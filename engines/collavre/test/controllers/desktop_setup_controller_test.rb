@@ -47,6 +47,28 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "first administrator creation rejects non-loopback requests" do
+    Collavre::User.where(system_admin: true).update_all(system_admin: false)
+
+    post collavre.desktop_setup_account_path,
+         params: { admin: { name: "Remote", email: "remote@desktop.test", password: "secure-password", password_confirmation: "secure-password" } },
+         headers: { "REMOTE_ADDR" => "10.0.0.25" }
+
+    assert_response :forbidden
+    assert_nil Collavre::User.find_by(email: "remote@desktop.test")
+  end
+
+  test "an existing administrator returns to incomplete setup after login" do
+    owner = users(:one)
+    owner.update!(email_verified_at: Time.current)
+    get collavre.desktop_setup_path
+
+    assert_redirected_to collavre.new_session_path
+    post collavre.session_path, params: { email: owner.email, password: "password" }
+
+    assert_redirected_to collavre.desktop_setup_path(step: :install)
+  end
+
   test "setup renders actual account controls and dynamic adapter statuses" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
     get collavre.desktop_setup_path(step: :account, locale: :en)

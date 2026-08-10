@@ -20,7 +20,14 @@ module Collavre
       @step = STEPS.first unless STEPS.include?(@step)
       @user = Current.user
       @account_required = !Collavre::User.where(system_admin: true).exists?
-      redirect_to collavre.new_session_path unless @account_required || @user
+      return if @account_required || @user
+
+      # A failed native registration leaves the proxy installed but incomplete.
+      # Preserve the exact setup destination through login so the local owner
+      # can retry without deleting Keychain entries or app data.
+      @step = "install" if @step == "account"
+      session[:return_to_after_authenticating] = collavre.desktop_setup_path(step: @step)
+      redirect_to collavre.new_session_path
     end
 
     def create_account
@@ -50,7 +57,11 @@ module Collavre
     # this loopback endpoint; secrets never enter the DOM or JavaScript response.
     def registration_token
       return unless require_loopback!
-      require_system_admin!
+      unless Current.user&.system_admin?
+        head :forbidden
+        return
+      end
+
       render json: { token: registration_verifier.generate({ user_id: Current.user.id, expires_at: 5.minutes.from_now.to_i }) }
     end
 

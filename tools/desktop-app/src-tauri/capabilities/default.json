@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "Core capabilities for the Collavre desktop shell.",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
   "permissions": ["core:default", "shell:default"]
 }

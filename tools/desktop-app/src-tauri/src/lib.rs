@@ -188,6 +188,21 @@ fn read_proxy_config(data: &Path) -> Option<ProxyConfig> {
     (config.port > 0 && !config.version.is_empty()).then_some(config)
 }
 
+fn normalized_proxy_config(
+    existing: Option<ProxyConfig>,
+    version: String,
+    default_port: u16,
+) -> ProxyConfig {
+    match existing {
+        Some(config) => ProxyConfig { version, ..config },
+        None => ProxyConfig {
+            port: default_port,
+            version,
+            registered: false,
+        },
+    }
+}
+
 fn write_proxy_config(data: &Path, config: &ProxyConfig) -> Result<(), String> {
     let state_dir = proxy_state_dir(data);
     fs::create_dir_all(&state_dir)
@@ -481,11 +496,11 @@ fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<Proxy
     fs::create_dir_all(&data)
         .map_err(|_| "Could not create the Collavre data directory.".to_string())?;
     let manifest = bundled_proxy_manifest(app)?;
-    let config = read_proxy_config(&data).unwrap_or(ProxyConfig {
-        port: free_port(),
-        version: manifest.version,
-        registered: false,
-    });
+    // A bundled proxy update keeps the existing loopback port, Keychain keys,
+    // and completed state, but advances the expected runtime version before the
+    // health check. Without this migration an upgrade can never restart or be
+    // repaired because start_proxy rejects the stale version first.
+    let config = normalized_proxy_config(read_proxy_config(&data), manifest.version, free_port());
     write_proxy_config(&data, &config)?;
     start_proxy(app, &data, sidecar)?;
     Ok(proxy_status(app, &data, sidecar))
@@ -808,7 +823,10 @@ fn apply_desktop_config(data: &Path) {
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
-    use super::{config_env_overrides, generate_proxy_key, parse_bundled_proxy_manifest};
+    use super::{
+        config_env_overrides, generate_proxy_key, normalized_proxy_config,
+        parse_bundled_proxy_manifest, ProxyConfig,
+    };
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
@@ -910,6 +928,23 @@ mod tests {
             .all(|character| character.is_ascii_alphanumeric()
                 || character == '_'
                 || character == '-'));
+    }
+
+    #[test]
+    fn proxy_upgrade_keeps_the_existing_port_and_completion_state() {
+        let config = normalized_proxy_config(
+            Some(ProxyConfig {
+                port: 34_567,
+                version: "0.1.0".to_string(),
+                registered: true,
+            }),
+            "0.2.0".to_string(),
+            45_678,
+        );
+
+        assert_eq!(34_567, config.port);
+        assert_eq!("0.2.0", config.version);
+        assert!(config.registered);
     }
 }
 
