@@ -43,6 +43,21 @@ module ActiveSupport
       # Rebuild the closure tree for Creatives fixture
       Creative.rebuild! if defined?(Creative)
     end
+
+    # The navigation registry is a process-wide singleton seeded once by the
+    # engine initializer. A test that resets it without restoring leaves every
+    # later test in the same process rendering an empty GNB, which surfaces as
+    # unrelated view assertions failing under some seeds. Fail on the test that
+    # emptied it instead of on its victims.
+    # Raises rather than asserts so the guard does not add an assertion to every
+    # test in the suite, which would hide the "missing assertions" reporter.
+    teardown do
+      next unless defined?(Navigation::Registry)
+      next if Navigation::Registry.instance.all.any?
+
+      raise("Navigation::Registry was left empty by this test. " \
+      "Snapshot it with `.all` in setup and re-register the items in teardown.")
+    end
   end
 end
 
