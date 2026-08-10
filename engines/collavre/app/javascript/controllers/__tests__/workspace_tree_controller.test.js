@@ -25,6 +25,7 @@ describe('WorkspaceTreeController', () => {
           {
             id: 1,
             label: 'Root',
+            progress: 0.5,
             snippet: 'Root chat',
             can_comment: true,
             url: '/creatives?id=1',
@@ -98,6 +99,12 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboFrame).toBe('creative-workspace-content')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboAction).toBe('advance')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboPrefetch).toBe('false')
+    expect(document.querySelector('[data-creative-id="1"] > div > a').dataset.guideAnchor).toBe('tree.node')
+    expect(document.querySelector('[data-creative-id="1"] > div > a').dataset.guideAnchorKey).toBe('1')
+    const progress = document.querySelector('[data-creative-id="1"] .creative-workspace-tree-progress')
+    expect(progress.dataset.guideAnchor).toBe('tree.progress')
+    expect(progress.dataset.guideAnchorKey).toBe('1')
+    expect(progress.textContent).toBe('50%')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
   })
