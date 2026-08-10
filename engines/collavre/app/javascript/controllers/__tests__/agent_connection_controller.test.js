@@ -156,6 +156,30 @@ describe("AgentConnectionController", () => {
     expect(document.querySelector('[data-role="base-url"]')).toBeNull()
   })
 
+  test("does not submit a custom-provider session without a valid base URL", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'),
+      "agent-connection"
+    )
+    controller.baseUrlFlows = new Map([["codex_custom", ["api-key"]]])
+    controller.renderSession({ engine: "codex_custom", flow: "api-key", status: "pending", sessionId: "session-1" })
+
+    const baseUrl = document.querySelector('[data-role="base-url"]')
+    let reportValidityCalls = 0
+    let fetchCalled = false
+    baseUrl.reportValidity = () => {
+      reportValidityCalls += 1
+      return false
+    }
+    global.fetch = async () => { fetchCalled = true }
+
+    await controller.submit({ params: { engine: "codex_custom", session: "session-1" } })
+
+    expect(reportValidityCalls).toBe(1)
+    expect(fetchCalled).toBe(false)
+  })
+
   test("shows routing detail and remains compatible with proxies without base URL flows", async () => {
     await mount()
     const controller = application.getControllerForElementAndIdentifier(

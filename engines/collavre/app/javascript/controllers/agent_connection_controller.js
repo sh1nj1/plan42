@@ -65,6 +65,11 @@ export default class extends Controller {
   async submit(event) {
     const secret = this.sessionTarget.querySelector('[data-role="secret"]')
     const baseUrl = this.sessionTarget.querySelector('[data-role="base-url"]')
+    if (baseUrl && !baseUrl.checkValidity()) {
+      baseUrl.reportValidity()
+      return
+    }
+
     try {
       const data = await this.request(this.sessionDetailUrl(event.params.engine, event.params.session), {
         method: "POST",
