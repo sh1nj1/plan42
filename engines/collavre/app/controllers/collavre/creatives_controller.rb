@@ -25,6 +25,7 @@ module Collavre
     def index
       respond_to do |format|
         format.html do
+          visit_received_at = Time.current
           # HTML only needs parent_creative for nav/title - skip expensive filtered queries
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
           if params[:id].present?
@@ -37,7 +38,8 @@ module Collavre
                 @last_visited_creative_visit_sequence = remember_last_visited_creative(
                   @parent_creative,
                   client_id: @last_visited_creative_client_id,
-                  sequence: @last_visited_creative_visit_sequence
+                  sequence: @last_visited_creative_visit_sequence,
+                  received_at: visit_received_at
                 )
               end
               @last_visited_creative_token = last_visited_creative_token
@@ -562,12 +564,13 @@ module Collavre
     # issuing the HTML request that normally records this value. The client
     # calls this endpoint after confirming the restored frame matches the URL.
     def remember_last_visited
+      visit_received_at = Time.current
       return head :forbidden unless @creative.has_permission?(Current.user, :read)
 
       visit = restored_visit
       return head :unprocessable_entity unless visit
 
-      remember_last_visited_creative(@creative, **visit)
+      remember_last_visited_creative(@creative, **visit, received_at: visit_received_at)
       head :no_content
     end
 
@@ -584,17 +587,22 @@ module Collavre
     end
 
     private
-      def remember_last_visited_creative(creative, client_id:, sequence:)
+      def remember_last_visited_creative(creative, client_id:, sequence:, received_at:)
         return unless Current.user && creative
 
         Current.user.with_lock do
           same_client = Current.user.last_visited_creative_client_id == client_id
           sequence ||= same_client ? Current.user.last_visited_creative_visit_sequence.to_i + 1 : 1
           return sequence if same_client && Current.user.last_visited_creative_visit_sequence.to_i >= sequence
+          return sequence if !same_client && Current.user.last_visited_creative_at &&
+            Current.user.last_visited_creative_at >= received_at
 
           Current.user.update_columns(
             last_visited_creative_id: creative.id,
-            last_visited_creative_at: Time.current,
+            # A request can wait on this lock after it reaches Rails. Retain
+            # its arrival time so an older request from another browser session
+            # cannot overwrite a Creative recorded by a later-arriving visit.
+            last_visited_creative_at: received_at,
             last_visited_creative_client_id: client_id,
             last_visited_creative_visit_sequence: sequence
           )

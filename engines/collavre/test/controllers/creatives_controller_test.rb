@@ -40,6 +40,31 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, user.last_visited_creative_visit_sequence
   end
 
+  test "an earlier request from another browser session cannot overwrite a later visit" do
+    user = users(:one)
+    earlier_creative = creatives(:root_parent)
+    later_creative = creatives(:unconvert_target)
+    earlier_received_at = 2.minutes.ago
+
+    user.update!(
+      last_visited_creative: later_creative,
+      last_visited_creative_at: 1.minute.ago,
+      last_visited_creative_client_id: "second-browser",
+      last_visited_creative_visit_sequence: 1
+    )
+
+    Collavre::CreativesController.new.send(
+      :remember_last_visited_creative,
+      earlier_creative,
+      client_id: "first-browser",
+      sequence: 1,
+      received_at: earlier_received_at
+    )
+
+    assert_equal later_creative, user.reload.last_visited_creative
+    assert_equal "second-browser", user.last_visited_creative_client_id
+  end
+
   test "prefetching a readable creative does not remember it as the user's last visited creative" do
     user = users(:one)
     creative = creatives(:root_parent)
