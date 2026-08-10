@@ -91,4 +91,46 @@ describe('TopicsController#deleteTopic', () => {
 
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  // Assigning "" only moves serverLastTopicId, and both deep-link sources
+  // outrank it in the currentTopicId getter — so without the release the
+  // deleted id keeps answering for every later restoreSelection().
+  describe('deleting the topic in view while a deep link names it', () => {
+    const deleteTopicInView = async (topicId) => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true })
+      const button = document.createElement('button')
+      button.dataset.id = topicId
+      confirmDialog.mockResolvedValue(true)
+
+      await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+    }
+
+    test('clears an overrideTopicId pointing at it', async () => {
+      controller.setOverrideTopicId('99')
+
+      await deleteTopicInView('99')
+
+      expect(controller.currentTopicId).toBe('')
+    })
+
+    test('drops a ?topic_id= naming it', async () => {
+      window.history.replaceState({}, '', '/?topic_id=99')
+
+      await deleteTopicInView('99')
+
+      expect(new URLSearchParams(window.location.search).get('topic_id')).toBeNull()
+
+      window.history.replaceState({}, '', '/')
+    })
+
+    test('leaves a ?topic_id= pointing at a different topic alone', async () => {
+      window.history.replaceState({}, '', '/?topic_id=7')
+
+      await deleteTopicInView('99')
+
+      expect(new URLSearchParams(window.location.search).get('topic_id')).toBe('7')
+
+      window.history.replaceState({}, '', '/')
+    })
+  })
 })

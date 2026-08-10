@@ -742,4 +742,92 @@ describe('TopicsController archived topic messages', () => {
       })
     })
   })
+
+  // list_controller asks isArchivedTopic for every incoming stream, and the
+  // reload that follows an archive/unarchive only refreshes the cache when its
+  // fetch resolves. Between the two, membership has to already be right.
+  describe('archive membership before the reload lands', () => {
+    // Hold the topics reload open so every assertion runs inside the window.
+    const stubPendingReload = () => {
+      global.fetch = jest.fn(() => new Promise(() => {}))
+    }
+
+    const broadcast = (action, topic) =>
+      controller.handleTopicMessage({ action, topic })
+
+    test('an archived broadcast marks the topic archived immediately', () => {
+      stubPendingReload()
+
+      broadcast('archived', { id: 2, name: 'Alpha' })
+
+      expect(controller.isArchivedTopic('2')).toBe(true)
+    })
+
+    test('an unarchived broadcast unmarks it immediately', () => {
+      stubPendingReload()
+
+      broadcast('unarchived', { id: 3, name: 'Zeta' })
+
+      expect(controller.isArchivedTopic('3')).toBe(false)
+    })
+
+    test('an unarchived broadcast clears the unread badge it can no longer show', () => {
+      stubPendingReload()
+      controller.archivedWithNewMessages.add('3')
+
+      broadcast('unarchived', { id: 3, name: 'Zeta' })
+
+      expect(controller.archivedWithNewMessages.has('3')).toBe(false)
+    })
+
+    test('an unarchived broadcast keeps another archived topic unread', () => {
+      stubPendingReload()
+      controller.archivedWithNewMessages.add('3')
+      controller.archivedWithNewMessages.add('4')
+
+      broadcast('unarchived', { id: 3, name: 'Zeta' })
+
+      expect(controller.archivedWithNewMessages.has('4')).toBe(true)
+    })
+
+    // loadTopics() empties this.topics on its way out, so the archived cache is
+    // the only one still readable in this window — and the only one routing
+    // consults.
+    test('a broadcast with no topic payload leaves the archived cache alone', () => {
+      stubPendingReload()
+
+      controller.handleTopicMessage({ action: 'archived' })
+
+      expect(controller.archivedTopics.map((t) => t.id)).toEqual([3, 4])
+    })
+
+    // The actor's own reload has the same window as every receiver's.
+    test('archiving locally marks the topic archived immediately', async () => {
+      global.fetch = jest.fn((url) => {
+        if (String(url).includes('/archive')) return Promise.resolve({ ok: true })
+        return new Promise(() => {})
+      })
+
+      await controller.archiveTopic({
+        stopPropagation: jest.fn(),
+        currentTarget: { dataset: { id: '2' } },
+      })
+
+      expect(controller.isArchivedTopic('2')).toBe(true)
+    })
+
+    test('restoring locally unmarks the topic immediately', async () => {
+      global.fetch = jest.fn((url) => {
+        if (String(url).includes('/unarchive')) return Promise.resolve({ ok: true })
+        return new Promise(() => {})
+      })
+
+      await controller.unarchiveTopic({
+        stopPropagation: jest.fn(),
+        currentTarget: { dataset: { id: '3' } },
+      })
+
+      expect(controller.isArchivedTopic('3')).toBe(false)
+    })
+  })
 })

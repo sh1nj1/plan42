@@ -93,6 +93,33 @@ export default class extends Controller {
         return (this.archivedTopics || []).some(t => String(t.id) === String(id))
     }
 
+    // Move a topic between the live and archived caches without waiting for the
+    // reload. Every caller follows with loadTopics(), which clears this.topics
+    // synchronously and refills both lists when its fetch lands — so this only
+    // has to be right for the window in between, which is exactly the window
+    // isArchivedTopic is consulted in.
+    applyArchiveTransition(action, topic) {
+        const id = topic && topic.id
+        if (!id) return
+
+        const key = String(id)
+        const known = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
+            .find(t => String(t.id) === key)
+        const entry = { ...(known || {}), ...topic }
+
+        this.topics = (this.topics || []).filter(t => String(t.id) !== key)
+        this.archivedTopics = (this.archivedTopics || []).filter(t => String(t.id) !== key)
+
+        if (action === "archived") {
+            this.archivedTopics = [ ...this.archivedTopics, entry ]
+        } else {
+            this.topics = [ ...this.topics, entry ]
+            // Nothing archived is left to clear the badge from, so drop it here
+            // rather than leaving the toggle lit until the reload lands.
+            this.pruneArchivedBadges()
+        }
+    }
+
     // The toggle badge is derived from set size, so an id that is no longer
     // archived — unarchived, deleted, or left behind by a creative switch —
     // would keep it lit with no chip to click and clear it.
@@ -576,6 +603,9 @@ export default class extends Controller {
                     this.currentTopicId = ""
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
+                // The actor has the same stale-membership window as everyone
+                // receiving the broadcast, so close it on this side too.
+                this.applyArchiveTransition("archived", { id: topicId })
                 this.loadTopics()
             } else {
                 alertDialog(this._i18n("archive_error"))
@@ -599,6 +629,7 @@ export default class extends Controller {
             })
 
             if (response.ok) {
+                this.applyArchiveTransition("unarchived", { id: topicId })
                 this.loadTopics()
             } else {
                 alertDialog(this._i18n("restore_error"))
@@ -1066,6 +1097,12 @@ export default class extends Controller {
         }
 
         if (action === "archived" || action === "unarchived") {
+            // loadTopics() only refreshes archivedTopics when its fetch resolves,
+            // and list_controller routes every incoming stream through
+            // isArchivedTopic in the meantime. The broadcast already carries the
+            // membership change, so apply it now rather than letting that window
+            // route on the old answer.
+            this.applyArchiveTransition(action, data.topic || { id: data.topic_id })
             this.loadTopics()
             return
         }

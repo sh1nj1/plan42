@@ -215,6 +215,73 @@ describe('CommentsListController deep-linked topic resolution', () => {
     expect(controller.listTarget.innerHTML).toContain('comment_99')
     expect(controller.listTarget.dataset.currentTopicId).toBe('9')
   })
+
+  // The exemption is only for a load the server retopiced. A load the server
+  // said nothing about is still subject to the plain stale-topic guard, on both
+  // the success and the failure path.
+  describe('a load the server did not retopic', () => {
+    const buildPendingLoad = () => {
+      const topicsController = { setOverrideTopicId: jest.fn(), selectTopic: jest.fn() }
+      const controller = buildListController({ currentTopicId: '2', topicsController })
+      controller.selection = new Set()
+      controller._loadCommentsVersion = 0
+      controller.prevMsgNavigator = { reset: jest.fn() }
+      controller.highlightComment = jest.fn()
+      controller.markCommentsRead = jest.fn()
+      controller.scrollToBottom = jest.fn()
+      return controller
+    }
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    test('discards its HTML when the topic moved while it was in flight', async () => {
+      const controller = buildPendingLoad()
+      global.fetch = jest.fn().mockImplementation(async () => {
+        controller.currentTopicId = '9' // the user switched mid-flight
+        return {
+          ok: true,
+          headers: { get: () => null },
+          text: async () => '<div id="comment_55">topic two</div>',
+        }
+      })
+
+      controller.loadInitialComments()
+      await flush()
+
+      expect(controller.listTarget.innerHTML).not.toContain('comment_55')
+    })
+
+    test('discards its error when the topic moved while it was in flight', async () => {
+      const controller = buildPendingLoad()
+      global.fetch = jest.fn().mockImplementation(async () => {
+        controller.currentTopicId = '9'
+        return {
+          ok: false,
+          headers: { get: () => null },
+          json: async () => ({ error: 'No permission' }),
+        }
+      })
+
+      controller.loadInitialComments()
+      await flush()
+
+      expect(controller.listTarget.innerHTML).toBe('')
+    })
+
+    test('still renders its error when the topic did not move', async () => {
+      const controller = buildPendingLoad()
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        headers: { get: () => null },
+        json: async () => ({ error: 'No permission' }),
+      })
+
+      controller.loadInitialComments()
+      await flush()
+
+      expect(controller.listTarget.innerHTML).toContain('No permission')
+    })
+  })
 })
 
 describe('CommentsListController deep link into an archived topic', () => {
