@@ -30,7 +30,12 @@ struct Sidecar {
 /// Holds the optional, user-approved cli-openai-proxy process. It is deliberately
 /// separate from the Rails sidecar: a failed or disabled proxy must never stop
 /// the local Collavre application from opening.
-struct ProxySidecar(Mutex<Option<Child>>);
+struct ManagedProxy {
+    child: Child,
+    port: u16,
+}
+
+struct ProxySidecar(Mutex<Option<ManagedProxy>>);
 
 const PROXY_KEYCHAIN_SERVICE: &str = "net.collavre.desktop.cli-openai-proxy";
 const PROXY_ADMIN_KEY_ACCOUNT: &str = "admin-key";
@@ -470,7 +475,7 @@ fn proxy_status(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> 
         .map(|mut child| {
             let exited = child
                 .as_mut()
-                .and_then(|process| process.try_wait().ok().flatten())
+                .and_then(|process| process.child.try_wait().ok().flatten())
                 .is_some();
             if exited {
                 child.take();
@@ -488,6 +493,43 @@ fn proxy_status(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> 
     }
 }
 
+/// A live child is authoritative for the port it was spawned with. During a
+/// retry, that port must not be treated as an unrelated listener and replaced
+/// beneath the running proxy.
+fn managed_proxy_runs_on_port(sidecar: &ProxySidecar, port: u16) -> bool {
+    managed_proxy_port(sidecar) == Some(port)
+}
+
+fn managed_proxy_port(sidecar: &ProxySidecar) -> Option<u16> {
+    sidecar
+        .0
+        .lock()
+        .map(|mut proxy| {
+            let exited = proxy
+                .as_mut()
+                .and_then(|process| process.child.try_wait().ok().flatten())
+                .is_some();
+            if exited {
+                proxy.take();
+            }
+            proxy.as_ref().map(|process| process.port)
+        })
+        .ok()
+        .flatten()
+}
+
+fn stop_managed_proxy(sidecar: &ProxySidecar) -> Result<(), String> {
+    let mut proxy = sidecar
+        .0
+        .lock()
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?
+        .take();
+    if let Some(proxy) = proxy.as_mut() {
+        stop_sidecar(&mut proxy.child);
+    }
+    Ok(())
+}
+
 fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> Result<(), String> {
     let mut child = sidecar
         .0
@@ -495,7 +537,7 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
         .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?;
     let exited = child
         .as_mut()
-        .and_then(|process| process.try_wait().ok().flatten())
+        .and_then(|process| process.child.try_wait().ok().flatten())
         .is_some();
     if exited {
         child.take();
@@ -525,20 +567,23 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
         .0
         .lock()
         .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?
-        .replace(child);
+        .replace(ManagedProxy {
+            child,
+            port: config.port,
+        });
     let healthy = sidecar
         .0
         .lock()
         .ok()
         .and_then(|mut guard| {
-            guard
-                .as_mut()
-                .map(|child| wait_until_proxy_healthy(child, config.port, Duration::from_secs(15)))
+            guard.as_mut().map(|proxy| {
+                wait_until_proxy_healthy(&mut proxy.child, config.port, Duration::from_secs(15))
+            })
         })
         .unwrap_or(false);
     if !healthy {
-        if let Some(mut child) = sidecar.0.lock().ok().and_then(|mut guard| guard.take()) {
-            stop_sidecar(&mut child);
+        if let Some(mut proxy) = sidecar.0.lock().ok().and_then(|mut guard| guard.take()) {
+            stop_sidecar(&mut proxy.child);
         }
         let _ = fs::remove_file(proxy_pidfile_path(data));
         return Err(
@@ -559,11 +604,20 @@ fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<Proxy
     // repaired because start_proxy rejects the stale version first.
     let mut config =
         normalized_proxy_config(read_proxy_config(&data), manifest.version, free_port());
-    // Clear a prior crashed proxy before probing its persisted port. If another
-    // process owns it, choose a fresh loopback port and require registration so
-    // Rails' gateway URL follows the repaired proxy.
-    reap_orphan_proxy(&data);
-    if !proxy_port_available(config.port) {
+    // A live managed child owns this port and can continue serving a recovery
+    // retry. Only discard an orphaned pidfile and replace a claimed port when
+    // no managed proxy is already running there.
+    let managed_proxy_owns_port = managed_proxy_runs_on_port(sidecar, config.port);
+    if !managed_proxy_owns_port && managed_proxy_port(sidecar).is_some() {
+        // A live managed process for a different port cannot satisfy this
+        // configuration. Stop it through its retained Child handle before
+        // changing state and spawning a replacement.
+        stop_managed_proxy(sidecar)?;
+    }
+    if !managed_proxy_owns_port {
+        reap_orphan_proxy(&data);
+    }
+    if !managed_proxy_owns_port && !proxy_port_available(config.port) {
         replace_occupied_proxy_port(&mut config, free_port());
     }
     write_proxy_config(&data, &config)?;
@@ -710,10 +764,73 @@ fn nvm_bin_paths(home: &Path) -> Vec<PathBuf> {
         .map(|entry| entry.path().join("bin"))
         .filter(|path| path.is_dir())
         .collect::<Vec<_>>();
-    // The inherited PATH, if any, was retained before these fallbacks. Keep
-    // the fallback order deterministic without disturbing that precedence.
-    paths.sort();
+    paths.sort_by(|left, right| nvm_version_sort_key(right).cmp(&nvm_version_sort_key(left)));
+    if let Some(default) = nvm_default_bin_path(home, &paths) {
+        paths.retain(|path| path != &default);
+        paths.insert(0, default);
+    }
     paths
+}
+
+/// Resolve NVM's configured default before trying other installed versions.
+/// Finder normally has neither NVM_DIR nor NVM_BIN in its environment, but NVM
+/// persists this alias for shells and desktop launches alike.
+fn nvm_default_bin_path(home: &Path, paths: &[PathBuf]) -> Option<PathBuf> {
+    let mut alias = fs::read_to_string(home.join(".nvm/alias/default"))
+        .ok()?
+        .trim()
+        .to_string();
+    for _ in 0..8 {
+        if let Some(path) = nvm_matching_bin_path(paths, &alias) {
+            return Some(path);
+        }
+        let relative_alias = Path::new(&alias);
+        if relative_alias.is_absolute()
+            || relative_alias
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return None;
+        }
+        alias = fs::read_to_string(home.join(".nvm/alias").join(relative_alias))
+            .ok()?
+            .trim()
+            .to_string();
+    }
+    None
+}
+
+fn nvm_matching_bin_path(paths: &[PathBuf], alias: &str) -> Option<PathBuf> {
+    let requested = alias.trim().trim_start_matches('v');
+    if matches!(requested, "node" | "stable" | "*") {
+        return paths.first().cloned();
+    }
+    paths.iter().find_map(|path| {
+        let version = path
+            .parent()?
+            .file_name()?
+            .to_str()?
+            .trim_start_matches('v');
+        (version == requested
+            || (requested
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+                && version
+                    .strip_prefix(requested)
+                    .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('.'))))
+        .then(|| path.clone())
+    })
+}
+
+fn nvm_version_sort_key(path: &Path) -> Vec<u64> {
+    path.parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| part.parse().unwrap_or(0))
+        .collect()
 }
 
 fn desktop_cli_path() -> std::ffi::OsString {
@@ -965,12 +1082,12 @@ fn apply_desktop_config(data: &Path) {
 mod tests {
     use super::{
         append_unique_paths, config_env_overrides, generate_proxy_key,
-        invalidate_proxy_registration_after_key_regeneration, migrate_proxy_config,
-        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
-        reap_orphan_proxy, replace_occupied_proxy_port, wait_until_proxy_healthy,
-        write_proxy_config, ProxyConfig,
+        invalidate_proxy_registration_after_key_regeneration, managed_proxy_runs_on_port,
+        migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
+        read_proxy_config, reap_orphan_proxy, replace_occupied_proxy_port,
+        wait_until_proxy_healthy, write_proxy_config, ManagedProxy, ProxyConfig, ProxySidecar,
     };
-    use std::{env, fs, path::PathBuf, process, time::Duration};
+    use std::{env, fs, path::PathBuf, process, sync::Mutex, time::Duration};
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
@@ -1116,6 +1233,52 @@ mod tests {
         let _ = fs::remove_dir_all(&home);
 
         assert_eq!(vec![nvm_bin], paths);
+    }
+
+    #[test]
+    fn nvm_default_alias_precedes_other_installed_versions() {
+        let home = env::temp_dir().join(format!("collavre-nvm-default-{}", process::id()));
+        let default_alias = home.join(".nvm/alias/default");
+        let older = home.join(".nvm/versions/node/v20.10.0/bin");
+        let selected = home.join(".nvm/versions/node/v22.16.0/bin");
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(default_alias.parent().expect("alias directory"))
+            .expect("create alias directory");
+        fs::create_dir_all(&older).expect("create old node bin");
+        fs::create_dir_all(&selected).expect("create default node bin");
+        fs::write(&default_alias, "22\n").expect("write default alias");
+
+        let paths = nvm_bin_paths(&home);
+        let _ = fs::remove_dir_all(&home);
+
+        assert_eq!(vec![selected, older], paths);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_managed_proxy_keeps_its_persisted_port_during_recovery() {
+        use std::process::Command;
+
+        let child = Command::new("sh")
+            .args(["-c", "sleep 2"])
+            .spawn()
+            .expect("spawn managed proxy");
+        let sidecar = ProxySidecar(Mutex::new(Some(ManagedProxy {
+            child,
+            port: 34_567,
+        })));
+
+        assert!(managed_proxy_runs_on_port(&sidecar, 34_567));
+        assert!(!managed_proxy_runs_on_port(&sidecar, 45_678));
+
+        let mut proxy = sidecar
+            .0
+            .lock()
+            .expect("proxy lock")
+            .take()
+            .expect("managed proxy");
+        let _ = proxy.child.kill();
+        let _ = proxy.child.wait();
     }
 
     #[test]
@@ -1333,8 +1496,8 @@ pub fn run() {
                 if let Some(mut child) = app.state::<Sidecar>().child.lock().unwrap().take() {
                     stop_sidecar(&mut child);
                 }
-                if let Some(mut child) = app.state::<ProxySidecar>().0.lock().unwrap().take() {
-                    stop_sidecar(&mut child);
+                if let Some(mut proxy) = app.state::<ProxySidecar>().0.lock().unwrap().take() {
+                    stop_sidecar(&mut proxy.child);
                 }
                 // Clear the pidfile so the next launch doesn't try to reap a pid
                 // that is gone (or, worse, reused by an unrelated process).
