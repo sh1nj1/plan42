@@ -99,7 +99,7 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert admin_gateway.valid?, admin_gateway.errors.full_messages.to_sentence
   end
 
-  test "only the signed desktop registration flow can retarget a desktop-managed gateway" do
+  test "only the signed desktop registration flow can change desktop-managed native configuration" do
     gateway = build_gateway(
       base_url: "http://127.0.0.1:34567",
       desktop_managed: true,
@@ -111,9 +111,29 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_includes gateway.errors.details[:base_url].pluck(:error), :immutable
     assert_equal "http://127.0.0.1:34567", gateway.reload.base_url
 
-    gateway.update_from_desktop_registration!(base_url: "http://127.0.0.1:45678")
+    assert_not gateway.update(
+      admin_key: "replacement-admin",
+      completion_key: "replacement-completion",
+      identity_secret: "r" * 32
+    )
+    %i[admin_key completion_key identity_secret].each do |attribute|
+      assert_includes gateway.errors.details[attribute].pluck(:error), :immutable
+    end
+    assert_equal "admin", gateway.reload.admin_key
+    assert_equal "completion", gateway.completion_key
+    assert_equal "i" * 32, gateway.identity_secret
+
+    gateway.update_from_desktop_registration!(
+      base_url: "http://127.0.0.1:45678",
+      admin_key: "replacement-admin",
+      completion_key: "replacement-completion",
+      identity_secret: "r" * 32
+    )
 
     assert_equal "http://127.0.0.1:45678", gateway.reload.base_url
+    assert_equal "replacement-admin", gateway.admin_key
+    assert_equal "replacement-completion", gateway.completion_key
+    assert_equal "r" * 32, gateway.identity_secret
   end
 
   test "desktop-managed gateways remain in shared workspace mode" do

@@ -6,6 +6,7 @@ module Collavre
 
     # Must match the proxy's USER_IDENTITY_HMAC_SECRET.
     MIN_IDENTITY_SECRET_BYTES = 32
+    DESKTOP_NATIVE_CREDENTIAL_ATTRIBUTES = %i[admin_key completion_key identity_secret].freeze
 
     belongs_to :owner, class_name: "Collavre::User"
     has_many :agents, class_name: "Collavre::User", dependent: :restrict_with_error
@@ -27,6 +28,7 @@ module Collavre
     validate :base_url_is_http
     validate :base_url_is_safe_for_owner
     validate :desktop_managed_base_url_is_immutable
+    validate :desktop_managed_credentials_are_immutable
     validate :desktop_managed_gateway_uses_shared_workspace
     validate :identity_secret_is_usable
     after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
@@ -97,6 +99,20 @@ module Collavre
       return if @desktop_registration_update
 
       errors.add(:base_url, :immutable)
+    end
+
+    # Keychain is the source of truth for the local proxy credentials. The
+    # regular Rails settings form cannot synchronize it, so only the signed
+    # native registration handoff may rotate these values.
+    def desktop_managed_credentials_are_immutable
+      return unless persisted? && desktop_managed?
+      return if @desktop_registration_update
+
+      DESKTOP_NATIVE_CREDENTIAL_ATTRIBUTES.each do |attribute|
+        next unless public_send("will_save_change_to_#{attribute}?")
+
+        errors.add(attribute, :immutable)
+      end
     end
 
     # The macOS bundle deliberately runs one shared local proxy. Per-user
