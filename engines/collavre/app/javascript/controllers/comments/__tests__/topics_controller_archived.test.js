@@ -204,6 +204,73 @@ describe('TopicsController archived topic messages', () => {
 
       expect(changeEvents).toHaveLength(0)
     })
+
+    describe('after the user collapses the section on the topic they are in', () => {
+      const collapse = () => controller.toggleArchivedTopics({ stopPropagation: jest.fn() })
+      const rename = () => controller.updateTopicInList({ id: 2, name: 'Alpha renamed' })
+
+      beforeEach(() => {
+        controller.serverLastTopicId = '3'
+        controller.showingArchived = true
+        render()
+        collapse()
+      })
+
+      test('an unrelated rename does not reopen it', () => {
+        rename()
+
+        expect(controller.showingArchived).toBe(false)
+        expect(controller.listTarget.querySelector('.topic-archived[data-id="3"]')).toBeNull()
+      })
+
+      test('a reorder does not reopen it', () => {
+        controller.reorderTopicsFromServer([2, 1])
+
+        expect(controller.showingArchived).toBe(false)
+      })
+
+      test('the hidden topic stays selected', () => {
+        rename()
+
+        expect(String(controller.currentTopicId)).toBe('3')
+      })
+
+      test('deliberately reselecting the topic reopens the section', () => {
+        controller.selectTopic('3')
+
+        expect(controller.showingArchived).toBe(true)
+        expect(controller.listTarget.querySelector('.topic-archived[data-id="3"]').classList)
+          .toContain('active')
+      })
+
+      test('a rename after that reselection leaves the section open', () => {
+        controller.selectTopic('3')
+
+        rename()
+
+        expect(controller.showingArchived).toBe(true)
+      })
+
+      test('re-expanding by hand also drops the suppression', () => {
+        collapse()
+
+        rename()
+
+        expect(controller.showingArchived).toBe(true)
+      })
+    })
+
+    test('collapsing while a live topic is open still reveals a restored archived one', () => {
+      controller.serverLastTopicId = '2'
+      controller.showingArchived = true
+      render()
+
+      controller.toggleArchivedTopics({ stopPropagation: jest.fn() })
+      controller.serverLastTopicId = '3'
+      controller.restoreSelection()
+
+      expect(controller.showingArchived).toBe(true)
+    })
   })
 
   describe('new message badges', () => {

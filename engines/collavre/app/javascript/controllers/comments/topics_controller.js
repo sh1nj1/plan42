@@ -199,7 +199,12 @@ export default class extends Controller {
             // section when the selection lands inside it.
             const known = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
             if (known.some(t => String(t.id) === String(lastTopicId))) {
-                this.selectTopic(lastTopicId)
+                // Restoring is not a navigation, so it must not undo a collapse
+                // the user chose while sitting in this very topic. Only
+                // restoreSelection is suppressed; every other selectTopic caller
+                // is the user going somewhere, and reveals normally.
+                const reveal = this.archivedCollapsedTopicId !== String(lastTopicId)
+                this.selectTopic(lastTopicId, { reveal })
                 return
             }
         }
@@ -214,6 +219,9 @@ export default class extends Controller {
         if (!id || this.showingArchived) return
         if (!this.isArchivedTopic(id)) return
 
+        // Reaching here is a deliberate navigation into the section, so an
+        // earlier collapse no longer describes what the user wants.
+        this.archivedCollapsedTopicId = null
         this.showingArchived = true
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
     }
@@ -603,6 +611,13 @@ export default class extends Controller {
     toggleArchivedTopics(event) {
         event.stopPropagation()
         this.showingArchived = !this.showingArchived
+        // Collapsing while the open topic lives in this section is a deliberate
+        // choice to hide it, so record it. Every re-render runs restoreSelection
+        // → selectTopic → revealArchivedTopic, which would otherwise reopen the
+        // section on any unrelated rename, reorder, or topic broadcast.
+        this.archivedCollapsedTopicId = !this.showingArchived && this.isArchivedTopic(this.currentTopicId)
+            ? String(this.currentTopicId)
+            : null
         // No restoreSelection() here: toggling cannot invalidate the selection, and
         // renderTopics already re-applies the active class. Re-selecting would
         // re-expand the section the user just collapsed (selectTopic reveals an
@@ -721,14 +736,14 @@ export default class extends Controller {
         this.selectTopic(id)
     }
 
-    selectTopic(id) {
+    selectTopic(id, { reveal = true } = {}) {
         // Only restoreSelection() is guarded, so reaching selectTopic with this
         // id means the user deliberately went back into the archived topic.
         // The transition is over.
         if (this.archivedAwayTopicId && String(id) === this.archivedAwayTopicId) {
             this.archivedAwayTopicId = null
         }
-        this.revealArchivedTopic(id)
+        if (reveal) this.revealArchivedTopic(id)
         this.updateSelectionUI(id)
         if (id) {
             this.clearNewMessageBadge(id)
