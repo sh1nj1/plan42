@@ -13,9 +13,14 @@ describe('WorkspaceTreeController', () => {
   let preventNavigation
 
   beforeEach(async () => {
-    fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    window.localStorage.clear()
+    fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
+      url === '/creatives/next_last_visited_sequence'
+        ? { ok: true, headers: new Headers(), json: async () => ({ sequence: 2 }) }
+        : {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
         creatives: [
           {
             id: 1,
@@ -35,8 +40,9 @@ describe('WorkspaceTreeController', () => {
             ],
           },
         ],
-      }),
-    })
+          }),
+        }
+    ))
     global.fetch = fetchMock
     window.history.replaceState({}, '', '/creatives?id=2')
     preventNavigation = (event) => event.preventDefault()
@@ -44,6 +50,9 @@ describe('WorkspaceTreeController', () => {
     document.body.innerHTML = `
       <section data-controller="workspace-tree"
                data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
+               data-workspace-tree-last-visited-creative-url-value="/creatives"
+               data-workspace-tree-last-visited-creative-visit-token-value="server-token"
+               data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
@@ -56,7 +65,9 @@ describe('WorkspaceTreeController', () => {
              data-creative-id="2"
              data-creative-snippet="Branch chat"
              data-can-comment="false"
-             data-creative-path="[1,2,3]"></div>
+             data-creative-path="[1,2,3]"
+             data-last-visited-creative-visit-token="server-token"
+             data-last-visited-creative-visit-sequence="1"></div>
       </turbo-frame>
     `
 
@@ -73,6 +84,7 @@ describe('WorkspaceTreeController', () => {
     application.stop()
     document.removeEventListener('click', preventNavigation)
     document.body.innerHTML = ''
+    window.localStorage.clear()
     delete global.fetch
   })
 
@@ -85,8 +97,145 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="2"] a').getAttribute('aria-current')).toBe('page')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboFrame).toBe('creative-workspace-content')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboAction).toBe('advance')
+    expect(document.querySelector('[data-creative-id="2"] a').dataset.turboPrefetch).toBe('false')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
+  })
+
+  test('records the visible creative after a cached Turbo history restore', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/2/remember_last_visited?visit_token=server-token')
+    expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
+    expect(options.headers.get('Accept')).toBe('application/json')
+    expect(options.headers.get('X-CSRF-Token')).toBe('token')
+    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
+  })
+
+  test('records a cached history restore after Turbo reconnects the workspace controller', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.body.innerHTML = `
+      <section data-controller="workspace-tree"
+               data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
+               data-workspace-tree-last-visited-creative-url-value="/creatives"
+               data-workspace-tree-last-visited-creative-visit-token-value="server-token"
+               data-workspace-tree-last-visited-creative-visit-sequence-value="1"
+               data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-loading-text-value="Loading"
+               data-workspace-tree-empty-text-value="Empty"
+               data-workspace-tree-error-text-value="Error">
+        <button data-workspace-tree-target="panelToggle" data-action="workspace-tree#togglePanel" aria-expanded="false"></button>
+        <nav data-workspace-tree-target="tree"></nav>
+      </section>
+      <turbo-frame id="creative-workspace-content">
+        <div data-workspace-navigation-state
+             data-creative-id="2"
+             data-creative-snippet="Branch chat"
+             data-can-comment="false"
+             data-creative-path="[1,2,3]"
+             data-last-visited-creative-visit-token="server-token"
+             data-last-visited-creative-visit-sequence="1"></div>
+      </turbo-frame>
+    `
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="workspace-tree"]'),
+      'workspace-tree'
+    )
+
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/2/remember_last_visited?visit_token=server-token')
+    expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
+    expect(options.headers.get('Accept')).toBe('application/json')
+    expect(options.headers.get('X-CSRF-Token')).toBe('token')
+  })
+
+  test('retries a cached history restore after refreshing a stale CSRF token', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="stale-token">'
+    fetchMock.mockReset()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 2 }), headers: { get: () => null } })
+      .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
+      .mockResolvedValueOnce({ headers: { get: () => 'fresh-token' } })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 3 }), headers: { get: () => null } })
+      .mockResolvedValueOnce({ ok: true, status: 204, headers: { get: () => null } })
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://localhost/creatives?id=2', expect.objectContaining({
+      method: 'HEAD',
+      credentials: 'same-origin',
+      headers: { 'X-Sec-Purpose': 'prefetch' },
+      signal: expect.any(AbortSignal),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock.mock.calls[4][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
+  })
+
+  test('does not retry a restored visit after a newer navigation starts', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="stale-token">'
+    let resolveRefresh
+    fetchMock.mockReset()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 2 }), headers: { get: () => null } })
+      .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'advance' } }))
+    resolveRefresh({ headers: { get: () => 'fresh-token' } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('uses the frame response token after workspace navigation', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    frame.innerHTML = `
+      <div data-workspace-navigation-state
+           data-creative-id="1"
+           data-creative-snippet="Root chat"
+           data-can-comment="true"
+           data-creative-path="[1]"
+           data-last-visited-creative-visit-token="new-server-token"
+           data-last-visited-creative-visit-sequence="2"></div>
+    `
+    frame.dispatchEvent(new Event('turbo:frame-load', { bubbles: true }))
+    window.history.replaceState({}, '', '/creatives?id=1')
+
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/1/remember_last_visited?visit_token=new-server-token')
+    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
   })
 
   test('lazily reloads toggled branches and restores focus and scroll', async () => {

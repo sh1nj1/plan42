@@ -42,6 +42,7 @@ module Collavre
 
     # Leaf-first destroy to avoid closure_tree find(parent_id) errors
     has_many :creatives, class_name: "Collavre::Creative", dependent: nil
+    belongs_to :last_visited_creative, class_name: "Collavre::Creative", optional: true
     before_destroy :destroy_creatives_leaf_first
 
     # /compress and /merge summaries are durable recovery artifacts: they replace

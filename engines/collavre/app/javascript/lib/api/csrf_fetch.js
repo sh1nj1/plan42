@@ -20,15 +20,17 @@ export function updateCsrfTokenFromResponse(response) {
 }
 
 /**
- * Fetch a fresh CSRF token from the server.  Uses a lightweight HEAD
- * request to the current page — the response body is discarded but the
- * X-CSRF-Token header gives us a valid token.
+ * Fetch a fresh CSRF token from the server. Uses a lightweight HEAD request
+ * marked as a prefetch so endpoints that record ordinary visits do not treat
+ * the refresh as navigation.
  */
-export async function refreshCsrfToken() {
+export async function refreshCsrfToken({ signal } = {}) {
   try {
     const response = await fetch(window.location.href, {
       method: 'HEAD',
       credentials: 'same-origin',
+      headers: { 'X-Sec-Purpose': 'prefetch' },
+      signal,
     })
     updateCsrfTokenFromResponse(response)
     return readCsrfToken()
