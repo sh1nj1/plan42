@@ -143,6 +143,13 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     assert_empty @registry.all
   end
 
+  test "suite guard restores initializer items before reporting a leak" do
+    error = assert_raises(RuntimeError) { NavigationRegistryTestGuard.verify! }
+
+    assert_match(/was left empty/, error.message)
+    assert_not_empty @registry.all
+  end
+
   test "find returns item by key" do
     @registry.register(key: :test_item, label: "Test")
 

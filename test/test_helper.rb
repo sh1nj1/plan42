@@ -11,6 +11,19 @@ require "minitest/mock"
 # Engine route set only; app route host stays unset (OpenRedirect guard).
 Collavre::Engine.routes.default_url_options[:host] ||= "www.example.com"
 
+module NavigationRegistryTestGuard
+  INITIAL_ITEMS = Navigation::Registry.instance.all.map(&:deep_dup).freeze
+
+  def self.verify!
+    registry = Navigation::Registry.instance
+    return if registry.all.any?
+
+    INITIAL_ITEMS.each { |item| registry.register(item.deep_dup) }
+    raise("Navigation::Registry was left empty by this test. " \
+    "Snapshot it with `.all` in setup and re-register the items in teardown.")
+  end
+end
+
 # Add engines test directories to the test runner
 # Note: We do not auto-load engine tests here to avoid running them during targeted app tests.
 # Use `rails test engines/` or `rake test:engines` to run engine tests.
@@ -52,11 +65,7 @@ module ActiveSupport
     # Raises rather than asserts so the guard does not add an assertion to every
     # test in the suite, which would hide the "missing assertions" reporter.
     teardown do
-      next unless defined?(Navigation::Registry)
-      next if Navigation::Registry.instance.all.any?
-
-      raise("Navigation::Registry was left empty by this test. " \
-      "Snapshot it with `.all` in setup and re-register the items in teardown.")
+      NavigationRegistryTestGuard.verify!
     end
   end
 end
