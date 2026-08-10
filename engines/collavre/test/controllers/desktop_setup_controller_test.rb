@@ -267,10 +267,37 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
       identity_secret: "l" * 48,
       tenant_id: "collavre-desktop"
     )
+    Collavre::User.create!(
+      name: "Claude Code",
+      email: "collavre-desktop-claude-code@ai.local",
+      password: "secure-password",
+      email_verified_at: Time.current,
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: users(:one).id,
+      agent_gateway: legacy_gateway,
+      tools: []
+    )
 
     AddDesktopManagedToAgentGateways.new.migrate(:up)
 
     assert_predicate legacy_gateway.reload, :desktop_managed?
+  end
+
+  test "migration does not mark an ordinary gateway that only uses the legacy tenant ID" do
+    ordinary_gateway = Collavre::AgentGateway.create!(
+      owner: users(:one),
+      name: "Ordinary gateway",
+      base_url: "http://127.0.0.1:35000",
+      admin_key: "ordinary-admin-key",
+      completion_key: "ordinary-completion-key",
+      identity_secret: "o" * 48,
+      tenant_id: "collavre-desktop"
+    )
+
+    AddDesktopManagedToAgentGateways.new.migrate(:up)
+
+    assert_not_predicate ordinary_gateway.reload, :desktop_managed?
   end
 
   test "migration marks a renamed legacy desktop gateway and its preset" do
