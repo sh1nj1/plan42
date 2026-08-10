@@ -11,12 +11,17 @@ function sequenceUrl(baseUrl) {
   return `${url.pathname}${url.search}`
 }
 
-async function nextLastVisitedCreativeSequence(baseUrl, signal) {
+async function nextLastVisitedCreativeSequence(baseUrl, signal, retryCsrf = true) {
   const response = await csrfFetch(sequenceUrl(baseUrl), {
     method: 'PATCH',
     headers: { Accept: 'application/json' },
     signal,
   })
+  if (response.status === 422 && retryCsrf && !signal?.aborted) {
+    await refreshCsrfToken({ signal })
+    if (signal?.aborted) return null
+    return nextLastVisitedCreativeSequence(baseUrl, signal, false)
+  }
   if (!response.ok) return null
 
   const sequence = Number((await response.json()).sequence)

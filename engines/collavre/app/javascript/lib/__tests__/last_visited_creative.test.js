@@ -40,6 +40,21 @@ describe('rememberLastVisitedCreative', () => {
     expect(csrfFetch).toHaveBeenCalledWith('/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
   })
 
+  test('refreshes CSRF and retries sequence reservation before remembering a restored Creative', async () => {
+    csrfFetch
+      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 2 }) })
+      .mockResolvedValueOnce({ ok: true })
+
+    rememberLastVisitedCreative('/creatives', 1, 'restored-token')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(refreshCsrfToken).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(csrfFetch).toHaveBeenNthCalledWith(1, '/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
+    expect(csrfFetch).toHaveBeenNthCalledWith(2, '/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
+    expect(csrfFetch).toHaveBeenNthCalledWith(3, '/creatives/1/remember_last_visited?visit_token=restored-token', expect.objectContaining({ method: 'PATCH' }))
+  })
+
   test('does not reserve a sequence for an unrelated Turbo navigation', async () => {
     const fetchOptions = { method: 'GET', headers: new Headers() }
     const resume = jest.fn()
