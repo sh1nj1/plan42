@@ -245,12 +245,20 @@ fn generate_proxy_key(prefix: &str) -> Result<String, String> {
     Ok(format!("{prefix}_{}", URL_SAFE_NO_PAD.encode(bytes)))
 }
 
+struct ProxyCredentials {
+    admin_key: String,
+    completion_key: String,
+    identity_secret: String,
+    regenerated: bool,
+}
+
 #[cfg(target_os = "macos")]
-fn keychain_proxy_key(account: &str, prefix: &str) -> Result<String, String> {
+fn keychain_proxy_key(account: &str, prefix: &str) -> Result<(String, bool), String> {
     use security_framework::passwords::{get_generic_password, set_generic_password};
 
     if let Ok(bytes) = get_generic_password(PROXY_KEYCHAIN_SERVICE, account) {
         return String::from_utf8(bytes)
+            .map(|key| (key, false))
             .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string());
     }
 
@@ -258,12 +266,41 @@ fn keychain_proxy_key(account: &str, prefix: &str) -> Result<String, String> {
     set_generic_password(PROXY_KEYCHAIN_SERVICE, account, key.as_bytes()).map_err(|_| {
         "Collavre needs Keychain access to store the desktop proxy key.".to_string()
     })?;
-    Ok(key)
+    Ok((key, true))
 }
 
 #[cfg(not(target_os = "macos"))]
-fn keychain_proxy_key(_account: &str, _prefix: &str) -> Result<String, String> {
+fn keychain_proxy_key(_account: &str, _prefix: &str) -> Result<(String, bool), String> {
     Err("Desktop proxy installation is currently supported on macOS only.".to_string())
+}
+
+fn proxy_credentials() -> Result<ProxyCredentials, String> {
+    let (admin_key, admin_key_regenerated) =
+        keychain_proxy_key(PROXY_ADMIN_KEY_ACCOUNT, "cop_admin")?;
+    let (completion_key, completion_key_regenerated) =
+        keychain_proxy_key(PROXY_COMPLETION_KEY_ACCOUNT, "cop_key")?;
+    let (identity_secret, identity_secret_regenerated) =
+        keychain_proxy_key(PROXY_IDENTITY_SECRET_ACCOUNT, "cop_identity")?;
+    Ok(ProxyCredentials {
+        admin_key,
+        completion_key,
+        identity_secret,
+        regenerated: admin_key_regenerated
+            || completion_key_regenerated
+            || identity_secret_regenerated,
+    })
+}
+
+fn invalidate_proxy_registration_after_key_regeneration(
+    data: &Path,
+    config: &mut ProxyConfig,
+    credentials_regenerated: bool,
+) -> Result<(), String> {
+    if credentials_regenerated && config.registered {
+        config.registered = false;
+        write_proxy_config(data, config)?;
+    }
+    Ok(())
 }
 
 /// File recording the live sidecar's PID, so a launch that follows a crash can
@@ -379,7 +416,12 @@ fn reap_orphan_proxy(data: &Path) {
     let _ = fs::remove_file(proxy_pidfile_path(data));
 }
 
-fn spawn_proxy(app: &tauri::AppHandle, data: &Path, config: &ProxyConfig) -> Result<Child, String> {
+fn spawn_proxy(
+    app: &tauri::AppHandle,
+    data: &Path,
+    config: &ProxyConfig,
+    credentials: ProxyCredentials,
+) -> Result<Child, String> {
     let root = proxy_root(app);
     let node = root.join("node/bin/node");
     let entrypoint = root.join("node_modules/cli-openai-proxy/dist/server/standalone.js");
@@ -390,9 +432,6 @@ fn spawn_proxy(app: &tauri::AppHandle, data: &Path, config: &ProxyConfig) -> Res
         );
     }
 
-    let admin_key = keychain_proxy_key(PROXY_ADMIN_KEY_ACCOUNT, "cop_admin")?;
-    let completion_key = keychain_proxy_key(PROXY_COMPLETION_KEY_ACCOUNT, "cop_key")?;
-    let identity_secret = keychain_proxy_key(PROXY_IDENTITY_SECRET_ACCOUNT, "cop_identity")?;
     let state = proxy_state_dir(data);
     fs::create_dir_all(state.join("provision-state"))
         .map_err(|_| "Could not create the desktop proxy state directory.".to_string())?;
@@ -405,9 +444,9 @@ fn spawn_proxy(app: &tauri::AppHandle, data: &Path, config: &ProxyConfig) -> Res
         .current_dir(&state)
         .env("HOST", "127.0.0.1")
         .env("PORT", config.port.to_string())
-        .env("API_KEYS", completion_key)
-        .env("AUTH_ADMIN_KEYS", admin_key)
-        .env("USER_IDENTITY_HMAC_SECRET", identity_secret)
+        .env("API_KEYS", credentials.completion_key)
+        .env("AUTH_ADMIN_KEYS", credentials.admin_key)
+        .env("USER_IDENTITY_HMAC_SECRET", credentials.identity_secret)
         .env("PATH", desktop_cli_path())
         .env("PROVISION_STATE_DIR", state.join("provision-state"));
 
@@ -477,14 +516,20 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
         return Ok(());
     }
     drop(child);
-    let config = read_proxy_config(data)
+    let mut config = read_proxy_config(data)
         .ok_or_else(|| "Desktop proxy setup has not been approved.".to_string())?;
     let manifest = bundled_proxy_manifest(app)?;
     if config.version != manifest.version {
         return Err("The desktop proxy version changed. Re-run desktop proxy setup.".to_string());
     }
+    let credentials = proxy_credentials()?;
+    invalidate_proxy_registration_after_key_regeneration(
+        data,
+        &mut config,
+        credentials.regenerated,
+    )?;
     reap_orphan_proxy(data);
-    let child = spawn_proxy(app, data, &config)?;
+    let child = spawn_proxy(app, data, &config, credentials)?;
     fs::write(proxy_pidfile_path(data), child.id().to_string())
         .map_err(|_| "Could not record the desktop proxy process.".to_string())?;
     sidecar
@@ -554,16 +599,14 @@ fn desktop_proxy_complete_setup(
     let data = data_dir(&app);
     let config = read_proxy_config(&data)
         .ok_or_else(|| "Desktop proxy configuration is missing after installation.".to_string())?;
-    let admin_key = keychain_proxy_key(PROXY_ADMIN_KEY_ACCOUNT, "cop_admin")?;
-    let completion_key = keychain_proxy_key(PROXY_COMPLETION_KEY_ACCOUNT, "cop_key")?;
-    let identity_secret = keychain_proxy_key(PROXY_IDENTITY_SECRET_ACCOUNT, "cop_identity")?;
+    let credentials = proxy_credentials()?;
     let adapters = detected_adapters();
     let request = GatewayRegistration {
         registration_token: &registration_token,
         proxy_port: config.port,
-        admin_key: &admin_key,
-        completion_key: &completion_key,
-        identity_secret: &identity_secret,
+        admin_key: &credentials.admin_key,
+        completion_key: &credentials.completion_key,
+        identity_secret: &credentials.identity_secret,
         adapters: &adapters,
     };
     let server_port = rails_sidecar
@@ -863,8 +906,10 @@ fn apply_desktop_config(data: &Path) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        config_env_overrides, generate_proxy_key, migrate_proxy_config, normalized_proxy_config,
-        parse_bundled_proxy_manifest, read_proxy_config, write_proxy_config, ProxyConfig,
+        config_env_overrides, generate_proxy_key,
+        invalidate_proxy_registration_after_key_regeneration, migrate_proxy_config,
+        normalized_proxy_config, parse_bundled_proxy_manifest, read_proxy_config,
+        write_proxy_config, ProxyConfig,
     };
     use std::{env, fs, process};
 
@@ -1011,6 +1056,28 @@ mod tests {
         assert!(upgraded.registered);
         assert_eq!("0.2.0", persisted.version);
     }
+
+    #[test]
+    fn regenerated_keychain_credentials_require_gateway_reregistration() {
+        let data = env::temp_dir().join(format!("collavre-proxy-reregister-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        write_proxy_config(&data, &config).expect("write registered proxy configuration");
+
+        invalidate_proxy_registration_after_key_regeneration(&data, &mut config, true)
+            .expect("invalidate stale gateway registration");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert!(!config.registered);
+        assert!(!persisted.registered);
+        assert_eq!(34_567, persisted.port);
+        assert_eq!("0.1.0", persisted.version);
+    }
 }
 
 pub fn run() {
@@ -1064,9 +1131,11 @@ pub fn run() {
             let first_run_complete = bundled_proxy_manifest(&handle)
                 .and_then(|manifest| migrate_proxy_config(&data, manifest.version))
                 .and_then(|config| match config {
-                    Some(config) => {
+                    Some(_) => {
                         start_proxy(&handle, &data, &app.state::<ProxySidecar>())?;
-                        Ok(config.registered)
+                        Ok(read_proxy_config(&data)
+                            .map(|config| config.registered)
+                            .unwrap_or(false))
                     }
                     None => Ok(false),
                 })
