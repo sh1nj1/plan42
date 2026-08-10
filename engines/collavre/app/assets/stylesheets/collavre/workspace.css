@@ -197,7 +197,13 @@ body.creative-workspace .creative-content {
     .creative-workspace-shell:has(#comments-popup.docked-collapsed) {
         grid-template-columns: minmax(0, 1fr) 3rem;
     }
+}
 
+/* Below the three-column breakpoint the tree gives up its own column and
+   becomes an off-canvas drawer with a toggle handle. Shared by the two-panel
+   band and the one-panel (mobile) band so both collapse the same way — and so
+   the tree stays mounted in both, preserving its expansion state. */
+@media (max-width: 1279px) {
     .creative-workspace-tree-region {
         position: fixed;
         top: 0;
@@ -261,8 +267,12 @@ body.creative-workspace .creative-content {
         max-width: var(--max-width);
     }
 
-    .creative-workspace-tree-region {
-        display: none;
+    /* In the two-panel band the handle's default offset lands in the left
+       gutter main leaves itself. One-panel main runs flush to the edge, so the
+       same offset would sit on top of the breadcrumb row — park the handle in
+       the nav's empty left corner instead, where it reads as the menu button
+       it effectively is. */
+    .creative-workspace-tree-toggle {
+        top: var(--space-3);
     }
-
 }
