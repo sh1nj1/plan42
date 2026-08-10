@@ -188,6 +188,7 @@ export default class extends Controller {
     link.className = 'creative-workspace-tree-link'
     link.dataset.turboFrame = 'creative-workspace-content'
     link.dataset.turboAction = 'advance'
+    link.dataset.turboPrefetch = 'false'
     link.dataset.creativeId = String(node.id)
     link.dataset.creativeSnippet = node.snippet || node.label
     link.dataset.canComment = String(node.can_comment === true)
