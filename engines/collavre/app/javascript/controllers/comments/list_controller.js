@@ -529,6 +529,13 @@ export default class extends Controller {
     // Actually form_controller handleSubmit calls this list controller? No, distinct.
   }
 
+  // A comment with no topic is never archived, so the empty check also keeps
+  // this off the topics controller for the common case.
+  isArchivedTopicMessage(topicId) {
+    if (!topicId) return false
+    return Boolean(this.popupController?.topicsController?.isArchivedTopic?.(topicId))
+  }
+
   handleStreamRender(event) {
     // Only care about streams targeting our list
     if (event.target.target !== 'comments-list') return
@@ -555,8 +562,17 @@ export default class extends Controller {
         const currentTopicId = this.currentTopicId || ""
 
         // If we are in a specific topic (currentTopicId is set)
-        // AND the message is for a different topic
-        if (currentTopicId && String(currentTopicId) !== String(messageTopicId)) {
+        // AND the message is for a different topic.
+        //
+        // All Messages (currentTopicId === "") takes everything except archived
+        // topics: CommentsController#index filters those out of this view, so
+        // letting a live one in would show a message that vanishes on reload.
+        // Both cases badge the topic instead of appending.
+        const isForeignTopic = currentTopicId
+          ? String(currentTopicId) !== String(messageTopicId)
+          : this.isArchivedTopicMessage(messageTopicId)
+
+        if (isForeignTopic) {
           event.preventDefault()
           // Dispatch event for topics controller to show badge
           const customEvent = new CustomEvent("comments--topics:new-message", {

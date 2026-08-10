@@ -307,6 +307,31 @@ describe('TopicsController archived topic messages', () => {
       expect(controller.archivedWithNewMessages.size).toBe(0)
     })
 
+    // popup_controller.handleCreativeClick re-opens the *same* creative when a
+    // docked chat receives a workspace-sync event carrying a highlightId. These
+    // marks are transient — loadTopics() cannot rebuild them — so following a
+    // comment deep link must not wipe the other archived topics' unread state.
+    test('re-opening the same creative keeps its unread marks', async () => {
+      render()
+      newMessage('3')
+      newMessage('4')
+
+      await switchCreative('42')
+
+      expect([...controller.archivedWithNewMessages].sort()).toEqual(['3', '4'])
+    })
+
+    test('the toggle stays badged after re-opening the same creative', async () => {
+      render()
+      newMessage('3')
+
+      await switchCreative('42')
+      render()
+
+      expect(controller.listTarget.querySelector('.topic-archived-toggle').classList)
+        .toContain('has-new-messages')
+    })
+
     test("the new creative's archived toggle renders unbadged after a switch", async () => {
       render()
       newMessage('3')

@@ -35,6 +35,7 @@ export default class extends Controller {
     }
 
     onPopupOpened({ creativeId }) {
+        const previousCreativeId = this.creativeIdValue
         this.creativeIdValue = creativeId
         // Clear stale cached state from the previous creative — otherwise
         // chat-context autofill (command_menu) reads stale values during the
@@ -49,8 +50,13 @@ export default class extends Controller {
         // (popup_controller._navigateToEntry calls open()/openForCreative()
         // again), so unread marks from the previous creative would badge the new
         // creative's archived toggle — and never clear, since those ids are not
-        // among its topics.
-        this.archivedWithNewMessages.clear()
+        // among its topics. Only on an actual switch, though: a docked chat
+        // re-opens the *same* creative when a workspace-sync event carries a
+        // highlightId (popup_controller.handleCreativeClick), and these marks are
+        // transient — loadTopics() cannot rebuild them.
+        if (String(previousCreativeId || '') !== String(creativeId || '')) {
+            this.archivedWithNewMessages.clear()
+        }
         this.subscribe()
         return this.loadTopics()
     }
@@ -73,6 +79,14 @@ export default class extends Controller {
     get archivedWithNewMessages() {
         if (!this._archivedWithNewMessages) this._archivedWithNewMessages = new Set()
         return this._archivedWithNewMessages
+    }
+
+    // list_controller asks this before appending a live message to All Messages:
+    // CommentsController#index leaves archived-topic comments out of that view,
+    // so a stream must not put one there either.
+    isArchivedTopic(id) {
+        if (!id) return false
+        return (this.archivedTopics || []).some(t => String(t.id) === String(id))
     }
 
     // The toggle badge is derived from set size, so an id that is no longer
@@ -182,7 +196,7 @@ export default class extends Controller {
     // one choke point so the strip always shows which topic is open.
     revealArchivedTopic(id) {
         if (!id || this.showingArchived) return
-        if (!(this.archivedTopics || []).some(t => String(t.id) === String(id))) return
+        if (!this.isArchivedTopic(id)) return
 
         this.showingArchived = true
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
@@ -809,7 +823,7 @@ export default class extends Controller {
         // Don't show badge if we are currently in this topic (shouldn't happen due to list_controller logic, but safety check)
         if (String(this.currentTopicId) === String(topicId)) return
 
-        const isArchived = (this.archivedTopics || []).some(t => String(t.id) === String(topicId))
+        const isArchived = this.isArchivedTopic(topicId)
         if (isArchived) this.archivedWithNewMessages.add(String(topicId))
 
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
