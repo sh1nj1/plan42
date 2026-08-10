@@ -89,6 +89,46 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert Collavre::Contact.exists?(user: owner, contact_user: existing)
   end
 
+  test "recovery updates the original desktop gateway when another administrator is signed in" do
+    owner = users(:one)
+    sign_in_as(owner, password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+    owner_token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: owner_token,
+      proxy_port: 34_567,
+      admin_key: "owner-admin-key",
+      completion_key: "owner-completion-key",
+      identity_secret: "i" * 48,
+      adapters: [ "claude" ]
+    }, as: :json
+
+    gateway = owner.owned_agent_gateways.find_by!(name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME)
+    users(:two).update!(system_admin: true)
+    sign_in_as(users(:two), password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+    recovery_token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: recovery_token,
+      proxy_port: 45_678,
+      admin_key: "recovery-admin-key",
+      completion_key: "recovery-completion-key",
+      identity_secret: "s" * 48,
+      adapters: [ "claude" ]
+    }, as: :json
+
+    assert_response :created
+    assert_equal 1, Collavre::AgentGateway.where(name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME).count
+    gateway.reload
+    assert_equal owner, gateway.owner
+    assert_equal "http://127.0.0.1:45678", gateway.base_url
+    assert_equal "recovery-admin-key", gateway.admin_key
+    assert_equal [ "collavre-desktop-claude-code@ai.local" ], owner.created_ai_users.pluck(:email)
+    assert_empty users(:two).created_ai_users.where(email: "collavre-desktop-claude-code@ai.local")
+  end
+
   test "registration rejects a missing native grant" do
     post collavre.desktop_setup_register_gateway_path, params: { proxy_port: 34_567 }, as: :json
 

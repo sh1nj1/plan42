@@ -11,8 +11,14 @@ module Collavre
       return unless require_desktop_mode!
       return unless require_loopback!
 
-      owner = registration_owner!
-      gateway = owner.owned_agent_gateways.find_or_initialize_by(name: DesktopSetupController::DESKTOP_GATEWAY_NAME)
+      registration_owner = registration_owner!
+      # A desktop has one local proxy, not one proxy per administrator. During
+      # recovery a different system administrator may be signed in, but the
+      # existing gateway (and its generated presets) must remain owned by the
+      # administrator that originally configured the desktop.
+      gateway = Collavre::AgentGateway.find_or_initialize_by(name: DesktopSetupController::DESKTOP_GATEWAY_NAME)
+      gateway.owner ||= registration_owner
+      owner = gateway.owner
       gateway.assign_attributes(
         base_url: "http://127.0.0.1:#{proxy_port}",
         admin_key: params.require(:admin_key),
