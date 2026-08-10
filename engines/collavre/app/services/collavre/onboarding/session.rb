@@ -21,8 +21,8 @@ module Collavre
       def self.onboarding_root(creatives, session_id: nil)
         return Array(creatives).find { |creative| onboarding_root?(creative, session_id) } unless creatives.respond_to?(:where)
 
-        scope = creatives.where("#{onboarding_value('scenario_key')} IS NOT NULL")
-        scope = scope.where("#{onboarding_value('session_id')} = ?", session_id) if session_id.present?
+        scope = creatives.where(onboarding_scenario_key_present_sql)
+        scope = scope.where(onboarding_session_id_equals_sql, session_id) if session_id.present?
         scope.first
       end
       private_class_method :onboarding_root
@@ -34,14 +34,23 @@ module Collavre
       end
       private_class_method :onboarding_root?
 
-      def self.onboarding_value(key)
+      def self.onboarding_scenario_key_present_sql
         if Creative.connection.adapter_name.match?(/sqlite/i)
-          "json_extract(data, '$.onboarding.#{key}')"
+          "json_extract(data, '$.onboarding.scenario_key') IS NOT NULL"
         else
-          "data -> 'onboarding' ->> '#{key}'"
+          "data -> 'onboarding' ->> 'scenario_key' IS NOT NULL"
         end
       end
-      private_class_method :onboarding_value
+      private_class_method :onboarding_scenario_key_present_sql
+
+      def self.onboarding_session_id_equals_sql
+        if Creative.connection.adapter_name.match?(/sqlite/i)
+          "json_extract(data, '$.onboarding.session_id') = ?"
+        else
+          "data -> 'onboarding' ->> 'session_id' = ?"
+        end
+      end
+      private_class_method :onboarding_session_id_equals_sql
 
       def initialize(root)
         @root = root
