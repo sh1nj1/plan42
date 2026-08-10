@@ -90,6 +90,19 @@ class RootHomePathTest < ActionDispatch::IntegrationTest
     assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
   end
 
+  test "authenticated user redirect preserves the engine mount prefix" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+
+    sign_in_as(@user, password: "password")
+    get "/", env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :redirect
+    location = URI.parse(response.location)
+    assert_equal "/collavre/creatives", location.path
+    assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
+  end
+
   test "authenticated user cannot be redirected to a creative they no longer can read" do
     private_creative = Collavre::Creative.create!(user: users(:two), description: "Private")
     @user.update!(last_visited_creative: private_creative)

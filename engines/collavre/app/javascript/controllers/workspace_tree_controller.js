@@ -58,7 +58,11 @@ export default class extends Controller {
     // have started in between and supersedes the restore.
     if (lastVisitAction === 'restore') {
       requestAnimationFrame(() => {
-        if (lastVisitAction === 'restore') this.ensureFrameMatchesLocation()
+        if (lastVisitAction !== 'restore' || !this.element.isConnected) return
+
+        this.ensureFrameMatchesLocation()
+        this.syncFromWorkspaceFrame(undefined, { rememberLastVisited: true })
+        lastVisitAction = null
       })
     }
     this.load({ syncChat: false })
@@ -311,7 +315,10 @@ export default class extends Controller {
       // disconnected — it only reads the current document and URL.
       const restoringHistory = lastVisitAction === 'restore'
       if (restoringHistory) this.ensureFrameMatchesLocation()
-      if (this.element.isConnected) this.syncFromWorkspaceFrame(undefined, { rememberLastVisited: restoringHistory })
+      if (this.element.isConnected) {
+        this.syncFromWorkspaceFrame(undefined, { rememberLastVisited: restoringHistory })
+        if (restoringHistory) lastVisitAction = null
+      }
     })
   }
 

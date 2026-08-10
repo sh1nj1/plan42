@@ -104,6 +104,45 @@ describe('WorkspaceTreeController', () => {
     })
   })
 
+  test('records a cached history restore after Turbo reconnects the workspace controller', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.body.innerHTML = `
+      <section data-controller="workspace-tree"
+               data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
+               data-workspace-tree-last-visited-creative-url-value="/creatives"
+               data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-loading-text-value="Loading"
+               data-workspace-tree-empty-text-value="Empty"
+               data-workspace-tree-error-text-value="Error">
+        <button data-workspace-tree-target="panelToggle" data-action="workspace-tree#togglePanel" aria-expanded="false"></button>
+        <nav data-workspace-tree-target="tree"></nav>
+      </section>
+      <turbo-frame id="creative-workspace-content">
+        <div data-workspace-navigation-state
+             data-creative-id="2"
+             data-creative-snippet="Branch chat"
+             data-can-comment="false"
+             data-creative-path="[1,2,3]"></div>
+      </turbo-frame>
+    `
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="workspace-tree"]'),
+      'workspace-tree'
+    )
+
+    expect(fetchMock).toHaveBeenLastCalledWith('/creatives/2/remember_last_visited', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'X-CSRF-Token': 'token' },
+    })
+  })
+
   test('lazily reloads toggled branches and restores focus and scroll', async () => {
     let branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
     controller.treeTarget.scrollTop = 24

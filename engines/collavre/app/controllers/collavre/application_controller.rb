@@ -45,7 +45,7 @@ module Collavre
       creative = Current.user.last_visited_creative
       return unless creative&.has_permission?(Current.user, :read)
 
-      collavre_engine.creatives_path(id: creative.id)
+      collavre_engine.creatives_path(id: creative.id, script_name: request.script_name)
     end
 
     def set_csrf_token_header
