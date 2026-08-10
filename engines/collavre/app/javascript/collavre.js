@@ -18,6 +18,7 @@ import "./components/creative_tree_row"
 
 // Import and re-export lib utilities
 import "./lib/apply_lexical_styles"
+import "./lib/creative_link_prefetch"
 import "./lib/turbo_stream_actions"
 import "./lib/turbo_confirm"
 
