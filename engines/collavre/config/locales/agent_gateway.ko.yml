@@ -73,6 +73,70 @@ ko:
       updated: Agent Gateway가 수정되었습니다.
       destroyed: Agent Gateway가 삭제되었습니다.
       in_use: AI Agent가 사용 중인 게이트웨이는 삭제할 수 없습니다.
+    desktop_setup:
+      preview: 목업 전용 — 실제 변경은 없습니다
+      title: 로컬 AI Agent 설정
+      subtitle: Collavre Desktop 앱의 첫 실행 안내 흐름입니다.
+      progress_label: 설정 진행 상황
+      back: 이전
+      next: 계속
+      restart: 다시 보기
+      steps:
+        account: 관리자 계정
+        install: 설치
+        adapters: CLI 안내
+        ready: 완료
+      account:
+        kicker: 첫 실행 설정
+        title: 첫 관리자 계정 만들기
+        body: AI Gateway를 설치하기 전에 로컬 Collavre 관리자를 설정합니다. 앱은 관리자 계정을 미리 생성하지 않습니다.
+        name_label: 이름
+        name_placeholder: 이름을 입력하세요
+        email_label: 이메일
+        email_placeholder: you@example.com
+        password_label: 비밀번호
+        password_placeholder: 비밀번호를 입력하세요
+        password_confirmation_label: 비밀번호 확인
+        password_confirmation_placeholder: 비밀번호를 다시 입력하세요
+        hint: 이 목업은 입력값을 저장하지 않습니다. 실제 Tauri 마법사는 계속하기 전에 값을 검증하고 이 Mac에만 첫 관리자 계정을 생성합니다.
+        notice: 비밀번호는 이 Mac에만 보관합니다. AI provider로 전송하거나 기존 CLI 계정에 접근하는 데 사용하지 않습니다.
+      install:
+        kicker: 명시적 동의
+        title: 로컬 프록시 설치 및 등록
+        body: 실제 마법사는 로컬 변경을 시작하기 전에 한 번만 동의를 요청합니다.
+        items:
+          installation:
+            title: 설치
+            body: 이 Mac에서 cli-openai-proxy를 단일 로컬 서비스로 설치합니다.
+          keys:
+            title: 보안 키
+            body: 관리자 키 하나와 API 키 하나를 생성하고 로컬 Gateway에만 보관합니다.
+          registration:
+            title: 등록
+            body: 해당 Gateway를 Collavre 관리자 계정에 자동 등록합니다.
+        consent: 계속하면 단일 로컬 CLI Proxy 서비스를 설치하고 설정한다는 점을 이해했습니다.
+        hint: 이 목업에서는 동의 제어가 비활성화되어 있습니다. 실제 마법사에서는 이 명시적 확인이 필수입니다.
+      adapters:
+        kicker: 기존 CLI 도구
+        title: 이미 로그인한 CLI 도구 사용
+        body: Collavre는 CLI 실행 파일을 사용할 수 있는지 확인한 뒤 알맞은 Agent 프리셋을 만듭니다.
+        status: 목업에서 감지됨
+        claude:
+          title: Claude Code
+          body: 기존 로컬 Claude Code 세션을 사용합니다. 마법사는 로그인하거나 자격 증명을 읽지 않습니다.
+        codex:
+          title: Codex
+          body: 기존 로컬 Codex 세션을 사용합니다. 마법사는 로그인하거나 자격 증명을 읽지 않습니다.
+        notice: 실제 흐름에서는 실행 파일 사용 가능 여부만 확인합니다. 기존 자격 증명과 설정을 읽거나 외부로 전송하지 않습니다.
+      ready:
+        kicker: 설정 완료
+        title: 로컬 AI Gateway 준비 완료
+        body: 실제 흐름은 이 단계가 성공하면 Collavre로 돌아갑니다.
+        items:
+          proxy: 로컬 cli-openai-proxy 인스턴스 하나가 설치됩니다.
+          gateway: 생성한 로컬 Gateway가 Collavre 관리자에게 등록됩니다.
+          agents: 지원되는 경우 즉시 사용할 수 있는 Claude Code와 Codex Agent 프리셋이 준비됩니다.
+        notice: 이 완료 상태는 예시입니다. 이 페이지에서는 서비스나 Gateway가 생성되지 않습니다.
     agent_connections:
       title: "%{agent} 연결"
       card_title: 엔진 연결 및 프로비저닝

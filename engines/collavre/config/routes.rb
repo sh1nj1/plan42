@@ -15,6 +15,7 @@ Collavre::Engine.routes.draw do
   resources :agent_gateways, path: "settings/agent-gateways", except: :show do
     post :check, on: :member
   end
+  get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
   resources :users, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     collection do
       get :new_ai
