@@ -1,4 +1,5 @@
 require "test_helper"
+require Rails.root.join("engines/collavre/db/migrate/20260810100000_add_desktop_managed_to_agent_gateways")
 
 class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
   setup do
@@ -140,6 +141,23 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_equal "https://unrelated.example.test", unrelated_gateway.base_url
     assert_equal "unrelated-admin-key", unrelated_gateway.admin_key
     assert_not_predicate unrelated_gateway, :desktop_managed?
+  end
+
+  test "migration marks the unambiguous legacy desktop gateway" do
+    users(:one).update!(system_admin: true)
+    legacy_gateway = Collavre::AgentGateway.create!(
+      owner: users(:one),
+      name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME,
+      base_url: "http://127.0.0.1:35000",
+      admin_key: "legacy-admin-key",
+      completion_key: "legacy-completion-key",
+      identity_secret: "l" * 48,
+      tenant_id: "collavre-desktop"
+    )
+
+    AddDesktopManagedToAgentGateways.new.migrate(:up)
+
+    assert_predicate legacy_gateway.reload, :desktop_managed?
   end
 
   test "registration rejects a missing native grant" do

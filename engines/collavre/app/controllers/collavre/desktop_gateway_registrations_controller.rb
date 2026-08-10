@@ -36,6 +36,13 @@ module Collavre
       render json: { gateway_id: gateway.id, adapters: detected_adapters }, status: :created
     rescue ActiveRecord::RecordInvalid => e
       render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    rescue ActiveRecord::RecordNotUnique
+      # Concurrent first-run handoffs can both observe no marked gateway. Once
+      # one creates it, reload that durable identity and apply this handoff.
+      raise if @retried_after_gateway_insert
+
+      @retried_after_gateway_insert = true
+      retry
     rescue ActionController::ParameterMissing, ActiveSupport::MessageVerifier::InvalidSignature => e
       render json: { error: e.message }, status: :unprocessable_entity
     end
