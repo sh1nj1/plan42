@@ -141,6 +141,80 @@ describe('CommentsListController deep-linked topic resolution', () => {
     expect(topicsController.selectTopic).not.toHaveBeenCalled()
     expect(controller.listTarget.dataset.currentTopicId).toBe('3')
   })
+
+  // A deep link that loses the race still gets its X-Topic-Id answered. Acting on
+  // it would move the selection to a topic nobody is looking at any more, and the
+  // load that replaced it would render into that wrong selection.
+  const raceDeepLinkAgainstSelection = () => {
+    const topicsController = { setOverrideTopicId: jest.fn(), selectTopic: jest.fn() }
+    const controller = buildListController({ currentTopicId: '2', topicsController })
+    controller.selection = new Set()
+    controller._loadCommentsVersion = 0
+    controller.prevMsgNavigator = { reset: jest.fn() }
+    controller.highlightComment = jest.fn()
+    controller.markCommentsRead = jest.fn()
+    controller.scrollToBottom = jest.fn()
+
+    let releaseDeepLink
+    let releaseSelected
+    const deepLinkGate = new Promise((resolve) => { releaseDeepLink = resolve })
+    const selectedGate = new Promise((resolve) => { releaseSelected = resolve })
+
+    global.fetch = jest.fn()
+      .mockImplementationOnce(async () => {
+        await deepLinkGate
+        return {
+          ok: true,
+          headers: { get: (name) => (name === 'X-Topic-Id' ? '3' : null) },
+          text: async () => '<div id="comment_55" class="comment-item">deep linked</div>',
+        }
+      })
+      .mockImplementationOnce(async () => {
+        await selectedGate
+        return {
+          ok: true,
+          headers: { get: () => null },
+          text: async () => '<div id="comment_99" class="comment-item">topic nine</div>',
+        }
+      })
+
+    controller.highlightAfterLoad = 55
+    controller.loadInitialComments()
+
+    // The user picks another topic before the deep link comes back.
+    controller.highlightAfterLoad = null
+    controller.currentTopicId = '9'
+    controller.loadInitialComments()
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+    return { controller, topicsController, releaseDeepLink, releaseSelected, flush }
+  }
+
+  test('ignores the X-Topic-Id of a load that was already superseded', async () => {
+    const { controller, topicsController, releaseDeepLink, flush } = raceDeepLinkAgainstSelection()
+
+    releaseDeepLink()
+    await flush()
+
+    expect(controller.currentTopicId).toBe('9')
+    expect(topicsController.selectTopic).not.toHaveBeenCalled()
+    expect(topicsController.setOverrideTopicId).not.toHaveBeenCalled()
+  })
+
+  test('does not pass the topic-guard exemption to the load that superseded it', async () => {
+    const { controller, releaseDeepLink, releaseSelected, flush } = raceDeepLinkAgainstSelection()
+
+    releaseDeepLink()
+    await flush()
+    releaseSelected()
+    await flush()
+
+    expect(controller.isServerResolvedTopic(2)).toBe(false)
+    // The surviving load rendered its own topic, and the selection it renders
+    // under is the one the user picked.
+    expect(controller.listTarget.innerHTML).toContain('comment_99')
+    expect(controller.listTarget.dataset.currentTopicId).toBe('9')
+  })
 })
 
 describe('CommentsListController deep link into an archived topic', () => {

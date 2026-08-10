@@ -208,7 +208,7 @@ export default class extends Controller {
     const requestTopicId = this.currentTopicId || ""
     const requestCreativeId = this.creativeId
 
-    this.fetchComments(params).then((html) => {
+    this.fetchComments(params, { loadVersion: requestVersion }).then((html) => {
       // Discard stale responses if creative or topic changed while fetching.
       // This prevents a race condition where switching creatives causes
       // the old creative's comments to overwrite the new creative's list.
@@ -255,9 +255,9 @@ export default class extends Controller {
     })
   }
 
-  // fetchComments stamps the load version whose response carried an X-Topic-Id
-  // that moved the selection. Only that one request may ignore the stale-topic
-  // guard; a later load bumps _loadCommentsVersion and stops matching.
+  // fetchComments stamps the version of the request whose own response carried
+  // an X-Topic-Id that moved the selection. Only that request may ignore the
+  // stale-topic guard; every other load compares unequal and stays guarded.
   isServerResolvedTopic(requestVersion) {
     return this._serverTopicRequestVersion !== undefined &&
       this._serverTopicRequestVersion === requestVersion
@@ -320,7 +320,7 @@ export default class extends Controller {
       })
   }
 
-  fetchComments(params = {}) {
+  fetchComments(params = {}, { loadVersion } = {}) {
     const urlParams = new URLSearchParams(params)
     if (this.manualSearchQuery) {
       urlParams.set('search', this.manualSearchQuery)
@@ -345,7 +345,12 @@ export default class extends Controller {
       }
 
       const serverTopicId = response.headers.get("X-Topic-Id")
-      if (serverTopicId !== null && serverTopicId !== undefined) {
+      // A load superseded while in flight must not retopic anything: its own HTML
+      // is dropped, so moving currentTopicId (and the strip, and the form) to its
+      // answer would leave the surviving load rendering into a selection it never
+      // asked for.
+      const superseded = loadVersion !== undefined && loadVersion !== this._loadCommentsVersion
+      if (serverTopicId !== null && serverTopicId !== undefined && !superseded) {
         // Server says we are in this topic. 
         // If it differs from current, update state.
 
@@ -356,11 +361,11 @@ export default class extends Controller {
         if (currentStr !== serverStr) {
           this.currentTopicId = serverTopicId
           // Tell loadInitialComments' stale-topic guard that this switch is the
-          // answer to the load it is still awaiting. Deep links are the only
-          // requests the server answers with X-Topic-Id, and only
-          // loadInitialComments sends them, so the in-flight load version
-          // identifies it.
-          this._serverTopicRequestVersion = this._loadCommentsVersion
+          // answer to the load it is still awaiting. Stamp the version of the
+          // request that actually carried the header, not the controller's
+          // latest: reading the latest would hand the exemption to a newer load
+          // that never asked for a topic switch.
+          this._serverTopicRequestVersion = loadVersion
           // Notify topics controller to update UI
           const event = new CustomEvent("comments--topics:update-selection", { detail: { topicId: serverTopicId } })
           window.dispatchEvent(event)
