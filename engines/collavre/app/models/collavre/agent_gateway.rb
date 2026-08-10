@@ -26,6 +26,7 @@ module Collavre
     validates :tenant_id, format: { with: /\A[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,199}\z/ }
     validate :base_url_is_http
     validate :base_url_is_safe_for_owner
+    validate :desktop_managed_base_url_is_immutable
     validate :identity_secret_is_usable
     after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
 
@@ -38,6 +39,16 @@ module Collavre
     def proxy_path(path)
       suffix = path.start_with?("/") ? path : "/#{path}"
       "#{proxy_base_url}#{suffix}"
+    end
+
+    # The signed native setup handoff is the only flow permitted to retarget a
+    # desktop-managed gateway. Its loopback exception must not be reusable by
+    # an owner editing the gateway through the regular settings UI.
+    def update_from_desktop_registration!(attributes)
+      @desktop_registration_update = true
+      update!(attributes)
+    ensure
+      @desktop_registration_update = false
     end
 
     # Desktop-managed gateways are created only by the signed native setup
@@ -78,6 +89,13 @@ module Collavre
       return if CliProxy::EndpointPolicy.new.safe_literal?(base_url)
 
       errors.add(:base_url, :unsafe)
+    end
+
+    def desktop_managed_base_url_is_immutable
+      return unless persisted? && desktop_managed? && will_save_change_to_base_url?
+      return if @desktop_registration_update
+
+      errors.add(:base_url, :immutable)
     end
 
     def identity_secret_is_usable

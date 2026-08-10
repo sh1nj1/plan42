@@ -99,6 +99,23 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert admin_gateway.valid?, admin_gateway.errors.full_messages.to_sentence
   end
 
+  test "only the signed desktop registration flow can retarget a desktop-managed gateway" do
+    gateway = build_gateway(
+      base_url: "http://127.0.0.1:34567",
+      desktop_managed: true,
+      identity_secret: "i" * 32
+    )
+    gateway.save!
+
+    assert_not gateway.update(base_url: "http://127.0.0.1:45678")
+    assert_includes gateway.errors.details[:base_url].pluck(:error), :immutable
+    assert_equal "http://127.0.0.1:34567", gateway.reload.base_url
+
+    gateway.update_from_desktop_registration!(base_url: "http://127.0.0.1:45678")
+
+    assert_equal "http://127.0.0.1:45678", gateway.reload.base_url
+  end
+
   test "switching to shared replaces per-user workspaces with an isolated shared workspace" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!

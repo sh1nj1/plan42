@@ -33,7 +33,7 @@ module Collavre
       gateway.owner ||= registration_owner
       gateway.name ||= available_desktop_gateway_name(gateway.owner)
       owner = gateway.owner
-      gateway.assign_attributes(
+      gateway_attributes = {
         base_url: "http://127.0.0.1:#{proxy_port}",
         admin_key: params.require(:admin_key),
         completion_key: params.require(:completion_key),
@@ -41,10 +41,10 @@ module Collavre
         tenant_id: "collavre-desktop",
         workspace_mode: :shared,
         active: true
-      )
+      }
 
       Collavre::AgentGateway.transaction do
-        gateway.save!
+        gateway.update_from_desktop_registration!(gateway_attributes)
         detected_adapters.each { |adapter| provision_preset!(owner, gateway, adapter) }
       end
       render json: { gateway_id: gateway.id, adapters: detected_adapters }, status: :created

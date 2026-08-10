@@ -83,6 +83,35 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert_equal "completion", @gateway.completion_key
   end
 
+  test "owner cannot retarget a desktop-managed gateway from settings" do
+    desktop_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Desktop proxy",
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin",
+      completion_key: "desktop-completion",
+      identity_secret: "d" * 32,
+      desktop_managed: true
+    )
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(desktop_gateway), params: {
+      agent_gateway: {
+        name: desktop_gateway.name,
+        base_url: "http://127.0.0.1:45678",
+        admin_key: "",
+        completion_key: "",
+        identity_secret: "",
+        tenant_id: desktop_gateway.tenant_id,
+        workspace_mode: desktop_gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal "http://127.0.0.1:34567", desktop_gateway.reload.base_url
+  end
+
   test "connection check uses completion key as mapped user key" do
     sign_in_as(@owner, password: "password")
     arguments = []
