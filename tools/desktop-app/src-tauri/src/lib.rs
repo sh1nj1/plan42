@@ -570,17 +570,6 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
     Ok(())
 }
 
-/// Invoked only after the user accepts the first-run proxy setup. The response
-/// intentionally contains no key material; Rails receives credentials during a
-/// separate authenticated gateway-registration step.
-#[tauri::command]
-fn desktop_proxy_install(
-    app: tauri::AppHandle,
-    sidecar: tauri::State<'_, ProxySidecar>,
-) -> Result<ProxyStatus, String> {
-    install_proxy(&app, &sidecar)
-}
-
 fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<ProxyStatus, String> {
     let data = data_dir(app);
     fs::create_dir_all(&data)
@@ -1220,7 +1209,6 @@ pub fn run() {
         })
         .manage(ProxySidecar(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
-            desktop_proxy_install,
             desktop_proxy_complete_setup,
             desktop_proxy_status
         ])

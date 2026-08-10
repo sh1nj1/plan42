@@ -107,9 +107,6 @@ the resolved tarball integrity values inside the signed application bundle.
 
 Tauri exposes internal setup commands for the first-run wizard:
 
-- `desktop_proxy_install` creates a persistent loopback port, creates the
-  proxy's admin and completion keys in the macOS Keychain if needed, then starts
-  the embedded proxy.
 - `desktop_proxy_status` returns installation/process status and the public
   port/version only. It never returns either secret.
 - `desktop_proxy_complete_setup` detects executable availability for Claude
