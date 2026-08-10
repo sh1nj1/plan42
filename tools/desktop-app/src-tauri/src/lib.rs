@@ -1242,40 +1242,36 @@ pub fn run() {
             app.state::<Sidecar>().child.lock().unwrap().replace(child);
             app.state::<Sidecar>().port.lock().unwrap().replace(port);
 
-            // A configured proxy means the user previously accepted its first
-            // run setup. Migrate its expected bundled version before restarting
-            // it: otherwise an app update leaves the old version on disk and the
-            // restart is rejected forever. If migration or restart fails, open
-            // the setup recovery screen rather than silently navigating to home.
-            let first_run_complete = bundled_proxy_manifest(&handle)
-                .and_then(|manifest| migrate_proxy_config(&data, manifest.version))
-                .and_then(|config| match config {
-                    Some(_) => {
-                        start_proxy(&handle, &data, &app.state::<ProxySidecar>())?;
-                        Ok(read_proxy_config(&data)
-                            .map(|config| config.registered)
-                            .unwrap_or(false))
-                    }
-                    None => Ok(false),
-                })
-                .unwrap_or(false);
-
             // Show the branded loading screen (dist/index.html) immediately so the
-            // user sees custom UI while the sidecar boots, instead of a blank or
-            // absent window. We used to block setup on the health check and only
-            // then create the window pointed at the Rails URL — meaning nothing was
-            // on screen during a cold first-run migration. Now we create the window
-            // first and health-gate on a background thread (below).
+            // user sees custom UI while the Rails sidecar and any previously
+            // configured proxy start. Proxy health checks can take up to 15 seconds
+            // after an update or failure, so they must not block window creation.
             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
                 .title("Collavre Desktop")
                 .inner_size(1280.0, 860.0)
                 .build()?;
 
-            // Health-gate the sidecar OFF the UI thread so the splash keeps
-            // animating. On success, swap the splash for the live app; on timeout,
-            // surface a readable error in the splash instead of a frozen bar. 120s
-            // covers a cold first-run migration.
+            // Health-gate startup off the UI thread so the splash keeps animating.
+            // On success, swap it for the live app; on timeout, surface a readable
+            // error in place. 120s covers a cold first-run Rails migration.
             std::thread::spawn(move || {
+                // A configured proxy means the user previously accepted its first
+                // run setup. Migrate its expected bundled version before restarting
+                // it: otherwise an app update leaves the old version on disk and the
+                // restart is rejected forever. If migration or restart fails, open
+                // the setup recovery screen rather than silently navigating to home.
+                let first_run_complete = bundled_proxy_manifest(&handle)
+                    .and_then(|manifest| migrate_proxy_config(&data, manifest.version))
+                    .and_then(|config| match config {
+                        Some(_) => {
+                            start_proxy(&handle, &data, &handle.state::<ProxySidecar>())?;
+                            Ok(read_proxy_config(&data)
+                                .map(|config| config.registered)
+                                .unwrap_or(false))
+                        }
+                        None => Ok(false),
+                    })
+                    .unwrap_or(false);
                 let healthy = wait_until_healthy(port, Duration::from_secs(120));
                 let Some(window) = handle.get_webview_window("main") else {
                     return;
