@@ -1,4 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
+// Keep the workspace tree's branch affordance visually aligned with the
+// central creative tree (components/creative_tree_row.js#_toggleIcon).
 import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
 
 // Module-scoped: a history restore replaces the whole body, swapping this
