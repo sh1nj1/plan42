@@ -696,33 +696,52 @@ fn desktop_cli_search_paths() -> Vec<PathBuf> {
         .into_iter()
         .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
         .collect::<Vec<_>>();
-    paths.extend([
-        PathBuf::from("/opt/homebrew/bin"),
-        PathBuf::from("/usr/local/bin"),
-    ]);
+    append_unique_paths(
+        &mut paths,
+        [
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+        ],
+    );
     if let Some(home) = std::env::var_os("HOME") {
         let home = PathBuf::from(home);
-        paths.extend([
-            home.join(".local/bin"),
-            home.join(".npm-global/bin"),
-            home.join(".volta/bin"),
-        ]);
-        paths.extend(nvm_bin_paths(&home));
+        append_unique_paths(
+            &mut paths,
+            [
+                home.join(".local/bin"),
+                home.join(".npm-global/bin"),
+                home.join(".volta/bin"),
+            ],
+        );
+        append_unique_paths(&mut paths, nvm_bin_paths(&home));
     }
-    paths.sort();
-    paths.dedup();
     paths
+}
+
+/// Preserve the inherited PATH order: it selects the CLI and Node version a
+/// user already chose in their shell. Appended fallback directories are only
+/// used when that PATH does not contain the executable.
+fn append_unique_paths(paths: &mut Vec<PathBuf>, candidates: impl IntoIterator<Item = PathBuf>) {
+    for candidate in candidates {
+        if !paths.contains(&candidate) {
+            paths.push(candidate);
+        }
+    }
 }
 
 fn nvm_bin_paths(home: &Path) -> Vec<PathBuf> {
     let versions = home.join(".nvm/versions/node");
-    fs::read_dir(versions)
+    let mut paths = fs::read_dir(versions)
         .into_iter()
         .flatten()
         .filter_map(Result::ok)
         .map(|entry| entry.path().join("bin"))
         .filter(|path| path.is_dir())
-        .collect()
+        .collect::<Vec<_>>();
+    // The inherited PATH, if any, was retained before these fallbacks. Keep
+    // the fallback order deterministic without disturbing that precedence.
+    paths.sort();
+    paths
 }
 
 fn desktop_cli_path() -> std::ffi::OsString {
@@ -781,7 +800,12 @@ fn wait_until_proxy_healthy(child: &mut Child, port: u16, timeout: Duration) -> 
             return false;
         }
         if http_ok(port, "/health") {
-            return true;
+            // A different process can claim the persisted port in the small
+            // interval between our availability check and Node binding it. Do
+            // not accept that process's generic 200 response: give the child
+            // time to report the bind failure, then verify it is still alive.
+            std::thread::sleep(Duration::from_millis(500));
+            return child.try_wait().ok().flatten().is_none();
         }
         std::thread::sleep(Duration::from_millis(250));
     }
@@ -937,12 +961,12 @@ fn apply_desktop_config(data: &Path) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        config_env_overrides, generate_proxy_key,
+        append_unique_paths, config_env_overrides, generate_proxy_key,
         invalidate_proxy_registration_after_key_regeneration, migrate_proxy_config,
         normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
-        replace_occupied_proxy_port, write_proxy_config, ProxyConfig,
+        replace_occupied_proxy_port, wait_until_proxy_healthy, write_proxy_config, ProxyConfig,
     };
-    use std::{env, fs, process};
+    use std::{env, fs, path::PathBuf, process, time::Duration};
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
@@ -1088,6 +1112,55 @@ mod tests {
         let _ = fs::remove_dir_all(&home);
 
         assert_eq!(vec![nvm_bin], paths);
+    }
+
+    #[test]
+    fn fallback_paths_do_not_reorder_the_inherited_path() {
+        let inherited = PathBuf::from("/custom/node/bin");
+        let fallback = PathBuf::from("/opt/homebrew/bin");
+        let mut paths = vec![inherited.clone(), fallback.clone()];
+
+        append_unique_paths(&mut paths, [fallback, PathBuf::from("/usr/local/bin")]);
+
+        assert_eq!(
+            paths,
+            vec![
+                inherited,
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/local/bin"),
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proxy_health_rejects_an_impostor_when_the_spawned_child_exits() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::process::Command;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind impostor health server");
+        let port = listener.local_addr().expect("listener address").port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept health request");
+            let mut request = [0_u8; 256];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                .expect("respond as impostor");
+        });
+        let mut child = Command::new("sh")
+            .args(["-c", "sleep 0.1; exit 1"])
+            .spawn()
+            .expect("spawn failed proxy process");
+
+        assert!(!wait_until_proxy_healthy(
+            &mut child,
+            port,
+            Duration::from_secs(2)
+        ));
+        server.join().expect("health server joined");
     }
 
     #[test]
