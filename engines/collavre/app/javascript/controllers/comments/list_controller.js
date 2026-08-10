@@ -349,8 +349,15 @@ export default class extends Controller {
             // Deep link / around_comment_id resolution from server must win over
             // saved topic state for the current popup session.
             this.popupController.topicsController.setOverrideTopicId(serverTopicId)
-            // Update UI and local state without dispatching change event (to avoid loop)
-            this.popupController.topicsController.updateSelectionUI(serverTopicId)
+            // Go through selectTopic, not updateSelectionUI: a deep link can resolve
+            // to an archived topic, whose chip exists only while the archived section
+            // is expanded, and form_controller learns the active topic solely from the
+            // change event — without it a reply posts into the previously selected
+            // conversation. The reload this event would normally trigger is already
+            // ruled out: this.currentTopicId was set to serverTopicId just above, so
+            // handleTopicChange's equality guard returns before resetToLatest() can
+            // discard the highlight window.
+            this.popupController.topicsController.selectTopic(serverTopicId)
 
             // Also update data attribute for CSS scoping
             this.listTarget.dataset.currentTopicId = serverTopicId || ""
