@@ -131,12 +131,12 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_nil user.reload.last_visited_creative
   end
 
-  test "a prefetch HEAD request for a creative does not remember it as the user's last visited creative" do
+  test "a HEAD request for a creative does not remember it as the user's last visited creative" do
     user = users(:one)
     creative = creatives(:root_parent)
     user.update!(last_visited_creative_id: nil)
 
-    head creatives_path(id: creative.id), headers: { "X-Sec-Purpose" => "prefetch" }
+    head creatives_path(id: creative.id)
 
     assert_response :success
     assert_nil user.reload.last_visited_creative

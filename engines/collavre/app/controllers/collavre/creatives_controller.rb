@@ -34,7 +34,7 @@ module Collavre
             if Current.user
               @last_visited_creative_client_id = last_visited_creative_client_id
               @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
-              unless turbo_prefetch_request?
+              unless request.head? || turbo_prefetch_request?
                 @last_visited_creative_visit_sequence = remember_last_visited_creative(
                   @parent_creative,
                   client_id: @last_visited_creative_client_id,
