@@ -167,6 +167,28 @@ describe('WorkspaceTreeController', () => {
     expect(fetchMock.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
   })
 
+  test('does not retry a restored visit after a newer navigation starts', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="stale-token">'
+    let resolveRefresh
+    fetchMock.mockReset()
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'advance' } }))
+    resolveRefresh({ headers: { get: () => 'fresh-token' } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   test('lazily reloads toggled branches and restores focus and scroll', async () => {
     let branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
     controller.treeTarget.scrollTop = 24

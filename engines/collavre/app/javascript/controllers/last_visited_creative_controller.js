@@ -1,5 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
-import { rememberLastVisitedCreative } from '../lib/last_visited_creative'
+import { cancelPendingLastVisitedCreative, rememberLastVisitedCreative } from '../lib/last_visited_creative'
 
 // A Turbo restore can replace the entire body, so preserve the visit action
 // outside an individual controller instance until the restored page reconnects.
@@ -28,6 +28,7 @@ export default class extends Controller {
   }
 
   handleVisit(event) {
+    cancelPendingLastVisitedCreative()
     lastVisitAction = event.detail?.action
   }
 

@@ -1,5 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
-import { rememberLastVisitedCreative } from '../lib/last_visited_creative'
+import { cancelPendingLastVisitedCreative, rememberLastVisitedCreative } from '../lib/last_visited_creative'
 // Keep the workspace tree's branch affordance visually aligned with the
 // central creative tree (components/creative_tree_row.js#_toggleIcon).
 import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
@@ -294,6 +294,7 @@ export default class extends Controller {
   }
 
   handleVisitStart(event) {
+    cancelPendingLastVisitedCreative()
     lastVisitAction = event.detail?.action
   }
 
