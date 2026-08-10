@@ -219,8 +219,9 @@ export default class extends Controller {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
     const highlightId = event.detail?.highlightId
+    const openRequested = event.detail?.openRequested === true
     if (!button) return
-    if (event.detail?.workspaceSync && !this.isDocked()) {
+    if (event.detail?.workspaceSync && !this.isDocked() && !openRequested) {
       const nextCreativeId = creativeId || button.dataset.creativeId || ''
       if (
         this.element.style.display === 'flex' &&
@@ -243,19 +244,24 @@ export default class extends Controller {
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
       if (this.isDocked()) {
-        if (userRequestedOpen) {
+	if (userRequestedOpen || openRequested) {
           // Already loaded for this creative — expand only, so the draft and
           // subscriptions survive.
           this.expandDocked()
-        } else if (highlightId) {
+	}
+	if (highlightId) {
           this.open(button, { creativeId, highlightId })
         }
         return
       }
+      if (openRequested) {
+	if (highlightId) this.open(button, { creativeId, highlightId })
+	return
+      }
       this.close()
       return
     }
-    if (userRequestedOpen) this.expandDocked()
+    if (userRequestedOpen || openRequested) this.expandDocked()
     const openOptions = { creativeId }
     if (highlightId) openOptions.highlightId = highlightId
     this.open(button, openOptions)

@@ -293,13 +293,16 @@ export default class extends Controller {
   handleFrameLoad(event) {
     if (event.target.id !== 'creative-workspace-content') return
 
-    this.syncFromWorkspaceFrame(event.target, { authoritative: event.type === 'turbo:frame-load' })
+    const authoritative = event.type === 'turbo:frame-load'
+    this.syncFromWorkspaceFrame(event.target, { authoritative })
+    if (authoritative) this.frameRequestUrl = undefined
   }
 
   handleFrameRequest(event) {
     if (event.target.id !== 'creative-workspace-content') return
 
     this.frameRequestGeneration = this.invalidationGeneration
+    this.frameRequestUrl = event.detail?.url
   }
 
   handleFetchRequest(event) {
@@ -426,8 +429,11 @@ export default class extends Controller {
     this.setActiveId(activeId)
 
     if (syncChat) {
+      const chatUrl = this.frameRequestUrl || window.location.href
+      const highlightId = authoritative ? this.commentIdFromUrl(chatUrl) : undefined
       this.openChat(state, {
-        highlightId: authoritative ? this.commentIdFromLocation() : undefined,
+	highlightId,
+	openRequested: authoritative && this.commentsRequestedFromUrl(chatUrl),
       })
     }
 
@@ -468,13 +474,14 @@ export default class extends Controller {
     this.activeId = String(id)
   }
 
-  openChat(link, { highlightId } = {}) {
+  openChat(link, { highlightId, openRequested = false } = {}) {
     document.dispatchEvent(new CustomEvent('creative-comments-click', {
       detail: {
         button: link,
         creativeId: link.dataset.creativeId,
         workspaceSync: true,
         highlightId,
+	openRequested,
       },
     }))
   }
@@ -581,14 +588,29 @@ export default class extends Controller {
   }
 
   commentIdFromLocation() {
-    const params = new URLSearchParams(window.location.search)
+    return this.commentIdFromUrl(window.location.href)
+  }
+
+  commentIdFromUrl(value) {
+    const url = new URL(value, window.location.origin)
+    const params = url.searchParams
     const queryCommentId = params.get('comment_id') || params.get('highlight_comment_id')
     if (queryCommentId) return queryCommentId
 
-    const pathCommentId = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)?.[1]
+    const pathCommentId = url.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)?.[1]
     if (pathCommentId) return pathCommentId
 
-    return window.location.hash.match(/comment_(\d+)/)?.[1]
+    return url.hash.match(/comment_(\d+)/)?.[1]
+  }
+
+  commentsRequestedFromLocation() {
+    return this.commentsRequestedFromUrl(window.location.href)
+  }
+
+  commentsRequestedFromUrl(value) {
+    const url = new URL(value, window.location.origin)
+    if (url.searchParams.get('open_comments') === 'true') return true
+    return Boolean(this.commentIdFromUrl(url))
   }
 
   rootState() {

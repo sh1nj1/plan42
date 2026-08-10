@@ -1,11 +1,37 @@
 import { LinkNode } from "@lexical/link"
 import { $applyNodeReplacement } from "lexical"
 
-const CREATIVE_PATH = /^\/creatives\/(\d+)(?:[/?#]|$)/
+const WORKSPACE_FRAME_ID = "creative-workspace-content"
 
-export function creativeIdFromUrl(url) {
-  const match = String(url || "").match(CREATIVE_PATH)
-  return match ? Number(match[1]) : null
+function normalizedMountPath(mountPath) {
+  const value = String(mountPath || "").trim()
+  if (!value || value === "/") return ""
+
+  return `/${value.replace(/^\/+|\/+$/g, "")}`
+}
+
+export function collavreMountPath() {
+  return normalizedMountPath(
+    document.getElementById(WORKSPACE_FRAME_ID)?.dataset.collavreMountPath
+  )
+}
+
+export function creativeIdFromUrl(url, mountPath = collavreMountPath()) {
+  const value = String(url || "")
+  if (!value.startsWith("/") || value.startsWith("//")) return null
+
+  const parsed = new URL(value, "http://collavre.local")
+  const creativeBasePath = `${normalizedMountPath(mountPath)}/creatives`
+  const showPath = parsed.pathname.startsWith(`${creativeBasePath}/`)
+    ? parsed.pathname.slice(creativeBasePath.length)
+    : ""
+  const showMatch = showPath.match(/^\/(\d+)\/?$/)
+  if (showMatch) return Number(showMatch[1])
+
+  if (parsed.pathname !== creativeBasePath) return null
+
+  const id = parsed.searchParams.get("id")
+  return /^\d+$/.test(id || "") ? Number(id) : null
 }
 
 export class CreativeLinkNode extends LinkNode {

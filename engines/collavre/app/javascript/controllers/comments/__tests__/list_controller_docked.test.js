@@ -90,4 +90,36 @@ describe('CommentsListController docked startup', () => {
 
     expect(controller.listTarget.innerHTML).toBe('')
   })
+
+  test('accepts the topic resolved by an earlier-message deep link', async () => {
+    const controller = Object.create(CommentsListController.prototype)
+    const element = document.createElement('section')
+    const listTarget = document.createElement('div')
+    element.appendChild(listTarget)
+    controller.creativeId = '12'
+    controller.currentTopicId = '7'
+    controller.highlightAfterLoad = '34'
+    controller.highlightCreativeId = '12'
+    controller._loadCommentsVersion = 0
+    controller.selection = new Set()
+    controller.prevMsgNavigator = { reset: jest.fn() }
+    controller.fetchComments = jest.fn(async () => {
+      controller.currentTopicId = '9'
+      return '<div id="comment_34">Earlier message</div>'
+    })
+    controller.highlightComment = jest.fn()
+    controller.markCommentsRead = jest.fn()
+    controller.listTarget = listTarget
+    Object.defineProperty(controller, 'element', { value: element })
+    Object.defineProperty(controller, 'popupController', { value: null })
+    Object.defineProperty(controller, 'formController', { value: null })
+
+    controller.loadInitialComments()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(controller.fetchComments).toHaveBeenCalledWith({ around_comment_id: '34' })
+    expect(controller.highlightComment).toHaveBeenCalledWith('34')
+    expect(controller.initialLoadComplete).toBe(true)
+  })
 })
