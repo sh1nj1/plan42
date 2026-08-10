@@ -1,4 +1,5 @@
 import csrfFetch, { refreshCsrfToken } from './api/csrf_fetch'
+import { LAST_VISITED_CREATIVE_AT_HEADER, nextLastVisitedCreativeTimestamp } from './creative_link_prefetch'
 
 let pendingRequestController = null
 
@@ -13,11 +14,15 @@ export function rememberLastVisitedCreative(baseUrl, creativeId) {
   cancelPendingLastVisitedCreative()
   const requestController = new AbortController()
   pendingRequestController = requestController
+  const visitTimestamp = String(nextLastVisitedCreativeTimestamp())
   const url = new URL(baseUrl, window.location.origin)
   url.pathname = `${url.pathname.replace(/\/$/, '')}/${encodeURIComponent(creativeId)}/remember_last_visited`
   const request = () => csrfFetch(`${url.pathname}${url.search}`, {
     method: 'PATCH',
-    headers: { Accept: 'application/json' },
+    headers: {
+      Accept: 'application/json',
+      [LAST_VISITED_CREATIVE_AT_HEADER]: visitTimestamp,
+    },
     signal: requestController.signal,
   })
 

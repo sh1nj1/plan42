@@ -30,7 +30,7 @@ module Collavre
           if params[:id].present?
             creative = Creative.find_by(id: params[:id])
             @parent_creative = creative if creative&.has_permission?(Current.user, :read)
-            remember_last_visited_creative(@parent_creative) unless turbo_prefetch_request?
+            remember_last_visited_creative(@parent_creative, visited_at: last_visited_creative_at) unless turbo_prefetch_request?
           end
           @creatives = []  # CSR will fetch via JSON
           @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
@@ -553,7 +553,7 @@ module Collavre
     def remember_last_visited
       return head :forbidden unless @creative.has_permission?(Current.user, :read)
 
-      remember_last_visited_creative(@creative)
+      remember_last_visited_creative(@creative, visited_at: last_visited_creative_at)
       head :no_content
     end
 
@@ -570,11 +570,24 @@ module Collavre
     end
 
     private
-      def remember_last_visited_creative(creative)
+      def remember_last_visited_creative(creative, visited_at: Time.current)
         return unless Current.user && creative
-        return if Current.user.last_visited_creative_id == creative.id
 
-        Current.user.update_column(:last_visited_creative_id, creative.id)
+        Current.user.with_lock do
+          return if Current.user.last_visited_creative_at && Current.user.last_visited_creative_at >= visited_at
+
+          Current.user.update_columns(
+            last_visited_creative_id: creative.id,
+            last_visited_creative_at: visited_at
+          )
+        end
+      end
+
+      def last_visited_creative_at
+        milliseconds = request.headers["X-Collavre-Last-Visited-Creative-At"].to_i
+        return Time.current unless milliseconds.positive?
+
+        Time.at(milliseconds / 1000.0)
       end
 
       def turbo_prefetch_request?

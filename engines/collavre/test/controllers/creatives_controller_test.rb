@@ -59,6 +59,25 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal creative, user.reload.last_visited_creative
   end
 
+  test "an older restored visit does not overwrite a newer Creative navigation" do
+    user = users(:one)
+    newer_creative = creatives(:root_parent)
+    restored_creative = creatives(:unconvert_target)
+    newer_visit_at = 1.minute.ago.change(usec: 0)
+    user.update_columns(
+      last_visited_creative_id: newer_creative.id,
+      last_visited_creative_at: newer_visit_at
+    )
+
+    patch remember_last_visited_creative_path(restored_creative), as: :json, headers: {
+      "X-Collavre-Last-Visited-Creative-At" => ((newer_visit_at - 1.second).to_f * 1000).to_i.to_s
+    }
+
+    assert_response :no_content
+    assert_equal newer_creative, user.reload.last_visited_creative
+    assert_equal newer_visit_at, user.last_visited_creative_at
+  end
+
   test "remembering an inaccessible browser history creative preserves the current last visit" do
     user = users(:one)
     remembered_creative = creatives(:root_parent)

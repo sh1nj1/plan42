@@ -41,6 +41,7 @@ describe('LastVisitedCreativeController', () => {
       method: 'PATCH',
       credentials: 'same-origin',
     }))
+    expect(fetchMock.mock.calls[0][1].headers.get('X-Collavre-Last-Visited-Creative-At')).toEqual(expect.any(String))
   })
 
   test('records a cached history restore after Turbo reconnects the page', async () => {
