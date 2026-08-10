@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_10_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_060000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -985,6 +985,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_000001) do
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
     t.string "google_uid"
+    t.datetime "last_visited_creative_at"
+    t.string "last_visited_creative_client_id"
+    t.integer "last_visited_creative_id"
+    t.bigint "last_visited_creative_issued_sequence"
+    t.bigint "last_visited_creative_visit_sequence"
     t.string "llm_api_key"
     t.string "llm_model"
     t.string "llm_vendor"
@@ -1012,6 +1017,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_000001) do
     t.string "webauthn_id"
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
     t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["last_visited_creative_id"], name: "index_users_on_last_visited_creative_id"
     t.index ["searchable"], name: "index_users_on_searchable"
     t.index ["system_admin"], name: "index_users_on_system_admin"
   end
@@ -1126,5 +1132,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_000001) do
   add_foreign_key "user_creative_preferences", "users"
   add_foreign_key "user_themes", "users"
   add_foreign_key "users", "agent_gateways"
+  add_foreign_key "users", "creatives", column: "last_visited_creative_id", on_delete: :nullify
   add_foreign_key "webauthn_credentials", "users"
 end

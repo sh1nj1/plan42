@@ -11,6 +11,269 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     "turbo-cable-stream-source[signed-stream-name='#{signed_name}']"
   end
 
+  def last_visited_creative_token
+    response.body.match(/data-(?:workspace-tree|last-visited-creative)-last-visited-creative-visit-token-value="([^"]+)"/)[1]
+  end
+
+  test "opening a readable creative remembers it as the user's last visited creative" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+    user.update!(last_visited_creative_id: nil)
+
+    get creatives_path(id: creative.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_equal creative, user.reload.last_visited_creative
+    assert_equal 1, user.last_visited_creative_visit_sequence
+  end
+
+  test "a headerless Creative navigation allocates its sequence while holding the user lock" do
+    user = users(:one)
+    first_creative = creatives(:root_parent)
+    second_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: first_creative.id)
+    get creatives_path(id: second_creative.id)
+
+    assert_response :success
+    assert_equal second_creative, user.reload.last_visited_creative
+    assert_equal 2, user.last_visited_creative_visit_sequence
+  end
+
+  test "storage-disabled tabs receive distinct server-allocated visit sequences" do
+    user = users(:one)
+    first_creative = creatives(:root_parent)
+    second_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: first_creative.id)
+    visit_token = last_visited_creative_token
+
+    get creatives_path(id: second_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => visit_token
+    }
+
+    assert_response :success
+    assert_equal second_creative, user.reload.last_visited_creative
+    assert_equal 2, user.last_visited_creative_visit_sequence
+  end
+
+  test "server-issued sequences preserve navigation order when requests arrive out of order" do
+    user = users(:one)
+    earlier_creative = creatives(:root_parent)
+    later_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: earlier_creative.id)
+    visit_token = last_visited_creative_token
+
+    patch next_last_visited_sequence_creatives_path, as: :json
+    earlier_sequence = response.parsed_body.fetch("sequence")
+    patch next_last_visited_sequence_creatives_path, as: :json
+    later_sequence = response.parsed_body.fetch("sequence")
+
+    get creatives_path(id: later_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => visit_token,
+      "X-Collavre-Last-Visited-Creative-Sequence" => later_sequence.to_s
+    }
+    patch remember_last_visited_creative_path(earlier_creative),
+      params: { visit_token: visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => earlier_sequence.to_s },
+      as: :json
+
+    assert_response :no_content
+    assert_equal later_creative, user.reload.last_visited_creative
+    assert_equal later_sequence, user.last_visited_creative_visit_sequence
+  end
+
+  test "issuing a visit sequence redirects an unauthenticated user to sign in" do
+    delete session_path
+
+    patch next_last_visited_sequence_creatives_path, as: :json
+
+    assert_redirected_to new_session_path
+  end
+
+  test "an earlier request from another browser session cannot overwrite a later visit" do
+    user = users(:one)
+    earlier_creative = creatives(:root_parent)
+    later_creative = creatives(:unconvert_target)
+    earlier_received_at = 2.minutes.ago
+
+    user.update!(
+      last_visited_creative: later_creative,
+      last_visited_creative_at: 1.minute.ago,
+      last_visited_creative_client_id: "second-browser",
+      last_visited_creative_visit_sequence: 1
+    )
+
+    Collavre::CreativesController.new.send(
+      :remember_last_visited_creative,
+      earlier_creative,
+      client_id: "first-browser",
+      sequence: 1,
+      received_at: earlier_received_at
+    )
+
+    assert_equal later_creative, user.reload.last_visited_creative
+    assert_equal "second-browser", user.last_visited_creative_client_id
+  end
+
+  test "prefetching a readable creative does not remember it as the user's last visited creative" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+    user.update!(last_visited_creative_id: nil)
+
+    get creatives_path(id: creative.id), headers: {
+      "Turbo-Frame" => "creative-workspace-content",
+      "X-Sec-Purpose" => "prefetch"
+    }
+
+    assert_response :success
+    assert_nil user.reload.last_visited_creative
+  end
+
+  test "a HEAD request for a creative does not remember it as the user's last visited creative" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+    user.update!(last_visited_creative_id: nil)
+
+    head creatives_path(id: creative.id)
+
+    assert_response :success
+    assert_nil user.reload.last_visited_creative
+  end
+
+  test "opening an inaccessible creative does not replace the last visited creative" do
+    user = users(:one)
+    remembered_creative = creatives(:root_parent)
+    inaccessible_creative = Creative.create!(user: users(:two), description: "Private workspace creative")
+    user.update!(last_visited_creative: remembered_creative)
+
+    get creatives_path(id: inaccessible_creative.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_equal remembered_creative, user.reload.last_visited_creative
+  end
+
+  test "remembering a creative restored from browser history updates the last visited creative" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+    visit_token = last_visited_creative_token
+    user.update!(last_visited_creative_id: nil)
+
+    patch remember_last_visited_creative_path(creative),
+      params: { visit_token: visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "2" },
+      as: :json
+
+    assert_response :no_content
+    assert_equal creative, user.reload.last_visited_creative
+  end
+
+  test "a storage-disabled browser history restore receives a server-allocated sequence" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+    visit_token = last_visited_creative_token
+    user.update!(last_visited_creative_id: nil)
+
+    patch remember_last_visited_creative_path(creative),
+      params: { visit_token: visit_token },
+      as: :json
+
+    assert_response :no_content
+    assert_equal creative, user.reload.last_visited_creative
+    assert_equal 2, user.last_visited_creative_visit_sequence
+  end
+
+  test "a delayed restored visit cannot overwrite a later Creative navigation" do
+    user = users(:one)
+    newer_creative = creatives(:root_parent)
+    restored_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: restored_creative.id)
+    restored_visit_token = last_visited_creative_token
+
+    get creatives_path(id: newer_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => restored_visit_token,
+      "X-Collavre-Last-Visited-Creative-Sequence" => "2"
+    }
+
+    patch remember_last_visited_creative_path(restored_creative),
+      params: { visit_token: restored_visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "1" },
+      as: :json
+
+    assert_response :no_content
+    assert_equal newer_creative, user.reload.last_visited_creative
+    assert_equal 2, user.last_visited_creative_visit_sequence
+  end
+
+  test "a browser history restore supersedes the Creative visited before it" do
+    user = users(:one)
+    restored_creative = creatives(:root_parent)
+    newer_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: restored_creative.id)
+    restored_visit_token = last_visited_creative_token
+
+    get creatives_path(id: newer_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => restored_visit_token,
+      "X-Collavre-Last-Visited-Creative-Sequence" => "2"
+    }
+
+    patch remember_last_visited_creative_path(restored_creative),
+      params: { visit_token: restored_visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "3" },
+      as: :json
+
+    assert_response :no_content
+    assert_equal restored_creative, user.reload.last_visited_creative
+    assert_equal 3, user.last_visited_creative_visit_sequence
+  end
+
+  test "rejects unsigned restored visit tokens" do
+    user = users(:one)
+    previous_creative = creatives(:root_parent)
+    visited_creative = creatives(:unconvert_target)
+    user.update!(last_visited_creative: previous_creative)
+
+    patch remember_last_visited_creative_path(visited_creative), params: { visit_token: "forged" }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal previous_creative, user.reload.last_visited_creative
+  end
+
+  test "rejects a restored visit token for another Creative" do
+    token_creative = creatives(:root_parent)
+    visited_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: token_creative.id)
+    visit_token = last_visited_creative_token
+
+    patch remember_last_visited_creative_path(visited_creative),
+      params: { visit_token: visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "2" },
+      as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal token_creative, users(:one).reload.last_visited_creative
+  end
+
+  test "remembering an inaccessible browser history creative preserves the current last visit" do
+    user = users(:one)
+    remembered_creative = creatives(:root_parent)
+    inaccessible_creative = Creative.create!(user: users(:two), description: "Private workspace creative")
+    user.update!(last_visited_creative: remembered_creative)
+
+    patch remember_last_visited_creative_path(inaccessible_creative), as: :json
+
+    assert_response :forbidden
+    assert_equal remembered_creative, user.reload.last_visited_creative
+  end
+
   test "creative workspace is disabled by default" do
     users(:one).update!(creative_workspace_enabled: false)
     creative = creatives(:root_parent)
@@ -23,6 +286,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-workspace-tree", count: 0
     assert_select "turbo-frame#creative-workspace-content", count: 0
     assert_select "[data-workspace-navigation-state]", count: 0
+    assert_select "[data-controller='last-visited-creative'][data-last-visited-creative-creative-id-value='#{creative.id}'][data-last-visited-creative-visit-token-value]"
     assert_select "#comments-popup[data-docked='false']", count: 1
     assert_select creative_tree_stream_selector, count: 1
   end
@@ -36,7 +300,11 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "body.creative-workspace"
     assert_select ".creative-workspace-shell"
     assert_select "#creative-workspace-tree"
+    assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-token-value]"
+    assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-sequence-value]"
+    assert_select "[data-controller='last-visited-creative']", count: 0
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
+    assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-last-visited-creative-visit-token][data-last-visited-creative-visit-sequence]"
     assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"
     assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
     assert_select ".creative-workspace-shell #{creative_tree_stream_selector}", count: 1
@@ -56,7 +324,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "a.creative-breadcrumb-link[href='#{creatives_path}'][data-turbo-action='advance']"
-    assert_select "a.creative-breadcrumb-link[href='#{creative_path(ancestor)}'][data-turbo-action='advance']"
+    assert_select "a.creative-breadcrumb-link[href='#{creative_path(ancestor)}'][data-turbo-action='advance'][data-turbo-prefetch='false']"
+    assert_select "a.creative-breadcrumb-current[href='#{creative_path(child)}'][data-turbo-action='replace'][data-turbo-prefetch='false']"
   end
 
   test "workspace tree JSON returns collapsed branches without leaf roots" do

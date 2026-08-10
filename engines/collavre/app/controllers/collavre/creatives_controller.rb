@@ -19,17 +19,31 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
+    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
 
     def index
       respond_to do |format|
         format.html do
+          visit_received_at = Time.current
           # HTML only needs parent_creative for nav/title - skip expensive filtered queries
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
           if params[:id].present?
             creative = Creative.find_by(id: params[:id])
             @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+            if Current.user
+              @last_visited_creative_client_id = last_visited_creative_client_id
+              @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
+              unless request.head? || turbo_prefetch_request?
+                @last_visited_creative_visit_sequence = remember_last_visited_creative(
+                  @parent_creative,
+                  client_id: @last_visited_creative_client_id,
+                  sequence: @last_visited_creative_visit_sequence,
+                  received_at: visit_received_at
+                )
+              end
+              @last_visited_creative_token = last_visited_creative_token
+            end
           end
           @creatives = []  # CSR will fetch via JSON
           @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
@@ -546,6 +560,27 @@ module Collavre
       head :ok
     end
 
+    # Turbo may restore a cached workspace frame from browser history without
+    # issuing the HTML request that normally records this value. The client
+    # calls this endpoint after confirming the restored frame matches the URL.
+    def remember_last_visited
+      visit_received_at = Time.current
+      return head :forbidden unless @creative.has_permission?(Current.user, :read)
+
+      visit = restored_visit
+      return head :unprocessable_entity unless visit
+
+      remember_last_visited_creative(@creative, **visit, received_at: visit_received_at)
+      head :no_content
+    end
+
+    # Reserve an ordering value before Turbo starts a Creative navigation.
+    # Reserving does not change the remembered Creative, so a cancelled request
+    # leaves only a harmless gap in the sequence.
+    def next_last_visited_sequence
+      render json: { sequence: issue_last_visited_creative_sequence }
+    end
+
     def destroy
       parent = @creative.parent
       unless @creative.has_permission?(Current.user, :admin)
@@ -559,6 +594,84 @@ module Collavre
     end
 
     private
+      def remember_last_visited_creative(creative, client_id:, sequence:, received_at:)
+        return unless Current.user && creative
+
+        Current.user.with_lock do
+          same_client = Current.user.last_visited_creative_client_id == client_id
+          sequence ||= issue_last_visited_creative_sequence_locked
+          return sequence if same_client && Current.user.last_visited_creative_visit_sequence.to_i >= sequence
+          return sequence if !same_client && Current.user.last_visited_creative_at &&
+            Current.user.last_visited_creative_at >= received_at
+
+          Current.user.update_columns(
+            last_visited_creative_id: creative.id,
+            # A request can wait on this lock after it reaches Rails. Retain
+            # its arrival time so an older request from another browser session
+            # cannot overwrite a Creative recorded by a later-arriving visit.
+            last_visited_creative_at: received_at,
+            last_visited_creative_client_id: client_id,
+            last_visited_creative_visit_sequence: sequence
+          )
+          sequence
+        end
+      end
+
+      def issue_last_visited_creative_sequence
+        Current.user.with_lock { issue_last_visited_creative_sequence_locked }
+      end
+
+      def issue_last_visited_creative_sequence_locked
+        sequence = [
+          Current.user.last_visited_creative_issued_sequence.to_i,
+          Current.user.last_visited_creative_visit_sequence.to_i
+        ].max + 1
+        Current.user.update_column(:last_visited_creative_issued_sequence, sequence)
+        sequence
+      end
+
+      def last_visited_creative_client_id
+        session[:last_visited_creative_client_id] ||= SecureRandom.uuid
+      end
+
+      def last_visited_creative_visit_sequence
+        supplied_sequence = request.headers["X-Collavre-Last-Visited-Creative-Sequence"].to_i
+        supplied_sequence if supplied_sequence.positive? && visit_token_client_id == last_visited_creative_client_id
+      end
+
+      def last_visited_creative_token
+        return unless @parent_creative && @last_visited_creative_client_id && @last_visited_creative_visit_sequence
+
+        Rails.application.message_verifier(:last_visited_creative).generate({
+          "creative_id" => @parent_creative.id,
+          "client_id" => @last_visited_creative_client_id,
+          "sequence" => @last_visited_creative_visit_sequence
+        })
+      end
+
+      def restored_visit
+        visit = Rails.application.message_verifier(:last_visited_creative).verified(params[:visit_token])
+        sequence = request.headers["X-Collavre-Last-Visited-Creative-Sequence"].to_i
+        return unless visit.is_a?(Hash) && visit["creative_id"] == @creative.id &&
+          visit["client_id"] == last_visited_creative_client_id
+
+        { client_id: visit.fetch("client_id"), sequence: sequence.positive? ? sequence : nil }
+      rescue ActiveSupport::MessageVerifier::InvalidSignature, KeyError, ArgumentError
+        nil
+      end
+
+      def visit_token_client_id
+        token = request.headers["X-Collavre-Last-Visited-Creative-Token"]
+        visit = Rails.application.message_verifier(:last_visited_creative).verified(token)
+        visit["client_id"] if visit.is_a?(Hash)
+      rescue ActiveSupport::MessageVerifier::InvalidSignature
+        nil
+      end
+
+      def turbo_prefetch_request?
+        request.headers["X-Sec-Purpose"] == "prefetch"
+      end
+
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
         ::Creatives::TreeBuilder.new(
           user: Current.user,
