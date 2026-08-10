@@ -44,10 +44,10 @@
       <% if @parent_creative %>
         <% @parent_creative.ancestors.reverse.each do |ancestor| %>
           <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-turbo-action="advance" title="<%= Collavre::HtmlText.label(ancestor.effective_description) %>"><%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %></a>
+          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-turbo-action="advance" data-turbo-prefetch="false" title="<%= Collavre::HtmlText.label(ancestor.effective_description) %>"><%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %></a>
         <% end %>
         <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace"><%= Collavre::HtmlText.truncated_label(@parent_creative.effective_description, 30) %></a>
+        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace" data-turbo-prefetch="false"><%= Collavre::HtmlText.truncated_label(@parent_creative.effective_description, 30) %></a>
       <% end %>
     </div>
 

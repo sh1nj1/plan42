@@ -116,7 +116,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "a.creative-breadcrumb-link[href='#{creatives_path}'][data-turbo-action='advance']"
-    assert_select "a.creative-breadcrumb-link[href='#{creative_path(ancestor)}'][data-turbo-action='advance']"
+    assert_select "a.creative-breadcrumb-link[href='#{creative_path(ancestor)}'][data-turbo-action='advance'][data-turbo-prefetch='false']"
+    assert_select "a.creative-breadcrumb-current[href='#{creative_path(child)}'][data-turbo-action='replace'][data-turbo-prefetch='false']"
   end
 
   test "workspace tree JSON returns collapsed branches without leaf roots" do
