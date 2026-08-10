@@ -1,6 +1,12 @@
 import { Controller } from "@hotwired/stimulus"
 import csrfFetch from "../lib/api/csrf_fetch"
 
+export function setupNextUrl(nextUrlValue, adapters) {
+  const nextUrl = new URL(nextUrlValue, window.location.origin)
+  for (const adapter of adapters || []) nextUrl.searchParams.set(adapter, "1")
+  return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`
+}
+
 // The browser handles consent and a short-lived registration grant only. The
 // Tauri command keeps proxy secrets in Keychain and posts them directly to the
 // local Rails sidecar, so no secret is exposed to the DOM.
@@ -26,13 +32,15 @@ export default class extends Controller {
       const result = await invoke("desktop_proxy_complete_setup", {
         registrationToken: token,
       })
-      const query = new URLSearchParams()
-      for (const adapter of result.adapters || []) query.set(adapter, "1")
-      window.location.assign(`${this.nextUrlValue}?${query.toString()}`)
+      this.navigate(setupNextUrl(this.nextUrlValue, result.adapters))
     } catch (error) {
       this.errorTarget.textContent = error?.message || this.failedValue
       this.errorTarget.hidden = false
       this.submitTarget.disabled = !this.consentTarget.checked
     }
+  }
+
+  navigate(url) {
+    window.location.assign(url)
   }
 }

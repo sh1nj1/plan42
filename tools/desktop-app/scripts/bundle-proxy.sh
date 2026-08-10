@@ -48,6 +48,7 @@ else
   curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$NODE_RUNTIME_URL"
   printf '%s  %s\n' "$NODE_RUNTIME_SHA256" "$archive" | shasum -a 256 -c -
   tar -xJf "$archive" -C "$stage"
+  rm -f "$archive"
   runtime_root="$(find "$stage" -mindepth 1 -maxdepth 1 -type d -name 'node-v*-darwin-arm64' -print -quit)"
   [[ -n "$runtime_root" ]] || fail "Node archive is not a darwin-arm64 distribution"
   mv "$runtime_root" "$stage/node"
