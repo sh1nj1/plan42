@@ -1,5 +1,5 @@
 import csrfFetch, { refreshCsrfToken } from './api/csrf_fetch'
-import { isCreativeNavigation } from './creative_link_prefetch'
+import { isCreativeVisitNavigation } from './creative_link_prefetch'
 
 let pendingRequestController = null
 const SEQUENCE_HEADER = 'X-Collavre-Last-Visited-Creative-Sequence'
@@ -34,7 +34,7 @@ export async function prepareLastVisitedCreativeNavigation(event, baseUrl, visit
     !baseUrl ||
     !visitToken ||
     !fetchOptions ||
-    !isCreativeNavigation(event.detail?.url) ||
+    !isCreativeVisitNavigation(event.detail?.url) ||
     String(fetchOptions.method || 'GET').toUpperCase() !== 'GET'
   ) return
 

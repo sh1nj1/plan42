@@ -69,4 +69,19 @@ describe('rememberLastVisitedCreative', () => {
     expect(resume).not.toHaveBeenCalled()
     expect(csrfFetch).not.toHaveBeenCalled()
   })
+
+  test('does not reserve a sequence for a nested Creative Turbo frame request', async () => {
+    const fetchOptions = { method: 'GET', headers: new Headers() }
+    const resume = jest.fn()
+    const event = new CustomEvent('turbo:before-fetch-request', {
+      cancelable: true,
+      detail: { fetchOptions, resume, url: '/creatives/1/comments/2/activity_log' },
+    })
+
+    await prepareLastVisitedCreativeNavigation(event, '/creatives', 'server-token')
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(resume).not.toHaveBeenCalled()
+    expect(csrfFetch).not.toHaveBeenCalled()
+  })
 })

@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import "../creative_link_prefetch"
+import { isCreativeVisitNavigation } from "../creative_link_prefetch"
 
 function prefetch(link) {
   const event = new Event("turbo:before-prefetch", { bubbles: true, cancelable: true })
@@ -33,4 +33,14 @@ test("does not prevent prefetching unrelated or external links", () => {
 
   expect(prefetch(unrelated).defaultPrevented).toBe(false)
   expect(prefetch(external).defaultPrevented).toBe(false)
+})
+
+test("identifies only Creative index and show routes as visit navigations", () => {
+  [ "/creatives", "/creatives.html", "/collavre/creatives/2" ].forEach((url) => {
+    expect(isCreativeVisitNavigation(url)).toBe(true)
+  })
+
+  ;[ "/creatives/2/comments/3/activity_log", "/creatives/next_last_visited_sequence" ].forEach((url) => {
+    expect(isCreativeVisitNavigation(url)).toBe(false)
+  })
 })
