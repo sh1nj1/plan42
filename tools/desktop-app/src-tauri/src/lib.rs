@@ -206,6 +206,17 @@ fn normalized_proxy_config(
     }
 }
 
+/// A persisted loopback port can later be claimed by another local process.
+/// Replacing it requires gateway re-registration because its URL has changed.
+fn replace_occupied_proxy_port(config: &mut ProxyConfig, replacement_port: u16) {
+    config.port = replacement_port;
+    config.registered = false;
+}
+
+fn proxy_port_available(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
 /// Update only the proxy version tracked in local state when a new desktop
 /// bundle is installed. The port, registration state, and all Keychain-backed
 /// credentials remain untouched.
@@ -579,7 +590,15 @@ fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<Proxy
     // and completed state, but advances the expected runtime version before the
     // health check. Without this migration an upgrade can never restart or be
     // repaired because start_proxy rejects the stale version first.
-    let config = normalized_proxy_config(read_proxy_config(&data), manifest.version, free_port());
+    let mut config =
+        normalized_proxy_config(read_proxy_config(&data), manifest.version, free_port());
+    // Clear a prior crashed proxy before probing its persisted port. If another
+    // process owns it, choose a fresh loopback port and require registration so
+    // Rails' gateway URL follows the repaired proxy.
+    reap_orphan_proxy(&data);
+    if !proxy_port_available(config.port) {
+        replace_occupied_proxy_port(&mut config, free_port());
+    }
     write_proxy_config(&data, &config)?;
     start_proxy(app, &data, sidecar)?;
     Ok(proxy_status(app, &data, sidecar))
@@ -688,10 +707,22 @@ fn desktop_cli_search_paths() -> Vec<PathBuf> {
             home.join(".npm-global/bin"),
             home.join(".volta/bin"),
         ]);
+        paths.extend(nvm_bin_paths(&home));
     }
     paths.sort();
     paths.dedup();
     paths
+}
+
+fn nvm_bin_paths(home: &Path) -> Vec<PathBuf> {
+    let versions = home.join(".nvm/versions/node");
+    fs::read_dir(versions)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join("bin"))
+        .filter(|path| path.is_dir())
+        .collect()
 }
 
 fn desktop_cli_path() -> std::ffi::OsString {
@@ -908,8 +939,8 @@ mod tests {
     use super::{
         config_env_overrides, generate_proxy_key,
         invalidate_proxy_registration_after_key_regeneration, migrate_proxy_config,
-        normalized_proxy_config, parse_bundled_proxy_manifest, read_proxy_config,
-        write_proxy_config, ProxyConfig,
+        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
+        replace_occupied_proxy_port, write_proxy_config, ProxyConfig,
     };
     use std::{env, fs, process};
 
@@ -1030,6 +1061,33 @@ mod tests {
         assert_eq!(34_567, config.port);
         assert_eq!("0.2.0", config.version);
         assert!(config.registered);
+    }
+
+    #[test]
+    fn occupied_proxy_port_is_replaced_and_requires_reregistration() {
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+
+        replace_occupied_proxy_port(&mut config, 45_678);
+
+        assert_eq!(45_678, config.port);
+        assert!(!config.registered);
+    }
+
+    #[test]
+    fn nvm_node_bins_are_included_in_desktop_cli_paths() {
+        let home = env::temp_dir().join(format!("collavre-nvm-paths-{}", process::id()));
+        let nvm_bin = home.join(".nvm/versions/node/v22.0.0/bin");
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(&nvm_bin).expect("create NVM node bin");
+
+        let paths = nvm_bin_paths(&home);
+        let _ = fs::remove_dir_all(&home);
+
+        assert_eq!(vec![nvm_bin], paths);
     }
 
     #[test]

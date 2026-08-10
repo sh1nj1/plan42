@@ -24,8 +24,17 @@ module Collavre
       # Recovery is entered without a step after native setup fails. An
       # authenticated owner must resume at installation rather than see the
       # sign-in-only account panel.
-      if @user
+      if @user&.system_admin?
         @step = "install" if @step == "account"
+        return
+      end
+
+      # A desktop in open mode can have an ordinary user signed in when native
+      # proxy recovery opens this page. That user cannot mint a registration
+      # token, so keep them on the account step where they can sign out and use
+      # the owner's account instead of presenting a broken install action.
+      if @user
+        @step = "account"
         return
       end
 

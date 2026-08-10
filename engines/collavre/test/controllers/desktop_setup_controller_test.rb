@@ -164,6 +164,17 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller='desktop-proxy-setup']"
   end
 
+  test "an authenticated non-administrator can switch to the owner during recovery" do
+    sign_in_as(users(:two), password: "password")
+
+    get collavre.desktop_setup_path(step: :install)
+
+    assert_response :success
+    assert_select "form[action='#{collavre.session_path}'] input[name='_method'][value='delete']"
+    assert_select "a[href='#{collavre.new_session_path}']"
+    assert_select "[data-controller='desktop-proxy-setup']", count: 0
+  end
+
   test "setup renders actual account controls and dynamic adapter statuses" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
     get collavre.desktop_setup_path(step: :account, locale: :en)

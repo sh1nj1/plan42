@@ -52,6 +52,9 @@
         <p id="desktop-setup-account-hint" class="desktop-setup__hint"><%= t("collavre.desktop_setup.account.hint") %></p>
       <% else %>
         <p class="desktop-setup__lead"><%= t("collavre.desktop_setup.account.existing") %></p>
+        <% if @user %>
+          <%= button_to t("app.sign_out"), collavre.session_path, method: :delete, class: "desktop-setup__button desktop-setup__button--secondary" %>
+        <% end %>
         <%= link_to t("app.sign_in"), collavre.new_session_path, class: "desktop-setup__button" %>
       <% end %>
       <aside class="desktop-setup__notice"><%= t("collavre.desktop_setup.account.notice") %></aside>
