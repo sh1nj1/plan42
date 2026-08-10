@@ -21,7 +21,7 @@ module Creatives
       @view_context = FakeViewContext.new
     end
 
-    test "returns only readable branches without loading their children" do
+    test "returns readable roots including leaves without loading their children" do
       root = Creative.create!(user: @user, description: "<strong>Root</strong>")
       branch = Creative.create!(user: @user, parent: root, description: "Branch")
       Creative.create!(user: @user, parent: branch, description: "Leaf")
@@ -29,7 +29,7 @@ module Creatives
 
       nodes = build_tree([ root, root_leaf ])
 
-      assert_equal [ root.id ], nodes.pluck(:id)
+      assert_equal [ root.id, root_leaf.id ], nodes.pluck(:id)
       assert_equal "Root", nodes.first[:label]
       assert_equal root.creative_snippet, nodes.first[:snippet]
       assert nodes.first[:can_comment]
@@ -46,15 +46,17 @@ module Creatives
       nodes = build_tree([ root ], expanded_ids: [ root.id ])
 
       assert_equal [ branch.id ], nodes.first[:children].pluck(:id)
-      refute nodes.first[:children].first[:has_children]
+      assert nodes.first[:children].first[:has_children]
       assert_empty nodes.first[:children].first[:children]
     end
 
-    test "hides a branch whose children are not readable" do
+    test "keeps a readable root when none of its children are readable" do
       root = Creative.create!(user: @user, description: "Private child root")
       Creative.create!(user: users(:two), parent: root, description: "Foreign child")
 
-      assert_empty build_tree([ root ])
+      nodes = build_tree([ root ])
+      assert_equal [ root.id ], nodes.pluck(:id)
+      refute nodes.first[:has_children]
     end
 
     test "expands requested paths beyond the former display level" do
@@ -73,7 +75,7 @@ module Creatives
         rendered_ids << remaining.first.fetch(:id)
         remaining = remaining.first.fetch(:children)
       end
-      assert_equal path.map(&:id), rendered_ids
+      assert_equal (path + [ path.last.children.first ]).map(&:id), rendered_ids
     end
 
     test "stops linked shell cycles without hiding the shell" do

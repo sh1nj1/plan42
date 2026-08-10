@@ -73,7 +73,7 @@
         <main>
           <%= yield %>
         </main>
-        <%= render "collavre/comments/comments_popup", docked: true, creative: @parent_creative %>
+        <%= render "collavre/comments/comments_popup", docked: true, creative: (@onboarding_chat_creative || @parent_creative) %>
       </div>
     <% else %>
       <main>

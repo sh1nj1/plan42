@@ -25,6 +25,7 @@ module Collavre
     def index
       respond_to do |format|
         format.html do
+          ensure_onboarding_for_workspace_root
           visit_received_at = Time.current
           # HTML only needs parent_creative for nav/title - skip expensive filtered queries
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
@@ -288,6 +289,7 @@ module Collavre
       respond_to do |format|
         permitted = creative_params.to_h
         base = @creative.effective_origin(Set.new)
+        previous_description = base.description
         success = true
         previous_progress = base.progress
         requested_progress = permitted["progress"] || permitted[:progress]
@@ -322,6 +324,13 @@ module Collavre
         end
 
         if success
+          Onboarding::ProgressTracker.record(
+            user: Current.user,
+            event: requested_progress.present? ? :progress_changed : :description_changed,
+            creative: base,
+            before_description: previous_description,
+            before_progress: previous_progress
+          )
           format.html { redirect_to @creative }
           format.json do
             base.reload
@@ -594,6 +603,20 @@ module Collavre
     end
 
     private
+
+      def ensure_onboarding_for_workspace_root
+        return unless Current.user&.creative_workspace_enabled? && params[:id].blank?
+        return if Current.user.onboarding_completed_at?
+
+        session = Onboarding::Seeder.new(user: Current.user).call
+        return unless session
+
+        session.update! do |onboarding|
+          next unless onboarding.delete("chat_autoopen_pending")
+
+          @onboarding_chat_creative = session.root
+        end
+      end
       def remember_last_visited_creative(creative, client_id:, sequence:, received_at:)
         return unless Current.user && creative
 

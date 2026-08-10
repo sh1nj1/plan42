@@ -1,0 +1,30 @@
+ko:
+  collavre:
+    onboarding:
+      seed:
+        root: "🚀 콜라브 시작하기"
+        progress_practice: "연습용 항목 1"
+        editor_practice: "연습용 항목 2"
+      card:
+        heading: "콜라브 둘러보기"
+        next: "보여주기"
+        finish: "마치고 정리하기"
+        learn_more: "기능 더 알아보기"
+        complete: "기본 사용법을 모두 마쳤습니다."
+      reset: "온보딩 다시 보기"
+      steps:
+        tree_node:
+          title: "시작 공간 찾기"
+          body: "왼쪽 트리에 연습용 작업 공간이 생겼습니다."
+        progress:
+          title: "연습 항목 완료하기"
+          body: "연습용 항목 1을 체크하고 부모 진행률이 바뀌는지 확인하세요."
+        editor:
+          title: "항목 편집하기"
+          body: "연습용 항목 2의 문장을 바꿔보세요."
+        comment:
+          title: "채팅 메시지 보내기"
+          body: "연습용 항목 2를 열고 공개 메시지를 남겨보세요."
+        mention:
+          title: "AI 팀원 멘션하기"
+          body: "채팅에서 @이름: 형식으로 사용 가능한 AI 팀원을 불러보세요."

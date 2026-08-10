@@ -199,6 +199,8 @@ export default class extends Controller {
     link.dataset.turboAction = 'advance'
     link.dataset.turboPrefetch = 'false'
     link.dataset.creativeId = String(node.id)
+    link.dataset.guideAnchor = 'tree.node'
+    link.dataset.guideAnchorKey = String(node.id)
     link.dataset.creativeSnippet = node.snippet || node.label
     link.dataset.canComment = String(node.can_comment === true)
     if (String(node.id) === String(this.activeId)) {
@@ -207,6 +209,14 @@ export default class extends Controller {
     }
     link.addEventListener('click', (event) => this.selectNode(event))
     row.appendChild(link)
+    if (node.progress !== undefined) {
+      const progress = document.createElement('span')
+      progress.className = 'creative-workspace-tree-progress'
+      progress.dataset.guideAnchor = 'tree.progress'
+      progress.dataset.guideAnchorKey = String(node.id)
+      progress.textContent = `${Math.round(Number(node.progress) * 100)}%`
+      row.appendChild(progress)
+    }
     item.appendChild(row)
 
     if (hasChildren && expanded) {

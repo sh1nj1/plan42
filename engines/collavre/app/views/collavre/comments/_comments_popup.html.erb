@@ -93,7 +93,7 @@
      <% end %>>
   <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
   <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
-  <div class="comments-popup-header" data-comments--popup-target="header">
+  <div class="comments-popup-header" data-comments--popup-target="header" data-guide-anchor="chat.toggle">
     <div class="chat-nav-buttons" data-comments--popup-target="navContainer">
       <button class="chat-nav-btn" type="button" disabled
               data-comments--popup-target="navBack"
@@ -134,6 +134,7 @@
       <button id="close-comments-btn" data-comments--popup-target="closeButton" class="popup-close-btn" type="button" aria-label="<%= t('collavre.comments.close') %>" title="<%= t('collavre.comments.close') %>">&times;</button>
     </div>
   </div>
+  <%= render "collavre/onboarding/card", creative: popup_creative if popup_creative.present? %>
   <div id="comment-contexts" data-comments--contexts-target="list" class="comment-contexts-list" style="display:none;"
        data-inherited-label="<%= t('collavre.contexts.inherited_label', default: 'Inherited from parent') %>"
        data-self-context-label="<%= t('collavre.contexts.self_context_label', default: 'Current creative context') %>"
@@ -172,7 +173,7 @@
       <button type="button" class="comment-quote-cancel" data-comments--form-target="quoteCancelButton" data-action="click->comments--form#cancelQuote" title="<%= t('app.cancel') %>">&times;</button>
     </div>
     <div class="review-quotes-container" data-comments--form-target="reviewQuotesContainer" style="display:none;"></div>
-    <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
+    <textarea class="shared-input-surface" name="comment[content]" data-guide-anchor="chat.composer" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
     <div class="comment-bottom">
     <input type="file" id="comment-images" name="comment[images][]" accept="image/*" multiple data-comments--form-target="imageInput" style="display:none;" />
     <label style="height: 22px"><input type="hidden" name="comment[private]" value="0" /><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" value="1" /> <%= t('collavre.comments.private') %></label>

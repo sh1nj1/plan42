@@ -1,0 +1,59 @@
+import { Controller } from '@hotwired/stimulus'
+import csrfFetch from '../lib/api/csrf_fetch'
+
+// A read-only runner: it highlights an anchored UI element but never invokes a
+// write. Domain actions advance only after their server-side controller succeeds.
+export default class extends Controller {
+  static targets = ['instruction', 'step', 'next', 'finish']
+  static values = { stateUrl: String, advanceUrl: String, completeUrl: String, currentStep: String }
+
+  connect() {
+    this.refresh = this.refresh.bind(this)
+    this.refresh()
+    this.timer = window.setInterval(this.refresh, 1200)
+  }
+
+  disconnect() {
+    if (this.timer) window.clearInterval(this.timer)
+    document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
+  }
+
+  async advance() {
+    await csrfFetch(this.advanceUrlValue, { method: 'POST' })
+    this.refresh()
+  }
+
+  async complete() {
+    const response = await csrfFetch(this.completeUrlValue, { method: 'POST' })
+    const data = await response.json()
+    if (data.redirect_url) window.Turbo?.visit(data.redirect_url) || (window.location.href = data.redirect_url)
+  }
+
+  async refresh() {
+    const response = await fetch(this.stateUrlValue, { headers: { Accept: 'application/json' } })
+    if (!response.ok) return
+    const state = await response.json()
+    if (state.complete) {
+      this.instructionTarget.textContent = state.instruction
+      this.nextTarget.hidden = true
+      this.finishTarget.hidden = false
+      return
+    }
+    if (!state.current_step) return
+    this.currentStepValue = state.current_step
+    this.instructionTarget.textContent = state.instruction
+    this.nextTarget.hidden = state.completion !== 'ui'
+    this.finishTarget.hidden = true
+    this.stepTargets.forEach((step) => {
+      step.classList.toggle('is-current', step.dataset.stepKey === state.current_step)
+      step.classList.toggle('is-complete', state.completed_steps.includes(step.dataset.stepKey))
+    })
+    this.highlight(state.anchor)
+  }
+
+  highlight(anchor) {
+    document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
+    const target = anchor && document.querySelector(`[data-guide-anchor="${anchor}"]`)
+    target?.classList.add('guide-anchor-highlight')
+  }
+}

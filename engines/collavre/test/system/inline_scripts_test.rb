@@ -308,7 +308,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{leaf.id}']",
                     visible: :all, wait: 10
-    assert_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}'].is-current"
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{leaf.id}'].is-current"
     assert_equal leaf.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
 
     visit collavre.creatives_path
@@ -386,7 +386,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creatives_path(id: stable_branch.id)
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{stable_branch.id}']", wait: 10
-    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']"
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
 
     child = Creative.create!(user: @user, parent: changing_creative, description: "Temporary child")
     page.execute_script("document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))")
@@ -396,7 +396,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     child.destroy!
     page.execute_script("document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))")
 
-    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
   end
 
   test "workspace tree refresh does not reopen a destroyed creative chat" do

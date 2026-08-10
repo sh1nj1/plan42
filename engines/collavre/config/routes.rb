@@ -178,6 +178,10 @@ Collavre::Engine.routes.draw do
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
   post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
   delete "/notices", to: "notices#restore_all", as: :restore_notices
+  post "/onboarding/advance", to: "onboardings#advance", as: :advance_onboarding
+  get "/onboarding", to: "onboardings#show", as: :onboarding
+  post "/onboarding/complete", to: "onboardings#complete", as: :complete_onboarding
+  post "/onboarding/reset", to: "onboardings#reset", as: :reset_onboarding
 
   # Agent API (Claude Channel MCP plugin)
   namespace :api do

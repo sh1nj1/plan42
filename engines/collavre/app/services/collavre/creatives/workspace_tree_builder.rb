@@ -23,17 +23,15 @@ module Collavre
 
         creatives = entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
         prepare_level(creatives)
-        branch_entries = entries.select { |entry| children_index.has_children?(entry.fetch(:creative)) }
-        branches = branch_entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
+        branches = creatives.select { |creative| children_index.has_children?(creative) }
         children_index.load(branches)
-        children_by_parent = branches.to_h { |creative| [ creative.id, children_index.children_for(creative) ] }
-        prepare_presence(children_by_parent.values.flatten)
-        branch_children_by_parent = children_by_parent.transform_values do |children|
-          children.select { |child| children_index.has_children?(child) }
+        children_by_parent = creatives.to_h do |creative|
+          [ creative.id, children_index.has_children?(creative) ? children_index.children_for(creative) : [] ]
         end
-        child_entries_by_parent = branch_entries.to_h do |entry|
+        prepare_presence(children_by_parent.values.flatten)
+        child_entries_by_parent = entries.to_h do |entry|
           creative = entry.fetch(:creative)
-          children = expanded?(creative) ? acyclic_children(entry, branch_children_by_parent.fetch(creative.id)) : []
+          children = expanded?(creative) ? acyclic_children(entry, children_by_parent.fetch(creative.id)) : []
           child_entries = children.map do |child|
             { creative: child, ancestor_ids: entry.fetch(:ancestor_ids).dup.add(creative.id) }
           end
@@ -42,15 +40,16 @@ module Collavre
         child_nodes = build_entries(child_entries_by_parent.values.flatten)
         next_child_node = child_nodes.each
 
-        branch_entries.map do |entry|
+        entries.map do |entry|
           creative = entry.fetch(:creative)
-          visible_children = acyclic_children(entry, branch_children_by_parent.fetch(creative.id))
+          visible_children = acyclic_children(entry, children_by_parent.fetch(creative.id))
           children = child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }
           {
             id: creative.id,
             label: Collavre::HtmlText.label(creative.effective_description),
             snippet: creative.creative_snippet,
             can_comment: allowed?(creative, :feedback),
+            progress: creative.progress,
             url: view_context.collavre.creatives_path(id: creative.id),
             has_children: visible_children.any?,
             children: children
