@@ -34,6 +34,7 @@ module Collavre
       # token, so keep them on the account step where they can sign out and use
       # the owner's account instead of presenting a broken install action.
       if @user
+        session[:return_to_after_authenticating] = collavre.desktop_setup_path(step: @step)
         @step = "account"
         return
       end

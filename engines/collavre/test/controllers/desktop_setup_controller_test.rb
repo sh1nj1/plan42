@@ -431,6 +431,18 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller='desktop-proxy-setup']", count: 0
   end
 
+  test "switching accounts during recovery returns the administrator to installation" do
+    owner = users(:one)
+    owner.update!(email_verified_at: Time.current)
+    sign_in_as(users(:two), password: "password")
+
+    get collavre.desktop_setup_path(step: :install)
+    delete collavre.session_path
+    post collavre.session_path, params: { email: owner.email, password: "password" }
+
+    assert_redirected_to collavre.desktop_setup_path(step: :install)
+  end
+
   test "setup renders actual account controls and dynamic adapter statuses" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
     get collavre.desktop_setup_path(step: :account, locale: :en)
