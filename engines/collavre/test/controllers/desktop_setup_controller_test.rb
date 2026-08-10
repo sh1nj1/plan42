@@ -91,6 +91,15 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
 
   test "recovery updates the original desktop gateway when another administrator is signed in" do
     owner = users(:one)
+    unrelated_gateway = Collavre::AgentGateway.create!(
+      owner: users(:two),
+      name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME,
+      base_url: "https://unrelated.example.test",
+      admin_key: "unrelated-admin-key",
+      completion_key: "unrelated-completion-key",
+      identity_secret: "u" * 48,
+      tenant_id: "unrelated-gateway"
+    )
     sign_in_as(owner, password: "password")
 
     post collavre.desktop_setup_registration_token_path
@@ -120,13 +129,17 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     }, as: :json
 
     assert_response :created
-    assert_equal 1, Collavre::AgentGateway.where(name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME).count
+    assert_equal 1, Collavre::AgentGateway.where(desktop_managed: true).count
     gateway.reload
     assert_equal owner, gateway.owner
     assert_equal "http://127.0.0.1:45678", gateway.base_url
     assert_equal "recovery-admin-key", gateway.admin_key
     assert_equal [ "collavre-desktop-claude-code@ai.local" ], owner.created_ai_users.pluck(:email)
     assert_empty users(:two).created_ai_users.where(email: "collavre-desktop-claude-code@ai.local")
+    unrelated_gateway.reload
+    assert_equal "https://unrelated.example.test", unrelated_gateway.base_url
+    assert_equal "unrelated-admin-key", unrelated_gateway.admin_key
+    assert_not_predicate unrelated_gateway, :desktop_managed?
   end
 
   test "registration rejects a missing native grant" do

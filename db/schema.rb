@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_10_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_100000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -58,12 +58,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_060000) do
     t.string "base_url", null: false
     t.text "completion_key", null: false
     t.datetime "created_at", null: false
+    t.boolean "desktop_managed", default: false, null: false
     t.text "identity_secret"
     t.string "name", null: false
     t.integer "owner_id", null: false
     t.string "tenant_id", default: "collavre", null: false
     t.datetime "updated_at", null: false
     t.integer "workspace_mode", default: 0, null: false
+    t.index ["desktop_managed"], name: "index_agent_gateways_on_desktop_managed", unique: true, where: "desktop_managed"
     t.index ["owner_id", "name"], name: "index_agent_gateways_on_owner_id_and_name", unique: true
     t.index ["owner_id"], name: "index_agent_gateways_on_owner_id"
   end
