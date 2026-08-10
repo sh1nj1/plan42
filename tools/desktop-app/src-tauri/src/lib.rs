@@ -948,6 +948,25 @@ fn invalidate_proxy_registration_when_gateway_is_missing(
     Ok(())
 }
 
+/// Do not treat a Rails connection failure during sidecar startup as evidence
+/// that a persisted gateway was removed. The definitive gateway check runs
+/// only after Rails has answered its health endpoint.
+fn revalidate_registered_gateway_after_rails_health(
+    rails_healthy: bool,
+    rails_port: u16,
+    data: &Path,
+    config: &mut ProxyConfig,
+    credentials: &ProxyCredentials,
+) -> Result<bool, String> {
+    if !rails_healthy || !config.registered {
+        return Ok(false);
+    }
+
+    let gateway_exists = registered_gateway_exists(rails_port, config, credentials);
+    invalidate_proxy_registration_when_gateway_is_missing(data, config, gateway_exists)?;
+    Ok(gateway_exists)
+}
+
 /// Ask Rails to validate the signed, short-lived setup consent grant before
 /// native installation mutates persistent state. This call deliberately sends
 /// no proxy credentials.
@@ -1164,8 +1183,8 @@ mod tests {
         invalidate_proxy_registration_when_gateway_is_missing, managed_proxy_runs_on_port,
         migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
         read_proxy_config, reap_orphan_proxy, replace_occupied_proxy_port,
-        wait_until_proxy_healthy, write_proxy_config, ManagedProxy, ProxyConfig, ProxyCredentials,
-        ProxySidecar,
+        revalidate_registered_gateway_after_rails_health, wait_until_proxy_healthy,
+        write_proxy_config, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
     };
     use std::{
         env,
@@ -1542,6 +1561,39 @@ mod tests {
         assert!(!config.registered);
         assert!(!persisted.registered);
     }
+
+    #[test]
+    fn rails_startup_delay_does_not_invalidate_proxy_registration() {
+        let data = env::temp_dir().join(format!("collavre-proxy-rails-delay-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        write_proxy_config(&data, &config).expect("write registered proxy configuration");
+        let credentials = ProxyCredentials {
+            admin_key: "admin".to_string(),
+            completion_key: "completion".to_string(),
+            identity_secret: "identity".to_string(),
+            regenerated: false,
+        };
+
+        let revalidated = revalidate_registered_gateway_after_rails_health(
+            false,
+            45_678,
+            &data,
+            &mut config,
+            &credentials,
+        )
+        .expect("skip gateway revalidation while Rails starts");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert!(!revalidated);
+        assert!(config.registered);
+        assert!(persisted.registered);
+    }
 }
 
 pub fn run() {
@@ -1604,32 +1656,39 @@ pub fn run() {
                 // it: otherwise an app update leaves the old version on disk and the
                 // restart is rejected forever. If migration or restart fails, open
                 // the setup recovery screen rather than silently navigating to home.
-                let first_run_complete = bundled_proxy_manifest(&handle)
+                let proxy_config = bundled_proxy_manifest(&handle)
                     .and_then(|manifest| migrate_proxy_config(&data, manifest.version))
                     .and_then(|config| match config {
                         Some(_) => {
                             start_proxy(&handle, &data, &handle.state::<ProxySidecar>())?;
-                            let mut config = read_proxy_config(&data).ok_or_else(|| {
-                                "Desktop proxy configuration is missing.".to_string()
-                            })?;
-                            if config.registered {
-                                let credentials = proxy_credentials()?;
-                                let gateway_exists =
-                                    registered_gateway_exists(port, &config, &credentials);
-                                invalidate_proxy_registration_when_gateway_is_missing(
-                                    &data,
-                                    &mut config,
-                                    gateway_exists,
-                                )?;
-                                Ok(gateway_exists)
-                            } else {
-                                Ok(false)
-                            }
+                            read_proxy_config(&data)
+                                .ok_or_else(|| {
+                                    "Desktop proxy configuration is missing.".to_string()
+                                })
+                                .map(Some)
                         }
-                        None => Ok(false),
+                        None => Ok(None),
+                    });
+                let healthy = wait_until_healthy(port, Duration::from_secs(120));
+                let first_run_complete = proxy_config
+                    .and_then(|config| {
+                        if !healthy {
+                            return Ok(false);
+                        }
+                        let mut config = match config {
+                            Some(config) => config,
+                            None => return Ok(false),
+                        };
+                        let credentials = proxy_credentials()?;
+                        revalidate_registered_gateway_after_rails_health(
+                            true,
+                            port,
+                            &data,
+                            &mut config,
+                            &credentials,
+                        )
                     })
                     .unwrap_or(false);
-                let healthy = wait_until_healthy(port, Duration::from_secs(120));
                 let Some(window) = handle.get_webview_window("main") else {
                     return;
                 };
