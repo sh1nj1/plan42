@@ -177,6 +177,47 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_not_predicate unrelated_gateway, :desktop_managed?
   end
 
+  test "recovery keeps the desktop gateway usable after its owner loses administrator rights" do
+    owner = users(:one)
+    sign_in_as(owner, password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+    owner_token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: owner_token,
+      proxy_port: 34_567,
+      admin_key: "owner-admin-key",
+      completion_key: "owner-completion-key",
+      identity_secret: "i" * 48,
+      adapters: [ "claude" ]
+    }, as: :json
+    assert_response :created
+
+    gateway = Collavre::AgentGateway.find_by!(desktop_managed: true)
+    users(:two).update!(system_admin: true)
+    owner.update!(system_admin: false)
+    sign_in_as(users(:two), password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+    recovery_token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: recovery_token,
+      proxy_port: 45_678,
+      admin_key: "recovery-admin-key",
+      completion_key: "recovery-completion-key",
+      identity_secret: "s" * 48,
+      adapters: [ "claude" ]
+    }, as: :json
+
+    assert_response :created
+    gateway.reload
+    assert_equal owner, gateway.owner
+    assert_equal "http://127.0.0.1:45678", gateway.base_url
+    assert_predicate gateway, :desktop_loopback?
+    assert_nil Collavre::CliProxy::Client.new(gateway: gateway).instance_variable_get(:@http_client).instance_variable_get(:@endpoint_policy)
+    assert_equal [ "collavre-desktop-claude-code@ai.local" ], owner.created_ai_users.pluck(:email)
+  end
+
   test "migration marks the unambiguous legacy desktop gateway" do
     users(:one).update!(system_admin: true)
     legacy_gateway = Collavre::AgentGateway.create!(

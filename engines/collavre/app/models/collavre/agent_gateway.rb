@@ -40,6 +40,23 @@ module Collavre
       "#{proxy_base_url}#{suffix}"
     end
 
+    # Desktop-managed gateways are created only by the signed native setup
+    # handoff and always target the local proxy. They remain usable when their
+    # original owner later loses the system administrator role.
+    def desktop_loopback?
+      return false unless desktop_managed?
+
+      uri = URI.parse(base_url.to_s)
+      uri.scheme == "http" &&
+        uri.host == "127.0.0.1" &&
+        uri.port.present? &&
+        uri.userinfo.blank? &&
+        uri.query.blank? &&
+        uri.fragment.blank?
+    rescue URI::InvalidURIError
+      false
+    end
+
     private
 
     def proxy_base_url
@@ -57,6 +74,7 @@ module Collavre
 
     def base_url_is_safe_for_owner
       return if owner&.system_admin?
+      return if desktop_loopback?
       return if CliProxy::EndpointPolicy.new.safe_literal?(base_url)
 
       errors.add(:base_url, :unsafe)
