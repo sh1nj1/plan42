@@ -39,6 +39,7 @@ import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
 import InboxBadgeController from "./inbox_badge_controller"
+import LastVisitedCreativeController from "./last_visited_creative_controller"
 import WorkspaceTreeController from "./workspace_tree_controller"
 import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
@@ -81,6 +82,7 @@ export {
   CommentBadgeController,
   LandingVideoController,
   InboxBadgeController,
+  LastVisitedCreativeController,
   WorkspaceTreeController,
   GatewayCheckController,
   AgentConnectionController,
@@ -128,6 +130,7 @@ export function registerControllers(application) {
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)
   application.register("inbox-badge", InboxBadgeController)
+  application.register("last-visited-creative", LastVisitedCreativeController)
   application.register("workspace-tree", WorkspaceTreeController)
   application.register("gateway-check", GatewayCheckController)
   application.register("agent-connection", AgentConnectionController)

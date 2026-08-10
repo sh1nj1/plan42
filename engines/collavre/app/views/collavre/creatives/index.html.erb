@@ -19,6 +19,17 @@
 <% if @auto_fullscreen %>
   <% content_for :comments_popup_auto_fullscreen, "true" %>
 <% end %>
+<% if authenticated? && !creative_workspace? && @parent_creative %>
+  <%= tag.div(
+        nil,
+        hidden: true,
+        data: {
+          controller: "last-visited-creative",
+          last_visited_creative_url_value: creatives_path,
+          last_visited_creative_creative_id_value: @parent_creative.id
+        }
+      ) %>
+<% end %>
 
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"

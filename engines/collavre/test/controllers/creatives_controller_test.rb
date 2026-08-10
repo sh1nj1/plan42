@@ -83,6 +83,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-workspace-tree", count: 0
     assert_select "turbo-frame#creative-workspace-content", count: 0
     assert_select "[data-workspace-navigation-state]", count: 0
+    assert_select "[data-controller='last-visited-creative'][data-last-visited-creative-creative-id-value='#{creative.id}']"
     assert_select "#comments-popup[data-docked='false']", count: 1
     assert_select creative_tree_stream_selector, count: 1
   end
@@ -96,6 +97,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "body.creative-workspace"
     assert_select ".creative-workspace-shell"
     assert_select "#creative-workspace-tree"
+    assert_select "[data-controller='last-visited-creative']", count: 0
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"
     assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
