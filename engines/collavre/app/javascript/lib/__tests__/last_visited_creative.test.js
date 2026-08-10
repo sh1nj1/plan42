@@ -13,6 +13,7 @@ jest.unstable_mockModule('../api/csrf_fetch', () => ({
 }))
 
 const {
+  prepareLastVisitedCreativeNavigation,
   rememberLastVisitedCreative,
 } = await import('../last_visited_creative')
 
@@ -37,5 +38,20 @@ describe('rememberLastVisitedCreative', () => {
 
     expect(refreshCsrfToken).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(csrfFetch).toHaveBeenCalledWith('/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
+  })
+
+  test('does not reserve a sequence for an unrelated Turbo navigation', async () => {
+    const fetchOptions = { method: 'GET', headers: new Headers() }
+    const resume = jest.fn()
+    const event = new CustomEvent('turbo:before-fetch-request', {
+      cancelable: true,
+      detail: { fetchOptions, resume, url: '/users' },
+    })
+
+    await prepareLastVisitedCreativeNavigation(event, '/creatives', 'server-token')
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(resume).not.toHaveBeenCalled()
+    expect(csrfFetch).not.toHaveBeenCalled()
   })
 })

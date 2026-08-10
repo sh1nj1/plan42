@@ -80,7 +80,7 @@ describe('LastVisitedCreativeController', () => {
     const resume = jest.fn()
     const event = new CustomEvent('turbo:before-fetch-request', {
       cancelable: true,
-      detail: { fetchOptions, resume },
+      detail: { fetchOptions, resume, url: '/creatives?id=2' },
     })
     document.dispatchEvent(event)
     await new Promise((resolve) => setTimeout(resolve, 0))
