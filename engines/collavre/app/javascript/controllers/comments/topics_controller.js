@@ -519,6 +519,10 @@ export default class extends Controller {
 
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
+                    // Same deep-link hazard as the "deleted" broadcast: this
+                    // path reaches restoreSelection through loadTopics instead
+                    // of removeTopic, but the getter is the same one.
+                    this.releaseDeepLinkSelection(topicId)
                     this.currentTopicId = "" // Switch to Main
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
@@ -560,8 +564,7 @@ export default class extends Controller {
                     // topic stays the effective selection no matter what the
                     // preference says: overrideTopicId (deep link) and the
                     // ?topic_id= query parameter.
-                    this.clearOverrideTopicId()
-                    this.clearUrlTopicId(topicId)
+                    this.releaseDeepLinkSelection(topicId)
                     this.currentTopicId = ""
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
@@ -935,6 +938,16 @@ export default class extends Controller {
         return this.serverLastTopicId || ""
     }
 
+    // A topic leaving the strip — archived or deleted — has to leave both
+    // sources that outrank serverLastTopicId in the currentTopicId getter.
+    // Assigning "" only touches the preference, so on its own the getter goes
+    // on naming the gone topic and every later restoreSelection() finds it
+    // unknown and resets to Main, discarding whatever the user picked instead.
+    releaseDeepLinkSelection(topicId) {
+        this.clearOverrideTopicId()
+        this.clearUrlTopicId(topicId)
+    }
+
     // Drop ?topic_id= when it names the topic being archived. It is a selection
     // source in its own right and survives every reload, so leaving it would
     // re-select the topic the user just archived out of. replaceState, not a
@@ -1118,6 +1131,7 @@ export default class extends Controller {
         this.archivedTopics = nextArchivedTopics
         this.pruneArchivedBadges()
         if (String(this.currentTopicId) === String(topicId)) {
+            this.releaseDeepLinkSelection(topicId)
             this.currentTopicId = ""
             this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }

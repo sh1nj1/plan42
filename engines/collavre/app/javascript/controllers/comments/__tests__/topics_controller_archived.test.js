@@ -626,5 +626,53 @@ describe('TopicsController archived topic messages', () => {
       expect(controller.archivedTopics.map((t) => t.id)).toEqual([3, 4])
       expect(changeEvents).toEqual([])
     })
+
+    // Assigning "" only moves the preference, and both deep-link sources outrank
+    // it in the currentTopicId getter, so the deleted id would keep answering
+    // for every later restoreSelection().
+    describe('while a deep link still names it', () => {
+      test('clears an overrideTopicId pointing at it', () => {
+        controller.setOverrideTopicId('3')
+
+        deleteBroadcast(3)
+
+        expect(controller.currentTopicId).toBe('1')
+      })
+
+      test('drops a ?topic_id= naming it', () => {
+        window.history.replaceState({}, '', '/?topic_id=3')
+
+        deleteBroadcast(3)
+
+        expect(new URLSearchParams(window.location.search).get('topic_id')).toBeNull()
+        expect(controller.currentTopicId).toBe('1')
+
+        window.history.replaceState({}, '', '/')
+      })
+
+      // The point of clearing them: a re-render must not throw away the topic
+      // the user picked after the deletion.
+      test('a later re-render keeps the topic the user chose instead', () => {
+        controller.setOverrideTopicId('3')
+        deleteBroadcast(3)
+
+        controller.selectTopic('2')
+        controller.renderTopics(controller.topics, controller.canManageTopics)
+        controller.restoreSelection()
+
+        expect(controller.currentTopicId).toBe('2')
+        expect(changeEvents.at(-1).topicId).toBe('2')
+      })
+
+      test('leaves a deep link pointing at a different topic alone', () => {
+        window.history.replaceState({}, '', '/?topic_id=4')
+
+        deleteBroadcast(3)
+
+        expect(new URLSearchParams(window.location.search).get('topic_id')).toBe('4')
+
+        window.history.replaceState({}, '', '/')
+      })
+    })
   })
 })
