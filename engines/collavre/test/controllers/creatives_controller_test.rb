@@ -60,7 +60,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     visit_token = last_visited_creative_token
     user.update!(last_visited_creative_id: nil)
 
-    patch remember_last_visited_creative_path(creative), params: { visit_token: visit_token }, as: :json
+    patch remember_last_visited_creative_path(creative),
+      params: { visit_token: visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "2" },
+      as: :json
 
     assert_response :no_content
     assert_equal creative, user.reload.last_visited_creative
@@ -71,23 +74,45 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     newer_creative = creatives(:root_parent)
     restored_creative = creatives(:unconvert_target)
 
-    travel_to 2.minutes.ago.change(usec: 0) do
-      get creatives_path(id: restored_creative.id)
-      @restored_visit_token = last_visited_creative_token
-    end
+    get creatives_path(id: restored_creative.id)
+    restored_visit_token = last_visited_creative_token
 
-    newer_visit_at = 1.minute.ago.change(usec: 0)
-    travel_to newer_visit_at do
-      get creatives_path(id: newer_creative.id)
-    end
+    get creatives_path(id: newer_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => restored_visit_token,
+      "X-Collavre-Last-Visited-Creative-Sequence" => "2"
+    }
 
-    travel_to Time.current.change(usec: 0) do
-      patch remember_last_visited_creative_path(restored_creative), params: { visit_token: @restored_visit_token }, as: :json
-    end
+    patch remember_last_visited_creative_path(restored_creative),
+      params: { visit_token: restored_visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "1" },
+      as: :json
 
     assert_response :no_content
     assert_equal newer_creative, user.reload.last_visited_creative
-    assert_equal newer_visit_at, user.last_visited_creative_at
+    assert_equal 2, user.last_visited_creative_visit_sequence
+  end
+
+  test "a browser history restore supersedes the Creative visited before it" do
+    user = users(:one)
+    restored_creative = creatives(:root_parent)
+    newer_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: restored_creative.id)
+    restored_visit_token = last_visited_creative_token
+
+    get creatives_path(id: newer_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => restored_visit_token,
+      "X-Collavre-Last-Visited-Creative-Sequence" => "2"
+    }
+
+    patch remember_last_visited_creative_path(restored_creative),
+      params: { visit_token: restored_visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "3" },
+      as: :json
+
+    assert_response :no_content
+    assert_equal restored_creative, user.reload.last_visited_creative
+    assert_equal 3, user.last_visited_creative_visit_sequence
   end
 
   test "rejects unsigned restored visit tokens" do
@@ -109,7 +134,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     get creatives_path(id: token_creative.id)
     visit_token = last_visited_creative_token
 
-    patch remember_last_visited_creative_path(visited_creative), params: { visit_token: visit_token }, as: :json
+    patch remember_last_visited_creative_path(visited_creative),
+      params: { visit_token: visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => "2" },
+      as: :json
 
     assert_response :unprocessable_entity
     assert_equal token_creative, users(:one).reload.last_visited_creative
@@ -154,8 +182,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select ".creative-workspace-shell"
     assert_select "#creative-workspace-tree"
     assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-token-value]"
+    assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-sequence-value]"
     assert_select "[data-controller='last-visited-creative']", count: 0
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
+    assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-last-visited-creative-visit-token][data-last-visited-creative-visit-sequence]"
     assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"
     assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
     assert_select ".creative-workspace-shell #{creative_tree_stream_selector}", count: 1

@@ -1,5 +1,9 @@
 import { Controller } from '@hotwired/stimulus'
-import { cancelPendingLastVisitedCreative, rememberLastVisitedCreative } from '../lib/last_visited_creative'
+import {
+  cancelPendingLastVisitedCreative,
+  prepareLastVisitedCreativeNavigation,
+  rememberLastVisitedCreative,
+} from '../lib/last_visited_creative'
 // Keep the workspace tree's branch affordance visually aligned with the
 // central creative tree (components/creative_tree_row.js#_toggleIcon).
 import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
@@ -19,6 +23,7 @@ export default class extends Controller {
     url: String,
     lastVisitedCreativeUrl: String,
     lastVisitedCreativeVisitToken: String,
+    lastVisitedCreativeVisitSequence: Number,
     currentPath: Array,
     loadingText: String,
     emptyText: String,
@@ -34,6 +39,7 @@ export default class extends Controller {
     this.invalidationGeneration = 0
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleFrameRequest = this.handleFrameRequest.bind(this)
+    this.handleFetchRequest = this.handleFetchRequest.bind(this)
     this.handleTurboRender = this.handleTurboRender.bind(this)
     this.handleVisitStart = this.handleVisitStart.bind(this)
     this.handlePopState = this.handlePopState.bind(this)
@@ -46,6 +52,7 @@ export default class extends Controller {
     this.element.addEventListener('touchend', this.handlePanelTouchEnd, { passive: true })
     document.addEventListener('turbo:visit', this.handleVisitStart)
     document.addEventListener('turbo:before-fetch-request', this.handleFrameRequest)
+    document.addEventListener('turbo:before-fetch-request', this.handleFetchRequest)
     document.addEventListener('turbo:frame-load', this.handleFrameLoad)
     document.addEventListener('turbo:frame-render', this.handleFrameLoad)
     document.addEventListener('turbo:render', this.handleTurboRender)
@@ -80,6 +87,7 @@ export default class extends Controller {
     this.element.removeEventListener('touchend', this.handlePanelTouchEnd)
     document.removeEventListener('turbo:visit', this.handleVisitStart)
     document.removeEventListener('turbo:before-fetch-request', this.handleFrameRequest)
+    document.removeEventListener('turbo:before-fetch-request', this.handleFetchRequest)
     document.removeEventListener('turbo:frame-load', this.handleFrameLoad)
     document.removeEventListener('turbo:frame-render', this.handleFrameLoad)
     document.removeEventListener('turbo:render', this.handleTurboRender)
@@ -294,6 +302,14 @@ export default class extends Controller {
     this.frameRequestGeneration = this.invalidationGeneration
   }
 
+  handleFetchRequest(event) {
+    prepareLastVisitedCreativeNavigation(
+      event,
+      this.lastVisitedCreativeVisitTokenValue,
+      this.lastVisitedCreativeVisitSequenceValue
+    )
+  }
+
   handleVisitStart(event) {
     cancelPendingLastVisitedCreative()
     lastVisitAction = event.detail?.action
@@ -378,6 +394,7 @@ export default class extends Controller {
     if (!state) return
 
     const stateCreativeId = state.dataset.creativeId
+    this.updateLastVisitedCreativeNavigation(state)
     const locationCreativeId = this.creativeIdFromLocation()
     if (!stateCreativeId && (authoritative || !locationCreativeId)) {
       this.currentPathValue = []
@@ -420,7 +437,21 @@ export default class extends Controller {
   rememberLastVisitedCreative(creativeId) {
     if (!creativeId || !this.hasLastVisitedCreativeUrlValue || !this.hasLastVisitedCreativeVisitTokenValue) return
 
-    rememberLastVisitedCreative(this.lastVisitedCreativeUrlValue, creativeId, this.lastVisitedCreativeVisitTokenValue)
+    rememberLastVisitedCreative(
+      this.lastVisitedCreativeUrlValue,
+      creativeId,
+      this.lastVisitedCreativeVisitTokenValue,
+      this.lastVisitedCreativeVisitSequenceValue
+    )
+  }
+
+  updateLastVisitedCreativeNavigation(state) {
+    const token = state.dataset.lastVisitedCreativeVisitToken
+    const sequence = Number(state.dataset.lastVisitedCreativeVisitSequence)
+    if (!token || !Number.isFinite(sequence)) return
+
+    this.lastVisitedCreativeVisitTokenValue = token
+    this.lastVisitedCreativeVisitSequenceValue = sequence
   }
 
   setActiveId(id) {

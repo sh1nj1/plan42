@@ -13,6 +13,7 @@ describe('WorkspaceTreeController', () => {
   let preventNavigation
 
   beforeEach(async () => {
+    window.localStorage.clear()
     fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -46,6 +47,7 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
                data-workspace-tree-last-visited-creative-url-value="/creatives"
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
+               data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
@@ -58,7 +60,9 @@ describe('WorkspaceTreeController', () => {
              data-creative-id="2"
              data-creative-snippet="Branch chat"
              data-can-comment="false"
-             data-creative-path="[1,2,3]"></div>
+             data-creative-path="[1,2,3]"
+             data-last-visited-creative-visit-token="server-token"
+             data-last-visited-creative-visit-sequence="1"></div>
       </turbo-frame>
     `
 
@@ -75,6 +79,7 @@ describe('WorkspaceTreeController', () => {
     application.stop()
     document.removeEventListener('click', preventNavigation)
     document.body.innerHTML = ''
+    window.localStorage.clear()
     delete global.fetch
   })
 
@@ -104,6 +109,7 @@ describe('WorkspaceTreeController', () => {
     expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
     expect(options.headers.get('Accept')).toBe('application/json')
     expect(options.headers.get('X-CSRF-Token')).toBe('token')
+    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
   })
 
   test('records a cached history restore after Turbo reconnects the workspace controller', async () => {
@@ -114,6 +120,7 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
                data-workspace-tree-last-visited-creative-url-value="/creatives"
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
+               data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
@@ -126,7 +133,9 @@ describe('WorkspaceTreeController', () => {
              data-creative-id="2"
              data-creative-snippet="Branch chat"
              data-can-comment="false"
-             data-creative-path="[1,2,3]"></div>
+             data-creative-path="[1,2,3]"
+             data-last-visited-creative-visit-token="server-token"
+             data-last-visited-creative-visit-sequence="1"></div>
       </turbo-frame>
     `
     document.dispatchEvent(new Event('turbo:render'))
@@ -189,6 +198,30 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  test('uses the frame response token after workspace navigation', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    frame.innerHTML = `
+      <div data-workspace-navigation-state
+           data-creative-id="1"
+           data-creative-snippet="Root chat"
+           data-can-comment="true"
+           data-creative-path="[1]"
+           data-last-visited-creative-visit-token="new-server-token"
+           data-last-visited-creative-visit-sequence="2"></div>
+    `
+    frame.dispatchEvent(new Event('turbo:frame-load', { bubbles: true }))
+    window.history.replaceState({}, '', '/creatives?id=1')
+
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/1/remember_last_visited?visit_token=new-server-token')
+    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('3')
   })
 
   test('lazily reloads toggled branches and restores focus and scroll', async () => {

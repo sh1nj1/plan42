@@ -7,7 +7,9 @@
                 creative_id: @parent_creative&.id,
                 creative_path: @workspace_path_ids,
                 creative_snippet: @parent_creative&.creative_snippet,
-                can_comment: @parent_creative&.has_permission?(Current.user, :feedback)
+                can_comment: @parent_creative&.has_permission?(Current.user, :feedback),
+                last_visited_creative_visit_token: @last_visited_creative_token,
+                last_visited_creative_visit_sequence: @last_visited_creative_visit_sequence
               } %>
 <% end %>
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
@@ -27,7 +29,8 @@
           controller: "last-visited-creative",
           last_visited_creative_url_value: creatives_path,
           last_visited_creative_creative_id_value: @parent_creative.id,
-          last_visited_creative_visit_token_value: @last_visited_creative_token
+          last_visited_creative_visit_token_value: @last_visited_creative_token,
+          last_visited_creative_visit_sequence_value: @last_visited_creative_visit_sequence
         }
       ) %>
 <% end %>

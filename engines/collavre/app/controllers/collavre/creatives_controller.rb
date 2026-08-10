@@ -30,9 +30,16 @@ module Collavre
           if params[:id].present?
             creative = Creative.find_by(id: params[:id])
             @parent_creative = creative if creative&.has_permission?(Current.user, :read)
-            unless turbo_prefetch_request?
-              @last_visited_creative_at = last_visited_creative_at
-              remember_last_visited_creative(@parent_creative, visited_at: @last_visited_creative_at)
+            if Current.user
+              @last_visited_creative_client_id = last_visited_creative_client_id
+              @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
+              unless turbo_prefetch_request?
+                remember_last_visited_creative(
+                  @parent_creative,
+                  client_id: @last_visited_creative_client_id,
+                  sequence: @last_visited_creative_visit_sequence
+                )
+              end
               @last_visited_creative_token = last_visited_creative_token
             end
           end
@@ -557,10 +564,10 @@ module Collavre
     def remember_last_visited
       return head :forbidden unless @creative.has_permission?(Current.user, :read)
 
-      visited_at = restored_visit_at
-      return head :unprocessable_entity unless visited_at
+      visit = restored_visit
+      return head :unprocessable_entity unless visit
 
-      remember_last_visited_creative(@creative, visited_at: visited_at)
+      remember_last_visited_creative(@creative, **visit)
       head :no_content
     end
 
@@ -577,41 +584,63 @@ module Collavre
     end
 
     private
-      def remember_last_visited_creative(creative, visited_at: Time.current)
+      def remember_last_visited_creative(creative, client_id:, sequence:)
         return unless Current.user && creative
 
         Current.user.with_lock do
-          return if Current.user.last_visited_creative_at && Current.user.last_visited_creative_at >= visited_at
+          same_client = Current.user.last_visited_creative_client_id == client_id
+          return if same_client && Current.user.last_visited_creative_visit_sequence.to_i >= sequence
 
           Current.user.update_columns(
             last_visited_creative_id: creative.id,
-            last_visited_creative_at: visited_at
+            last_visited_creative_at: Time.current,
+            last_visited_creative_client_id: client_id,
+            last_visited_creative_visit_sequence: sequence
           )
         end
       end
 
-      def last_visited_creative_at
-        # This server-issued timestamp is signed into the rendered page. A
-        # cached restore later submits the original value, preserving the
-        # navigation order even if its PATCH arrives after a newer visit.
-        Time.current
+      def last_visited_creative_client_id
+        session[:last_visited_creative_client_id] ||= SecureRandom.uuid
+      end
+
+      def last_visited_creative_visit_sequence
+        supplied_sequence = request.headers["X-Collavre-Last-Visited-Creative-Sequence"].to_i
+        return supplied_sequence if supplied_sequence.positive? && visit_token_client_id == last_visited_creative_client_id
+
+        if Current.user.last_visited_creative_client_id == last_visited_creative_client_id
+          Current.user.last_visited_creative_visit_sequence.to_i + 1
+        else
+          1
+        end
       end
 
       def last_visited_creative_token
-        return unless @parent_creative && @last_visited_creative_at
+        return unless @parent_creative && @last_visited_creative_client_id && @last_visited_creative_visit_sequence
 
         Rails.application.message_verifier(:last_visited_creative).generate({
           "creative_id" => @parent_creative.id,
-          "visited_at" => @last_visited_creative_at.iso8601(6)
+          "client_id" => @last_visited_creative_client_id,
+          "sequence" => @last_visited_creative_visit_sequence
         })
       end
 
-      def restored_visit_at
+      def restored_visit
         visit = Rails.application.message_verifier(:last_visited_creative).verified(params[:visit_token])
-        return unless visit.is_a?(Hash) && visit["creative_id"] == @creative.id
+        sequence = request.headers["X-Collavre-Last-Visited-Creative-Sequence"].to_i
+        return unless visit.is_a?(Hash) && visit["creative_id"] == @creative.id &&
+          visit["client_id"] == last_visited_creative_client_id && sequence.positive?
 
-        Time.iso8601(visit.fetch("visited_at"))
+        { client_id: visit.fetch("client_id"), sequence: sequence }
       rescue ActiveSupport::MessageVerifier::InvalidSignature, KeyError, ArgumentError
+        nil
+      end
+
+      def visit_token_client_id
+        token = request.headers["X-Collavre-Last-Visited-Creative-Token"]
+        visit = Rails.application.message_verifier(:last_visited_creative).verified(token)
+        visit["client_id"] if visit.is_a?(Hash)
+      rescue ActiveSupport::MessageVerifier::InvalidSignature
         nil
       end
 
