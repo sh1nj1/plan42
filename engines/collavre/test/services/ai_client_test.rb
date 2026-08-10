@@ -532,8 +532,8 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal "completion-secret", context_config.openai_api_key
     assert_equal "https://proxy.example.com/v1", context_config.openai_api_base
     assert_equal Collavre::CliProxy::SafeNetHttpAdapter, context_config.faraday_adapter
-    assert_equal "agent-#{agent.id}--user-#{workspace_user.id}",
-                 fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
+    assert_equal "user-#{workspace_user.id}", fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
+    assert_equal "agent-#{agent.id}", fake_chat.headers_set.fetch("X-CLI-Proxy-Workspace-ID")
     assert fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature").present?
     assert_equal "creative_42_topic_7", fake_chat.headers_set.fetch("X-Session-Id")
 
@@ -639,9 +639,8 @@ class AiClientTest < ActiveSupport::TestCase
       client.send(:build_conversation)
     end
 
-    assert_equal "agent-#{agent.id}--user-#{owner.id}",
-                 fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
-    refute_includes fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID"), "user-#{upstream_agent.id}"
+    assert_equal "user-#{owner.id}", fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
+    assert_not_equal "user-#{upstream_agent.id}", fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
   end
 
   test "build_conversation rejects an explicitly unverified per-user workspace principal" do

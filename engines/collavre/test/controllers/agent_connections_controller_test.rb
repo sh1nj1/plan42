@@ -32,8 +32,10 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     workspace = Collavre::AgentWorkspace.find_by!(agent: @agent, user: @other)
-    assert_includes response.body, workspace.proxy_user_id
-    assert_equal "agent-#{@agent.id}--user-#{@other.id}", workspace.proxy_user_id
+    assert_includes response.body, workspace.proxy_credential_id
+    assert_includes response.body, workspace.proxy_workspace_id
+    assert_equal "user-#{@other.id}", workspace.proxy_credential_id
+    assert_equal "agent-#{@agent.id}", workspace.proxy_workspace_id
   end
 
   test "shared mode only lets the agent owner manage login" do

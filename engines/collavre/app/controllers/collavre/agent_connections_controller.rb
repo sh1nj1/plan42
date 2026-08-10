@@ -18,7 +18,11 @@ module Collavre
       render json: {
         engines: engine_rows,
         provision: client.provision_status,
-        workspace: { user_id: @workspace.proxy_user_id, mode: @agent.agent_gateway.workspace_mode }
+        workspace: {
+          credential_id: @workspace.proxy_credential_id,
+          workspace_id: @workspace.proxy_workspace_id,
+          mode: @agent.agent_gateway.workspace_mode
+        }
       }
     rescue Collavre::CliProxy::Client::Error => e
       render_proxy_error(e)
