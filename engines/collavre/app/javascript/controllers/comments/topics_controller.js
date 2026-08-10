@@ -56,6 +56,9 @@ export default class extends Controller {
         // transient — loadTopics() cannot rebuild them.
         if (String(previousCreativeId || '') !== String(creativeId || '')) {
             this.archivedWithNewMessages.clear()
+            // Scoped to the creative it was archived in; a topic id from another
+            // creative must not veto this one's restored selection.
+            this.archivedAwayTopicId = null
         }
         this.subscribe()
         return this.loadTopics()
@@ -68,6 +71,7 @@ export default class extends Controller {
         this.topics = []
         this.mainTopicId = null
         this.archivedWithNewMessages.clear()
+        this.archivedAwayTopicId = null
         delete this.element.dataset.effectiveCreativeId
     }
 
@@ -150,6 +154,13 @@ export default class extends Controller {
                 this.archivedTopics = data.archived_topics || []
                 this.pruneArchivedBadges()
                 this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                // The archive guard only has to outlive the stale preference.
+                // Once the server stops naming that topic the transition is
+                // over, so a later reselection (another tab, a deep link) is
+                // honoured normally.
+                if (this.archivedAwayTopicId && this.serverLastTopicId !== this.archivedAwayTopicId) {
+                    this.archivedAwayTopicId = null
+                }
                 this.isInbox = !!data.is_inbox
                 this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null
                 this.mainTopicId = data.main_topic_id ? String(data.main_topic_id) : null
@@ -174,7 +185,10 @@ export default class extends Controller {
 
     restoreSelection() {
         const lastTopicId = this.currentTopicId
-        if (lastTopicId) {
+        // archiveTopic() switched away from this topic on purpose. The server
+        // preference still names it until the debounced save lands, so accept
+        // the local intent over the stale server answer for that window.
+        if (lastTopicId && String(lastTopicId) !== this.archivedAwayTopicId) {
             // Validate against the topic data, not the rendered DOM. An archived
             // topic is still readable and writable — archiving hides it from the
             // strip, it does not close the conversation. A DOM lookup would bounce
@@ -530,6 +544,19 @@ export default class extends Controller {
 
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
+                    // Archiving the topic in view switches to All Messages, but
+                    // the preference save is debounced 500ms and both this
+                    // reload and the "archived" broadcast's own reload can beat
+                    // it. restoreSelection() accepts archived ids now, so the
+                    // stale last_topic_id would drop the user straight back into
+                    // the topic they just archived out of. Flag it instead of
+                    // flushing the save: the broadcast reload cannot be ordered
+                    // behind the flush, only ignored.
+                    this.archivedAwayTopicId = String(topicId)
+                    // A deep link pins currentTopicId through overrideTopicId,
+                    // which outranks serverLastTopicId in the getter — leaving it
+                    // set would keep reporting the archived topic as current.
+                    this.clearOverrideTopicId()
                     this.currentTopicId = ""
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
@@ -687,6 +714,12 @@ export default class extends Controller {
     }
 
     selectTopic(id) {
+        // Only restoreSelection() is guarded, so reaching selectTopic with this
+        // id means the user deliberately went back into the archived topic.
+        // The transition is over.
+        if (this.archivedAwayTopicId && String(id) === this.archivedAwayTopicId) {
+            this.archivedAwayTopicId = null
+        }
         this.revealArchivedTopic(id)
         this.updateSelectionUI(id)
         if (id) {

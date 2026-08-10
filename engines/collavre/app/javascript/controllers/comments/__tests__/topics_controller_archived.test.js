@@ -381,4 +381,125 @@ describe('TopicsController archived topic messages', () => {
         .not.toContain('has-new-messages')
     })
   })
+
+  // Archiving the topic in view switches to All Messages, but the preference
+  // save is debounced 500ms — so the topics reload it triggers (and the one the
+  // "archived" broadcast triggers) still reads the archived topic as
+  // last_topic_id. restoreSelection accepts archived ids now, so nothing else
+  // stops it from putting the user back where they just left.
+  describe('archiving the topic in view', () => {
+    // Route by URL: the archive PATCH and the topics reload both go through
+    // the same global fetch. lastTopicId is what the server preference still
+    // reports at reload time.
+    const stubFetch = (lastTopicId) => {
+      global.fetch = jest.fn((url) => {
+        if (String(url).includes('/archive')) return Promise.resolve({ ok: true })
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            topics: [{ id: 1, name: 'Main' }],
+            archived_topics: [{ id: 2, name: 'Alpha' }, ...ARCHIVED],
+            can_manage: true,
+            main_topic_id: 1,
+            last_topic_id: lastTopicId,
+          }),
+        })
+      })
+    }
+
+    // archiveTopic fires loadTopics without awaiting it.
+    const archive = async (topicId) => {
+      await controller.archiveTopic({
+        stopPropagation: jest.fn(),
+        currentTarget: { dataset: { id: topicId } },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    test('does not reselect the topic the reload still reports as last_topic_id', async () => {
+      controller.serverLastTopicId = '2'
+      render()
+      stubFetch(2)
+
+      await archive('2')
+
+      expect(changeEvents.at(-1).topicId).toBe('1')
+      expect(controller.currentTopicId).toBe('1')
+    })
+
+    test('leaves the archived section collapsed instead of revealing the archived topic', async () => {
+      controller.serverLastTopicId = '2'
+      render()
+      stubFetch(2)
+
+      await archive('2')
+
+      expect(controller.showingArchived).toBe(false)
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="2"]')).toBeNull()
+    })
+
+    test('a deep-link override does not keep reporting the archived topic as current', async () => {
+      controller.setOverrideTopicId('2')
+      render()
+      stubFetch(2)
+
+      await archive('2')
+
+      expect(controller.overrideTopicId).toBeUndefined()
+      expect(controller.currentTopicId).toBe('1')
+    })
+
+    test('the user can still go back into the topic they just archived', async () => {
+      controller.serverLastTopicId = '2'
+      render()
+      stubFetch(2)
+      await archive('2')
+
+      controller.selectTopic('2')
+      controller.restoreSelection()
+
+      expect(changeEvents.at(-1).topicId).toBe('2')
+      expect(controller.showingArchived).toBe(true)
+    })
+
+    test('the guard lifts once the server preference stops naming the topic', async () => {
+      controller.serverLastTopicId = '2'
+      render()
+      stubFetch(2)
+      await archive('2')
+
+      stubFetch(null)
+      await controller.loadTopics()
+      // Reselected elsewhere — another tab, or a deep link.
+      stubFetch(2)
+      await controller.loadTopics()
+
+      expect(changeEvents.at(-1).topicId).toBe('2')
+    })
+
+    test('archiving a topic that is not in view leaves the selection alone', async () => {
+      controller.topics = [...TOPICS, { id: 5, name: 'Beta' }]
+      controller.serverLastTopicId = '2'
+      render()
+      global.fetch = jest.fn((url) => {
+        if (String(url).includes('/archive')) return Promise.resolve({ ok: true })
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            topics: TOPICS,
+            archived_topics: [{ id: 5, name: 'Beta' }, ...ARCHIVED],
+            can_manage: true,
+            main_topic_id: 1,
+            last_topic_id: 2,
+          }),
+        })
+      })
+
+      await archive('5')
+
+      expect(changeEvents.at(-1).topicId).toBe('2')
+    })
+  })
 })
