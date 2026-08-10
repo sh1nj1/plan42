@@ -34,7 +34,7 @@ module Collavre
               @last_visited_creative_client_id = last_visited_creative_client_id
               @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
               unless turbo_prefetch_request?
-                remember_last_visited_creative(
+                @last_visited_creative_visit_sequence = remember_last_visited_creative(
                   @parent_creative,
                   client_id: @last_visited_creative_client_id,
                   sequence: @last_visited_creative_visit_sequence
@@ -589,7 +589,8 @@ module Collavre
 
         Current.user.with_lock do
           same_client = Current.user.last_visited_creative_client_id == client_id
-          return if same_client && Current.user.last_visited_creative_visit_sequence.to_i >= sequence
+          sequence ||= same_client ? Current.user.last_visited_creative_visit_sequence.to_i + 1 : 1
+          return sequence if same_client && Current.user.last_visited_creative_visit_sequence.to_i >= sequence
 
           Current.user.update_columns(
             last_visited_creative_id: creative.id,
@@ -597,6 +598,7 @@ module Collavre
             last_visited_creative_client_id: client_id,
             last_visited_creative_visit_sequence: sequence
           )
+          sequence
         end
       end
 
@@ -606,13 +608,7 @@ module Collavre
 
       def last_visited_creative_visit_sequence
         supplied_sequence = request.headers["X-Collavre-Last-Visited-Creative-Sequence"].to_i
-        return supplied_sequence if supplied_sequence.positive? && visit_token_client_id == last_visited_creative_client_id
-
-        if Current.user.last_visited_creative_client_id == last_visited_creative_client_id
-          Current.user.last_visited_creative_visit_sequence.to_i + 1
-        else
-          1
-        end
+        supplied_sequence if supplied_sequence.positive? && visit_token_client_id == last_visited_creative_client_id
       end
 
       def last_visited_creative_token

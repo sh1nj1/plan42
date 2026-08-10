@@ -24,6 +24,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal creative, user.reload.last_visited_creative
+    assert_equal 1, user.last_visited_creative_visit_sequence
+  end
+
+  test "a headerless Creative navigation allocates its sequence while holding the user lock" do
+    user = users(:one)
+    first_creative = creatives(:root_parent)
+    second_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: first_creative.id)
+    get creatives_path(id: second_creative.id)
+
+    assert_response :success
+    assert_equal second_creative, user.reload.last_visited_creative
+    assert_equal 2, user.last_visited_creative_visit_sequence
   end
 
   test "prefetching a readable creative does not remember it as the user's last visited creative" do
