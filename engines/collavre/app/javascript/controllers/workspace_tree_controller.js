@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import csrfFetch, { refreshCsrfToken } from '../lib/api/csrf_fetch'
 // Keep the workspace tree's branch affordance visually aligned with the
 // central creative tree (components/creative_tree_row.js#_toggleIcon).
 import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
@@ -418,15 +419,20 @@ export default class extends Controller {
 
     const url = new URL(this.lastVisitedCreativeUrlValue, window.location.origin)
     url.pathname = `${url.pathname.replace(/\/$/, '')}/${encodeURIComponent(creativeId)}/remember_last_visited`
-    const headers = {
-      Accept: 'application/json',
-      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
-    }
-    fetch(`${url.pathname}${url.search}`, {
+    const request = () => csrfFetch(`${url.pathname}${url.search}`, {
       method: 'PATCH',
-      credentials: 'same-origin',
-      headers,
-    }).catch(() => {})
+      headers: { Accept: 'application/json' },
+    })
+
+    request()
+      .then(async (response) => {
+        if (response.ok) return
+        if (response.status !== 422) return
+
+        await refreshCsrfToken()
+        await request()
+      })
+      .catch(() => {})
   }
 
   setActiveId(id) {

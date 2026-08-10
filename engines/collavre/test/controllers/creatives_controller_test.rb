@@ -22,6 +22,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal creative, user.reload.last_visited_creative
   end
 
+  test "prefetching a readable creative does not remember it as the user's last visited creative" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+    user.update!(last_visited_creative_id: nil)
+
+    get creatives_path(id: creative.id), headers: {
+      "Turbo-Frame" => "creative-workspace-content",
+      "X-Sec-Purpose" => "prefetch"
+    }
+
+    assert_response :success
+    assert_nil user.reload.last_visited_creative
+  end
+
   test "opening an inaccessible creative does not replace the last visited creative" do
     user = users(:one)
     remembered_creative = creatives(:root_parent)

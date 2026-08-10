@@ -97,11 +97,11 @@ describe('WorkspaceTreeController', () => {
 
     await new Promise((resolve) => requestAnimationFrame(resolve))
 
-    expect(fetchMock).toHaveBeenLastCalledWith('/creatives/2/remember_last_visited', {
-      method: 'PATCH',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'X-CSRF-Token': 'token' },
-    })
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/2/remember_last_visited')
+    expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
+    expect(options.headers.get('Accept')).toBe('application/json')
+    expect(options.headers.get('X-CSRF-Token')).toBe('token')
   })
 
   test('records a cached history restore after Turbo reconnects the workspace controller', async () => {
@@ -136,11 +136,34 @@ describe('WorkspaceTreeController', () => {
       'workspace-tree'
     )
 
-    expect(fetchMock).toHaveBeenLastCalledWith('/creatives/2/remember_last_visited', {
-      method: 'PATCH',
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/2/remember_last_visited')
+    expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
+    expect(options.headers.get('Accept')).toBe('application/json')
+    expect(options.headers.get('X-CSRF-Token')).toBe('token')
+  })
+
+  test('retries a cached history restore after refreshing a stale CSRF token', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="stale-token">'
+    fetchMock.mockReset()
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
+      .mockResolvedValueOnce({ headers: { get: () => 'fresh-token' } })
+      .mockResolvedValueOnce({ ok: true, status: 204, headers: { get: () => null } })
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/2/remember_last_visited', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost/creatives?id=2', {
+      method: 'HEAD',
       credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'X-CSRF-Token': 'token' },
     })
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/creatives/2/remember_last_visited', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
   })
 
   test('lazily reloads toggled branches and restores focus and scroll', async () => {
