@@ -7,6 +7,7 @@ import path from "node:path";
 import https from "node:https";
 import http from "node:http";
 import os from "node:os";
+import { randomBytes } from "node:crypto";
 import { decodeHtmlEntities } from "./html_entities.js";
 
 const CONFIG_DIR = path.join(
@@ -26,8 +27,26 @@ function loadConfig() {
 }
 
 function saveConfig(config) {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  fs.chmodSync(CONFIG_DIR, 0o700);
+
+  const temporaryFile = path.join(
+    CONFIG_DIR,
+    `.config.json.${process.pid}.${randomBytes(8).toString("hex")}.tmp`
+  );
+  let descriptor;
+  try {
+    descriptor = fs.openSync(temporaryFile, "wx", 0o600);
+    fs.fchmodSync(descriptor, 0o600);
+    fs.writeFileSync(descriptor, JSON.stringify(config, null, 2), "utf8");
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temporaryFile, CONFIG_FILE);
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    if (fs.existsSync(temporaryFile)) fs.unlinkSync(temporaryFile);
+  }
 }
 
 // --- MCP SSE Client ---
