@@ -59,23 +59,46 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal creative, user.reload.last_visited_creative
   end
 
-  test "an older restored visit does not overwrite a newer Creative navigation" do
+  test "an earlier server-timed restored visit does not overwrite a later Creative navigation" do
     user = users(:one)
     newer_creative = creatives(:root_parent)
     restored_creative = creatives(:unconvert_target)
-    newer_visit_at = 1.minute.ago.change(usec: 0)
+    restored_visit_at = 2.minutes.ago.change(usec: 0)
+    newer_visit_at = restored_visit_at + 1.minute
     user.update_columns(
       last_visited_creative_id: newer_creative.id,
       last_visited_creative_at: newer_visit_at
     )
 
-    patch remember_last_visited_creative_path(restored_creative), as: :json, headers: {
-      "X-Collavre-Last-Visited-Creative-At" => ((newer_visit_at - 1.second).to_f * 1000).to_i.to_s
-    }
+    travel_to restored_visit_at do
+      patch remember_last_visited_creative_path(restored_creative), as: :json
+    end
 
     assert_response :no_content
     assert_equal newer_creative, user.reload.last_visited_creative
     assert_equal newer_visit_at, user.last_visited_creative_at
+  end
+
+  test "uses server time instead of an untrusted browser clock" do
+    user = users(:one)
+    previous_creative = creatives(:root_parent)
+    visited_creative = creatives(:unconvert_target)
+    previous_visit_at = 2.minutes.ago.change(usec: 0)
+    server_visit_at = previous_visit_at + 1.minute
+    user.update_columns(
+      last_visited_creative_id: previous_creative.id,
+      last_visited_creative_at: previous_visit_at
+    )
+
+    travel_to server_visit_at do
+      patch remember_last_visited_creative_path(visited_creative), as: :json, headers: {
+        "X-Collavre-Last-Visited-Creative-At" => 1.year.from_now.to_i.to_s
+      }
+    end
+
+    assert_response :no_content
+    assert_equal visited_creative, user.reload.last_visited_creative
+    assert_equal server_visit_at, user.last_visited_creative_at
   end
 
   test "remembering an inaccessible browser history creative preserves the current last visit" do

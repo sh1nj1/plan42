@@ -9,14 +9,6 @@ function prefetch(link) {
   return event
 }
 
-function fetchRequest(url, headers = {}) {
-  const event = new CustomEvent("turbo:before-fetch-request", {
-    detail: { url: new URL(url, window.location.origin), fetchOptions: { headers } },
-  })
-  document.dispatchEvent(event)
-  return headers
-}
-
 afterEach(() => {
   document.body.innerHTML = ""
 })
@@ -41,16 +33,4 @@ test("does not prevent prefetching unrelated or external links", () => {
 
   expect(prefetch(unrelated).defaultPrevented).toBe(false)
   expect(prefetch(external).defaultPrevented).toBe(false)
-})
-
-test("orders same-origin Creative navigation requests", () => {
-  const headers = fetchRequest("/collavre/creatives?id=3")
-
-  expect(headers["X-Collavre-Last-Visited-Creative-At"]).toEqual(expect.any(String))
-})
-
-test("does not add ordering headers to unrelated requests", () => {
-  const headers = fetchRequest("/users/1")
-
-  expect(headers).not.toHaveProperty("X-Collavre-Last-Visited-Creative-At")
 })

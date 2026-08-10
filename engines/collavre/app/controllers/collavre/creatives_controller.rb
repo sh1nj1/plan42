@@ -584,10 +584,11 @@ module Collavre
       end
 
       def last_visited_creative_at
-        milliseconds = request.headers["X-Collavre-Last-Visited-Creative-At"].to_i
-        return Time.current unless milliseconds.positive?
-
-        Time.at(milliseconds / 1000.0)
+        # Capture this before acquiring the user-row lock. A request that
+        # arrived first but waits for a later visit to commit must not overwrite
+        # that later visit when it obtains the lock. Server time avoids relying
+        # on untrusted, device-specific browser clocks for this ordering.
+        Time.current
       end
 
       def turbo_prefetch_request?
