@@ -578,8 +578,6 @@ module Collavre
     # Reserving does not change the remembered Creative, so a cancelled request
     # leaves only a harmless gap in the sequence.
     def next_last_visited_sequence
-      return head :forbidden unless Current.user
-
       render json: { sequence: issue_last_visited_creative_sequence }
     end
 

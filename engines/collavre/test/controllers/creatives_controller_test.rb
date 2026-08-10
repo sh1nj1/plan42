@@ -84,12 +84,12 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal later_sequence, user.last_visited_creative_visit_sequence
   end
 
-  test "issuing a visit sequence requires an authenticated user" do
+  test "issuing a visit sequence redirects an unauthenticated user to sign in" do
     delete session_path
 
     patch next_last_visited_sequence_creatives_path, as: :json
 
-    assert_response :forbidden
+    assert_redirected_to new_session_path
   end
 
   test "an earlier request from another browser session cannot overwrite a later visit" do
