@@ -90,6 +90,40 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert Collavre::Contact.exists?(user: owner, contact_user: existing)
   end
 
+  test "registration preserves an owner's ordinary gateway with the desktop gateway name" do
+    owner = users(:one)
+    ordinary_gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME,
+      base_url: "https://ordinary.example.test",
+      admin_key: "ordinary-admin-key",
+      completion_key: "ordinary-completion-key",
+      identity_secret: "o" * 48,
+      tenant_id: "ordinary-gateway"
+    )
+    sign_in_as(owner, password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+    token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: token,
+      proxy_port: 34_567,
+      admin_key: "desktop-admin-key",
+      completion_key: "desktop-completion-key",
+      identity_secret: "i" * 48,
+      adapters: []
+    }, as: :json
+
+    assert_response :created
+    desktop_gateway = Collavre::AgentGateway.find_by!(desktop_managed: true)
+    assert_equal "#{Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME} (2)", desktop_gateway.name
+    assert_equal owner, desktop_gateway.owner
+    assert_equal "http://127.0.0.1:34567", desktop_gateway.base_url
+    ordinary_gateway.reload
+    assert_equal "https://ordinary.example.test", ordinary_gateway.base_url
+    assert_not_predicate ordinary_gateway, :desktop_managed?
+  end
+
   test "recovery updates the original desktop gateway when another administrator is signed in" do
     owner = users(:one)
     unrelated_gateway = Collavre::AgentGateway.create!(

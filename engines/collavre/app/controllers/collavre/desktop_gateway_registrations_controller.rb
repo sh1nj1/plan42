@@ -17,7 +17,7 @@ module Collavre
       # user-editable display name and owner during recovery.
       gateway = Collavre::AgentGateway.find_or_initialize_by(desktop_managed: true)
       gateway.owner ||= registration_owner
-      gateway.name ||= DesktopSetupController::DESKTOP_GATEWAY_NAME
+      gateway.name ||= available_desktop_gateway_name(gateway.owner)
       owner = gateway.owner
       gateway.assign_attributes(
         base_url: "http://127.0.0.1:#{proxy_port}",
@@ -78,6 +78,14 @@ module Collavre
         agent.save!
       end
       Collavre::Contact.ensure(user: owner, contact_user: agent)
+    end
+
+    def available_desktop_gateway_name(owner)
+      base_name = DesktopSetupController::DESKTOP_GATEWAY_NAME
+      return base_name unless owner.owned_agent_gateways.exists?(name: base_name)
+
+      suffix = (2..).find { |number| !owner.owned_agent_gateways.exists?(name: "#{base_name} (#{number})") }
+      "#{base_name} (#{suffix})"
     end
 
     def registration_owner!
