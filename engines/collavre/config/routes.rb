@@ -154,6 +154,7 @@ Collavre::Engine.routes.draw do
       get :export_markdown
     end
     member do
+      patch :remember_last_visited
       get :children
       post :request_permission, to: "creatives#request_permission"
       post :unconvert

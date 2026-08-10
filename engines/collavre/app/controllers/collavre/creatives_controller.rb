@@ -19,7 +19,7 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
+    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
 
     def index
@@ -545,6 +545,16 @@ module Collavre
     def unarchive
       @creative.unarchive!
       head :ok
+    end
+
+    # Turbo may restore a cached workspace frame from browser history without
+    # issuing the HTML request that normally records this value. The client
+    # calls this endpoint after confirming the restored frame matches the URL.
+    def remember_last_visited
+      return head :forbidden unless @creative.has_permission?(Current.user, :read)
+
+      remember_last_visited_creative(@creative)
+      head :no_content
     end
 
     def destroy

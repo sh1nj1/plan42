@@ -44,6 +44,7 @@ describe('WorkspaceTreeController', () => {
     document.body.innerHTML = `
       <section data-controller="workspace-tree"
                data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
+               data-workspace-tree-last-visited-creative-url-value="/creatives"
                data-workspace-tree-current-path-value="[1,2,3]"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
@@ -87,6 +88,20 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboAction).toBe('advance')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
+  })
+
+  test('records the visible creative after a cached Turbo history restore', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(fetchMock).toHaveBeenLastCalledWith('/creatives/2/remember_last_visited', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'X-CSRF-Token': 'token' },
+    })
   })
 
   test('lazily reloads toggled branches and restores focus and scroll', async () => {

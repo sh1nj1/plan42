@@ -34,6 +34,29 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal remembered_creative, user.reload.last_visited_creative
   end
 
+  test "remembering a creative restored from browser history updates the last visited creative" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+    user.update!(last_visited_creative_id: nil)
+
+    patch remember_last_visited_creative_path(creative), as: :json
+
+    assert_response :no_content
+    assert_equal creative, user.reload.last_visited_creative
+  end
+
+  test "remembering an inaccessible browser history creative preserves the current last visit" do
+    user = users(:one)
+    remembered_creative = creatives(:root_parent)
+    inaccessible_creative = Creative.create!(user: users(:two), description: "Private workspace creative")
+    user.update!(last_visited_creative: remembered_creative)
+
+    patch remember_last_visited_creative_path(inaccessible_creative), as: :json
+
+    assert_response :forbidden
+    assert_equal remembered_creative, user.reload.last_visited_creative
+  end
+
   test "creative workspace is disabled by default" do
     users(:one).update!(creative_workspace_enabled: false)
     creative = creatives(:root_parent)

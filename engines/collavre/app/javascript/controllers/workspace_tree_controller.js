@@ -16,6 +16,7 @@ export default class extends Controller {
 
   static values = {
     url: String,
+    lastVisitedCreativeUrl: String,
     currentPath: Array,
     loadingText: String,
     emptyText: String,
@@ -308,8 +309,9 @@ export default class extends Controller {
     requestAnimationFrame(() => {
       // The restore check must run even from an instance the render just
       // disconnected — it only reads the current document and URL.
-      if (lastVisitAction === 'restore') this.ensureFrameMatchesLocation()
-      if (this.element.isConnected) this.syncFromWorkspaceFrame()
+      const restoringHistory = lastVisitAction === 'restore'
+      if (restoringHistory) this.ensureFrameMatchesLocation()
+      if (this.element.isConnected) this.syncFromWorkspaceFrame(undefined, { rememberLastVisited: restoringHistory })
     })
   }
 
@@ -357,7 +359,7 @@ export default class extends Controller {
 
   syncFromWorkspaceFrame(
     frame = document.getElementById('creative-workspace-content'),
-    { authoritative = false, syncChat = true } = {}
+    { authoritative = false, syncChat = true, rememberLastVisited = false } = {}
   ) {
     if (!frame) return
 
@@ -400,6 +402,24 @@ export default class extends Controller {
         highlightId: authoritative ? this.commentIdFromLocation() : undefined,
       })
     }
+
+    if (rememberLastVisited) this.rememberLastVisitedCreative(stateCreativeId)
+  }
+
+  rememberLastVisitedCreative(creativeId) {
+    if (!creativeId || !this.hasLastVisitedCreativeUrlValue) return
+
+    const url = new URL(this.lastVisitedCreativeUrlValue, window.location.origin)
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/${encodeURIComponent(creativeId)}/remember_last_visited`
+    const headers = {
+      Accept: 'application/json',
+      'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+    }
+    fetch(`${url.pathname}${url.search}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers,
+    }).catch(() => {})
   }
 
   setActiveId(id) {
