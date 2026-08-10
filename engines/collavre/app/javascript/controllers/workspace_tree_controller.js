@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
 
 // Module-scoped: a history restore replaces the whole body, swapping this
 // controller's instance mid-visit. The instance that observes turbo:visit is
@@ -6,13 +7,6 @@ import { Controller } from '@hotwired/stimulus'
 // visit action must outlive any single instance.
 let lastVisitAction = null
 const MAX_EXPANDED_BRANCHES = 100
-
-// Keep the workspace tree's branch affordance visually aligned with the
-// central creative tree (components/creative_tree_row.js#_toggleIcon).
-const CHEVRON_COLLAPSED =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6L15 12L9 18"/></svg>'
-const CHEVRON_EXPANDED =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9L12 15L18 9"/></svg>'
 
 export default class extends Controller {
   static targets = ['tree', 'panelToggle']
