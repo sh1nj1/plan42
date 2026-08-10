@@ -7,6 +7,14 @@ import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
 // visit action must outlive any single instance.
 let lastVisitAction = null
 const MAX_EXPANDED_BRANCHES = 100
+const PANEL_SWIPE_CLOSE_DISTANCE = 50
+
+// Keep the workspace tree's branch affordance visually aligned with the
+// central creative tree (components/creative_tree_row.js#_toggleIcon).
+const CHEVRON_COLLAPSED =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6L15 12L9 18"/></svg>'
+const CHEVRON_EXPANDED =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9L12 15L18 9"/></svg>'
 
 export default class extends Controller {
   static targets = ['tree', 'panelToggle']
@@ -31,8 +39,12 @@ export default class extends Controller {
     this.handleTurboRender = this.handleTurboRender.bind(this)
     this.handleVisitStart = this.handleVisitStart.bind(this)
     this.handlePopState = this.handlePopState.bind(this)
+    this.handlePanelTouchStart = this.handlePanelTouchStart.bind(this)
+    this.handlePanelTouchEnd = this.handlePanelTouchEnd.bind(this)
     this.queueRefresh = this.queueRefresh.bind(this)
     window.addEventListener('popstate', this.handlePopState)
+    this.element.addEventListener('touchstart', this.handlePanelTouchStart, { passive: true })
+    this.element.addEventListener('touchend', this.handlePanelTouchEnd, { passive: true })
     document.addEventListener('turbo:visit', this.handleVisitStart)
     document.addEventListener('turbo:before-fetch-request', this.handleFrameRequest)
     document.addEventListener('turbo:frame-load', this.handleFrameLoad)
@@ -60,6 +72,8 @@ export default class extends Controller {
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     if (this.popStateSyncTimer) window.clearTimeout(this.popStateSyncTimer)
     window.removeEventListener('popstate', this.handlePopState)
+    this.element.removeEventListener('touchstart', this.handlePanelTouchStart)
+    this.element.removeEventListener('touchend', this.handlePanelTouchEnd)
     document.removeEventListener('turbo:visit', this.handleVisitStart)
     document.removeEventListener('turbo:before-fetch-request', this.handleFrameRequest)
     document.removeEventListener('turbo:frame-load', this.handleFrameLoad)
@@ -217,6 +231,31 @@ export default class extends Controller {
   closePanel() {
     this.element.classList.remove('is-open')
     this.panelToggleTarget.setAttribute('aria-expanded', 'false')
+  }
+
+  handlePanelTouchStart(event) {
+    if (!this.element.classList.contains('is-open') || event.touches.length !== 1) {
+      this.panelTouchStart = null
+      return
+    }
+
+    const touch = event.touches[0]
+    this.panelTouchStart = { x: touch.clientX, y: touch.clientY }
+  }
+
+  handlePanelTouchEnd(event) {
+    const touchStart = this.panelTouchStart
+    this.panelTouchStart = null
+    if (!touchStart || event.changedTouches.length !== 1 || !this.isDrawerViewport()) return
+
+    const touch = event.changedTouches[0]
+    const horizontalDistance = Math.abs(touch.clientX - touchStart.x)
+    const verticalDistance = Math.abs(touch.clientY - touchStart.y)
+    if (horizontalDistance >= PANEL_SWIPE_CLOSE_DISTANCE && horizontalDistance > verticalDistance) this.closePanel()
+  }
+
+  isDrawerViewport() {
+    return window.innerWidth < 1280
   }
 
   selectNode(event) {
