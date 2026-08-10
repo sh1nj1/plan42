@@ -168,6 +168,31 @@ describe('WorkspaceTreeController', () => {
     expect(treeRegion.classList.contains('is-open')).toBe(true)
   })
 
+  test('closes an open drawer when the user clicks outside it', () => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 })
+    panelToggle.click()
+
+    document.getElementById('creative-workspace-content').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    expect(treeRegion.classList.contains('is-open')).toBe(false)
+    expect(panelToggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('keeps the tree open after an outside click at three-panel width', () => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    treeRegion.classList.add('is-open')
+    panelToggle.setAttribute('aria-expanded', 'true')
+
+    document.getElementById('creative-workspace-content').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    expect(treeRegion.classList.contains('is-open')).toBe(true)
+    expect(panelToggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
   test('preserves link focus across background tree refreshes', async () => {
     let rootLink = document.querySelector('[data-creative-id="1"] > div > a')
     rootLink.focus()

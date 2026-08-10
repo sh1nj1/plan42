@@ -9,13 +9,6 @@ let lastVisitAction = null
 const MAX_EXPANDED_BRANCHES = 100
 const PANEL_SWIPE_CLOSE_DISTANCE = 50
 
-// Keep the workspace tree's branch affordance visually aligned with the
-// central creative tree (components/creative_tree_row.js#_toggleIcon).
-const CHEVRON_COLLAPSED =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6L15 12L9 18"/></svg>'
-const CHEVRON_EXPANDED =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9L12 15L18 9"/></svg>'
-
 export default class extends Controller {
   static targets = ['tree', 'panelToggle']
 
@@ -41,6 +34,7 @@ export default class extends Controller {
     this.handlePopState = this.handlePopState.bind(this)
     this.handlePanelTouchStart = this.handlePanelTouchStart.bind(this)
     this.handlePanelTouchEnd = this.handlePanelTouchEnd.bind(this)
+    this.handleOutsidePanelClick = this.handleOutsidePanelClick.bind(this)
     this.queueRefresh = this.queueRefresh.bind(this)
     window.addEventListener('popstate', this.handlePopState)
     this.element.addEventListener('touchstart', this.handlePanelTouchStart, { passive: true })
@@ -50,6 +44,7 @@ export default class extends Controller {
     document.addEventListener('turbo:frame-load', this.handleFrameLoad)
     document.addEventListener('turbo:frame-render', this.handleFrameLoad)
     document.addEventListener('turbo:render', this.handleTurboRender)
+    document.addEventListener('click', this.handleOutsidePanelClick)
     document.addEventListener('workspace-tree:invalidate', this.queueRefresh)
     document.addEventListener('creative-destroyed', this.queueRefresh)
     window.addEventListener('collavre:creative-drop-complete', this.queueRefresh)
@@ -79,6 +74,7 @@ export default class extends Controller {
     document.removeEventListener('turbo:frame-load', this.handleFrameLoad)
     document.removeEventListener('turbo:frame-render', this.handleFrameLoad)
     document.removeEventListener('turbo:render', this.handleTurboRender)
+    document.removeEventListener('click', this.handleOutsidePanelClick)
     document.removeEventListener('workspace-tree:invalidate', this.queueRefresh)
     document.removeEventListener('creative-destroyed', this.queueRefresh)
     window.removeEventListener('collavre:creative-drop-complete', this.queueRefresh)
@@ -231,6 +227,11 @@ export default class extends Controller {
   closePanel() {
     this.element.classList.remove('is-open')
     this.panelToggleTarget.setAttribute('aria-expanded', 'false')
+  }
+
+  handleOutsidePanelClick(event) {
+    if (!this.element.classList.contains('is-open') || !this.isDrawerViewport()) return
+    if (!this.element.contains(event.target)) this.closePanel()
   }
 
   handlePanelTouchStart(event) {
