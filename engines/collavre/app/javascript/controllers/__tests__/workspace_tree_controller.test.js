@@ -123,6 +123,51 @@ describe('WorkspaceTreeController', () => {
     expect(panelToggle.closest('section').classList.contains('is-open')).toBe(false)
   })
 
+  test.each([100, 260])('closes an open mobile drawer after a horizontal swipe in either direction (%i)', (endX) => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 430 })
+    panelToggle.click()
+    treeRegion.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true,
+      touches: [{ clientX: 180, clientY: 100 }],
+    }))
+    treeRegion.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true,
+      changedTouches: [{ clientX: endX, clientY: 110 }],
+    }))
+
+    expect(treeRegion.classList.contains('is-open')).toBe(false)
+    expect(panelToggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('keeps the drawer open for vertical swipes and desktop gestures', () => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 430 })
+    panelToggle.click()
+    treeRegion.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true,
+      touches: [{ clientX: 180, clientY: 100 }],
+    }))
+    treeRegion.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true,
+      changedTouches: [{ clientX: 170, clientY: 220 }],
+    }))
+    expect(treeRegion.classList.contains('is-open')).toBe(true)
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    treeRegion.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true,
+      touches: [{ clientX: 180, clientY: 100 }],
+    }))
+    treeRegion.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true,
+      changedTouches: [{ clientX: 100, clientY: 110 }],
+    }))
+    expect(treeRegion.classList.contains('is-open')).toBe(true)
+  })
+
   test('preserves link focus across background tree refreshes', async () => {
     let rootLink = document.querySelector('[data-creative-id="1"] > div > a')
     rootLink.focus()
