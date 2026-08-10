@@ -20,7 +20,7 @@ module Collavre
 
           session_id = SecureRandom.uuid
           root = Creative.create!(user: user, description: t(:root), progress: 0.0)
-          share_available_agent!(root)
+          agent = share_available_agent!(root)
           first = Creative.create!(user: user, parent: root, description: t(:progress_practice), progress: 0.0,
                                    data: { "onboarding" => { "session_id" => session_id } })
           second = Creative.create!(user: user, parent: root, description: t(:editor_practice), progress: 0.0,
@@ -32,6 +32,9 @@ module Collavre
               "current_step" => "tree_node",
               "steps" => {},
               "practice_creative_ids" => [ first.id, second.id ],
+              # The core engine can run without an AI integration. Do not show
+              # an impossible mention step when no usable agent is available.
+              "agent_mention_enabled" => agent.present?,
               "chat_autoopen_pending" => true
             }
           })
@@ -60,6 +63,7 @@ module Collavre
           share.shared_by = user
           share.permission = :feedback
         end
+        agent
       end
 
       def t(key)

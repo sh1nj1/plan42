@@ -26,6 +26,18 @@ module Collavre
         session = Seeder.new(user: user).call
 
         assert_equal "feedback", CreativeShare.find_by!(creative: session.root, user: agent).permission
+        assert_equal true, session.data["agent_mention_enabled"]
+      end
+
+      test "omits the agent mention step when no agent is available" do
+        user = User.create!(name: "Core-only learner", email: "core-only-learner@example.com", password: "password")
+
+        User.stub(:accessible_ai_agents_for, User.none) do
+          session = Seeder.new(user: user).call
+
+          assert_equal false, session.data["agent_mention_enabled"]
+          refute_includes session.scenario.steps.map(&:key), :mention
+        end
       end
 
       test "resolves a practice creative to its scenario root" do

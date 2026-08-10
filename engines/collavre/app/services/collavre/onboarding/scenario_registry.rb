@@ -21,8 +21,11 @@ module Collavre
 
       SCENARIOS = { FIRST_STEPS.key.to_s => FIRST_STEPS }.freeze
 
-      def self.fetch(key)
-        SCENARIOS.fetch(key.to_s)
+      def self.fetch(key, include_agent_mention: true)
+        scenario = SCENARIOS.fetch(key.to_s)
+        return scenario if include_agent_mention
+
+        Scenario.new(scenario.key, scenario.steps.reject { |step| step.key == :mention }.freeze)
       end
 
       def self.all

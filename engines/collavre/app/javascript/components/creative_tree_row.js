@@ -308,7 +308,13 @@ class CreativeTreeRow extends LitElement {
   _renderActionButton() {
     if (this.canWrite) {
       return html`
-        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id=${this.creativeId}>
+        <button
+          type="button"
+          class="creative-action-btn edit-inline-btn"
+          data-creative-id=${this.creativeId}
+          data-guide-anchor="creative.editor"
+          data-guide-anchor-key=${this.creativeId}
+        >
           ${unsafeHTML(this.editIconHtml || "")}
         </button>
       `;

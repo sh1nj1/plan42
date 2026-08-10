@@ -7,6 +7,10 @@ module Collavre
     class ProgressTrackerTest < ActiveSupport::TestCase
       setup do
         @user = User.create!(name: "Learner", email: "tracker@example.com", password: "password")
+        @seeded_agent = User.create!(
+          name: "Onboarding helper", email: "onboarding-helper@example.com", password: "password",
+          llm_vendor: "openai", searchable: true
+        )
         @session = Seeder.new(user: @user).call
         @first, @second = @session.practice_creatives.order(:id)
       end
@@ -70,20 +74,35 @@ module Collavre
 
       test "uses the seeded agent share to complete the mention step" do
         @user = User.create!(name: "Seeded agent learner", email: "seeded-agent-learner@example.com", password: "password")
-        agent = User.create!(
-          name: "Seeded helper", email: "seeded-helper@example.com", password: "password",
-          llm_vendor: "openai", searchable: true
-        )
         @session = Seeder.new(user: @user).call
         @first, @second = @session.practice_creatives.order(:id)
-        share = CreativeShare.find_by!(creative: @session.root, user: agent)
+        share = CreativeShare.find_by!(creative: @session.root)
+        agent = share.user
         Creatives::PermissionCacheBuilder.propagate_share(share)
         advance_to_mention_step
-        comment = Comment.create!(creative: @second, user: @user, content: "@Seeded helper: Please help")
+        comment = Comment.create!(creative: @second, user: @user, content: "@#{agent.name}: Please help")
 
         ProgressTracker.record(user: @user, event: :agent_mentioned, comment: comment)
 
         assert_equal "complete", current_step
+      end
+
+      test "finishes after a public comment when the core deployment has no agent" do
+        user = User.create!(name: "Core-only learner", email: "core-only-tracker@example.com", password: "password")
+        User.stub(:accessible_ai_agents_for, User.none) do
+          session = Seeder.new(user: user).call
+          first, second = session.practice_creatives.order(:id)
+
+          ProgressTracker.record(user: user, event: :ui)
+          first.update!(progress: 1.0)
+          ProgressTracker.record(user: user, event: :progress_changed, creative: first, before_progress: 0)
+          second.update!(description: "Changed")
+          ProgressTracker.record(user: user, event: :description_changed, creative: second, before_description: "Before")
+          comment = Comment.create!(creative: second, user: user, content: "Hello")
+          ProgressTracker.record(user: user, event: :comment_created, comment: comment)
+
+          assert_equal "complete", Session.for_user(user).data["current_step"]
+        end
       end
 
       private

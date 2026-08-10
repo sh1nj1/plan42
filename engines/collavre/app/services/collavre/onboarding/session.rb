@@ -67,7 +67,10 @@ module Collavre
       end
 
       def scenario
-        ScenarioRegistry.fetch(data.fetch("scenario_key"))
+        ScenarioRegistry.fetch(
+          data.fetch("scenario_key"),
+          include_agent_mention: data["agent_mention_enabled"] == true
+        )
       end
 
       def current_step

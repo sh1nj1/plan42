@@ -88,6 +88,14 @@ describe("creative-tree-row parentId convention", () => {
     expect(tree.dataset.parentId).toBe("");
   });
 
+  test("editable rows expose the visible edit control as a keyed guide anchor", async () => {
+    const el = await mountRow({ creativeId: "8", canWrite: true });
+    const button = el.querySelector(".edit-inline-btn");
+
+    expect(button.dataset.guideAnchor).toBe("creative.editor");
+    expect(button.dataset.guideAnchorKey).toBe("8");
+  });
+
   test("addNew sibling derivation reads the correct parent from a page-title child", async () => {
     // Simulate the editor's else-branch derivation: parentId = prev.dataset.parentId
     // for a child row that lives under a page-title parent (id 5).
