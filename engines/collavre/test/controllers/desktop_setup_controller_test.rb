@@ -1,5 +1,6 @@
 require "test_helper"
 require Rails.root.join("engines/collavre/db/migrate/20260810100000_add_desktop_managed_to_agent_gateways")
+require Rails.root.join("engines/collavre/db/migrate/20260810100001_add_desktop_preset_adapter_to_users")
 
 class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
   setup do
@@ -88,6 +89,43 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_predicate existing, :searchable?
     assert_equal [ "web_search" ], existing.tools
     assert Collavre::Contact.exists?(user: owner, contact_user: existing)
+  end
+
+  test "registration does not adopt an ordinary agent with a desktop preset email" do
+    owner = users(:one)
+    ordinary_agent = Collavre::User.create!(
+      name: "Ordinary Claude",
+      email: "collavre-desktop-claude-code@ai.local",
+      password: "secure-password",
+      email_verified_at: Time.current,
+      llm_vendor: "anthropic",
+      llm_model: "claude-sonnet-4-5",
+      created_by_id: owner.id,
+      searchable: true,
+      tools: [ "web_search" ]
+    )
+    sign_in_as(owner, password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+    token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: token,
+      proxy_port: 34_567,
+      admin_key: "admin-key",
+      completion_key: "completion-key",
+      identity_secret: "i" * 48,
+      adapters: [ "claude" ]
+    }, as: :json
+
+    assert_response :created
+    ordinary_agent.reload
+    assert_equal "anthropic", ordinary_agent.llm_vendor
+    assert_equal "claude-sonnet-4-5", ordinary_agent.llm_model
+    assert_predicate ordinary_agent, :searchable?
+    preset = owner.created_ai_users.find_by!(desktop_preset_adapter: "claude")
+    assert_equal "collavre-desktop-claude-code+desktop-#{preset.agent_gateway_id}@ai.local", preset.email
+    assert_equal "cli_proxy", preset.llm_vendor
+    assert_equal "paperclip/claude_local", preset.llm_model
   end
 
   test "registration preserves an owner's ordinary gateway with the desktop gateway name" do
@@ -233,6 +271,36 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     AddDesktopManagedToAgentGateways.new.migrate(:up)
 
     assert_predicate legacy_gateway.reload, :desktop_managed?
+  end
+
+  test "migration marks a renamed legacy desktop gateway and its preset" do
+    users(:one).update!(system_admin: true)
+    legacy_gateway = Collavre::AgentGateway.create!(
+      owner: users(:one),
+      name: "My renamed local proxy",
+      base_url: "http://127.0.0.1:35000",
+      admin_key: "legacy-admin-key",
+      completion_key: "legacy-completion-key",
+      identity_secret: "l" * 48,
+      tenant_id: "collavre-desktop"
+    )
+    preset = Collavre::User.create!(
+      name: "Claude Code",
+      email: "collavre-desktop-claude-code@ai.local",
+      password: "secure-password",
+      email_verified_at: Time.current,
+      llm_vendor: "cli_proxy",
+      llm_model: "custom/model",
+      created_by_id: users(:one).id,
+      agent_gateway: legacy_gateway,
+      tools: []
+    )
+
+    AddDesktopManagedToAgentGateways.new.migrate(:up)
+    AddDesktopPresetAdapterToUsers.new.migrate(:up)
+
+    assert_predicate legacy_gateway.reload, :desktop_managed?
+    assert_equal "claude", preset.reload.desktop_preset_adapter
   end
 
   test "registration rejects a missing native grant" do

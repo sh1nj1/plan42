@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_10_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_100001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -978,6 +978,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_100000) do
     t.datetime "created_at", null: false
     t.integer "created_by_id"
     t.boolean "creative_workspace_enabled", default: true, null: false
+    t.string "desktop_preset_adapter"
     t.json "dismissed_notices"
     t.string "email", null: false
     t.datetime "email_verified_at"
@@ -1018,6 +1019,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_100000) do
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
+    t.index ["desktop_preset_adapter"], name: "index_users_on_desktop_preset_adapter", unique: true, where: "desktop_preset_adapter IS NOT NULL"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["last_visited_creative_id"], name: "index_users_on_last_visited_creative_id"
     t.index ["searchable"], name: "index_users_on_searchable"

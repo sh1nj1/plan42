@@ -18,7 +18,6 @@ class AddDesktopManagedToAgentGateways < ActiveRecord::Migration[8.1]
     legacy_gateway_ids = select_values(<<~SQL.squish)
       SELECT id FROM agent_gateways
       WHERE desktop_managed = FALSE
-      AND name = 'Collavre Desktop CLI Proxy'
       AND tenant_id = 'collavre-desktop'
     SQL
     return unless legacy_gateway_ids.one?
