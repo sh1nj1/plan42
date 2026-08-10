@@ -45,6 +45,12 @@ export default class extends Controller {
         // effective_creative_id. loadTopics() repopulates both.
         delete this.element.dataset.effectiveCreativeId
         this.mainTopicId = null
+        // Switching creatives reuses this instance without an onPopupClosed
+        // (popup_controller._navigateToEntry calls open()/openForCreative()
+        // again), so unread marks from the previous creative would badge the new
+        // creative's archived toggle — and never clear, since those ids are not
+        // among its topics.
+        this.archivedWithNewMessages.clear()
         this.subscribe()
         return this.loadTopics()
     }
@@ -67,6 +73,17 @@ export default class extends Controller {
     get archivedWithNewMessages() {
         if (!this._archivedWithNewMessages) this._archivedWithNewMessages = new Set()
         return this._archivedWithNewMessages
+    }
+
+    // The toggle badge is derived from set size, so an id that is no longer
+    // archived — unarchived, deleted, or left behind by a creative switch —
+    // would keep it lit with no chip to click and clear it.
+    pruneArchivedBadges() {
+        if (this.archivedWithNewMessages.size === 0) return
+        const archivedIds = new Set((this.archivedTopics || []).map(t => String(t.id)))
+        this.archivedWithNewMessages.forEach(id => {
+            if (!archivedIds.has(id)) this.archivedWithNewMessages.delete(id)
+        })
     }
 
     get creativeId() {
@@ -117,6 +134,7 @@ export default class extends Controller {
                 this.canCreateTopic = canCreateTopic
                 this.canSetPrimaryAgent = canSetPrimaryAgent
                 this.archivedTopics = data.archived_topics || []
+                this.pruneArchivedBadges()
                 this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 this.isInbox = !!data.is_inbox
                 this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null

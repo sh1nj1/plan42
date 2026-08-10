@@ -282,4 +282,78 @@ describe('TopicsController archived topic messages', () => {
         .not.toContain('has-new-messages')
     })
   })
+
+  // The toggle badge is derived from the unread set's size, so any id left in it
+  // that no longer belongs to an archived topic lights the toggle with no chip
+  // to click and clear it.
+  describe('stale unread state', () => {
+    const newMessage = (topicId) => controller.handleNewMessage({ detail: { topicId } })
+
+    // popup_controller._navigateToEntry reuses open()/openForCreative() on this
+    // same instance, so no onPopupClosed runs between two creatives.
+    const switchCreative = async (creativeId) => {
+      controller.subscribe = jest.fn()
+      controller.loadTopics = jest.fn().mockResolvedValue(undefined)
+      await controller.onPopupOpened({ creativeId })
+    }
+
+    test('switching creatives drops the previous creative unread marks', async () => {
+      render()
+      newMessage('3')
+      expect(controller.archivedWithNewMessages.size).toBe(1)
+
+      await switchCreative('99')
+
+      expect(controller.archivedWithNewMessages.size).toBe(0)
+    })
+
+    test("the new creative's archived toggle renders unbadged after a switch", async () => {
+      render()
+      newMessage('3')
+
+      await switchCreative('99')
+      controller.topics = [{ id: 10, name: 'Main' }]
+      controller.archivedTopics = [{ id: 11, name: 'Other' }]
+      render()
+
+      expect(controller.listTarget.querySelector('.topic-archived-toggle').classList)
+        .not.toContain('has-new-messages')
+    })
+
+    test('loadTopics drops unread marks for topics that are no longer archived', async () => {
+      render()
+      newMessage('3')
+      newMessage('4')
+
+      // Topic 3 was restored to the live strip; only 4 is still archived.
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          topics: [{ id: 1, name: 'Main' }, { id: 3, name: 'Zeta' }],
+          archived_topics: [{ id: 4, name: 'Omega' }],
+          can_manage: true,
+          main_topic_id: 1,
+        }),
+      })
+
+      await controller.loadTopics()
+
+      expect([...controller.archivedWithNewMessages]).toEqual(['4'])
+      expect(controller.listTarget.querySelector('.topic-archived-toggle').classList)
+        .toContain('has-new-messages')
+    })
+
+    test('the toggle badge clears when the only unread topic is unarchived', () => {
+      render()
+      newMessage('3')
+
+      controller.archivedTopics = [{ id: 4, name: 'Omega' }]
+      controller.pruneArchivedBadges()
+      render()
+
+      expect(controller.listTarget.querySelector('.topic-archived-toggle').classList)
+        .not.toContain('has-new-messages')
+    })
+  })
 })
