@@ -1,6 +1,12 @@
 require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
+  test "lists complete codex custom proxy model identifiers" do
+    assert_includes User::SUPPORTED_LLM_MODELS, "paperclip/codex_custom/anthropic/claude-sonnet-4.5"
+    assert_includes User::SUPPORTED_LLM_MODELS, "paperclip/codex_custom/openai/gpt-5"
+    refute_includes User::SUPPORTED_LLM_MODELS, "paperclip/codex_custom"
+  end
+
   test "requires valid email" do
     user = User.new(email: "bad", password: "password123", password_confirmation: "password123", name: "Bad")
     assert_not user.valid?

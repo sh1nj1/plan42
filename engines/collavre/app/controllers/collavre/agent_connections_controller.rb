@@ -46,7 +46,14 @@ module Collavre
     end
 
     def submit_auth_session
-      render json: proxy_client.submit_auth_session(params[:engine], params[:session_id], params[:auth_secret])
+      base_url = params[:base_url].presence
+      validate_custom_gateway_base_url!(base_url) if base_url
+      render json: proxy_client.submit_auth_session(
+        params[:engine],
+        params[:session_id],
+        params[:auth_secret],
+        base_url: base_url
+      )
     rescue Collavre::CliProxy::Client::Error => e
       render_proxy_error(e)
     end
@@ -135,6 +142,24 @@ module Collavre
     def render_proxy_error(error)
       status = error.status.to_i.between?(400, 599) ? error.status : :bad_gateway
       render json: { error: { message: error.message, code: error.code } }, status: status
+    end
+
+    # A custom provider URL is supplied by an agent user but fetched by the
+    # proxy with its credentials. Check it here as well as at the proxy boundary
+    # so a non-admin user cannot use the login form as an internal-network probe.
+    def validate_custom_gateway_base_url!(base_url)
+      return if Current.user.system_admin?
+
+      policy = Collavre::CliProxy::EndpointPolicy.new
+      return policy.resolve!(base_url) if policy.safe_literal?(base_url)
+
+      raise Collavre::CliProxy::EndpointPolicy::UnsafeEndpoint
+    rescue Collavre::CliProxy::EndpointPolicy::UnsafeEndpoint
+      raise Collavre::CliProxy::Client::Error.new(
+        t("collavre.agent_connections.errors.insecure_base_url"),
+        status: 422,
+        code: "insecure_base_url"
+      )
     end
   end
 end

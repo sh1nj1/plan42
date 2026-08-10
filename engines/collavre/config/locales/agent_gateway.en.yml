@@ -91,8 +91,13 @@ en:
       refresh: Refresh
       login: Log in
       submit: Submit
+      base_url:
+        label: Provider base URL
+        help: Enter an HTTPS Responses API base URL, such as OpenRouter's https://openrouter.ai/api/v1. It must resolve only to a public address.
       open_url: Open verification page
       error: CLI Proxy error
+      errors:
+        insecure_base_url: The provider base URL must use HTTPS and resolve only to a public address.
       provisioning: Provisioning
       provisioning_help: Collavre always provisions one collavre-cli skill and one workspace-specific config containing the callback URL and token. "Sync now" re-registers this workspace's manifest first, so it also repairs provisioning that never ran or failed — no new login needed.
       sync: Sync now

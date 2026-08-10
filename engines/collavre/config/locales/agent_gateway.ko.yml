@@ -91,8 +91,13 @@ ko:
       refresh: 새로고침
       login: 로그인
       submit: 제출
+      base_url:
+        label: Provider base URL
+        help: OpenRouter의 https://openrouter.ai/api/v1 같은 HTTPS Responses API base URL을 입력하세요. 공개 주소로만 해석되어야 합니다.
       open_url: 인증 페이지 열기
       error: CLI Proxy 오류
+      errors:
+        insecure_base_url: Provider base URL은 HTTPS를 사용하고 공개 주소로만 해석되어야 합니다.
       provisioning: 프로비저닝
       provisioning_help: Collavre는 collavre-cli 스킬 하나와 callback URL·token이 든 워크스페이스 설정 하나를 항상 프로비저닝합니다. "지금 동기화"는 이 워크스페이스의 매니페스트를 먼저 다시 등록하므로, 프로비저닝이 안 됐거나 실패한 경우에도 다시 로그인하지 않고 복구합니다.
       sync: 지금 동기화

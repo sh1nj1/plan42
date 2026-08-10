@@ -214,7 +214,9 @@ module Collavre
       "gemini-1.5-flash",
       "gemini-1.5-pro",
       "paperclip/claude_local",
-      "paperclip/codex_local"
+      "paperclip/codex_local",
+      "paperclip/codex_custom/anthropic/claude-sonnet-4.5",
+      "paperclip/codex_custom/openai/gpt-5"
     ].freeze
 
     def ai_user?

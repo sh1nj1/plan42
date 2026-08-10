@@ -12,6 +12,8 @@ export default class extends Controller {
     loading: String,
     login: String,
     submit: String,
+    baseUrlLabel: String,
+    baseUrlHelp: String,
     cancel: String,
     openUrl: String,
     approve: String,
@@ -36,7 +38,9 @@ export default class extends Controller {
     this.hideError()
     try {
       const data = await this.request(this.statusUrlValue)
-      this.renderEngines(data.engines || [])
+      const engines = data.engines || []
+      this.baseUrlFlows = new Map(engines.map((engine) => [engine.engine, engine.base_url_flows || []]))
+      this.renderEngines(engines)
       this.renderProvision(data.provision || {})
     } catch (error) {
       this.showError(error.message)
@@ -59,11 +63,15 @@ export default class extends Controller {
   }
 
   async submit(event) {
-    const input = this.sessionTarget.querySelector("input")
+    const secret = this.sessionTarget.querySelector('[data-role="secret"]')
+    const baseUrl = this.sessionTarget.querySelector('[data-role="base-url"]')
     try {
       const data = await this.request(this.sessionDetailUrl(event.params.engine, event.params.session), {
         method: "POST",
-        body: JSON.stringify({ auth_secret: input?.value || "" })
+        body: JSON.stringify({
+          auth_secret: secret?.value || "",
+          ...(baseUrl ? { base_url: baseUrl.value } : {})
+        })
       })
       this.renderSession(data)
       if (data.status === "authorized") this.refresh()
@@ -125,6 +133,12 @@ export default class extends Controller {
       name.append(strong)
       const state = document.createElement("td")
       state.textContent = this.statusLabel(engine.status?.state || "unknown")
+      if (engine.status?.detail) {
+        const detail = document.createElement("div")
+        detail.className = "text-muted"
+        detail.textContent = engine.status.detail
+        state.append(detail)
+      }
       const action = document.createElement("td")
       const flows = engine.flows?.length ? engine.flows : [engine.flow].filter(Boolean)
       flows.forEach((flow) => {
@@ -233,11 +247,27 @@ export default class extends Controller {
     }
 
     if (session.status === "pending" && session.flow !== "device-code") {
-      const input = document.createElement("input")
-      input.type = session.flow === "api-key" ? "password" : "text"
-      input.className = "stacked-form-control mt-2"
+      if (this.requiresBaseUrl(session.engine, session.flow)) {
+        const baseUrlLabel = document.createElement("label")
+        baseUrlLabel.className = "mt-2"
+        baseUrlLabel.textContent = this.baseUrlLabelValue
+        const baseUrlHelp = document.createElement("p")
+        baseUrlHelp.className = "text-muted"
+        baseUrlHelp.textContent = this.baseUrlHelpValue
+        const baseUrl = document.createElement("input")
+        baseUrl.type = "url"
+        baseUrl.className = "stacked-form-control"
+        baseUrl.placeholder = "https://openrouter.ai/api/v1"
+        baseUrl.dataset.role = "base-url"
+        baseUrl.required = true
+        panel.append(baseUrlLabel, baseUrlHelp, baseUrl)
+      }
+      const secret = document.createElement("input")
+      secret.type = session.flow === "api-key" ? "password" : "text"
+      secret.className = "stacked-form-control mt-2"
+      secret.dataset.role = "secret"
       const submit = this.actionButton(this.submitValue, "agent-connection#submit", session)
-      panel.append(input, submit)
+      panel.append(secret, submit)
     }
     if (session.status === "pending") panel.append(this.actionButton(this.cancelValue, "agent-connection#cancel", session))
     if (session.error?.message) {
@@ -265,6 +295,10 @@ export default class extends Controller {
 
   itemTypeLabel(type) {
     return this.itemTypeLabelsValue[type] || type
+  }
+
+  requiresBaseUrl(engine, flow) {
+    return (this.baseUrlFlows?.get(engine) || []).includes(flow)
   }
 
   async poll(engine, sessionId, expiresAt) {

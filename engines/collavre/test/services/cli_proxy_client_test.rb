@@ -53,6 +53,39 @@ class CliProxyClientTest < ActiveSupport::TestCase
     assert_equal "device-code", JSON.parse(request.fetch(:body)).fetch("flow")
   end
 
+  test "submits an optional custom provider base url with the credential" do
+    gateway = Struct.new(:admin_key) do
+      def proxy_path(path)
+        "https://proxy.example.com#{path}"
+      end
+    end.new("admin-secret")
+    response = FakeResponse.new(code: 200, message: "OK", payload: { "status" => "authorized" }, successful: true)
+    http = FakeHttpClient.new(response)
+
+    Collavre::CliProxy::Client.new(gateway: gateway, http_client: http)
+                              .submit_auth_session("codex_custom", "session-1", "provider-secret", base_url: "https://openrouter.ai/api/v1")
+
+    assert_equal(
+      { "value" => "provider-secret", "base_url" => "https://openrouter.ai/api/v1" },
+      JSON.parse(http.requests.fetch(0).fetch(:body))
+    )
+  end
+
+  test "omits an absent custom provider base url" do
+    gateway = Struct.new(:admin_key) do
+      def proxy_path(path)
+        "https://proxy.example.com#{path}"
+      end
+    end.new("admin-secret")
+    response = FakeResponse.new(code: 200, message: "OK", payload: { "status" => "authorized" }, successful: true)
+    http = FakeHttpClient.new(response)
+
+    Collavre::CliProxy::Client.new(gateway: gateway, http_client: http)
+                              .submit_auth_session("codex", "session-1", "provider-secret")
+
+    assert_equal({ "value" => "provider-secret" }, JSON.parse(http.requests.fetch(0).fetch(:body)))
+  end
+
   test "maps proxy error response to a domain error" do
     gateway = Struct.new(:admin_key) do
       def proxy_path(path)
