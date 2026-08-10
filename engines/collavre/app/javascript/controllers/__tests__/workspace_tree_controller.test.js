@@ -86,6 +86,7 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboFrame).toBe('creative-workspace-content')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboAction).toBe('advance')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
+    expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
   })
 
   test('lazily reloads toggled branches and restores focus and scroll', async () => {
@@ -97,6 +98,7 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="1"] > ul')).toBeNull()
     branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
     expect(branchToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(branchToggle.querySelector('svg path').getAttribute('d')).toBe('M9 6L15 12L9 18')
     expect(document.activeElement).toBe(branchToggle)
     expect(controller.treeTarget.scrollTop).toBe(24)
     let requestUrl = fetchMock.mock.calls[1][0]
@@ -107,6 +109,7 @@ describe('WorkspaceTreeController', () => {
     branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
     expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
     expect(branchToggle.getAttribute('aria-expanded')).toBe('true')
+    expect(branchToggle.querySelector('svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
     expect(document.activeElement).toBe(branchToggle)
     requestUrl = fetchMock.mock.calls[2][0]
     expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['2', '3', '1'])

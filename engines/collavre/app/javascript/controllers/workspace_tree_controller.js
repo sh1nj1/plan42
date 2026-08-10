@@ -7,6 +7,13 @@ import { Controller } from '@hotwired/stimulus'
 let lastVisitAction = null
 const MAX_EXPANDED_BRANCHES = 100
 
+// Keep the workspace tree's branch affordance visually aligned with the
+// central creative tree (components/creative_tree_row.js#_toggleIcon).
+const CHEVRON_COLLAPSED =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6L15 12L9 18"/></svg>'
+const CHEVRON_EXPANDED =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9L12 15L18 9"/></svg>'
+
 export default class extends Controller {
   static targets = ['tree', 'panelToggle']
 
@@ -153,7 +160,7 @@ export default class extends Controller {
       toggle.className = 'creative-workspace-tree-branch-toggle'
       toggle.setAttribute('aria-expanded', String(expanded))
       toggle.setAttribute('aria-label', node.label)
-      toggle.textContent = expanded ? '▾' : '▸'
+      toggle.innerHTML = expanded ? CHEVRON_EXPANDED : CHEVRON_COLLAPSED
       toggle.addEventListener('click', () => this.toggleBranch(item, toggle))
       row.appendChild(toggle)
     } else {
