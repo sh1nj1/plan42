@@ -1709,9 +1709,33 @@ body.chat-fullscreen {
 .topic-archived-toggle:hover {
     opacity: 1;
 }
+/* Archived topics still receive messages. When the section is collapsed there is
+   no chip to badge, so the toggle carries the unread dot instead. */
+.topic-archived-toggle.has-new-messages {
+    position: relative;
+    opacity: 1;
+    border-color: var(--color-active);
+}
+.topic-archived-toggle.has-new-messages::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--color-danger);
+}
 .topic-tag.topic-archived {
     opacity: 0.5;
     font-style: italic;
+    cursor: pointer;
+}
+/* Archived topics are readable and selectable — the dimming marks them as
+   archived, it must not make the one you are reading illegible. */
+.topic-tag.topic-archived:hover,
+.topic-tag.topic-archived.active {
+    opacity: 1;
 }
 
 /* Topic list popup button (pinned right of the scrolling tab bar) */

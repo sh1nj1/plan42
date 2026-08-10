@@ -55,7 +55,18 @@ export default class extends Controller {
         this.creativeIdValue = null
         this.topics = []
         this.mainTopicId = null
+        this.archivedWithNewMessages.clear()
         delete this.element.dataset.effectiveCreativeId
+    }
+
+    // Archived topics still accept messages, but their chips only exist in the
+    // DOM while the archived section is expanded. Remember which ones have
+    // unread traffic so the badge can live on the collapsed toggle and survive
+    // re-renders. Created lazily: a docked controller can receive popup
+    // lifecycle callbacks before connect() has run.
+    get archivedWithNewMessages() {
+        if (!this._archivedWithNewMessages) this._archivedWithNewMessages = new Set()
+        return this._archivedWithNewMessages
     }
 
     get creativeId() {
@@ -132,15 +143,31 @@ export default class extends Controller {
     restoreSelection() {
         const lastTopicId = this.currentTopicId
         if (lastTopicId) {
-            // Validate it exists in list
-            const exists = this.listTarget.querySelector(`[data-id="${lastTopicId}"]`)
-            if (exists) {
+            // Validate against the topic data, not the rendered DOM. An archived
+            // topic is still readable and writable — archiving hides it from the
+            // strip, it does not close the conversation. A DOM lookup would bounce
+            // the user back to Main every time the archived section is collapsed,
+            // because collapsed chips are never rendered. selectTopic expands the
+            // section when the selection lands inside it.
+            const known = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
+            if (known.some(t => String(t.id) === String(lastTopicId))) {
                 this.selectTopic(lastTopicId)
                 return
             }
         }
 
         this.selectTopic(this.mainTopicId || "")
+    }
+
+    // An archived topic can be opened from the topic strip, the topic-list popup,
+    // a deep link, or a restored last-topic. Expand the archived section from this
+    // one choke point so the strip always shows which topic is open.
+    revealArchivedTopic(id) {
+        if (!id || this.showingArchived) return
+        if (!(this.archivedTopics || []).some(t => String(t.id) === String(id))) return
+
+        this.showingArchived = true
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
     }
 
     renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage) {
@@ -192,12 +219,19 @@ export default class extends Controller {
 
         // Archived topics section
         if (this.archivedTopics && this.archivedTopics.length > 0) {
-            html += `<span class="topic-archived-toggle" data-action="click->comments--topics#toggleArchivedTopics">
+            // Badges are re-applied from state on every render because innerHTML
+            // below wipes the classes set by handleNewMessage.
+            const toggleBadge = this.archivedWithNewMessages.size > 0 ? ' has-new-messages' : ''
+            html += `<span class="topic-archived-toggle${toggleBadge}" data-action="click->comments--topics#toggleArchivedTopics">
                       ${ICON_ARCHIVE} ${this.archivedTopics.length}
                      </span>`
             if (this.showingArchived) {
                 this.archivedTopics.forEach(topic => {
-                    html += `<span class="topic-tag topic-archived" data-id="${topic.id}">
+                    const isActive = String(this.currentTopicId) === String(topic.id) ? ' active' : ''
+                    const hasNew = this.archivedWithNewMessages.has(String(topic.id)) ? ' has-new-messages' : ''
+                    html += `<span class="topic-tag topic-archived${isActive}${hasNew}"
+                                   data-action="click->comments--topics#select"
+                                   data-id="${topic.id}">
                               #${topic.name}
                               ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
                              </span>`
@@ -502,8 +536,11 @@ export default class extends Controller {
     toggleArchivedTopics(event) {
         event.stopPropagation()
         this.showingArchived = !this.showingArchived
+        // No restoreSelection() here: toggling cannot invalidate the selection, and
+        // renderTopics already re-applies the active class. Re-selecting would
+        // re-expand the section the user just collapsed (selectTopic reveals an
+        // archived selection) and pointlessly reload the message list.
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
-        this.restoreSelection()
     }
 
     openTopicListPopup(event) {
@@ -618,6 +655,7 @@ export default class extends Controller {
     }
 
     selectTopic(id) {
+        this.revealArchivedTopic(id)
         this.updateSelectionUI(id)
         if (id) {
             this.clearNewMessageBadge(id)
@@ -753,9 +791,16 @@ export default class extends Controller {
         // Don't show badge if we are currently in this topic (shouldn't happen due to list_controller logic, but safety check)
         if (String(this.currentTopicId) === String(topicId)) return
 
+        const isArchived = (this.archivedTopics || []).some(t => String(t.id) === String(topicId))
+        if (isArchived) this.archivedWithNewMessages.add(String(topicId))
+
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
-        if (topicEl) {
-            topicEl.classList.add('has-new-messages')
+        if (topicEl) topicEl.classList.add('has-new-messages')
+
+        // A collapsed archived section has no chip to badge, so the toggle carries
+        // the notice — otherwise a message in an archived topic is invisible.
+        if (isArchived) {
+            this.listTarget.querySelector('.topic-archived-toggle')?.classList.add('has-new-messages')
         }
     }
 
@@ -763,6 +808,12 @@ export default class extends Controller {
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
         if (topicEl) {
             topicEl.classList.remove('has-new-messages')
+        }
+
+        // The toggle aggregates every archived topic, so it only clears once none
+        // of them is left unread.
+        if (this.archivedWithNewMessages.delete(String(topicId)) && this.archivedWithNewMessages.size === 0) {
+            this.listTarget.querySelector('.topic-archived-toggle')?.classList.remove('has-new-messages')
         }
     }
 
