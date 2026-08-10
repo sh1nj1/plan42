@@ -24,5 +24,59 @@ module Collavre
       assert_response :success
       refute_includes response.body, "data-creative-id=\"#{session.root.id}\""
     end
+
+    test "advances and completes onboarding through the namespaced services" do
+      user = User.create!(name: "Learner", email: "onboarding-actions@example.com", password: "password")
+      sign_in_as(user, password: "password")
+      session = Onboarding::Seeder.new(user: user).call
+
+      post advance_onboarding_path, as: :json
+
+      assert_response :success
+      assert_equal "progress", response.parsed_body.fetch("current_step")
+
+      post complete_onboarding_path, as: :json
+
+      assert_response :success
+      assert user.reload.onboarding_completed_at?
+      assert_nil Onboarding::Session.for_user(user)
+      assert_nil Creative.find_by(id: session.root.id)
+    end
+
+    test "reset seeds onboarding even when the user already has a workspace" do
+      user = User.create!(name: "Returning learner", email: "onboarding-reset@example.com", password: "password")
+      Creative.create!(user: user, description: "Existing workspace")
+      sign_in_as(user, password: "password")
+
+      post reset_onboarding_path
+
+      assert_redirected_to creatives_path
+      session = Onboarding::Session.for_user(user.reload)
+      assert session
+      assert_equal 2, session.root.children.count
+      assert user.onboarding_seeded_at?
+      assert_nil user.onboarding_completed_at
+    end
+
+    test "description editing advances when the inline form also submits unchanged progress" do
+      user = User.create!(name: "Editor", email: "onboarding-editor@example.com", password: "password")
+      sign_in_as(user, password: "password")
+      session = Onboarding::Seeder.new(user: user).call
+      first, second = session.practice_creatives.order(:id)
+
+      post advance_onboarding_path, as: :json
+      patch creative_path(first), params: { creative: { progress: 1.0 } }, as: :json
+
+      assert_response :success
+      assert_equal "editor", Onboarding::Session.for_user(user).data.fetch("current_step")
+
+      patch creative_path(second), params: {
+        creative: { description: "Updated practice item", progress: second.progress }
+      }, as: :json
+
+      assert_response :success
+      assert_equal "Updated practice item", second.reload.description
+      assert_equal "comment", Onboarding::Session.for_user(user).data.fetch("current_step")
+    end
   end
 end

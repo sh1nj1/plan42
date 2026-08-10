@@ -7,18 +7,19 @@ module Collavre
     end
 
     def advance
-      ProgressTracker.record(user: Current.user, event: :ui)
+      Onboarding::ProgressTracker.record(user: Current.user, event: :ui)
       render json: state
     end
 
     def complete
-      CompletionService.new(user: Current.user).call
+      Onboarding::CompletionService.new(user: Current.user).call
       render json: { success: true, redirect_url: features_path }
     end
 
     def reset
-      CompletionService.new(user: Current.user).call
+      Onboarding::CompletionService.new(user: Current.user).call
       Current.user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+      Onboarding::Seeder.new(user: Current.user, force: true).call
       redirect_to creatives_path
     end
 

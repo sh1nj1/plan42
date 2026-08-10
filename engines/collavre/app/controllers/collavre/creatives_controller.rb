@@ -324,12 +324,10 @@ module Collavre
         end
 
         if success
-          Onboarding::ProgressTracker.record(
-            user: Current.user,
-            event: requested_progress.present? ? :progress_changed : :description_changed,
-            creative: base,
-            before_description: previous_description,
-            before_progress: previous_progress
+          record_onboarding_progress(
+            base,
+            previous_description: previous_description,
+            previous_progress: previous_progress
           )
           format.html { redirect_to @creative }
           format.json do
@@ -368,6 +366,25 @@ module Collavre
           format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
         end
       end
+    end
+
+    def record_onboarding_progress(creative, previous_description:, previous_progress:)
+      if creative.progress != previous_progress
+        Onboarding::ProgressTracker.record(
+          user: Current.user,
+          event: :progress_changed,
+          creative: creative,
+          before_progress: previous_progress
+        )
+      end
+      return if creative.description == previous_description
+
+      Onboarding::ProgressTracker.record(
+        user: Current.user,
+        event: :description_changed,
+        creative: creative,
+        before_description: previous_description
+      )
     end
 
     def contexts

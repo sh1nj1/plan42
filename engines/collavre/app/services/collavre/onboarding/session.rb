@@ -4,9 +4,7 @@ module Collavre
   module Onboarding
     class Session
       def self.for_user(user)
-        root = user.creatives.where(parent_id: nil).find do |creative|
-          creative.data.is_a?(Hash) && creative.data.dig("onboarding", "session_id").present?
-        end
+        root = onboarding_root(user&.creatives)
         root && new(root)
       end
 
@@ -16,8 +14,19 @@ module Collavre
         data = creative.data.is_a?(Hash) ? creative.data["onboarding"] : nil
         return unless data.is_a?(Hash) && data["session_id"].present?
 
-        new(creative)
+        root = onboarding_root(creative.user.creatives, session_id: data["session_id"])
+        root && new(root)
       end
+
+      def self.onboarding_root(creatives, session_id: nil)
+        records = creatives.respond_to?(:reload) ? creatives.reload : Array(creatives)
+        records.find do |creative|
+          onboarding = creative.data.is_a?(Hash) ? creative.data["onboarding"] : nil
+          onboarding.is_a?(Hash) && onboarding["scenario_key"].present? &&
+            (session_id.blank? || onboarding["session_id"] == session_id)
+        end
+      end
+      private_class_method :onboarding_root
 
       def initialize(root)
         @root = root

@@ -3,13 +3,14 @@
 module Collavre
   module Onboarding
     class Seeder
-      def initialize(user:)
+      def initialize(user:, force: false)
         @user = user
+        @force = force
       end
 
       def call
         return Session.for_user(user) if user.onboarding_seeded_at?
-        return mark_existing_workspace_complete! if user.creatives.where(parent_id: nil).to_a.any? { |creative| !creative.inbox? }
+        return mark_existing_workspace_complete! if existing_workspace? && !force?
 
         user.with_lock do
           return Session.for_user(user) if user.onboarding_seeded_at?
@@ -38,6 +39,14 @@ module Collavre
       private
 
       attr_reader :user
+
+      def force?
+        @force
+      end
+
+      def existing_workspace?
+        user.creatives.where(parent_id: nil).to_a.any? { |creative| !creative.inbox? }
+      end
 
       def t(key)
         I18n.t("collavre.onboarding.seed.#{key}", locale: user.locale.presence || I18n.default_locale)
