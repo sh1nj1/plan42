@@ -18,6 +18,7 @@ export default class extends Controller {
   static values = {
     url: String,
     lastVisitedCreativeUrl: String,
+    lastVisitedCreativeVisitToken: String,
     currentPath: Array,
     loadingText: String,
     emptyText: String,
@@ -417,9 +418,9 @@ export default class extends Controller {
   }
 
   rememberLastVisitedCreative(creativeId) {
-    if (!creativeId || !this.hasLastVisitedCreativeUrlValue) return
+    if (!creativeId || !this.hasLastVisitedCreativeUrlValue || !this.hasLastVisitedCreativeVisitTokenValue) return
 
-    rememberLastVisitedCreative(this.lastVisitedCreativeUrlValue, creativeId)
+    rememberLastVisitedCreative(this.lastVisitedCreativeUrlValue, creativeId, this.lastVisitedCreativeVisitTokenValue)
   }
 
   setActiveId(id) {

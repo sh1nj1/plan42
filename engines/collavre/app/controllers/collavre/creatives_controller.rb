@@ -30,7 +30,11 @@ module Collavre
           if params[:id].present?
             creative = Creative.find_by(id: params[:id])
             @parent_creative = creative if creative&.has_permission?(Current.user, :read)
-            remember_last_visited_creative(@parent_creative, visited_at: last_visited_creative_at) unless turbo_prefetch_request?
+            unless turbo_prefetch_request?
+              @last_visited_creative_at = last_visited_creative_at
+              remember_last_visited_creative(@parent_creative, visited_at: @last_visited_creative_at)
+              @last_visited_creative_token = last_visited_creative_token
+            end
           end
           @creatives = []  # CSR will fetch via JSON
           @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
@@ -553,7 +557,10 @@ module Collavre
     def remember_last_visited
       return head :forbidden unless @creative.has_permission?(Current.user, :read)
 
-      remember_last_visited_creative(@creative, visited_at: last_visited_creative_at)
+      visited_at = restored_visit_at
+      return head :unprocessable_entity unless visited_at
+
+      remember_last_visited_creative(@creative, visited_at: visited_at)
       head :no_content
     end
 
@@ -584,11 +591,28 @@ module Collavre
       end
 
       def last_visited_creative_at
-        # Capture this before acquiring the user-row lock. A request that
-        # arrived first but waits for a later visit to commit must not overwrite
-        # that later visit when it obtains the lock. Server time avoids relying
-        # on untrusted, device-specific browser clocks for this ordering.
+        # This server-issued timestamp is signed into the rendered page. A
+        # cached restore later submits the original value, preserving the
+        # navigation order even if its PATCH arrives after a newer visit.
         Time.current
+      end
+
+      def last_visited_creative_token
+        return unless @parent_creative && @last_visited_creative_at
+
+        Rails.application.message_verifier(:last_visited_creative).generate({
+          "creative_id" => @parent_creative.id,
+          "visited_at" => @last_visited_creative_at.iso8601(6)
+        })
+      end
+
+      def restored_visit_at
+        visit = Rails.application.message_verifier(:last_visited_creative).verified(params[:visit_token])
+        return unless visit.is_a?(Hash) && visit["creative_id"] == @creative.id
+
+        Time.iso8601(visit.fetch("visited_at"))
+      rescue ActiveSupport::MessageVerifier::InvalidSignature, KeyError, ArgumentError
+        nil
       end
 
       def turbo_prefetch_request?

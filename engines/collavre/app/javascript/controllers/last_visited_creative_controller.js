@@ -9,6 +9,7 @@ export default class extends Controller {
   static values = {
     url: String,
     creativeId: String,
+    visitToken: String,
   }
 
   connect() {
@@ -39,7 +40,7 @@ export default class extends Controller {
   rememberRestoredCreative() {
     if (lastVisitAction !== 'restore' || !this.element.isConnected) return
 
-    rememberLastVisitedCreative(this.urlValue, this.creativeIdValue)
+    rememberLastVisitedCreative(this.urlValue, this.creativeIdValue, this.visitTokenValue)
     lastVisitAction = null
   }
 }

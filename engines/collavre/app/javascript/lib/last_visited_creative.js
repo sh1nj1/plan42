@@ -7,14 +7,15 @@ export function cancelPendingLastVisitedCreative() {
   pendingRequestController = null
 }
 
-export function rememberLastVisitedCreative(baseUrl, creativeId) {
-  if (!baseUrl || !creativeId) return
+export function rememberLastVisitedCreative(baseUrl, creativeId, visitToken) {
+  if (!baseUrl || !creativeId || !visitToken) return
 
   cancelPendingLastVisitedCreative()
   const requestController = new AbortController()
   pendingRequestController = requestController
   const url = new URL(baseUrl, window.location.origin)
   url.pathname = `${url.pathname.replace(/\/$/, '')}/${encodeURIComponent(creativeId)}/remember_last_visited`
+  url.searchParams.set('visit_token', visitToken)
   const request = () => csrfFetch(`${url.pathname}${url.search}`, {
     method: 'PATCH',
     headers: {

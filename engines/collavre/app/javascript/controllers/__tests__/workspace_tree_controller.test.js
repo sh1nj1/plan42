@@ -45,6 +45,7 @@ describe('WorkspaceTreeController', () => {
       <section data-controller="workspace-tree"
                data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
                data-workspace-tree-last-visited-creative-url-value="/creatives"
+               data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-current-path-value="[1,2,3]"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
@@ -99,7 +100,7 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => requestAnimationFrame(resolve))
 
     const [url, options] = fetchMock.mock.calls.at(-1)
-    expect(url).toBe('/creatives/2/remember_last_visited')
+    expect(url).toBe('/creatives/2/remember_last_visited?visit_token=server-token')
     expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
     expect(options.headers.get('Accept')).toBe('application/json')
     expect(options.headers.get('X-CSRF-Token')).toBe('token')
@@ -112,6 +113,7 @@ describe('WorkspaceTreeController', () => {
       <section data-controller="workspace-tree"
                data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
                data-workspace-tree-last-visited-creative-url-value="/creatives"
+               data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-current-path-value="[1,2,3]"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
@@ -138,7 +140,7 @@ describe('WorkspaceTreeController', () => {
     )
 
     const [url, options] = fetchMock.mock.calls.at(-1)
-    expect(url).toBe('/creatives/2/remember_last_visited')
+    expect(url).toBe('/creatives/2/remember_last_visited?visit_token=server-token')
     expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
     expect(options.headers.get('Accept')).toBe('application/json')
     expect(options.headers.get('X-CSRF-Token')).toBe('token')
@@ -158,12 +160,12 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => requestAnimationFrame(resolve))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/2/remember_last_visited', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost/creatives?id=2', {
       method: 'HEAD',
       credentials: 'same-origin',
     })
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/creatives/2/remember_last_visited', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
     expect(fetchMock.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
   })
 

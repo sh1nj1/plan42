@@ -11,6 +11,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     "turbo-cable-stream-source[signed-stream-name='#{signed_name}']"
   end
 
+  def last_visited_creative_token
+    response.body.match(/data-(?:workspace-tree|last-visited-creative)-last-visited-creative-visit-token-value="([^"]+)"/)[1]
+  end
+
   test "opening a readable creative remembers it as the user's last visited creative" do
     user = users(:one)
     creative = creatives(:root_parent)
@@ -51,27 +55,34 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
   test "remembering a creative restored from browser history updates the last visited creative" do
     user = users(:one)
     creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+    visit_token = last_visited_creative_token
     user.update!(last_visited_creative_id: nil)
 
-    patch remember_last_visited_creative_path(creative), as: :json
+    patch remember_last_visited_creative_path(creative), params: { visit_token: visit_token }, as: :json
 
     assert_response :no_content
     assert_equal creative, user.reload.last_visited_creative
   end
 
-  test "an earlier server-timed restored visit does not overwrite a later Creative navigation" do
+  test "a delayed restored visit cannot overwrite a later Creative navigation" do
     user = users(:one)
     newer_creative = creatives(:root_parent)
     restored_creative = creatives(:unconvert_target)
-    restored_visit_at = 2.minutes.ago.change(usec: 0)
-    newer_visit_at = restored_visit_at + 1.minute
-    user.update_columns(
-      last_visited_creative_id: newer_creative.id,
-      last_visited_creative_at: newer_visit_at
-    )
 
-    travel_to restored_visit_at do
-      patch remember_last_visited_creative_path(restored_creative), as: :json
+    travel_to 2.minutes.ago.change(usec: 0) do
+      get creatives_path(id: restored_creative.id)
+      @restored_visit_token = last_visited_creative_token
+    end
+
+    newer_visit_at = 1.minute.ago.change(usec: 0)
+    travel_to newer_visit_at do
+      get creatives_path(id: newer_creative.id)
+    end
+
+    travel_to Time.current.change(usec: 0) do
+      patch remember_last_visited_creative_path(restored_creative), params: { visit_token: @restored_visit_token }, as: :json
     end
 
     assert_response :no_content
@@ -79,26 +90,29 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal newer_visit_at, user.last_visited_creative_at
   end
 
-  test "uses server time instead of an untrusted browser clock" do
+  test "rejects unsigned restored visit tokens" do
     user = users(:one)
     previous_creative = creatives(:root_parent)
     visited_creative = creatives(:unconvert_target)
-    previous_visit_at = 2.minutes.ago.change(usec: 0)
-    server_visit_at = previous_visit_at + 1.minute
-    user.update_columns(
-      last_visited_creative_id: previous_creative.id,
-      last_visited_creative_at: previous_visit_at
-    )
+    user.update!(last_visited_creative: previous_creative)
 
-    travel_to server_visit_at do
-      patch remember_last_visited_creative_path(visited_creative), as: :json, headers: {
-        "X-Collavre-Last-Visited-Creative-At" => 1.year.from_now.to_i.to_s
-      }
-    end
+    patch remember_last_visited_creative_path(visited_creative), params: { visit_token: "forged" }, as: :json
 
-    assert_response :no_content
-    assert_equal visited_creative, user.reload.last_visited_creative
-    assert_equal server_visit_at, user.last_visited_creative_at
+    assert_response :unprocessable_entity
+    assert_equal previous_creative, user.reload.last_visited_creative
+  end
+
+  test "rejects a restored visit token for another Creative" do
+    token_creative = creatives(:root_parent)
+    visited_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: token_creative.id)
+    visit_token = last_visited_creative_token
+
+    patch remember_last_visited_creative_path(visited_creative), params: { visit_token: visit_token }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal token_creative, users(:one).reload.last_visited_creative
   end
 
   test "remembering an inaccessible browser history creative preserves the current last visit" do
@@ -125,7 +139,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-workspace-tree", count: 0
     assert_select "turbo-frame#creative-workspace-content", count: 0
     assert_select "[data-workspace-navigation-state]", count: 0
-    assert_select "[data-controller='last-visited-creative'][data-last-visited-creative-creative-id-value='#{creative.id}']"
+    assert_select "[data-controller='last-visited-creative'][data-last-visited-creative-creative-id-value='#{creative.id}'][data-last-visited-creative-visit-token-value]"
     assert_select "#comments-popup[data-docked='false']", count: 1
     assert_select creative_tree_stream_selector, count: 1
   end
@@ -139,6 +153,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "body.creative-workspace"
     assert_select ".creative-workspace-shell"
     assert_select "#creative-workspace-tree"
+    assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-token-value]"
     assert_select "[data-controller='last-visited-creative']", count: 0
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"

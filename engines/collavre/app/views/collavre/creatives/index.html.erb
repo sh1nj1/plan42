@@ -26,7 +26,8 @@
         data: {
           controller: "last-visited-creative",
           last_visited_creative_url_value: creatives_path,
-          last_visited_creative_creative_id_value: @parent_creative.id
+          last_visited_creative_creative_id_value: @parent_creative.id,
+          last_visited_creative_visit_token_value: @last_visited_creative_token
         }
       ) %>
 <% end %>

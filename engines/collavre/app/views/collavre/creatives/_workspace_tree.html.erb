@@ -2,6 +2,7 @@
          data-controller="workspace-tree"
          data-workspace-tree-url-value="<%= creatives_path(format: :json, workspace_tree: 1) %>"
          data-workspace-tree-last-visited-creative-url-value="<%= creatives_path %>"
+         data-workspace-tree-last-visited-creative-visit-token-value="<%= @last_visited_creative_token %>"
          data-workspace-tree-current-path-value="<%= @workspace_path_ids.to_json %>"
          data-workspace-tree-loading-text-value="<%= t('app.loading') %>"
          data-workspace-tree-empty-text-value="<%= t('collavre.creatives.workspace.empty') %>"
