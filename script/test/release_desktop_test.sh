@@ -268,4 +268,18 @@ publish_release "desktop-v2.3.4" "2.3.4" "$artifact_dir/Collavre-Desktop_2.3.4_a
 grep -Fqx "release upload desktop-v2.3.4 $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256 --clobber" "$gh_log"
 grep -Fqx "release edit desktop-v2.3.4 --draft=false --title Collavre Desktop 2.3.4 --notes-file $artifact_dir/release-notes.md" "$gh_log"
 
+ci_log="$fixture_dir/ci.log"
+gh() {
+  printf '%s\n' "$*" >> "$ci_log"
+  if [[ "$1 $2" == "run list" ]]; then
+    printf '12345\n'
+  fi
+}
+(
+  cd "$repo_dir"
+  wait_for_release_ci
+)
+grep -Fqx "run list --workflow CI --commit $(git -C "$repo_dir" rev-parse HEAD) --json databaseId --jq .[0].databaseId" "$ci_log"
+grep -Fqx "run watch 12345 --exit-status" "$ci_log"
+
 echo "release_desktop_test: passed"

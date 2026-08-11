@@ -356,6 +356,26 @@ push_release_refs() {
   git push --atomic origin "${refs[@]}"
 }
 
+wait_for_release_ci() {
+  local commit run_id="" attempts=0
+  commit="$(git rev-parse HEAD)"
+
+  echo "[release-desktop] Waiting for CI on $commit..."
+  # The push event can take a few seconds to create a workflow run. Limit the
+  # polling window so an unavailable Actions service cannot leave a release
+  # process hanging indefinitely.
+  while ((attempts < 60)); do
+    run_id="$(gh run list --workflow CI --commit "$commit" --json databaseId --jq '.[0].databaseId')"
+    [[ -n "$run_id" ]] && break
+    ((attempts += 1))
+    sleep 5
+  done
+  [[ -n "$run_id" ]] || die "CI workflow did not start for release commit $commit"
+
+  gh run watch "$run_id" --exit-status || \
+    die "CI failed for release commit $commit; GitHub Release was not published"
+}
+
 ensure_main_matches_origin() {
   [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || \
     die "local main must exactly match origin/main before creating a release"
@@ -621,6 +641,7 @@ main() {
 
   ensure_release_tag "$tag" "$selected_version"
   push_release_refs "$tag"
+  wait_for_release_ci
   publish_release "$tag" "$selected_version" "$artifact"
 
   echo "[release-desktop] Published $tag"

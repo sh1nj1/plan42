@@ -62,15 +62,6 @@ else
 fi
 export CARGO_TARGET_DIR="$TAURI_TARGET_DIR"
 
-# A custom target can live inside the source tree (for example, a relative
-# CARGO_TARGET_DIR). Exclude it from staging so a previous bundle's resource
-# copy is never embedded into the next application bundle.
-STAGING_EXCLUDES=()
-if [[ "$TAURI_TARGET_DIR" == "$APP_ROOT/"* ]]; then
-  TAURI_TARGET_STAGING_PATH="${TAURI_TARGET_DIR#"$APP_ROOT"/}"
-  STAGING_EXCLUDES+=(--exclude "/$TAURI_TARGET_STAGING_PATH/***")
-fi
-
 echo "[build-macos] 1/7 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
 
@@ -100,38 +91,16 @@ echo "[build-macos] 4/7 precompiling assets (desktop env)"
 echo "[build-macos] 5/7 staging app tree into $STAGING"
 rm -rf "$DESKTOP_DIR/staging"
 mkdir -p "$STAGING"
-# Copy the app, excluding VCS, dev cruft, tests, and per-run state. The vendored
-# Ruby/gems under tools/desktop-app/vendor ARE included (the app needs them) — the
-# --include below protects that whole tree from the unanchored test/spec excludes:
-# rsync matches a bare 'test'/'spec' at ANY depth, which otherwise strips real gem
-# library code living under a dir named test/ (e.g. rack-test's lib/rack/test/ —
-# cookie_jar.rb), corrupting the bundle and crashing boot with a LoadError.
-# Secrets are excluded so a developer's local credentials never get baked into a
-# distributable .app: the desktop env provisions its own SECRET_KEY_BASE at first
-# run and never decrypts credentials, so any config/*.key / .env* are pure liability
-# (.gitignore treats every /config/*.key as a local secret, not just master.key).
-# .bundle is excluded too: a developer's local `bundle config set --local` writes
-# .bundle/config, which outranks the launcher's BUNDLE_PATH env and would point the
-# packaged app at a dev-only gem path. The launcher sets all bundler env at runtime.
-rsync -a --delete \
-  --exclude '.git' \
-  --exclude 'node_modules' \
-  --exclude 'log/*' \
-  --exclude 'tmp/*' \
-  --exclude 'storage/*' \
-  --exclude '/tools/desktop-app/vendor/proxy/***' \
-  --include 'tools/desktop-app/vendor/**' \
-  --exclude 'test' \
-  --exclude 'spec' \
-  --exclude '.env' \
-  --exclude '.env.*' \
-  --exclude '.bundle' \
-  --exclude 'config/*.key' \
-  --exclude 'config/credentials/*.key' \
-  --exclude 'tools/desktop-app/staging' \
-  --exclude 'tools/desktop-app/src-tauri/target' \
-  "${STAGING_EXCLUDES[@]}" \
-  "$APP_ROOT/" "$STAGING/"
+# Stage only Git-tracked application files. An exclusion list inevitably misses
+# newly ignored files (including developer credentials), while this allowlist
+# keeps release-machine state out of the signed application by construction.
+# The generated Ruby/gem tree is the sole intentional untracked input; the
+# immutable proxy is copied separately below after its runtime is bundled.
+git -C "$APP_ROOT" ls-files -z | \
+  rsync -a --from0 --files-from=- "$APP_ROOT/" "$STAGING/"
+mkdir -p "$STAGING/tools/desktop-app/vendor"
+rsync -a --delete --exclude 'proxy/***' \
+  "$DESKTOP_DIR/vendor/" "$STAGING/tools/desktop-app/vendor/"
 
 # Rails creates runtime files below Rails.root/tmp when starting the server.
 # The app bundle is read-only once distributed, so the directory itself must
