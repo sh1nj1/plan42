@@ -19,9 +19,17 @@ en:
             base_url:
               invalid: "must be an http(s) origin without credentials, query or fragment"
               unsafe: "must use HTTPS and cannot target a local, private, or reserved network address"
+              immutable: "cannot be changed for a desktop-managed gateway"
+            admin_key:
+              immutable: "cannot be changed for a desktop-managed gateway"
+            completion_key:
+              immutable: "cannot be changed for a desktop-managed gateway"
+            workspace_mode:
+              desktop_shared_only: "must remain shared for a desktop-managed gateway"
             tenant_id:
               invalid: "may only contain letters, digits and . _ : @ / -"
             identity_secret:
+              immutable: "cannot be changed for a desktop-managed gateway"
               blank: "is required for per-user mode or a gateway assigned to multiple AI agents"
               too_short: "must contain at least %{count} bytes"
         collavre/user:
@@ -73,6 +81,77 @@ en:
       updated: Agent gateway was updated.
       destroyed: Agent gateway was deleted.
       in_use: This gateway is assigned to an AI agent and cannot be deleted.
+    desktop_setup:
+      kicker: First-run setup
+      title: Set up local AI agents
+      subtitle: A guided first-run experience for the Collavre Desktop app.
+      progress_label: Setup progress
+      back: Back
+      next: Continue
+      steps:
+        account: Administrator account
+        install: Install
+        adapters: CLI guidance
+        ready: Ready
+      account:
+        kicker: First-run setup
+        title: Create the first administrator account
+        body: Set up the local Collavre administrator before installing the AI gateway. No administrator account is seeded with the app.
+        name_label: Name
+        name_placeholder: Your name
+        email_label: Email
+        email_placeholder: you@example.com
+        password_label: Password
+        password_placeholder: Choose a password
+        password_confirmation_label: Confirm password
+        password_confirmation_placeholder: Enter the password again
+        hint: This account is created only on this Mac and signs you in immediately.
+        notice: Your password stays on this Mac. The wizard does not send it to an AI provider or use it to access existing CLI accounts.
+        continue: Create administrator account
+        existing: An administrator account already exists on this Mac. Sign in to continue setup.
+        already_created: An administrator account already exists on this Mac.
+      install:
+        kicker: Explicit consent
+        title: Install and register the local proxy
+        body: Your confirmation starts one bundled, loopback-only proxy and registers it to your local administrator account.
+        items:
+          installation:
+            title: Installation
+            body: Install cli-openai-proxy as a single local service for this Mac.
+          keys:
+            title: Secure keys
+            body: Generate one administrator key and one API key, then retain them only for the local gateway.
+          registration:
+            title: Registration
+            body: Register that gateway automatically with the Collavre administrator account.
+        consent: I understand that continuing will install and configure one local CLI Proxy service.
+        hint: The proxy generates its credentials in macOS Keychain. Existing Claude Code and Codex credentials are not read or changed.
+        continue: Install and continue
+        unavailable: This action is available only in Collavre Desktop.
+        failed: The local proxy could not be installed. No gateway was registered; try again after reviewing the desktop log.
+      adapters:
+        kicker: Existing CLI tools
+        title: Use the CLI tools you already signed in to
+        body: Collavre will create suitable agent presets after checking whether the CLI executable is available.
+        detected: Detected — agent preset created
+        not_detected: Not detected — no preset created
+        claude:
+          title: Claude Code
+          body: Uses your existing local Claude Code session. The wizard does not log in or read its credentials.
+        codex:
+          title: Codex
+          body: Uses your existing local Codex session. The wizard does not log in or read its credentials.
+        notice: Only executable availability is checked. Existing credentials and configuration are neither read nor sent externally.
+      ready:
+        kicker: Setup complete
+        title: Your local AI gateway is ready
+        body: The local proxy and gateway are ready. Open Collavre to start using your configured agents.
+        items:
+          proxy: One local cli-openai-proxy instance is installed.
+          gateway: The generated local gateway is registered to the Collavre administrator.
+          agents: Ready-to-use Claude Code and Codex agent presets are available when supported.
+        notice: You can manage the gateway later from Agent Gateway settings. Removing it does not alter your Claude Code or Codex installation.
+        open: Open Collavre
     agent_connections:
       title: "%{agent} connection"
       card_title: Engine connection and provisioning

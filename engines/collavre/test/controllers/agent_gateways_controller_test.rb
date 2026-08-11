@@ -83,6 +83,96 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert_equal "completion", @gateway.completion_key
   end
 
+  test "owner cannot retarget a desktop-managed gateway from settings" do
+    desktop_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Desktop proxy",
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin",
+      completion_key: "desktop-completion",
+      identity_secret: "d" * 32,
+      desktop_managed: true
+    )
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(desktop_gateway), params: {
+      agent_gateway: {
+        name: desktop_gateway.name,
+        base_url: "http://127.0.0.1:45678",
+        admin_key: "",
+        completion_key: "",
+        identity_secret: "",
+        tenant_id: desktop_gateway.tenant_id,
+        workspace_mode: desktop_gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal "http://127.0.0.1:34567", desktop_gateway.reload.base_url
+  end
+
+  test "owner cannot replace desktop-managed credentials from settings" do
+    desktop_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Desktop proxy",
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin",
+      completion_key: "desktop-completion",
+      identity_secret: "d" * 32,
+      desktop_managed: true
+    )
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(desktop_gateway), params: {
+      agent_gateway: {
+        name: desktop_gateway.name,
+        base_url: desktop_gateway.base_url,
+        admin_key: "replacement-admin",
+        completion_key: "replacement-completion",
+        identity_secret: "r" * 32,
+        tenant_id: desktop_gateway.tenant_id,
+        workspace_mode: desktop_gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    desktop_gateway.reload
+    assert_equal "desktop-admin", desktop_gateway.admin_key
+    assert_equal "desktop-completion", desktop_gateway.completion_key
+    assert_equal "d" * 32, desktop_gateway.identity_secret
+  end
+
+  test "owner cannot switch a desktop-managed gateway to per-user mode from settings" do
+    desktop_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Desktop proxy",
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin",
+      completion_key: "desktop-completion",
+      identity_secret: "d" * 32,
+      desktop_managed: true
+    )
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(desktop_gateway), params: {
+      agent_gateway: {
+        name: desktop_gateway.name,
+        base_url: desktop_gateway.base_url,
+        admin_key: "",
+        completion_key: "",
+        identity_secret: "",
+        tenant_id: desktop_gateway.tenant_id,
+        workspace_mode: "per_user",
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_predicate desktop_gateway.reload, :shared?
+  end
+
   test "connection check uses completion key as mapped user key" do
     sign_in_as(@owner, password: "password")
     arguments = []

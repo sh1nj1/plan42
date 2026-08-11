@@ -99,6 +99,80 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert admin_gateway.valid?, admin_gateway.errors.full_messages.to_sentence
   end
 
+  test "only the signed desktop registration flow can change desktop-managed native configuration" do
+    gateway = build_gateway(
+      base_url: "http://127.0.0.1:34567",
+      desktop_managed: true,
+      identity_secret: "i" * 32
+    )
+    gateway.save!
+
+    assert_not gateway.update(base_url: "http://127.0.0.1:45678")
+    assert_includes gateway.errors.details[:base_url].pluck(:error), :immutable
+    assert_equal "http://127.0.0.1:34567", gateway.reload.base_url
+
+    assert_not gateway.update(
+      admin_key: "replacement-admin",
+      completion_key: "replacement-completion",
+      identity_secret: "r" * 32
+    )
+    %i[admin_key completion_key identity_secret].each do |attribute|
+      assert_includes gateway.errors.details[attribute].pluck(:error), :immutable
+    end
+    assert_equal "admin", gateway.reload.admin_key
+    assert_equal "completion", gateway.completion_key
+    assert_equal "i" * 32, gateway.identity_secret
+
+    gateway.update_from_desktop_registration!(
+      base_url: "http://127.0.0.1:45678",
+      admin_key: "replacement-admin",
+      completion_key: "replacement-completion",
+      identity_secret: "r" * 32
+    )
+
+    assert_equal "http://127.0.0.1:45678", gateway.reload.base_url
+    assert_equal "replacement-admin", gateway.admin_key
+    assert_equal "replacement-completion", gateway.completion_key
+    assert_equal "r" * 32, gateway.identity_secret
+  end
+
+  test "desktop-managed credential errors are translated in every supported locale" do
+    gateway = build_gateway(
+      base_url: "http://127.0.0.1:34567",
+      desktop_managed: true,
+      identity_secret: "i" * 32
+    )
+    gateway.save!
+
+    %i[en ko].each do |locale|
+      I18n.with_locale(locale) do
+        gateway.assign_attributes(
+          admin_key: "replacement-admin",
+          completion_key: "replacement-completion",
+          identity_secret: "r" * 32
+        )
+
+        assert_not gateway.valid?
+        gateway.errors.full_messages.each do |message|
+          assert_no_match(/translation missing/i, message, "untranslated desktop credential error in #{locale}: #{message}")
+        end
+      end
+    end
+  end
+
+  test "desktop-managed gateways remain in shared workspace mode" do
+    gateway = build_gateway(
+      base_url: "http://127.0.0.1:34567",
+      desktop_managed: true,
+      identity_secret: "i" * 32
+    )
+    gateway.save!
+
+    assert_not gateway.update(workspace_mode: :per_user)
+    assert_includes gateway.errors.details[:workspace_mode].pluck(:error), :desktop_shared_only
+    assert_predicate gateway.reload, :shared?
+  end
+
   test "switching to shared replaces per-user workspaces with an isolated shared workspace" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!

@@ -326,7 +326,7 @@ module Collavre
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
-          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin?
+          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin? && !gateway.desktop_loopback?
             config.faraday_adapter = Collavre::CliProxy::SafeNetHttpAdapter
           end
         end

@@ -17,20 +17,76 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
 STAGING="$DESKTOP_DIR/staging/app"
+TAURI_SOURCE_DIR="$(cd -P "$DESKTOP_DIR/src-tauri" && pwd)"
+# Cargo accepts target directories that do not exist yet, so `realpath` cannot
+# normalize them reliably. Collapse lexical `.` and `..` components instead,
+# preserving Cargo's src-tauri-relative interpretation for both its output and
+# the staging exclusion below.
+normalize_target_dir() {
+	local path="$1"
+	local component
+	local last_index
+	local -a path_components=()
+	local -a normalized_components=()
 
-echo "[build-macos] 1/6 vendoring Ruby + gems"
+	[[ "$path" == /* ]] || path="$TAURI_SOURCE_DIR/$path"
+	IFS=/ read -r -a path_components <<< "$path"
+
+	for component in "${path_components[@]}"; do
+		case "$component" in
+			""|.) ;;
+			..)
+				if ((${#normalized_components[@]})); then
+					last_index=$((${#normalized_components[@]} - 1))
+					unset "normalized_components[$last_index]"
+				fi
+				;;
+			*) normalized_components+=("$component") ;;
+		esac
+	done
+
+	local normalized_path=""
+	for component in "${normalized_components[@]}"; do
+		normalized_path+="/$component"
+	done
+	printf '%s\n' "${normalized_path:-/}"
+}
+
+# Resolve a caller-provided relative CARGO_TARGET_DIR where Cargo resolves it:
+# from src-tauri. Export the normalized value too, so Cargo and the post-build
+# checks below always operate on the same directory.
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+  TAURI_TARGET_DIR="$(normalize_target_dir "$CARGO_TARGET_DIR")"
+else
+  TAURI_TARGET_DIR="$TAURI_SOURCE_DIR/target"
+fi
+export CARGO_TARGET_DIR="$TAURI_TARGET_DIR"
+
+# A custom target can live inside the source tree (for example, a relative
+# CARGO_TARGET_DIR). Exclude it from staging so a previous bundle's resource
+# copy is never embedded into the next application bundle.
+STAGING_EXCLUDES=()
+if [[ "$TAURI_TARGET_DIR" == "$APP_ROOT/"* ]]; then
+  TAURI_TARGET_STAGING_PATH="${TAURI_TARGET_DIR#"$APP_ROOT"/}"
+  STAGING_EXCLUDES+=(--exclude "/$TAURI_TARGET_STAGING_PATH/***")
+fi
+
+echo "[build-macos] 1/7 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
+
+echo "[build-macos] 2/7 bundling cli-openai-proxy"
+"$SCRIPT_DIR/bundle-proxy.sh"
 
 # jsbundling-rails drives esbuild from node_modules during assets:precompile, so
 # the JS deps must be installed first (same as the Dockerfile/Render build). A
 # clean checkout or CI runner has no node_modules, so precompile fails without this.
-echo "[build-macos] 2/6 installing Node packages (npm ci)"
+echo "[build-macos] 3/7 installing Node packages (npm ci)"
 (
   cd "$APP_ROOT"
   npm ci
 )
 
-echo "[build-macos] 3/6 precompiling assets (desktop env)"
+echo "[build-macos] 4/7 precompiling assets (desktop env)"
 (
   cd "$APP_ROOT"
   export PATH="$DESKTOP_DIR/vendor/ruby/bin:$PATH"
@@ -41,7 +97,7 @@ echo "[build-macos] 3/6 precompiling assets (desktop env)"
     "$DESKTOP_DIR/vendor/ruby/bin/ruby" -S bundle exec rails assets:precompile
 )
 
-echo "[build-macos] 4/6 staging app tree into $STAGING"
+echo "[build-macos] 5/7 staging app tree into $STAGING"
 rm -rf "$DESKTOP_DIR/staging"
 mkdir -p "$STAGING"
 # Copy the app, excluding VCS, dev cruft, tests, and per-run state. The vendored
@@ -63,6 +119,7 @@ rsync -a --delete \
   --exclude 'log/*' \
   --exclude 'tmp/*' \
   --exclude 'storage/*' \
+  --exclude '/tools/desktop-app/vendor/proxy/***' \
   --include 'tools/desktop-app/vendor/**' \
   --exclude 'test' \
   --exclude 'spec' \
@@ -73,7 +130,13 @@ rsync -a --delete \
   --exclude 'config/credentials/*.key' \
   --exclude 'tools/desktop-app/staging' \
   --exclude 'tools/desktop-app/src-tauri/target' \
+  "${STAGING_EXCLUDES[@]}" \
   "$APP_ROOT/" "$STAGING/"
+
+# Rails creates runtime files below Rails.root/tmp when starting the server.
+# The app bundle is read-only once distributed, so the directory itself must
+# already exist in the staged app even though its contents stay excluded.
+mkdir -p "$STAGING/tmp/pids"
 
 # tauri-build opens every staged file to bundle it as a resource; if any file is
 # not owner-readable the resource walk aborts with EACCES. A mode-only `chmod -R`
@@ -86,11 +149,17 @@ chmod -RN "$STAGING"                              # drop inherited/explicit ACLs
 chflags -R nouchg "$STAGING" 2>/dev/null || true  # clear immutable flags if present
 chmod -R u+rwX "$STAGING"                          # normalize POSIX mode bits
 
+# The proxy is a separate Tauri resource rather than part of the Rails source
+# tree. Its Node runtime and exact npm dependency tree are immutable after this
+# point and are covered by the same code signature as the final .app.
+mkdir -p "$STAGING/proxy"
+rsync -a --delete "$DESKTOP_DIR/vendor/proxy/" "$STAGING/proxy/"
+
 # Generate the Tauri icon set from the existing app icon. tauri.conf.json points
 # at src-tauri/icons/, which is .gitignored (generated, not committed) — without
 # this step `cargo tauri build` fails on a missing icon. Source of truth is the
 # app's own icon under public/, so the desktop app can't drift from the brand.
-echo "[build-macos] 5/6 generating app icons"
+echo "[build-macos] 6/7 generating app icons"
 ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
 [ -n "$ICON_SRC" ] || { echo "no source icon at $APP_ROOT/public/icon-*.png"; exit 1; }
 (
@@ -107,11 +176,11 @@ ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
 # which cargo never cleans. Make any prior copy tree owner-writable so the re-copy
 # can overwrite it. chmod (not rm): if the build script doesn't re-run, the existing
 # copies must stay in place or the bundle loses its resources.
-for app_copy in "$DESKTOP_DIR/src-tauri/target"/*/app; do
+for app_copy in "$TAURI_TARGET_DIR"/*/app; do
   [ -d "$app_copy" ] && chmod -R u+w "$app_copy" 2>/dev/null || true
 done
 
-echo "[build-macos] 6/6 building the Tauri bundle"
+echo "[build-macos] 7/7 building the Tauri bundle"
 (
   cd "$DESKTOP_DIR/src-tauri"
   # CI=true makes Tauri's bundle_dmg.sh skip the AppleScript step that styles the
@@ -122,6 +191,51 @@ echo "[build-macos] 6/6 building the Tauri bundle"
   CI="${CI:-true}" cargo tauri build
 )
 
+# Verify the exact runtime copied into the .app, not merely the source vendor
+# directory. A desktop bundle must never rely on a target Mac's system Ruby.
+BUNDLED_RUBY="$TAURI_TARGET_DIR/release/bundle/macos/Collavre Desktop.app/Contents/Resources/app/tools/desktop-app/vendor/ruby/bin/ruby"
+[ -x "$BUNDLED_RUBY" ] || {
+  echo "[build-macos] packaged Ruby is missing or not executable: $BUNDLED_RUBY" >&2
+  exit 1
+}
+"$BUNDLED_RUBY" -v
+
+# Ruby is built with --enable-load-relative, so exercise the packaged runtime
+# with no RUBYLIB override. This verifies that it resolves its standard library
+# from inside the app without prioritizing Ruby's bundled Prism over Bundler's.
+PACKAGED_RUBY_ROOT="${BUNDLED_RUBY%/bin/ruby}"
+PACKAGED_APP_ROOT="${PACKAGED_RUBY_ROOT%/tools/desktop-app/vendor/ruby}"
+packaged_load_relative="$("$BUNDLED_RUBY" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE")')"
+[ "$packaged_load_relative" = "yes" ] || {
+  echo "[build-macos] packaged Ruby is not self-relocating" >&2
+  exit 1
+}
+PACKAGED_RUBY_TEST_DATA="$(mktemp -d)"
+trap 'rm -rf "$PACKAGED_RUBY_TEST_DATA"' EXIT
+env -i \
+  PATH=/usr/bin:/bin \
+  COLLAVRE_DATA_DIR="$PACKAGED_RUBY_TEST_DATA" \
+  "$BUNDLED_RUBY" "$PACKAGED_APP_ROOT/tools/desktop-app/scripts/provision-secrets.rb" >/dev/null
+env -i \
+  PATH="$PACKAGED_RUBY_ROOT/bin:/usr/bin:/bin" \
+  BUNDLE_GEMFILE="$PACKAGED_APP_ROOT/Gemfile" \
+  BUNDLE_PATH="$PACKAGED_APP_ROOT/tools/desktop-app/vendor/bundle" \
+  BUNDLE_WITHOUT="development:test:production" \
+  BUNDLE_WITH="desktop" \
+  COLLAVRE_DATA_DIR="$PACKAGED_RUBY_TEST_DATA" \
+  RAILS_ENV=desktop \
+  SECRET_KEY_BASE=0123456789012345678901234567890123456789012345678901234567890123 \
+  "$BUNDLED_RUBY" "$PACKAGED_APP_ROOT/bin/rails" runner \
+  'require "shellwords"; build_prefix = Shellwords.shellsplit(RbConfig::CONFIG.fetch("configure_args")).find { |argument| argument.start_with?("--prefix=") }&.delete_prefix("--prefix="); abort "Ruby build prefix is unavailable" unless build_prefix; abort "stale Ruby load path" if $LOAD_PATH.any? { |path| path == build_prefix || path.start_with?("#{build_prefix}/") }; abort "wrong Prism version" unless Gem.loaded_specs.fetch("prism").version.to_s == "1.9.0"' >/dev/null
+
+# A Ruby executable can start on the build Mac even when one of its Mach-O load
+# commands still names the checkout. Reject that non-relocatable bundle here,
+# before a DMG can be handed to another Mac.
+if otool -L "$BUNDLED_RUBY" | grep -qF "$APP_ROOT/tools/desktop-app/vendor/ruby"; then
+  echo "[build-macos] packaged Ruby still references the build checkout" >&2
+  exit 1
+fi
+
 echo "[build-macos] done →"
-echo "  $DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre Desktop.app"
+echo "  $TAURI_TARGET_DIR/release/bundle/macos/Collavre Desktop.app"
 echo "Run it once via: right-click → Open (unsigned, Gatekeeper)."
