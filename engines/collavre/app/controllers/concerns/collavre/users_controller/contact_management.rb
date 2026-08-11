@@ -24,6 +24,17 @@ module Collavre
         Collavre::User.mentionable_for(creative)
       end
 
+      # An onboarding practice tree grants feedback access to one available AI
+      # helper. Keep the picker aligned with the dispatch permission check so a
+      # learner cannot choose a visible agent that cannot answer in the tree.
+      session = Collavre::Onboarding::Session.for_creative(creative)
+      if params[:scope] != "contacts" && session
+        eligible_agent_ids = scope.ai_agents.select do |agent|
+          creative.has_permission?(agent, :feedback)
+        end.map(&:id)
+        scope = scope.where(id: eligible_agent_ids)
+      end
+
       users = scope
       if term.present?
         users = users.where("LOWER(users.email) LIKE :term OR LOWER(users.name) LIKE :term", term: "#{term}%")

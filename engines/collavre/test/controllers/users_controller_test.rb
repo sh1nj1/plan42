@@ -331,6 +331,29 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, results.length
   end
 
+  test "onboarding mention search only offers agents with feedback access" do
+    learner = User.create!(name: "Onboarding learner", email: "onboarding-search@example.com", password: "password")
+    helper = User.create!(
+      name: "Onboarding helper", email: "onboarding-search-helper@example.com", password: "password",
+      llm_vendor: "openai", searchable: true
+    )
+    unavailable_agent = User.create!(
+      name: "Onboarding unavailable helper", email: "onboarding-search-unavailable@example.com", password: "password",
+      llm_vendor: "openai", searchable: true
+    )
+    session = User.stub(:accessible_ai_agents_for, User.where(id: helper.id)) do
+      Collavre::Onboarding::Seeder.new(user: learner).call
+    end
+    sign_in_as(learner, password: "password")
+
+    get collavre.search_users_path, params: { q: "onboarding", creative_id: session.practice_creatives.second.id }
+
+    assert_response :success
+    emails = JSON.parse(response.body).pluck("email")
+    assert_includes emails, helper.email
+    refute_includes emails, unavailable_agent.email
+  end
+
   test "ai user defaults to non-searchable when checkbox is unchecked" do
     sign_in_as(@regular_user, password: "password")
 

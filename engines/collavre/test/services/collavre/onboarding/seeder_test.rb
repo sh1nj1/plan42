@@ -139,6 +139,18 @@ module Collavre
         assert user.reload.onboarding_completed_at?
         assert_empty user.creatives.where(id: creative_ids)
       end
+
+      test "cleans up and completes a session with a practice creative moved outside its root" do
+        user = User.create!(name: "Moved onboarding practice", email: "moved-onboarding-practice@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        creative_ids = [ session.root.id, *session.practice_creative_ids ]
+        outside_root = Creative.create!(user: user, description: "Outside onboarding")
+        session.practice_creatives.second.update!(parent: outside_root)
+
+        assert_nil Seeder.new(user: user).call
+        assert user.reload.onboarding_completed_at?
+        assert_empty user.creatives.where(id: creative_ids)
+      end
     end
   end
 end
