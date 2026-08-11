@@ -454,6 +454,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       js_imports_in(%(<code>{import("#{satellite}/thing")}</code>), jsx: true)
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(<code>{ready ? "}" : import("#{satellite}/thing")}</code>), jsx: true)
+    assert_empty js_imports_in(%(<>import "#{satellite}/thing"</>), jsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(<>{import("#{satellite}/thing")}</>), jsx: true)
   end
 
   test "detector ignores an import method called on an object" do
@@ -461,6 +464,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_empty js_imports_in(%(registry.import("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(import("#{satellite}/template")))
+  end
+
+  test "JS specifier decoder removes escaped line terminators" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in("import X from \"#{satellite.sub("_", "_\\\n")}/thing\"")
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in("import X from \"#{satellite.sub("_", "_\\\r\n")}/thing\"")
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in("import X from \"#{satellite.sub("_", "_\\\r")}/thing\"")
   end
 
   # The failure mode a file-level waiver has: it was written for one reference
@@ -607,6 +621,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def jsx_tag_at(source, cursor)
+    return [ nil, cursor + 1, false, false ] if source[cursor, 2] == "<>"
+    return [ nil, cursor + 2, true, false ] if source[cursor, 3] == "</>"
+
     match = source[cursor..].match(/\A<\/?([A-Za-z][A-Za-z0-9:._-]*)\b/)
     return unless match
 
@@ -800,6 +817,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_escape(source, cursor)
     escaped = source[cursor + 1]
     return [ "\\", cursor + 1 ] unless escaped
+    return [ "", cursor + 3 ] if escaped == "\r" && source[cursor + 2] == "\n"
+    return [ "", cursor + 2 ] if escaped == "\n" || escaped == "\r"
 
     simple = { "b" => "\b", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v", "0" => "\0" }
     return [ simple.fetch(escaped, escaped), cursor + 2 ] unless escaped == "u" || escaped == "x"
