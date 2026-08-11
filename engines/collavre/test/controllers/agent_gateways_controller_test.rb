@@ -135,6 +135,30 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert_select "label[for='agent_gateway_clear_completion_key']", I18n.t("collavre.agent_gateways.clear_completion_key_label")
   end
 
+  test "gateway edit preserves completion key removal intent after validation failure" do
+    sign_in_as(@owner, password: "password")
+    @gateway.update!(completion_key: "stored-completion-secret")
+
+    patch collavre.agent_gateway_path(@gateway), params: {
+      agent_gateway: {
+        name: "",
+        base_url: @gateway.base_url,
+        admin_key: "",
+        completion_key: "",
+        clear_completion_key: "1",
+        identity_secret: "",
+        tenant_id: @gateway.tenant_id,
+        workspace_mode: @gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_select "input[type='checkbox'][name='agent_gateway[clear_completion_key]'][checked='checked']"
+    assert_equal "stored-completion-secret", @gateway.reload.completion_key
+    assert_not_includes response.body, "stored-completion-secret"
+  end
+
   test "owner cannot retarget a desktop-managed gateway from settings" do
     desktop_gateway = Collavre::AgentGateway.create!(
       owner: @owner,

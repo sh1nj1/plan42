@@ -21,11 +21,15 @@ module Collavre
       end
     end
 
-    def edit; end
+    def edit
+      @has_stored_completion_key = @agent_gateway.completion_key.present?
+    end
 
     def update
       attributes = gateway_params
       clear_completion_key = ActiveModel::Type::Boolean.new.cast(attributes.delete(:clear_completion_key))
+      @has_stored_completion_key = @agent_gateway.completion_key.present?
+      @clear_completion_key = clear_completion_key
 
       if clear_completion_key
         attributes[:completion_key] = nil
