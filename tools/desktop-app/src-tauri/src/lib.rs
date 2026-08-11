@@ -18,13 +18,16 @@ use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 /// Holds the sidecar child so we can stop it on exit.
 struct Sidecar {
     child: Mutex<Option<Child>>,
     port: Mutex<Option<u16>>,
+    secret: String,
 }
 
 /// Holds the optional, user-approved cli-openai-proxy process. It is deliberately
@@ -269,6 +272,16 @@ fn generate_proxy_key(prefix: &str) -> Result<String, String> {
     Ok(format!("{prefix}_{}", URL_SAFE_NO_PAD.encode(bytes)))
 }
 
+/// Generate the ephemeral secret that binds the native shell to the Rails
+/// child it launches. It is passed only through the child's environment and
+/// is never persisted or exposed to the webview.
+fn generate_sidecar_secret() -> Result<String, String> {
+    let mut bytes = [0u8; 48];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| "Could not generate a desktop sidecar secret.".to_string())?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+
 struct ProxyCredentials {
     admin_key: String,
     completion_key: String,
@@ -372,7 +385,7 @@ fn reap_orphan_sidecar(data: &Path) {
     let _ = fs::remove_file(pidfile_path(data));
 }
 
-fn spawn_sidecar(root: &Path, data: &Path, port: u16) -> Child {
+fn spawn_sidecar(root: &Path, data: &Path, port: u16, secret: &str) -> Child {
     let launcher = root.join("bin/desktop-server");
     // Honor a caller-supplied bind host (open mode = 0.0.0.0 for LAN/Tailscale);
     // default to loopback. COLLAVRE_ALLOWED_HOSTS rides along via the inherited
@@ -383,7 +396,8 @@ fn spawn_sidecar(root: &Path, data: &Path, port: u16) -> Child {
         .current_dir(root)
         .env("PORT", port.to_string())
         .env("COLLAVRE_DATA_DIR", data)
-        .env("COLLAVRE_BIND_HOST", bind_host);
+        .env("COLLAVRE_BIND_HOST", bind_host)
+        .env("COLLAVRE_DESKTOP_SIDECAR_SECRET", secret);
 
     // Capture the sidecar's stdout/stderr to a boot log. A Finder-launched .app has
     // no terminal, so without this any startup failure (db migrate/seed, Puma) is
@@ -663,6 +677,7 @@ fn desktop_proxy_complete_setup(
         .lock()
         .map_err(|_| "The local Collavre server port is unavailable.".to_string())?
         .ok_or_else(|| "Collavre Desktop could not determine the local server port.".to_string())?;
+    authenticate_rails_sidecar(&rails_sidecar, server_port)?;
     // Validate the Rails-issued, short-lived consent grant before creating
     // Keychain credentials, writing proxy state, or starting the proxy. The
     // Tauri command is callable from loopback pages, so an arbitrary string
@@ -998,11 +1013,80 @@ fn validate_registration_grant(port: u16, registration_token: &str) -> Result<()
     }
 }
 
-/// Poll `GET /up` until it answers 200 or we give up.
-fn wait_until_healthy(port: u16, timeout: Duration) -> bool {
+type HmacSha256 = Hmac<Sha256>;
+
+fn valid_sidecar_challenge_response(secret: &str, challenge: &str, response: &str) -> bool {
+    let Ok(signature) = URL_SAFE_NO_PAD.decode(response.trim()) else {
+        return false;
+    };
+    let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) else {
+        return false;
+    };
+    mac.update(challenge.as_bytes());
+    mac.verify_slice(&signature).is_ok()
+}
+
+/// Prove the listener knows the ephemeral secret injected into the Rails child.
+/// A listener that merely imitates `/up` cannot manufacture this HMAC response.
+fn sidecar_challenge_accepted(port: u16, secret: &str) -> bool {
+    let Ok(challenge) = generate_sidecar_secret() else {
+        return false;
+    };
+    let address = format!("127.0.0.1:{port}");
+    let Ok(mut stream) = TcpStream::connect(&address) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+    let request = format!(
+        "GET /desktop/setup/sidecar-health?challenge={challenge} HTTP/1.0\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut response = String::new();
+    if stream.read_to_string(&mut response).is_err() {
+        return false;
+    }
+    let Some((headers, body)) = response.split_once("\r\n\r\n") else {
+        return false;
+    };
+    headers.starts_with("HTTP/1.")
+        && headers.contains(" 200")
+        && valid_sidecar_challenge_response(secret, &challenge, body)
+}
+
+fn sidecar_is_running(sidecar: &Sidecar) -> bool {
+    sidecar
+        .child
+        .lock()
+        .ok()
+        .and_then(|mut child| {
+            child
+                .as_mut()
+                .map(|child| child.try_wait().ok().flatten().is_none())
+        })
+        .unwrap_or(false)
+}
+
+fn authenticate_rails_sidecar(sidecar: &Sidecar, port: u16) -> Result<(), String> {
+    if sidecar_is_running(sidecar)
+        && sidecar_challenge_accepted(port, &sidecar.secret)
+        && sidecar_is_running(sidecar)
+    {
+        return Ok(());
+    }
+
+    Err("The local Collavre server could not be authenticated. Restart Collavre Desktop and try again.".to_string())
+}
+
+/// Poll the authenticated sidecar challenge until the spawned Rails process is
+/// ready. Never navigate the capability-enabled webview to an unauthenticated
+/// listener that merely answers a generic health request.
+fn wait_until_authenticated_sidecar(sidecar: &Sidecar, port: u16, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if http_ok(port, "/up") {
+        if authenticate_rails_sidecar(sidecar, port).is_ok() {
             return true;
         }
         std::thread::sleep(Duration::from_millis(250));
@@ -1183,9 +1267,12 @@ mod tests {
         invalidate_proxy_registration_when_gateway_is_missing, managed_proxy_runs_on_port,
         migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
         read_proxy_config, reap_orphan_proxy, replace_occupied_proxy_port,
-        revalidate_registered_gateway_after_rails_health, wait_until_proxy_healthy,
-        write_proxy_config, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
+        revalidate_registered_gateway_after_rails_health, valid_sidecar_challenge_response,
+        wait_until_proxy_healthy, write_proxy_config, HmacSha256, ManagedProxy, ProxyConfig,
+        ProxyCredentials, ProxySidecar, URL_SAFE_NO_PAD,
     };
+    use base64::Engine;
+    use hmac::Mac;
     use std::{
         env,
         ffi::{OsStr, OsString},
@@ -1296,6 +1383,29 @@ mod tests {
             .all(|character| character.is_ascii_alphanumeric()
                 || character == '_'
                 || character == '-'));
+    }
+
+    #[test]
+    fn sidecar_health_requires_a_valid_hmac_challenge_response() {
+        let secret = "sidecar-secret";
+        let challenge = "native-challenge";
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("valid HMAC key");
+        mac.update(challenge.as_bytes());
+        let response = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+
+        assert!(valid_sidecar_challenge_response(
+            secret, challenge, &response
+        ));
+        assert!(!valid_sidecar_challenge_response(
+            secret,
+            "different-challenge",
+            &response
+        ));
+        assert!(!valid_sidecar_challenge_response(
+            secret,
+            challenge,
+            "not-a-signature"
+        ));
     }
 
     #[test]
@@ -1597,11 +1707,13 @@ mod tests {
 }
 
 pub fn run() {
+    let sidecar_secret = generate_sidecar_secret().expect("generate Rails sidecar secret");
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(Sidecar {
             child: Mutex::new(None),
             port: Mutex::new(None),
+            secret: sidecar_secret,
         })
         .manage(ProxySidecar(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
@@ -1633,7 +1745,7 @@ pub fn run() {
             // Reap any sidecar orphaned by a prior crash before we spawn — it
             // still holds this data dir's SQLite write locks.
             reap_orphan_sidecar(&data);
-            let child = spawn_sidecar(&root, &data, port);
+            let child = spawn_sidecar(&root, &data, port, &app.state::<Sidecar>().secret);
             let _ = fs::write(pidfile_path(&data), child.id().to_string());
             app.state::<Sidecar>().child.lock().unwrap().replace(child);
             app.state::<Sidecar>().port.lock().unwrap().replace(port);
@@ -1669,7 +1781,11 @@ pub fn run() {
                         }
                         None => Ok(None),
                     });
-                let healthy = wait_until_healthy(port, Duration::from_secs(120));
+                let healthy = wait_until_authenticated_sidecar(
+                    &handle.state::<Sidecar>(),
+                    port,
+                    Duration::from_secs(120),
+                );
                 let first_run_complete = proxy_config
                     .and_then(|config| {
                         if !healthy {

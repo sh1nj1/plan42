@@ -18,6 +18,7 @@ Collavre::Engine.routes.draw do
   get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
   post "desktop/setup/account", to: "desktop_setup#create_account", as: :desktop_setup_account
   post "desktop/setup/registration-token", to: "desktop_setup#registration_token", as: :desktop_setup_registration_token
+  get "desktop/setup/sidecar-health", to: "desktop_sidecar_health#show", as: :desktop_setup_sidecar_health
   post "desktop/setup/validate-registration-grant", to: "desktop_gateway_registrations#validate_registration_grant", as: :desktop_setup_validate_registration_grant
   post "desktop/setup/gateway-registered", to: "desktop_gateway_registrations#registered", as: :desktop_setup_gateway_registered
   post "desktop/setup/register-gateway", to: "desktop_gateway_registrations#create", as: :desktop_setup_register_gateway
