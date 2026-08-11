@@ -149,6 +149,24 @@ BUNDLED_RUBY="$TAURI_TARGET_DIR/release/bundle/macos/Collavre Desktop.app/Conten
 }
 "$BUNDLED_RUBY" -v
 
+# ruby-build embeds the original build prefix in Ruby's default $LOAD_PATH.
+# Exercise the packaged runtime with only its copied standard library available;
+# otherwise a build Mac can hide this failure because its checkout still exists.
+PACKAGED_RUBY_ROOT="${BUNDLED_RUBY%/bin/ruby}"
+PACKAGED_RUBY_STDLIB_DIR="$(find "$PACKAGED_RUBY_ROOT/lib/ruby" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*.[0-9]*.[0-9]*' -print -quit)"
+[ -n "$PACKAGED_RUBY_STDLIB_DIR" ] || {
+  echo "[build-macos] packaged Ruby standard library is missing" >&2
+  exit 1
+}
+PACKAGED_RUBY_ARCH_DIR="$(find "$PACKAGED_RUBY_STDLIB_DIR" -mindepth 1 -maxdepth 1 -type d -name '*-darwin*' -print -quit)"
+PACKAGED_RUBY_TEST_DATA="$(mktemp -d)"
+trap 'rm -rf "$PACKAGED_RUBY_TEST_DATA"' EXIT
+env -i \
+  PATH=/usr/bin:/bin \
+  COLLAVRE_DATA_DIR="$PACKAGED_RUBY_TEST_DATA" \
+  RUBYLIB="$PACKAGED_RUBY_STDLIB_DIR${PACKAGED_RUBY_ARCH_DIR:+:$PACKAGED_RUBY_ARCH_DIR}" \
+  "$BUNDLED_RUBY" "$APP_ROOT/tools/desktop-app/scripts/provision-secrets.rb" >/dev/null
+
 # A Ruby executable can start on the build Mac even when one of its Mach-O load
 # commands still names the checkout. Reject that non-relocatable bundle here,
 # before a DMG can be handed to another Mac.
