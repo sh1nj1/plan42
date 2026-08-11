@@ -479,6 +479,31 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       js_imports_in(%(const id = <T = object>(value: T) => value; import("#{satellite}/thing")), jsx: true, tsx: true)
   end
 
+  test "TSX generic declarations do not mask later module syntax as JSX text" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(function identity<T>(value: T) { return value }\nimport("#{satellite}/thing")), jsx: true, tsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(export async function identity<T extends object>(value: T): Promise<T> { return value }\nimport("#{satellite}/thing")), jsx: true, tsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(class Box { identity<T>(value: T): T { return value }\n}\nimport("#{satellite}/thing")), jsx: true, tsx: true)
+    # A single-parameter generic is still a JSX element when it wraps children.
+    assert_empty js_imports_in(%(<T>import "#{satellite}/thing"</T>), jsx: true, tsx: true)
+  end
+
+  # Masking is the dangerous direction: anything a mis-read tag swallows never
+  # reaches the scanner. An opening tag with no closing tag anywhere after it is
+  # not valid JSX, so it is a misdetection — leave the source alone and let the
+  # tokenizer see it rather than blanking the rest of the file.
+  test "an unclosed JSX tag does not mask the rest of the source" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const bound = a <Widget> b;\nimport("#{satellite}/thing")), jsx: true)
+    assert_empty js_imports_in(%(<Widget>import "#{satellite}/thing"</Widget>), jsx: true)
+  end
+
   test "detector ignores an import method called on an object" do
     satellite = SATELLITES.first
 
@@ -666,9 +691,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def jsx_tag_at(source, cursor, tsx: false)
-    return [ nil, cursor + 1, false, false ] if source[cursor, 2] == "<>"
+    return [ nil, cursor + 1, false, false ] if source[cursor, 2] == "<>" && source[(cursor + 2)..].to_s.include?("</>")
     return [ nil, cursor + 2, true, false ] if source[cursor, 3] == "</>"
-    return if tsx && tsx_generic_arrow_at?(source, cursor)
+    return if tsx && tsx_generic_at?(source, cursor)
 
     match = source[cursor..].match(/\A<\/?([A-Za-z][A-Za-z0-9:._-]*)\b/)
     return unless match
@@ -679,21 +704,35 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     finish = jsx_tag_end(source, cursor + match[0].length)
     return unless finish
 
-    [ match[1], finish, closing, source[finish - 1] == "/" ]
+    self_closing = source[finish - 1] == "/"
+    return unless closing || self_closing || closes_later?(source, finish, match[1])
+
+    [ match[1], finish, closing, self_closing ]
   end
 
-  # In TSX, `<T,>`, `<T extends U>` and `<T = U>` begin generic arrow
-  # functions, not JSX elements. They are only generic syntax when the type
-  # parameters are followed by an arrow parameter list; ordinary JSX keeps the
-  # normal tag path above.
-  def tsx_generic_arrow_at?(source, cursor)
+  # Masking is the one direction that can hide an import, so a tag only opens a
+  # masked region when its closing tag actually exists. An opening tag with no
+  # `</name>` after it is not valid JSX — it is something else read as a tag,
+  # such as a generic parameter list or a comparison — and blanking the rest of
+  # the file on that reading is how a real import escapes the scanner.
+  def closes_later?(source, finish, name)
+    source[(finish + 1)..].to_s.match?(%r{</#{Regexp.escape(name)}\s*>})
+  end
+
+  # In TSX, angle brackets after a name are type parameters, not a JSX element:
+  # `<T,>`, `<T extends U>` and `<T = U>` open a generic arrow function, and
+  # `<T>` abutting a function or method name opens a generic declaration.
+  # Both are recognised by what follows the parameters — an arrow parameter
+  # list — so ordinary JSX keeps the normal tag path above.
+  def tsx_generic_at?(source, cursor)
     finish = tsx_type_parameter_end(source, cursor)
     return unless finish
 
     parameters = source[(cursor + 1)...finish]
-    return unless parameters.match?(/,|\bextends\b|=/)
+    rest = source[(finish + 1)..].to_s
+    return true if parameters.match?(/,|\bextends\b|=/) && rest.match?(/\A\s*\([^)]*\)(?:\s*:\s*[^=]+)?\s*=>/m)
 
-    source[(finish + 1)..].match?(/\A\s*\([^)]*\)(?:\s*:\s*[^=]+)?\s*=>/m)
+    source[0...cursor].match?(/[A-Za-z_$][\w$]*\z/) && rest.match?(/\A\s*\([^)]*\)(?:\s*:\s*[^{;=]+)?\s*\{/m)
   end
 
   def tsx_type_parameter_end(source, cursor)

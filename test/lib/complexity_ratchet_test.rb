@@ -103,6 +103,29 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     assert_equal "Sample#run[block:each](2)", path_for(source, 6)
   end
 
+  test "singleton methods on explicit receivers get distinct keys" do
+    # `def self.run` keeps the plain `.run` key it has always had, but
+    # `def Foo.run` and `def Bar.run` are separate entities. Collapsed onto one
+    # key, swapping a baselined 90-line `Foo.run` for an 80-line `Bar.run`
+    # reads as a tightening when it is in fact new debt on a new method.
+    source = <<~RUBY
+      module Sample
+        def self.run
+        end
+
+        def Foo.run
+        end
+
+        def Bar.run
+        end
+      end
+    RUBY
+
+    assert_equal "Sample.run", path_for(source, 2)
+    assert_equal "Sample::Foo.run", path_for(source, 5)
+    assert_equal "Sample::Bar.run", path_for(source, 8)
+  end
+
   test "keeps the population of siblings that are below the budget" do
     source = <<~RUBY
       class Sample
@@ -776,6 +799,37 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
       class A
         def run
           low.each { |item| item }
+        end
+      end
+    RUBY
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 90 }, { SIB => 80 },
+      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
+      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_equal SIB, problem.key
+  end
+
+  test "rejects a newcomer that took over a baselined sibling's key" do
+    # The mirror image of a deletion. Inserting a new sibling *ahead* of the
+    # baselined one hands the unsuffixed key to the newcomer while the original
+    # retreats behind `(2)` and drops below budget. Per-key comparison then sees
+    # 90 -> 80 and calls it an improvement, so the population has to be watched
+    # for any change, not only for shrinkage.
+    before_source = <<~RUBY
+      class A
+        def run
+          high.each { |item| item }
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+          low.each { |item| item }
+          high.each { |item| item }
         end
       end
     RUBY

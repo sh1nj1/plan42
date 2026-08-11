@@ -167,7 +167,18 @@ module ComplexityRatchet
     end
 
     def visit_def_node(node)
-      nest("#{node.receiver ? '.' : '#'}#{node.name}", node.location) { super }
+      nest("#{receiver_prefix(node.receiver)}#{node.name}", node.location) { super }
+    end
+
+    # `def self.run` is the enclosing class's own method and keeps the plain
+    # `.run` key. Any other receiver names a different object, so it has to
+    # reach the key: collapsed onto one `.run`, replacing a baselined 90-line
+    # `Foo.run` with an 80-line `Bar.run` reads as a tightening when it is a
+    # different method carrying new debt.
+    def receiver_prefix(receiver)
+      return "#" unless receiver
+
+      receiver.is_a?(Prism::SelfNode) ? "." : "#{receiver.slice}."
     end
 
     # Record direct statements while their enclosing scope is on the stack.
@@ -773,8 +784,13 @@ module ComplexityRatchet
     def sibling_family_changes(entries, siblings, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
       {
         baseline_shrank: entries.size < siblings.size,
-        population_shrank: entries.any? do |key, _|
-          before_siblings.fetch(sibling_population_key(key), 0) > after_siblings.fetch(sibling_population_key(key), 0)
+        # Any change in the population moves ordinals, in either direction. A
+        # deletion renames the survivor onto its dead sibling's key; an
+        # insertion *ahead* of a baselined sibling hands that key to the
+        # newcomer and retires the original behind `(2)`. Both read as a
+        # per-key improvement, so the comparison is `!=`, not `>`.
+        population_changed: entries.any? do |key, _|
+          before_siblings.fetch(sibling_population_key(key), 0) != after_siblings.fetch(sibling_population_key(key), 0)
         end,
         anchors_reordered: entries.any? { |key, _| sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) },
         anchors_ambiguous: entries.any? do |key, _|
@@ -804,8 +820,8 @@ module ComplexityRatchet
         "same-named siblings have indistinguishable anchors, so a changed baseline cannot safely " \
           "transfer their allowances — #{value} is above the #{floor} the family was recorded at"
       else
-        "a same-named sibling disappeared from the source, so this entry's ordinal may have " \
-          "transferred from that sibling — reset the baseline only after reviewing the change"
+        "the number of same-named siblings changed, so this entry's ordinal may have " \
+          "transferred from another sibling — reset the baseline only after reviewing the change"
       end
     end
 
