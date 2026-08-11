@@ -123,6 +123,7 @@ module ComplexityRatchet
       @ranges = {}
       @enclosures = []
       @stack = []
+      @fallback_statements = Hash.new { |hash, key| hash[key] = [] }
       @occurrences = Hash.new(0)
       @sibling_anchors = Hash.new { |hash, key| hash[key] = [] }
       super()
@@ -145,6 +146,14 @@ module ComplexityRatchet
         &.last
     end
 
+    # Ordinalise every same-text statement in a scope, including below-budget
+    # siblings; duplicate offenses at one source range still share an ordinal.
+    def fallback_ordinal(line, last_line, text)
+      statements = @fallback_statements[[ enclosing_path(line, last_line).to_s, text ]]
+      index = statements.find_index { |start_line, end_line| start_line == line && (last_line.nil? || end_line == last_line) }
+      (index || statements.find_index { |start_line, _end_line| start_line == line })&.+(1)
+    end
+
     def visit_class_node(node)
       nest(node.constant_path.slice, node.location) { super }
     end
@@ -159,6 +168,14 @@ module ComplexityRatchet
 
     def visit_def_node(node)
       nest("#{node.receiver ? '.' : '#'}#{node.name}", node.location) { super }
+    end
+
+    # Record direct statements while their enclosing scope is on the stack.
+    def visit_statements_node(node)
+      node.body.each do |statement|
+        @fallback_statements[[ path, statement.location.slice.lines.first.strip.gsub(/\s+/, " ") ]] << [ statement.location.start_line, statement.location.end_line ]
+      end
+      super
     end
 
     # A `do ... end` can hang off three node types, not one: an ordinary call,
@@ -340,34 +357,23 @@ module ComplexityRatchet
       source = File.read(File.join(root, path))
       entities = EntityMap.for(source)
       lines = source.lines
-      fallback_occurrences = Hash.new(0)
-      fallback_keys = {}
-
       offenses.sort_by { |offense| [ offense.dig("location", "start_line") || offense.dig("location", "line"), offense.dig("location", "last_line") || 0 ] }.each do |offense|
         line = offense.dig("location", "start_line") || offense.dig("location", "line")
         last_line = offense.dig("location", "last_line")
-        key = [ path, offense["cop_name"], entity_name(entities, lines, line, last_line, fallback_occurrences, fallback_keys, offense["cop_name"]) ].join(SEPARATOR)
+        key = [ path, offense["cop_name"], entities[line, last_line] || fallback_name(entities, lines, line, last_line) ].join(SEPARATOR)
         record(acc, key, offense["message"])
       end
     end
 
-    def entity_name(entities, lines, line, last_line, fallback_occurrences, fallback_keys, cop_name)
-      entities[line, last_line] || fallback_name(entities, lines, line, last_line, fallback_occurrences, fallback_keys, cop_name)
-    end
-
     # Metrics/BlockNesting and friends point at a bare statement rather than a
     # definition. The normalised source line and enclosing scope identify the
-    # usual case; ordinalise repeated statements within one cop so their counts
-    # cannot aggregate into a single baseline entry.
-    def fallback_name(entities, lines, line, last_line, occurrences, keys, cop_name)
+    # usual case; include below-budget twins in the ordinal population too.
+    def fallback_name(entities, lines, line, last_line)
       text = lines[line - 1].to_s.strip.gsub(/\s+/, " ")
       text = "#{text[0, 97]}..." if text.length > 100
       base = [ entities.enclosing_path(line, last_line), "~#{text}" ].compact.join
-      location = [ cop_name, base, line, last_line ]
-      return keys[location] if keys.key?(location)
-
-      occurrence = (occurrences[[ cop_name, base ]] += 1)
-      keys[location] = occurrence == 1 ? base : "#{base}(#{occurrence})"
+      ordinal = entities.fallback_ordinal(line, last_line, text)
+      ordinal && ordinal > 1 ? "#{base}(#{ordinal})" : base
     end
 
     def record(acc, key, message)
@@ -747,14 +753,15 @@ module ComplexityRatchet
       )
       return [] unless changes.values.any?
 
-      floor = siblings.map(&:last).min
-      entries.filter_map { |key, value| sibling_entry_problem(key, value, before, floor, changes) }
+      entries.filter_map { |key, value| sibling_entry_problem(key, value, before, siblings.map(&:last).min, changes, before_siblings.fetch(sibling_population_key(key), 0) > siblings.size) }
     end
 
     def sibling_family_changes(entries, siblings, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
       {
         baseline_shrank: entries.size < siblings.size,
-        population_shrank: entries.any? { |key, _| sibling_population_shrank?(key, before_siblings, after_siblings) },
+        population_shrank: entries.any? do |key, _|
+          before_siblings.fetch(sibling_population_key(key), 0) > after_siblings.fetch(sibling_population_key(key), 0)
+        end,
         anchors_reordered: entries.any? { |key, _| sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) },
         anchors_ambiguous: entries.any? do |key, _|
           sibling_anchors_ambiguous?(key, entries, siblings, before_sibling_anchors, after_sibling_anchors)
@@ -762,22 +769,20 @@ module ComplexityRatchet
       }
     end
 
-    def sibling_population_shrank?(key, before, after)
-      before.fetch(sibling_population_key(key), 0) > after.fetch(sibling_population_key(key), 0)
-    end
-
-    def sibling_entry_problem(key, value, before, floor, changes)
-      return unless before.key?(key)
-      return if changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? && value <= floor
+    def sibling_entry_problem(key, value, before, floor, changes, baseline_incomplete)
+      return unless before.key?(key) && (value > floor || !changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? || changes[:anchors_reordered] && baseline_incomplete)
 
       Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
-        message: sibling_problem_message(value, floor, changes[:baseline_shrank], changes[:anchors_reordered], changes[:anchors_ambiguous]))
+        message: sibling_problem_message(value, floor, changes[:baseline_shrank], changes[:anchors_reordered], changes[:anchors_ambiguous], baseline_incomplete))
     end
 
-    def sibling_problem_message(value, floor, baseline_shrank, anchors_reordered, anchors_ambiguous)
+    def sibling_problem_message(value, floor, baseline_shrank, anchors_reordered, anchors_ambiguous, baseline_incomplete)
       if baseline_shrank
         "a same-named sibling was removed, so this entry may have inherited that sibling's " \
           "allowance — #{value} is above the #{floor} the family was recorded at"
+      elsif anchors_reordered && baseline_incomplete
+        "same-named siblings changed order while at least one sibling was not baselined, so an " \
+          "allowance may have moved to a previously unrecorded entity"
       elsif anchors_reordered
         "same-named siblings changed order, so this entry may have inherited that sibling's " \
           "allowance — #{value} is above the #{floor} the family was recorded at"
@@ -791,13 +796,10 @@ module ComplexityRatchet
     end
 
     # Siblings share every part of a key except their ordinal.
-    def family(key)
-      key.gsub(/\(\d+\)/, "")
-    end
+    def family(key) = key.gsub(/\(\d+\)/, "")
 
     def sibling_population_key(key)
-      file, _cop, entity = key.split(SEPARATOR, 3)
-      [ file, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)
+      key.split(SEPARATOR, 3).then { |file, _cop, entity| [ file, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR) }
     end
 
     def sibling_anchors_reordered?(key, before, after)

@@ -386,6 +386,23 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     }, result)
   end
 
+  test "fallback ordinals include matching statements below the budget" do
+    File.write(File.join(@dir, "sample.rb"), <<~RUBY)
+      class Sample
+        def wide
+          if ready
+          end
+          if ready
+          end
+        end
+      end
+    RUBY
+
+    result = fold([ offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 5) ])
+
+    assert_equal({ "sample.rb | Metrics/BlockNesting | Sample#wide~if ready(2)" => 1 }, result)
+  end
+
   test "skips files with no offenses" do
     payload = { "files" => [ { "path" => "sample.rb", "offenses" => [] }, { "path" => "other.rb" } ] }
 
@@ -720,6 +737,36 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
       before_siblings: { SIBLING_POPULATION => 2 },
       after_siblings: { SIBLING_POPULATION => 2 }
     )
+  end
+
+  test "rejects reordered families with an unbaselined sibling even below the recorded floor" do
+    before_source = <<~RUBY
+      class A
+        def run
+          high.each { |item| item }
+          low.each { |item| item }
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+          low.each { |item| item }
+          high.each { |item| item }
+        end
+      end
+    RUBY
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 90 }, { SIB => 80 },
+      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
+      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source),
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "not baselined"
   end
 
   test "rejects same-count siblings that exchange allowances by changing order" do

@@ -457,6 +457,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(<>import "#{satellite}/thing"</>), jsx: true)
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(<>{import("#{satellite}/thing")}</>), jsx: true)
+    assert_empty js_imports_in(%(<div>{ready && <code>import "#{satellite}/thing"</code>}</div>), jsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(<div>{ready && <code>{import("#{satellite}/thing")}</code>}</div>), jsx: true)
   end
 
   test "detector ignores an import method called on an object" do
@@ -608,7 +611,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
         depth += 1 unless closing || self_closing
         cursor = finish + 1
       elsif depth.positive? && source[cursor] == "{"
-        cursor = jsx_expression_end(source, cursor)
+        expression_end = jsx_expression_end(source, cursor)
+        expression = source[(cursor + 1)...(expression_end - 1)]
+        masked[(cursor + 1)...(expression_end - 1)] = mask_jsx_text(expression) if expression
+        cursor = expression_end
       elsif depth.positive?
         masked[cursor] = " " unless source[cursor] == "\n"
         cursor += 1
