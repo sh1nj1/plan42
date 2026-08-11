@@ -43,6 +43,9 @@ module ComplexityRatchet
   CONFIG_PATH   = ".rubocop_metrics.yml"
   BASELINE_PATH = ".complexity_baseline.yml"
   WAIVERS_PATH  = ".complexity_waivers.yml"
+  # The rest of the budget: CONFIG_PATH sets Enabled and Max and inherits every
+  # other Metrics setting from the RuboCop gems pinned here. See #verify_toolchain.
+  LOCK_PATH     = "Gemfile.lock"
 
   # The measured value inside a RuboCop Metrics message:
   #   "Method has too many lines. [38/25]"                    -> 38
@@ -554,6 +557,46 @@ module ComplexityRatchet
       cop_problems(before, after) + exclude_problems(before, after) + global_problems(before, after)
     end
 
+    # The budget is not only what .rubocop_metrics.yml says. That file sets
+    # `Enabled` and `Max` and inherits everything else from the RuboCop gems, so
+    # a version bump moves the effective budget while the file it is compared
+    # against is byte-identical:
+    #
+    #   Metrics/MethodLength in .rubocop_metrics.yml : Enabled, Max
+    #   Metrics/MethodLength in effect               : Enabled, Max,
+    #     AllowedMethods, AllowedPatterns, CountAsOne, CountComments
+    #
+    # Four of six keys live in the gem. Measured on this repo by widening one of
+    # them the way an upgrade would, changing nothing in the repository:
+    # measurement drops 438 entities to 277, `--regenerate` deletes all 161
+    # MethodLength entries, and both `--verify-baseline` and `--check` exit 0.
+    # MethodLength is then off repository-wide with no reset label.
+    #
+    # Comparing *resolved* configs does not close this. Resolution uses the gems
+    # that are installed, and CI installs only this branch's — so the base
+    # config would be resolved with the new RuboCop and come out identical. The
+    # version is the only evidence of the base's behaviour that survives into
+    # the PR build, so that is what is compared.
+    #
+    # A toolchain change is not blocked, only made explicit: it goes through
+    # `complexity-baseline-reset` like any other budget change, which is the
+    # case that label was written for.
+    def verify_toolchain(before_lock, after_lock)
+      return [] if before_lock.nil?
+
+      before, after = [ before_lock, after_lock ].map { |lock| rubocop_versions(lock) }
+
+      (before.keys | after.keys).sort.filter_map do |gem_name|
+        next if before[gem_name] == after[gem_name]
+
+        problem(:toolchain_changed, gem_name,
+          "#{gem_name} #{before[gem_name] || '(absent)'} -> #{after[gem_name] || '(absent)'} — " \
+          "the Metrics budget inherits AllowedMethods, AllowedPatterns, CountAsOne and CountComments " \
+          "from these gems, so an upgrade can silence offenses and delete baseline entries " \
+          "while #{CONFIG_PATH} stays identical")
+      end
+    end
+
     # Keys present in the measurement but absent from the baseline are NOT
     # added: adding them is what --verify-baseline exists to reject. They are
     # returned so the CLI can point at the real fix.
@@ -664,6 +707,18 @@ module ComplexityRatchet
       changed = (mine.keys | theirs.keys).reject { |key| mine[key] == theirs[key] }.sort
       [ problem(:budget_scope_narrowed, "AllCops",
         "#{changed.join(', ')} changed in #{CONFIG_PATH} — narrowing what RuboCop reads hides entities from the ratchet") ]
+    end
+
+    # Every resolved `rubocop*` gem in a Gemfile.lock, as name => version.
+    #
+    # Gemfile.lock indents a resolved spec by four spaces and its dependencies
+    # by six, so the anchored four-space match takes each gem once and ignores
+    # the dependency lines that repeat it with a constraint instead of a
+    # version. Scoped to the rubocop family because they are the ones that ship
+    # config: rubocop's own default.yml, rubocop-rails-omakase's rubocop.yml
+    # named in `inherit_gem`, and the rubocop-ast the metrics are computed with.
+    def rubocop_versions(lock)
+      lock.to_s.scan(/^ {4}(rubocop[\w-]*) \(([^)]+)\)$/).to_h
     end
 
     def problem(kind, key, message)

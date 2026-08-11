@@ -36,6 +36,7 @@ end.parse!
 BASELINE = File.join(ROOT, ComplexityRatchet::BASELINE_PATH)
 WAIVERS  = File.join(ROOT, ComplexityRatchet::WAIVERS_PATH)
 CONFIG   = File.join(ROOT, ComplexityRatchet::CONFIG_PATH)
+LOCK     = File.join(ROOT, ComplexityRatchet::LOCK_PATH)
 
 def abort_with(message)
   warn message
@@ -66,9 +67,11 @@ when :verify
 
   base_config = file_at(options[:ref], ComplexityRatchet::CONFIG_PATH)
 
-  # Two ways to unwind the ratchet, and only one of them touches the baseline.
+  # Three ways to unwind the ratchet, and only one of them touches the baseline.
   # Raising a Max deletes baseline entries wholesale, which reads as a refactor
-  # to verify_monotonic — so the budget is checked as well as the baseline.
+  # to verify_monotonic; upgrading RuboCop does the same without editing a file
+  # in this repository at all. So the budget and the toolchain that supplies its
+  # inherited half are both checked alongside the baseline.
   problems =
     ComplexityRatchet.verify_monotonic(
       ComplexityRatchet.flatten(YAML.safe_load(base_baseline) || {}),
@@ -77,6 +80,10 @@ when :verify
     ComplexityRatchet.verify_budget(
       base_config && (YAML.safe_load(base_config) || {}),
       YAML.safe_load_file(CONFIG) || {}
+    ) +
+    ComplexityRatchet.verify_toolchain(
+      file_at(options[:ref], ComplexityRatchet::LOCK_PATH),
+      File.read(LOCK)
     )
 
   if problems.empty?
@@ -87,7 +94,8 @@ when :verify
   report(problems)
   abort_with("\nThe complexity baseline and the budget in #{ComplexityRatchet::CONFIG_PATH} may only tighten. " \
              "Fix the entity, or add a time-boxed waiver to #{ComplexityRatchet::WAIVERS_PATH} " \
-             "with an owner, a reason, and an expiry.")
+             "with an owner, a reason, and an expiry.\n" \
+             "A deliberate budget or RuboCop change goes through the `complexity-baseline-reset` label instead.")
 end
 
 actual = ComplexityRatchet::Measurement.call(root: ROOT)

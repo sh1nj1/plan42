@@ -727,6 +727,76 @@ class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
   end
 end
 
+# .rubocop_metrics.yml carries `Enabled` and `Max` and inherits the rest, so the
+# budget only half lives in this repository. Verified on the real tree by
+# widening one inherited default the way an upgrade would, with nothing in the
+# repository changed: 438 entities measured down to 277, `--regenerate` deleted
+# all 161 MethodLength entries, and both gates exited 0.
+class ComplexityRatchetToolchainTest < ActiveSupport::TestCase
+  LOCK = <<~LOCK
+    GEM
+      remote: https://rubygems.org/
+      specs:
+        rails (8.1.0)
+        rubocop (1.86.0)
+          rubocop-ast (>= 1.49.0, < 2.0)
+        rubocop-ast (1.49.1)
+        rubocop-rails-omakase (1.1.0)
+          rubocop (>= 1.72)
+
+    DEPENDENCIES
+      rubocop-rails-omakase
+  LOCK
+
+  def with(replacements)
+    replacements.reduce(LOCK) { |lock, (from, to)| lock.sub(from, to) }
+  end
+
+  test "rejects a RuboCop upgrade, which moves the inherited half of the budget" do
+    problem = ComplexityRatchet.verify_toolchain(LOCK, with("rubocop (1.86.0)" => "rubocop (1.87.0)")).sole
+
+    assert_equal :toolchain_changed, problem.kind
+    assert_equal "rubocop", problem.key
+    assert_includes problem.message, "1.86.0 -> 1.87.0"
+  end
+
+  # The config named in `inherit_gem` ships in this gem, so its version moves
+  # AllCops/Exclude and the cop defaults just as directly as RuboCop's own.
+  test "rejects an upgrade of any gem in the rubocop family" do
+    %w[rubocop-ast rubocop-rails-omakase].each do |gem_name|
+      after = with("#{gem_name} (1." => "#{gem_name} (9.")
+      problem = ComplexityRatchet.verify_toolchain(LOCK, after).sole
+
+      assert_equal gem_name, problem.key, "#{gem_name} was accepted"
+    end
+  end
+
+  test "rejects a downgrade and a removal as readily as an upgrade" do
+    downgraded = ComplexityRatchet.verify_toolchain(with("rubocop (1.86.0)" => "rubocop (1.70.0)"), LOCK).sole
+    assert_equal "1.70.0 -> 1.86.0", downgraded.message[/[\d.]+ -> [\d.]+/]
+
+    removed = ComplexityRatchet.verify_toolchain(LOCK, LOCK.sub(/^    rubocop-ast \(1\.49\.1\)\n/, "")).sole
+    assert_equal "rubocop-ast", removed.key
+    assert_includes removed.message, "(absent)"
+  end
+
+  # A dependency line repeats the gem with a constraint rather than a version.
+  # Reading those would compare "rubocop (>= 1.72)" against itself forever and
+  # miss the resolved version entirely.
+  test "reads resolved versions and not the dependency constraints under them" do
+    assert_empty ComplexityRatchet.verify_toolchain(LOCK, LOCK.sub("rubocop (>= 1.72)", "rubocop (>= 1.86)"))
+  end
+
+  test "ignores gems outside the rubocop family and an unchanged lock" do
+    assert_empty ComplexityRatchet.verify_toolchain(LOCK, with("rails (8.1.0)" => "rails (8.2.0)"))
+    assert_empty ComplexityRatchet.verify_toolchain(LOCK, LOCK.dup)
+  end
+
+  test "a base ref that predates the lockfile has nothing to verify" do
+    assert_empty ComplexityRatchet.verify_toolchain(nil, LOCK)
+  end
+end
+
 class ComplexityRatchetRegenerateTest < ActiveSupport::TestCase
   KEY = "a.rb | Metrics/MethodLength | A#b"
   OTHER = "b.rb | Metrics/AbcSize | B#c"

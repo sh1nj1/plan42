@@ -258,6 +258,30 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(registry.load_all("#{satellite}")))
   end
 
+  # Holding `require` and `load` to Kernel is only sound if every spelling of
+  # Kernel counts. `::Kernel` parses as a ConstantPathNode rather than a
+  # ConstantReadNode, so a working loader call was skipped over a difference in
+  # how the receiver was written.
+  test "detector flags a Kernel loader however Kernel is qualified" do
+    satellite = SATELLITES.first
+    feature = "#{satellite}/some_service"
+
+    assert_equal [ feature ], requires_in(%(::Kernel.require "#{feature}"))
+    assert_equal [ "#{feature}.rb" ], requires_in(%(::Kernel.load "#{feature}.rb"))
+    assert_equal [ feature ], requires_in(%(Object::Kernel.require "#{feature}"))
+    assert_equal [ feature ], requires_in(%(::Object::Kernel.require "#{feature}"))
+  end
+
+  # The counterpart. A nested `Wrapper::Kernel` is somebody else's constant and
+  # raises NameError in Ruby, so the walk has to reach the root rather than
+  # accept any path whose last segment reads "Kernel".
+  test "detector ignores a loader on a Kernel nested under another namespace" do
+    satellite = SATELLITES.first
+
+    assert_empty requires_in(%(Wrapper::Kernel.load "#{satellite}/x.rb"))
+    assert_empty requires_in(%(Wrapper::Object::Kernel.load "#{satellite}/x.rb"))
+  end
+
   # `autoload` is Module#autoload, so a module receiver is its ordinary form —
   # the opposite of `load`, where the bare call is the ordinary one. Holding
   # both to the Kernel rule would have missed the spelling people actually
@@ -575,7 +599,38 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if call.receiver.nil?
     return true if call.name == :autoload
 
-    call.receiver.is_a?(Prism::ConstantReadNode) && call.receiver.name == :Kernel
+    kernel?(call.receiver)
+  end
+
+  # Every spelling that reaches the real Kernel, not just the bare constant.
+  # `::Kernel.require "collavre_slack/foo"` parses as a ConstantPathNode rather
+  # than a ConstantReadNode, and matching only the latter let a working loader
+  # call through on a spelling difference alone.
+  #
+  # Checked against Ruby rather than reasoned about — `Kernel`, `::Kernel`,
+  # `Object::Kernel` and `::Object::Kernel` all load the file, while
+  # `Wrapper::Kernel` and `String::Kernel` raise NameError. So the rule is
+  # "Kernel, qualified by nothing but Object", which is the same shape as the
+  # `Object::` exception the constant detector already makes: top-level
+  # constants are constants of Object, and nothing else reaches them.
+  def kernel?(node)
+    case node
+    when Prism::ConstantReadNode then node.name == :Kernel
+    when Prism::ConstantPathNode then node.name == :Kernel && top_level_path?(node.parent)
+    else false
+    end
+  end
+
+  # True for the qualifier of a top-level constant: absent (a leading `::`), or
+  # `Object` reached the same way. `Wrapper::Object::Kernel` is Wrapper's own
+  # nesting and resolves to nothing, so the walk has to reach the root.
+  def top_level_path?(node)
+    case node
+    when nil then true
+    when Prism::ConstantReadNode then node.name == :Object
+    when Prism::ConstantPathNode then node.name == :Object && top_level_path?(node.parent)
+    else false
+    end
   end
 
   # The engine is identified from every path segment after normalization, not

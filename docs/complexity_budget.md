@@ -95,6 +95,32 @@ that changes how a metric is computed shifts every value at once — that is wha
 the `complexity-baseline-reset` PR label is for. Applying a label does not
 re-trigger CI, so re-run the `complexity` job after adding it.
 
+### Rule 5: the RuboCop version is part of the budget
+
+`.rubocop_metrics.yml` sets `Enabled` and `Max` and inherits everything else, so
+only half the budget lives in this repository:
+
+| `Metrics/MethodLength` | keys |
+|---|---|
+| in `.rubocop_metrics.yml` | `Enabled`, `Max` |
+| in effect | `Enabled`, `Max`, `AllowedMethods`, `AllowedPatterns`, `CountAsOne`, `CountComments` |
+
+Four of six come from the gems. Widening one of them the way an upgrade would,
+with nothing in this repository changed, takes the measurement from 438 entities
+to 277; `--regenerate` then deletes all 161 `Metrics/MethodLength` entries and
+both gates exit 0, with the cop effectively off repository-wide.
+
+So `--verify-baseline` compares the resolved `rubocop*` versions in
+`Gemfile.lock` against the base ref's, and any change is reported. Comparing the
+*resolved* configuration instead would not work: resolution uses the gems that
+are installed, and CI installs only the PR branch's, so the base config would be
+resolved with the new RuboCop and come out identical.
+
+A RuboCop bump is therefore a `complexity-baseline-reset` PR: apply the label,
+re-run the `complexity` job, and regenerate the baseline in that same PR so the
+new values are recorded once, deliberately, in a diff whose subject is the
+upgrade.
+
 ### Why not `.rubocop_todo.yml`
 
 Because it does the opposite of what it looks like it does.
