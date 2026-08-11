@@ -26,6 +26,7 @@ module Collavre
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
     after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
+    after_update_commit :schedule_onboarding_cleanup, if: :became_inactive?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
       rel = where(topic_id: topic_id, status: %w[running delegated])
@@ -149,6 +150,26 @@ module Collavre
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
+    end
+
+    # A completed onboarding session may have stopped retrying its cleanup
+    # while a tool approval waited indefinitely. Once that turn transitions out
+    # of an active state, enqueue one final cleanup instead of polling forever.
+    def became_inactive?
+      saved_change_to_attribute?("status") &&
+        status_before_last_save.in?(ACTIVE_STATUSES) &&
+        !active?
+    end
+
+    def schedule_onboarding_cleanup
+      creative = self.creative
+      session_id = creative&.data&.dig("onboarding", "session_id")
+      return if session_id.blank?
+
+      user = creative.user
+      return unless user&.onboarding_completed_at?
+
+      OnboardingCleanupJob.perform_later(user.id, session_id)
     end
 
     # This turn refused other dispatches on the strength of having read their

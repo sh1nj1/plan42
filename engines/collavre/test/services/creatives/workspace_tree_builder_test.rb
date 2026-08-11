@@ -26,8 +26,9 @@ module Creatives
       branch = Creative.create!(user: @user, parent: root, description: "Branch")
       Creative.create!(user: @user, parent: branch, description: "Leaf")
       root_leaf = Creative.create!(user: @user, description: "Root leaf")
+      inbox = Creative.inbox_for(@user)
 
-      nodes = build_tree([ root, root_leaf ])
+      nodes = build_tree([ root, root_leaf, inbox ])
 
       assert_equal [ root.id, root_leaf.id ], nodes.pluck(:id)
       assert_equal "Root", nodes.first[:label]

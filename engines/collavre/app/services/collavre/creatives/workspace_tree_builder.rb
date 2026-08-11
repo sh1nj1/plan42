@@ -19,6 +19,9 @@ module Collavre
       attr_reader :children_index, :expanded_ids, :user, :view_context
 
       def build_entries(entries)
+        # The Inbox has dedicated navigation and must not also appear as an
+        # ordinary root workspace node. Keep other childless roots visible.
+        entries = entries.reject { |entry| entry.fetch(:creative).inbox? }
         return [] if entries.empty?
 
         creatives = entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
