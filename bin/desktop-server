@@ -58,19 +58,10 @@ if [ -x "$VENDORED_RUBY" ]; then
   export BUNDLE_WITHOUT="development:test:production"
   export BUNDLE_WITH="desktop"
 
-  # ruby-build embeds its installation prefix in Ruby's default load path. The
-  # portable runtime is copied from that prefix into the .app, so a different
-  # Mac cannot use those baked-in paths to find standard-library files such as
-  # securerandom. Prepend the runtime's actual stdlib directories and discard
-  # any caller-supplied RUBYLIB: a packaged app must not load code from outside
-  # its signed bundle.
-  RUBY_STDLIB_DIR="$(find "$VENDOR_DIR/ruby/lib/ruby" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*.[0-9]*.[0-9]*' -print -quit)"
-  [ -n "$RUBY_STDLIB_DIR" ] || {
-    echo "[desktop-server] bundled Ruby standard library is missing" >&2
-    exit 1
-  }
-  RUBY_ARCH_DIR="$(find "$RUBY_STDLIB_DIR" -mindepth 1 -maxdepth 1 -type d -name '*-darwin*' -print -quit)"
-  export RUBYLIB="$RUBY_STDLIB_DIR${RUBY_ARCH_DIR:+:$RUBY_ARCH_DIR}"
+  # The packaged runtime is self-relocating, so prevent caller-supplied paths
+  # from loading standard-library or gem code outside the signed app bundle.
+  unset RUBYLIB
+  unset RUBYOPT
 elif [ "$PACKAGED_APP" = true ]; then
   echo "[desktop-server] bundled Ruby is missing or not executable: $VENDORED_RUBY" >&2
   exit 1

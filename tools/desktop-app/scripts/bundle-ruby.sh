@@ -26,15 +26,28 @@ command -v ruby-build >/dev/null 2>&1 || {
 mkdir -p "$VENDOR_DIR"
 
 if [ -x "$RUBY_PREFIX/bin/ruby" ]; then
-  echo "[bundle-ruby] reusing existing vendored Ruby at $RUBY_PREFIX"
-else
+  load_relative="$("$RUBY_PREFIX/bin/ruby" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE")')"
+  if [ "$load_relative" = "yes" ]; then
+    echo "[bundle-ruby] reusing self-relocating vendored Ruby at $RUBY_PREFIX"
+  else
+    echo "[bundle-ruby] replacing non-relocating vendored Ruby at $RUBY_PREFIX"
+    rm -rf "$RUBY_PREFIX" "$VENDOR_DIR/bundle"
+  fi
+fi
+
+if [ ! -x "$RUBY_PREFIX/bin/ruby" ]; then
   echo "[bundle-ruby] building Ruby $RUBY_VERSION into $RUBY_PREFIX (this is slow)…"
-  ruby-build "$RUBY_VERSION" "$RUBY_PREFIX"
+  RUBY_CONFIGURE_OPTS="${RUBY_CONFIGURE_OPTS:-} --enable-load-relative" ruby-build "$RUBY_VERSION" "$RUBY_PREFIX"
 fi
 
 "$SCRIPT_DIR/relocate-ruby.sh" "$RUBY_PREFIX"
 
 VENDORED_RUBY="$RUBY_PREFIX/bin/ruby"
+load_relative="$("$VENDORED_RUBY" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE")')"
+[ "$load_relative" = "yes" ] || {
+  echo "[bundle-ruby] Ruby was not built with --enable-load-relative" >&2
+  exit 1
+}
 export PATH="$RUBY_PREFIX/bin:$PATH"
 export GEM_HOME="$VENDOR_DIR/bundle"
 export GEM_PATH="$VENDOR_DIR/bundle"
