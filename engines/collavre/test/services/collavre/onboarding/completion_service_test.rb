@@ -67,6 +67,22 @@ module Collavre
         refute Creative.exists?(session.root.id)
       end
 
+      test "defers cleanup while the onboarding agent job is queued before its task exists" do
+        user = User.create!(name: "Queued finisher", email: "queued-finisher@example.com", password: "password")
+        agent = User.create!(name: "Queued helper", email: "queued-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        comment = Comment.create!(creative: session.practice_creatives.second, user: user, content: "@Queued helper: Please help")
+        ai_job = AiAgentJob.new(agent.id, "comment_created", { "comment" => { "id" => comment.id } })
+        SolidQueue::Job.create!(class_name: AiAgentJob.name, queue_name: "ai_agents", arguments: ai_job.serialize)
+
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+          CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
+        end
+
+        assert Creative.exists?(session.root.id)
+      end
+
       test "removes a deferred session after its agent turn settles" do
         user = User.create!(name: "Settled finisher", email: "settled-finisher@example.com", password: "password")
         session = Seeder.new(user: user).call

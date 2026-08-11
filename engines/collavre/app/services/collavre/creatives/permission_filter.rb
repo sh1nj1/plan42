@@ -46,6 +46,36 @@ module Creatives
       end
     end
 
+    # Narrows a User relation to users that can access +creative+ at the
+    # requested level. Keep the permission predicate in SQL so callers can
+    # apply their own ordering and limit *after* inaccessible users have been
+    # excluded. A direct user cache entry remains authoritative over public
+    # access, matching #permitted_user_ids and PermissionChecker.
+    def self.permitted_users(scope, creative, min_permission: :read)
+      return scope.none if creative.blank?
+
+      effective = EffectiveCreativeResolution.effective_creative(creative)
+      min_rank = CreativeShare.permissions.fetch(min_permission.to_s)
+      user_table = User.quoted_table_name
+      cache_table = CreativeSharesCache.quoted_table_name
+      user_cache = "permission_filter_user_cache"
+      public_cache = "permission_filter_public_cache"
+
+      scope
+        .joins(sanitize_join("LEFT OUTER JOIN #{cache_table} #{user_cache} " \
+          "ON #{user_cache}.creative_id = ? AND #{user_cache}.user_id = #{user_table}.id", effective.id))
+        .joins(sanitize_join("LEFT OUTER JOIN #{cache_table} #{public_cache} " \
+          "ON #{public_cache}.creative_id = ? AND #{public_cache}.user_id IS NULL", effective.id))
+        .where(
+          "#{user_table}.id = :owner_id OR " \
+            "CASE WHEN #{user_cache}.id IS NOT NULL THEN #{user_cache}.permission " \
+            "ELSE #{public_cache}.permission END >= :min_rank",
+          owner_id: effective.user_id,
+          min_rank: min_rank
+        )
+        .distinct
+    end
+
     # Returns the subset of `ids` the user may access at `min_permission` or
     # higher, as an Array. `min_permission:` defaults to `:read`, so the no-arg
     # form is unchanged; pass `:write` (etc.) to share the one batch filter with
@@ -139,6 +169,11 @@ module Creatives
     end
 
     private
+
+    def self.sanitize_join(sql, id)
+      ActiveRecord::Base.sanitize_sql_array([ sql, id ])
+    end
+    private_class_method :sanitize_join
 
     attr_reader :user
 

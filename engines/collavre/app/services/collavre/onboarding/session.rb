@@ -127,9 +127,8 @@ module Collavre
       def agent_mention_available?
         return false unless data["agent_mention_enabled"] == true
 
-        User.mentionable_for(root).ai_agents.any? do |agent|
-          root.has_permission?(agent, :feedback)
-        end
+        agent = mention_agent
+        agent&.ai_user? && root.has_permission?(agent, :feedback)
       end
 
       def complete_removed_mention_step!
@@ -138,6 +137,21 @@ module Collavre
         update! do |onboarding|
           onboarding["current_step"] = "complete"
         end
+      end
+
+      # New sessions persist the helper selected by Seeder, keeping the polling
+      # endpoint to a single user/cache lookup. The cache-backed fallback keeps
+      # sessions created before that field existed resumable without scanning all
+      # globally searchable agents.
+      def mention_agent
+        agent_id = data["agent_mention_agent_id"]
+        return User.find_by(id: agent_id) if agent_id.present?
+
+        User.mentionable_for(root).ai_agents
+          .joins(:creative_shares_caches)
+          .where(creative_shares_caches: { creative_id: root.id })
+          .where("creative_shares_caches.permission >= ?", CreativeShare.permissions[:feedback])
+          .first
       end
 
       def target_creative(step)

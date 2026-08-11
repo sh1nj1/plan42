@@ -28,6 +28,7 @@ module Collavre
         assert_equal "feedback", CreativeShare.find_by!(creative: session.root, user: agent).permission
         assert session.practice_creatives.all? { |creative| creative.has_permission?(agent, :feedback) }
         assert_equal true, session.data["agent_mention_enabled"]
+        assert_equal agent.id, session.data["agent_mention_agent_id"]
       end
 
       test "omits the agent mention step when no agent is available" do

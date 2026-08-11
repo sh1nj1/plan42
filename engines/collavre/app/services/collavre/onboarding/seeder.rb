@@ -37,6 +37,7 @@ module Collavre
               # The core engine can run without an AI integration. Do not show
               # an impossible mention step when no usable agent is available.
               "agent_mention_enabled" => agent.present?,
+              "agent_mention_agent_id" => agent&.id,
               "chat_autoopen_pending" => true
             }
           })
