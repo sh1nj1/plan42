@@ -1122,19 +1122,55 @@ fn wait_until_authenticated_sidecar(sidecar: &Sidecar, port: u16, timeout: Durat
     false
 }
 
+/// Return whether macOS reports that the spawned proxy process owns the
+/// loopback listener. A successful HTTP response alone is not proof of
+/// ownership: another local process can bind the persisted port before Node
+/// reaches it and mimic the unauthenticated health endpoint.
+#[cfg(target_os = "macos")]
+fn proxy_child_owns_listener(child: &mut Child, port: u16) -> bool {
+    if child.try_wait().ok().flatten().is_some() {
+        return false;
+    }
+
+    let child_pid = child.id().to_string();
+    let listener = format!("-iTCP@127.0.0.1:{port}");
+    Command::new("/usr/sbin/lsof")
+        .args([
+            "-nP",
+            "-a",
+            "-p",
+            &child_pid,
+            &listener,
+            "-sTCP:LISTEN",
+            "-Fp",
+        ])
+        .output()
+        .map(|output| output.status.success() && lsof_reports_process(&output.stdout, &child_pid))
+        .unwrap_or(false)
+}
+
+/// Desktop releases are supported only on macOS. Other targets fail closed so
+/// an accidental cross-platform package cannot trust an unauthenticated port.
+#[cfg(not(target_os = "macos"))]
+fn proxy_child_owns_listener(_child: &mut Child, _port: u16) -> bool {
+    false
+}
+
+fn lsof_reports_process(output: &[u8], expected_pid: &str) -> bool {
+    let process_record = format!("p{expected_pid}");
+    output
+        .split(|byte| *byte == b'\n')
+        .any(|line| line == process_record.as_bytes())
+}
+
 fn wait_until_proxy_healthy(child: &mut Child, port: u16, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if child.try_wait().ok().flatten().is_some() {
             return false;
         }
-        if http_ok(port, "/health") {
-            // A different process can claim the persisted port in the small
-            // interval between our availability check and Node binding it. Do
-            // not accept that process's generic 200 response: give the child
-            // time to report the bind failure, then verify it is still alive.
-            std::thread::sleep(Duration::from_millis(500));
-            return child.try_wait().ok().flatten().is_none();
+        if http_ok(port, "/health") && proxy_child_owns_listener(child, port) {
+            return true;
         }
         std::thread::sleep(Duration::from_millis(250));
     }
@@ -1292,13 +1328,14 @@ mod tests {
     use super::{
         append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
         generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
-        invalidate_proxy_registration_when_gateway_is_missing, managed_proxy_runs_on_port,
-        migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
-        read_proxy_config, reap_orphan_proxy, register_authenticated_gateway,
-        registered_authenticated_gateway_exists, replace_occupied_proxy_port,
-        revalidate_registered_gateway_after_rails_health, valid_sidecar_challenge_response,
-        wait_until_proxy_healthy, write_proxy_config, GatewayRegistration, HmacSha256,
-        ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar, Sidecar, URL_SAFE_NO_PAD,
+        invalidate_proxy_registration_when_gateway_is_missing, lsof_reports_process,
+        managed_proxy_runs_on_port, migrate_proxy_config, normalized_proxy_config, nvm_bin_paths,
+        parse_bundled_proxy_manifest, read_proxy_config, reap_orphan_proxy,
+        register_authenticated_gateway, registered_authenticated_gateway_exists,
+        replace_occupied_proxy_port, revalidate_registered_gateway_after_rails_health,
+        valid_sidecar_challenge_response, wait_until_proxy_healthy, write_proxy_config,
+        GatewayRegistration, HmacSha256, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
+        Sidecar, URL_SAFE_NO_PAD,
     };
     use base64::Engine;
     use hmac::Mac;
@@ -1797,9 +1834,16 @@ mod tests {
         let _ = fs::remove_dir_all(&data);
     }
 
+    #[test]
+    fn lsof_listener_check_requires_the_expected_process() {
+        assert!(lsof_reports_process(b"p1234\n", "1234"));
+        assert!(!lsof_reports_process(b"p5678\n", "1234"));
+        assert!(!lsof_reports_process(b"", "1234"));
+    }
+
     #[cfg(unix)]
     #[test]
-    fn proxy_health_rejects_an_impostor_when_the_spawned_child_exits() {
+    fn proxy_health_rejects_an_impostor_while_the_spawned_child_is_alive() {
         use std::io::{Read, Write};
         use std::net::TcpListener;
         use std::process::Command;
@@ -1816,16 +1860,18 @@ mod tests {
                 .expect("respond as impostor");
         });
         let mut child = Command::new("sh")
-            .args(["-c", "sleep 0.1; exit 1"])
+            .args(["-c", "sleep 2"])
             .spawn()
-            .expect("spawn failed proxy process");
+            .expect("spawn unrelated child");
 
         assert!(!wait_until_proxy_healthy(
             &mut child,
             port,
-            Duration::from_secs(2)
+            Duration::from_millis(500)
         ));
         server.join().expect("health server joined");
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]
