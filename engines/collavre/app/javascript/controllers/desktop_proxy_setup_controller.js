@@ -19,6 +19,11 @@ export default class extends Controller {
   }
 
   async install() {
+    if (!this.consentTarget.checked) {
+      this.submitTarget.disabled = true
+      return
+    }
+
     this.errorTarget.hidden = true
     this.submitTarget.disabled = true
 
