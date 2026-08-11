@@ -182,6 +182,32 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     assert_equal "Sample[lambda](2)", path_for(source, 6, 8)
   end
 
+  # A `do ... end` hangs off three node types, and only CallNode was handled.
+  # `super do` is a SuperNode or a ForwardingSuperNode depending on nothing more
+  # than whether the parentheses are written, so both fell back to their source
+  # line — and `~super do` is the same text for every one of them.
+  test "blocks attached to super are entities, with or without parentheses" do
+    source = <<~RUBY
+      class Sample < Base
+        def run
+          super do
+            1
+          end
+          super() do
+            2
+          end
+          super do
+            3
+          end
+        end
+      end
+    RUBY
+
+    assert_equal "Sample#run[block:super]", path_for(source, 3, 5)
+    assert_equal "Sample#run[block:super](2)", path_for(source, 6, 8)
+    assert_equal "Sample#run[block:super](3)", path_for(source, 9, 11)
+  end
+
   # A lambda is a scope like any other: things nested inside it must carry it in
   # their path, or a method-shaped body inside a lambda keys as if it were a
   # sibling of the lambda.

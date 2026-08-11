@@ -38,13 +38,6 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
 
-  # The only token types that can sit between a loader and its path argument.
-  # #feature_after walks the argument list with these rather than taking the
-  # first string within a fixed window: `autoload(:Foo, "x")` puts the literal
-  # seven tokens out, and a window wide enough for it would start reading
-  # whatever else shares the line.
-  ARGUMENT_TOKENS = %i[PARENTHESIS_LEFT SYMBOL_BEGIN CONSTANT IDENTIFIER COMMA STRING_BEGIN].freeze
-
   # A satellite class named inside a string is a dependency too — Rails
   # resolves `class_name:`, `constantize` and an STI `type` value to the real
   # constant at run time, and the core engine breaks if the satellite renames
@@ -277,14 +270,38 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/foo" ], requires_in(%(mod&.autoload :Foo, "#{satellite}/foo"))
   end
 
-  # Reaching the literal in `autoload(:Foo, "x")` means walking further than the
-  # old fixed window, so this pins where the walk stops: once the argument list
-  # closes, a string later on the same line is somebody else's.
-  test "detector does not read past the end of a loader's argument list" do
+  # The path has to belong to the loader itself. A string in a *neighbouring*
+  # call on the same line, or in a nested call the loader only takes the result
+  # of, is somebody else's.
+  test "detector does not read strings belonging to another call" do
     satellite = SATELLITES.first
 
     assert_empty requires_in(%(load(path) || warn("#{satellite} is missing")))
     assert_empty requires_in(%(require_relative File.join(__dir__, "#{satellite}")))
+  end
+
+  # Formatting was the recurring miss: parentheses moved the literal, and a call
+  # split across lines put an IGNORED_NEWLINE where the old token walk stopped.
+  # Reading the parsed arguments makes layout irrelevant, so these are all one
+  # dependency spelled four ways.
+  test "detector flags a loader however the call is laid out" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(require(\n  "#{satellite}/foo"\n)))
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(require_dependency(\n  "#{satellite}/foo",\n)))
+    assert_equal [ "#{satellite}/foo" ],
+      requires_in(%(Collavre.autoload(\n  :Foo,\n  "#{satellite}/foo"\n)))
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(require \\\n  "#{satellite}/foo"))
+  end
+
+  # A computed path still names the engine literally, so the static part of an
+  # interpolated string counts. The negative matters as much: an exact segment
+  # match means a longer name that merely starts with an engine's is not a hit.
+  test "detector flags an interpolated path and ignores a longer look-alike" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "/#{satellite}/foo" ], requires_in(%(require "\#{root}/#{satellite}/foo"))
+    assert_empty requires_in(%(require "\#{root}/#{satellite}_stub/foo"))
   end
 
   # A hand-written glob has now missed shipped Ruby twice — `.rake`, then `db/`
@@ -498,26 +515,49 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # names no constant and adds no gemspec entry — invisible to both other
   # checks.
   #
-  # The target is matched on the tokens that follow the call, not by grepping
-  # for the engine name, so prose that happens to mention an engine
-  # ("collavre_slack is not loaded" in a warn) is not a violation.
+  # The target is read off the call's parsed arguments, not by grepping for the
+  # engine name, so prose that happens to mention an engine ("collavre_slack is
+  # not loaded" in a warn) is not a violation.
+  #
+  # This walks the syntax tree rather than the token stream. The token version
+  # had to know how many tokens sat between the call and its path, and every
+  # formatting variant moved that distance: parentheses pushed the literal from
+  # five tokens out to seven, and a call broken across lines put an
+  # IGNORED_NEWLINE in the gap that ended the walk before the string. Each was a
+  # separate silent miss. Prism has already resolved all of that, so
+  # `require(\n  "collavre_slack/foo"\n)` reads the same as the one-liner.
   def requires_in(source)
-    all = tokens(source)
-    all.each_with_index.filter_map { |token, index|
-      next unless token.type == :IDENTIFIER && LOADER_METHODS.include?(token.value)
-      next unless loader_receiver?(all, index, token.value)
+    loader_calls(Prism.parse(source).value).filter_map { |call|
+      next unless loader_receiver?(call)
 
-      feature = feature_after(all, index)
-      feature if satellite_for(feature)
+      string_arguments(call).find { |feature| satellite_for(feature) }
     }.uniq
   end
 
-  def feature_after(all, index)
-    all[(index + 1)..].to_a.each do |token|
-      return token.value if token.type == :STRING_CONTENT
-      return nil unless ARGUMENT_TOKENS.include?(token.type)
+  def loader_calls(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    found << node if node.is_a?(Prism::CallNode) && LOADER_METHODS.include?(node.name.to_s)
+    node.compact_child_nodes.each { |child| loader_calls(child, found) }
+    found
+  end
+
+  # Only literal arguments of the loader itself. `require_relative
+  # File.join(__dir__, "collavre_slack")` computes its path, so the engine name
+  # sits in an argument to `File.join` rather than to the loader, and this
+  # returns nothing for it — deliberately, since that is also how a false
+  # positive on an unrelated nested call would arise.
+  #
+  # The static parts of an interpolated string count: the engine name in
+  # "#{root}/collavre_slack/foo" is still a literal reference to it.
+  def string_arguments(call)
+    call.arguments&.arguments.to_a.flat_map do |argument|
+      case argument
+      when Prism::StringNode then argument.unescaped
+      when Prism::InterpolatedStringNode then argument.parts.grep(Prism::StringNode).map(&:unescaped)
+      else []
+      end
     end
-    nil
   end
 
   # The receiver rule differs by method, because the methods differ.
@@ -531,12 +571,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # `require` and `load` stay on Kernel. `YAML.load "collavre_slack/x.yml"` is a
   # file read, not a dependency on the engine, and `load` is common enough as a
   # method name that matching any receiver would make this test cry wolf.
-  def loader_receiver?(all, index, method)
-    receiver = index >= 1 && [ :DOT, :AMPERSAND_DOT ].include?(all[index - 1].type)
-    return true unless receiver
-    return true if method == "autoload"
+  def loader_receiver?(call)
+    return true if call.receiver.nil?
+    return true if call.name == :autoload
 
-    all[index - 2]&.value == "Kernel"
+    call.receiver.is_a?(Prism::ConstantReadNode) && call.receiver.name == :Kernel
   end
 
   # The engine is identified from every path segment after normalization, not

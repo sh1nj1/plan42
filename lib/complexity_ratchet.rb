@@ -145,20 +145,29 @@ module ComplexityRatchet
       nest("#{node.receiver ? '.' : '#'}#{node.name}", node.location) { super }
     end
 
-    # RuboCop reports Metrics/BlockLength against the whole `send + block`
-    # range, so the offense line is the call's line rather than the `do`. The
-    # `do` line is recorded too, as a fallback for anything that points there.
+    # A `do ... end` can hang off three node types, not one: an ordinary call,
+    # `super do`, and `super() do`. Only the first was handled, so a super block
+    # fell through to the `~source line` fallback and every `super do` in a file
+    # shared the key `~super do`.
     #
-    # `node.block` is a BlockArgumentNode for `foo(&blk)`, which has no body and
-    # is not a scope — only a literal BlockNode introduces one.
+    # These three are the complete set — they are the only Prism nodes that
+    # carry a `block` field capable of holding a literal BlockNode (the
+    # Index*Node and ParametersNode forms take a block *argument* or *parameter*,
+    # which is not a scope). Enumerating a closed grammar is fine; the trouble on
+    # this gate has always come from enumerating open-ended things instead.
     def visit_call_node(node)
-      return super unless node.block.is_a?(Prism::BlockNode)
+      nest_block(node, "[block:#{node.name}]") { super }
+    end
 
-      node.receiver&.accept(self)
-      node.arguments&.accept(self)
-      nest("[block:#{node.name}]", node.location, node.block.location.start_line) do
-        node.block.body&.accept(self)
-      end
+    # `super do` and `super() do` — SuperNode and ForwardingSuperNode. Both key
+    # as `[block:super]`; they are the same call, and which one Prism produces
+    # depends only on whether the author wrote the parentheses.
+    def visit_super_node(node)
+      nest_block(node, "[block:super]") { super }
+    end
+
+    def visit_forwarding_super_node(node)
+      nest_block(node, "[block:super]") { super }
     end
 
     # `-> do ... end` is a LambdaNode, not a CallNode with a block, so it is not
@@ -178,6 +187,26 @@ module ComplexityRatchet
     end
 
     private
+
+    # RuboCop reports Metrics/BlockLength against the whole `send + block`
+    # range, so the offense line is the call's line rather than the `do`. The
+    # `do` line is recorded too, as a fallback for anything that points there.
+    #
+    # `node.block` is a BlockArgumentNode for `foo(&blk)`, which has no body and
+    # is not a scope — only a literal BlockNode introduces one. Without a block
+    # the node is not a scope at all, so it is visited normally.
+    #
+    # Everything except the block is visited outside the new scope: a receiver
+    # or an argument is evaluated at the call site, so a lambda passed as an
+    # argument belongs beside the call rather than inside its block.
+    def nest_block(node, segment)
+      return yield unless node.block.is_a?(Prism::BlockNode)
+
+      node.compact_child_nodes.each { |child| child.accept(self) unless child.equal?(node.block) }
+      nest(segment, node.location, node.block.location.start_line) do
+        node.block.body&.accept(self)
+      end
+    end
 
     # Two indexes, because a start line alone is not an identity. In a chained
     # block — `items.each do ... end.map do ... end` — both blocks are reported
