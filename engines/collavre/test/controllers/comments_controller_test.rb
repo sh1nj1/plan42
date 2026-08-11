@@ -1066,10 +1066,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     get creative_comments_path(onboarding_session.root)
 
     assert_response :success
-    assert_includes @response.body, 'id="no-comments"'
     assert_includes @response.body, 'class="onboarding-card"'
+    assert_not_includes @response.body, 'id="no-comments"'
     assert_not_includes @response.body, "feature-card-grid"
     assert_not_includes @response.body, I18n.t("collavre.comments.empty_state.title")
+  end
+
+  test "index keeps the onboarding card after the first comment" do
+    onboarding_session = Collavre::Onboarding::Seeder.new(user: @user, force: true).call
+    onboarding_session.root.comments.create!(content: "My first chat message", user: @user)
+
+    get creative_comments_path(onboarding_session.root)
+
+    assert_response :success
+    assert_includes @response.body, 'class="onboarding-card"'
+    assert_not_includes @response.body, 'id="no-comments"'
+    assert_includes @response.body, "My first chat message"
   end
 
   test "index shows notification guidance for an empty inbox System topic" do
