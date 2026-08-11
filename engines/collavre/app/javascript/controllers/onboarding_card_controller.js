@@ -8,12 +8,14 @@ export default class extends Controller {
   static values = { stateUrl: String, advanceUrl: String, completeUrl: String, currentStep: String }
 
   connect() {
+    this.refreshGeneration = 0
     this.refresh = this.refresh.bind(this)
     this.refresh()
     this.timer = window.setInterval(this.refresh, 1200)
   }
 
   disconnect() {
+    this.refreshGeneration += 1
     if (this.timer) window.clearInterval(this.timer)
     document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
   }
@@ -30,9 +32,11 @@ export default class extends Controller {
   }
 
   async refresh() {
+    const generation = ++this.refreshGeneration
     const response = await fetch(this.stateUrlValue, { headers: { Accept: 'application/json' } })
-    if (!response.ok) return
+    if (generation !== this.refreshGeneration || !response.ok) return
     const state = await response.json()
+    if (generation !== this.refreshGeneration) return
     if (state.complete) {
       this.instructionTarget.textContent = state.instruction
       this.nextTarget.hidden = true

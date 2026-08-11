@@ -57,7 +57,7 @@ module Collavre
         assert user.reload.onboarding_completed_at?
 
         clear_enqueued_jobs
-        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id, 1 ]) do
           OnboardingCleanupJob.perform_now(user.id, session.session_id)
         end
         assert Creative.exists?(session.root.id)
@@ -89,6 +89,22 @@ module Collavre
 
         OnboardingCleanupJob.perform_now(user.id, session.session_id)
         refute Creative.exists?(session.root.id)
+      end
+
+      test "stops retrying when an onboarding agent turn does not settle" do
+        user = User.create!(name: "Pending approval finisher", email: "pending-approval-finisher@example.com", password: "password")
+        agent = User.create!(name: "Pending approval helper", email: "pending-approval-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        comment = Comment.create!(creative: session.practice_creatives.second, user: user, content: "@Pending approval helper: Please help")
+        Task.create!(name: "Awaiting approval", status: "pending_approval", trigger_event_name: "comment_created",
+                     trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent,
+                     creative: session.practice_creatives.second)
+
+        assert_no_enqueued_jobs(only: OnboardingCleanupJob) do
+          OnboardingCleanupJob.perform_now(user.id, session.session_id, OnboardingCleanupJob::RETRY_DELAYS.length)
+        end
+        assert Creative.exists?(session.root.id)
       end
     end
   end
