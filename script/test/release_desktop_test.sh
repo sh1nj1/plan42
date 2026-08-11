@@ -94,6 +94,12 @@ git -C "$repo_dir" commit --quiet --allow-empty -m "$(release_commit_message "2.
   ensure_release_tag "desktop-v2.3.4" "2.3.4"
   assert_equal "$(git rev-parse HEAD)" "$(git rev-parse desktop-v2.3.4^{commit})"
 )
+git -C "$repo_dir" tag -a desktop-v2.3.4-rc.1 -m "Collavre Desktop 2.3.4 RC"
+(
+  cd "$repo_dir"
+  assert_equal "desktop-v2.3.4" "$(previous_release_tag)"
+  assert_equal "desktop-v2.3.4-rc.1" "$(previous_release_tag desktop-v2.3.4)"
+)
 
 origin_dir="$fixture_dir/origin.git"
 git init --bare --quiet "$origin_dir"
@@ -115,6 +121,19 @@ git -C "$remote_clone" push --quiet origin main
   reconcile_resumed_release "desktop-v2.3.5" "2.3.5"
   assert_equal "$(git rev-parse HEAD)" "$(git rev-parse desktop-v2.3.5^{commit})"
   assert_equal "$(release_commit_message "2.3.5")" "$(git log -1 --format=%s HEAD)"
+  git push --quiet --atomic origin HEAD:main refs/tags/desktop-v2.3.5
+)
+git -C "$remote_clone" pull --quiet --ff-only origin main
+printf 'later remote change\n' > "$remote_clone/LATER_REMOTE_CHANGE"
+git -C "$remote_clone" add LATER_REMOTE_CHANGE
+git -C "$remote_clone" commit --quiet -m "fix: advance main again"
+git -C "$remote_clone" push --quiet origin main
+(
+  cd "$repo_dir"
+  git fetch --quiet origin main
+  push_release_refs "desktop-v2.3.5"
+  git fetch --quiet origin main
+  git merge-base --is-ancestor HEAD origin/main
 )
 
 artifact_dir="$fixture_dir/artifacts"

@@ -169,6 +169,25 @@ is_prerelease() {
   [[ "${1%%+*}" == *-* ]]
 }
 
+# Git's version sort does not implement SemVer prerelease precedence (for
+# example, it can order 1.0.0-rc.1 ahead of 1.0.0). Select release tags using
+# the same comparator used for release-version validation instead.
+previous_release_tag() {
+  local excluded_tag="${1:-}" tag version latest_tag="" latest_version=""
+
+  while IFS= read -r tag; do
+    [[ "$tag" != "$excluded_tag" ]] || continue
+    version="${tag#"$TAG_PREFIX"}"
+    valid_semver "$version" || continue
+    if [[ -z "$latest_version" ]] || version_advances "$version" "$latest_version"; then
+      latest_tag="$tag"
+      latest_version="$version"
+    fi
+  done < <(git tag --list "${TAG_PREFIX}*")
+
+  printf '%s\n' "$latest_tag"
+}
+
 # Keep target-directory resolution identical to build-macos.sh. Cargo resolves
 # a relative CARGO_TARGET_DIR from src-tauri, and the release verifier must look
 # in that same location after the build completes.
@@ -267,6 +286,19 @@ reconcile_resumed_release() {
   git tag -d "$tag" >/dev/null 2>&1 || true
   git rebase origin/main
   ensure_release_tag "$tag" "$version"
+}
+
+push_release_refs() {
+  local tag="$1"
+  local -a refs=("refs/tags/$tag")
+
+  # A previous attempt may already have pushed the release commit. Avoid
+  # sending HEAD:main in that case: newer commits may legitimately be on main
+  # while the tag and GitHub Release still need to be published.
+  if ! git merge-base --is-ancestor HEAD origin/main; then
+    refs=(HEAD:main "${refs[@]}")
+  fi
+  git push --atomic origin "${refs[@]}"
 }
 
 publish_release() {
@@ -434,12 +466,7 @@ main() {
       die "resume version $selected_version does not match the rebased release commit"
   fi
 
-  previous_tag="$(git tag --list "${TAG_PREFIX}*" --sort=-v:refname)"
-  if [[ -n "$resume_version" ]]; then
-    previous_tag="$(grep -Fxv "${TAG_PREFIX}${resume_version}" <<< "$previous_tag" | head -1 || true)"
-  else
-    previous_tag="$(head -1 <<< "$previous_tag")"
-  fi
+  previous_tag="$(previous_release_tag "${TAG_PREFIX}${resume_version}")"
   if [[ -n "$previous_tag" ]]; then
     range="$previous_tag..HEAD"
     if [[ -z "$(git log --oneline "$range")" ]]; then
@@ -490,7 +517,7 @@ main() {
   artifact="$RELEASE_ARTIFACT"
 
   ensure_release_tag "$tag" "$selected_version"
-  git push --atomic origin HEAD:main "refs/tags/$tag"
+  push_release_refs "$tag"
   publish_release "$tag" "$selected_version" "$artifact"
 
   echo "[release-desktop] Published $tag"
