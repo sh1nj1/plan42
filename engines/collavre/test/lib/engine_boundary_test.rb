@@ -406,6 +406,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "TSX generator templates use JSX scanning" do
+    satellite = SATELLITES.first
+    path = ENGINES_ROOT.join(CORE, "lib/generators/collavre/install/templates/view.tsx.tt")
+
+    assert_empty js_violations_in(path.to_s, %(<div>import "#{satellite}/thing"</div>))
+  end
+
   test "detector flags a satellite imported from core JavaScript" do
     satellite = SATELLITES.first
 
@@ -466,6 +473,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(<div>{ready && <code>import "#{satellite}/thing"</code>}</div>), jsx: true)
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(<div>{ready && <code>{import("#{satellite}/thing")}</code>}</div>), jsx: true)
+  end
+
+  test "detector scans module syntax after JSX tag delimiters" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const view = <div>hello</div>; import("#{satellite}/thing")), jsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(<div title={"x\\\""}>hello</div>; import("#{satellite}/thing")), jsx: true)
   end
 
   test "TSX generic arrows do not mask later module syntax as JSX text" do
@@ -634,7 +650,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_violations_in(path, source)
-    js_imports_in(source, jsx: path.end_with?(".jsx", ".tsx"), tsx: path.end_with?(".tsx")).map do |specifier|
+    extension = File.extname(path.delete_suffix(".tt"))
+    js_imports_in(source, jsx: %w[.jsx .tsx].include?(extension), tsx: extension == ".tsx").map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
   end
@@ -671,6 +688,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     while cursor < source.length
       if source[cursor] == "<" && (tag = jsx_tag_at(source, cursor, tsx:))
         _name, finish, closing, self_closing = tag
+        mask_jsx_tag(source, masked, cursor, finish, tsx:)
         depth -= 1 if closing && depth.positive?
         depth += 1 unless closing || self_closing
         cursor = finish + 1
@@ -688,6 +706,26 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
 
     masked
+  end
+
+  # JSX delimiters are not JavaScript tokens. Leaving `</tag>` in the source
+  # lets its slash begin a regex literal and can hide a later import. Attribute
+  # expressions remain executable JavaScript, so retain their contents while
+  # masking the tag syntax around them.
+  def mask_jsx_tag(source, masked, cursor, finish, tsx:)
+    while cursor <= finish
+      if source[cursor] == "{"
+        expression_end = jsx_expression_end(source, cursor)
+        expression = source[(cursor + 1)...(expression_end - 1)]
+        masked[(cursor + 1)...(expression_end - 1)] = mask_jsx_text(expression, tsx:) if expression
+        masked[cursor] = " "
+        masked[expression_end - 1] = " "
+        cursor = expression_end
+      else
+        masked[cursor] = " " unless source[cursor] == "\n"
+        cursor += 1
+      end
+    end
   end
 
   def jsx_tag_at(source, cursor, tsx: false)
@@ -754,7 +792,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     while (character = source[cursor])
       if quote
-        cursor += 2 if character == "\\"
+        cursor += 2 and next if character == "\\"
         quote = nil if character == quote
       elsif character == "\"" || character == "'"
         quote = character

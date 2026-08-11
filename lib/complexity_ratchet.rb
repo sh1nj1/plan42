@@ -175,11 +175,7 @@ module ComplexityRatchet
     # reach the key: collapsed onto one `.run`, replacing a baselined 90-line
     # `Foo.run` with an 80-line `Bar.run` reads as a tightening when it is a
     # different method carrying new debt.
-    def receiver_prefix(receiver)
-      return "#" unless receiver
-
-      receiver.is_a?(Prism::SelfNode) ? "." : "#{receiver.slice}."
-    end
+    def receiver_prefix(receiver) = receiver ? receiver.is_a?(Prism::SelfNode) ? "." : "#{receiver.slice}." : "#"
 
     # Record direct statements while their enclosing scope is on the stack.
     def visit_statements_node(node)
@@ -231,38 +227,26 @@ module ComplexityRatchet
       nest("[lambda]", node.location) { super }
     end
 
-    # Baseline entries only exist for scopes that are currently over budget,
-    # but sibling ordinals are assigned to every scope. Keep that population so
-    # --verify-baseline can notice when an unrecorded sibling disappears and a
-    # recorded sibling shifts onto its key.
+    # Keep every sibling population so verification catches ordinal transfers
+    # from scopes that were below budget and absent from the baseline.
     def sibling_populations
       @occurrences.select { |_path, count| count > 1 }
         .merge(fallback_sibling_populations) { |_path, scopes, statements| scopes + statements }
     end
 
-    # Ordinals distinguish sibling scopes in the measurement, but their order
-    # can change without their count changing. Retain a stable-enough anchor
-    # for literal blocks — the call prefix through `do`/`{`, excluding the body
-    # whose size is being measured — so verification can notice `first.each`
-    # and `second.each` swapping places instead of transferring their budgets.
-    def sibling_anchors
-      @sibling_anchors.select { |path, anchors| @occurrences[path] > 1 }
-    end
+    # A block call prefix distinguishes replacements that keep the same key.
+    def sibling_anchors = @sibling_anchors.select { |path, _| path.include?("[block:") }
 
     private
 
     # Fallback identities have the same ordinal problem as named scopes. Their
     # population must reach the verification profile too, or deleting an
     # under-budget twin lets its survivor inherit the unsuffixed baseline key.
-    def fallback_sibling_populations
-      @fallback_statements.filter_map do |(scope, text), statements|
+    def fallback_sibling_populations = @fallback_statements.filter_map do |(scope, text), statements|
         [ "#{scope}~#{abbreviate(text)}", statements.size ] if statements.size > 1
       end.to_h
-    end
 
-    def abbreviate(text)
-      text.length > 100 ? "#{text[0, 97]}..." : text
-    end
+    def abbreviate(text) = text.length > 100 ? "#{text[0, 97]}..." : text
 
     # RuboCop reports Metrics/BlockLength against the whole `send + block`
     # range, so the offense line is the call's line rather than the `do`. The
@@ -285,8 +269,8 @@ module ComplexityRatchet
     end
 
     def block_anchor(node)
-      block_offset = node.block.location.start_offset - node.location.start_offset
-      node.location.slice[0...block_offset].gsub(/\s+/, " ").strip
+      node.location.slice[0...(node.block.location.start_offset - node.location.start_offset)]
+        .gsub(/\s+/, " ").strip
     end
 
     # Two indexes, because a start line alone is not an identity. In a chained
@@ -326,9 +310,7 @@ module ComplexityRatchet
 
     # "Collavre::AgentOrchestrator#run[block:each]" — `::` between namespaces,
     # `#`/`.`/`[` already carry their own separator.
-    def path
-      @stack.each_with_object(+"") { |segment, acc| join(acc, segment) }
-    end
+    def path = @stack.each_with_object(+"") { |segment, acc| join(acc, segment) }
 
     def join(prefix, segment)
       prefix << "::" unless prefix.empty? || segment.start_with?("#", ".", "[")
@@ -782,34 +764,30 @@ module ComplexityRatchet
     end
 
     def sibling_family_changes(entries, siblings, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
+      keys = entries.map(&:first)
       {
         baseline_shrank: entries.size < siblings.size,
-        # Any change in the population moves ordinals, in either direction. A
-        # deletion renames the survivor onto its dead sibling's key; an
-        # insertion *ahead* of a baselined sibling hands that key to the
-        # newcomer and retires the original behind `(2)`. Both read as a
-        # per-key improvement, so the comparison is `!=`, not `>`.
-        population_changed: entries.any? do |key, _|
-          before_siblings.fetch(sibling_population_key(key), 0) != after_siblings.fetch(sibling_population_key(key), 0)
-        end,
-        anchors_reordered: entries.any? { |key, _| sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) },
-        anchors_ambiguous: entries.any? do |key, _|
-          sibling_anchors_ambiguous?(key, entries, siblings, before_sibling_anchors, after_sibling_anchors)
-        end
+        population_changed: keys.any? { |key| before_siblings.fetch(sibling_population_key(key), 0) != after_siblings.fetch(sibling_population_key(key), 0) },
+        anchors_reordered: keys.any? { |key| sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) },
+        anchors_ambiguous: keys.any? { |key| sibling_anchors_ambiguous?(key, entries, siblings, before_sibling_anchors, after_sibling_anchors) },
+        unique_anchor_changed: entries.one? && siblings.one? && keys.any? { |key| [ before_sibling_anchors[sibling_population_key(key)], after_sibling_anchors[sibling_population_key(key)] ].all? { _1&.one? } && sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) }
       }
     end
 
     def sibling_entry_problem(key, value, before, floor, changes, baseline_incomplete)
-      return unless before.key?(key) && (value > floor || !changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? || changes[:anchors_reordered] && baseline_incomplete)
+      return unless before.key?(key) && (value > floor || changes[:unique_anchor_changed] || !changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? || changes[:anchors_reordered] && baseline_incomplete)
 
       Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
-        message: sibling_problem_message(value, floor, changes[:baseline_shrank], changes[:anchors_reordered], changes[:anchors_ambiguous], baseline_incomplete))
+        message: sibling_problem_message(value, floor, changes[:baseline_shrank], changes[:anchors_reordered], changes[:anchors_ambiguous], changes[:unique_anchor_changed], baseline_incomplete))
     end
 
-    def sibling_problem_message(value, floor, baseline_shrank, anchors_reordered, anchors_ambiguous, baseline_incomplete)
+    def sibling_problem_message(value, floor, baseline_shrank, anchors_reordered, anchors_ambiguous, unique_anchor_changed, baseline_incomplete)
       if baseline_shrank
         "a same-named sibling was removed, so this entry may have inherited that sibling's " \
           "allowance — #{value} is above the #{floor} the family was recorded at"
+      elsif unique_anchor_changed
+        "the block changed its call anchor, so a new block may have inherited " \
+          "the old block's allowance"
       elsif anchors_reordered && baseline_incomplete
         "same-named siblings changed order while at least one sibling was not baselined, so an " \
           "allowance may have moved to a previously unrecorded entity"
@@ -837,9 +815,7 @@ module ComplexityRatchet
     end
 
     def sibling_anchors_reordered?(key, before, after)
-      sibling_key = sibling_population_key(key)
-      previous = before[sibling_key]
-      current = after[sibling_key]
+      previous, current = [ before, after ].map { |anchors| anchors[sibling_population_key(key)] }
       previous && current && previous.size == current.size && previous != current
     end
 

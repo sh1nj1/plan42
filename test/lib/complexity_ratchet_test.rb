@@ -170,6 +170,21 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  test "keeps the anchor of a uniquely named block" do
+    source = <<~RUBY
+      class Sample
+        def run
+          users.each { |user| user }
+        end
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample#run[block:each]" => [ "users.each" ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   # Both views come from one parse now. They have to stay keyed identically, or
   # verify_monotonic would look up an anchor under a key the population never
   # produced and silently compare nothing.
@@ -940,6 +955,32 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
     assert_equal :baseline_sibling_shift, problem.kind
     assert_equal SIB, problem.key
     assert_includes problem.message, "changed order"
+  end
+
+  test "rejects a unique block replaced with a different anchor" do
+    before_source = <<~RUBY
+      class A
+        def run
+          users.each { |user| user }
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+          orders.each { |order| order }
+        end
+      end
+    RUBY
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 90 }, { SIB => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "block changed"
   end
 
   test "accepts same-count siblings when their anchors keep the same order" do
