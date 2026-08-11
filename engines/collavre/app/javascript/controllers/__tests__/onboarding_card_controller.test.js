@@ -125,13 +125,12 @@ describe('OnboardingCardController', () => {
     expect(panel.querySelector('button').getAttribute('aria-expanded')).toBe('true')
   })
 
-  test('ignores an older polling response that finishes after a newer one', async () => {
-    let resolveOlderResponse
-    const olderResponse = new Promise((resolve) => { resolveOlderResponse = resolve })
-    const visit = jest.fn()
-    window.Turbo = { visit }
-    fetchMock.mockImplementationOnce(() => olderResponse)
-    const olderRefresh = controller.refresh()
+  test('serializes slow polling responses and refreshes again afterward', async () => {
+    let resolveSlowResponse
+    const slowResponse = new Promise((resolve) => { resolveSlowResponse = resolve })
+    fetchMock.mockImplementationOnce(() => slowResponse)
+    const firstRefresh = controller.refresh()
+    const secondRefresh = controller.refresh()
 
     state = {
       current_step: 'comment',
@@ -140,21 +139,49 @@ describe('OnboardingCardController', () => {
       completed_steps: ['welcome'],
       anchor: 'chat.composer',
     }
-    await controller.refresh()
-    resolveOlderResponse(jsonResponse({
+    resolveSlowResponse(jsonResponse({
       current_step: 'progress',
       instruction: 'Check the practice item.',
       completion: 'progress_changed',
       completed_steps: ['welcome'],
       anchor: 'tree.progress',
-      navigation_path: '/creatives?id=1',
     }))
-    await olderRefresh
+    await Promise.all([firstRefresh, secondRefresh])
+    await flush()
 
     expect(controller.instructionTarget.textContent).toBe('Write a comment.')
     expect(controller.currentStepValue).toBe('comment')
     expect(document.querySelector('[data-guide-anchor="chat.composer"]').classList.contains('guide-anchor-highlight')).toBe(true)
-    expect(visit).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('discards a slow response invalidated by an advance action', async () => {
+    let resolveSlowResponse
+    const slowResponse = new Promise((resolve) => { resolveSlowResponse = resolve })
+    fetchMock.mockImplementationOnce(() => slowResponse)
+    const slowRefresh = controller.refresh()
+
+    state = {
+      current_step: 'comment',
+      instruction: 'Write a comment.',
+      completion: 'server',
+      completed_steps: ['welcome'],
+      anchor: 'chat.composer',
+    }
+    await controller.advance()
+    resolveSlowResponse(jsonResponse({
+      current_step: 'progress',
+      instruction: 'Check the practice item.',
+      completion: 'progress_changed',
+      completed_steps: ['welcome'],
+      anchor: 'tree.progress',
+    }))
+    await slowRefresh
+    await flush()
+
+    expect(controller.instructionTarget.textContent).toBe('Write a comment.')
+    expect(controller.currentStepValue).toBe('comment')
+    expect(document.querySelector('[data-guide-anchor="chat.composer"]').classList.contains('guide-anchor-highlight')).toBe(true)
   })
 
   test('renders the completed state and ignores incomplete or failed responses', async () => {

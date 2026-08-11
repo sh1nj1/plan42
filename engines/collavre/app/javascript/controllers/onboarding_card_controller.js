@@ -9,6 +9,8 @@ export default class extends Controller {
 
   connect() {
     this.refreshGeneration = 0
+    this.refreshPromise = null
+    this.refreshPending = false
     this.refresh = this.refresh.bind(this)
     this.refresh()
     this.timer = window.setInterval(this.refresh, 1200)
@@ -16,12 +18,14 @@ export default class extends Controller {
 
   disconnect() {
     this.refreshGeneration += 1
+    this.refreshPending = false
     if (this.timer) window.clearInterval(this.timer)
     document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
   }
 
   async advance() {
     await csrfFetch(this.advanceUrlValue, { method: 'POST' })
+    this.refreshGeneration += 1
     this.refresh()
   }
 
@@ -32,11 +36,33 @@ export default class extends Controller {
   }
 
   async refresh() {
+    if (this.refreshPromise) {
+      this.refreshPending = true
+      return this.refreshPromise
+    }
+
     const generation = ++this.refreshGeneration
+    this.refreshPromise = this.fetchState(generation)
+
+    try {
+      await this.refreshPromise
+    } finally {
+      this.refreshPromise = null
+      const refreshAgain = this.refreshPending
+      this.refreshPending = false
+      if (refreshAgain) this.refresh()
+    }
+  }
+
+  async fetchState(generation) {
     const response = await fetch(this.stateUrlValue, { headers: { Accept: 'application/json' } })
     if (generation !== this.refreshGeneration || !response.ok) return
     const state = await response.json()
     if (generation !== this.refreshGeneration) return
+    this.render(state)
+  }
+
+  render(state) {
     if (state.complete) {
       this.instructionTarget.textContent = state.instruction
       this.nextTarget.hidden = true
