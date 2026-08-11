@@ -371,6 +371,16 @@ fn legacy_proxy_credentials_from_entries(
     }
 }
 
+fn legacy_or_new_proxy_credentials(
+    legacy: Option<ProxyCredentials>,
+    generate: impl FnOnce() -> Result<ProxyCredentials, String>,
+) -> Result<ProxyCredentials, String> {
+    match legacy {
+        Some(credentials) => Ok(credentials),
+        None => generate(),
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn legacy_proxy_credentials() -> Result<Option<ProxyCredentials>, String> {
     use security_framework::passwords::get_generic_password;
@@ -403,7 +413,8 @@ fn keychain_proxy_credentials() -> Result<ProxyCredentials, String> {
     // Older desktop builds stored each secret in its own Keychain entry. Read
     // those entries only during this one-time migration, then keep all three
     // values in one entry so a launch makes one Keychain access request.
-    let credentials = legacy_proxy_credentials()?.unwrap_or(generate_proxy_credentials()?);
+    let credentials =
+        legacy_or_new_proxy_credentials(legacy_proxy_credentials()?, generate_proxy_credentials)?;
     let serialized = encode_proxy_credentials(&credentials)?;
     set_generic_password(
         PROXY_KEYCHAIN_SERVICE,
@@ -1451,7 +1462,7 @@ mod tests {
         append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
         decode_proxy_credentials, desktop_port, encode_proxy_credentials, generate_proxy_key,
         invalidate_proxy_registration_after_key_regeneration,
-        invalidate_proxy_registration_when_gateway_is_missing,
+        invalidate_proxy_registration_when_gateway_is_missing, legacy_or_new_proxy_credentials,
         legacy_proxy_credentials_from_entries, lsof_reports_process, managed_proxy_credentials,
         managed_proxy_runs_on_port, migrate_proxy_config, normalized_proxy_config, nvm_bin_paths,
         parse_bundled_proxy_manifest, read_proxy_config, reap_orphan_proxy,
@@ -1681,6 +1692,24 @@ mod tests {
         assert_eq!("legacy-admin-key", credentials.admin_key);
         assert_eq!("legacy-completion-key", credentials.completion_key);
         assert_eq!("legacy-identity-secret", credentials.identity_secret);
+        assert!(!credentials.regenerated);
+    }
+
+    #[test]
+    fn complete_legacy_credentials_do_not_generate_a_fallback() {
+        let legacy = ProxyCredentials {
+            admin_key: "legacy-admin-key".to_string(),
+            completion_key: "legacy-completion-key".to_string(),
+            identity_secret: "legacy-identity-secret".to_string(),
+            regenerated: false,
+        };
+
+        let credentials = legacy_or_new_proxy_credentials(Some(legacy), || {
+            Err("fallback must not be generated".to_string())
+        })
+        .expect("preserve legacy credentials without generating a fallback");
+
+        assert_eq!("legacy-admin-key", credentials.admin_key);
         assert!(!credentials.regenerated);
     }
 
