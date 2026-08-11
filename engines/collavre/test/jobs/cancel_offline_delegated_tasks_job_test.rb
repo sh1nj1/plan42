@@ -238,37 +238,4 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     assert_equal "cancelled", queued_task.reload.status,
       "queued work on the dropped session topic must be cancelled, not promoted into a clientless topic"
   end
-
-  test "fails parent workflow when cancelling a delegated subtask" do
-    parent_task = Task.create!(
-      name: "Workflow Parent",
-      status: "running",
-      agent: @owner,
-      creative_id: @creative.id
-    )
-
-    sub_task = Task.create!(
-      name: "Claude subtask",
-      status: "delegated",
-      agent: @claude_agent,
-      parent_task_id: parent_task.id,
-      creative_id: @creative.id
-    )
-
-    fail_called_with = nil
-    fake_executor = Class.new do
-      define_method(:fail_subtask!) do |child, error_message: nil|
-        fail_called_with = { sub_task: child, error_message: error_message }
-      end
-    end.new
-
-    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
-      Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
-    end
-
-    assert_equal "cancelled", sub_task.reload.status
-    assert_not_nil fail_called_with, "Expected WorkflowExecutor#fail_subtask! to be invoked for workflow subtasks"
-    assert_equal sub_task.id, fail_called_with[:sub_task].id
-    assert_match(/connection/i, fail_called_with[:error_message].to_s)
-  end
 end

@@ -37,21 +37,7 @@ module Collavre
             "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
             "session offline (routing_expression blank)"
           )
-          # Workflow subtasks created by WorkflowExecutor carry parent_task_id and
-          # no topic. If we only cancel the child and return, the parent workflow
-          # stays "running" with its current/pending creative state forever — no
-          # rescue path runs because we never raise. Mirror the StandardError
-          # rescue below: fail the child and notify the parent so the workflow
-          # transitions to "failed" with a failure_reason.
-          if task.parent_task_id.present?
-            task.update!(status: "failed")
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task,
-              error_message: "Claude Channel session offline before dispatch"
-            )
-          else
-            task.update!(status: "cancelled")
-          end
+          task.update!(status: "cancelled")
           if task.trigger_event_payload&.key?("topic")
             Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
           end
@@ -89,15 +75,7 @@ module Collavre
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
             "is now assigned to another agent (agent=#{agent.id})"
           )
-          if task.parent_task_id.present?
-            task.update!(status: "failed")
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task,
-              error_message: "Topic reassigned to another agent before dispatch"
-            )
-          else
-            task.update!(status: "cancelled")
-          end
+          task.update!(status: "cancelled")
           # A pending_approval task kept its slot across the pause (the
           # ApprovalPendingError rescue sets should_release = false), and this
           # early return skips the ensure block that would give it back, so
@@ -231,72 +209,26 @@ module Collavre
           task.reload
         end
 
-        response_content = AiAgentService.new(task).call
+        AiAgentService.new(task).call
 
         # Claude Channel agents delegate via MCP; no immediate response expected
         if is_claude_channel_agent
           # Hold agent capacity until reply / cancel / stuck-recovery releases it.
           should_release = false
-        # Workflow subtasks with empty responses should retry, then fail
-        elsif task.parent_task_id.present? && response_content.blank?
-          max_retries = 2
-          current_retry = task.retry_count || 0
-
-          if current_retry < max_retries
-            transition_running_task!(
-              task,
-              retry_count: current_retry + 1,
-              status: "pending"
-            )
-            Rails.logger.warn(
-              "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
-              "retrying (#{current_retry + 1}/#{max_retries})"
-            )
-            AiAgentJob.set(wait: 5.seconds).perform_later(task)
-          else
-            transition_running_task!(task, status: "failed")
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task, error_message: "Agent returned empty response after #{max_retries} retries"
-            )
-          end
         else
           transition_running_task!(task, status: "done")
-          # Advance workflow (release happens in ensure block)
-          if task.parent_task_id.present?
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
-          end
         end
       rescue ApprovalPendingError
         # Task status already set to pending_approval by AiAgentService
         # Don't release resources yet - task will resume
         should_release = false
         Rails.logger.info("AiAgentJob paused for task #{task.id}: awaiting tool approval")
-      rescue TurnDeadlineError => e
-        # The deadline is the one terminal exit this worker inflicts on itself:
-        # every external failer of a workflow subtask (StuckDetector, the
-        # offline guards above, comment deletion) calls fail_subtask! at the
-        # site that writes `failed`, which is why the CancelledError branch
-        # below never has to. Here the writer is AgentLifecycleManager inside
-        # this very call stack, so the parent notification happens here or
-        # nowhere — and without it the parent workflow stays "running" on a
-        # child that already failed underneath it. Restore/settle of dropped
-        # dispatches needs nothing extra: fail_while_worker_settles! marked the
-        # row, and the ensure below settles it.
+      rescue TurnDeadlineError
+        # AgentLifecycleManager already wrote the terminal status inside this
+        # call stack. Restore/settle of dropped dispatches needs nothing extra:
+        # fail_while_worker_settles! marked the row, and the ensure below
+        # settles it.
         Rails.logger.info("AiAgentJob turn deadline exceeded for task #{task.id}")
-        if (parent_task = task.parent_task)
-          # The parent can be stopped independently while this exception
-          # unwinds. Serialize against that transition and report failure only
-          # while it is still the active workflow; an explicit cancellation
-          # that gets the lock first must remain the terminal result.
-          parent_task.with_lock do
-            next unless parent_task.status == "running"
-
-            Collavre::Comments::WorkflowExecutor.new(parent_task).fail_subtask!(
-              task,
-              error_message: "Turn exceeded the #{e.deadline_seconds}s deadline"
-            )
-          end
-        end
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
         Rails.logger.info("AiAgentJob cancelled for task #{task.id}: trigger message deleted")
@@ -310,10 +242,6 @@ module Collavre
         Orchestration::DeliveryRecord.restore_if_undelivered!(task.reload)
       rescue StandardError => e
         task.update!(status: "failed")
-        # Fail workflow if this is a sub-task
-        if task.parent_task_id.present?
-          Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(task, error_message: e.message)
-        end
         Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
         raise e
       ensure
