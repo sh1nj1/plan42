@@ -30,6 +30,54 @@ valid_semver() {
   [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]
 }
 
+# Print -1, 0, or 1 when the first SemVer has lower, equal, or higher
+# precedence than the second. Build metadata intentionally has no precedence.
+semver_compare() {
+  ruby -e '
+    def parse(version)
+      core_and_pre = version.split("+", 2).first
+      core, prerelease = core_and_pre.split("-", 2)
+      [core.split(".").map(&:to_i), prerelease&.split(".")]
+    end
+
+    def compare_identifiers(left, right)
+      left.zip(right).each do |a, b|
+	return -1 if a.nil?
+	return 1 if b.nil?
+	next if a == b
+
+	a_numeric = /\A\d+\z/.match?(a)
+	b_numeric = /\A\d+\z/.match?(b)
+	return a.to_i <=> b.to_i if a_numeric && b_numeric
+	return -1 if a_numeric
+	return 1 if b_numeric
+
+	return a <=> b
+      end
+      0
+    end
+
+    left_core, left_pre = parse(ARGV.fetch(0))
+    right_core, right_pre = parse(ARGV.fetch(1))
+    core_comparison = left_core <=> right_core
+    if core_comparison != 0
+      puts core_comparison
+    elsif left_pre.nil? && right_pre.nil?
+      puts 0
+    elsif left_pre.nil?
+      puts 1
+    elsif right_pre.nil?
+      puts(-1)
+    else
+      puts compare_identifiers(left_pre, right_pre)
+    end
+  ' "$1" "$2"
+}
+
+version_advances() {
+  [[ "$(semver_compare "$1" "$2")" -gt 0 ]]
+}
+
 bump_version() {
   local version="$1"
   local level="$2"
@@ -121,6 +169,43 @@ is_prerelease() {
   [[ "${1%%+*}" == *-* ]]
 }
 
+# Keep target-directory resolution identical to build-macos.sh. Cargo resolves
+# a relative CARGO_TARGET_DIR from src-tauri, and the release verifier must look
+# in that same location after the build completes.
+normalize_tauri_target_dir() {
+  local path="$1"
+  local component last_index normalized_path=""
+  local -a path_components=()
+  local -a normalized_components=()
+
+  [[ "$path" == /* ]] || path="$TAURI_DIR/$path"
+  IFS=/ read -r -a path_components <<< "$path"
+  for component in "${path_components[@]}"; do
+    case "$component" in
+      ""|.) ;;
+      ..)
+	if ((${#normalized_components[@]})); then
+	  last_index=$((${#normalized_components[@]} - 1))
+	  unset "normalized_components[$last_index]"
+	fi
+	;;
+      *) normalized_components+=("$component") ;;
+    esac
+  done
+  for component in "${normalized_components[@]}"; do
+    normalized_path+="/$component"
+  done
+  printf '%s\n' "${normalized_path:-/}"
+}
+
+tauri_target_dir() {
+  if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+    normalize_tauri_target_dir "$CARGO_TARGET_DIR"
+  else
+    printf '%s\n' "$TAURI_DIR/target"
+  fi
+}
+
 write_checksum() {
   local artifact="$1"
   local checksum="$2"
@@ -153,6 +238,35 @@ ensure_release_tag() {
   else
     git tag -a "$tag" -m "Collavre Desktop $version"
   fi
+}
+
+reconcile_resumed_release() {
+  local tag="$1"
+  local version="$2"
+  local expected_message remote_tag
+  expected_message="$(release_commit_message "$version")"
+
+  [[ "$(git log -1 --format=%s HEAD)" == "$expected_message" ]] || \
+    die "resume requires HEAD to be the release commit: $expected_message"
+
+  # If the release commit is already on origin/main, keep it as the immutable
+  # release source even when newer commits have landed after it.
+  if git merge-base --is-ancestor HEAD origin/main; then
+    return
+  fi
+
+  remote_tag="$(git ls-remote --refs origin "refs/tags/$tag")"
+  [[ -z "$remote_tag" ]] || \
+    die "cannot rebase resumed release: $tag is already published on origin"
+
+  # A rejected main push leaves exactly the local release commit ahead of an
+  # advancing origin/main. Rebase it before rebuilding and recreate its local
+  # tag so the tag always names the rebuilt release commit.
+  [[ "$(git rev-list --count origin/main..HEAD)" == "1" ]] || \
+    die "resume requires exactly one unpushed release commit above origin/main"
+  git tag -d "$tag" >/dev/null 2>&1 || true
+  git rebase origin/main
+  ensure_release_tag "$tag" "$version"
 }
 
 publish_release() {
@@ -248,17 +362,18 @@ run_checks() {
 
 build_notarized_dmg() {
   local version="$1"
-  local source_dmg app_path artifact checksum
+  local source_dmg app_path artifact checksum target_dir
 
   echo "[release-desktop] Building signed DMG..."
-  rm -rf "$TAURI_DIR/target/release/bundle/dmg"
+  target_dir="$(tauri_target_dir)"
+  rm -rf "$target_dir/release/bundle/dmg"
   "$DESKTOP_DIR/scripts/build-macos.sh"
 
-  app_path="$TAURI_DIR/target/release/bundle/macos/Collavre Desktop.app"
+  app_path="$target_dir/release/bundle/macos/Collavre Desktop.app"
   [[ -d "$app_path" ]] || die "Tauri app bundle was not created: $app_path"
   codesign --verify --deep --strict --verbose=2 "$app_path"
 
-  source_dmg="$(find "$TAURI_DIR/target/release/bundle/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit 2>/dev/null || true)"
+  source_dmg="$(find "$target_dir/release/bundle/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit 2>/dev/null || true)"
   [[ -n "$source_dmg" ]] || die "Tauri DMG was not created"
   artifact="$ARTIFACT_DIR/Collavre-Desktop_${version}_aarch64.dmg"
   cp "$source_dmg" "$artifact"
@@ -291,9 +406,6 @@ main() {
   cd "$PROJECT_ROOT"
   check_prerequisites
 
-  git fetch origin main --tags
-  git pull --ff-only origin main
-
   local current_version previous_tag range bump suggested_version selected_version tag artifact resume_version=""
   if (($#)); then
     [[ $# -eq 2 && "$1" == "--resume" ]] || die "usage: $0 [--resume VERSION]"
@@ -301,10 +413,26 @@ main() {
     valid_semver "$resume_version" || die "resume version must be valid semver"
   fi
 
+  git fetch origin main --tags
+  if [[ -z "$resume_version" ]]; then
+    git pull --ff-only origin main
+  fi
+
   current_version="$(desktop_version)"
   valid_semver "$current_version" || die "Tauri version is not valid semver: $current_version"
   [[ "$current_version" == "$(cargo_version)" && "$current_version" == "$(cargo_lock_version)" ]] || \
     die "Tauri, Cargo manifest, and Cargo lock versions must match"
+
+  if [[ -n "$resume_version" ]]; then
+    selected_version="$resume_version"
+    [[ "$current_version" == "$selected_version" ]] || \
+      die "resume version $selected_version does not match current version $current_version"
+    tag="${TAG_PREFIX}${selected_version}"
+    reconcile_resumed_release "$tag" "$selected_version"
+    current_version="$(desktop_version)"
+    [[ "$current_version" == "$selected_version" ]] || \
+      die "resume version $selected_version does not match the rebased release commit"
+  fi
 
   previous_tag="$(git tag --list "${TAG_PREFIX}*" --sort=-v:refname)"
   if [[ -n "$resume_version" ]]; then
@@ -320,11 +448,7 @@ main() {
   else
     range="HEAD"
   fi
-  if [[ -n "$resume_version" ]]; then
-    selected_version="$resume_version"
-    [[ "$current_version" == "$selected_version" ]] || \
-      die "resume version $selected_version does not match current version $current_version"
-  else
+  if [[ -z "$resume_version" ]]; then
     bump="$(version_bump_level "$range")"
     suggested_version="$(bump_version "$current_version" "$bump")"
 
@@ -334,13 +458,15 @@ main() {
     selected_version="${selected_version:-$suggested_version}"
   fi
   valid_semver "$selected_version" || die "release version must be valid semver"
-  tag="${TAG_PREFIX}${selected_version}"
+  tag="${tag:-${TAG_PREFIX}${selected_version}}"
   if [[ -z "$resume_version" ]]; then
     git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "tag already exists locally: $tag"
     git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1 && die "tag already exists on origin: $tag"
+    version_advances "$selected_version" "$current_version" || \
+      die "release version must advance current version $current_version"
   fi
 
-  printf '\nDesktop commits included in this release:\n'
+  printf '\nBundled source commits included in this release:\n'
   git log --oneline "$range"
   if [[ -n "$resume_version" ]]; then
     read -r -p "Rebuild, notarize, and resume publishing $tag? [y/N] " confirm
@@ -364,8 +490,7 @@ main() {
   artifact="$RELEASE_ARTIFACT"
 
   ensure_release_tag "$tag" "$selected_version"
-  git push origin main
-  git push origin "$tag"
+  git push --atomic origin HEAD:main "refs/tags/$tag"
   publish_release "$tag" "$selected_version" "$artifact"
 
   echo "[release-desktop] Published $tag"

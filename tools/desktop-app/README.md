@@ -155,15 +155,18 @@ and notarized distribution build.
 
 `script/release-desktop.sh` is the single operator entry point. The canonical
 version is `src-tauri/tauri.conf.json`; the script keeps Cargo's manifest and
-lockfile package versions in sync, proposes a semantic bump from desktop commit
-messages, then requires an explicit version and final confirmation before
-creating the version commit.
+lockfile package versions in sync, proposes a semantic bump from all bundled
+source commits, then requires an explicit version that advances the current
+version and final confirmation before creating the version commit.
 
 It runs the desktop Rust and Rails test suites, creates the Apple-Silicon DMG,
 checks its code signature, submits and staples it with Apple notarization,
 writes a SHA-256 checksum, and only then creates a GitHub Release. The Git tag
-format is `desktop-v<semver>` and release notes are generated from desktop
-commits since the preceding desktop tag.
+format is `desktop-v<semver>` and release notes are generated from bundled
+source commits since the preceding desktop tag. If publication fails after the
+version commit, rerun `script/release-desktop.sh --resume <version>` from that clean
+release checkout; it safely rebases an unpushed release commit onto current
+`origin/main` before rebuilding.
 
 Run it only from a clean, current `main` checkout on an Apple-Silicon Mac:
 
