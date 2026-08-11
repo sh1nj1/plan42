@@ -1,3 +1,5 @@
 <% default_help_url = collavre.features_path(locale: I18n.locale, script_name: request.script_name) %>
 <% help_url = SystemSetting.help_menu_link.presence || default_help_url %>
-<%= link_to t('app.help'), help_url, id: "creative-guide-link", class: "creative-guide-link", target: "_blank", rel: "noopener" %>
+<%# Navigates in the current window: the guide is a normal page, so the browser's
+    back button is the way back — a new tab left users with no way to return. %>
+<%= link_to t('app.help'), help_url, id: "creative-guide-link", class: "creative-guide-link" %>

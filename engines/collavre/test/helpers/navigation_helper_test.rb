@@ -135,12 +135,13 @@ class NavigationHelperTest < ActionView::TestCase
     assert_match(/creative-guide-link/, html)
   end
 
-  test "help partial opens the default features page in a new tab" do
+  test "help partial opens the default features page in the current window" do
     SystemSetting.stub(:help_menu_link, "") do
       I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
     end
 
-    assert_select "a#creative-guide-link[href='/features?locale=en'][target='_blank'][rel='noopener']", count: 1
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
   end
 
   test "help partial preserves the engine mount path" do
@@ -153,12 +154,13 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[href='/collavre/features?locale=ko']", count: 1
   end
 
-  test "help partial preserves the configured link and opens it in a new tab" do
+  test "help partial preserves the configured link and opens it in the current window" do
     SystemSetting.stub(:help_menu_link, "https://docs.example.com/help") do
       render partial: "collavre/shared/navigation/help_button"
     end
 
-    assert_select "a#creative-guide-link[href='https://docs.example.com/help'][target='_blank'][rel='noopener']", count: 1
+    assert_select "a#creative-guide-link[href='https://docs.example.com/help']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
   end
 
   test "navigation partial renders mobile guest help and sign in buttons" do
@@ -184,8 +186,7 @@ class NavigationHelperTest < ActionView::TestCase
 
     assert_includes rendered, 'class="mobile-only"'
     assert_includes rendered, 'creative-guide-link'
-    assert_includes rendered, 'target="_blank"'
-    assert_includes rendered, 'rel="noopener"'
+    assert_not_includes rendered, 'target="_blank"'
     assert_includes rendered, I18n.t("app.sign_in")
     assert_includes rendered, collavre.new_session_path
   end
@@ -219,7 +220,8 @@ class NavigationHelperTest < ActionView::TestCase
       render partial: "collavre/shared/navigation"
     end
 
-    assert_select "a#creative-guide-link[href='/features?locale=en'][target='_blank'][rel='noopener']", count: 2
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 2
+    assert_select "a#creative-guide-link[target]", count: 0
   ensure
     Current.user = nil
   end

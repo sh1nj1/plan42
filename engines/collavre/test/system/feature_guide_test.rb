@@ -5,7 +5,7 @@ require_relative "../application_system_test_case"
 # breadcrumb markup is present either way — so visibility is asserted in a real
 # browser instead.
 class FeatureGuideTest < ApplicationSystemTestCase
-  test "the default help link opens the complete feature guide in a new tab" do
+  test "the default help link opens the complete feature guide in the current window" do
     registry = Navigation::Registry.instance
     original_help_item = registry.find(:help)
     registry.register(
@@ -17,19 +17,24 @@ class FeatureGuideTest < ApplicationSystemTestCase
     )
     SystemSetting.find_by(key: "help_menu_link")&.destroy
     visit root_path
+    app_path = page.current_path
+    windows_before = page.windows.size
 
-    feature_window = window_opened_by do
-      find("a#creative-guide-link", visible: :visible, match: :first).click
-    end
+    find("a#creative-guide-link", visible: :visible, match: :first).click
 
-    within_window feature_window do
-      assert_current_path collavre.features_path(locale: I18n.locale)
-      assert_selector ".feature-guide-link-card", count: 9
+    assert_current_path collavre.features_path(locale: I18n.locale)
+    assert_equal windows_before, page.windows.size, "the help link must not open a new window"
+    assert_selector ".feature-guide-link-card", count: 9
 
-      find("a[href^='/features/mention_agent']").click
+    find("a[href^='/features/mention_agent']").click
 
-      assert_selector "h1", text: I18n.t("collavre.features.pages.mention_agent.title")
-    end
+    assert_selector "h1", text: I18n.t("collavre.features.pages.mention_agent.title")
+
+    # The whole point of staying in this window: back walks straight into the app.
+    page.go_back
+    page.go_back
+
+    assert_current_path app_path
   ensure
     original_help_item ? registry.register(original_help_item) : registry.unregister(:help)
   end
