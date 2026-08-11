@@ -468,11 +468,25 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       js_imports_in(%(<div>{ready && <code>{import("#{satellite}/thing")}</code>}</div>), jsx: true)
   end
 
+  test "TSX generic arrows do not mask later module syntax as JSX text" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const id = <T,>(value: T) => value; import("#{satellite}/thing")), jsx: true)
+  end
+
   test "detector ignores an import method called on an object" do
     satellite = SATELLITES.first
 
     assert_empty js_imports_in(%(registry.import("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(import("#{satellite}/template")))
+  end
+
+  test "detector ignores a require method called on an object" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(registry.require("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -508,6 +522,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     # And a different class under a waived engine is never covered by it.
     assert_equal [ [ "#{satellite}::Repository", :constant ] ],
       unwaived(references_in(source), [ "#{satellite}::Account" ] * 2)
+  end
+
+  # #references_in orders by line so that #unwaived blames the newest occurrence
+  # of a name. That only works if both detectors report a real line — a string
+  # reference reporting nil sorts as 0 and jumps ahead of every constant above
+  # it, which is exactly what a shadowed helper caused here.
+  test "string references carry their source line and sort with constant ones" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    source = "#{satellite}::Account.first\nbelongs_to :a, class_name: \"#{satellite}::Repository\"\n"
+
+    assert_equal [ [ "#{satellite}::Repository", 2 ] ], string_references_in(source)
+    assert_equal [ [ "#{satellite}::Account", :constant ], [ "#{satellite}::Repository", :string ] ],
+      references_in(source)
   end
 
   # A recorded exception is the strongest thing this test can hand out. If the
@@ -640,6 +667,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless match
 
     closing = source[cursor + 1] == "/"
+    return if !closing && source[cursor + match[0].length] == ","
+
     finish = jsx_tag_end(source, cursor + match[0].length)
     return unless finish
 
@@ -667,49 +696,25 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  # Balancing `{` and `}` is the only thing this needs beyond ordinary scanning,
+  # and everything else has to behave exactly as the import scan does — a brace
+  # inside a string, a comment or a regex literal is not structural. So it walks
+  # the same scanner rather than a second copy of it: the two drifted apart once
+  # already, and a quoted "}" ended the expression early.
   def jsx_expression_end(source, cursor)
     depth = 1
     cursor += 1
     tokens = []
 
     while (character = source[cursor])
-      case character
-      when /\s/
-        cursor += 1
-      when "\"", "'", "`"
-        token, cursor = js_string_token(source, cursor)
-        tokens << token
-      when "/"
-        if source[cursor + 1] == "/"
-          cursor = source.index("\n", cursor) || source.length
-        elsif source[cursor + 1] == "*"
-          cursor = (source.index("*/", cursor + 2) || source.length - 2) + 2
-        elsif js_regex_start?(tokens)
-          token, cursor = js_regex_token(source, cursor)
-          tokens << token
-        else
-          tokens << [ :punctuation, character ]
-          cursor += 1
-        end
-      when /[A-Za-z_$]/
-        finish = cursor + 1
-        finish += 1 while source[finish]&.match?(/[A-Za-z0-9_$]/)
-        tokens << [ :word, source[cursor...finish] ]
-        cursor = finish
-      when "{"
-        tokens << [ :punctuation, character ]
-        depth += 1
-        cursor += 1
-      when "}"
+      if character == "}"
         depth -= 1
         return cursor + 1 if depth.zero?
-
-        tokens << [ :punctuation, character ]
-        cursor += 1
-      else
-        tokens << [ :punctuation, character ]
-        cursor += 1
+      elsif character == "{"
+        depth += 1
       end
+
+      cursor = js_scan_token(source, cursor, tokens)
     end
 
     cursor
@@ -721,38 +726,48 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_tokens(source)
     tokens = []
     cursor = 0
-
-    while (character = source[cursor])
-      case character
-      when /\s/
-        cursor += 1
-      when "/"
-        if source[cursor + 1] == "/"
-          cursor = source.index("\n", cursor) || source.length
-        elsif source[cursor + 1] == "*"
-          cursor = (source.index("*/", cursor + 2) || source.length - 2) + 2
-        elsif js_regex_start?(tokens)
-          token, cursor = js_regex_token(source, cursor)
-          tokens << token
-        else
-          tokens << [ :punctuation, character ]
-          cursor += 1
-        end
-      when "'", "\"", "`"
-        token, cursor = js_string_token(source, cursor)
-        tokens << token
-      when /[A-Za-z_$]/
-        finish = cursor + 1
-        finish += 1 while source[finish]&.match?(/[A-Za-z0-9_$]/)
-        tokens << [ :word, source[cursor...finish] ]
-        cursor = finish
-      else
-        tokens << [ :punctuation, character ]
-        cursor += 1
-      end
-    end
-
+    cursor = js_scan_token(source, cursor, tokens) while cursor < source.length
     tokens
+  end
+
+  # One step of that scanner: skip whitespace or a comment, or append exactly one
+  # string, regex, word or punctuation token. Returns the cursor after it.
+  def js_scan_token(source, cursor, tokens)
+    case source[cursor]
+    when /\s/ then cursor + 1
+    when "/" then js_scan_slash(source, cursor, tokens)
+    when "'", "\"", "`" then js_scan_pair(js_string_token(source, cursor), tokens)
+    when /[A-Za-z_$]/ then js_scan_word(source, cursor, tokens)
+    else
+      tokens << [ :punctuation, source[cursor] ]
+      cursor + 1
+    end
+  end
+
+  def js_scan_slash(source, cursor, tokens)
+    if source[cursor + 1] == "/"
+      source.index("\n", cursor) || source.length
+    elsif source[cursor + 1] == "*"
+      (source.index("*/", cursor + 2) || source.length - 2) + 2
+    elsif js_regex_start?(tokens)
+      js_scan_pair(js_regex_token(source, cursor), tokens)
+    else
+      tokens << [ :punctuation, "/" ]
+      cursor + 1
+    end
+  end
+
+  def js_scan_word(source, cursor, tokens)
+    finish = cursor + 1
+    finish += 1 while source[finish]&.match?(/[A-Za-z0-9_$]/)
+    tokens << [ :word, source[cursor...finish] ]
+    finish
+  end
+
+  def js_scan_pair(scanned, tokens)
+    token, cursor = scanned
+    tokens << token
+    cursor
   end
 
   # `/` is division or a regular-expression delimiter depending on its
@@ -854,6 +869,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
       case value
       when "require"
+        next if tokens[index - 1] == [ :punctuation, "." ]
+
         js_call_specifier(tokens, index)
       when "import"
         next if tokens[index - 1] == [ :punctuation, "." ]
@@ -994,7 +1011,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # written into a string literal in core code is the violation, whatever reads
   # it afterwards.
   def string_references_in(source)
-    string_literals_in(Prism.parse(source).value)
+    located_string_literals_in(Prism.parse(source).value)
       .flat_map { |value, line| value.scan(SATELLITE_IN_STRING).map { |name| [ name, line ] } }
   end
 
@@ -1003,13 +1020,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # the value the program will actually use. Interpolated strings expose their
   # static StringNode parts separately, preserving the existing partial-path
   # coverage without treating an expression as literal text.
-  def string_literals_in(node, found = [])
+  #
+  # Named apart from #string_literals_in on purpose: the two return different
+  # shapes, and while they shared a name Ruby kept only the second definition.
+  # Every string reference then came back with a nil line, which #references_in
+  # sorts as 0 — so a satellite name in a string was always blamed before a
+  # constant reference above it, whatever the file actually said.
+  def located_string_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
     if node.is_a?(Prism::StringNode)
       found << [ node.unescaped, node.location.start_line ]
     else
-      node.compact_child_nodes.each { |child| string_literals_in(child, found) }
+      node.compact_child_nodes.each { |child| located_string_literals_in(child, found) }
     end
 
     found

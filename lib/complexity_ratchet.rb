@@ -583,35 +583,34 @@ module ComplexityRatchet
       } + sibling_problems(before, after, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
     end
 
-    # The baseline cannot describe an under-budget sibling because RuboCop does
-    # not emit an offense for it. Compare the parsed scope populations from the
-    # base ref and the branch too: otherwise deleting a 90-line sibling next to
-    # an unrecorded 60-line sibling lets the latter grow to 80 under the former
-    # key, and every baseline-only comparison calls that an improvement.
-    def sibling_populations(sources)
-      sources.each_with_object({}) do |(path, source), populations|
-        next if source.nil?
-
-        EntityMap.for(source).sibling_populations.each do |entity, count|
-          populations[[ path, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)] = count
-        end
-      end
-    end
-
+    # Both sibling views of a source, from one parse.
+    #
     # Population catches a deleted sibling that was below budget and therefore
-    # absent from the baseline. Anchors catch the other positional transfer:
-    # two named calls can swap order while keeping the same population, making
-    # every ordinal key look individually tighter even though the smaller
-    # sibling grew under the larger sibling's allowance.
-    def sibling_anchors(sources)
-      sources.each_with_object({}) do |(path, source), anchors|
+    # absent from the baseline: the baseline cannot describe an under-budget
+    # sibling, so deleting a 90-line one next to an unrecorded 60-line one lets
+    # the latter grow to 80 under the former's key, and every baseline-only
+    # comparison calls that an improvement.
+    #
+    # Anchors catch the other positional transfer: two named calls can swap
+    # order while keeping the same population, making every ordinal key look
+    # individually tighter even though the smaller sibling grew under the larger
+    # sibling's allowance.
+    #
+    # Answered together because every caller wants both for the same files, and
+    # asking separately parsed each of the 129 baselined files twice.
+    def sibling_profile(sources)
+      sources.each_with_object({ populations: {}, anchors: {} }) do |(path, source), profile|
         next if source.nil?
 
-        EntityMap.for(source).sibling_anchors.each do |entity, values|
-          anchors[[ path, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)] = values
-        end
+        entities = EntityMap.for(source)
+        entities.sibling_populations.each { |entity, count| profile[:populations][sibling_key(path, entity)] = count }
+        entities.sibling_anchors.each { |entity, values| profile[:anchors][sibling_key(path, entity)] = values }
       end
     end
+
+    def sibling_populations(sources) = sibling_profile(sources).fetch(:populations)
+
+    def sibling_anchors(sources) = sibling_profile(sources).fetch(:anchors)
 
     # Raising a Max in .rubocop_metrics.yml is the quiet way to unwind the
     # ratchet, and verify_monotonic cannot see it: RuboCop stops emitting the
@@ -798,8 +797,12 @@ module ComplexityRatchet
     # Siblings share every part of a key except their ordinal.
     def family(key) = key.gsub(/\(\d+\)/, "")
 
+    # Sibling views are keyed by file and family, without the cop: a population
+    # or an anchor is a property of the source, not of the cop that measured it.
+    def sibling_key(path, entity) = [ path, family(entity) ].join(SEPARATOR)
+
     def sibling_population_key(key)
-      key.split(SEPARATOR, 3).then { |file, _cop, entity| [ file, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR) }
+      key.split(SEPARATOR, 3).then { |file, _cop, entity| sibling_key(file, entity) }
     end
 
     def sibling_anchors_reordered?(key, before, after)

@@ -132,6 +132,28 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  # Both views come from one parse now. They have to stay keyed identically, or
+  # verify_monotonic would look up an anchor under a key the population never
+  # produced and silently compare nothing.
+  test "sibling profile answers both views from one pass over the sources" do
+    source = <<~RUBY
+      class Sample
+        def run
+          first.each { |item| item }
+          second.each { |item| item }
+        end
+      end
+    RUBY
+    sources = { "a.rb" => source, "gone.rb" => nil }
+
+    profile = ComplexityRatchet.sibling_profile(sources)
+
+    assert_equal({ "a.rb | Sample#run[block:each]" => 2 }, profile.fetch(:populations))
+    assert_equal({ "a.rb | Sample#run[block:each]" => [ "first.each", "second.each" ] }, profile.fetch(:anchors))
+    assert_equal profile.fetch(:populations), ComplexityRatchet.sibling_populations(sources)
+    assert_equal profile.fetch(:anchors), ComplexityRatchet.sibling_anchors(sources)
+  end
+
   test "sibling scopes are counted per parent, not per file" do
     source = <<~RUBY
       class Sample

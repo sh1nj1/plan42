@@ -13,7 +13,6 @@
 require "rubygems"
 require "bundler/setup"
 require "optparse"
-require "shellwords"
 
 ROOT = File.expand_path("..", __dir__)
 require File.join(ROOT, "lib", "complexity_ratchet")
@@ -57,26 +56,19 @@ def file_at(ref, path)
   status.success? ? out : nil
 end
 
-def sibling_populations_at(ref, paths)
-  ComplexityRatchet.sibling_populations(paths.to_h { |path| [ path, file_at(ref, path) ] })
+# The sibling checks need the population and the anchors of every baselined
+# file, on both sides of the comparison. Reading each side once and profiling it
+# once is not just tidier: asking for the two views separately ran `git show`
+# twice per file and parsed all 129 of them four times over.
+def sources_at(ref, paths)
+  paths.to_h { |path| [ path, file_at(ref, path) ] }
 end
 
-def current_sibling_populations(paths)
-  ComplexityRatchet.sibling_populations(paths.to_h do |path|
+def current_sources(paths)
+  paths.to_h do |path|
     full_path = File.join(ROOT, path)
     [ path, File.file?(full_path) ? File.read(full_path) : nil ]
-  end)
-end
-
-def sibling_anchors_at(ref, paths)
-  ComplexityRatchet.sibling_anchors(paths.to_h { |path| [ path, file_at(ref, path) ] })
-end
-
-def current_sibling_anchors(paths)
-  ComplexityRatchet.sibling_anchors(paths.to_h do |path|
-    full_path = File.join(ROOT, path)
-    [ path, File.file?(full_path) ? File.read(full_path) : nil ]
-  end)
+  end
 end
 
 case options[:mode]
@@ -97,14 +89,17 @@ when :verify
   # to verify_monotonic; upgrading RuboCop does the same without editing a file
   # in this repository at all. So the budget and the toolchain that supplies its
   # inherited half are both checked alongside the baseline.
+  before_profile = ComplexityRatchet.sibling_profile(sources_at(options[:ref], baseline_paths))
+  after_profile = ComplexityRatchet.sibling_profile(current_sources(baseline_paths))
+
   problems =
     ComplexityRatchet.verify_monotonic(
       before_entries,
       after_entries,
-      before_siblings: sibling_populations_at(options[:ref], baseline_paths),
-      after_siblings: current_sibling_populations(baseline_paths),
-      before_sibling_anchors: sibling_anchors_at(options[:ref], baseline_paths),
-      after_sibling_anchors: current_sibling_anchors(baseline_paths)
+      before_siblings: before_profile.fetch(:populations),
+      after_siblings: after_profile.fetch(:populations),
+      before_sibling_anchors: before_profile.fetch(:anchors),
+      after_sibling_anchors: after_profile.fetch(:anchors)
     ) +
     ComplexityRatchet.verify_budget(
       base_config && (YAML.safe_load(base_config) || {}),
