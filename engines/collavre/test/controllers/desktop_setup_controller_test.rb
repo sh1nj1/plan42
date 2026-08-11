@@ -300,7 +300,7 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_not_predicate ordinary_gateway.reload, :desktop_managed?
   end
 
-  test "migration marks a renamed legacy desktop gateway and its preset" do
+  test "migration marks a legacy desktop gateway with a customized tenant ID and its preset" do
     users(:one).update!(system_admin: true)
     legacy_gateway = Collavre::AgentGateway.create!(
       owner: users(:one),
@@ -309,7 +309,7 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
       admin_key: "legacy-admin-key",
       completion_key: "legacy-completion-key",
       identity_secret: "l" * 48,
-      tenant_id: "collavre-desktop"
+      tenant_id: "my-custom-tenant"
     )
     preset = Collavre::User.create!(
       name: "Claude Code",

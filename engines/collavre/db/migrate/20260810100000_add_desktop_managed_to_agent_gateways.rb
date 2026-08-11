@@ -21,7 +21,6 @@ class AddDesktopManagedToAgentGateways < ActiveRecord::Migration[8.1]
     legacy_gateway_ids = select_values(<<~SQL.squish)
       SELECT id FROM agent_gateways
       WHERE desktop_managed = FALSE
-      AND tenant_id = 'collavre-desktop'
       AND base_url LIKE 'http://127.0.0.1:%'
       AND EXISTS (
         SELECT 1 FROM users
