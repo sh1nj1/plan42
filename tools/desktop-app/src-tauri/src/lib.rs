@@ -45,9 +45,11 @@ struct ManagedProxy {
 struct ProxySidecar(Mutex<Option<ManagedProxy>>);
 
 const PROXY_KEYCHAIN_SERVICE: &str = "net.collavre.desktop.cli-openai-proxy";
+const PROXY_CREDENTIALS_ACCOUNT: &str = "credentials";
 const PROXY_ADMIN_KEY_ACCOUNT: &str = "admin-key";
 const PROXY_COMPLETION_KEY_ACCOUNT: &str = "completion-key";
 const PROXY_IDENTITY_SECRET_ACCOUNT: &str = "identity-secret";
+const ERR_SEC_ITEM_NOT_FOUND: i32 = -25_300;
 
 #[derive(Debug, Deserialize)]
 struct BundledProxyManifest {
@@ -301,43 +303,108 @@ struct ProxyCredentials {
     regenerated: bool,
 }
 
+#[derive(Deserialize, Serialize)]
+struct StoredProxyCredentials {
+    admin_key: String,
+    completion_key: String,
+    identity_secret: String,
+}
+
+fn encode_proxy_credentials(credentials: &ProxyCredentials) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(&StoredProxyCredentials {
+        admin_key: credentials.admin_key.clone(),
+        completion_key: credentials.completion_key.clone(),
+        identity_secret: credentials.identity_secret.clone(),
+    })
+    .map_err(|_| "Could not prepare the desktop proxy keys for Keychain.".to_string())
+}
+
+fn decode_proxy_credentials(bytes: &[u8]) -> Result<ProxyCredentials, String> {
+    let credentials: StoredProxyCredentials = serde_json::from_slice(bytes)
+        .map_err(|_| "The desktop proxy keys in Keychain are invalid.".to_string())?;
+    if credentials.admin_key.is_empty()
+        || credentials.completion_key.is_empty()
+        || credentials.identity_secret.is_empty()
+    {
+        return Err("The desktop proxy keys in Keychain are invalid.".to_string());
+    }
+    Ok(ProxyCredentials {
+        admin_key: credentials.admin_key,
+        completion_key: credentials.completion_key,
+        identity_secret: credentials.identity_secret,
+        regenerated: false,
+    })
+}
+
+fn generate_proxy_credentials() -> Result<ProxyCredentials, String> {
+    Ok(ProxyCredentials {
+        admin_key: generate_proxy_key("cop_admin")?,
+        completion_key: generate_proxy_key("cop_key")?,
+        identity_secret: generate_proxy_key("cop_identity")?,
+        regenerated: true,
+    })
+}
+
 #[cfg(target_os = "macos")]
-fn keychain_proxy_key(account: &str, prefix: &str) -> Result<(String, bool), String> {
+fn legacy_proxy_credentials() -> Result<Option<ProxyCredentials>, String> {
+    use security_framework::passwords::get_generic_password;
+
+    let admin_key = match get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_ADMIN_KEY_ACCOUNT) {
+        Ok(bytes) => String::from_utf8(bytes)
+            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(None),
+        Err(_) => {
+            return Err("Collavre needs Keychain access for the desktop proxy key.".to_string());
+        }
+    };
+    let completion_key = get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_COMPLETION_KEY_ACCOUNT)
+        .map_err(|_| "The desktop proxy keys in Keychain are incomplete.".to_string())?;
+    let identity_secret =
+        get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_IDENTITY_SECRET_ACCOUNT)
+            .map_err(|_| "The desktop proxy keys in Keychain are incomplete.".to_string())?;
+    Ok(Some(ProxyCredentials {
+        admin_key,
+        completion_key: String::from_utf8(completion_key)
+            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+        identity_secret: String::from_utf8(identity_secret)
+            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+        regenerated: false,
+    }))
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_proxy_credentials() -> Result<ProxyCredentials, String> {
     use security_framework::passwords::{get_generic_password, set_generic_password};
 
-    if let Ok(bytes) = get_generic_password(PROXY_KEYCHAIN_SERVICE, account) {
-        return String::from_utf8(bytes)
-            .map(|key| (key, false))
-            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string());
+    match get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_CREDENTIALS_ACCOUNT) {
+        Ok(bytes) => return decode_proxy_credentials(&bytes),
+        Err(error) if error.code() != ERR_SEC_ITEM_NOT_FOUND => {
+            return Err("Collavre needs Keychain access for the desktop proxy.".to_string());
+        }
+        Err(_) => {}
     }
 
-    let key = generate_proxy_key(prefix)?;
-    set_generic_password(PROXY_KEYCHAIN_SERVICE, account, key.as_bytes()).map_err(|_| {
-        "Collavre needs Keychain access to store the desktop proxy key.".to_string()
-    })?;
-    Ok((key, true))
+    // Older desktop builds stored each secret in its own Keychain entry. Read
+    // those entries only during this one-time migration, then keep all three
+    // values in one entry so a launch makes one Keychain access request.
+    let credentials = legacy_proxy_credentials()?.unwrap_or(generate_proxy_credentials()?);
+    let serialized = encode_proxy_credentials(&credentials)?;
+    set_generic_password(
+        PROXY_KEYCHAIN_SERVICE,
+        PROXY_CREDENTIALS_ACCOUNT,
+        &serialized,
+    )
+    .map_err(|_| "Collavre needs Keychain access to store the desktop proxy keys.".to_string())?;
+    Ok(credentials)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn keychain_proxy_key(_account: &str, _prefix: &str) -> Result<(String, bool), String> {
+fn keychain_proxy_credentials() -> Result<ProxyCredentials, String> {
     Err("Desktop proxy installation is currently supported on macOS only.".to_string())
 }
 
 fn proxy_credentials() -> Result<ProxyCredentials, String> {
-    let (admin_key, admin_key_regenerated) =
-        keychain_proxy_key(PROXY_ADMIN_KEY_ACCOUNT, "cop_admin")?;
-    let (completion_key, completion_key_regenerated) =
-        keychain_proxy_key(PROXY_COMPLETION_KEY_ACCOUNT, "cop_key")?;
-    let (identity_secret, identity_secret_regenerated) =
-        keychain_proxy_key(PROXY_IDENTITY_SECRET_ACCOUNT, "cop_identity")?;
-    Ok(ProxyCredentials {
-        admin_key,
-        completion_key,
-        identity_secret,
-        regenerated: admin_key_regenerated
-            || completion_key_regenerated
-            || identity_secret_regenerated,
-    })
+    keychain_proxy_credentials()
 }
 
 fn invalidate_proxy_registration_after_key_regeneration(
@@ -598,6 +665,9 @@ fn stop_managed_proxy(sidecar: &ProxySidecar) -> Result<(), String> {
 }
 
 fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> Result<(), String> {
+    if managed_proxy_credentials(sidecar)?.is_some() {
+        return Ok(());
+    }
     let credentials = proxy_credentials()?;
     start_proxy_with_credentials(app, data, sidecar, credentials).map(|_| ())
 }
@@ -1363,7 +1433,8 @@ fn apply_desktop_config(data: &Path) {
 mod tests {
     use super::{
         append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
-        desktop_port, generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
+        decode_proxy_credentials, desktop_port, encode_proxy_credentials, generate_proxy_key,
+        invalidate_proxy_registration_after_key_regeneration,
         invalidate_proxy_registration_when_gateway_is_missing, lsof_reports_process,
         managed_proxy_credentials, managed_proxy_runs_on_port, migrate_proxy_config,
         normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
@@ -1533,6 +1604,33 @@ mod tests {
             .all(|character| character.is_ascii_alphanumeric()
                 || character == '_'
                 || character == '-'));
+    }
+
+    #[test]
+    fn proxy_credentials_are_stored_as_one_keychain_value() {
+        let credentials = ProxyCredentials {
+            admin_key: "admin-key".to_string(),
+            completion_key: "completion-key".to_string(),
+            identity_secret: "identity-secret".to_string(),
+            regenerated: true,
+        };
+
+        let serialized = encode_proxy_credentials(&credentials).expect("serialize credentials");
+        let decoded = decode_proxy_credentials(&serialized).expect("decode credentials");
+
+        assert_eq!("admin-key", decoded.admin_key);
+        assert_eq!("completion-key", decoded.completion_key);
+        assert_eq!("identity-secret", decoded.identity_secret);
+        assert!(!decoded.regenerated);
+    }
+
+    #[test]
+    fn proxy_credentials_reject_invalid_or_incomplete_keychain_values() {
+        assert!(decode_proxy_credentials(b"not-json").is_err());
+        assert!(decode_proxy_credentials(
+            br#"{"admin_key":"admin","completion_key":"","identity_secret":"identity"}"#
+        )
+        .is_err());
     }
 
     #[test]
@@ -2141,7 +2239,16 @@ pub fn run() {
                             Some(config) => config,
                             None => return Ok(false),
                         };
-                        let credentials = proxy_credentials()?;
+                        // `start_proxy` retains the credentials it used in the
+                        // managed child. Reuse them for the registration check
+                        // instead of asking Keychain for the same secrets again.
+                        let credentials = managed_proxy_credentials(
+                            &handle.state::<ProxySidecar>(),
+                        )?
+                        .ok_or_else(|| {
+                            "The desktop proxy stopped before registration could be verified."
+                                .to_string()
+                        })?;
                         revalidate_registered_gateway_after_rails_health(
                             true,
                             &handle.state::<Sidecar>(),
