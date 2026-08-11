@@ -17,6 +17,9 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
 STAGING="$DESKTOP_DIR/staging/app"
+# An absolute CARGO_TARGET_DIR lets release builds reuse a verified Cargo cache
+# without changing where staging or the final bundle are resolved.
+TAURI_TARGET_DIR="${CARGO_TARGET_DIR:-$DESKTOP_DIR/src-tauri/target}"
 
 echo "[build-macos] 1/7 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
@@ -122,7 +125,7 @@ ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
 # which cargo never cleans. Make any prior copy tree owner-writable so the re-copy
 # can overwrite it. chmod (not rm): if the build script doesn't re-run, the existing
 # copies must stay in place or the bundle loses its resources.
-for app_copy in "$DESKTOP_DIR/src-tauri/target"/*/app; do
+for app_copy in "$TAURI_TARGET_DIR"/*/app; do
   [ -d "$app_copy" ] && chmod -R u+w "$app_copy" 2>/dev/null || true
 done
 
@@ -139,7 +142,7 @@ echo "[build-macos] 7/7 building the Tauri bundle"
 
 # Verify the exact runtime copied into the .app, not merely the source vendor
 # directory. A desktop bundle must never rely on a target Mac's system Ruby.
-BUNDLED_RUBY="$DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre Desktop.app/Contents/Resources/app/tools/desktop-app/vendor/ruby/bin/ruby"
+BUNDLED_RUBY="$TAURI_TARGET_DIR/release/bundle/macos/Collavre Desktop.app/Contents/Resources/app/tools/desktop-app/vendor/ruby/bin/ruby"
 [ -x "$BUNDLED_RUBY" ] || {
   echo "[build-macos] packaged Ruby is missing or not executable: $BUNDLED_RUBY" >&2
   exit 1
