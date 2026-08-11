@@ -35,9 +35,9 @@ Two units with one clear interface (HTTP over loopback):
 
 ### 1. Tauri shell (Rust)
 - Minimal window using the OS webview. No custom frontend.
-- On launch: use the stable `127.0.0.1:4000` default, spawn the Rails
+- On launch: use the stable `127.0.0.1:45173` default, spawn the Rails
   **sidecar** (`externalBin`), poll `GET /up` until healthy, then load
-  `http://127.0.0.1:4000`. A valid, explicitly configured `PORT` may override
+  `http://127.0.0.1:45173`. A valid, explicitly configured `PORT` may override
   that default.
 - Never silently select an ephemeral fallback when the configured port is
   occupied. The stable loopback origin is required for local firewall rules and
@@ -125,7 +125,7 @@ risk with Rails runtime paths / asset pipeline — deferred.)
 
 1. **Headless boot** — add `desktop` env; boot Rails with sqlite + local storage
    + no SSL + generated secret, data under app-support. Confirm the full app
-   works at `http://127.0.0.1:4000`. No Tauri yet. ← validates everything.
+   works at `http://127.0.0.1:45173`. No Tauri yet. ← validates everything.
 2. **Vendored Ruby boot** — vendor portable arm64 Ruby + standalone bundle; boot
    the same with vendored Ruby instead of rbenv.
 3. **Tauri shell** — spawn sidecar, health-gate `/up`, webview, graceful quit.

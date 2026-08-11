@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
-const DEFAULT_PORT: u16 = 4000;
+const DEFAULT_PORT: u16 = 45173;
 const DESKTOP_USER_AGENT: &str = concat!("CollavreDesktop/", env!("CARGO_PKG_VERSION"));
 
 /// Holds the sidecar child so we can stop it on exit.
@@ -1391,7 +1391,7 @@ fn json_to_host_list(v: &serde_json::Value) -> Option<String> {
 /// Recognized keys — all optional, unknown keys and wrong-typed values ignored:
 ///   "allowed_hosts": ["host", ...] | "host,host"  -> COLLAVRE_ALLOWED_HOSTS
 ///   "bind_host":      "0.0.0.0"                    -> COLLAVRE_BIND_HOST
-///   "port":           4000 | "4000"               -> PORT
+///   "port":           45173 | "45173"             -> PORT
 ///
 /// Malformed JSON (or a non-object top level) yields no overrides: a bad config
 /// file degrades to the built-in closed-loopback defaults rather than failing
@@ -1491,7 +1491,8 @@ mod tests {
 
     #[test]
     fn desktop_port_defaults_to_the_stable_port() {
-        assert_eq!(desktop_port(None), DEFAULT_PORT);
+        assert_eq!(desktop_port(None), 45_173);
+        assert_eq!(DEFAULT_PORT, 45_173);
         assert_eq!(desktop_port(Some("not-a-port")), DEFAULT_PORT);
         assert_eq!(desktop_port(Some("0")), DEFAULT_PORT);
     }
@@ -1563,24 +1564,24 @@ mod tests {
     #[test]
     fn port_number_and_string_both_map() {
         assert_eq!(
-            pairs(r#"{"port": 4000}"#),
-            vec![("PORT", "4000".to_string())]
+            pairs(r#"{"port": 45173}"#),
+            vec![("PORT", "45173".to_string())]
         );
         assert_eq!(
-            pairs(r#"{"port": "4000"}"#),
-            vec![("PORT", "4000".to_string())]
+            pairs(r#"{"port": "45173"}"#),
+            vec![("PORT", "45173".to_string())]
         );
     }
 
     #[test]
     fn all_three_keys_preserve_a_stable_order() {
-        let got = pairs(r#"{"port": 4000, "bind_host": "0.0.0.0", "allowed_hosts": ["h"]}"#);
+        let got = pairs(r#"{"port": 45173, "bind_host": "0.0.0.0", "allowed_hosts": ["h"]}"#);
         assert_eq!(
             got,
             vec![
                 ("COLLAVRE_ALLOWED_HOSTS", "h".to_string()),
                 ("COLLAVRE_BIND_HOST", "0.0.0.0".to_string()),
-                ("PORT", "4000".to_string()),
+                ("PORT", "45173".to_string()),
             ]
         );
     }

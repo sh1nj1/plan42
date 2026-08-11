@@ -29,20 +29,20 @@ commas):
 {
   "allowed_hosts": ["xxx.tailadceed.ts.net"],
   "bind_host": "0.0.0.0",
-  "port": 4000
+  "port": 45173
 }
 ```
 
 - `allowed_hosts` — a JSON array, or a `"a,b"` comma-separated string.
 - `bind_host` — omit to stay on loopback (`127.0.0.1`); set `"0.0.0.0"` to open.
-- `port` — omit to use the stable default, `4000`.
+- `port` — omit to use the stable default, `45173`.
 
 A missing or malformed file is the normal closed-loopback case and is ignored
 (the app never fails to launch over a bad config).
 
 ## Port policy
 
-The desktop shell uses `http://127.0.0.1:4000` when no valid `PORT` setting is
+The desktop shell uses `http://127.0.0.1:45173` when no valid `PORT` setting is
 provided. This origin is deliberately stable so local firewall rules and future
 PKCE/loopback OAuth callback registrations can target one URL. A valid `PORT`
 environment variable or `config.json` `port` value is an explicit override; an
@@ -147,7 +147,7 @@ configuration is read, displayed, or sent externally.
 The whole desktop env runs from a dev checkout — no Tauri, no vendored Ruby:
 
 ```bash
-PORT=4000 bin/desktop-server
+PORT=45173 bin/desktop-server
 # → boots RAILS_ENV=desktop on SQLite, /up returns 200, no https redirect
 ```
 
