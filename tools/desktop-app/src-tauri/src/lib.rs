@@ -345,31 +345,47 @@ fn generate_proxy_credentials() -> Result<ProxyCredentials, String> {
     })
 }
 
+/// Preserve a complete legacy set during migration. A partially written set
+/// cannot authenticate the existing gateway, so replace it as if it were a
+/// fresh installation; the `regenerated` flag subsequently invalidates the
+/// stale gateway registration.
+fn legacy_proxy_credentials_from_entries(
+    admin_key: Option<Vec<u8>>,
+    completion_key: Option<Vec<u8>>,
+    identity_secret: Option<Vec<u8>>,
+) -> Result<Option<ProxyCredentials>, String> {
+    match (admin_key, completion_key, identity_secret) {
+        (None, None, None) => Ok(None),
+        (Some(admin_key), Some(completion_key), Some(identity_secret)) => {
+            Ok(Some(ProxyCredentials {
+                admin_key: String::from_utf8(admin_key)
+                    .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+                completion_key: String::from_utf8(completion_key)
+                    .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+                identity_secret: String::from_utf8(identity_secret)
+                    .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+                regenerated: false,
+            }))
+        }
+        _ => generate_proxy_credentials().map(Some),
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn legacy_proxy_credentials() -> Result<Option<ProxyCredentials>, String> {
     use security_framework::passwords::get_generic_password;
 
-    let admin_key = match get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_ADMIN_KEY_ACCOUNT) {
-        Ok(bytes) => String::from_utf8(bytes)
-            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
-        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(None),
-        Err(_) => {
-            return Err("Collavre needs Keychain access for the desktop proxy key.".to_string());
-        }
+    let read_entry = |account| match get_generic_password(PROXY_KEYCHAIN_SERVICE, account) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
+        Err(_) => Err("Collavre needs Keychain access for the desktop proxy key.".to_string()),
     };
-    let completion_key = get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_COMPLETION_KEY_ACCOUNT)
-        .map_err(|_| "The desktop proxy keys in Keychain are incomplete.".to_string())?;
-    let identity_secret =
-        get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_IDENTITY_SECRET_ACCOUNT)
-            .map_err(|_| "The desktop proxy keys in Keychain are incomplete.".to_string())?;
-    Ok(Some(ProxyCredentials {
-        admin_key,
-        completion_key: String::from_utf8(completion_key)
-            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
-        identity_secret: String::from_utf8(identity_secret)
-            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
-        regenerated: false,
-    }))
+
+    legacy_proxy_credentials_from_entries(
+        read_entry(PROXY_ADMIN_KEY_ACCOUNT)?,
+        read_entry(PROXY_COMPLETION_KEY_ACCOUNT)?,
+        read_entry(PROXY_IDENTITY_SECRET_ACCOUNT)?,
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -1435,10 +1451,11 @@ mod tests {
         append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
         decode_proxy_credentials, desktop_port, encode_proxy_credentials, generate_proxy_key,
         invalidate_proxy_registration_after_key_regeneration,
-        invalidate_proxy_registration_when_gateway_is_missing, lsof_reports_process,
-        managed_proxy_credentials, managed_proxy_runs_on_port, migrate_proxy_config,
-        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
-        reap_orphan_proxy, register_authenticated_gateway, registered_authenticated_gateway_exists,
+        invalidate_proxy_registration_when_gateway_is_missing,
+        legacy_proxy_credentials_from_entries, lsof_reports_process, managed_proxy_credentials,
+        managed_proxy_runs_on_port, migrate_proxy_config, normalized_proxy_config, nvm_bin_paths,
+        parse_bundled_proxy_manifest, read_proxy_config, reap_orphan_proxy,
+        register_authenticated_gateway, registered_authenticated_gateway_exists,
         replace_occupied_proxy_port, revalidate_registered_gateway_after_rails_health,
         valid_sidecar_challenge_response, wait_until_proxy_healthy, write_proxy_config,
         GatewayRegistration, HmacSha256, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
@@ -1631,6 +1648,40 @@ mod tests {
             br#"{"admin_key":"admin","completion_key":"","identity_secret":"identity"}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn incomplete_legacy_keychain_credentials_are_regenerated() {
+        let credentials = legacy_proxy_credentials_from_entries(
+            Some(b"legacy-admin-key".to_vec()),
+            None,
+            Some(b"legacy-identity-secret".to_vec()),
+        )
+        .expect("regenerate incomplete credentials")
+        .expect("credentials");
+
+        assert!(credentials.regenerated);
+        assert_ne!("legacy-admin-key", credentials.admin_key);
+        assert_ne!("legacy-identity-secret", credentials.identity_secret);
+        assert!(credentials.admin_key.starts_with("cop_admin_"));
+        assert!(credentials.completion_key.starts_with("cop_key_"));
+        assert!(credentials.identity_secret.starts_with("cop_identity_"));
+    }
+
+    #[test]
+    fn complete_legacy_keychain_credentials_are_preserved() {
+        let credentials = legacy_proxy_credentials_from_entries(
+            Some(b"legacy-admin-key".to_vec()),
+            Some(b"legacy-completion-key".to_vec()),
+            Some(b"legacy-identity-secret".to_vec()),
+        )
+        .expect("read complete credentials")
+        .expect("credentials");
+
+        assert_eq!("legacy-admin-key", credentials.admin_key);
+        assert_eq!("legacy-completion-key", credentials.completion_key);
+        assert_eq!("legacy-identity-secret", credentials.identity_secret);
+        assert!(!credentials.regenerated);
     }
 
     #[test]
