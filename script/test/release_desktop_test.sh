@@ -15,7 +15,9 @@ assert_equal() {
 
 valid_semver "0.1.0"
 valid_semver "1.2.3-beta.1+build.8"
-if valid_semver "1.02.3" || valid_semver "v1.2.3" || valid_semver "1.2"; then
+valid_semver "1.2.3-0+build.01"
+if valid_semver "1.02.3" || valid_semver "v1.2.3" || valid_semver "1.2" || \
+  valid_semver "1.2.3-01" || valid_semver "1.2.3-alpha.01"; then
   echo "invalid semver was accepted" >&2
   exit 1
 fi
@@ -177,6 +179,14 @@ assert_equal "detach $failed_mount_dir -quiet" "$(tail -n 1 "$dmg_detach_log")"
 
 artifact_dir="$fixture_dir/artifacts"
 mkdir -p "$artifact_dir"
+printf 'stale DMG\n' > "$artifact_dir/previous-release.dmg"
+printf 'stale checksum\n' > "$artifact_dir/previous-release.dmg.sha256"
+ARTIFACT_DIR="$artifact_dir"
+prepare_artifact_dir
+[[ -z "$(find "$artifact_dir" -mindepth 1 -print -quit)" ]] || {
+  echo "previous release artifacts were not removed before staging" >&2
+  exit 1
+}
 printf 'dmg fixture\n' > "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg"
 write_checksum "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg" "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256"
 assert_equal "Collavre-Desktop_2.3.4_aarch64.dmg" "$(awk '{print $2}' "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256")"

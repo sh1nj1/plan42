@@ -27,7 +27,20 @@ require_command() {
 }
 
 valid_semver() {
-  [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]
+  local version="$1"
+  local prerelease identifier
+
+  [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]] || return 1
+
+  prerelease="${version%%+*}"
+  [[ "$prerelease" == *-* ]] || return 0
+  prerelease="${prerelease#*-}"
+  IFS=. read -r -a prerelease <<< "$prerelease"
+  for identifier in "${prerelease[@]}"; do
+    # SemVer permits a numeric prerelease identifier of 0, but not 01, 002,
+    # and so on. Cargo enforces the same rule, so reject before committing.
+    [[ ! "$identifier" =~ ^[0-9]+$ || "$identifier" == "0" || "$identifier" != 0* ]] || return 1
+  done
 }
 
 # Print -1, 0, or 1 when the first SemVer has lower, equal, or higher
@@ -235,6 +248,13 @@ write_checksum() {
     cd "$artifact_dir"
     shasum -a 256 "$artifact_name"
   ) > "$checksum"
+}
+
+prepare_artifact_dir() {
+  # build-macos stages PROJECT_ROOT into the app. Remove artifacts from a prior
+  # release attempt before staging so a DMG never embeds another DMG/app.
+  rm -rf "$ARTIFACT_DIR"
+  mkdir -p "$ARTIFACT_DIR"
 }
 
 cleanup_mounted_dmg() {
@@ -520,7 +540,7 @@ main() {
   fi
   [[ "$confirm" =~ ^[Yy]$ ]] || die "release cancelled"
 
-  mkdir -p "$ARTIFACT_DIR"
+  prepare_artifact_dir
   release_notes "$range" "$selected_version"
   if [[ -z "$resume_version" ]]; then
     update_versions "$selected_version"
