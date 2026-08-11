@@ -391,6 +391,18 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_nil Collavre::User.find_by(email: "remote@desktop.test")
   end
 
+  test "first administrator creation rejects a forwarded loopback address from a LAN peer" do
+    Collavre::User.where(system_admin: true).update_all(system_admin: false)
+
+    post collavre.desktop_setup_account_path,
+      params: { admin: { name: "Spoofed", email: "spoofed@desktop.test", password: "secure-password", password_confirmation: "secure-password" } },
+      env: { "REMOTE_ADDR" => "192.168.1.50" },
+      headers: { "X-Forwarded-For" => "127.0.0.1" }
+
+    assert_response :forbidden
+    assert_nil Collavre::User.find_by(email: "spoofed@desktop.test")
+  end
+
   test "first administrator creation is unavailable outside desktop mode" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
     Rails.application.config.x.desktop_proxy_setup = false
