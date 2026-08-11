@@ -68,6 +68,17 @@ def current_sibling_populations(paths)
   end)
 end
 
+def sibling_anchors_at(ref, paths)
+  ComplexityRatchet.sibling_anchors(paths.to_h { |path| [ path, file_at(ref, path) ] })
+end
+
+def current_sibling_anchors(paths)
+  ComplexityRatchet.sibling_anchors(paths.to_h do |path|
+    full_path = File.join(ROOT, path)
+    [ path, File.file?(full_path) ? File.read(full_path) : nil ]
+  end)
+end
+
 case options[:mode]
 when :verify
   base_baseline = file_at(options[:ref], ComplexityRatchet::BASELINE_PATH)
@@ -91,7 +102,9 @@ when :verify
       before_entries,
       after_entries,
       before_siblings: sibling_populations_at(options[:ref], baseline_paths),
-      after_siblings: current_sibling_populations(baseline_paths)
+      after_siblings: current_sibling_populations(baseline_paths),
+      before_sibling_anchors: sibling_anchors_at(options[:ref], baseline_paths),
+      after_sibling_anchors: current_sibling_anchors(baseline_paths)
     ) +
     ComplexityRatchet.verify_budget(
       base_config && (YAML.safe_load(base_config) || {}),

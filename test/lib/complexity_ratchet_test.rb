@@ -116,6 +116,22 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     assert_equal({ "Sample#run[block:each]" => 2 }, ComplexityRatchet::EntityMap.for(source).sibling_populations)
   end
 
+  test "keeps block call prefixes as sibling anchors" do
+    source = <<~RUBY
+      class Sample
+        def run
+          first.each { |item| item }
+          second.each { |item| item }
+        end
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample#run[block:each]" => [ "first.each", "second.each" ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   test "sibling scopes are counted per parent, not per file" do
     source = <<~RUBY
       class Sample
@@ -655,6 +671,59 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
       before_siblings: { SIBLING_POPULATION => 2 },
       after_siblings: { SIBLING_POPULATION => 2 }
     )
+  end
+
+  test "rejects same-count siblings that exchange allowances by changing order" do
+    before_source = <<~RUBY
+      class A
+        def run
+          first.each { |item| item }
+          second.each { |item| item }
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+          second.each { |item| item }
+          first.each { |item| item }
+        end
+      end
+    RUBY
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 90, SIB2 => 80 }, { SIB => 85, SIB2 => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_equal SIB, problem.key
+    assert_includes problem.message, "changed order"
+  end
+
+  test "accepts same-count siblings when their anchors keep the same order" do
+    anchors = { SIBLING_POPULATION => [ "first.each", "second.each" ] }
+
+    assert_empty ComplexityRatchet.verify_monotonic(
+      { SIB => 90, SIB2 => 80 }, { SIB => 85, SIB2 => 80 },
+      before_sibling_anchors: anchors,
+      after_sibling_anchors: anchors
+    )
+  end
+
+  test "rejects changed allowances for same-count siblings with identical anchors" do
+    anchors = { SIBLING_POPULATION => [ "items.each", "items.each" ] }
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 90, SIB2 => 80 }, { SIB => 85, SIB2 => 80 },
+      before_sibling_anchors: anchors,
+      after_sibling_anchors: anchors
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_equal SIB, problem.key
+    assert_includes problem.message, "indistinguishable anchors"
   end
 
   # Nothing was removed, so neither sibling can have inherited anything.

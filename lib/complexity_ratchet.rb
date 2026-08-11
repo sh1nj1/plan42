@@ -123,6 +123,7 @@ module ComplexityRatchet
       @ranges = {}
       @stack = []
       @occurrences = Hash.new(0)
+      @sibling_anchors = Hash.new { |hash, key| hash[key] = [] }
       super()
     end
 
@@ -197,6 +198,15 @@ module ComplexityRatchet
       @occurrences.select { |_path, count| count > 1 }
     end
 
+    # Ordinals distinguish sibling scopes in the measurement, but their order
+    # can change without their count changing. Retain a stable-enough anchor
+    # for literal blocks — the call prefix through `do`/`{`, excluding the body
+    # whose size is being measured — so verification can notice `first.each`
+    # and `second.each` swapping places instead of transferring their budgets.
+    def sibling_anchors
+      @sibling_anchors.select { |path, anchors| @occurrences[path] > 1 }
+    end
+
     private
 
     # RuboCop reports Metrics/BlockLength against the whole `send + block`
@@ -214,9 +224,14 @@ module ComplexityRatchet
       return yield unless node.block.is_a?(Prism::BlockNode)
 
       node.compact_child_nodes.each { |child| child.accept(self) unless child.equal?(node.block) }
-      nest(segment, node.location, node.block.location.start_line) do
+      nest(segment, node.location, node.block.location.start_line, anchor: block_anchor(node)) do
         node.block.body&.accept(self)
       end
+    end
+
+    def block_anchor(node)
+      block_offset = node.block.location.start_offset - node.location.start_offset
+      node.location.slice[0...block_offset].gsub(/\s+/, " ").strip
     end
 
     # Two indexes, because a start line alone is not an identity. In a chained
@@ -229,8 +244,8 @@ module ComplexityRatchet
     #
     # The line-only map stays as the fallback for offenses whose range is not a
     # scope's range (Metrics/BlockNesting points at a bare statement).
-    def nest(segment, location, *extra_lines)
-      @stack.push(disambiguate(segment))
+    def nest(segment, location, *extra_lines, anchor: segment)
+      @stack.push(disambiguate(segment, anchor))
       @ranges[[ location.start_line, location.end_line ]] ||= path
       [ location.start_line, *extra_lines ].each { |line| @paths[line] ||= path }
       yield
@@ -246,8 +261,10 @@ module ComplexityRatchet
     # fully-qualified parent path, so it is stable against edits anywhere else in
     # the file, and only the second and later twins carry a suffix — the common
     # case of a uniquely-named scope keeps a clean key.
-    def disambiguate(segment)
-      occurrence = (@occurrences[join(path, segment)] += 1)
+    def disambiguate(segment, anchor)
+      sibling_path = join(path, segment)
+      @sibling_anchors[sibling_path] << anchor
+      occurrence = (@occurrences[sibling_path] += 1)
       occurrence == 1 ? segment : "#{segment}(#{occurrence})"
     end
 
@@ -523,7 +540,7 @@ module ComplexityRatchet
     # worth plugging: skipping the gate afterwards means deleting a 438-entry
     # file, which is a reviewable event, whereas the path this actually closes —
     # `--regenerate` to make CI green — is a single command.
-    def verify_monotonic(before, after, before_siblings: {}, after_siblings: {})
+    def verify_monotonic(before, after, before_siblings: {}, after_siblings: {}, before_sibling_anchors: {}, after_sibling_anchors: {})
       return [] if before.nil?
 
       after.filter_map { |key, value|
@@ -535,7 +552,7 @@ module ComplexityRatchet
           Problem.new(kind: :baseline_loosened, key: key, blocking: true,
             message: "baseline raised from #{recorded} to #{value} — the ratchet only turns one way")
         end
-      } + sibling_problems(before, after, before_siblings:, after_siblings:)
+      } + sibling_problems(before, after, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
     end
 
     # The baseline cannot describe an under-budget sibling because RuboCop does
@@ -549,6 +566,21 @@ module ComplexityRatchet
 
         EntityMap.for(source).sibling_populations.each do |entity, count|
           populations[[ path, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)] = count
+        end
+      end
+    end
+
+    # Population catches a deleted sibling that was below budget and therefore
+    # absent from the baseline. Anchors catch the other positional transfer:
+    # two named calls can swap order while keeping the same population, making
+    # every ordinal key look individually tighter even though the smaller
+    # sibling grew under the larger sibling's allowance.
+    def sibling_anchors(sources)
+      sources.each_with_object({}) do |(path, source), anchors|
+        next if source.nil?
+
+        EntityMap.for(source).sibling_anchors.each do |entity, values|
+          anchors[[ path, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)] = values
         end
       end
     end
@@ -674,33 +706,62 @@ module ComplexityRatchet
     # choice is which way to be wrong, and a false positive here costs a
     # reviewer applying `complexity-baseline-reset` while a false negative
     # unwinds the ratchet silently.
-    def sibling_problems(before, after, before_siblings:, after_siblings:)
+    def sibling_problems(before, after, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
       recorded = before.group_by { |key, _| family(key) }
       after.group_by { |key, _| family(key) }.flat_map do |name, entries|
-        siblings = recorded[name]
-        next [] if siblings.nil?
-
-        floor = siblings.map(&:last).min
-        baseline_shrank = entries.size < siblings.size
-        population_shrank = entries.any? do |key, _|
-          before_siblings.fetch(sibling_population_key(key), 0) > after_siblings.fetch(sibling_population_key(key), 0)
-        end
-        next [] unless baseline_shrank || population_shrank
-
-        entries.filter_map do |key, value|
-          next unless before.key?(key)
-          next if baseline_shrank && value <= floor
-
-          Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
-            message: sibling_problem_message(value, floor, baseline_shrank))
-        end
+        sibling_family_problems(
+          entries, recorded[name], before,
+          before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:
+        )
       end
     end
 
-    def sibling_problem_message(value, floor, baseline_shrank)
+    def sibling_family_problems(entries, siblings, before, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
+      return [] if siblings.nil?
+
+      changes = sibling_family_changes(
+        entries, siblings,
+        before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:
+      )
+      return [] unless changes.values.any?
+
+      floor = siblings.map(&:last).min
+      entries.filter_map { |key, value| sibling_entry_problem(key, value, before, floor, changes) }
+    end
+
+    def sibling_family_changes(entries, siblings, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
+      {
+        baseline_shrank: entries.size < siblings.size,
+        population_shrank: entries.any? { |key, _| sibling_population_shrank?(key, before_siblings, after_siblings) },
+        anchors_reordered: entries.any? { |key, _| sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) },
+        anchors_ambiguous: entries.any? do |key, _|
+          sibling_anchors_ambiguous?(key, entries, siblings, before_sibling_anchors, after_sibling_anchors)
+        end
+      }
+    end
+
+    def sibling_population_shrank?(key, before, after)
+      before.fetch(sibling_population_key(key), 0) > after.fetch(sibling_population_key(key), 0)
+    end
+
+    def sibling_entry_problem(key, value, before, floor, changes)
+      return unless before.key?(key)
+      return if changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? && value <= floor
+
+      Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
+        message: sibling_problem_message(value, floor, changes[:baseline_shrank], changes[:anchors_reordered], changes[:anchors_ambiguous]))
+    end
+
+    def sibling_problem_message(value, floor, baseline_shrank, anchors_reordered, anchors_ambiguous)
       if baseline_shrank
         "a same-named sibling was removed, so this entry may have inherited that sibling's " \
           "allowance — #{value} is above the #{floor} the family was recorded at"
+      elsif anchors_reordered
+        "same-named siblings changed order, so this entry may have inherited that sibling's " \
+          "allowance — #{value} is above the #{floor} the family was recorded at"
+      elsif anchors_ambiguous
+        "same-named siblings have indistinguishable anchors, so a changed baseline cannot safely " \
+          "transfer their allowances — #{value} is above the #{floor} the family was recorded at"
       else
         "a same-named sibling disappeared from the source, so this entry's ordinal may have " \
           "transferred from that sibling — reset the baseline only after reviewing the change"
@@ -715,6 +776,27 @@ module ComplexityRatchet
     def sibling_population_key(key)
       file, _cop, entity = key.split(SEPARATOR, 3)
       [ file, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)
+    end
+
+    def sibling_anchors_reordered?(key, before, after)
+      sibling_key = sibling_population_key(key)
+      previous = before[sibling_key]
+      current = after[sibling_key]
+      previous && current && previous.size == current.size && previous != current
+    end
+
+    # Two `items.each` blocks have the same call prefix. If their measured
+    # values change, no source-only identity can say which one supplied the
+    # old limit; holding both to the family floor is the conservative choice.
+    # Do not flag an unchanged baseline, or every PR would fail merely because
+    # an existing ambiguous family exists.
+    def sibling_anchors_ambiguous?(key, entries, siblings, before, after)
+      return false if entries.sort_by(&:first) == siblings.sort_by(&:first)
+
+      sibling_key = sibling_population_key(key)
+      previous = before[sibling_key]
+      current = after[sibling_key]
+      previous && current && previous.size == current.size && previous.uniq.size < previous.size
     end
 
     # A cop that was gating has to keep gating, at a limit no higher, over a

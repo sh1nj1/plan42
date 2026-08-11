@@ -190,8 +190,8 @@ class reopened in the same file — are numbered from the second one on
 (`…#run[block:each](2)`). Without that they share a key, and only the larger of
 the two is recorded, so a second block over the budget would hide behind a
 sibling already in the baseline. The ordinal counts within the parent scope, so
-edits elsewhere in the file leave it alone; adding or reordering same-named
-siblings does shift it, and shows up as a new entity to fix or waive.
+edits elsewhere in the file leave it alone; adding same-named siblings does
+shift it and shows up as a new entity to fix or waive.
 
 An ordinal is a position, though, and a position is not an identity. Delete the
 first of two same-named siblings and the second is renamed onto the first's key
@@ -207,6 +207,20 @@ one deleted and nothing grew. That case goes through `complexity-baseline-reset`
 like any other deliberate change — a false positive costs a reviewer's
 signature, a false negative unwinds the ratchet silently. No family in this
 repo currently has two baselined siblings, so today it fires on neither.
+
+A family can also keep the same count while its named block calls swap order.
+That transfers their ordinals just as surely as deletion does: a sibling pinned
+at 80 can grow to 85 beneath a former 90 limit while both ordinal keys appear to
+tighten. For literal blocks verification keeps the call prefix through `do` or
+`{` (not the measured body) as an anchor. If those anchors change order, each
+entry is held to the family's smallest recorded limit and a deliberate change
+uses `complexity-baseline-reset`.
+
+When the prefixes themselves are identical (two `items.each` blocks), source
+has no stable identity to distinguish the entries. If their baseline values
+change, verification conservatively applies the same floor; an unchanged family
+still passes. That tradeoff makes a deliberate refactor reviewable instead of
+silently granting the smaller block the larger block's allowance.
 
 The same comparison also reads the sibling population from the base and current
 source, not only from baseline entries. This catches the inverse case: a

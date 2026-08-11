@@ -306,13 +306,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   # The path has to belong to the loader itself. A string in a *neighbouring*
-  # call on the same line, or in a nested call the loader only takes the result
-  # of, is somebody else's.
-  test "detector does not read strings belonging to another call" do
+  # call on the same line is somebody else's, but a string nested in the
+  # loader's argument computes the path it receives and is therefore real.
+  test "detector ignores strings belonging to a neighbouring call" do
     satellite = SATELLITES.first
 
     assert_empty requires_in(%(load(path) || warn("#{satellite} is missing")))
-    assert_empty requires_in(%(require_relative File.join(__dir__, "#{satellite}")))
+  end
+
+  test "detector flags a satellite nested in a computed loader argument" do
+    satellite = SATELLITES.first
+    path = "../../#{satellite}/lib/#{satellite}/engine"
+
+    assert_equal [ path ], requires_in(%(require File.join(__dir__, "#{path}")))
+    assert_equal [ "#{satellite}/thing" ], requires_in(%(load Pathname.new("#{satellite}/thing")))
   end
 
   # Formatting was the recurring miss: parentheses moved the literal, and a call
@@ -351,14 +358,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   # The scan was Ruby-only while the gemspec packaged more JavaScript than
   # Ruby, so this pins the count rather than mere presence: dropping the
-  # extension would leave the suite green with the larger half unread.
+  # extension or an extensionless Node entry point would leave shipped code
+  # unread.
   test "core source scan covers the JavaScript the engine ships" do
-    scanned = core_sources.count { |path| path.match?(JS_FILE) }
-    packaged = core_gemspec.files.count { |path| path.match?(JS_FILE) }
+    scanned = core_sources.count { |path| javascript_source?(path) }
+    root = ENGINES_ROOT.join(CORE)
+    packaged = core_gemspec.files.count { |path| javascript_source?(root.join(path).to_s) }
 
     assert_operator scanned, :>, 100,
       "core engine scan found #{scanned} JS files — script/build.cjs bundles them, so they are shipped code"
     assert_equal packaged, scanned
+    assert_includes core_sources, root.join("skills/collavre/scripts/collavre").to_s
   end
 
   test "detector flags a satellite imported from core JavaScript" do
@@ -456,7 +466,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def core_sources
     root = ENGINES_ROOT.join(CORE)
     packaged = core_gemspec.files.select do |path|
-      path.match?(RUBY_FILE) || path.match?(JS_FILE) || File.basename(path) == "Rakefile"
+      path.match?(RUBY_FILE) || javascript_source?(root.join(path).to_s) || File.basename(path) == "Rakefile"
     end
 
     # The gemspec does not package itself, and it is Ruby that can require.
@@ -469,7 +479,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def violations_in(path)
     source = File.read(path)
-    return js_violations_in(path, source) if path.match?(JS_FILE)
+    return js_violations_in(path, source) if javascript_source?(path, source)
 
     # ERB is not Ruby, so lex only the fragments between the tags.
     ruby = path.end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
@@ -490,6 +500,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     js_imports_in(source).map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
+  end
+
+  # The gem packages one extensionless Node executable. Its shebang, not its
+  # filename, says it is JavaScript; checking it here keeps a new production
+  # CLI on the same boundary rule as app/javascript.
+  def javascript_source?(path, source = nil)
+    return true if path.match?(JS_FILE)
+
+    head = source || File.binread(path, 256)
+    head.b.match?(/\A#![^\n]*\b(?:node|nodejs|deno|bun)(?:\s|\z)/n)
   end
 
   # A JS specifier reaches a satellite two ways, and both normalize the same as
@@ -743,21 +763,23 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     found
   end
 
-  # Only literal arguments of the loader itself. `require_relative
-  # File.join(__dir__, "collavre_slack")` computes its path, so the engine name
-  # sits in an argument to `File.join` rather than to the loader, and this
-  # returns nothing for it — deliberately, since that is also how a false
-  # positive on an unrelated nested call would arise.
+  # Literals nested in a loader argument still contribute to the path the
+  # loader receives: `require File.join(__dir__, "collavre_slack/engine")` is
+  # a real dependency. The walk starts at each argument, not at the entire
+  # statement, so a neighbouring `warn("collavre_slack")` remains prose.
   #
   # The static parts of an interpolated string count: the engine name in
   # "#{root}/collavre_slack/foo" is still a literal reference to it.
   def string_arguments(call)
-    call.arguments&.arguments.to_a.flat_map do |argument|
-      case argument
-      when Prism::StringNode then argument.unescaped
-      when Prism::InterpolatedStringNode then argument.parts.grep(Prism::StringNode).map(&:unescaped)
-      else []
-      end
+    call.arguments&.arguments.to_a.flat_map { |argument| string_literals_in(argument) }
+  end
+
+  def string_literals_in(node)
+    case node
+    when Prism::StringNode then [ node.unescaped ]
+    when Prism::InterpolatedStringNode then node.parts.flat_map { |part| string_literals_in(part) }
+    when Prism::Node then node.compact_child_nodes.flat_map { |child| string_literals_in(child) }
+    else []
     end
   end
 
