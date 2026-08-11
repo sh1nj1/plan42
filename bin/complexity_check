@@ -1,0 +1,110 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Entity-level complexity ratchet. See lib/complexity_ratchet.rb for why this
+# exists and docs/complexity_budget.md for how to work with it.
+#
+#   bin/complexity_check                     # gate: fail on growth, new debt, or a stale baseline
+#   bin/complexity_check --regenerate        # record shrunk/removed entities after a refactor
+#   bin/complexity_check --verify-baseline origin/main
+#                                            # fail if the baseline was loosened in this branch
+#   bin/complexity_check --seed              # bootstrap the baseline (one time only)
+
+require "rubygems"
+require "bundler/setup"
+require "optparse"
+require "shellwords"
+
+ROOT = File.expand_path("..", __dir__)
+require File.join(ROOT, "lib", "complexity_ratchet")
+
+options = { mode: :check }
+OptionParser.new do |parser|
+  parser.banner = "Usage: bin/complexity_check [options]"
+  parser.on("--regenerate", "Update the baseline for entities that shrank or disappeared") { options[:mode] = :regenerate }
+  parser.on("--seed", "Write a fresh baseline from the current codebase (bootstrap only)") { options[:mode] = :seed }
+  parser.on("--verify-baseline REF", "Fail if the baseline was loosened relative to REF") do |ref|
+    options[:mode] = :verify
+    options[:ref] = ref
+  end
+  parser.on("-h", "--help") do
+    puts parser
+    exit 0
+  end
+end.parse!
+
+BASELINE = File.join(ROOT, ComplexityRatchet::BASELINE_PATH)
+WAIVERS  = File.join(ROOT, ComplexityRatchet::WAIVERS_PATH)
+
+def abort_with(message)
+  warn message
+  exit 1
+end
+
+def report(problems)
+  problems.group_by(&:kind).each do |kind, group|
+    puts "\n#{kind.to_s.tr('_', ' ')} (#{group.size})"
+    group.sort_by(&:key).each { |problem| puts "  #{problem.key}\n      #{problem.message}" }
+  end
+end
+
+# --verify-baseline reads the baseline as it exists on the merge base, so it
+# only ever judges what this branch changed.
+def baseline_at(ref)
+  path = ComplexityRatchet::BASELINE_PATH
+  out, _err, status = Open3.capture3("git", "show", "#{ref}:#{path}", chdir: ROOT)
+  # A branch that predates the baseline has nothing to loosen.
+  return {} unless status.success?
+
+  YAML.safe_load(out) || {}
+end
+
+case options[:mode]
+when :verify
+  problems = ComplexityRatchet.verify_monotonic(baseline_at(options[:ref]),
+    ComplexityRatchet.load_baseline(BASELINE))
+  if problems.empty?
+    puts "Complexity baseline is unchanged or tightened relative to #{options[:ref]}."
+    exit 0
+  end
+
+  report(problems)
+  abort_with("\nThe complexity baseline may only shrink. Fix the entity, or add a time-boxed " \
+             "waiver to #{ComplexityRatchet::WAIVERS_PATH} with an owner, a reason, and an expiry.")
+end
+
+actual = ComplexityRatchet::Measurement.call(root: ROOT)
+
+case options[:mode]
+when :seed
+  ComplexityRatchet.dump_baseline(BASELINE, actual)
+  puts "Seeded #{ComplexityRatchet::BASELINE_PATH} with #{actual.size} entities."
+when :regenerate
+  baseline = ComplexityRatchet.load_baseline(BASELINE)
+  updated, unrecorded = ComplexityRatchet.regenerate(baseline, actual)
+  ComplexityRatchet.dump_baseline(BASELINE, updated)
+  puts "Baseline: #{baseline.size} -> #{updated.size} entities."
+  unless unrecorded.empty?
+    puts "\nNOT added to the baseline (#{unrecorded.size}) — new debt has to be fixed or waived:"
+    unrecorded.sort.each { |key| puts "  #{key}" }
+    exit 1
+  end
+when :check
+  check = ComplexityRatchet::Check.new(
+    actual: actual,
+    baseline: ComplexityRatchet.load_baseline(BASELINE),
+    waivers: ComplexityRatchet.load_waivers(WAIVERS)
+  )
+
+  if check.pass?
+    advisory = check.problems
+    report(advisory) unless advisory.empty?
+    puts "\nComplexity ratchet OK — #{actual.size} entities over budget, none grew."
+    exit 0
+  end
+
+  report(check.problems)
+  abort_with("\n#{check.blocking_problems.size} blocking complexity problem(s). " \
+             "Shrink the entity, run `bin/complexity_check --regenerate` if you improved it, " \
+             "or add a time-boxed waiver to #{ComplexityRatchet::WAIVERS_PATH}.")
+end

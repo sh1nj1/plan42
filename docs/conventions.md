@@ -52,6 +52,9 @@ end
 require "collavre_openclaw/some_service"
 ```
 
+Rule 2's one-directional half is enforced by `EngineBoundaryTest`: no source
+file under `engines/collavre/` may name a `Collavre*` satellite constant.
+
 ## Internationalization (i18n)
 
 **All user-facing text must use i18n and be written in both EN and KO.**
@@ -122,12 +125,22 @@ engines/collavre_openclaw/config/locales/
 ```bash
 # Required before every PR
 ./bin/rubocop -a          # Auto-fix style issues
+bin/complexity_check      # Complexity ratchet (~2s)
 bin/rails test            # Unit/integration tests
 bin/rails test:system     # System tests
 ```
 
 **No merge without CI passing.** See [testing.md](testing.md) for the full test
 conventions.
+
+### Complexity Ratchet
+
+No class, module, method, or block may grow past the size recorded in
+`.complexity_baseline.yml`, and anything new must fit the budget in
+`.rubocop_metrics.yml`. If a refactor shrank something, run
+`bin/complexity_check --regenerate` in the same PR. The baseline can only ever
+tighten — CI rejects a PR that raises a value or adds a key. See
+[complexity_budget.md](complexity_budget.md).
 
 ## PR Merge Principles (CTO Perspective)
 

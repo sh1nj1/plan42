@@ -77,6 +77,44 @@ jobs:
       - name: Test shell script helpers
         run: bash script/test/lightsail_launch_test.sh
 
+  # Entity-level complexity ratchet. Adds ~2s: RuboCop's Metrics department over
+  # app code only, compared against .complexity_baseline.yml. See
+  # docs/complexity_budget.md.
+  complexity:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # --verify-baseline diffs this branch's baseline against the base
+          # branch, so the base commit has to be in the local history.
+          fetch-depth: 0
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      # Runs first: if the baseline was loosened, the check below would happily
+      # pass and the loosening is the actual finding.
+      #
+      # The `complexity-baseline-reset` label is the only way past this, and it
+      # exists for one case: a RuboCop upgrade that changes how a metric is
+      # computed, which shifts every value at once. Applying a label does not
+      # re-trigger CI, so re-run this job afterwards.
+      - name: Verify the complexity baseline was not loosened
+        if: >-
+          github.event_name == 'pull_request' &&
+          !contains(github.event.pull_request.labels.*.name, 'complexity-baseline-reset')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bin/complexity_check --verify-baseline "$BASE_SHA"
+
+      - name: Check the complexity ratchet
+        run: bin/complexity_check
+
   # Production runs PostgreSQL while dev/test run SQLite, so db/schema.rb is
   # dumped from SQLite and can silently pick up SQLite-only constructs (e.g.
   # json_extract expression indexes) that crash `db:schema:load` on Postgres —

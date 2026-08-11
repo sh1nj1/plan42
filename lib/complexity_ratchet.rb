@@ -1,0 +1,427 @@
+# frozen_string_literal: true
+
+require "date"
+require "json"
+require "open3"
+require "prism"
+require "yaml"
+
+# Entity-level monotonic complexity ratchet.
+#
+# The problem it solves: the core engine's app code has been compounding at
+# roughly +65% per quarter with an added:deleted line ratio around 13:1, and not
+# one CI gate constrains it. RuboCop runs omakase, which disables every Metrics
+# cop; Codecov is informational.
+#
+# The obvious fix — `rubocop --auto-gen-config` — is a trap. Auto-gen raises each
+# cop's Max to the worst value it observes, which in this repo means
+# MethodLength 240, ClassLength 1731, AbcSize 267. That does not enable the cop,
+# it disables it with extra steps: a brand-new 200-line method would pass. The
+# other auto-gen mode, per-file Exclude, is worse — an excluded file becomes
+# permanently invisible to that cop and can grow without limit, which is exactly
+# the amnesty a god object wants.
+#
+# So the baseline here is recorded per ENTITY (a specific class, module, method,
+# or block) rather than per cop or per file:
+#
+#   * every entity already over budget is pinned at its current value and may
+#     only shrink — growth fails CI
+#   * every entity NOT in the baseline must fit the budget in
+#     .rubocop_metrics.yml — new code gets no amnesty from old debt
+#   * shrinking an entity requires updating the baseline in the same PR, so the
+#     ratchet only ever turns one way
+#   * the baseline cannot be loosened: `--verify-baseline` rejects any PR whose
+#     baseline raises a value or adds a key
+#   * the single escape hatch is a waiver with an owner, a reason, and an expiry
+#     date; an expired waiver fails CI
+#
+# Entities are keyed by their fully-qualified name, not by line number, so
+# inserting code above a method does not invalidate its baseline entry.
+module ComplexityRatchet
+  Error = Class.new(StandardError)
+
+  CONFIG_PATH   = ".rubocop_metrics.yml"
+  BASELINE_PATH = ".complexity_baseline.yml"
+  WAIVERS_PATH  = ".complexity_waivers.yml"
+
+  # The measured value inside a RuboCop Metrics message:
+  #   "Method has too many lines. [38/25]"                    -> 38
+  #   "Assignment Branch Condition size ... [<7, 42, 8> 43.55/35]" -> 43.55
+  # Metrics/BlockNesting carries no number; those offenses are counted instead.
+  VALUE_PATTERN = /\[(?:<[^>]*>\s*)?([\d.]+)\/[\d.]+\]/
+
+  SEPARATOR = " | "
+
+  BASELINE_HEADER = <<~YAML
+    # Complexity ratchet baseline — DO NOT hand-edit to make CI pass.
+    #
+    # Each entry pins one entity (class / module / method / block) that is
+    # already over the budget in .rubocop_metrics.yml at the size it had when it
+    # was recorded. The value may only go DOWN. `bin/complexity_check
+    # --verify-baseline <ref>` fails any PR that raises a value or adds a key,
+    # so regenerating this file cannot be used to turn CI green.
+    #
+    # Regenerate after a refactor that shrinks or removes an entity:
+    #
+    #     bin/complexity_check --regenerate
+    #
+    # Structure: <path>: <cop>: <entity>: <value>. Tool output and waiver keys
+    # use the flattened form "<path> | <cop> | <entity>".
+  YAML
+
+  WAIVERS_TEMPLATE = <<~YAML
+    # Time-boxed exceptions to the complexity budget.
+    #
+    # A waiver is the ONLY way to land a new entity that exceeds
+    # .rubocop_metrics.yml. It is deliberately more expensive than fixing the
+    # code: it needs a named owner, a reason a reviewer can argue with, and an
+    # expiry date. Once `expires` passes, CI fails until the entity is fixed or
+    # the waiver is consciously renewed — so a waiver decays into work instead
+    # of into permanent amnesty.
+    #
+    # Cap the expiry at 90 days out. Copy the key verbatim from the
+    # bin/complexity_check output.
+    #
+    # - key: "engines/collavre/app/services/collavre/example.rb | Metrics/MethodLength | Collavre::Example#call"
+    #   owner: "@github-handle"
+    #   reason: "Vendor protocol handshake is a single linear sequence; splitting it hides the order."
+    #   expires: "2026-11-09"
+
+    waivers: []
+  YAML
+
+  MAX_WAIVER_DAYS = 90
+
+  # Resolves a source line to the fully-qualified name of the entity that starts
+  # on it. Baseline keys have to survive ordinary editing: a line number shifts
+  # every time something is inserted above it, and a bare method name is not
+  # unique within a file, so neither works as an identity on its own.
+  class EntityMap < Prism::Visitor
+    # Deliberately not rescued. A visitor that blows up on some node shape would
+    # otherwise degrade every entity in that file to its `~source line` fallback
+    # — a baseline that looks complete but silently loses its identity keys. A
+    # loud crash is the cheaper failure. (Prism reports syntax errors in the
+    # result rather than raising, so a malformed file still parses to a tree.)
+    def self.for(source)
+      map = new
+      Prism.parse(source).value.accept(map)
+      map
+    end
+
+    def initialize
+      @paths = {}
+      @stack = []
+      super()
+    end
+
+    def [](line)
+      @paths[line]
+    end
+
+    def visit_class_node(node)
+      nest(node.constant_path.slice, node.location.start_line) { super }
+    end
+
+    def visit_module_node(node)
+      nest(node.constant_path.slice, node.location.start_line) { super }
+    end
+
+    def visit_singleton_class_node(node)
+      nest("<<#{node.expression.slice}", node.location.start_line) { super }
+    end
+
+    def visit_def_node(node)
+      nest("#{node.receiver ? '.' : '#'}#{node.name}", node.location.start_line) { super }
+    end
+
+    # RuboCop reports Metrics/BlockLength against the whole `send + block`
+    # range, so the offense line is the call's line rather than the `do`. Record
+    # both so either resolves to the block.
+    #
+    # `node.block` is a BlockArgumentNode for `foo(&blk)`, which has no body and
+    # is not a scope — only a literal BlockNode introduces one.
+    def visit_call_node(node)
+      return super unless node.block.is_a?(Prism::BlockNode)
+
+      node.receiver&.accept(self)
+      node.arguments&.accept(self)
+      nest("[block:#{node.name}]", node.location.start_line, node.block.location.start_line) do
+        node.block.body&.accept(self)
+      end
+    end
+
+    private
+
+    def nest(segment, *lines)
+      @stack.push(segment)
+      lines.each { |line| @paths[line] ||= path }
+      yield
+    ensure
+      @stack.pop
+    end
+
+    # "Collavre::AgentOrchestrator#run[block:each]" — `::` between namespaces,
+    # `#`/`.`/`[` already carry their own separator.
+    def path
+      @stack.each_with_object(+"") do |segment, acc|
+        acc << "::" unless acc.empty? || segment.start_with?("#", ".", "[")
+        acc << segment
+      end
+    end
+  end
+
+  # Runs RuboCop's Metrics department and folds the offenses into
+  # {entity key => measured value}.
+  class Measurement
+    def self.call(root:, config: CONFIG_PATH)
+      new(root: root, config: config).call
+    end
+
+    def initialize(root:, config: CONFIG_PATH)
+      @root = root
+      @config = config
+    end
+
+    def call
+      fold(run_rubocop)
+    end
+
+    # Split out from #call so the folding — which is where the entity keys and
+    # the max-vs-count rules live — can be tested against a fixture payload
+    # instead of a two-second RuboCop run.
+    def fold(payload)
+      payload.fetch("files").each_with_object({}) do |file, acc|
+        offenses = file["offenses"]
+        next if offenses.nil? || offenses.empty?
+
+        absorb(acc, relative_path(file["path"]), offenses)
+      end
+    end
+
+    private
+
+    attr_reader :root, :config
+
+    def run_rubocop
+      command = [ "bundle", "exec", "rubocop", "-c", config,
+                  "--only", "Metrics", "--format", "json", "--no-color" ]
+      stdout, stderr, status = Open3.capture3(*command, chdir: root)
+      # RuboCop exits 1 whenever offenses exist, which is the normal case here.
+      # Only a missing JSON document means the run itself failed.
+      raise Error, "rubocop failed (#{status.exitstatus}): #{stderr}" if stdout.strip.empty?
+
+      JSON.parse(stdout)
+    end
+
+    def absorb(acc, path, offenses)
+      source = File.read(File.join(root, path))
+      entities = EntityMap.for(source)
+      lines = source.lines
+
+      offenses.each do |offense|
+        line = offense.dig("location", "start_line") || offense.dig("location", "line")
+        key = [ path, offense["cop_name"], entity_name(entities, lines, line) ].join(SEPARATOR)
+        record(acc, key, offense["message"])
+      end
+    end
+
+    def entity_name(entities, lines, line)
+      entities[line] || fallback_name(lines, line)
+    end
+
+    # Metrics/BlockNesting and friends point at a bare statement rather than a
+    # definition. The normalised source line is the only identity available.
+    def fallback_name(lines, line)
+      text = lines[line - 1].to_s.strip.gsub(/\s+/, " ")
+      text = "#{text[0, 97]}..." if text.length > 100
+      "~#{text}"
+    end
+
+    def record(acc, key, message)
+      measured = message[VALUE_PATTERN, 1]
+      if measured
+        acc[key] = ComplexityRatchet.normalize([ acc[key].to_f, measured.to_f ].max)
+      else
+        acc[key] = acc[key].to_i + 1
+      end
+    end
+
+    def relative_path(path)
+      absolute = File.expand_path(path)
+      prefix = "#{File.expand_path(root)}/"
+      absolute.start_with?(prefix) ? absolute.delete_prefix(prefix) : path
+    end
+  end
+
+  # A single reason the ratchet is unhappy. `blocking` separates hard failures
+  # from advisory notes so an unused waiver cannot fail a build on its own.
+  Problem = Struct.new(:kind, :key, :message, :blocking, keyword_init: true) do
+    def blocking?
+      blocking
+    end
+  end
+
+  Waiver = Struct.new(:key, :owner, :reason, :expires, keyword_init: true)
+
+  # Compares a measurement against the baseline and the waiver list.
+  class Check
+    def initialize(actual:, baseline:, waivers: [], today: Date.today)
+      @actual = actual
+      @baseline = baseline
+      @waivers = waivers
+      @today = today
+    end
+
+    def problems
+      @problems ||= waiver_problems + measurement_problems + resolved_problems
+    end
+
+    def blocking_problems
+      problems.select(&:blocking?)
+    end
+
+    def pass?
+      blocking_problems.empty?
+    end
+
+    private
+
+    attr_reader :actual, :baseline, :waivers, :today
+
+    def waived
+      @waived ||= waivers.to_h { |waiver| [ waiver.key, waiver ] }
+    end
+
+    def waiver_problems
+      waivers.filter_map do |waiver|
+        if invalid_waiver_reason(waiver)
+          problem(:invalid_waiver, waiver.key, invalid_waiver_reason(waiver), blocking: true)
+        elsif waiver.expires < today
+          problem(:expired_waiver, waiver.key,
+            "waiver owned by #{waiver.owner} expired on #{waiver.expires} — fix the entity or renew it deliberately",
+            blocking: true)
+        elsif !actual.key?(waiver.key)
+          problem(:unused_waiver, waiver.key, "waiver is no longer needed; delete it", blocking: false)
+        end
+      end
+    end
+
+    def invalid_waiver_reason(waiver)
+      return "waiver is missing owner/reason/expires" if [ waiver.key, waiver.owner, waiver.reason, waiver.expires ].any?(&:nil?)
+      return nil unless waiver.expires > today + MAX_WAIVER_DAYS
+
+      "waiver expiry #{waiver.expires} is more than #{MAX_WAIVER_DAYS} days out"
+    end
+
+    def measurement_problems
+      actual.filter_map do |key, value|
+        next if waived.key?(key)
+
+        recorded = baseline[key]
+        if recorded.nil?
+          problem(:new_offense, key, "#{value} exceeds the budget and has no baseline entry", blocking: true)
+        elsif value > recorded
+          problem(:regression, key, "grew from #{recorded} to #{value}", blocking: true)
+        elsif value < recorded
+          problem(:stale, key, "improved from #{recorded} to #{value} — run bin/complexity_check --regenerate", blocking: true)
+        end
+      end
+    end
+
+    def resolved_problems
+      (baseline.keys - actual.keys).map do |key|
+        problem(:stale, key, "is now within budget — run bin/complexity_check --regenerate", blocking: true)
+      end
+    end
+
+    def problem(kind, key, message, blocking:)
+      Problem.new(kind: kind, key: key, message: message, blocking: blocking)
+    end
+  end
+
+  class << self
+    # RuboCop prints AbcSize as a float; keep whole numbers as integers so the
+    # baseline diff reads 38 rather than 38.0.
+    def normalize(value)
+      rounded = value.round(2)
+      rounded == rounded.to_i ? rounded.to_i : rounded
+    end
+
+    def load_baseline(path)
+      return {} unless File.exist?(path)
+
+      flatten(YAML.safe_load_file(path) || {})
+    end
+
+    def dump_baseline(path, entries)
+      File.write(path, BASELINE_HEADER + YAML.dump(nest(entries), line_width: -1))
+    end
+
+    # On disk the baseline nests path -> cop -> entity; in memory it is a flat
+    # map of "path | cop | entity" keys. Nesting is not cosmetic: YAML falls
+    # back to the `? key` / `: value` explicit form once a mapping key passes
+    # 128 characters, and a flat key made of a full engine path plus a
+    # namespaced method name blows through that constantly — producing a
+    # three-line diff per entity instead of one.
+    def nest(entries)
+      entries.sort.each_with_object({}) do |(key, value), acc|
+        file, cop, entity = key.split(SEPARATOR, 3)
+        ((acc[file] ||= {})[cop] ||= {})[entity] = value
+      end
+    end
+
+    def flatten(nested)
+      nested.each_with_object({}) do |(file, cops), acc|
+        cops.each do |cop, entities|
+          entities.each { |entity, value| acc[[ file, cop, entity ].join(SEPARATOR)] = value }
+        end
+      end
+    end
+
+    def load_waivers(path)
+      return [] unless File.exist?(path)
+
+      document = YAML.safe_load_file(path, permitted_classes: [ Date ]) || {}
+      Array(document["waivers"]).map do |entry|
+        Waiver.new(
+          key: entry["key"],
+          owner: entry["owner"],
+          reason: entry["reason"],
+          expires: parse_date(entry["expires"])
+        )
+      end
+    end
+
+    def parse_date(value)
+      case value
+      when Date then value
+      when String then (Date.parse(value) rescue nil)
+      end
+    end
+
+    # A regenerated baseline must be a subset-or-tightening of the previous one.
+    # Without this, "just regenerate the baseline" would be a one-command way to
+    # legalise any regression — the same hole that makes .rubocop_todo.yml
+    # useless as a gate.
+    def verify_monotonic(before, after)
+      after.filter_map do |key, value|
+        recorded = before[key]
+        if recorded.nil?
+          Problem.new(kind: :baseline_addition, key: key, blocking: true,
+            message: "added to the baseline (#{value}) — new debt needs a fix or a waiver, not a baseline entry")
+        elsif value > recorded
+          Problem.new(kind: :baseline_loosened, key: key, blocking: true,
+            message: "baseline raised from #{recorded} to #{value} — the ratchet only turns one way")
+        end
+      end
+    end
+
+    # Keys present in the measurement but absent from the baseline are NOT
+    # added: adding them is what --verify-baseline exists to reject. They are
+    # returned so the CLI can point at the real fix.
+    def regenerate(baseline, actual)
+      updated = baseline.filter_map { |key, _| [ key, actual[key] ] if actual.key?(key) }.to_h
+      [ updated, actual.keys - baseline.keys ]
+    end
+  end
+end
