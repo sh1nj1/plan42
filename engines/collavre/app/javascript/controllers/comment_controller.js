@@ -329,7 +329,9 @@ export default class extends Controller {
       renderItem: () => reviewLabel,
     })
 
-    // Position below the selection end
+    // Position below the selection end. A derived rect rather than one of
+    // showAt's live anchor providers: selecting inside the popup clears this
+    // selection, so there would be nothing left to re-measure.
     const belowRect = {
       left: anchorRect.left,
       right: anchorRect.right,

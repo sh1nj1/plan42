@@ -1,5 +1,5 @@
 import CommonPopup from '../lib/common_popup'
-import { getCaretClientRect } from '../utils/caret_position'
+import { caretAnchor } from '../utils/caret_position'
 
 let mentionMenuInitialized = false
 
@@ -42,8 +42,7 @@ if (!mentionMenuInitialized) {
         return
       }
       popupMenu.setItems(users)
-      const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
-      popupMenu.showAt(caretRect)
+      popupMenu.showAt(caretAnchor(textarea))
     }
 
     textarea.addEventListener('keydown', function (event) {

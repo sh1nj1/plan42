@@ -1,5 +1,5 @@
 import CommonPopup from '../lib/common_popup'
-import { getCaretClientRect } from '../utils/caret_position'
+import { caretAnchor } from '../utils/caret_position'
 import CommandArgsForm from './command_args_form'
 import { openCreativeLinkPicker } from './creative_link_picker'
 
@@ -171,8 +171,7 @@ if (!commandMenuInitialized) {
       }
 
       popupMenu.setItems(filtered)
-      const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
-      popupMenu.showAt(caretRect)
+      popupMenu.showAt(caretAnchor(textarea))
     }
 
     function openCreativePicker(textarea) {

@@ -15,7 +15,7 @@
 // document, so Enter = keep. Typing adds the typed word as an always-present,
 // auto-selected custom option.
 
-import CommonPopup from '../lib/common_popup'
+import CommonPopup, { elementAnchor } from '../lib/common_popup'
 import csrfFetch from '../lib/api/csrf_fetch'
 import {
   detectDevice,
@@ -421,7 +421,7 @@ export class TypoCorrector {
     this._activeEdit = edit
     this.popupInput.value = edit.currentValue
     this._refreshPopupItems('')
-    this.popup.showAt(anchorEl.getBoundingClientRect())
+    this.popup.showAt(elementAnchor(anchorEl))
     // Desktop: focus + select-all so a keystroke immediately replaces the word.
     // Mobile keyboard is left to an explicit tap on the input (no auto-focus) —
     // chip taps are the primary path.

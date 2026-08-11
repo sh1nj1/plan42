@@ -34,7 +34,7 @@ export default class extends CommonPopupController {
         super.disconnect()
     }
 
-    open(anchorRect, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
+    open(anchor, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
         this._openGeneration++
         this.onSelectCallback = onSelectCallback
         this.onCloseCallback = onCloseCallback
@@ -46,7 +46,7 @@ export default class extends CommonPopupController {
         this.inputTarget.value = ''
         // Clear any CommonPopup item state; we render our own DOM into the list.
         this.popup.setItems([])
-        super.open(anchorRect)
+        super.open(anchor)
 
         requestAnimationFrame(() => {
             this.inputTarget.focus()
@@ -179,6 +179,16 @@ export default class extends CommonPopupController {
         }
         nodes.forEach((node) => this.listTarget.appendChild(this._buildTreeItem(node, 0)))
         this._resetActive()
+        this._reposition()
+    }
+
+    // The popup is positioned one frame after open(), while the list still shows
+    // "Loading…". Every render that changes the list's height has to re-run that
+    // placement, or the popup keeps the size the placeholder implied — which,
+    // with the caret near the bottom of the screen, leaves a single tree row
+    // visible under the search box.
+    _reposition() {
+        this.popup?.reposition()
     }
 
     _buildTreeItem(node, level) {
@@ -254,6 +264,7 @@ export default class extends CommonPopupController {
         if (childrenUl) childrenUl.hidden = true
         const toggle = li.querySelector(':scope > .link-tree-row > .link-tree-toggle')
         if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.innerHTML = CHEVRON_COLLAPSED
+        this._reposition()
     }
 
     // Returns a promise that resolves once the node is expanded (children loaded
@@ -268,7 +279,10 @@ export default class extends CommonPopupController {
         childrenUl.hidden = false
         if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.innerHTML = CHEVRON_EXPANDED
 
-        if (li.dataset.loaded === '1') return Promise.resolve()
+        if (li.dataset.loaded === '1') {
+            this._reposition()
+            return Promise.resolve()
+        }
 
         const level = parseInt(li.dataset.level, 10) + 1
         li.dataset.loaded = '1'
@@ -280,13 +294,15 @@ export default class extends CommonPopupController {
                 const list = Array.isArray(nodes) ? nodes : []
                 if (list.length === 0) {
                     childrenUl.innerHTML = `<li class="link-tree-empty">${this._escape(this._text('emptyText'))}</li>`
-                    return
+                } else {
+                    list.forEach((child) => childrenUl.appendChild(this._buildTreeItem(child, level)))
                 }
-                list.forEach((child) => childrenUl.appendChild(this._buildTreeItem(child, level)))
+                this._reposition()
             })
             .catch(() => {
                 li.dataset.loaded = '0'
                 childrenUl.innerHTML = ''
+                this._reposition()
             })
     }
 
@@ -327,6 +343,7 @@ export default class extends CommonPopupController {
             this.listTarget.appendChild(this._buildCreateItem(query))
         }
         this._resetActive()
+        this._reposition()
     }
 
     _buildCreateItem(query) {
@@ -548,6 +565,7 @@ export default class extends CommonPopupController {
         this.listTarget.innerHTML = ''
         this._appendMessage(text)
         this._activeEl = null
+        this._reposition()
     }
 
     _appendMessage(text) {
