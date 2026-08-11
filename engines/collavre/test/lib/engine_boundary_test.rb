@@ -13,9 +13,10 @@ require "prism"
 # associations into core models from an initializer. A test that contradicted
 # the documented architecture would be deleted, not obeyed.
 #
-# What is left is a clean binary: a core source file naming a satellite
-# constant. Today that count is zero, so this test costs nothing to keep green
-# and exists purely to make the first violation loud instead of invisible.
+# What is left is a clean binary: a core source file reaching a satellite, by
+# naming its constant or by requiring one of its files. Today that count is
+# zero, so this test costs nothing to keep green and exists purely to make the
+# first violation loud instead of invisible.
 class EngineBoundaryTest < ActiveSupport::TestCase
   ENGINES_ROOT = Rails.root.join("engines")
   CORE = "collavre"
@@ -29,12 +30,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   SATELLITE_CONSTANTS = SATELLITES.to_h { |name| [ name.camelize, name ] }.freeze
 
+  REQUIRE_METHODS = %w[require require_relative require_dependency].freeze
+
   test "satellite engines exist to be checked" do
     assert_operator SATELLITES.size, :>=, 2,
       "boundary test found no satellite engines — the discovery glob is broken, not the codebase"
   end
 
-  test "core engine source never references a satellite engine constant" do
+  test "core engine source never loads or references a satellite engine" do
     violations = core_sources.flat_map { |path| violations_in(path) }
 
     assert_empty violations, <<~MESSAGE
@@ -77,6 +80,25 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty constants_in("Collavre::Creative.first")
   end
 
+  test "detector flags a require of a satellite engine" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/some_service" ], requires_in(%(require "#{satellite}/some_service"))
+    assert_equal [ satellite ], requires_in(%(require_relative("#{satellite}")))
+  end
+
+  test "detector ignores requires of the core engine and third-party gems" do
+    assert_empty requires_in(%(require "#{CORE}/engine"))
+    assert_empty requires_in(%(require "net/http"))
+  end
+
+  test "detector ignores a satellite name inside an unrelated string" do
+    satellite = SATELLITES.first
+
+    assert_empty requires_in(%(warn "#{satellite} is not loaded"))
+    assert_empty requires_in("# require \"#{satellite}\" would be a violation")
+  end
+
   private
 
   def core_sources
@@ -85,16 +107,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def violations_in(path)
     source = File.read(path)
-    referenced = if path.end_with?(".erb")
-      # ERB is not Ruby, so lex only the fragments between the tags.
-      constants_in(source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n"))
-    else
-      constants_in(source)
-    end
+    # ERB is not Ruby, so lex only the fragments between the tags.
+    ruby = path.end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
 
-    referenced.map do |constant|
+    constants_in(ruby).map { |constant|
       "  #{relative(path)} references #{constant} (engines/#{SATELLITE_CONSTANTS[constant]})"
-    end
+    } + requires_in(ruby).map { |feature|
+      "  #{relative(path)} requires \"#{feature}\" (engines/#{feature.split('/').first})"
+    }
   end
 
   # Lexing rather than grepping: `# see CollavreSlack for the pattern` and
@@ -102,11 +122,35 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # existing mentions in the core engine are both comments. A regex would fail
   # this test on day one for no reason.
   def constants_in(source)
-    Prism.lex(source).value
-      .select { |token, _state| token.type == :CONSTANT }
-      .map { |token, _state| token.value }
+    tokens(source)
+      .select { |token| token.type == :CONSTANT }
+      .map(&:value)
       .uniq
       .select { |value| SATELLITE_CONSTANTS.key?(value) }
+  end
+
+  # A constant is not the only way to reach a satellite. Every engine is on the
+  # load path via the host Gemfile, so `require "collavre_slack/some_service"`
+  # in a core file is a working, undeclared core-to-satellite dependency that
+  # names no constant and adds no gemspec entry — invisible to both other
+  # checks.
+  #
+  # The require target is matched on the token that follows the call, not by
+  # grepping for the engine name, so prose that happens to mention an engine
+  # ("collavre_slack is not loaded" in a warn) is not a violation.
+  def requires_in(source)
+    all = tokens(source)
+    all.each_with_index.filter_map { |token, index|
+      next unless token.type == :IDENTIFIER && REQUIRE_METHODS.include?(token.value)
+
+      # `require "x"` and `require("x")` — the literal is within three tokens.
+      feature = all[index + 1, 3].to_a.find { |candidate| candidate.type == :STRING_CONTENT }&.value
+      feature if SATELLITES.include?(feature.to_s.split("/").first)
+    }.uniq
+  end
+
+  def tokens(source)
+    Prism.lex(source).value.map(&:first)
   end
 
   def relative(path)

@@ -51,9 +51,9 @@ The rules:
    recorded value always tracks reality and the ratchet only turns one way.
 4. The baseline cannot be loosened. `--verify-baseline` fails any PR that raises
    a value or adds a key.
-5. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs
-   an owner, a reason, and an expiry no more than 90 days out. An expired waiver
-   fails CI.
+5. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs a
+   non-blank owner, a non-blank reason, and an expiry no more than 90 days out.
+   An expired or blank-field waiver fails CI.
 
 Two caveats on rule 4. `--verify-baseline` passes when the base ref predates the
 baseline file, which is what lets the bootstrap commit land; the residual way
@@ -114,6 +114,14 @@ engines/collavre/app/services/collavre/agent_orchestrator.rb:
 Names come from a Prism parse of the source. `Metrics/BlockNesting` offenses do
 not sit on a definition, so those fall back to a normalised source line, written
 with a leading `~`.
+
+Sibling scopes that share a name — `items.each do` twice in one method, or a
+class reopened in the same file — are numbered from the second one on
+(`…#run[block:each](2)`). Without that they share a key, and only the larger of
+the two is recorded, so a second block over the budget would hide behind a
+sibling already in the baseline. The ordinal counts within the parent scope, so
+edits elsewhere in the file leave it alone; adding or reordering same-named
+siblings does shift it, and shows up as a new entity to fix or waive.
 
 Tests are excluded. A 900-line test class is a list, not a god object: it has no
 callers, holds no shared mutable state, and splitting it buys nothing. Test bloat

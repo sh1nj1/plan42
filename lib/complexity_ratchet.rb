@@ -111,6 +111,7 @@ module ComplexityRatchet
     def initialize
       @paths = {}
       @stack = []
+      @occurrences = Hash.new(0)
       super()
     end
 
@@ -153,20 +154,35 @@ module ComplexityRatchet
     private
 
     def nest(segment, *lines)
-      @stack.push(segment)
+      @stack.push(disambiguate(segment))
       lines.each { |line| @paths[line] ||= path }
       yield
     ensure
       @stack.pop
     end
 
+    # Sibling scopes can share a name: `items.each do` twice in one method, or a
+    # class reopened later in the same file. Left alone they collapse to one key,
+    # and Measurement#record keeps only the larger value — so a second block
+    # landing at 80 against a sibling pinned at 90 would be invisible to the
+    # ratchet even though it blows the budget. The ordinal is counted over the
+    # fully-qualified parent path, so it is stable against edits anywhere else in
+    # the file, and only the second and later twins carry a suffix — the common
+    # case of a uniquely-named scope keeps a clean key.
+    def disambiguate(segment)
+      occurrence = (@occurrences[join(path, segment)] += 1)
+      occurrence == 1 ? segment : "#{segment}(#{occurrence})"
+    end
+
     # "Collavre::AgentOrchestrator#run[block:each]" — `::` between namespaces,
     # `#`/`.`/`[` already carry their own separator.
     def path
-      @stack.each_with_object(+"") do |segment, acc|
-        acc << "::" unless acc.empty? || segment.start_with?("#", ".", "[")
-        acc << segment
-      end
+      @stack.each_with_object(+"") { |segment, acc| join(acc, segment) }
+    end
+
+    def join(prefix, segment)
+      prefix << "::" unless prefix.empty? || segment.start_with?("#", ".", "[")
+      prefix << segment
     end
   end
 
@@ -307,10 +323,20 @@ module ComplexityRatchet
     end
 
     def invalid_waiver_reason(waiver)
-      return "waiver is missing owner/reason/expires" if [ waiver.key, waiver.owner, waiver.reason, waiver.expires ].any?(&:nil?)
+      return "waiver is missing owner/reason/expires" if incomplete?(waiver)
       return nil unless waiver.expires > today + MAX_WAIVER_DAYS
 
       "waiver expiry #{waiver.expires} is more than #{MAX_WAIVER_DAYS} days out"
+    end
+
+    # `owner: ""` is not an owner and `reason: ""` is not a reason. Accepting
+    # them would leave the field technically present and the accountability the
+    # waiver exists to create entirely absent — a blank waiver silently skips
+    # the entity in #measurement_problems, which is the strongest thing this
+    # tool can do for you, handed out for free.
+    def incomplete?(waiver)
+      waiver.expires.nil? ||
+        [ waiver.key, waiver.owner, waiver.reason ].any? { |field| !field.is_a?(String) || field.strip.empty? }
     end
 
     def measurement_problems

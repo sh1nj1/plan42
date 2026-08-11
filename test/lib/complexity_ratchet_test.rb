@@ -82,6 +82,51 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     assert_nil path_for(source, 3)
   end
 
+  test "sibling scopes sharing a name get distinct keys" do
+    # Without the ordinal both blocks key to Sample#run[block:each], and
+    # Measurement#record keeps only the larger of the two — so a second block
+    # over the budget hides behind a bigger sibling already in the baseline.
+    source = <<~RUBY
+      class Sample
+        def run
+          items.each do |i|
+            i
+          end
+          others.each do |o|
+            o
+          end
+        end
+      end
+    RUBY
+
+    assert_equal "Sample#run[block:each]", path_for(source, 3)
+    assert_equal "Sample#run[block:each](2)", path_for(source, 6)
+  end
+
+  test "sibling scopes are counted per parent, not per file" do
+    source = <<~RUBY
+      class Sample
+        def first
+          items.each { |i| i }
+        end
+
+        def second
+          items.each { |i| i }
+        end
+      end
+    RUBY
+
+    assert_equal "Sample#first[block:each]", path_for(source, 3)
+    assert_equal "Sample#second[block:each]", path_for(source, 7)
+  end
+
+  test "a class reopened in the same file does not collapse into one key" do
+    source = "class A\n  def b\n  end\nend\nclass A\n  def c\n  end\nend\n"
+
+    assert_equal "A#b", path_for(source, 2)
+    assert_equal "A(2)#c", path_for(source, 6)
+  end
+
   test "the key is unchanged when code is inserted above the entity" do
     before = "class A\n  def b\n  end\nend\n"
     after  = "class A\n  CONST = 1\n\n  def b\n  end\nend\n"
@@ -155,6 +200,41 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     payload = { "files" => [ { "path" => "sample.rb", "offenses" => [] }, { "path" => "other.rb" } ] }
 
     assert_empty ComplexityRatchet::Measurement.new(root: @dir).fold(payload)
+  end
+
+  test "a new block does not hide behind a bigger sibling with the same call" do
+    # The whole failure mode in one test: two `each` blocks in one method used
+    # to fold to a single key, and #record keeps the maximum. A block added at
+    # 80 against a sibling already baselined at 90 left the folded value at 90
+    # — unchanged, so the ratchet passed a fresh over-budget block.
+    File.write(File.join(@dir, "sample.rb"), <<~RUBY)
+      class Sample
+        def run
+          items.each do |i|
+            i
+          end
+          others.each do |o|
+            o
+          end
+        end
+      end
+    RUBY
+
+    result = fold([
+      offense("Metrics/BlockLength", "Block has too many lines. [90/70]", 3),
+      offense("Metrics/BlockLength", "Block has too many lines. [80/70]", 6)
+    ])
+
+    assert_equal({
+      "sample.rb | Metrics/BlockLength | Sample#run[block:each]" => 90,
+      "sample.rb | Metrics/BlockLength | Sample#run[block:each](2)" => 80
+    }, result)
+
+    baselined_sibling_only = result.reject { |key, _| key.end_with?("(2)") }.transform_values { 90 }
+    check = ComplexityRatchet::Check.new(actual: result, baseline: baselined_sibling_only)
+
+    refute_predicate check, :pass?
+    assert_equal :new_offense, check.blocking_problems.sole.kind
   end
 end
 
@@ -233,6 +313,18 @@ class ComplexityRatchetCheckTest < ActiveSupport::TestCase
     problem = check(actual: { KEY => 31 }, waivers: [ waiver(expires: TODAY + 30, owner: nil) ]).problems.sole
 
     assert_equal :invalid_waiver, problem.kind
+  end
+
+  test "a blank owner or reason is rejected rather than counted as present" do
+    # `owner: ""` satisfies a nil check while providing exactly none of the
+    # accountability the waiver exists to create — and a waiver that validates
+    # skips the entity entirely.
+    [ { owner: "" }, { reason: "   " }, { owner: "\n" } ].each do |blank|
+      result = check(actual: { KEY => 31 }, waivers: [ waiver(expires: TODAY + 30, **blank) ])
+
+      refute_predicate result, :pass?, "expected #{blank.inspect} to be rejected"
+      assert_equal :invalid_waiver, result.problems.sole.kind
+    end
   end
 
   test "an unused waiver is reported but does not block" do

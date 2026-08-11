@@ -612,8 +612,8 @@ engines/collavre/config/routes.rb:
     "[block:draw]": 194
 engines/collavre/lib/collavre/engine.rb:
   Metrics/BlockLength:
-    Collavre::Engine[block:initializer]: 102
-    Collavre::Engine[block:initializer][block:to_prepare]: 100
+    Collavre::Engine[block:initializer](14): 102
+    Collavre::Engine[block:initializer](14)[block:to_prepare]: 100
   Metrics/ClassLength:
     Collavre::Engine: 281
 engines/collavre/lib/generators/collavre/install/install_generator.rb:
@@ -634,7 +634,7 @@ engines/collavre_github/app/controllers/collavre_github/creatives/integrations_c
     CollavreGithub::Creatives::IntegrationsController#destroy: 49.54
     CollavreGithub::Creatives::IntegrationsController#update: 267.4
   Metrics/BlockLength:
-    CollavreGithub::Creatives::IntegrationsController#update[block:each]: 86
+    CollavreGithub::Creatives::IntegrationsController#update[block:each](3): 86
   Metrics/ClassLength:
     CollavreGithub::Creatives::IntegrationsController: 367
   Metrics/CyclomaticComplexity:
