@@ -288,6 +288,8 @@ module Collavre
               length: { maximum: Collavre::LlmModel::MAX_NAME_LENGTH },
               if: :will_save_change_to_llm_model?
     validate :cli_proxy_gateway_belongs_to_creator
+    around_save :serialize_cli_proxy_gateway_assignment
+    before_save :validate_cli_proxy_gateway_assignment_under_lock
     validate :theme_accessibility
     validate :password_meets_minimum_length
     validates :timezone,
@@ -302,18 +304,46 @@ module Collavre
     def cli_proxy_gateway_belongs_to_creator
       return unless llm_vendor == "cli_proxy"
 
-      if agent_gateway.nil?
-        errors.add(:agent_gateway, :blank)
-      elsif agent_gateway.owner_id != created_by_id
-        errors.add(:agent_gateway, :invalid)
-      elsif !agent_gateway.chat_capable?
-        errors.add(:agent_gateway, :completion_key_required)
-      elsif agent_gateway.identity_secret.blank?
-        agent_gateway.with_lock do
-          if agent_gateway.per_user? || agent_gateway.agents.where.not(id: id).exists?
-            errors.add(:agent_gateway, :identity_required)
-          end
+      validate_cli_proxy_gateway(agent_gateway)
+    end
+
+    # See AgentGateway#serialize_completion_key_removal. This repeats the
+    # gateway checks immediately before writing the agent while holding the
+    # same row lock used by a completion-key removal.
+    def serialize_cli_proxy_gateway_assignment
+      return yield unless llm_vendor == "cli_proxy" && agent_gateway_id.present?
+
+      gateway = AgentGateway.find_by(id: agent_gateway_id)
+      return yield unless gateway
+
+      gateway.with_lock do
+        begin
+          @cli_proxy_gateway_assignment_lock = gateway
+          yield
+        ensure
+          @cli_proxy_gateway_assignment_lock = nil
         end
+      end
+    end
+
+    def validate_cli_proxy_gateway_assignment_under_lock
+      gateway = @cli_proxy_gateway_assignment_lock
+      return unless gateway
+
+      error_count = errors.count
+      validate_cli_proxy_gateway(gateway)
+      throw :abort if errors.count > error_count
+    end
+
+    def validate_cli_proxy_gateway(gateway)
+      if gateway.nil?
+        errors.add(:agent_gateway, :blank)
+      elsif gateway.owner_id != created_by_id
+        errors.add(:agent_gateway, :invalid)
+      elsif !gateway.chat_capable?
+        errors.add(:agent_gateway, :completion_key_required)
+      elsif gateway.identity_secret.blank? && (gateway.per_user? || gateway.agents.where.not(id: id).exists?)
+        errors.add(:agent_gateway, :identity_required)
       end
     end
 
