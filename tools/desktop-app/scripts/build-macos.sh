@@ -17,9 +17,19 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
 STAGING="$DESKTOP_DIR/staging/app"
-# An absolute CARGO_TARGET_DIR lets release builds reuse a verified Cargo cache
-# without changing where staging or the final bundle are resolved.
-TAURI_TARGET_DIR="${CARGO_TARGET_DIR:-$DESKTOP_DIR/src-tauri/target}"
+TAURI_SOURCE_DIR="$(cd -P "$DESKTOP_DIR/src-tauri" && pwd)"
+# Resolve a caller-provided relative CARGO_TARGET_DIR where Cargo resolves it:
+# from src-tauri. Export the normalized value too, so Cargo and the post-build
+# checks below always operate on the same directory.
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+  case "$CARGO_TARGET_DIR" in
+    /*) TAURI_TARGET_DIR="$CARGO_TARGET_DIR" ;;
+    *) TAURI_TARGET_DIR="$TAURI_SOURCE_DIR/$CARGO_TARGET_DIR" ;;
+  esac
+else
+  TAURI_TARGET_DIR="$TAURI_SOURCE_DIR/target"
+fi
+export CARGO_TARGET_DIR="$TAURI_TARGET_DIR"
 
 echo "[build-macos] 1/7 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
@@ -175,7 +185,7 @@ env -i \
   RAILS_ENV=desktop \
   SECRET_KEY_BASE=0123456789012345678901234567890123456789012345678901234567890123 \
   "$BUNDLED_RUBY" "$PACKAGED_APP_ROOT/bin/rails" runner \
-  'abort "stale Ruby load path" if $LOAD_PATH.any? { |path| path.start_with?(RbConfig::CONFIG.fetch("prefix")) }; abort "wrong Prism version" unless Gem.loaded_specs.fetch("prism").version.to_s == "1.9.0"' >/dev/null
+  'require "shellwords"; build_prefix = Shellwords.shellsplit(RbConfig::CONFIG.fetch("configure_args")).find { |argument| argument.start_with?("--prefix=") }&.delete_prefix("--prefix="); abort "Ruby build prefix is unavailable" unless build_prefix; abort "stale Ruby load path" if $LOAD_PATH.any? { |path| path == build_prefix || path.start_with?("#{build_prefix}/") }; abort "wrong Prism version" unless Gem.loaded_specs.fetch("prism").version.to_s == "1.9.0"' >/dev/null
 
 # A Ruby executable can start on the build Mac even when one of its Mach-O load
 # commands still names the checkout. Reject that non-relocatable bundle here,
@@ -186,5 +196,5 @@ if otool -L "$BUNDLED_RUBY" | grep -qF "$APP_ROOT/tools/desktop-app/vendor/ruby"
 fi
 
 echo "[build-macos] done →"
-echo "  $DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre Desktop.app"
+echo "  $TAURI_TARGET_DIR/release/bundle/macos/Collavre Desktop.app"
 echo "Run it once via: right-click → Open (unsigned, Gatekeeper)."
