@@ -518,7 +518,7 @@ module ComplexityRatchet
     def verify_monotonic(before, after)
       return [] if before.nil?
 
-      after.filter_map do |key, value|
+      after.filter_map { |key, value|
         recorded = before[key]
         if recorded.nil?
           Problem.new(kind: :baseline_addition, key: key, blocking: true,
@@ -527,7 +527,7 @@ module ComplexityRatchet
           Problem.new(kind: :baseline_loosened, key: key, blocking: true,
             message: "baseline raised from #{recorded} to #{value} — the ratchet only turns one way")
         end
-      end
+      } + sibling_problems(before, after)
     end
 
     # Raising a Max in .rubocop_metrics.yml is the quiet way to unwind the
@@ -633,6 +633,45 @@ module ComplexityRatchet
     end
 
     private
+
+    # Same-named siblings are told apart by a positional ordinal, and position
+    # is not identity. Delete the first of two `[block:each]` siblings and the
+    # second is renamed onto the first's key — inheriting the first's allowance
+    # along with it. Measured: siblings recorded at 88 and 78, first deleted,
+    # survivor grown 78 -> 83; `--check` called that "improved from 88 to 83",
+    # `--regenerate` wrote 83, and every gate went green on five lines of real
+    # growth.
+    #
+    # Per-key comparison cannot see it, because the two keys are separately
+    # monotonic. So a family that *shrank* is compared as a whole: nobody knows
+    # which sibling survived, so every survivor is held to the smallest limit
+    # the family had. That is conservative on purpose — it also fires when the
+    # smaller sibling is the one deleted and nothing grew at all. There is no
+    # information in the baseline that distinguishes those two cases, so the
+    # choice is which way to be wrong, and a false positive here costs a
+    # reviewer applying `complexity-baseline-reset` while a false negative
+    # unwinds the ratchet silently.
+    def sibling_problems(before, after)
+      recorded = before.group_by { |key, _| family(key) }
+      after.group_by { |key, _| family(key) }.flat_map do |name, entries|
+        siblings = recorded[name]
+        next [] if siblings.nil? || entries.size >= siblings.size
+
+        floor = siblings.map(&:last).min
+        entries.filter_map do |key, value|
+          next unless before.key?(key) && value > floor
+
+          Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
+            message: "a same-named sibling was removed, so this entry may have inherited that sibling's " \
+                     "allowance — #{value} is above the #{floor} the family was recorded at")
+        end
+      end
+    end
+
+    # Siblings share every part of a key except their ordinal.
+    def family(key)
+      key.gsub(/\(\d+\)/, "")
+    end
 
     # A cop that was gating has to keep gating, at a limit no higher, over a
     # scope no smaller, with no new escape valve bolted on. A cop that only

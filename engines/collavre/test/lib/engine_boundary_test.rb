@@ -53,6 +53,24 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   RUBY_FILE = /\.(rb|rake|erb)\z/
 
+  # The engine ships 247 JavaScript files and script/build.cjs bundles every
+  # engine's `app/javascript/*` together, so a core module importing a
+  # satellite resolves in this monorepo and breaks a host that installs the
+  # core gem on its own. Ruby was the whole scan until now; this is the larger
+  # half of what the gemspec packages.
+  JS_FILE = /\.(js|jsx|mjs|cjs)\z/
+
+  # Every static way a JS module names another. Matched on the specifier of the
+  # import itself rather than by grepping for the engine name, so a comment or
+  # a string that mentions an engine is not a violation — the same rule the
+  # Ruby loader detector follows, for the same reason.
+  JS_IMPORTS = [
+    /\bimport\s+(?:[\w*{}\n\r\t ,$]+?\s+from\s*)?["']([^"']+)["']/m,  # import x from "y" / import "y"
+    /\bexport\s+[\w*{}\n\r\t ,$]+?\s+from\s*["']([^"']+)["']/m,       # export { x } from "y"
+    /\brequire\s*\(\s*["']([^"']+)["']/,                              # require("y")
+    /\bimport\s*\(\s*["']([^"']+)["']/                                # import("y") — dynamic
+  ].freeze
+
   # Two core migrations already reach satellites — one by constant behind
   # `defined?` guards, one by STI type string — and a migration that has run in
   # production cannot be edited. Recording them is the honest option: narrowing
@@ -338,6 +356,51 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  # The scan was Ruby-only while the gemspec packaged more JavaScript than
+  # Ruby, so this pins the count rather than mere presence: dropping the
+  # extension would leave the suite green with the larger half unread.
+  test "core source scan covers the JavaScript the engine ships" do
+    scanned = core_sources.count { |path| path.match?(JS_FILE) }
+    packaged = core_gemspec.files.count { |path| path.match?(JS_FILE) }
+
+    assert_operator scanned, :>, 100,
+      "core engine scan found #{scanned} JS files — script/build.cjs bundles them, so they are shipped code"
+    assert_equal packaged, scanned
+  end
+
+  test "detector flags a satellite imported from core JavaScript" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ], js_imports_in(%(import Thing from "#{satellite}/thing";))
+    assert_equal [ "../../../#{satellite}/app/javascript/thing" ],
+      js_imports_in(%(import { a, b } from "../../../#{satellite}/app/javascript/thing";))
+  end
+
+  test "detector flags every static form a JS module can name another by" do
+    satellite = SATELLITES.first
+    {
+      %(import "#{satellite}/side_effect";) => "#{satellite}/side_effect",
+      %(export { thing } from "#{satellite}/thing";) => "#{satellite}/thing",
+      %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
+      %(import {\n  a,\n  b\n} from "#{satellite}/thing";) => "#{satellite}/thing"
+    }.each do |source, expected|
+      assert_equal [ expected ], js_imports_in(source), "missed #{source.inspect}"
+    end
+  end
+
+  # Same rule the Ruby loader detector follows: the specifier is the violation,
+  # not the engine name appearing somewhere in the file.
+  test "detector ignores a satellite named outside a JS import" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(// see #{satellite}/thing for the pattern))
+    assert_empty js_imports_in(%(console.warn("#{satellite} is not loaded");))
+    assert_empty js_imports_in(%(import Thing from "#{CORE}/thing";))
+    assert_empty js_imports_in(%(import Thing from "#{satellite}_stub/thing";))
+    assert_empty js_imports_in(%(import Thing from "./components/thing";))
+  end
+
   # The failure mode a file-level waiver has: it was written for one reference
   # and silently covers the next one too. Both halves matter — a waived
   # occurrence must stay waived, or the list is useless, and an unwaived one
@@ -394,7 +457,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # including directories added later.
   def core_sources
     root = ENGINES_ROOT.join(CORE)
-    packaged = core_gemspec.files.select { |path| path.match?(RUBY_FILE) || File.basename(path) == "Rakefile" }
+    packaged = core_gemspec.files.select do |path|
+      path.match?(RUBY_FILE) || path.match?(JS_FILE) || File.basename(path) == "Rakefile"
+    end
 
     # The gemspec does not package itself, and it is Ruby that can require.
     (packaged.map { |path| root.join(path).to_s } << root.join("#{CORE}.gemspec").to_s).select { |path| File.file?(path) }
@@ -406,6 +471,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def violations_in(path)
     source = File.read(path)
+    return js_violations_in(path, source) if path.match?(JS_FILE)
+
     # ERB is not Ruby, so lex only the fragments between the tags.
     ruby = path.end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
     # Requires are deliberately absent from the waiver: no core file has one
@@ -419,6 +486,22 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     } + requires_in(ruby).map { |feature|
       "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
     }
+  end
+
+  def js_violations_in(path, source)
+    js_imports_in(source).map do |specifier|
+      "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
+    end
+  end
+
+  # A JS specifier reaches a satellite two ways, and both normalize the same as
+  # a Ruby require path: by traversal (`../../collavre_slack/app/javascript/x`)
+  # or by package name (`collavre_notion/thing`). #satellite_for already walks
+  # every segment of the cleaned path, so neither depth nor spelling matters.
+  def js_imports_in(source)
+    JS_IMPORTS.flat_map { |pattern| source.scan(pattern).flatten }
+      .select { |specifier| satellite_for(specifier) }
+      .uniq
   end
 
   # Multiset subtraction, not Array#-. `found - known` removes *every*

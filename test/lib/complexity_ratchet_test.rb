@@ -585,6 +585,47 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
     assert_equal :baseline_addition, problem.kind
   end
 
+  SIB  = "a.rb | Metrics/BlockLength | A#run[block:each]"
+  SIB2 = "a.rb | Metrics/BlockLength | A#run[block:each](2)"
+
+  # Deleting the first of two same-named siblings renames the second onto the
+  # first's key. Both keys are separately monotonic — 88 -> 83 is a tightening
+  # and the (2) entry is a deletion — so per-key comparison waves through an
+  # entity that grew from 78 to 83.
+  test "rejects a survivor that inherited a removed sibling's allowance" do
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 88, SIB2 => 78 }, { SIB => 83 }
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_equal SIB, problem.key
+    assert_includes problem.message, "78"
+  end
+
+  test "accepts a survivor that stayed within the family's smallest limit" do
+    assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, SIB2 => 78 }, { SIB => 78 })
+  end
+
+  # Nothing was removed, so neither sibling can have inherited anything.
+  test "accepts an intact sibling family where each entry tightened" do
+    assert_empty ComplexityRatchet.verify_monotonic(
+      { SIB => 88, SIB2 => 78 }, { SIB => 80, SIB2 => 70 }
+    )
+  end
+
+  # A shrinking family is normal; only a survivor above the family floor is not.
+  test "accepts a sibling family that shrank with no survivor over the floor" do
+    assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, SIB2 => 78 }, {})
+  end
+
+  # Ordinals are per parent scope, so an unrelated entity that merely shares a
+  # cop and a file is not a sibling.
+  test "does not treat unrelated entries as siblings" do
+    other = "a.rb | Metrics/BlockLength | A#other[block:each]"
+
+    assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, other => 78 }, { SIB => 88 })
+  end
+
   test "a base ref that predates the baseline file has nothing to verify" do
     # The bootstrap commit adds hundreds of entries at once; there is no prior
     # baseline for them to be a regression against.

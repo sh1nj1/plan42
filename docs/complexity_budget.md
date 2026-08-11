@@ -193,6 +193,21 @@ sibling already in the baseline. The ordinal counts within the parent scope, so
 edits elsewhere in the file leave it alone; adding or reordering same-named
 siblings does shift it, and shows up as a new entity to fix or waive.
 
+An ordinal is a position, though, and a position is not an identity. Delete the
+first of two same-named siblings and the second is renamed onto the first's key
+— inheriting the first's allowance with it. Both keys stay individually
+monotonic (one value fell, one entry vanished), so per-key comparison sees a
+refactor. Measured: siblings recorded at 88 and 78, the first deleted and the
+survivor grown 78 → 83, and `--check`, `--regenerate` and `--verify-baseline`
+were all green on five lines of real growth. So `--verify-baseline` compares a
+*shrunken* sibling family as a whole and holds every survivor to the smallest
+limit the family had. Nothing in the baseline says which sibling survived, so
+this is conservative on purpose: it also fires when the smaller sibling was the
+one deleted and nothing grew. That case goes through `complexity-baseline-reset`
+like any other deliberate change — a false positive costs a reviewer's
+signature, a false negative unwinds the ratchet silently. No family in this
+repo currently has two baselined siblings, so today it fires on neither.
+
 Chained blocks — `items.each do … end.map do … end` — need more than an ordinal,
 because they share a start line *and* a start column: a block offense covers the
 whole `send + block` range, and the outer send begins at the receiver. So an
@@ -249,11 +264,23 @@ class name in a string literal in core code is the violation, whatever reads it
 afterwards. Comments lex as `COMMENT` rather than `STRING_CONTENT`, so prose
 about an engine is still fine.
 
+**Importing** covers the engine's JavaScript, which is the larger half of what
+it ships — 247 packaged `.js`/`.jsx` files against 405 Ruby ones. `import`,
+`export … from`, `require()` and dynamic `import()` specifiers are matched, and
+resolved through the same `Pathname#cleanpath` walk as a Ruby require path, so
+both `collavre_slack/thing` and `../../../collavre_slack/app/javascript/thing`
+count while a comment or a log message mentioning an engine does not. This is a
+real path rather than a theoretical one: `script/build.cjs` bundles every
+engine's `app/javascript/*` entry points together, so a core module importing a
+satellite resolves fine in this monorepo and breaks a host that installs the
+core gem on its own.
+
 **What gets scanned** is read from `collavre.gemspec`'s own file list, plus the
-gemspec itself, filtered to `.rb` / `.rake` / `.erb` / `Rakefile`. It is not a
-hand-written glob: the first version globbed `{app,lib,config}/**/*.{rb,erb}`
-and review found shipped Ruby outside it twice — the engine's `.rake` tasks,
-then `db/` (154 files) and the `Rakefile`. A glob and a packaging manifest
+gemspec itself, filtered to `.rb` / `.rake` / `.erb` / `Rakefile` and
+`.js` / `.jsx` / `.mjs` / `.cjs`. It is not a hand-written glob: the first
+version globbed `{app,lib,config}/**/*.{rb,erb}` and review found shipped code
+outside it three times — the engine's `.rake` tasks, then `db/` (154 files) and
+the `Rakefile`, then all 247 JavaScript files. A glob and a packaging manifest
 maintained separately will drift. Reading the manifest means whatever the engine
 ships is scanned by construction, including directories added later.
 
