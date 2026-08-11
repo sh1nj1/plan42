@@ -135,6 +135,29 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty names(constant_references_in("Wrapper::#{satellite}.call"))
   end
 
+  # Top-level constants are constants of Object, so `Object::` reaches the
+  # engine while every other qualifier names somebody else's nested constant.
+  # Recorded without the qualifier, because it resolves to the same class and a
+  # waiver should not depend on how the reference was spelled.
+  test "detector flags a satellite reached through Object" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ "#{satellite}::Account" ], names(constant_references_in("Object::#{satellite}::Account.find(1)"))
+    assert_equal [ "#{satellite}::Account" ], names(constant_references_in("::Object::#{satellite}::Account.find(1)"))
+    assert_equal [ "#{satellite}::Account" ], names(constant_references_in("::#{satellite}::Account.find(1)"))
+    assert_equal [ satellite ], names(constant_references_in("Object::#{satellite}.thing"))
+  end
+
+  # The counterpart: only the real Object qualifies. A nested `Wrapper::Object`
+  # is an ordinary namespace, and `Wrapper::Object::CollavreSlack` is Wrapper's
+  # constant rather than the engine.
+  test "detector ignores a satellite nested under a namespace named Object" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_empty names(constant_references_in("Wrapper::Object::#{satellite}.call"))
+    assert_empty names(constant_references_in("Wrapper::Object::#{satellite}::Account.find(1)"))
+  end
+
   # Duplicates are what make a waiver cancel one occurrence instead of a class
   # of them, so the detector must not collapse them.
   test "detector keeps every occurrence rather than collapsing duplicates" do
@@ -405,11 +428,41 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     all = tokens(source)
     all.each_with_index.filter_map { |token, index|
       next unless token.type == :CONSTANT && SATELLITE_CONSTANTS.key?(token.value)
-      # A nested segment of somebody else's path, e.g. `Wrapper::CollavreSlack`.
-      next if index >= 2 && all[index - 1].type == :COLON_COLON && all[index - 2].type == :CONSTANT
+      next if nested_in_another_namespace?(all, index)
 
       [ qualified_from(all, index), token.location.start_line ]
     }
+  end
+
+  # A satellite token preceded by `SomeConstant::` is usually a segment of
+  # somebody else's path — `Wrapper::CollavreSlack` is Wrapper's own nested
+  # constant, not the engine.
+  #
+  # `Object::` is the one exception, because top-level constants *are* constants
+  # of Object: `Object::CollavreGithub::Account` resolves to exactly the same
+  # class as `CollavreGithub::Account`. Checked against Ruby rather than
+  # reasoned about — `Object::` and a leading `::` both resolve, while
+  # `Wrapper::`, `String::` and `Kernel::` all raise NameError. So `Object::` is
+  # the whole exception, not the first of a family.
+  #
+  # The name is built from the satellite token onward, so the qualifier does not
+  # survive into the result: the reference is recorded as
+  # `CollavreGithub::Account` however it was spelled, and one waiver covers it.
+  def nested_in_another_namespace?(all, index)
+    return false unless index >= 2
+    return false unless all[index - 1].type == :COLON_COLON && all[index - 2].type == :CONSTANT
+
+    !top_level_object?(all, index - 2)
+  end
+
+  # True when the token is the real `Object`, i.e. `Object` or `::Object` rather
+  # than a nested `Wrapper::Object`.
+  def top_level_object?(all, index)
+    return false unless all[index].value == "Object"
+    return true if index.zero?
+    return true unless all[index - 1].type == :COLON_COLON
+
+    index < 2 || all[index - 2].type != :CONSTANT
   end
 
   def qualified_from(all, index)

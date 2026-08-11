@@ -166,6 +166,16 @@ in would bury the app-code signal under thousands of block-length offenses.
 loads one of its files. It asserts only that half of the rule — see *Rejected
 alternatives* for why the `IntegrationRegistry` half is not enforced here.
 
+**Naming by constant** records the class actually reached, so
+`CollavreGithub::Account` rather than `CollavreGithub` — a waiver has to name one
+reference, not one engine. A qualifier is ignored when it belongs to somebody
+else (`Wrapper::CollavreSlack` is Wrapper's own constant), with `Object::` as the
+single exception: top-level constants are constants of `Object`, so
+`Object::CollavreGithub::Account` reaches the engine. It is recorded without the
+qualifier, since it resolves to the same class and a waiver should not depend on
+spelling. `Object::` really is the whole exception — `Wrapper::`, `String::` and
+`Kernel::` all raise `NameError`.
+
 **Loading** covers every entry point that resolves through `$LOAD_PATH`:
 `require`, `require_relative`, `require_dependency`, `load`, and `autoload`.
 Each reaches a satellite file while leaving behind no constant and no gemspec
