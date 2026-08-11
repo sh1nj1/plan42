@@ -6,9 +6,9 @@
 set -euo pipefail
 
 RUBY_PREFIX="$1"
-RUBY_LIBRARY="$RUBY_PREFIX/lib/libruby.3.4.dylib"
 
 [ -x "$RUBY_PREFIX/bin/ruby" ] || { echo "missing Ruby executable: $RUBY_PREFIX/bin/ruby" >&2; exit 1; }
+RUBY_LIBRARY="$("$RUBY_PREFIX/bin/ruby" -rrbconfig -e 'puts File.join(RbConfig::CONFIG.fetch("libdir"), RbConfig::CONFIG.fetch("LIBRUBY_SO"))')"
 [ -f "$RUBY_LIBRARY" ] || { echo "missing Ruby library: $RUBY_LIBRARY" >&2; exit 1; }
 
 gmp_load_command="$(otool -L "$RUBY_LIBRARY" | awk '/libgmp\.[0-9]+\.dylib / { print $1; exit }')"
