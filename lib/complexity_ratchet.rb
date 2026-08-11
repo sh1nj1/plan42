@@ -667,7 +667,7 @@ module ComplexityRatchet
     def verify_toolchain(before_lock, after_lock)
       return [] if before_lock.nil?
 
-      before, after = [ before_lock, after_lock ].map { |lock| rubocop_versions(lock) }
+      before, after = [ before_lock, after_lock ].map { |lock| toolchain_versions(lock) }
 
       (before.keys | after.keys).sort.filter_map do |gem_name|
         next if before[gem_name] == after[gem_name]
@@ -911,16 +911,15 @@ module ComplexityRatchet
         "#{changed.join(', ')} changed in #{CONFIG_PATH} — narrowing what RuboCop reads hides entities from the ratchet") ]
     end
 
-    # Every resolved `rubocop*` gem in a Gemfile.lock, as name => version.
+    # Every resolved Metrics or identity parser gem in Gemfile.lock, as name => version.
     #
     # Gemfile.lock indents a resolved spec by four spaces and its dependencies
     # by six, so the anchored four-space match takes each gem once and ignores
     # the dependency lines that repeat it with a constraint instead of a
-    # version. Scoped to the rubocop family because they are the ones that ship
-    # config: rubocop's own default.yml, rubocop-rails-omakase's rubocop.yml
-    # named in `inherit_gem`, and the rubocop-ast the metrics are computed with.
-    def rubocop_versions(lock)
-      lock.to_s.scan(/^ {4}(rubocop[\w-]*) \(([^)]+)\)$/).to_h
+    # version. RuboCop config controls the Metrics budget, while parser and
+    # Prism determine the offenses and stable entity identities respectively.
+    def toolchain_versions(lock)
+      lock.to_s.scan(/^ {4}(rubocop[\w-]*|parser|prism) \(([^)]+)\)$/).to_h
     end
 
     def problem(kind, key, message)

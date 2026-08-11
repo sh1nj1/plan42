@@ -998,6 +998,8 @@ class ComplexityRatchetToolchainTest < ActiveSupport::TestCase
         rubocop (1.86.0)
           rubocop-ast (>= 1.49.0, < 2.0)
         rubocop-ast (1.49.1)
+        parser (3.3.10.2)
+        prism (1.9.0)
         rubocop-rails-omakase (1.1.0)
           rubocop (>= 1.72)
 
@@ -1023,6 +1025,14 @@ class ComplexityRatchetToolchainTest < ActiveSupport::TestCase
     %w[rubocop-ast rubocop-rails-omakase].each do |gem_name|
       after = with("#{gem_name} (1." => "#{gem_name} (9.")
       problem = ComplexityRatchet.verify_toolchain(LOCK, after).sole
+
+      assert_equal gem_name, problem.key, "#{gem_name} was accepted"
+    end
+  end
+
+  test "rejects parser changes that alter offenses or entity identities" do
+    { "parser" => "3.3.10.2", "prism" => "1.9.0" }.each do |gem_name, version|
+      problem = ComplexityRatchet.verify_toolchain(LOCK, with("#{gem_name} (#{version})" => "#{gem_name} (9.0.0)")).sole
 
       assert_equal gem_name, problem.key, "#{gem_name} was accepted"
     end

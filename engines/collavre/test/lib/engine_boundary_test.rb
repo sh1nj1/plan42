@@ -60,7 +60,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # satellite resolves in this monorepo and breaks a host that installs the
   # core gem on its own. Ruby was the whole scan until now; this is the larger
   # half of what the gemspec packages.
-  JS_FILE = /\.(js|jsx|mjs|cjs)(?:\.tt)?\z/
+  JS_FILE = /\.(js|jsx|ts|tsx|mjs|cjs)(?:\.tt)?\z/
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -400,6 +400,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_includes core_sources, root.join("lib/generators/collavre/install/templates/build.cjs.tt").to_s
   end
 
+  test "TypeScript sources are scanned as JavaScript modules" do
+    %w[entry.ts view.tsx entry.ts.tt view.tsx.tt].each do |path|
+      assert javascript_source?(path), "#{path} is a shipped module source"
+    end
+  end
+
   test "detector flags a satellite imported from core JavaScript" do
     satellite = SATELLITES.first
 
@@ -570,7 +576,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_violations_in(path, source)
-    js_imports_in(source, jsx: path.end_with?(".jsx")).map do |specifier|
+    js_imports_in(source, jsx: path.end_with?(".jsx", ".tsx")).map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
   end
