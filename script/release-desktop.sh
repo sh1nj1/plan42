@@ -361,6 +361,17 @@ ensure_main_matches_origin() {
     die "local main must exactly match origin/main before creating a release"
 }
 
+# Return 10 after a successful fast-forward so the caller can restart this
+# script from the updated checkout. Bash reads function definitions at startup;
+# continuing here would otherwise use stale release logic against new source.
+sync_main_with_origin() {
+  local head_before head_after
+  head_before="$(git rev-parse HEAD)"
+  git pull --ff-only origin main || return $?
+  head_after="$(git rev-parse HEAD)"
+  [[ "$head_before" == "$head_after" ]] || return 10
+}
+
 publish_release() {
   local tag="$1"
   local version="$2"
@@ -513,7 +524,17 @@ main() {
 
   git fetch origin main --tags
   if [[ -z "$resume_version" ]]; then
-    git pull --ff-only origin main
+    local sync_status
+    if sync_main_with_origin; then
+      :
+    else
+      sync_status=$?
+      if ((sync_status == 10)); then
+	echo "[release-desktop] main advanced; restarting from the updated checkout..."
+	exec bash "$PROJECT_ROOT/script/release-desktop.sh" "$@"
+      fi
+      return "$sync_status"
+    fi
     ensure_main_matches_origin
   fi
 

@@ -192,6 +192,24 @@ git -C "$remote_clone" push --quiet origin main
   fi
 )
 
+sync_repo="$fixture_dir/sync-repo"
+git clone --quiet --branch main "$origin_dir" "$sync_repo"
+git -C "$sync_repo" config user.name "Release Script Test"
+git -C "$sync_repo" config user.email "release-script-test@example.test"
+git -C "$remote_clone" commit --quiet --allow-empty -m "fix: advance main before release"
+git -C "$remote_clone" push --quiet origin main
+(
+  cd "$sync_repo"
+  git fetch --quiet origin main
+  if sync_main_with_origin; then
+    echo "fast-forward did not request a release-script restart" >&2
+    exit 1
+  else
+    assert_equal "10" "$?"
+  fi
+  assert_equal "$(git rev-parse origin/main)" "$(git rev-parse HEAD)"
+)
+
 dmg_detach_log="$fixture_dir/dmg-detach.log"
 hdiutil() {
   printf '%s\n' "$*" >> "$dmg_detach_log"
