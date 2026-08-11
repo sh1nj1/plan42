@@ -85,6 +85,11 @@ module Collavre
         Creative.where(id: practice_creative_ids)
       end
 
+      def practice_creatives_intact?
+        expected_ids = practice_creative_ids.uniq.sort
+        expected_ids.size == 2 && practice_creatives.pluck(:id).sort == expected_ids
+      end
+
       def includes?(creative)
         creative && (creative.id == root.id || practice_creative_ids.include?(creative.id))
       end

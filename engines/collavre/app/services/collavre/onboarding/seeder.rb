@@ -11,21 +11,22 @@ module Collavre
       def call
         user.with_lock do
           session = Session.for_user(user)
-          return session if session
+          return session if session&.practice_creatives_intact?
+          return clean_up_session! if session
 
           # A deleted onboarding root cannot be resumed. Remove any practice
           # items reparented by the normal destroy flow before marking the
           # session complete, so they do not become permanent workspace roots.
-          return clean_up_deleted_session! if user.onboarding_seeded_at?
+          return clean_up_session! if user.onboarding_seeded_at?
           return mark_existing_workspace_complete! if existing_workspace? && !force?
 
           session_id = SecureRandom.uuid
           root = Creative.create!(user: user, description: t(:root), progress: 0.0)
-          agent = share_available_agent!(root)
           first = Creative.create!(user: user, parent: root, description: t(:progress_practice), progress: 0.0,
                                    data: { "onboarding" => { "session_id" => session_id } })
           second = Creative.create!(user: user, parent: root, description: t(:editor_practice), progress: 0.0,
                                     data: { "onboarding" => { "session_id" => session_id } })
+          agent = share_available_agent!(root)
           root.update!(data: {
             "onboarding" => {
               "session_id" => session_id,
@@ -60,10 +61,14 @@ module Collavre
         agent = User.accessible_ai_agents_for(user).first
         return unless agent
 
-        CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
+        share = CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
           share.shared_by = user
           share.permission = :feedback
         end
+        # The regular CreativeShare callback refreshes this cache asynchronously.
+        # The onboarding mention step may be reached before that job runs, so seed
+        # its permission synchronously after all practice children exist.
+        Creatives::PermissionCacheBuilder.propagate_share(share)
         agent
       end
 
@@ -76,7 +81,7 @@ module Collavre
         nil
       end
 
-      def clean_up_deleted_session!
+      def clean_up_session!
         CompletionService.new(user: user).call
         mark_existing_workspace_complete!
       end

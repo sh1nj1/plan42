@@ -26,6 +26,7 @@ module Collavre
         session = Seeder.new(user: user).call
 
         assert_equal "feedback", CreativeShare.find_by!(creative: session.root, user: agent).permission
+        assert session.practice_creatives.all? { |creative| creative.has_permission?(agent, :feedback) }
         assert_equal true, session.data["agent_mention_enabled"]
       end
 
@@ -85,6 +86,20 @@ module Collavre
         assert user.reload.onboarding_completed_at?
         assert_nil Session.for_user(user)
         assert_empty user.creatives.where(id: practice_ids)
+      end
+
+      test "cleans up and completes a session with a deleted practice creative" do
+        user = User.create!(name: "Damaged onboarding", email: "damaged-onboarding@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        remaining_practice = session.practice_creatives.second
+
+        Creatives::DestroyService.new(creative: session.practice_creatives.first, user: user).call
+
+        assert_nil Seeder.new(user: user).call
+        assert user.reload.onboarding_completed_at?
+        assert_nil Session.for_user(user)
+        refute Creative.exists?(session.root.id)
+        refute Creative.exists?(remaining_practice.id)
       end
     end
   end
