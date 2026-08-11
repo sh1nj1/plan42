@@ -727,6 +727,43 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, "comment-topic-switch"
   end
 
+  # Archiving a topic hides it from the topic strip; it does not close the
+  # conversation. The topic bar links straight to an archived topic, so these
+  # two tests pin the read and write paths the frontend depends on.
+  test "topic view shows comments of an archived topic when it is selected explicitly" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    archived_comment = @creative.comments.create!(content: "Archived lane comment", user: @user, topic: topic)
+    topic.update!(archived_at: Time.current)
+
+    get creative_comments_path(@creative), params: { topic_id: topic.id }
+
+    assert_response :success
+    assert_includes @response.body, archived_comment.content
+  end
+
+  test "posting a comment to an archived topic is accepted" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    topic.update!(archived_at: Time.current)
+
+    assert_difference("Comment.count", 1) do
+      post creative_comments_path(@creative),
+           params: { comment: { content: "Still writing here", topic_id: topic.id } }
+    end
+
+    assert_equal topic.id, Comment.order(:id).last.topic_id
+  end
+
+  test "the main view keeps hiding comments that live in an archived topic" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    archived_comment = @creative.comments.create!(content: "Archived lane comment", user: @user, topic: topic)
+    topic.update!(archived_at: Time.current)
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, archived_comment.content
+  end
+
 
   test "approve returns 422 for missing action" do
     comment = @creative.comments.create!(content: "No action", user: @user, approver: @user)
