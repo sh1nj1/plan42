@@ -363,6 +363,29 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     }, result)
   end
 
+  test "fallback keys distinguish repeated statements within the same scope" do
+    File.write(File.join(@dir, "sample.rb"), <<~RUBY)
+      class Sample
+        def wide
+          if ready
+          end
+          if ready
+          end
+        end
+      end
+    RUBY
+
+    result = fold([
+      offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 3),
+      offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 5)
+    ])
+
+    assert_equal({
+      "sample.rb | Metrics/BlockNesting | Sample#wide~if ready" => 1,
+      "sample.rb | Metrics/BlockNesting | Sample#wide~if ready(2)" => 1
+    }, result)
+  end
+
   test "skips files with no offenses" do
     payload = { "files" => [ { "path" => "sample.rb", "offenses" => [] }, { "path" => "other.rb" } ] }
 

@@ -193,6 +193,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
 
+  test "string detector resolves Ruby escapes before checking satellite constants" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    escaped = satellite.sub(/[A-Z]/) { |letter| "\\u%04X" % letter.ord }
+
+    assert_equal [ "#{satellite}::Account" ], names(string_references_in(%("#{escaped}::Account".constantize)))
+  end
+
   # The live case in this repo: an STI type inside a SQL heredoc, which lexes as
   # one STRING_CONTENT holding the whole query. Matching only whole-string
   # constants would miss it.
@@ -417,6 +424,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(const pattern = /import "#{satellite}\/thing"/;))
   end
 
+  test "detector ignores import examples in JSX text while keeping JSX expressions" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(<code>import "#{satellite}/thing"</code>), jsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(<code>{import("#{satellite}/thing")}</code>), jsx: true)
+  end
+
   # The failure mode a file-level waiver has: it was written for one reference
   # and silently covers the next one too. Both halves matter — a waived
   # occurrence must stay waived, or the list is useless, and an unwaived one
@@ -505,7 +520,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_violations_in(path, source)
-    js_imports_in(source).map do |specifier|
+    js_imports_in(source, jsx: path.end_with?(".jsx")).map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
   end
@@ -524,10 +539,86 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # a Ruby require path: by traversal (`../../collavre_slack/app/javascript/x`)
   # or by package name (`collavre_notion/thing`). #satellite_for already walks
   # every segment of the cleaned path, so neither depth nor spelling matters.
-  def js_imports_in(source)
-    js_specifiers(js_tokens(source))
+  def js_imports_in(source, jsx: false)
+    js_specifiers(js_tokens(jsx ? mask_jsx_text(source) : source))
       .select { |specifier| satellite_for(specifier) }
       .uniq
+  end
+
+  # JSX child text is neither JavaScript syntax nor an import. Mask it before
+  # tokenising, while retaining expressions inside `{...}` where a real dynamic
+  # import can appear. This small scanner deliberately only runs for `.jsx`
+  # sources; ordinary JavaScript keeps its original token stream.
+  def mask_jsx_text(source)
+    masked = source.dup
+    cursor = 0
+    depth = 0
+
+    while cursor < source.length
+      if source[cursor] == "<" && (tag = jsx_tag_at(source, cursor))
+        _name, finish, closing, self_closing = tag
+        depth -= 1 if closing && depth.positive?
+        depth += 1 unless closing || self_closing
+        cursor = finish + 1
+      elsif depth.positive? && source[cursor] == "{"
+        cursor = jsx_expression_end(source, cursor)
+      elsif depth.positive?
+        masked[cursor] = " " unless source[cursor] == "\n"
+        cursor += 1
+      else
+        cursor += 1
+      end
+    end
+
+    masked
+  end
+
+  def jsx_tag_at(source, cursor)
+    match = source[cursor..].match(/\A<\/?([A-Za-z][A-Za-z0-9:._-]*)\b/)
+    return unless match
+
+    closing = source[cursor + 1] == "/"
+    finish = jsx_tag_end(source, cursor + match[0].length)
+    return unless finish
+
+    [ match[1], finish, closing, source[finish - 1] == "/" ]
+  end
+
+  def jsx_tag_end(source, cursor)
+    quote = nil
+    braces = 0
+
+    while (character = source[cursor])
+      if quote
+        cursor += 2 if character == "\\"
+        quote = nil if character == quote
+      elsif character == "\"" || character == "'"
+        quote = character
+      elsif character == "{"
+        braces += 1
+      elsif character == "}"
+        braces -= 1 if braces.positive?
+      elsif character == ">" && braces.zero?
+        return cursor
+      end
+      cursor += 1
+    end
+  end
+
+  def jsx_expression_end(source, cursor)
+    depth = 1
+    cursor += 1
+
+    while (character = source[cursor])
+      cursor += 2 and next if character == "\\"
+      depth += 1 if character == "{"
+      depth -= 1 if character == "}"
+      return cursor + 1 if depth.zero?
+
+      cursor += 1
+    end
+
+    cursor
   end
 
   # JS comments and strings can contain a syntactically convincing `import`
@@ -719,7 +810,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       string_references_in(source).map { |name, line| [ name, :string, line ] }
 
     # sort_by is not stable, and two references can share a line.
-    located.each_with_index.sort_by { |(_name, _kind, line), index| [ line, index ] }
+    located.each_with_index.sort_by { |(_name, _kind, line), index| [ line || 0, index ] }
       .map { |(name, kind, _line), _index| [ name, kind ] }
   end
 
@@ -805,9 +896,25 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # written into a string literal in core code is the violation, whatever reads
   # it afterwards.
   def string_references_in(source)
-    tokens(source)
-      .select { |token| token.type == :STRING_CONTENT }
-      .flat_map { |token| token.value.scan(SATELLITE_IN_STRING).map { |name| [ name, token.location.start_line ] } }
+    string_literals_in(Prism.parse(source).value)
+      .flat_map { |value, line| value.scan(SATELLITE_IN_STRING).map { |name| [ name, line ] } }
+  end
+
+  # Prism tokens retain source escapes (`\\u0047`), but Ruby resolves them before
+  # code reaches `constantize` or `const_get`. StringNode#unescaped is therefore
+  # the value the program will actually use. Interpolated strings expose their
+  # static StringNode parts separately, preserving the existing partial-path
+  # coverage without treating an expression as literal text.
+  def string_literals_in(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    if node.is_a?(Prism::StringNode)
+      found << [ node.unescaped, node.location.start_line ]
+    else
+      node.compact_child_nodes.each { |child| string_literals_in(child, found) }
+    end
+
+    found
   end
 
   # A constant is not the only way to reach a satellite. Every engine is on the

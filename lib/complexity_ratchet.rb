@@ -340,25 +340,34 @@ module ComplexityRatchet
       source = File.read(File.join(root, path))
       entities = EntityMap.for(source)
       lines = source.lines
+      fallback_occurrences = Hash.new(0)
+      fallback_keys = {}
 
-      offenses.each do |offense|
+      offenses.sort_by { |offense| [ offense.dig("location", "start_line") || offense.dig("location", "line"), offense.dig("location", "last_line") || 0 ] }.each do |offense|
         line = offense.dig("location", "start_line") || offense.dig("location", "line")
         last_line = offense.dig("location", "last_line")
-        key = [ path, offense["cop_name"], entity_name(entities, lines, line, last_line) ].join(SEPARATOR)
+        key = [ path, offense["cop_name"], entity_name(entities, lines, line, last_line, fallback_occurrences, fallback_keys, offense["cop_name"]) ].join(SEPARATOR)
         record(acc, key, offense["message"])
       end
     end
 
-    def entity_name(entities, lines, line, last_line = nil)
-      entities[line, last_line] || fallback_name(entities, lines, line, last_line)
+    def entity_name(entities, lines, line, last_line, fallback_occurrences, fallback_keys, cop_name)
+      entities[line, last_line] || fallback_name(entities, lines, line, last_line, fallback_occurrences, fallback_keys, cop_name)
     end
 
     # Metrics/BlockNesting and friends point at a bare statement rather than a
-    # definition. The normalised source line is the only identity available.
-    def fallback_name(entities, lines, line, last_line)
+    # definition. The normalised source line and enclosing scope identify the
+    # usual case; ordinalise repeated statements within one cop so their counts
+    # cannot aggregate into a single baseline entry.
+    def fallback_name(entities, lines, line, last_line, occurrences, keys, cop_name)
       text = lines[line - 1].to_s.strip.gsub(/\s+/, " ")
       text = "#{text[0, 97]}..." if text.length > 100
-      [ entities.enclosing_path(line, last_line), "~#{text}" ].compact.join
+      base = [ entities.enclosing_path(line, last_line), "~#{text}" ].compact.join
+      location = [ cop_name, base, line, last_line ]
+      return keys[location] if keys.key?(location)
+
+      occurrence = (occurrences[[ cop_name, base ]] += 1)
+      keys[location] = occurrence == 1 ? base : "#{base}(#{occurrence})"
     end
 
     def record(acc, key, message)
