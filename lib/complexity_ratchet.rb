@@ -613,8 +613,21 @@ module ComplexityRatchet
     # Only *live* waivers are subtracted. An expired or malformed one is a
     # blocking problem in Check, so honouring it here would let --regenerate
     # exit 0 on something CI rejects.
+    #
+    # Values may only fall. Writing the measurement unconditionally let a
+    # waived entity's growth be copied into the baseline by the next unrelated
+    # refactor: Check skips waived keys, so nothing objected, and the value the
+    # waiver was meant to be temporary about became the permanent record.
+    # Measured on this repo — an entity baselined at 31, grown to 41 under a
+    # live waiver, came back 41 after --regenerate, --verify-baseline then
+    # blocked the branch, and deleting the expired waiver left zero blocking
+    # problems at 41. Taking the minimum makes this command structurally
+    # incapable of raising a value, so a waiver decays back to the recorded
+    # limit instead of laundering past it.
     def regenerate(baseline, actual, waivers: [], today: Date.today)
-      updated = baseline.filter_map { |key, _| [ key, actual[key] ] if actual.key?(key) }.to_h
+      updated = baseline.filter_map do |key, recorded|
+        [ key, [ recorded, actual[key] ].min ] if actual.key?(key)
+      end.to_h
       live = waivers.select { |waiver| waiver.live?(today) }.map(&:key)
       [ updated, actual.keys - baseline.keys - live ]
     end

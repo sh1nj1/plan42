@@ -66,6 +66,18 @@ a waiver is open. Only a *live* waiver counts: an expired or malformed one is
 reported by `--regenerate` exactly as `--check` blocks it, so the two commands
 cannot disagree about whether a PR is green.
 
+A waiver over an entity that is *already* in the baseline is the same rule read
+the other way. `--check` skips waived keys, so the entity may grow while the
+waiver is live — but `--regenerate` writes `min(recorded, measured)`, never the
+measurement on its own, so the growth never reaches the file. The command can
+lower a value or drop a key and nothing else, which is what keeps a waiver
+temporary: once it lapses, the entity owes exactly what it owed before, and
+`--check` reports the growth as a regression against the recorded limit. Without
+that, the next unrelated refactor would copy the grown value into the baseline —
+measured on this repo, an entity recorded at 31 and grown to 41 under a live
+waiver came back as 41, `--verify-baseline` blocked the branch that did it, and
+deleting the lapsed waiver left the higher limit permanent.
+
 Rule 5 exists because rule 4 alone is not enough, and the gap is not obvious:
 raising a `Max` makes RuboCop stop emitting the offenses that cop held,
 `--regenerate` then deletes their baseline entries, and a deletion is what a

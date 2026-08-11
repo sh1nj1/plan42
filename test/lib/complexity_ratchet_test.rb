@@ -875,6 +875,48 @@ class ComplexityRatchetRegenerateTest < ActiveSupport::TestCase
 
     assert_equal [ KEY ], unrecorded
   end
+
+  # The other half of honouring a waiver here. Check skips waived keys, so
+  # growth in an already-baselined entity raises no problem — and --regenerate
+  # used to copy that growth into the baseline on the next unrelated refactor.
+  # The temporary waiver became a permanent higher limit, and --verify-baseline
+  # blocked the branch that did it.
+  test "growth under a live waiver is not written into the baseline" do
+    baseline = { KEY => 31, OTHER => 40 }
+    actual = { KEY => 41, OTHER => 32 }
+
+    updated, unrecorded = ComplexityRatchet.regenerate(
+      baseline, actual, waivers: [ waiver ], today: TODAY
+    )
+
+    assert_equal({ KEY => 31, OTHER => 32 }, updated)
+    assert_empty unrecorded
+    assert_empty ComplexityRatchet.verify_monotonic(baseline, updated)
+  end
+
+  # What the waiver's expiry is for: the recorded limit is still 31, so once
+  # the waiver lapses the entity owes the same 10 lines it always did.
+  test "the recorded limit is what the entity owes once the waiver lapses" do
+    updated, = ComplexityRatchet.regenerate(
+      { KEY => 31 }, { KEY => 41 }, waivers: [ waiver ], today: TODAY
+    )
+    problem = ComplexityRatchet::Check.new(
+      actual: { KEY => 41 }, baseline: updated, waivers: [], today: TODAY
+    ).problems.sole
+
+    assert_equal :regression, problem.kind
+    assert_equal "grew from 31 to 41", problem.message
+  end
+
+  # Growth with no waiver at all is Check's business, not this command's. It
+  # must not be laundered either — regenerate can lower a value or drop a key,
+  # and that is all it can do.
+  test "growth with no waiver is not written into the baseline either" do
+    updated, = ComplexityRatchet.regenerate({ KEY => 31 }, { KEY => 41 })
+
+    assert_equal({ KEY => 31 }, updated)
+    assert_empty ComplexityRatchet.verify_monotonic({ KEY => 31 }, updated)
+  end
 end
 
 class ComplexityRatchetWaiverLoadingTest < ActiveSupport::TestCase
