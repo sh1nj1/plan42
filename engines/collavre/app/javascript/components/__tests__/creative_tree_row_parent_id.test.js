@@ -125,7 +125,9 @@ describe("creative-tree-row parentId convention", () => {
 
   test("progress updates preserve the engine mount prefix", async () => {
     const region = document.createElement("section");
-    region.dataset.creativePathTemplate = "/collavre/creatives/__CREATIVE_ID__";
+    const centralTree = document.createElement("div");
+    centralTree.dataset.creativePathTemplate = "/collavre/creatives/__CREATIVE_ID__";
+    region.appendChild(centralTree);
     document.body.appendChild(region);
     const fetchSpy = jest.fn().mockResolvedValue({
       ok: true,
@@ -135,7 +137,7 @@ describe("creative-tree-row parentId convention", () => {
     const el = await mountRow({
       creativeId: "8",
       progressHtml: '<button data-progress-toggle data-creative-id="8" data-new-progress="1"><input class="progress-toggle-checkbox" type="checkbox"></button>',
-    }, region);
+    }, centralTree);
 
     el.querySelector("[data-progress-toggle]").click();
     await new Promise((resolve) => setTimeout(resolve, 0));

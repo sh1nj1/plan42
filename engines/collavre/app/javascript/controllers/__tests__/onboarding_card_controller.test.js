@@ -111,6 +111,20 @@ describe('OnboardingCardController', () => {
     expect(visit).toHaveBeenCalledTimes(1)
   })
 
+  test('opens the workspace tree drawer before highlighting its node', async () => {
+    document.body.insertAdjacentHTML('beforeend', `
+      <section class="creative-workspace-tree-region" data-controller="workspace-tree">
+        <button data-workspace-tree-target="panelToggle" aria-expanded="false"></button>
+      </section>
+    `)
+
+    await controller.refresh()
+
+    const panel = document.querySelector('[data-controller="workspace-tree"]')
+    expect(panel.classList.contains('is-open')).toBe(true)
+    expect(panel.querySelector('button').getAttribute('aria-expanded')).toBe('true')
+  })
+
   test('ignores an older polling response that finishes after a newer one', async () => {
     let resolveOlderResponse
     const olderResponse = new Promise((resolve) => { resolveOlderResponse = resolve })

@@ -294,6 +294,7 @@
         'creatives--tree-loading-text-value': t('.loading_creatives'),
         'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
         'creatives--sync-current-user-id-value': Current.user&.id,
+        creative_path_template: creative_path("__CREATIVE_ID__"),
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),
         edit_off_icon_html: svg_tag("edit-off.svg", className: "icon-edit")
       }

@@ -31,6 +31,24 @@ module Collavre
         assert_equal agent.id, session.data["agent_mention_agent_id"]
       end
 
+      test "selects an AI agent whose canonical mention resolves unambiguously" do
+        user = User.create!(name: "Mention learner", email: "mention-learner@example.com", password: "password")
+        duplicate_one = User.create!(name: "Duplicate helper", email: "duplicate-helper@example.com", password: "password",
+                                     llm_vendor: "openai", searchable: true)
+        duplicate_two = User.create!(name: "Duplicate helper", email: "duplicate-helper-two@example.com", password: "password",
+                                     llm_vendor: "openai", searchable: true)
+        colon_agent = User.create!(name: "Colon: helper", email: "colon-helper@example.com", password: "password",
+                                   llm_vendor: "openai", searchable: true)
+        agent = User.create!(name: "Unique helper", email: "unique-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+
+        candidates = User.where(id: [ duplicate_one.id, duplicate_two.id, colon_agent.id, agent.id ]).order(:id)
+        session = User.stub(:accessible_ai_agents_for, candidates) { Seeder.new(user: user).call }
+
+        assert_equal agent.id, session.data["agent_mention_agent_id"]
+        assert_equal agent, MentionParser.resolve_user("@#{agent.name}: hello")
+      end
+
       test "omits the agent mention step when no agent is available" do
         user = User.create!(name: "Core-only learner", email: "core-only-learner@example.com", password: "password")
 

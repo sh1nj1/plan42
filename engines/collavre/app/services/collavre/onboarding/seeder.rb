@@ -59,7 +59,11 @@ module Collavre
       end
 
       def share_available_agent!(root)
-        agent = User.accessible_ai_agents_for(user).first
+        unambiguous_names = User.group("LOWER(name)").having("COUNT(*) = 1").select("LOWER(name)")
+        agent = User.accessible_ai_agents_for(user)
+                    .where.not("name LIKE ?", "%:%")
+                    .where("LOWER(name) IN (?)", unambiguous_names)
+                    .first
         return unless agent
 
         share = CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|

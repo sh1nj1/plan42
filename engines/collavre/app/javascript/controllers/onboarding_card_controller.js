@@ -74,10 +74,19 @@ export default class extends Controller {
 
   highlight(anchor, key) {
     document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
+    if (anchor === 'tree.node') this.openWorkspaceTree()
     const anchors = anchor ? document.querySelectorAll(`[data-guide-anchor="${anchor}"]`) : []
     const target = key == null
       ? anchors[0]
       : [...anchors].find((element) => element.dataset.guideAnchorKey === String(key)) || anchors[0]
     target?.classList.add('guide-anchor-highlight')
+  }
+
+  openWorkspaceTree() {
+    const panel = document.querySelector('[data-controller~="workspace-tree"]')
+    if (!panel || panel.classList.contains('is-open')) return
+
+    panel.classList.add('is-open')
+    panel.querySelector('[data-workspace-tree-target~="panelToggle"]')?.setAttribute('aria-expanded', 'true')
   }
 }
