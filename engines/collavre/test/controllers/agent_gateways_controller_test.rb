@@ -104,6 +104,37 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert_equal "completion", @gateway.completion_key
   end
 
+  test "owner can explicitly clear an unassigned gateway completion key" do
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(@gateway), params: {
+      agent_gateway: {
+        name: @gateway.name,
+        base_url: @gateway.base_url,
+        admin_key: "",
+        completion_key: "",
+        clear_completion_key: "1",
+        identity_secret: "",
+        tenant_id: @gateway.tenant_id,
+        workspace_mode: @gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_redirected_to collavre.agent_gateways_path
+    assert_nil @gateway.reload.completion_key
+  end
+
+  test "gateway edit form offers to clear an existing completion key" do
+    sign_in_as(@owner, password: "password")
+
+    get collavre.edit_agent_gateway_path(@gateway)
+
+    assert_response :success
+    assert_select "input[type='checkbox'][name='agent_gateway[clear_completion_key]'][value='1']"
+    assert_select "label[for='agent_gateway_clear_completion_key']", I18n.t("collavre.agent_gateways.clear_completion_key_label")
+  end
+
   test "owner cannot retarget a desktop-managed gateway from settings" do
     desktop_gateway = Collavre::AgentGateway.create!(
       owner: @owner,

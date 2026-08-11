@@ -31,6 +31,13 @@
     <%= form.label :completion_key, t("collavre.agent_gateways.completion_key") %>
     <%= masked_secret_field form, :completion_key, value: nil, class: "stacked-form-control", placeholder: secret_placeholder %>
     <small class="form-text text-muted"><%= t("collavre.agent_gateways.completion_key_help") %></small>
+    <% if agent_gateway.persisted? && agent_gateway.completion_key.present? %>
+      <div class="form-check mt-2">
+        <%= form.check_box :clear_completion_key, class: "form-check-input" %>
+        <%= form.label :clear_completion_key, t("collavre.agent_gateways.clear_completion_key_label"), class: "form-check-label" %>
+      </div>
+      <small class="form-text text-muted"><%= t("collavre.agent_gateways.clear_completion_key_help") %></small>
+    <% end %>
   </div>
   <div class="form-group">
     <%= form.label :identity_secret, t("collavre.agent_gateways.identity_secret") %>

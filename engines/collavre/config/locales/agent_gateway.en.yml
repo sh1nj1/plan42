@@ -55,6 +55,8 @@ en:
       admin_key_help: A value from the proxy AUTH_ADMIN_KEYS setting. Used only by the Collavre server.
       completion_key: Completion key
       completion_key_help: Optional. Required only for AI agent chat completions.
+      clear_completion_key_label: Remove stored completion key
+      clear_completion_key_help: After saving, this gateway can be used only for provisioning until a new completion key is added.
       identity_secret: Identity secret
       identity_secret_help: Must match USER_IDENTITY_HMAC_SECRET and contain at least 32 bytes. Required for per-user mode or multiple AI agents.
       tenant_id: Tenant ID
