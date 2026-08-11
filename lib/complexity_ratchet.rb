@@ -121,6 +121,7 @@ module ComplexityRatchet
     def initialize
       @paths = {}
       @ranges = {}
+      @enclosures = []
       @stack = []
       @occurrences = Hash.new(0)
       @sibling_anchors = Hash.new { |hash, key| hash[key] = [] }
@@ -131,6 +132,17 @@ module ComplexityRatchet
     # but passing it is what separates two scopes that open on the same line.
     def [](line, last_line = nil)
       @ranges[[ line, last_line ]] || @paths[line]
+    end
+
+    # Metrics/BlockNesting points at a statement inside its owning method or
+    # block rather than at a Prism scope. Keep that owner so source-line
+    # fallbacks in different methods cannot share one baseline key.
+    def enclosing_path(line, last_line = line)
+      last_line ||= line
+      @enclosures
+        .select { |start_line, end_line, _path| start_line <= line && end_line >= last_line }
+        .min_by { |start_line, end_line, _path| end_line - start_line }
+        &.last
     end
 
     def visit_class_node(node)
@@ -247,6 +259,7 @@ module ComplexityRatchet
     def nest(segment, location, *extra_lines, anchor: segment)
       @stack.push(disambiguate(segment, anchor))
       @ranges[[ location.start_line, location.end_line ]] ||= path
+      @enclosures << [ location.start_line, location.end_line, path ]
       [ location.start_line, *extra_lines ].each { |line| @paths[line] ||= path }
       yield
     ensure
@@ -337,15 +350,15 @@ module ComplexityRatchet
     end
 
     def entity_name(entities, lines, line, last_line = nil)
-      entities[line, last_line] || fallback_name(lines, line)
+      entities[line, last_line] || fallback_name(entities, lines, line, last_line)
     end
 
     # Metrics/BlockNesting and friends point at a bare statement rather than a
     # definition. The normalised source line is the only identity available.
-    def fallback_name(lines, line)
+    def fallback_name(entities, lines, line, last_line)
       text = lines[line - 1].to_s.strip.gsub(/\s+/, " ")
       text = "#{text[0, 97]}..." if text.length > 100
-      "~#{text}"
+      [ entities.enclosing_path(line, last_line), "~#{text}" ].compact.join
     end
 
     def record(acc, key, message)

@@ -381,12 +381,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   test "detector flags every static form a JS module can name another by" do
     satellite = SATELLITES.first
+    escaped_satellite = satellite.sub("_", "\\\\u005f")
+    hexadecimal_satellite = satellite.sub("_", "\\\\x5f")
+    braced_satellite = satellite.sub("_", "\\\\u{5f}")
     {
       %(import "#{satellite}/side_effect";) => "#{satellite}/side_effect",
       %(export { thing } from "#{satellite}/thing";) => "#{satellite}/thing",
       %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import(`#{satellite}/thing`);) => "#{satellite}/thing",
+      %(import Thing from "#{escaped_satellite}/thing";) => "#{satellite}/thing",
+      %(const t = await import(`#{escaped_satellite}/thing`);) => "#{satellite}/thing",
+      %(import Thing from "#{hexadecimal_satellite}/thing";) => "#{satellite}/thing",
+      %(import Thing from "#{braced_satellite}/thing";) => "#{satellite}/thing",
       %(import {\n  a,\n  b\n} from "#{satellite}/thing";) => "#{satellite}/thing"
     }.each do |source, expected|
       assert_equal [ expected ], js_imports_in(source), "missed #{source.inspect}"
@@ -616,8 +623,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     while (character = source[cursor])
       if character == "\\"
-        value << character << source[cursor + 1].to_s
-        cursor += 2
+        escaped, cursor = js_escape(source, cursor)
+        value << escaped
       elsif character == quote
         return [ [ static ? :string : :dynamic_string, value ], cursor + 1 ]
       else
@@ -628,6 +635,30 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
 
     [ [ :dynamic_string, value ], cursor ]
+  end
+
+  # Module specifiers are JavaScript strings, not source text: `\\u005f` and
+  # `_` both resolve to the same path. Decode the static escape forms here so
+  # the boundary rule sees the module Node will actually load. Interpolation
+  # stays a dynamic string above and never reaches this method's caller.
+  def js_escape(source, cursor)
+    escaped = source[cursor + 1]
+    return [ "\\", cursor + 1 ] unless escaped
+
+    simple = { "b" => "\b", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v", "0" => "\0" }
+    return [ simple.fetch(escaped, escaped), cursor + 2 ] unless escaped == "u" || escaped == "x"
+
+    if escaped == "u" && source[cursor + 2] == "{"
+      close = source.index("}", cursor + 3)
+      digits = close && source[(cursor + 3)...close]
+      return [ [ digits.to_i(16) ].pack("U"), close + 1 ] if digits&.match?(/\A[\da-fA-F]{1,6}\z/)
+    end
+
+    width = escaped == "u" ? 4 : 2
+    digits = source[(cursor + 2), width]
+    return [ [ digits.to_i(16) ].pack("U"), cursor + 2 + width ] if digits&.match?(/\A[\da-fA-F]{#{width}}\z/)
+
+    [ escaped, cursor + 2 ]
   end
 
   def js_specifiers(tokens)

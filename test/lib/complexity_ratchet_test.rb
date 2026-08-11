@@ -334,7 +334,33 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
   test "falls back to the source line for offenses that are not on a definition" do
     result = fold([ offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 3) ])
 
-    assert_equal "sample.rb | Metrics/BlockNesting | ~1", result.keys.sole
+    assert_equal "sample.rb | Metrics/BlockNesting | Sample#wide~1", result.keys.sole
+  end
+
+  test "fallback keys retain the enclosing scope" do
+    File.write(File.join(@dir, "sample.rb"), <<~RUBY)
+      class Sample
+        def first
+          if ready
+          end
+        end
+
+        def second
+          if ready
+          end
+        end
+      end
+    RUBY
+
+    result = fold([
+      offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 3),
+      offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 8)
+    ])
+
+    assert_equal({
+      "sample.rb | Metrics/BlockNesting | Sample#first~if ready" => 1,
+      "sample.rb | Metrics/BlockNesting | Sample#second~if ready" => 1
+    }, result)
   end
 
   test "skips files with no offenses" do

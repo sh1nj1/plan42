@@ -25,8 +25,8 @@ app/controllers/webauthn/sessions_controller.rb:
     Webauthn::SessionsController#create: 27
 app/helpers/application_helper.rb:
   Metrics/BlockNesting:
-    ~if attrs =~ /\b#{attr}=\"[^\"]*\"/: 1
-    ~if attrs =~ /\bclass=\"([^\"]*)\"/: 1
+    ApplicationHelper#svg_tag[block:sub!][block:each]~if attrs =~ /\b#{attr}=\"[^\"]*\"/: 1
+    ApplicationHelper#svg_tag[block:sub!][block:each]~if attrs =~ /\bclass=\"([^\"]*)\"/: 1
   Metrics/MethodLength:
     ApplicationHelper#svg_tag: 30
   Metrics/PerceivedComplexity:
@@ -477,7 +477,7 @@ engines/collavre/app/services/collavre/google_calendar_service.rb:
     Collavre::GoogleCalendarService#create_google_event: 63.77
     Collavre::GoogleCalendarService#ensure_app_calendar!: 35.68
   Metrics/BlockNesting:
-    "~if e.status_code == 404": 1
+    Collavre::GoogleCalendarService#ensure_app_calendar!~if e.status_code == 404: 1
   Metrics/CyclomaticComplexity:
     Collavre::GoogleCalendarService#create_google_event: 16
   Metrics/MethodLength:
@@ -498,7 +498,7 @@ engines/collavre/app/services/collavre/markdown_importer.rb:
   Metrics/AbcSize:
     Collavre::MarkdownImporter.import: 115.6
   Metrics/BlockNesting:
-    "~if (close_match = close_line.match(/^\\s*(`{3,}|~{3+})\\s*$/))": 1
+    Collavre::MarkdownImporter.import~if (close_match = close_line.match(/^\s*(`{3,}|~{3+})\s*$/)): 1
   Metrics/CyclomaticComplexity:
     Collavre::MarkdownImporter.import: 30
   Metrics/MethodLength:
@@ -687,7 +687,7 @@ engines/collavre_github/app/services/collavre_github/tools/pr_monitor_service.rb
     CollavreGithub::Tools::PrMonitorService#ensure_webhook_events: 29
 engines/collavre_github/app/services/collavre_github/webhook_provisioner.rb:
   Metrics/BlockNesting:
-    "~update_webhook(": 1
+    CollavreGithub::WebhookProvisioner#provision_hook~update_webhook(: 1
   Metrics/ClassLength:
     CollavreGithub::WebhookProvisioner: 386
   Metrics/CyclomaticComplexity:
@@ -871,8 +871,8 @@ lib/local_engine_setup.rb:
   Metrics/AbcSize:
     LocalEngineSetup.run: 60.87
   Metrics/BlockNesting:
-    "~rescue FrozenError": 1
-    "~rescue RuntimeError": 1
+    LocalEngineSetup.run[block:each](2)~rescue FrozenError: 1
+    LocalEngineSetup.run[block:each](2)~rescue RuntimeError: 1
   Metrics/CyclomaticComplexity:
     LocalEngineSetup.run: 19
   Metrics/MethodLength:
