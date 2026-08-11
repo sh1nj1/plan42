@@ -35,13 +35,19 @@ cd "$APP_ROOT"
 DATA_DIR="${COLLAVRE_DATA_DIR:-$HOME/Library/Application Support/Collavre}"
 mkdir -p "$DATA_DIR"
 
-# Pick the Ruby runtime: an explicit override, then a vendored portable Ruby
-# (present in packaged builds), then whatever `ruby` is on PATH (dev checkout).
+# Packaged apps must always use their vendored portable Ruby. Falling back to a
+# user's system Ruby makes the bundled Gemfile and gems incompatible with the
+# target Mac (and can silently select macOS's legacy Ruby 2.6). Development
+# checkouts have no vendor directory, so they may still use an explicit override
+# or `ruby` on PATH.
 VENDOR_DIR="$APP_ROOT/tools/desktop-app/vendor"
 VENDORED_RUBY="$VENDOR_DIR/ruby/bin/ruby"
-if [ -n "${COLLAVRE_RUBY:-}" ]; then
-  RUBY_BIN="$COLLAVRE_RUBY"
-elif [ -x "$VENDORED_RUBY" ]; then
+PACKAGED_APP=false
+case "$APP_ROOT" in
+  */Contents/Resources/app) PACKAGED_APP=true ;;
+esac
+
+if [ -x "$VENDORED_RUBY" ]; then
   RUBY_BIN="$VENDORED_RUBY"
   # Point Bundler at the vendored gems by absolute path resolved at runtime, so
   # the bundle works regardless of where the .app was installed (no reliance on
@@ -51,6 +57,11 @@ elif [ -x "$VENDORED_RUBY" ]; then
   export BUNDLE_PATH="$VENDOR_DIR/bundle"
   export BUNDLE_WITHOUT="development:test:production"
   export BUNDLE_WITH="desktop"
+elif [ "$PACKAGED_APP" = true ]; then
+  echo "[desktop-server] bundled Ruby is missing or not executable: $VENDORED_RUBY" >&2
+  exit 1
+elif [ -n "${COLLAVRE_RUBY:-}" ]; then
+  RUBY_BIN="$COLLAVRE_RUBY"
 else
   RUBY_BIN="ruby"
 fi

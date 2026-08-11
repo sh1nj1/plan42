@@ -137,6 +137,15 @@ echo "[build-macos] 7/7 building the Tauri bundle"
   CI="${CI:-true}" cargo tauri build
 )
 
+# Verify the exact runtime copied into the .app, not merely the source vendor
+# directory. A desktop bundle must never rely on a target Mac's system Ruby.
+BUNDLED_RUBY="$DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre Desktop.app/Contents/Resources/app/tools/desktop-app/vendor/ruby/bin/ruby"
+[ -x "$BUNDLED_RUBY" ] || {
+  echo "[build-macos] packaged Ruby is missing or not executable: $BUNDLED_RUBY" >&2
+  exit 1
+}
+"$BUNDLED_RUBY" -v
+
 echo "[build-macos] done →"
 echo "  $DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre Desktop.app"
 echo "Run it once via: right-click → Open (unsigned, Gatekeeper)."
