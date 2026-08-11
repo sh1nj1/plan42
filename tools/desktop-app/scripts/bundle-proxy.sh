@@ -3,14 +3,16 @@
 # the desktop app. This is a release-build step; it never installs a global npm
 # package and it never uses a user's Node installation at runtime.
 #
-# Required release inputs:
+# Optional release inputs:
 #   CLI_OPENAI_PROXY_VERSION  Published, exact semver (defaults to 0.1.0)
 #   NODE_RUNTIME_URL          Official darwin-arm64 Node .tar.xz URL
 #   NODE_RUNTIME_SHA256       SHA-256 for exactly that archive
 #
 # NODE_RUNTIME_DIR may be supplied by a release job that has already fetched and
-# verified the runtime. It must contain bin/node and bin/npm. This is useful for
-# hermetic CI, but does not relax the npm lockfile verification below.
+# verified the official runtime archive. It must contain bin/node and bin/npm.
+# When no runtime input is set, a pinned official Node distribution is downloaded
+# and verified. The packaged app never uses a developer's Node installation at
+# runtime.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,6 +23,8 @@ PACKAGE_VERSION="${CLI_OPENAI_PROXY_VERSION:-0.1.0}"
 NODE_RUNTIME_DIR="${NODE_RUNTIME_DIR:-}"
 NODE_RUNTIME_URL="${NODE_RUNTIME_URL:-}"
 NODE_RUNTIME_SHA256="${NODE_RUNTIME_SHA256:-}"
+DEFAULT_NODE_RUNTIME_URL="https://nodejs.org/dist/v22.13.0/node-v22.13.0-darwin-arm64.tar.xz"
+DEFAULT_NODE_RUNTIME_SHA256="71b0893ef6a55295994f38002fada15c9a76a3cedeb36745fde0403741d183c6"
 
 fail() {
   echo "[bundle-proxy] $*" >&2
@@ -40,8 +44,13 @@ if [[ -n "$NODE_RUNTIME_DIR" ]]; then
     fail "NODE_RUNTIME_DIR must contain executable bin/node and bin/npm"
   cp -R "$NODE_RUNTIME_DIR" "$stage/node"
 else
-  [[ -n "$NODE_RUNTIME_URL" && -n "$NODE_RUNTIME_SHA256" ]] || \
-    fail "NODE_RUNTIME_URL and NODE_RUNTIME_SHA256 are required when NODE_RUNTIME_DIR is not set"
+  if [[ -n "$NODE_RUNTIME_URL" || -n "$NODE_RUNTIME_SHA256" ]]; then
+    [[ -n "$NODE_RUNTIME_URL" && -n "$NODE_RUNTIME_SHA256" ]] || \
+      fail "set both NODE_RUNTIME_URL and NODE_RUNTIME_SHA256"
+  else
+    NODE_RUNTIME_URL="$DEFAULT_NODE_RUNTIME_URL"
+    NODE_RUNTIME_SHA256="$DEFAULT_NODE_RUNTIME_SHA256"
+  fi
   [[ "$NODE_RUNTIME_URL" == https://nodejs.org/* ]] || \
     fail "NODE_RUNTIME_URL must use the official nodejs.org HTTPS distribution"
   archive="$stage/node-runtime.tar.xz"
