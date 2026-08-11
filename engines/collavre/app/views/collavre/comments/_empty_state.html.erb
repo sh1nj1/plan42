@@ -16,18 +16,22 @@
   end
 %>
 <div id="no-comments" class="comments-placeholder" data-controller="comments--feature-cards comments--placeholder">
-  <template data-comments--feature-cards-target="minimalTemplate">
-    <%= render partial: "collavre/comments/empty_state_minimal", locals: { prompt_key: prompt_key } %>
-  </template>
-
-  <% if visible_cards.any? %>
-    <p class="feature-cards-title"><%= t(title_key) %></p>
-    <div class="feature-card-grid" data-comments--feature-cards-target="grid">
-      <% visible_cards.each do |card| %>
-        <%= render partial: "collavre/comments/feature_card", locals: { creative: creative, card: card } %>
-      <% end %>
-    </div>
+  <% if Collavre::Onboarding::Session.for_creative(creative) %>
+    <%= render "collavre/onboarding/card", creative: creative %>
   <% else %>
-    <%= render partial: "collavre/comments/empty_state_minimal", locals: { prompt_key: prompt_key } %>
+    <template data-comments--feature-cards-target="minimalTemplate">
+      <%= render partial: "collavre/comments/empty_state_minimal", locals: { prompt_key: prompt_key } %>
+    </template>
+
+    <% if visible_cards.any? %>
+      <p class="feature-cards-title"><%= t(title_key) %></p>
+      <div class="feature-card-grid" data-comments--feature-cards-target="grid">
+        <% visible_cards.each do |card| %>
+          <%= render partial: "collavre/comments/feature_card", locals: { creative: creative, card: card } %>
+        <% end %>
+      </div>
+    <% else %>
+      <%= render partial: "collavre/comments/empty_state_minimal", locals: { prompt_key: prompt_key } %>
+    <% end %>
   <% end %>
 </div>

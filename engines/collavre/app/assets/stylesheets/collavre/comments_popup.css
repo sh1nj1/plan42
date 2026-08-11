@@ -2176,8 +2176,7 @@ li:hover .topic-create-option {
     text-decoration: underline;
 }
 
-/* First-run onboarding stays above the comment list so it remains available
-   after the learner sends their first message. */
+/* First-run onboarding replaces feature cards in an empty chat. */
 .onboarding-card {
     margin: 10px 12px;
     padding: 12px;
