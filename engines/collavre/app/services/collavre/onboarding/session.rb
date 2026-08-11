@@ -74,7 +74,11 @@ module Collavre
       end
 
       def current_step
-        scenario.steps.find { |step| step.key.to_s == data["current_step"].to_s }
+        step = scenario.steps.find { |candidate| candidate.key.to_s == data["current_step"].to_s }
+        return step if step
+
+        complete_removed_mention_step!
+        nil
       end
 
       def practice_creative_ids
@@ -121,6 +125,14 @@ module Collavre
 
         User.mentionable_for(root).ai_agents.any? do |agent|
           root.has_permission?(agent, :feedback)
+        end
+      end
+
+      def complete_removed_mention_step!
+        return unless data["current_step"] == "mention" && !agent_mention_available?
+
+        update! do |onboarding|
+          onboarding["current_step"] = "complete"
         end
       end
 

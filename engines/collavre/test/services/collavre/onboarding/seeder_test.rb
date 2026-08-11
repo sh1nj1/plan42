@@ -54,6 +54,7 @@ module Collavre
         refute_includes session.scenario.steps.map(&:key), :mention
         session.update!(current_step: "mention")
         assert_nil session.current_step
+        assert_equal "complete", session.data["current_step"]
       end
 
       test "resolves a practice creative to its scenario root" do

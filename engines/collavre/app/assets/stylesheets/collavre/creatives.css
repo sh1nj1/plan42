@@ -554,6 +554,13 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     opacity: 1;
 }
 
+/* The onboarding guide targets this normally hover-only control. */
+.edit-inline-btn.guide-anchor-highlight {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+}
+
 @media (max-width: 768px) {
     .creative-toggle-btn {
         visibility: visible !important;
@@ -574,6 +581,11 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
         transform: translateX(0);
         pointer-events: auto;
         visibility: visible;
+    }
+
+    .edit-inline-btn.guide-anchor-highlight {
+        max-width: 40px;
+        transform: translateX(0);
     }
 }
 

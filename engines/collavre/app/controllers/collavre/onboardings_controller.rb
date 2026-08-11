@@ -12,7 +12,7 @@ module Collavre
     end
 
     def complete
-      Onboarding::CompletionService.new(user: Current.user).call
+      Onboarding::CompletionService.new(user: Current.user).call(defer_pending_agent_cleanup: true)
       render json: { success: true, redirect_url: features_path }
     end
 
