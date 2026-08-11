@@ -32,6 +32,8 @@ else
   ruby-build "$RUBY_VERSION" "$RUBY_PREFIX"
 fi
 
+"$SCRIPT_DIR/relocate-ruby.sh" "$RUBY_PREFIX"
+
 VENDORED_RUBY="$RUBY_PREFIX/bin/ruby"
 export PATH="$RUBY_PREFIX/bin:$PATH"
 export GEM_HOME="$VENDOR_DIR/bundle"

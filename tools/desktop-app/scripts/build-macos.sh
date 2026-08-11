@@ -149,6 +149,14 @@ BUNDLED_RUBY="$TAURI_TARGET_DIR/release/bundle/macos/Collavre Desktop.app/Conten
 }
 "$BUNDLED_RUBY" -v
 
+# A Ruby executable can start on the build Mac even when one of its Mach-O load
+# commands still names the checkout. Reject that non-relocatable bundle here,
+# before a DMG can be handed to another Mac.
+if otool -L "$BUNDLED_RUBY" | grep -qF "$APP_ROOT/tools/desktop-app/vendor/ruby"; then
+  echo "[build-macos] packaged Ruby still references the build checkout" >&2
+  exit 1
+fi
+
 echo "[build-macos] done →"
 echo "  $DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre Desktop.app"
 echo "Run it once via: right-click → Open (unsigned, Gatekeeper)."
