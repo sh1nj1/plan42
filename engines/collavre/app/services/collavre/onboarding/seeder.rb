@@ -13,9 +13,10 @@ module Collavre
           session = Session.for_user(user)
           return session if session
 
-          # A deleted onboarding root cannot be resumed. Mark it complete rather
-          # than silently creating another practice tree on a later visit.
-          return mark_existing_workspace_complete! if user.onboarding_seeded_at?
+          # A deleted onboarding root cannot be resumed. Remove any practice
+          # items reparented by the normal destroy flow before marking the
+          # session complete, so they do not become permanent workspace roots.
+          return clean_up_deleted_session! if user.onboarding_seeded_at?
           return mark_existing_workspace_complete! if existing_workspace? && !force?
 
           session_id = SecureRandom.uuid
@@ -73,6 +74,11 @@ module Collavre
       def mark_existing_workspace_complete!
         user.update!(onboarding_completed_at: Time.current)
         nil
+      end
+
+      def clean_up_deleted_session!
+        CompletionService.new(user: user).call
+        mark_existing_workspace_complete!
       end
     end
   end

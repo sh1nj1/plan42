@@ -78,11 +78,13 @@ module Collavre
       test "marks a deleted onboarding session complete without reseeding it" do
         user = User.create!(name: "Deleted onboarding", email: "deleted-onboarding@example.com", password: "password")
         session = Seeder.new(user: user).call
-        session.root.destroy!
+        practice_ids = session.practice_creatives.map(&:id)
+        Creatives::DestroyService.new(creative: session.root, user: user).call
 
         assert_nil Seeder.new(user: user).call
         assert user.reload.onboarding_completed_at?
         assert_nil Session.for_user(user)
+        assert_empty user.creatives.where(id: practice_ids)
       end
     end
   end

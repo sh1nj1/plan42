@@ -62,6 +62,20 @@ module Collavre
       assert_nil user.onboarding_completed_at
     end
 
+    test "reset removes practice items orphaned by a deleted onboarding root" do
+      user = User.create!(name: "Reset deleted root", email: "reset-deleted-root@example.com", password: "password")
+      sign_in_as(user, password: "password")
+      previous_session = Onboarding::Seeder.new(user: user).call
+      orphaned_practice_ids = previous_session.practice_creative_ids
+      Creatives::DestroyService.new(creative: previous_session.root, user: user).call
+
+      post reset_onboarding_path
+
+      assert_redirected_to creatives_path
+      assert_empty user.creatives.where(id: orphaned_practice_ids)
+      assert Onboarding::Session.for_user(user.reload)
+    end
+
     test "reset enables workspace mode so the runner can be displayed" do
       user = User.create!(
         name: "Workspace disabled learner", email: "workspace-disabled-onboarding@example.com", password: "password",

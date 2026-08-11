@@ -16,6 +16,18 @@ module Collavre
         assert_empty user.creatives.where(id: [ session.root.id, moved.id ])
         assert user.reload.onboarding_completed_at?
       end
+
+      test "removes orphaned practice items after their onboarding root is deleted" do
+        user = User.create!(name: "Deleted root finisher", email: "deleted-root-finisher@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        practice_ids = session.practice_creatives.map(&:id)
+        Creatives::DestroyService.new(creative: session.root, user: user).call
+
+        CompletionService.new(user: user).call
+
+        assert_empty user.creatives.where(id: practice_ids)
+        assert user.reload.onboarding_completed_at?
+      end
     end
   end
 end
