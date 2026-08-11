@@ -697,7 +697,7 @@ fn desktop_proxy_complete_setup(
         identity_secret: &credentials.identity_secret,
         adapters: &adapters,
     };
-    register_gateway(server_port, &request)?;
+    register_authenticated_gateway(&rails_sidecar, server_port, &request)?;
 
     let registered = ProxyConfig {
         registered: true,
@@ -906,6 +906,19 @@ fn register_gateway(port: u16, registration: &GatewayRegistration<'_>) -> Result
                 .to_string(),
         )
     }
+}
+
+/// Re-authenticate immediately before the credential-bearing registration
+/// request. Proxy installation can wait for Keychain or health checks, during
+/// which the Rails child could exit and its port could be claimed by another
+/// loopback process.
+fn register_authenticated_gateway(
+    sidecar: &Sidecar,
+    port: u16,
+    registration: &GatewayRegistration<'_>,
+) -> Result<(), String> {
+    authenticate_rails_sidecar(sidecar, port)?;
+    register_gateway(port, registration)
 }
 
 /// Confirm that the Rails record backing the locally healthy proxy still
@@ -1266,10 +1279,11 @@ mod tests {
         generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
         invalidate_proxy_registration_when_gateway_is_missing, managed_proxy_runs_on_port,
         migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
-        read_proxy_config, reap_orphan_proxy, replace_occupied_proxy_port,
-        revalidate_registered_gateway_after_rails_health, valid_sidecar_challenge_response,
-        wait_until_proxy_healthy, write_proxy_config, HmacSha256, ManagedProxy, ProxyConfig,
-        ProxyCredentials, ProxySidecar, URL_SAFE_NO_PAD,
+        read_proxy_config, reap_orphan_proxy, register_authenticated_gateway,
+        replace_occupied_proxy_port, revalidate_registered_gateway_after_rails_health,
+        valid_sidecar_challenge_response, wait_until_proxy_healthy, write_proxy_config,
+        GatewayRegistration, HmacSha256, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
+        Sidecar, URL_SAFE_NO_PAD,
     };
     use base64::Engine;
     use hmac::Mac;
@@ -1406,6 +1420,115 @@ mod tests {
             challenge,
             "not-a-signature"
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn gateway_registration_reauthenticates_sidecar_before_sending_credentials() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        fn read_request(stream: &mut std::net::TcpStream) -> String {
+            let mut bytes = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            let mut expected_length = None;
+
+            loop {
+                let count = stream.read(&mut buffer).expect("read request");
+                assert!(count > 0, "request ended before its body was complete");
+                bytes.extend_from_slice(&buffer[..count]);
+
+                let Some(headers_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let headers_end = headers_end + 4;
+                let body_length = *expected_length.get_or_insert_with(|| {
+                    let headers = String::from_utf8_lossy(&bytes[..headers_end]);
+                    headers
+                        .lines()
+                        .find_map(|line| line.strip_prefix("Content-Length: "))
+                        .and_then(|length| length.parse::<usize>().ok())
+                        .unwrap_or(0)
+                });
+                if bytes.len() >= headers_end + body_length {
+                    return String::from_utf8(bytes).expect("UTF-8 request");
+                }
+            }
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let port = listener.local_addr().expect("listener address").port();
+        let secret = "sidecar-registration-secret".to_string();
+        let expected_secret = secret.clone();
+        let server = thread::spawn(move || {
+            let (mut health, _) = listener.accept().expect("accept sidecar challenge");
+            let health_request = read_request(&mut health);
+            let challenge = health_request
+                .split_whitespace()
+                .nth(1)
+                .and_then(|path| path.split("challenge=").nth(1))
+                .expect("sidecar challenge");
+            let mut mac =
+                HmacSha256::new_from_slice(expected_secret.as_bytes()).expect("valid HMAC key");
+            mac.update(challenge.as_bytes());
+            let proof = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+            health
+                .write_all(
+                    format!(
+                        "HTTP/1.0 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{proof}",
+                        proof.len()
+                    )
+                    .as_bytes(),
+                )
+                .expect("write sidecar proof");
+            drop(health);
+
+            let (mut registration, _) = listener.accept().expect("accept registration");
+            let registration_request = read_request(&mut registration);
+            assert!(
+                registration_request.starts_with("POST /desktop/setup/register-gateway HTTP/1.1")
+            );
+            assert!(registration_request.contains("\"admin_key\":\"admin-key\""));
+            registration
+                .write_all(
+                    b"HTTP/1.0 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write registration response");
+        });
+
+        let child = process::Command::new("sh")
+            .args(["-c", "sleep 5"])
+            .spawn()
+            .expect("spawn sidecar child");
+        let sidecar = Sidecar {
+            child: Mutex::new(Some(child)),
+            port: Mutex::new(Some(port)),
+            secret,
+        };
+        let adapters = vec!["claude".to_string()];
+        let registration = GatewayRegistration {
+            registration_token: "registration-token",
+            proxy_port: 34_567,
+            admin_key: "admin-key",
+            completion_key: "completion-key",
+            identity_secret: "identity-secret",
+            adapters: &adapters,
+        };
+
+        register_authenticated_gateway(&sidecar, port, &registration)
+            .expect("authenticated registration");
+        server.join().expect("test registration server");
+
+        let mut child = sidecar
+            .child
+            .lock()
+            .expect("sidecar lock")
+            .take()
+            .expect("sidecar child");
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]
