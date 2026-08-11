@@ -87,7 +87,8 @@ module Collavre
 
       def practice_creatives_intact?
         expected_ids = practice_creative_ids.uniq.sort
-        expected_ids.size == 2 && practice_creatives.pluck(:id).sort == expected_ids
+        expected_ids.size == 2 && !root.archived? &&
+          practice_creatives.active.pluck(:id).sort == expected_ids
       end
 
       def includes?(creative)

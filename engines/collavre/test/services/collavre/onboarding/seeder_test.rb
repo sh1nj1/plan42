@@ -101,6 +101,28 @@ module Collavre
         refute Creative.exists?(session.root.id)
         refute Creative.exists?(remaining_practice.id)
       end
+
+      test "cleans up and completes a session with an archived onboarding root" do
+        user = User.create!(name: "Archived onboarding root", email: "archived-onboarding-root@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        creative_ids = [ session.root.id, *session.practice_creative_ids ]
+        session.root.archive!
+
+        assert_nil Seeder.new(user: user).call
+        assert user.reload.onboarding_completed_at?
+        assert_empty user.creatives.where(id: creative_ids)
+      end
+
+      test "cleans up and completes a session with an archived practice creative" do
+        user = User.create!(name: "Archived onboarding practice", email: "archived-onboarding-practice@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        creative_ids = [ session.root.id, *session.practice_creative_ids ]
+        session.practice_creatives.first.archive!
+
+        assert_nil Seeder.new(user: user).call
+        assert user.reload.onboarding_completed_at?
+        assert_empty user.creatives.where(id: creative_ids)
+      end
     end
   end
 end
