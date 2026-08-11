@@ -99,10 +99,39 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in("# require \"#{satellite}\" would be a violation")
   end
 
+  # Traversal is the obvious way around a check that only reads the first path
+  # segment, and it is the form a real sibling dependency would actually take:
+  # engines are siblings on disk, so `require_relative` between them is spelled
+  # with "..".
+  test "detector flags a satellite reached by relative traversal" do
+    satellite = SATELLITES.first
+    traversal = "../../#{satellite}/lib/#{satellite}/engine"
+
+    assert_equal [ traversal ], requires_in(%(require_relative "#{traversal}"))
+    assert_equal [ "./#{satellite}/x" ], requires_in(%(require "./#{satellite}/x"))
+    assert_equal satellite, satellite_for(traversal)
+  end
+
+  test "detector does not mistake traversal past an unrelated directory for a satellite" do
+    assert_empty requires_in(%(require_relative "../../support/net/http"))
+  end
+
+  # `.rake` is Ruby. The scan claiming a clean core engine while skipping the
+  # engine's own rake tasks would be a false negative, not a clean codebase.
+  test "core source scan covers rake tasks" do
+    rake_tasks = core_sources.grep(/\.rake\z/)
+
+    assert_operator rake_tasks.size, :>=, 1,
+      "core engine scan found no .rake files — the glob dropped them, and any satellite dependency there is invisible"
+  end
+
   private
 
+  # `.rake` is Ruby with a different extension, and the core engine ships two
+  # such files today. A satellite constant or require added to either would be
+  # a real dependency that an `.rb`-only glob reports as clean.
   def core_sources
-    Dir.glob(ENGINES_ROOT.join(CORE, "{app,lib,config}", "**", "*.{rb,erb}"))
+    Dir.glob(ENGINES_ROOT.join(CORE, "{app,lib,config}", "**", "*.{rb,rake,erb}"))
   end
 
   def violations_in(path)
@@ -113,7 +142,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     constants_in(ruby).map { |constant|
       "  #{relative(path)} references #{constant} (engines/#{SATELLITE_CONSTANTS[constant]})"
     } + requires_in(ruby).map { |feature|
-      "  #{relative(path)} requires \"#{feature}\" (engines/#{feature.split('/').first})"
+      "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
     }
   end
 
@@ -145,8 +174,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
       # `require "x"` and `require("x")` — the literal is within three tokens.
       feature = all[index + 1, 3].to_a.find { |candidate| candidate.type == :STRING_CONTENT }&.value
-      feature if SATELLITES.include?(feature.to_s.split("/").first)
+      feature if satellite_for(feature)
     }.uniq
+  end
+
+  # The engine is identified from every path segment after normalization, not
+  # from the first one. A sibling engine is reachable by traversal —
+  # `require_relative "../../collavre_slack/lib/collavre_slack/engine"` starts
+  # with ".." and `require "./collavre_notion/x"` starts with "." — so matching
+  # only the leading segment lets both through while the dependency is real.
+  def satellite_for(feature)
+    return nil if feature.nil?
+
+    Pathname.new(feature).cleanpath.each_filename.find { |segment| SATELLITES.include?(segment) }
   end
 
   def tokens(source)
