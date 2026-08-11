@@ -306,6 +306,8 @@ module Collavre
         errors.add(:agent_gateway, :blank)
       elsif agent_gateway.owner_id != created_by_id
         errors.add(:agent_gateway, :invalid)
+      elsif !agent_gateway.chat_capable?
+        errors.add(:agent_gateway, :completion_key_required)
       elsif agent_gateway.identity_secret.blank?
         agent_gateway.with_lock do
           if agent_gateway.per_user? || agent_gateway.agents.where.not(id: id).exists?

@@ -24,6 +24,7 @@ ko:
               immutable: "은(는) 데스크탑 관리 게이트웨이에서 변경할 수 없습니다"
             completion_key:
               immutable: "은(는) 데스크탑 관리 게이트웨이에서 변경할 수 없습니다"
+              required_for_agents: "은(는) AI Agent에 할당되어 있는 동안 필요합니다"
             workspace_mode:
               desktop_shared_only: "은(는) 데스크탑 관리 게이트웨이에서 공유 모드로 유지해야 합니다"
             tenant_id:
@@ -36,6 +37,7 @@ ko:
           attributes:
             agent_gateway:
               identity_required: "은(는) 다른 AI Agent와 게이트웨이를 공유할 때 Identity secret이 필요합니다"
+              completion_key_required: "은(는) AI Agent 채팅에 Completion key가 필요합니다"
   collavre:
     agent_gateways:
       title: 내 Agent Gateway

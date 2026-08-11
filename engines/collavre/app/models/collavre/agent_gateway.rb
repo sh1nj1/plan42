@@ -31,9 +31,14 @@ module Collavre
     validate :desktop_managed_credentials_are_immutable
     validate :desktop_managed_gateway_uses_shared_workspace
     validate :identity_secret_is_usable
+    validate :completion_key_is_present_when_assigned_to_agents
     after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
 
     scope :active, -> { where(active: true) }
+
+    def chat_capable?
+      completion_key.present?
+    end
 
     def completion_base_url
       "#{proxy_base_url}/v1"
@@ -133,6 +138,12 @@ module Collavre
       return if identity_secret.to_s.bytesize >= MIN_IDENTITY_SECRET_BYTES
 
       errors.add(:identity_secret, :too_short, count: MIN_IDENTITY_SECRET_BYTES)
+    end
+
+    def completion_key_is_present_when_assigned_to_agents
+      return if completion_key.present? || !agents.exists?
+
+      errors.add(:completion_key, :required_for_agents)
     end
 
     def workspace_credentials_changed?

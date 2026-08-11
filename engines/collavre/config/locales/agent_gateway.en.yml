@@ -24,6 +24,7 @@ en:
               immutable: "cannot be changed for a desktop-managed gateway"
             completion_key:
               immutable: "cannot be changed for a desktop-managed gateway"
+              required_for_agents: "is required while the gateway is assigned to an AI agent"
             workspace_mode:
               desktop_shared_only: "must remain shared for a desktop-managed gateway"
             tenant_id:
@@ -36,6 +37,7 @@ en:
           attributes:
             agent_gateway:
               identity_required: "requires an identity secret when shared with another AI agent"
+              completion_key_required: "requires a completion key for AI agent chat"
   collavre:
     agent_gateways:
       title: My Agent Gateways
