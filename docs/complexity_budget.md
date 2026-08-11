@@ -24,8 +24,9 @@ Measured on 2026-08-11, before any of this existed:
   every `Metrics` cop, and Codecov was informational.
 
 The divergence is *inside* the core, not across engine boundaries — the
-`collavre` → `collavre_*` rule is currently clean. So the ratchet is the primary
-gate and the boundary test is cheap insurance.
+`collavre` → `collavre_*` rule is clean in application code, with one recorded
+exception in a migration. So the ratchet is the primary gate and the boundary
+test is cheap insurance.
 
 ## The ratchet
 
@@ -127,6 +128,31 @@ Tests are excluded. A 900-line test class is a list, not a god object: it has no
 callers, holds no shared mutable state, and splitting it buys nothing. Test bloat
 is real, but it is a coverage-quality problem, not a coupling one, and mixing it
 in would bury the app-code signal under thousands of block-length offenses.
+
+## The engine boundary
+
+`EngineBoundaryTest` fails when a core engine file names a satellite constant or
+requires one of its files. It asserts only that half of the rule — see *Rejected
+alternatives* for why the `IntegrationRegistry` half is not enforced here.
+
+**What gets scanned** is read from `collavre.gemspec`'s own file list, plus the
+gemspec itself, filtered to `.rb` / `.rake` / `.erb` / `Rakefile`. It is not a
+hand-written glob: the first version globbed `{app,lib,config}/**/*.{rb,erb}`
+and review found shipped Ruby outside it twice — the engine's `.rake` tasks,
+then `db/` (154 files) and the `Rakefile`. A glob and a packaging manifest
+maintained separately will drift. Reading the manifest means whatever the engine
+ships is scanned by construction, including directories added later.
+
+**`KNOWN_VIOLATIONS`** records the one pre-existing reference: a 2026-01
+migration encrypting OAuth tokens reaches `CollavreGithub::Account` and
+`CollavreNotion::NotionAccount`, guarded by `defined?` so it runs on installs
+without those engines. A migration that has run in production cannot be edited,
+so it is recorded rather than fixed — but recording is not amnesty: a separate
+test asserts each entry is *still* a real violation, so when the migration is
+squashed away the stale entry fails instead of rotting into a blind spot.
+
+Adding an entry is not the normal response to a failure. Invert the dependency
+instead: expose a hook from `collavre` and let the satellite register itself.
 
 ## What this does not do
 

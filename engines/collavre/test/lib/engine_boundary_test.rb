@@ -14,9 +14,10 @@ require "prism"
 # the documented architecture would be deleted, not obeyed.
 #
 # What is left is a clean binary: a core source file reaching a satellite, by
-# naming its constant or by requiring one of its files. Today that count is
-# zero, so this test costs nothing to keep green and exists purely to make the
-# first violation loud instead of invisible.
+# naming its constant or by requiring one of its files. Every such reference in
+# shipped code is either zero or recorded in KNOWN_VIOLATIONS, so this test
+# stays green on the codebase as it is and exists to make the next violation
+# loud instead of invisible.
 class EngineBoundaryTest < ActiveSupport::TestCase
   ENGINES_ROOT = Rails.root.join("engines")
   CORE = "collavre"
@@ -31,6 +32,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   SATELLITE_CONSTANTS = SATELLITES.to_h { |name| [ name.camelize, name ] }.freeze
 
   REQUIRE_METHODS = %w[require require_relative require_dependency].freeze
+
+  RUBY_FILE = /\.(rb|rake|erb)\z/
+
+  # One core migration already reaches satellites, deliberately and behind
+  # `defined?` guards, and a migration that has run in production cannot be
+  # edited. Recording it is the honest option: narrowing the scan to hide it
+  # would also hide every migration written from here on.
+  #
+  # Entries are asserted below to still be real violations, so a stale one
+  # fails the suite instead of quietly granting permanent amnesty — the same
+  # rule the complexity baseline follows.
+  KNOWN_VIOLATIONS = {
+    "engines/collavre/db/migrate/20260120045354_encrypt_oauth_tokens.rb" => %w[CollavreGithub CollavreNotion]
+  }.freeze
 
   test "satellite engines exist to be checked" do
     assert_operator SATELLITES.size, :>=, 2,
@@ -52,8 +67,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   test "core engine gemspec declares no satellite dependency" do
-    gemspec = Gem::Specification.load(ENGINES_ROOT.join(CORE, "#{CORE}.gemspec").to_s)
-    satellite_deps = gemspec.dependencies.map(&:name) & SATELLITES
+    satellite_deps = core_gemspec.dependencies.map(&:name) & SATELLITES
 
     assert_empty satellite_deps,
       "engines/#{CORE}/#{CORE}.gemspec depends on #{satellite_deps.join(', ')} — the core engine cannot require a satellite"
@@ -116,30 +130,57 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(require_relative "../../support/net/http"))
   end
 
-  # `.rake` is Ruby. The scan claiming a clean core engine while skipping the
-  # engine's own rake tasks would be a false negative, not a clean codebase.
-  test "core source scan covers rake tasks" do
-    rake_tasks = core_sources.grep(/\.rake\z/)
+  # A hand-written glob has now missed shipped Ruby twice — `.rake`, then `db/`
+  # and the `Rakefile`. These pin the file classes that were invisible, so the
+  # coverage regression fails here rather than going quiet again.
+  test "core source scan covers every kind of Ruby the engine ships" do
+    %w[app/ lib/ db/migrate/ .rake Rakefile].each do |marker|
+      assert core_sources.any? { |path| relative(path).include?(marker) },
+        "core engine scan found nothing matching #{marker.inspect} — packaged Ruby is invisible to the boundary check"
+    end
+  end
 
-    assert_operator rake_tasks.size, :>=, 1,
-      "core engine scan found no .rake files — the glob dropped them, and any satellite dependency there is invisible"
+  # A recorded exception is the strongest thing this test can hand out. If the
+  # migration is ever squashed away, or the reference removed, the entry has to
+  # go with it — otherwise the list rots into a permanent blind spot.
+  test "recorded exceptions are still real violations" do
+    KNOWN_VIOLATIONS.each do |path, constants|
+      full = Rails.root.join(path)
+      assert File.file?(full), "#{path} is recorded in KNOWN_VIOLATIONS but no longer exists — delete the entry"
+
+      found = constants_in(File.read(full))
+      assert_equal constants.sort, found.sort,
+        "#{path} no longer references exactly #{constants.join(', ')} — update or delete its KNOWN_VIOLATIONS entry"
+    end
   end
 
   private
 
-  # `.rake` is Ruby with a different extension, and the core engine ships two
-  # such files today. A satellite constant or require added to either would be
-  # a real dependency that an `.rb`-only glob reports as clean.
+  # Derived from the gemspec's own file list rather than a hand-maintained
+  # glob. Two review rounds found Ruby the glob did not cover — `.rake` tasks,
+  # then `db/` (154 files) and the `Rakefile` — because the glob and the
+  # packaging manifest were maintained separately and drifted. Reading the
+  # manifest means whatever the engine ships is scanned by construction,
+  # including directories added later.
   def core_sources
-    Dir.glob(ENGINES_ROOT.join(CORE, "{app,lib,config}", "**", "*.{rb,rake,erb}"))
+    root = ENGINES_ROOT.join(CORE)
+    packaged = core_gemspec.files.select { |path| path.match?(RUBY_FILE) || File.basename(path) == "Rakefile" }
+
+    # The gemspec does not package itself, and it is Ruby that can require.
+    (packaged.map { |path| root.join(path).to_s } << root.join("#{CORE}.gemspec").to_s).select { |path| File.file?(path) }
+  end
+
+  def core_gemspec
+    @core_gemspec ||= Gem::Specification.load(ENGINES_ROOT.join(CORE, "#{CORE}.gemspec").to_s)
   end
 
   def violations_in(path)
     source = File.read(path)
     # ERB is not Ruby, so lex only the fragments between the tags.
     ruby = path.end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
+    known = KNOWN_VIOLATIONS.fetch(relative(path), [])
 
-    constants_in(ruby).map { |constant|
+    (constants_in(ruby) - known).map { |constant|
       "  #{relative(path)} references #{constant} (engines/#{SATELLITE_CONSTANTS[constant]})"
     } + requires_in(ruby).map { |feature|
       "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
