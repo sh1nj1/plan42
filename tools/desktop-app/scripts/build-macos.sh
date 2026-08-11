@@ -89,34 +89,7 @@ echo "[build-macos] 4/7 precompiling assets (desktop env)"
 )
 
 echo "[build-macos] 5/7 staging app tree into $STAGING"
-rm -rf "$DESKTOP_DIR/staging"
-mkdir -p "$STAGING"
-# Stage only Git-tracked application files. An exclusion list inevitably misses
-# newly ignored files (including developer credentials), while this allowlist
-# keeps release-machine state out of the signed application by construction.
-# The generated Ruby/gem tree is the sole intentional untracked input; the
-# immutable proxy is copied separately below after its runtime is bundled.
-git -C "$APP_ROOT" ls-files -z | \
-  rsync -a --from0 --files-from=- "$APP_ROOT/" "$STAGING/"
-mkdir -p "$STAGING/tools/desktop-app/vendor"
-rsync -a --delete --exclude 'proxy/***' \
-  "$DESKTOP_DIR/vendor/" "$STAGING/tools/desktop-app/vendor/"
-
-# Rails creates runtime files below Rails.root/tmp when starting the server.
-# The app bundle is read-only once distributed, so the directory itself must
-# already exist in the staged app even though its contents stay excluded.
-mkdir -p "$STAGING/tmp/pids"
-
-# tauri-build opens every staged file to bundle it as a resource; if any file is
-# not owner-readable the resource walk aborts with EACCES. A mode-only `chmod -R`
-# is not enough: on a managed/corporate Mac the checkout can carry inherited ACLs
-# (and rarely file flags) that deny owner access and SURVIVE chmod's mode bits, so
-# the walk still fails after a mode fix. Strip ACLs and flags first, then normalize
-# mode — those three are the only things that can deny owner read. The staging tree
-# is a throwaway copy that becomes read-only .app resources, so this is safe.
-chmod -RN "$STAGING"                              # drop inherited/explicit ACLs
-chflags -R nouchg "$STAGING" 2>/dev/null || true  # clear immutable flags if present
-chmod -R u+rwX "$STAGING"                          # normalize POSIX mode bits
+"$SCRIPT_DIR/stage-app-tree.sh" "$APP_ROOT" "$DESKTOP_DIR"
 
 # The proxy is a separate Tauri resource rather than part of the Rails source
 # tree. Its Node runtime and exact npm dependency tree are immutable after this
