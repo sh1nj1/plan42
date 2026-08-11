@@ -964,6 +964,19 @@ fn registered_gateway_exists(
         && (response.starts_with("HTTP/1.1 204") || response.starts_with("HTTP/1.0 204"))
 }
 
+/// Re-authenticate immediately before the startup gateway check. Keychain
+/// access can block after the initial startup health check, during which a
+/// different local process could claim the Rails port.
+fn registered_authenticated_gateway_exists(
+    sidecar: &Sidecar,
+    rails_port: u16,
+    config: &ProxyConfig,
+    credentials: &ProxyCredentials,
+) -> bool {
+    authenticate_rails_sidecar(sidecar, rails_port).is_ok()
+        && registered_gateway_exists(rails_port, config, credentials)
+}
+
 fn invalidate_proxy_registration_when_gateway_is_missing(
     data: &Path,
     config: &mut ProxyConfig,
@@ -981,6 +994,7 @@ fn invalidate_proxy_registration_when_gateway_is_missing(
 /// only after Rails has answered its health endpoint.
 fn revalidate_registered_gateway_after_rails_health(
     rails_healthy: bool,
+    sidecar: &Sidecar,
     rails_port: u16,
     data: &Path,
     config: &mut ProxyConfig,
@@ -990,7 +1004,8 @@ fn revalidate_registered_gateway_after_rails_health(
         return Ok(false);
     }
 
-    let gateway_exists = registered_gateway_exists(rails_port, config, credentials);
+    let gateway_exists =
+        registered_authenticated_gateway_exists(sidecar, rails_port, config, credentials);
     invalidate_proxy_registration_when_gateway_is_missing(data, config, gateway_exists)?;
     Ok(gateway_exists)
 }
@@ -1280,10 +1295,10 @@ mod tests {
         invalidate_proxy_registration_when_gateway_is_missing, managed_proxy_runs_on_port,
         migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
         read_proxy_config, reap_orphan_proxy, register_authenticated_gateway,
-        replace_occupied_proxy_port, revalidate_registered_gateway_after_rails_health,
-        valid_sidecar_challenge_response, wait_until_proxy_healthy, write_proxy_config,
-        GatewayRegistration, HmacSha256, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
-        Sidecar, URL_SAFE_NO_PAD,
+        registered_authenticated_gateway_exists, replace_occupied_proxy_port,
+        revalidate_registered_gateway_after_rails_health, valid_sidecar_challenge_response,
+        wait_until_proxy_healthy, write_proxy_config, GatewayRegistration, HmacSha256,
+        ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar, Sidecar, URL_SAFE_NO_PAD,
     };
     use base64::Engine;
     use hmac::Mac;
@@ -1291,6 +1306,7 @@ mod tests {
         env,
         ffi::{OsStr, OsString},
         fs,
+        io::Read,
         path::PathBuf,
         process,
         sync::Mutex,
@@ -1299,6 +1315,36 @@ mod tests {
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
+    }
+
+    #[cfg(unix)]
+    fn read_request(stream: &mut std::net::TcpStream) -> String {
+        let mut bytes = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        let mut expected_length = None;
+
+        loop {
+            let count = stream.read(&mut buffer).expect("read request");
+            assert!(count > 0, "request ended before its body was complete");
+            bytes.extend_from_slice(&buffer[..count]);
+
+            let Some(headers_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+            else {
+                continue;
+            };
+            let headers_end = headers_end + 4;
+            let body_length = *expected_length.get_or_insert_with(|| {
+                let headers = String::from_utf8_lossy(&bytes[..headers_end]);
+                headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Content-Length: "))
+                    .and_then(|length| length.parse::<usize>().ok())
+                    .unwrap_or(0)
+            });
+            if bytes.len() >= headers_end + body_length {
+                return String::from_utf8(bytes).expect("UTF-8 request");
+            }
+        }
     }
 
     #[test]
@@ -1425,38 +1471,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn gateway_registration_reauthenticates_sidecar_before_sending_credentials() {
-        use std::io::{Read, Write};
+        use std::io::Write;
         use std::net::TcpListener;
         use std::thread;
-
-        fn read_request(stream: &mut std::net::TcpStream) -> String {
-            let mut bytes = Vec::new();
-            let mut buffer = [0_u8; 1024];
-            let mut expected_length = None;
-
-            loop {
-                let count = stream.read(&mut buffer).expect("read request");
-                assert!(count > 0, "request ended before its body was complete");
-                bytes.extend_from_slice(&buffer[..count]);
-
-                let Some(headers_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
-                else {
-                    continue;
-                };
-                let headers_end = headers_end + 4;
-                let body_length = *expected_length.get_or_insert_with(|| {
-                    let headers = String::from_utf8_lossy(&bytes[..headers_end]);
-                    headers
-                        .lines()
-                        .find_map(|line| line.strip_prefix("Content-Length: "))
-                        .and_then(|length| length.parse::<usize>().ok())
-                        .unwrap_or(0)
-                });
-                if bytes.len() >= headers_end + body_length {
-                    return String::from_utf8(bytes).expect("UTF-8 request");
-                }
-            }
-        }
 
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
         let port = listener.local_addr().expect("listener address").port();
@@ -1520,6 +1537,90 @@ mod tests {
         register_authenticated_gateway(&sidecar, port, &registration)
             .expect("authenticated registration");
         server.join().expect("test registration server");
+
+        let mut child = sidecar
+            .child
+            .lock()
+            .expect("sidecar lock")
+            .take()
+            .expect("sidecar child");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn startup_gateway_check_reauthenticates_sidecar_before_sending_credentials() {
+        use std::io::Write;
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let port = listener.local_addr().expect("listener address").port();
+        let secret = "sidecar-startup-secret".to_string();
+        let expected_secret = secret.clone();
+        let server = thread::spawn(move || {
+            let (mut health, _) = listener.accept().expect("accept sidecar challenge");
+            let health_request = read_request(&mut health);
+            let challenge = health_request
+                .split_whitespace()
+                .nth(1)
+                .and_then(|path| path.split("challenge=").nth(1))
+                .expect("sidecar challenge");
+            let mut mac =
+                HmacSha256::new_from_slice(expected_secret.as_bytes()).expect("valid HMAC key");
+            mac.update(challenge.as_bytes());
+            let proof = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+            health
+                .write_all(
+                    format!(
+                        "HTTP/1.0 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{proof}",
+                        proof.len()
+                    )
+                    .as_bytes(),
+                )
+                .expect("write sidecar proof");
+            drop(health);
+
+            let (mut status, _) = listener.accept().expect("accept gateway status");
+            let status_request = read_request(&mut status);
+            assert!(status_request.starts_with("POST /desktop/setup/gateway-registered HTTP/1.1"));
+            assert!(status_request.contains("\"admin_key\":\"admin-key\""));
+            status
+                .write_all(
+                    b"HTTP/1.0 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write gateway status response");
+        });
+
+        let child = process::Command::new("sh")
+            .args(["-c", "sleep 5"])
+            .spawn()
+            .expect("spawn sidecar child");
+        let sidecar = Sidecar {
+            child: Mutex::new(Some(child)),
+            port: Mutex::new(Some(port)),
+            secret,
+        };
+        let config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        let credentials = ProxyCredentials {
+            admin_key: "admin-key".to_string(),
+            completion_key: "completion-key".to_string(),
+            identity_secret: "identity-secret".to_string(),
+            regenerated: false,
+        };
+
+        assert!(registered_authenticated_gateway_exists(
+            &sidecar,
+            port,
+            &config,
+            &credentials,
+        ));
+        server.join().expect("test gateway status server");
 
         let mut child = sidecar
             .child
@@ -1814,6 +1915,11 @@ mod tests {
 
         let revalidated = revalidate_registered_gateway_after_rails_health(
             false,
+            &Sidecar {
+                child: Mutex::new(None),
+                port: Mutex::new(None),
+                secret: "unused".to_string(),
+            },
             45_678,
             &data,
             &mut config,
@@ -1921,6 +2027,7 @@ pub fn run() {
                         let credentials = proxy_credentials()?;
                         revalidate_registered_gateway_after_rails_health(
                             true,
+                            &handle.state::<Sidecar>(),
                             port,
                             &data,
                             &mut config,
