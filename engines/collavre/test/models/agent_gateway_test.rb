@@ -46,7 +46,9 @@ class AgentGatewayTest < ActiveSupport::TestCase
   test "completion key is optional" do
     gateway = build_gateway(completion_key: nil)
 
-    assert gateway.valid?, gateway.errors.full_messages.to_sentence
+    gateway.save!
+
+    assert_nil gateway.reload.completion_key
   end
 
   test "identity secret is required before a shared gateway can serve multiple agents" do
