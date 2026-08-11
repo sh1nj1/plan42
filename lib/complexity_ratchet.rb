@@ -161,6 +161,22 @@ module ComplexityRatchet
       end
     end
 
+    # `-> do ... end` is a LambdaNode, not a CallNode with a block, so it is not
+    # reached by #visit_call_node — but RuboCop still reports Metrics/BlockLength
+    # against it. Without this every arrow lambda fell through to the `~source
+    # line` fallback, and that line is literally `-> do` for all of them: a table
+    # of lambdas collapsed to one key and Measurement#record kept only the
+    # largest, so a new over-budget lambda hid behind a baselined sibling.
+    #
+    # Measured before the fix, on two 80-line lambdas in one array:
+    #   {"… | Metrics/BlockLength | ~-> do" => 80}   # one key, two entities
+    #
+    # `[lambda]` rather than a name because a lambda literal has none; siblings
+    # separate through the usual ordinal.
+    def visit_lambda_node(node)
+      nest("[lambda]", node.location) { super }
+    end
+
     private
 
     # Two indexes, because a start line alone is not an identity. In a chained
@@ -299,7 +315,34 @@ module ComplexityRatchet
     end
   end
 
-  Waiver = Struct.new(:key, :owner, :reason, :expires, keyword_init: true)
+  Waiver = Struct.new(:key, :owner, :reason, :expires, keyword_init: true) do
+    # What makes a waiver count lives here rather than inside Check because two
+    # commands have to agree on it. If --regenerate honoured a waiver that
+    # --check rejects, `--regenerate` would exit 0 on debt that fails CI; if it
+    # ignored one --check honours, the documented refactor workflow would exit 1
+    # demanding a waiver that is already there. Two copies of this rule drift.
+    def invalid_reason(today)
+      return "waiver is missing owner/reason/expires" if incomplete?
+      return nil unless expires > today + MAX_WAIVER_DAYS
+
+      "waiver expiry #{expires} is more than #{MAX_WAIVER_DAYS} days out"
+    end
+
+    # Valid, in date, and therefore actually suppressing something today.
+    def live?(today)
+      invalid_reason(today).nil? && expires >= today
+    end
+
+    # `owner: ""` is not an owner and `reason: ""` is not a reason. Accepting
+    # them would leave the field technically present and the accountability the
+    # waiver exists to create entirely absent — a blank waiver silently skips
+    # the entity in Check#measurement_problems, which is the strongest thing
+    # this tool can do for you, handed out for free.
+    def incomplete?
+      expires.nil? ||
+        [ key, owner, reason ].any? { |field| !field.is_a?(String) || field.strip.empty? }
+    end
+  end
 
   # Compares a measurement against the baseline and the waiver list.
   class Check
@@ -332,8 +375,8 @@ module ComplexityRatchet
 
     def waiver_problems
       waivers.filter_map do |waiver|
-        if invalid_waiver_reason(waiver)
-          problem(:invalid_waiver, waiver.key, invalid_waiver_reason(waiver), blocking: true)
+        if (reason = waiver.invalid_reason(today))
+          problem(:invalid_waiver, waiver.key, reason, blocking: true)
         elsif waiver.expires < today
           problem(:expired_waiver, waiver.key,
             "waiver owned by #{waiver.owner} expired on #{waiver.expires} — fix the entity or renew it deliberately",
@@ -342,23 +385,6 @@ module ComplexityRatchet
           problem(:unused_waiver, waiver.key, "waiver is no longer needed; delete it", blocking: false)
         end
       end
-    end
-
-    def invalid_waiver_reason(waiver)
-      return "waiver is missing owner/reason/expires" if incomplete?(waiver)
-      return nil unless waiver.expires > today + MAX_WAIVER_DAYS
-
-      "waiver expiry #{waiver.expires} is more than #{MAX_WAIVER_DAYS} days out"
-    end
-
-    # `owner: ""` is not an owner and `reason: ""` is not a reason. Accepting
-    # them would leave the field technically present and the accountability the
-    # waiver exists to create entirely absent — a blank waiver silently skips
-    # the entity in #measurement_problems, which is the strongest thing this
-    # tool can do for you, handed out for free.
-    def incomplete?(waiver)
-      waiver.expires.nil? ||
-        [ waiver.key, waiver.owner, waiver.reason ].any? { |field| !field.is_a?(String) || field.strip.empty? }
     end
 
     def measurement_problems
@@ -502,9 +528,23 @@ module ComplexityRatchet
     # Keys present in the measurement but absent from the baseline are NOT
     # added: adding them is what --verify-baseline exists to reject. They are
     # returned so the CLI can point at the real fix.
-    def regenerate(baseline, actual)
+    # Returns the tightened baseline plus the keys that are new debt.
+    #
+    # A live waiver is not new debt — it is debt that has already been argued
+    # for, named an owner, and given an expiry. Counting it here made the
+    # documented refactor workflow unrunnable: --check passed on the waiver
+    # while --regenerate wrote the improved baseline and then exited 1, telling
+    # you to waive an entity that was waived on the line above. Verified on this
+    # repo before the fix — `--check` green, `--regenerate` exit 1 on the same
+    # two keys.
+    #
+    # Only *live* waivers are subtracted. An expired or malformed one is a
+    # blocking problem in Check, so honouring it here would let --regenerate
+    # exit 0 on something CI rejects.
+    def regenerate(baseline, actual, waivers: [], today: Date.today)
       updated = baseline.filter_map { |key, _| [ key, actual[key] ] if actual.key?(key) }.to_h
-      [ updated, actual.keys - baseline.keys ]
+      live = waivers.select { |waiver| waiver.live?(today) }.map(&:key)
+      [ updated, actual.keys - baseline.keys - live ]
     end
 
     private

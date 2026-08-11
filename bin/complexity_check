@@ -98,7 +98,9 @@ when :seed
   puts "Seeded #{ComplexityRatchet::BASELINE_PATH} with #{actual.size} entities."
 when :regenerate
   baseline = ComplexityRatchet.load_baseline(BASELINE)
-  updated, unrecorded = ComplexityRatchet.regenerate(baseline, actual)
+  updated, unrecorded = ComplexityRatchet.regenerate(
+    baseline, actual, waivers: ComplexityRatchet.load_waivers(WAIVERS)
+  )
   ComplexityRatchet.dump_baseline(BASELINE, updated)
   puts "Baseline: #{baseline.size} -> #{updated.size} entities."
   unless unrecorded.empty?

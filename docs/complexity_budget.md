@@ -59,6 +59,13 @@ The rules:
    non-blank owner, a non-blank reason, and an expiry no more than 90 days out.
    An expired or blank-field waiver fails CI.
 
+A waived entity stays out of the baseline — the waiver governs it, and it is
+meant to expire rather than settle in. `--regenerate` therefore leaves waived
+keys alone instead of reporting them as new debt, so rule 3 stays runnable while
+a waiver is open. Only a *live* waiver counts: an expired or malformed one is
+reported by `--regenerate` exactly as `--check` blocks it, so the two commands
+cannot disagree about whether a PR is green.
+
 Rule 5 exists because rule 4 alone is not enough, and the gap is not obvious:
 raising a `Max` makes RuboCop stop emitting the offenses that cop held,
 `--regenerate` then deletes their baseline entries, and a deletion is what a

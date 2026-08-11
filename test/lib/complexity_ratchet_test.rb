@@ -160,6 +160,65 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     # not a scope's range keeps resolving to something rather than to nil.
     assert_equal "Sample#run[block:each]", path_for(source, 3)
   end
+
+  # `-> do ... end` is a LambdaNode, not a CallNode carrying a block, so the
+  # visitor never reached it and every arrow lambda fell back to its source
+  # line — which reads `-> do` for all of them.
+  test "arrow lambdas are entities, and siblings do not share a key" do
+    source = <<~RUBY
+      class Sample
+        HANDLERS = [
+          -> do
+            1
+          end,
+          -> do
+            2
+          end
+        ].freeze
+      end
+    RUBY
+
+    assert_equal "Sample[lambda]", path_for(source, 3, 5)
+    assert_equal "Sample[lambda](2)", path_for(source, 6, 8)
+  end
+
+  # A lambda is a scope like any other: things nested inside it must carry it in
+  # their path, or a method-shaped body inside a lambda keys as if it were a
+  # sibling of the lambda.
+  test "scopes nested inside a lambda carry it in their key" do
+    source = <<~RUBY
+      class Sample
+        def run
+          -> do
+            items.each do |i|
+              i
+            end
+          end
+        end
+      end
+    RUBY
+
+    assert_equal "Sample#run[lambda][block:each]", path_for(source, 4, 6)
+  end
+
+  # `lambda { }` and `proc { }` are ordinary calls with blocks and were already
+  # covered; pinning them keeps the new node type from being mistaken for the
+  # only way to write one.
+  test "lambda and proc written as method calls keep their call-shaped keys" do
+    source = <<~RUBY
+      class Sample
+        A = lambda do
+          1
+        end
+        B = proc do
+          2
+        end
+      end
+    RUBY
+
+    assert_equal "Sample[block:lambda]", path_for(source, 2, 4)
+    assert_equal "Sample[block:proc]", path_for(source, 5, 7)
+  end
 end
 
 class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
@@ -293,6 +352,43 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
 
     inner_only = result.slice("sample.rb | Metrics/BlockLength | Sample#run[block:each]")
     check = ComplexityRatchet::Check.new(actual: result, baseline: inner_only)
+
+    refute_predicate check, :pass?
+    assert_equal :new_offense, check.blocking_problems.sole.kind
+  end
+
+  # The third shape of the same hiding place, and the worst of them: the
+  # fallback key for an arrow lambda is the text of its opening line, which is
+  # `-> do` for every lambda ever written. A whole table of them folded to one
+  # key regardless of nesting, file position or what they contain. Verified
+  # against real RuboCop output before the fix — two 80-line lambdas in one
+  # array produced `{"… | Metrics/BlockLength | ~-> do" => 80}`.
+  test "an arrow lambda does not hide behind another arrow lambda" do
+    File.write(File.join(@dir, "sample.rb"), <<~RUBY)
+      class Sample
+        HANDLERS = [
+          -> do
+            1
+          end,
+          -> do
+            2
+          end
+        ].freeze
+      end
+    RUBY
+
+    result = fold([
+      offense("Metrics/BlockLength", "Block has too many lines. [90/70]", 3, 5),
+      offense("Metrics/BlockLength", "Block has too many lines. [80/70]", 6, 8)
+    ])
+
+    assert_equal({
+      "sample.rb | Metrics/BlockLength | Sample[lambda]" => 90,
+      "sample.rb | Metrics/BlockLength | Sample[lambda](2)" => 80
+    }, result)
+
+    first_only = result.slice("sample.rb | Metrics/BlockLength | Sample[lambda]")
+    check = ComplexityRatchet::Check.new(actual: result, baseline: first_only)
 
     refute_predicate check, :pass?
     assert_equal :new_offense, check.blocking_problems.sole.kind
@@ -620,6 +716,67 @@ class ComplexityRatchetRegenerateTest < ActiveSupport::TestCase
     updated, unrecorded = ComplexityRatchet.regenerate({}, { KEY => 30 })
 
     assert_empty updated
+    assert_equal [ KEY ], unrecorded
+  end
+
+  TODAY = Date.new(2026, 8, 11)
+
+  def waiver(key: KEY, owner: "@sh1nj1", reason: "because", expires: TODAY + 30)
+    ComplexityRatchet::Waiver.new(key: key, owner: owner, reason: reason, expires: expires)
+  end
+
+  # --check honours a live waiver, so --regenerate has to as well. It did not:
+  # the command wrote the tightened baseline and then exited 1, telling you to
+  # waive an entity that was already waived. That made the documented refactor
+  # workflow unrunnable for as long as any waiver existed.
+  test "a live waiver is not new debt, so an unrelated refactor can regenerate" do
+    baseline = { OTHER => 40 }
+    actual = { OTHER => 32, KEY => 30 }
+
+    updated, unrecorded = ComplexityRatchet.regenerate(
+      baseline, actual, waivers: [ waiver ], today: TODAY
+    )
+
+    assert_equal({ OTHER => 32 }, updated)
+    assert_empty unrecorded
+
+    # And the two commands agree about it.
+    assert_predicate ComplexityRatchet::Check.new(
+      actual: actual, baseline: updated, waivers: [ waiver ], today: TODAY
+    ), :pass?
+  end
+
+  # Honouring a dead waiver would be the mirror-image bug: --regenerate exits 0
+  # on debt that Check blocks, so CI fails with the workflow reporting success.
+  test "an expired waiver does not suppress the debt it used to cover" do
+    _updated, unrecorded = ComplexityRatchet.regenerate(
+      {}, { KEY => 30 }, waivers: [ waiver(expires: TODAY - 1) ], today: TODAY
+    )
+
+    assert_equal [ KEY ], unrecorded
+  end
+
+  test "a blank-owner waiver does not suppress the debt it names" do
+    _updated, unrecorded = ComplexityRatchet.regenerate(
+      {}, { KEY => 30 }, waivers: [ waiver(owner: "  ") ], today: TODAY
+    )
+
+    assert_equal [ KEY ], unrecorded
+  end
+
+  test "a waiver past the expiry cap does not suppress the debt it names" do
+    _updated, unrecorded = ComplexityRatchet.regenerate(
+      {}, { KEY => 30 }, waivers: [ waiver(expires: TODAY + 365) ], today: TODAY
+    )
+
+    assert_equal [ KEY ], unrecorded
+  end
+
+  test "a waiver for some other entity leaves new debt visible" do
+    _updated, unrecorded = ComplexityRatchet.regenerate(
+      {}, { KEY => 30 }, waivers: [ waiver(key: OTHER) ], today: TODAY
+    )
+
     assert_equal [ KEY ], unrecorded
   end
 end
