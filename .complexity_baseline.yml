@@ -181,7 +181,7 @@ engines/collavre/app/controllers/concerns/collavre/comments/batch_operations.rb:
     Collavre::Comments::BatchOperations#merge: 41.4
 engines/collavre/app/controllers/concerns/collavre/users_controller/ai_user_management.rb:
   Metrics/AbcSize:
-    Collavre::UsersController::AiUserManagement#create_ai: 65.15
+    Collavre::UsersController::AiUserManagement#create_ai: 63.19
     Collavre::UsersController::AiUserManagement#update_ai: 53.68
   Metrics/MethodLength:
     Collavre::UsersController::AiUserManagement#create_ai: 36
@@ -331,7 +331,7 @@ engines/collavre/app/models/collavre/creative/realtime_broadcastable.rb:
     Collavre::Creative::RealtimeBroadcastable#broadcast_node_payload: 28
 engines/collavre/app/models/collavre/user.rb:
   Metrics/ClassLength:
-    Collavre::User: 300
+    Collavre::User: 323
 engines/collavre/app/services/collavre/agent_provisioning/archive.rb:
   Metrics/AbcSize:
     Collavre::AgentProvisioning::Archive::<<self#build: 40.36
