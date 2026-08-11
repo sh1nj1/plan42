@@ -91,7 +91,7 @@ The desktop release embeds one Apple-Silicon Node runtime and one exact
 published `cli-openai-proxy` version. It does not use Homebrew, a global npm
 install, or the user's `node` binary at runtime.
 
-The release job supplies all of these build inputs:
+For a reproducible release build, supply the official archive and its checksum:
 
 ```bash
 CLI_OPENAI_PROXY_VERSION=0.1.0
@@ -104,6 +104,12 @@ tools/desktop-app/scripts/build-macos.sh
 its supplied SHA-256, requires a Darwin ARM64 runtime, then resolves and locks
 the exact npm package before `npm ci` installs it. The generated lockfile keeps
 the resolved tarball integrity values inside the signed application bundle.
+
+For a local DMG build, no Node runtime environment variables are required. The
+script automatically bundles the Apple-Silicon Node installation found on
+`PATH`; it resolves Homebrew and version-manager symlinks before copying only
+that Node runtime. Set `NODE_RUNTIME_DIR` to override discovery, or set both
+`NODE_RUNTIME_URL` and `NODE_RUNTIME_SHA256` to use a verified archive.
 
 Tauri exposes internal setup commands for the first-run wizard:
 
@@ -175,10 +181,12 @@ export APPLE_SIGNING_IDENTITY='Developer ID Application: Example, Inc. (TEAMID)'
 export APPLE_ID='releases@example.com'
 export APPLE_APP_SPECIFIC_PASSWORD='xxxx-xxxx-xxxx-xxxx'
 export APPLE_TEAM_ID='TEAMID'
-export NODE_RUNTIME_URL='https://nodejs.org/dist/v<node-version>/node-v<node-version>-darwin-arm64.tar.xz'
-export NODE_RUNTIME_SHA256='<official-node-sha256>'
 script/release-desktop.sh
 ```
+
+The release script defaults to the Apple-Silicon Node runtime found on `PATH`.
+To pin the runtime archive, set both `NODE_RUNTIME_URL` and
+`NODE_RUNTIME_SHA256` before running it.
 
 The Apple signing identity and App Store app-specific password must be stored
 only in the protected release environment or the release operator's keychain;
