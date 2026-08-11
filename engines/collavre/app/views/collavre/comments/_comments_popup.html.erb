@@ -6,6 +6,7 @@
 <% onboarding_creative = local_assigns[:onboarding_creative] %>
 <div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics comments--contexts comments--drop-trigger share-modal" class="popup-box"
      data-creative-path-template="<%= creative_path('__CREATIVE_ID__') %>"
+     data-user-search-url="<%= search_users_path %>"
      data-fullscreen="<%= fullscreen %>"
      data-docked="<%= docked %>"
      data-docked-empty-text="<%= t('collavre.creatives.workspace.select_chat') %>"

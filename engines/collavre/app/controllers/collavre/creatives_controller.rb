@@ -369,12 +369,18 @@ module Collavre
     end
 
     def record_onboarding_progress(creative, previous_description:, previous_progress:)
+      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      session = Onboarding::Session.for_user(Current.user)
+      return unless session
+
       if creative.progress != previous_progress
         Onboarding::ProgressTracker.record(
           user: Current.user,
           event: :progress_changed,
           creative: creative,
-          before_progress: previous_progress
+          before_progress: previous_progress,
+          session: session
         )
       end
       return if creative.description == previous_description
@@ -383,7 +389,8 @@ module Collavre
         user: Current.user,
         event: :description_changed,
         creative: creative,
-        before_description: previous_description
+        before_description: previous_description,
+        session: session
       )
     end
 

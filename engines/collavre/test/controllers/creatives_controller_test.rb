@@ -325,6 +325,53 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller='workspace-tree'][data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
     assert_select "#creatives[data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
     assert_select "#comments-popup[data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
+    assert_select "#comments-popup[data-user-search-url='/collavre/users/search']"
+  end
+
+  test "completed users skip onboarding progress checks for Creative updates" do
+    user = users(:one)
+    user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: Time.current)
+    creative = creatives(:root_parent)
+
+    Current.set(user: user) do
+      Collavre::Onboarding::Session.stub(:for_user, ->(_requested_user) { flunk("should not load onboarding session") }) do
+        Collavre::CreativesController.new.send(
+          :record_onboarding_progress,
+          creative,
+          previous_description: "Earlier description",
+          previous_progress: creative.progress - 0.1
+        )
+      end
+    end
+  end
+
+  test "Creative updates reuse one onboarding session for all changed fields" do
+    user = users(:one)
+    user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: nil)
+    creative = creatives(:root_parent)
+    session = Object.new
+    session_loads = 0
+    recorded_sessions = []
+
+    Current.set(user: user) do
+      Collavre::Onboarding::Session.stub(:for_user, ->(requested_user) {
+        session_loads += 1
+        assert_equal user, requested_user
+        session
+      }) do
+        Collavre::Onboarding::ProgressTracker.stub(:record, ->(**arguments) { recorded_sessions << arguments.fetch(:session) }) do
+          Collavre::CreativesController.new.send(
+            :record_onboarding_progress,
+            creative,
+            previous_description: "Earlier description",
+            previous_progress: creative.progress - 0.1
+          )
+        end
+      end
+    end
+
+    assert_equal 1, session_loads
+    assert_equal [ session, session ], recorded_sessions
   end
 
   test "workspace breadcrumb root and ancestor links advance browser history" do
