@@ -182,6 +182,18 @@ is `Module#autoload` and a module receiver is its ordinary form:
 `Collavre.autoload :Notion, "collavre_notion/foo"` registers the constant and
 loads that file on first reference.
 
+**Naming** covers a satellite class written into a string literal:
+`class_name: "CollavreNotion::NotionAccount"`, `"CollavreGithub::Account".constantize`,
+`const_get`, or an STI `type` value inside a SQL heredoc. Rails resolves all of
+them to the real class at run time, and the core engine breaks when the satellite
+renames it — but none produce a `CONSTANT` token, a gemspec entry, or a require.
+The check is deliberately not keyed on the API that consumes the string:
+enumerating `class_name` / `constantize` / `const_get` / `serialize` is the same
+losing game that produced four rounds of misses on the loader check. A satellite
+class name in a string literal in core code is the violation, whatever reads it
+afterwards. Comments lex as `COMMENT` rather than `STRING_CONTENT`, so prose
+about an engine is still fine.
+
 **What gets scanned** is read from `collavre.gemspec`'s own file list, plus the
 gemspec itself, filtered to `.rb` / `.rake` / `.erb` / `Rakefile`. It is not a
 hand-written glob: the first version globbed `{app,lib,config}/**/*.{rb,erb}`
@@ -190,11 +202,13 @@ then `db/` (154 files) and the `Rakefile`. A glob and a packaging manifest
 maintained separately will drift. Reading the manifest means whatever the engine
 ships is scanned by construction, including directories added later.
 
-**`KNOWN_VIOLATIONS`** records the one pre-existing reference: a 2026-01
-migration encrypting OAuth tokens reaches `CollavreGithub::Account` and
-`CollavreNotion::NotionAccount`, guarded by `defined?` so it runs on installs
-without those engines. A migration that has run in production cannot be edited,
-so it is recorded rather than fixed — but recording is not amnesty: a separate
+**`KNOWN_VIOLATIONS`** records the two pre-existing references, both migrations.
+The 2026-01 OAuth token encryption reaches `CollavreGithub::Account` and
+`CollavreNotion::NotionAccount` by constant, guarded by `defined?` so it runs on
+installs without those engines; the 2026-05 dismissed-at backfill matches an STI
+`type = 'CollavreGithub::GithubPrChannel'` inside its SQL. A migration that has
+run in production cannot be edited, so both are recorded rather than fixed — but
+recording is not amnesty: a separate
 test asserts each entry is *still* a real violation, so when the migration is
 squashed away the stale entry fails instead of rotting into a blind spot.
 

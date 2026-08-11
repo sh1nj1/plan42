@@ -45,18 +45,28 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # whatever else shares the line.
   ARGUMENT_TOKENS = %i[PARENTHESIS_LEFT SYMBOL_BEGIN CONSTANT IDENTIFIER COMMA STRING_BEGIN].freeze
 
+  # A satellite class named inside a string is a dependency too — Rails
+  # resolves `class_name:`, `constantize` and an STI `type` value to the real
+  # constant at run time, and the core engine breaks if the satellite renames
+  # it. Matched anywhere inside the literal rather than only as the whole
+  # string, because the live case in this repo is an STI type inside a SQL
+  # heredoc. Comments lex as COMMENT, not STRING_CONTENT, so prose about an
+  # engine is still not a violation.
+  SATELLITE_IN_STRING = /\b(#{SATELLITE_CONSTANTS.keys.join('|')})\b/
+
   RUBY_FILE = /\.(rb|rake|erb)\z/
 
-  # One core migration already reaches satellites, deliberately and behind
-  # `defined?` guards, and a migration that has run in production cannot be
-  # edited. Recording it is the honest option: narrowing the scan to hide it
-  # would also hide every migration written from here on.
+  # Two core migrations already reach satellites — one by constant behind
+  # `defined?` guards, one by STI type string — and a migration that has run in
+  # production cannot be edited. Recording them is the honest option: narrowing
+  # the scan to hide them would also hide every migration written from here on.
   #
   # Entries are asserted below to still be real violations, so a stale one
   # fails the suite instead of quietly granting permanent amnesty — the same
   # rule the complexity baseline follows.
   KNOWN_VIOLATIONS = {
-    "engines/collavre/db/migrate/20260120045354_encrypt_oauth_tokens.rb" => %w[CollavreGithub CollavreNotion]
+    "engines/collavre/db/migrate/20260120045354_encrypt_oauth_tokens.rb" => %w[CollavreGithub CollavreNotion],
+    "engines/collavre/db/migrate/20260527000100_backfill_dismissed_at_for_legacy_detached_channels.rb" => %w[CollavreGithub]
   }.freeze
 
   test "satellite engines exist to be checked" do
@@ -104,6 +114,34 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   test "detector ignores the core engine's own constants" do
     assert_empty constants_in("Collavre::Creative.first")
+  end
+
+  # Rails resolves a class from a string in several places, and none of them
+  # leave a CONSTANT token behind. All three forms below are live Rails idiom.
+  test "detector flags a satellite class named in a string" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ satellite ], constant_strings_in(%(belongs_to :account, class_name: "#{satellite}::Account"))
+    assert_equal [ satellite ], constant_strings_in(%("#{satellite}::Account".constantize))
+    assert_equal [ satellite ], constant_strings_in(%(Object.const_get("#{satellite}")))
+  end
+
+  # The live case in this repo: an STI type inside a SQL heredoc, which lexes as
+  # one STRING_CONTENT holding the whole query. Matching only whole-string
+  # constants would miss it.
+  test "detector flags a satellite class named inside a heredoc" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    source = "execute <<~SQL\n  UPDATE channels SET x = 1 WHERE type = '#{satellite}::PrChannel'\nSQL\n"
+
+    assert_equal [ satellite ], constant_strings_in(source)
+  end
+
+  test "string detector ignores comments and the core engine's own constants" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_empty constant_strings_in("# see #{satellite}::Account for the pattern")
+    assert_empty constant_strings_in(%("Collavre::Creative"))
+    assert_empty constant_strings_in(%("#{satellite}Extra::Account"))
   end
 
   test "detector flags a require of a satellite engine" do
@@ -204,8 +242,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       full = Rails.root.join(path)
       assert File.file?(full), "#{path} is recorded in KNOWN_VIOLATIONS but no longer exists — delete the entry"
 
-      found = constants_in(File.read(full))
-      assert_equal constants.sort, found.sort,
+      source = File.read(full)
+      found = (constants_in(source) | constant_strings_in(source)).sort
+      assert_equal constants.sort, found,
         "#{path} no longer references exactly #{constants.join(', ')} — update or delete its KNOWN_VIOLATIONS entry"
     end
   end
@@ -238,6 +277,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     (constants_in(ruby) - known).map { |constant|
       "  #{relative(path)} references #{constant} (engines/#{SATELLITE_CONSTANTS[constant]})"
+    } + (constant_strings_in(ruby) - known).map { |constant|
+      "  #{relative(path)} names #{constant} in a string (engines/#{SATELLITE_CONSTANTS[constant]})"
     } + requires_in(ruby).map { |feature|
       "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
     }
@@ -253,6 +294,25 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       .map(&:value)
       .uniq
       .select { |value| SATELLITE_CONSTANTS.key?(value) }
+  end
+
+  # `belongs_to :account, class_name: "CollavreNotion::NotionAccount"` compiles
+  # to a CONSTANT token nowhere, declares nothing in the gemspec, and requires
+  # no file — yet the association resolves the class at run time and the core
+  # engine breaks when the satellite renames it.
+  #
+  # Deliberately not keyed on the API that consumes the string. `class_name`,
+  # `constantize`, `const_get`, `safe_constantize`, `serialize` and an STI `type`
+  # column all resolve one, and enumerating them is the same losing game that
+  # produced four rounds of misses on the loader check. A satellite class name
+  # written into a string literal in core code is the violation, whatever reads
+  # it afterwards.
+  def constant_strings_in(source)
+    tokens(source)
+      .select { |token| token.type == :STRING_CONTENT }
+      .flat_map { |token| token.value.scan(SATELLITE_IN_STRING) }
+      .flatten
+      .uniq
   end
 
   # A constant is not the only way to reach a satellite. Every engine is on the
