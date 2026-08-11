@@ -64,17 +64,6 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # import itself rather than by grepping for the engine name, so a comment or
   # a string that mentions an engine is not a violation — the same rule the
   # Ruby loader detector follows, for the same reason.
-  # A template literal without interpolation is static just like a quoted
-  # string. Interpolated templates stay out: their resolved path is not known
-  # to this source-only check.
-  JS_SPECIFIER = "(?<quote>[\"'`])(?<specifier>[^\"'`$]+)\\k<quote>"
-  JS_IMPORTS = [
-    /\bimport\s+(?:[\w*{}\n\r\t ,$]+?\s+from\s*)?#{JS_SPECIFIER}/m,  # import x from "y" / import "y"
-    /\bexport\s+[\w*{}\n\r\t ,$]+?\s+from\s*#{JS_SPECIFIER}/m,       # export { x } from "y"
-    /\brequire\s*\(\s*#{JS_SPECIFIER}/,                                  # require("y")
-    /\bimport\s*\(\s*#{JS_SPECIFIER}/                                    # import("y") — dynamic
-  ].freeze
-
   # Two core migrations already reach satellites — one by constant behind
   # `defined?` guards, one by STI type string — and a migration that has run in
   # production cannot be edited. Recording them is the honest option: narrowing
@@ -405,6 +394,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(import Thing from "#{satellite}_stub/thing";))
     assert_empty js_imports_in(%(import(`#{satellite}/\${name}`);))
     assert_empty js_imports_in(%(import Thing from "./components/thing";))
+    assert_empty js_imports_in(%(// import "#{satellite}/thing"\n))
+    assert_empty js_imports_in(%(/* import "#{satellite}/thing" */))
+    assert_empty js_imports_in(%(const example = 'import "#{satellite}/thing";))
   end
 
   # The failure mode a file-level waiver has: it was written for one reference
@@ -505,9 +497,105 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # or by package name (`collavre_notion/thing`). #satellite_for already walks
   # every segment of the cleaned path, so neither depth nor spelling matters.
   def js_imports_in(source)
-    JS_IMPORTS.flat_map { |pattern| source.to_enum(:scan, pattern).map { Regexp.last_match[:specifier] } }
+    js_specifiers(js_tokens(source))
       .select { |specifier| satellite_for(specifier) }
       .uniq
+  end
+
+  # JS comments and strings can contain a syntactically convincing `import`
+  # example. Tokenising the small grammar we need keeps those examples out
+  # without depending on a build-time JavaScript parser in a Ruby test.
+  def js_tokens(source)
+    tokens = []
+    cursor = 0
+
+    while (character = source[cursor])
+      case character
+      when /\s/
+        cursor += 1
+      when "/"
+        if source[cursor + 1] == "/"
+          cursor = source.index("\n", cursor) || source.length
+        elsif source[cursor + 1] == "*"
+          cursor = (source.index("*/", cursor + 2) || source.length - 2) + 2
+        else
+          tokens << [ :punctuation, character ]
+          cursor += 1
+        end
+      when "'", "\"", "`"
+        token, cursor = js_string_token(source, cursor)
+        tokens << token
+      when /[A-Za-z_$]/
+        finish = cursor + 1
+        finish += 1 while source[finish]&.match?(/[A-Za-z0-9_$]/)
+        tokens << [ :word, source[cursor...finish] ]
+        cursor = finish
+      else
+        tokens << [ :punctuation, character ]
+        cursor += 1
+      end
+    end
+
+    tokens
+  end
+
+  def js_string_token(source, cursor)
+    quote = source[cursor]
+    static = true
+    value = +""
+    cursor += 1
+
+    while (character = source[cursor])
+      if character == "\\"
+        value << character << source[cursor + 1].to_s
+        cursor += 2
+      elsif character == quote
+        return [ [ static ? :string : :dynamic_string, value ], cursor + 1 ]
+      else
+        static = false if quote == "`" && character == "$" && source[cursor + 1] == "{"
+        value << character
+        cursor += 1
+      end
+    end
+
+    [ [ :dynamic_string, value ], cursor ]
+  end
+
+  def js_specifiers(tokens)
+    tokens.each_with_index.filter_map do |(kind, value), index|
+      next unless kind == :word
+
+      case value
+      when "require"
+        js_call_specifier(tokens, index)
+      when "import"
+        js_bare_import_specifier(tokens, index) || js_call_specifier(tokens, index) || js_from_specifier(tokens, index + 1)
+      when "export"
+        js_from_specifier(tokens, index + 1)
+      end
+    end
+  end
+
+  def js_call_specifier(tokens, index)
+    return unless tokens[index + 1] == [ :punctuation, "(" ]
+    return unless tokens[index + 2]&.first == :string
+
+    tokens[index + 2].last
+  end
+
+  def js_bare_import_specifier(tokens, index)
+    tokens[index + 1].last if tokens[index + 1]&.first == :string
+  end
+
+  def js_from_specifier(tokens, start)
+    tokens.drop(start).each_with_index do |(kind, value), offset|
+      break if kind == :punctuation && value == ";"
+      next unless kind == :word && value == "from" && tokens[start + offset + 1]&.first == :string
+
+      return tokens[start + offset + 1].last
+    end
+
+    nil
   end
 
   # Multiset subtraction, not Array#-. `found - known` removes *every*
