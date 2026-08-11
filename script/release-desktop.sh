@@ -237,6 +237,16 @@ write_checksum() {
   ) > "$checksum"
 }
 
+cleanup_mounted_dmg() {
+  local mount_dir="$1"
+  local attached="$2"
+
+  if [[ "$attached" == "1" ]]; then
+    hdiutil detach "$mount_dir" -quiet 2>/dev/null || true
+  fi
+  rmdir "$mount_dir" 2>/dev/null || true
+}
+
 release_commit_message() {
   local version="$1"
   printf 'chore(desktop): release v%s' "$version"
@@ -299,6 +309,11 @@ push_release_refs() {
     refs=(HEAD:main "${refs[@]}")
   fi
   git push --atomic origin "${refs[@]}"
+}
+
+ensure_main_matches_origin() {
+  [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || \
+    die "local main must exactly match origin/main before creating a release"
 }
 
 publish_release() {
@@ -418,16 +433,18 @@ build_notarized_dmg() {
   xcrun stapler staple "$artifact"
   xcrun stapler validate "$artifact"
 
-  local mount_dir
+  local mount_dir dmg_attached=0
   mount_dir="$(mktemp -d)"
-  trap 'hdiutil detach "$mount_dir" -quiet 2>/dev/null || true; rmdir "$mount_dir" 2>/dev/null || true' RETURN
-  hdiutil attach "$artifact" -readonly -nobrowse -mountpoint "$mount_dir" >/dev/null
-  [[ -d "$mount_dir/Collavre Desktop.app" ]] || die "DMG does not contain Collavre Desktop.app"
-  codesign --verify --deep --strict --verbose=2 "$mount_dir/Collavre Desktop.app"
-  spctl --assess --type execute --verbose=4 "$mount_dir/Collavre Desktop.app"
-  hdiutil detach "$mount_dir" -quiet
-  rmdir "$mount_dir"
-  trap - RETURN
+  # Validate in a subshell so its EXIT trap also runs when set -e aborts a
+  # failed app-presence, signature, or Gatekeeper check.
+  (
+    trap 'cleanup_mounted_dmg "$mount_dir" "$dmg_attached"' EXIT
+    hdiutil attach "$artifact" -readonly -nobrowse -mountpoint "$mount_dir" >/dev/null
+    dmg_attached=1
+    [[ -d "$mount_dir/Collavre Desktop.app" ]] || die "DMG does not contain Collavre Desktop.app"
+    codesign --verify --deep --strict --verbose=2 "$mount_dir/Collavre Desktop.app"
+    spctl --assess --type execute --verbose=4 "$mount_dir/Collavre Desktop.app"
+  )
 
   checksum="$ARTIFACT_DIR/Collavre-Desktop_${version}_aarch64.dmg.sha256"
   write_checksum "$artifact" "$checksum"
@@ -448,6 +465,7 @@ main() {
   git fetch origin main --tags
   if [[ -z "$resume_version" ]]; then
     git pull --ff-only origin main
+    ensure_main_matches_origin
   fi
 
   current_version="$(desktop_version)"

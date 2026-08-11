@@ -135,6 +135,45 @@ git -C "$remote_clone" push --quiet origin main
   git fetch --quiet origin main
   git merge-base --is-ancestor HEAD origin/main
 )
+(
+  cd "$remote_clone"
+  git fetch --quiet origin main
+  ensure_main_matches_origin
+  git commit --quiet --allow-empty -m "fix: local-only change"
+  if (ensure_main_matches_origin); then
+    echo "local main ahead of origin/main was accepted" >&2
+    exit 1
+  fi
+)
+
+dmg_detach_log="$fixture_dir/dmg-detach.log"
+hdiutil() {
+  printf '%s\n' "$*" >> "$dmg_detach_log"
+}
+mount_dir="$fixture_dir/mounted-dmg"
+mkdir "$mount_dir"
+cleanup_mounted_dmg "$mount_dir" 1
+[[ ! -d "$mount_dir" ]] || {
+  echo "mounted DMG directory was not removed" >&2
+  exit 1
+}
+assert_equal "detach $mount_dir -quiet" "$(<"$dmg_detach_log")"
+
+failed_mount_dir="$fixture_dir/failed-mounted-dmg"
+mkdir "$failed_mount_dir"
+if (
+  dmg_attached=1
+  trap 'cleanup_mounted_dmg "$failed_mount_dir" "$dmg_attached"' EXIT
+  false
+); then
+  echo "failed DMG verification was accepted" >&2
+  exit 1
+fi
+[[ ! -d "$failed_mount_dir" ]] || {
+  echo "failed DMG verification did not clean up the mount directory" >&2
+  exit 1
+}
+assert_equal "detach $failed_mount_dir -quiet" "$(tail -n 1 "$dmg_detach_log")"
 
 artifact_dir="$fixture_dir/artifacts"
 mkdir -p "$artifact_dir"
