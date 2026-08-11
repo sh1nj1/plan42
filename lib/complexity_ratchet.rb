@@ -403,7 +403,15 @@ module ComplexityRatchet
     # Without this, "just regenerate the baseline" would be a one-command way to
     # legalise any regression — the same hole that makes .rubocop_todo.yml
     # useless as a gate.
+    #
+    # `before` is nil when the base ref predates the baseline file, which is the
+    # bootstrap commit and has nothing to compare against. That is not a hole
+    # worth plugging: skipping the gate afterwards means deleting a 438-entry
+    # file, which is a reviewable event, whereas the path this actually closes —
+    # `--regenerate` to make CI green — is a single command.
     def verify_monotonic(before, after)
+      return [] if before.nil?
+
       after.filter_map do |key, value|
         recorded = before[key]
         if recorded.nil?

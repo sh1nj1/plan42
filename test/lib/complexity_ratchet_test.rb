@@ -309,6 +309,12 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
 
     assert_equal :baseline_addition, problem.kind
   end
+
+  test "a base ref that predates the baseline file has nothing to verify" do
+    # The bootstrap commit adds hundreds of entries at once; there is no prior
+    # baseline for them to be a regression against.
+    assert_empty ComplexityRatchet.verify_monotonic(nil, { KEY => 30 })
+  end
 end
 
 class ComplexityRatchetRegenerateTest < ActiveSupport::TestCase

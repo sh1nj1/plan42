@@ -49,20 +49,25 @@ def report(problems)
 end
 
 # --verify-baseline reads the baseline as it exists on the merge base, so it
-# only ever judges what this branch changed.
+# only ever judges what this branch changed. nil means the ref predates the
+# baseline file entirely.
 def baseline_at(ref)
   path = ComplexityRatchet::BASELINE_PATH
   out, _err, status = Open3.capture3("git", "show", "#{ref}:#{path}", chdir: ROOT)
-  # A branch that predates the baseline has nothing to loosen.
-  return {} unless status.success?
+  return nil unless status.success?
 
-  YAML.safe_load(out) || {}
+  ComplexityRatchet.flatten(YAML.safe_load(out) || {})
 end
 
 case options[:mode]
 when :verify
-  problems = ComplexityRatchet.verify_monotonic(baseline_at(options[:ref]),
-    ComplexityRatchet.load_baseline(BASELINE))
+  base = baseline_at(options[:ref])
+  if base.nil?
+    puts "#{options[:ref]} predates #{ComplexityRatchet::BASELINE_PATH} — nothing to verify."
+    exit 0
+  end
+
+  problems = ComplexityRatchet.verify_monotonic(base, ComplexityRatchet.load_baseline(BASELINE))
   if problems.empty?
     puts "Complexity baseline is unchanged or tightened relative to #{options[:ref]}."
     exit 0

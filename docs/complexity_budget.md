@@ -55,6 +55,14 @@ The rules:
    an owner, a reason, and an expiry no more than 90 days out. An expired waiver
    fails CI.
 
+Two caveats on rule 4. `--verify-baseline` passes when the base ref predates the
+baseline file, which is what lets the bootstrap commit land; the residual way
+around the gate is therefore to delete `.complexity_baseline.yml` and regenerate
+it, which is a several-hundred-line deletion in the diff. And a RuboCop upgrade
+that changes how a metric is computed shifts every value at once — that is what
+the `complexity-baseline-reset` PR label is for. Applying a label does not
+re-trigger CI, so re-run the `complexity` job after adding it.
+
 ### Why not `.rubocop_todo.yml`
 
 Because it does the opposite of what it looks like it does.
