@@ -182,6 +182,22 @@ is_prerelease() {
   [[ "${1%%+*}" == *-* ]]
 }
 
+stable_version() {
+  local version="${1%%+*}"
+  printf '%s\n' "${version%%-*}"
+}
+
+# A prerelease can be promoted to its matching stable version without a new
+# source commit, but only when the current HEAD is exactly that prerelease.
+can_promote_prerelease_at_head() {
+  local version="$1"
+  local tag="$2"
+
+  is_prerelease "$version" || return 1
+  [[ "$tag" == "${TAG_PREFIX}${version}" ]] || return 1
+  [[ "$(git rev-parse "$tag^{commit}")" == "$(git rev-parse HEAD)" ]]
+}
+
 # Git's version sort does not implement SemVer prerelease precedence (for
 # example, it can order 1.0.0-rc.1 ahead of 1.0.0). Select release tags using
 # the same comparator used for release-version validation instead.
@@ -478,7 +494,7 @@ main() {
   cd "$PROJECT_ROOT"
   check_prerequisites
 
-  local current_version previous_tag range bump suggested_version selected_version tag artifact resume_version=""
+  local current_version previous_tag range bump suggested_version selected_version tag artifact resume_version="" prerelease_promotion=0
   if (($#)); then
     [[ $# -eq 2 && "$1" == "--resume" ]] || die "usage: $0 [--resume VERSION]"
     resume_version="$2"
@@ -511,14 +527,23 @@ main() {
   if [[ -n "$previous_tag" ]]; then
     range="$previous_tag..HEAD"
     if [[ -z "$(git log --oneline "$range")" ]]; then
+      if [[ -z "$resume_version" ]] && can_promote_prerelease_at_head "$current_version" "$previous_tag"; then
+      prerelease_promotion=1
+      else
       die "no desktop changes since $previous_tag"
+      fi
     fi
   else
     range="HEAD"
   fi
   if [[ -z "$resume_version" ]]; then
-    bump="$(version_bump_level "$range")"
-    suggested_version="$(bump_version "$current_version" "$bump")"
+    if ((prerelease_promotion)); then
+      bump="prerelease promotion"
+      suggested_version="$(stable_version "$current_version")"
+    else
+      bump="$(version_bump_level "$range")"
+      suggested_version="$(bump_version "$current_version" "$bump")"
+    fi
 
     printf 'Current version: %s\n' "$current_version"
     printf 'Suggested version: %s (%s bump)\n' "$suggested_version" "$bump"
@@ -530,8 +555,13 @@ main() {
   if [[ -z "$resume_version" ]]; then
     git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "tag already exists locally: $tag"
     git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1 && die "tag already exists on origin: $tag"
-    version_advances "$selected_version" "$current_version" || \
+    if ((prerelease_promotion)); then
+      [[ "$selected_version" == "$suggested_version" ]] || \
+      die "unchanged prerelease source can only promote to $suggested_version"
+    else
+      version_advances "$selected_version" "$current_version" || \
       die "release version must advance current version $current_version"
+    fi
   fi
 
   printf '\nBundled source commits included in this release:\n'

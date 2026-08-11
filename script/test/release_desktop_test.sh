@@ -30,6 +30,7 @@ if is_prerelease "1.2.3" || is_prerelease "1.2.3+build-1"; then
   echo "stable version was treated as a prerelease" >&2
   exit 1
 fi
+assert_equal "1.2.3" "$(stable_version "1.2.3-rc.1+build.7")"
 assert_equal "-1" "$(semver_compare "1.2.3-alpha.2" "1.2.3-alpha.10")"
 assert_equal "-1" "$(semver_compare "1.2.3-beta.1" "1.2.3")"
 assert_equal "0" "$(semver_compare "1.2.3+build.1" "1.2.3+build.2")"
@@ -108,6 +109,27 @@ git -C "$repo_dir" tag -a desktop-v2.3.4-rc.1 -m "Collavre Desktop 2.3.4 RC"
   cd "$repo_dir"
   assert_equal "desktop-v2.3.4" "$(previous_release_tag)"
   assert_equal "desktop-v2.3.4-rc.1" "$(previous_release_tag desktop-v2.3.4)"
+)
+
+promotion_repo="$fixture_dir/promotion-repo"
+git clone --quiet "$repo_dir" "$promotion_repo"
+git -C "$promotion_repo" checkout --quiet main
+git -C "$promotion_repo" config user.name "Release Script Test"
+git -C "$promotion_repo" config user.email "release-script-test@example.test"
+git -C "$promotion_repo" commit --quiet --allow-empty -m "chore(desktop): release v2.3.5-rc.1"
+git -C "$promotion_repo" tag -a desktop-v2.3.5-rc.1 -m "Collavre Desktop 2.3.5 RC"
+(
+  cd "$promotion_repo"
+  can_promote_prerelease_at_head "2.3.5-rc.1" "desktop-v2.3.5-rc.1"
+  if can_promote_prerelease_at_head "2.3.5" "desktop-v2.3.5-rc.1"; then
+    echo "stable release was accepted as a prerelease promotion" >&2
+    exit 1
+  fi
+  git commit --quiet --allow-empty -m "fix: source change after release candidate"
+  if can_promote_prerelease_at_head "2.3.5-rc.1" "desktop-v2.3.5-rc.1"; then
+    echo "prerelease promotion was accepted after a source change" >&2
+    exit 1
+  fi
 )
 
 origin_dir="$fixture_dir/origin.git"
