@@ -2070,6 +2070,10 @@ pub fn run() {
             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
                 .title("Collavre Desktop")
                 .inner_size(1280.0, 860.0)
+                // WKWebView only delegates downloads when the shell registers a
+                // handler. Returning true accepts its suggested destination and
+                // filename, including downloads triggered by `<a download>`.
+                .on_download(|_, _| true)
                 .build()?;
 
             // Health-gate startup off the UI thread so the splash keeps animating.
