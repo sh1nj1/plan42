@@ -31,6 +31,15 @@ else
 fi
 export CARGO_TARGET_DIR="$TAURI_TARGET_DIR"
 
+# A custom target can live inside the source tree (for example, a relative
+# CARGO_TARGET_DIR). Exclude it from staging so a previous bundle's resource
+# copy is never embedded into the next application bundle.
+STAGING_EXCLUDES=()
+if [[ "$TAURI_TARGET_DIR" == "$APP_ROOT/"* ]]; then
+  TAURI_TARGET_STAGING_PATH="${TAURI_TARGET_DIR#"$APP_ROOT"/}"
+  STAGING_EXCLUDES+=(--exclude "/$TAURI_TARGET_STAGING_PATH/***")
+fi
+
 echo "[build-macos] 1/7 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
 
@@ -90,6 +99,7 @@ rsync -a --delete \
   --exclude 'config/credentials/*.key' \
   --exclude 'tools/desktop-app/staging' \
   --exclude 'tools/desktop-app/src-tauri/target' \
+  "${STAGING_EXCLUDES[@]}" \
   "$APP_ROOT/" "$STAGING/"
 
 # Rails creates runtime files below Rails.root/tmp when starting the server.
