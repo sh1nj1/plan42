@@ -407,6 +407,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(// import "#{satellite}/thing"\n))
     assert_empty js_imports_in(%(/* import "#{satellite}/thing" */))
     assert_empty js_imports_in(%(const example = 'import "#{satellite}/thing";))
+    assert_empty js_imports_in(%(const pattern = /import "#{satellite}\/thing"/;))
   end
 
   # The failure mode a file-level waiver has: it was written for one reference
@@ -538,6 +539,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
           cursor = source.index("\n", cursor) || source.length
         elsif source[cursor + 1] == "*"
           cursor = (source.index("*/", cursor + 2) || source.length - 2) + 2
+        elsif js_regex_start?(tokens)
+          token, cursor = js_regex_token(source, cursor)
+          tokens << token
         else
           tokens << [ :punctuation, character ]
           cursor += 1
@@ -557,6 +561,51 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
 
     tokens
+  end
+
+  # `/` is division or a regular-expression delimiter depending on its
+  # syntactic position. Only a delimiter can hide convincing import syntax, so
+  # consume a complete literal when the preceding token can start an
+  # expression. A slash after an operand remains punctuation; that preserves
+  # real code such as `value / import("collavre_slack/x")`.
+  def js_regex_start?(tokens)
+    previous = tokens.last
+    return true if previous.nil?
+    expression_starters = [ "(", "[", "{", ",", ":", ";", "=", "!", "?", "+", "-", "*", "%", "&", "|", "^", "~", "<", ">" ]
+    return true if previous.first == :punctuation && expression_starters.include?(previous.last)
+
+    previous == [ :word, "return" ] || previous == [ :word, "throw" ] || previous == [ :word, "case" ]
+  end
+
+  # A regex literal is not module syntax, even when it contains the exact text
+  # of an import. Handle escaped delimiters and character classes so the first
+  # slash in `/[/] import "collavre_slack/x"/` does not end it early.
+  def js_regex_token(source, cursor)
+    value = +"/"
+    cursor += 1
+    in_character_class = false
+
+    while (character = source[cursor])
+      value << character
+      if character == "\\"
+        value << source[cursor + 1].to_s
+        cursor += 2
+      elsif character == "["
+        in_character_class = true
+        cursor += 1
+      elsif character == "]"
+        in_character_class = false
+        cursor += 1
+      elsif character == "/" && !in_character_class
+        cursor += 1
+        cursor += 1 while source[cursor]&.match?(/[A-Za-z]/)
+        return [ [ :regex, value ], cursor ]
+      else
+        cursor += 1
+      end
+    end
+
+    [ [ :regex, value ], cursor ]
   end
 
   def js_string_token(source, cursor)
