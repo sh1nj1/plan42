@@ -156,4 +156,16 @@ describe('FormController - double submit on slow API', () => {
     pressEnter(controller.textareaTarget)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
+
+  test('comment creation preserves the engine mount prefix', () => {
+    container.querySelector('#comments-popup').dataset.creativePathTemplate = '/collavre/creatives/__CREATIVE_ID__'
+    const fetchSpy = jest.fn(() => new Promise(() => {}))
+    global.fetch = fetchSpy
+    controller.creativeId = '444'
+    controller.textareaTarget.value = 'hello mounted engine'
+
+    pressEnter(controller.textareaTarget)
+
+    expect(fetchSpy).toHaveBeenCalledWith('/collavre/creatives/444/comments', expect.objectContaining({ method: 'POST' }))
+  })
 })

@@ -122,4 +122,24 @@ describe("creative-tree-row parentId convention", () => {
     });
     delete window.Turbo;
   });
+
+  test("progress updates preserve the engine mount prefix", async () => {
+    const region = document.createElement("section");
+    region.dataset.creativePathTemplate = "/collavre/creatives/__CREATIVE_ID__";
+    document.body.appendChild(region);
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ progress: 1 }),
+    });
+    global.fetch = fetchSpy;
+    const el = await mountRow({
+      creativeId: "8",
+      progressHtml: '<button data-progress-toggle data-creative-id="8" data-new-progress="1"><input class="progress-toggle-checkbox" type="checkbox"></button>',
+    }, region);
+
+    el.querySelector("[data-progress-toggle]").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchSpy).toHaveBeenCalledWith("/collavre/creatives/8", expect.objectContaining({ method: "PATCH" }));
+  });
 });

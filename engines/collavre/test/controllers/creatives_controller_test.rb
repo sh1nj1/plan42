@@ -316,6 +316,16 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
   end
 
+  test "workspace action paths preserve the engine mount prefix" do
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id), env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :success
+    assert_select "[data-controller='workspace-tree'][data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
+    assert_select "#comments-popup[data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
+  end
+
   test "workspace breadcrumb root and ancestor links advance browser history" do
     ancestor = creatives(:unconvert_target)
     child = creatives(:unconvert_child_two)
