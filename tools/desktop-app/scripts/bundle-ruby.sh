@@ -54,6 +54,13 @@ export GEM_PATH="$VENDOR_DIR/bundle"
 
 echo "[bundle-ruby] $("$VENDORED_RUBY" -v)"
 
+# A release bundle must not retain platform gems from an earlier install: when
+# source-only resolution replaces one, its stale native extension can still be
+# staged and reintroduce an unavailable dependency. This directory is generated
+# output, so rebuild it deterministically for every desktop package.
+rm -rf "$VENDOR_DIR/bundle"
+mkdir -p "$VENDOR_DIR/bundle"
+
 # Install bundler into the vendored Ruby, then install the app's gems there.
 "$VENDORED_RUBY" -S gem install bundler --no-document
 
@@ -67,6 +74,10 @@ export BUNDLE_GEMFILE="$APP_ROOT/Gemfile"
 export BUNDLE_PATH="$VENDOR_DIR/bundle"
 export BUNDLE_WITHOUT="development:test:production"
 export BUNDLE_WITH="desktop"
+# Platform gems may contain prebuilt native extensions with paths from their
+# release builder. Compile them for this Ruby instead so relocation can bundle
+# every dependency from the local build environment.
+export BUNDLE_FORCE_RUBY_PLATFORM=true
 "$VENDORED_RUBY" -S bundle install --jobs 4
 
 # Native gem extensions are compiled after the initial Ruby relocation and keep
