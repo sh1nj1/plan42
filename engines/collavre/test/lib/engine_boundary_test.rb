@@ -38,7 +38,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
-  TEMPLATE_RENDER_OPTIONS = %w[template partial file].freeze
+  TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
 
   # A satellite class named inside a string is a dependency too — Rails
   # resolves `class_name:`, `constantize` and an STI `type` value to the real
@@ -340,6 +340,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       template_paths_in(%(render_to_string "#{satellite}/integrations/modal"))
     assert_equal [ "#{satellite}/integrations/modal" ],
       template_paths_in(%(render(partial: "#{satellite}/integrations/modal")))
+    assert_equal [ "#{satellite}/application" ],
+      template_paths_in(%(render layout: "#{satellite}/application"))
   end
 
   test "template detector ignores ordinary rendered data" do
