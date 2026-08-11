@@ -37,6 +37,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
+  TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
+  TEMPLATE_RENDER_OPTIONS = %w[template partial file].freeze
 
   # A satellite class named inside a string is a dependency too — Rails
   # resolves `class_name:`, `constantize` and an STI `type` value to the real
@@ -329,6 +331,23 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/thing" ], requires_in(%(load Pathname.new("#{satellite}/thing")))
   end
 
+  test "detector flags a satellite template rendered by core" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/integrations/modal" ],
+      template_paths_in(%(render template: "#{satellite}/integrations/modal"))
+    assert_equal [ "#{satellite}/integrations/modal" ],
+      template_paths_in(%(render_to_string "#{satellite}/integrations/modal"))
+    assert_equal [ "#{satellite}/integrations/modal" ],
+      template_paths_in(%(render(partial: "#{satellite}/integrations/modal")))
+  end
+
+  test "template detector ignores ordinary rendered data" do
+    satellite = SATELLITES.first
+
+    assert_empty template_paths_in(%(render json: { error: "#{satellite}/not_a_template" }))
+  end
+
   # Formatting was the recurring miss: parentheses moved the literal, and a call
   # split across lines put an IGNORED_NEWLINE where the old token walk stopped.
   # Reading the parsed arguments makes layout irrelevant, so these are all one
@@ -430,6 +449,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(<code>import "#{satellite}/thing"</code>), jsx: true)
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(<code>{import("#{satellite}/thing")}</code>), jsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(<code>{ready ? "}" : import("#{satellite}/thing")}</code>), jsx: true)
+  end
+
+  test "detector ignores an import method called on an object" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(registry.import("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(import("#{satellite}/template")))
   end
 
   # The failure mode a file-level waiver has: it was written for one reference
@@ -516,6 +544,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       "  #{relative(path)} #{phrasing} (engines/#{engine_for(name)})"
     } + requires_in(ruby).map { |feature|
       "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
+    } + template_paths_in(ruby).map { |template|
+      "  #{relative(path)} renders template \"#{template}\" (engines/#{satellite_for(template)})"
     }
   end
 
@@ -608,14 +638,46 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def jsx_expression_end(source, cursor)
     depth = 1
     cursor += 1
+    tokens = []
 
     while (character = source[cursor])
-      cursor += 2 and next if character == "\\"
-      depth += 1 if character == "{"
-      depth -= 1 if character == "}"
-      return cursor + 1 if depth.zero?
+      case character
+      when /\s/
+        cursor += 1
+      when "\"", "'", "`"
+        token, cursor = js_string_token(source, cursor)
+        tokens << token
+      when "/"
+        if source[cursor + 1] == "/"
+          cursor = source.index("\n", cursor) || source.length
+        elsif source[cursor + 1] == "*"
+          cursor = (source.index("*/", cursor + 2) || source.length - 2) + 2
+        elsif js_regex_start?(tokens)
+          token, cursor = js_regex_token(source, cursor)
+          tokens << token
+        else
+          tokens << [ :punctuation, character ]
+          cursor += 1
+        end
+      when /[A-Za-z_$]/
+        finish = cursor + 1
+        finish += 1 while source[finish]&.match?(/[A-Za-z0-9_$]/)
+        tokens << [ :word, source[cursor...finish] ]
+        cursor = finish
+      when "{"
+        tokens << [ :punctuation, character ]
+        depth += 1
+        cursor += 1
+      when "}"
+        depth -= 1
+        return cursor + 1 if depth.zero?
 
-      cursor += 1
+        tokens << [ :punctuation, character ]
+        cursor += 1
+      else
+        tokens << [ :punctuation, character ]
+        cursor += 1
+      end
     end
 
     cursor
@@ -760,6 +822,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       when "require"
         js_call_specifier(tokens, index)
       when "import"
+        next if tokens[index - 1] == [ :punctuation, "." ]
+
         js_bare_import_specifier(tokens, index) || js_call_specifier(tokens, index) || js_from_specifier(tokens, index + 1)
       when "export"
         js_from_specifier(tokens, index + 1)
@@ -940,6 +1004,41 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
       string_arguments(call).find { |feature| satellite_for(feature) }
     }.uniq
+  end
+
+  # A literal satellite template name is the view analogue of `require`: it
+  # resolves only while that engine is installed. Limit this to Rails' render
+  # APIs and their path-bearing options so an error string in `render json:`
+  # remains ordinary data rather than a false dependency.
+  def template_paths_in(source)
+    render_calls(Prism.parse(source).value).flat_map { |call|
+      template_arguments(call).select { |path| satellite_for(path) }
+    }.uniq
+  end
+
+  def render_calls(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    found << node if node.is_a?(Prism::CallNode) && TEMPLATE_RENDER_METHODS.include?(node.name.to_s)
+    node.compact_child_nodes.each { |child| render_calls(child, found) }
+    found
+  end
+
+  def template_arguments(call)
+    call.arguments&.arguments.to_a.flat_map do |argument|
+      case argument
+      when Prism::StringNode, Prism::InterpolatedStringNode
+        string_literals_in(argument)
+      when Prism::KeywordHashNode
+        argument.elements.flat_map do |association|
+          next [] unless association.is_a?(Prism::AssocNode)
+          next [] unless TEMPLATE_RENDER_OPTIONS.include?(association.key&.unescaped)
+
+          string_literals_in(association.value)
+        end
+      else []
+      end
+    end
   end
 
   def loader_calls(node, found = [])
