@@ -86,10 +86,10 @@ copy_external_dependency() {
   local dependency="$2"
   local destination
 
-  [[ "$dependency" = /* ]] || return
-  is_system_dependency "$dependency" && return
-  [[ "$dependency" == "$RUBY_PREFIX/"* ]] && return
-  [[ "$dependency" == "$gmp_load_command" ]] && return
+  [[ "$dependency" = /* ]] || return 0
+  is_system_dependency "$dependency" && return 0
+  [[ "$dependency" == "$RUBY_PREFIX/"* ]] && return 0
+  [[ "$dependency" == "$gmp_load_command" ]] && return 0
 
   destination="$(external_destination "$dependency")"
   [ -f "$destination" ] && return
