@@ -43,6 +43,12 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_includes gateway.errors.details[:identity_secret].pluck(:error), :too_short
   end
 
+  test "completion key is optional" do
+    gateway = build_gateway(completion_key: nil)
+
+    assert gateway.valid?, gateway.errors.full_messages.to_sentence
+  end
+
   test "identity secret is required before a shared gateway can serve multiple agents" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!

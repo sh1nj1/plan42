@@ -52,6 +52,7 @@ ko:
       admin_key: Admin key
       admin_key_help: 프록시 AUTH_ADMIN_KEYS 값입니다. Collavre 서버에서만 사용합니다.
       completion_key: Completion key
+      completion_key_help: 선택 사항입니다. AI Agent 채팅 완료 요청에만 필요합니다.
       identity_secret: Identity secret
       identity_secret_help: USER_IDENTITY_HMAC_SECRET과 같아야 하며 32바이트 이상이어야 합니다. 사용자별 모드 또는 여러 AI Agent가 사용할 때 필수입니다.
       tenant_id: Tenant ID

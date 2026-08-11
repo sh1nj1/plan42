@@ -44,11 +44,32 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert @owner.owned_agent_gateways.exists?(name: "Second proxy")
   end
 
+  test "owner can create a gateway without a completion key" do
+    sign_in_as(@owner, password: "password")
+
+    post collavre.agent_gateways_path, params: {
+      agent_gateway: {
+        name: "Provisioning-only proxy",
+        base_url: "https://provisioning.example.com",
+        admin_key: "admin-2",
+        completion_key: "",
+        tenant_id: "collavre",
+        workspace_mode: "shared",
+        active: "1"
+      }
+    }
+
+    assert_redirected_to collavre.agent_gateways_path
+    assert_predicate @owner.owned_agent_gateways.find_by!(name: "Provisioning-only proxy").completion_key, :blank?
+  end
+
   test "gateway form explains the owner-specific endpoint policy" do
     sign_in_as(@owner, password: "password")
     get collavre.new_agent_gateway_path
     assert_response :success
     assert_includes response.body, I18n.t("collavre.agent_gateways.base_url_help")
+    assert_includes response.body, I18n.t("collavre.agent_gateways.completion_key_help")
+    assert_select "input[name='agent_gateway[completion_key]'][required]", count: 0
 
     sign_out
     sign_in_as(users(:one), password: "password")

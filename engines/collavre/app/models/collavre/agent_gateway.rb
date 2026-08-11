@@ -22,7 +22,7 @@ module Collavre
     normalizes :base_url, with: ->(value) { value.to_s.strip.sub(%r{/+\z}, "") }
     normalizes :tenant_id, with: ->(value) { value.to_s.strip }
 
-    validates :name, :base_url, :admin_key, :completion_key, :tenant_id, presence: true
+    validates :name, :base_url, :admin_key, :tenant_id, presence: true
     validates :name, uniqueness: { scope: :owner_id }
     validates :tenant_id, format: { with: /\A[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,199}\z/ }
     validate :base_url_is_http
