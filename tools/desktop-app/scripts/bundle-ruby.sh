@@ -74,14 +74,9 @@ export BUNDLE_GEMFILE="$APP_ROOT/Gemfile"
 export BUNDLE_PATH="$VENDOR_DIR/bundle"
 export BUNDLE_WITHOUT="development:test:production"
 export BUNDLE_WITH="desktop"
-# Platform gems may contain prebuilt native extensions with paths from their
-# release builder. Compile them for this Ruby instead so relocation can bundle
-# every dependency from the local build environment.
-export BUNDLE_FORCE_RUBY_PLATFORM=true
-# Nokogiri's bundled-library probe compiles Ruby 3.4 headers with `-Werror` and
-# fails on current Xcode. Build it against the local system libraries instead;
-# relocate-ruby.sh collects their non-system dylib dependencies into the app.
-export NOKOGIRI_USE_SYSTEM_LIBRARIES="${NOKOGIRI_USE_SYSTEM_LIBRARIES:-true}"
+# The lockfile retains the macOS platform gems for extensions such as Nokogiri.
+# relocate-ruby.sh rewrites their native dependencies after installation so the
+# precompiled package cannot retain a release-builder library path.
 "$VENDORED_RUBY" -S bundle install --jobs 4
 
 # Native gem extensions are compiled after the initial Ruby relocation and keep
