@@ -472,7 +472,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITES.first
 
     assert_equal [ "#{satellite}/thing" ],
-      js_imports_in(%(const id = <T,>(value: T) => value; import("#{satellite}/thing")), jsx: true)
+      js_imports_in(%(const id = <T,>(value: T) => value; import("#{satellite}/thing")), jsx: true, tsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const id = <T extends object>(value: T) => value; import("#{satellite}/thing")), jsx: true, tsx: true)
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const id = <T = object>(value: T) => value; import("#{satellite}/thing")), jsx: true, tsx: true)
   end
 
   test "detector ignores an import method called on an object" do
@@ -487,6 +491,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_empty js_imports_in(%(registry.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -603,7 +609,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_violations_in(path, source)
-    js_imports_in(source, jsx: path.end_with?(".jsx", ".tsx")).map do |specifier|
+    js_imports_in(source, jsx: path.end_with?(".jsx", ".tsx"), tsx: path.end_with?(".tsx")).map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
   end
@@ -622,8 +628,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # a Ruby require path: by traversal (`../../collavre_slack/app/javascript/x`)
   # or by package name (`collavre_notion/thing`). #satellite_for already walks
   # every segment of the cleaned path, so neither depth nor spelling matters.
-  def js_imports_in(source, jsx: false)
-    js_specifiers(js_tokens(jsx ? mask_jsx_text(source) : source))
+  def js_imports_in(source, jsx: false, tsx: false)
+    js_specifiers(js_tokens(jsx ? mask_jsx_text(source, tsx:) : source))
       .select { |specifier| satellite_for(specifier) }
       .uniq
   end
@@ -632,13 +638,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # tokenising, while retaining expressions inside `{...}` where a real dynamic
   # import can appear. This small scanner deliberately only runs for `.jsx`
   # sources; ordinary JavaScript keeps its original token stream.
-  def mask_jsx_text(source)
+  def mask_jsx_text(source, tsx: false)
     masked = source.dup
     cursor = 0
     depth = 0
 
     while cursor < source.length
-      if source[cursor] == "<" && (tag = jsx_tag_at(source, cursor))
+      if source[cursor] == "<" && (tag = jsx_tag_at(source, cursor, tsx:))
         _name, finish, closing, self_closing = tag
         depth -= 1 if closing && depth.positive?
         depth += 1 unless closing || self_closing
@@ -646,7 +652,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       elsif depth.positive? && source[cursor] == "{"
         expression_end = jsx_expression_end(source, cursor)
         expression = source[(cursor + 1)...(expression_end - 1)]
-        masked[(cursor + 1)...(expression_end - 1)] = mask_jsx_text(expression) if expression
+        masked[(cursor + 1)...(expression_end - 1)] = mask_jsx_text(expression, tsx:) if expression
         cursor = expression_end
       elsif depth.positive?
         masked[cursor] = " " unless source[cursor] == "\n"
@@ -659,9 +665,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     masked
   end
 
-  def jsx_tag_at(source, cursor)
+  def jsx_tag_at(source, cursor, tsx: false)
     return [ nil, cursor + 1, false, false ] if source[cursor, 2] == "<>"
     return [ nil, cursor + 2, true, false ] if source[cursor, 3] == "</>"
+    return if tsx && tsx_generic_arrow_at?(source, cursor)
 
     match = source[cursor..].match(/\A<\/?([A-Za-z][A-Za-z0-9:._-]*)\b/)
     return unless match
@@ -673,6 +680,33 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless finish
 
     [ match[1], finish, closing, source[finish - 1] == "/" ]
+  end
+
+  # In TSX, `<T,>`, `<T extends U>` and `<T = U>` begin generic arrow
+  # functions, not JSX elements. They are only generic syntax when the type
+  # parameters are followed by an arrow parameter list; ordinary JSX keeps the
+  # normal tag path above.
+  def tsx_generic_arrow_at?(source, cursor)
+    finish = tsx_type_parameter_end(source, cursor)
+    return unless finish
+
+    parameters = source[(cursor + 1)...finish]
+    return unless parameters.match?(/,|\bextends\b|=/)
+
+    source[(finish + 1)..].match?(/\A\s*\([^)]*\)(?:\s*:\s*[^=]+)?\s*=>/m)
+  end
+
+  def tsx_type_parameter_end(source, cursor)
+    depth = 0
+
+    while (character = source[cursor])
+      depth += 1 if character == "<"
+      if character == ">"
+        depth -= 1
+        return cursor if depth.zero?
+      end
+      cursor += 1
+    end
   end
 
   def jsx_tag_end(source, cursor)
@@ -869,7 +903,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
       case value
       when "require"
-        next if tokens[index - 1] == [ :punctuation, "." ]
+        next unless js_commonjs_loader?(tokens, index)
 
         js_call_specifier(tokens, index)
       when "import"
@@ -880,6 +914,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
         js_from_specifier(tokens, index + 1)
       end
     end
+  end
+
+  # Bare `require()` and Node's `module.require()` load modules. An arbitrary
+  # receiver's `require` method is application code and must not block the
+  # boundary test; `registry.module.require()` is still arbitrary, not Node's
+  # global `module` object.
+  def js_commonjs_loader?(tokens, index)
+    return true unless tokens[index - 1] == [ :punctuation, "." ]
+
+    tokens[index - 2] == [ :word, "module" ] && tokens[index - 3] != [ :punctuation, "." ]
   end
 
   def js_call_specifier(tokens, index)

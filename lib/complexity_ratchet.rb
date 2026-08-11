@@ -225,6 +225,7 @@ module ComplexityRatchet
     # recorded sibling shifts onto its key.
     def sibling_populations
       @occurrences.select { |_path, count| count > 1 }
+        .merge(fallback_sibling_populations) { |_path, scopes, statements| scopes + statements }
     end
 
     # Ordinals distinguish sibling scopes in the measurement, but their order
@@ -237,6 +238,19 @@ module ComplexityRatchet
     end
 
     private
+
+    # Fallback identities have the same ordinal problem as named scopes. Their
+    # population must reach the verification profile too, or deleting an
+    # under-budget twin lets its survivor inherit the unsuffixed baseline key.
+    def fallback_sibling_populations
+      @fallback_statements.filter_map do |(scope, text), statements|
+        [ "#{scope}~#{abbreviate(text)}", statements.size ] if statements.size > 1
+      end.to_h
+    end
+
+    def abbreviate(text)
+      text.length > 100 ? "#{text[0, 97]}..." : text
+    end
 
     # RuboCop reports Metrics/BlockLength against the whole `send + block`
     # range, so the offense line is the call's line rather than the `do`. The

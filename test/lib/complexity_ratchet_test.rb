@@ -116,6 +116,21 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     assert_equal({ "Sample#run[block:each]" => 2 }, ComplexityRatchet::EntityMap.for(source).sibling_populations)
   end
 
+  test "keeps the population of fallback statement twins below the budget" do
+    source = <<~RUBY
+      class Sample
+        def run
+          if ready
+          end
+          if ready
+          end
+        end
+      end
+    RUBY
+
+    assert_equal({ "Sample#run~if ready" => 2 }, ComplexityRatchet::EntityMap.for(source).sibling_populations)
+  end
+
   test "keeps block call prefixes as sibling anchors" do
     source = <<~RUBY
       class Sample
@@ -705,6 +720,7 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
   SIB  = "a.rb | Metrics/BlockLength | A#run[block:each]"
   SIB2 = "a.rb | Metrics/BlockLength | A#run[block:each](2)"
   SIBLING_POPULATION = "a.rb | A#run[block:each]"
+  FALLBACK = "a.rb | Metrics/BlockNesting | A#run~if ready"
 
   # Deleting the first of two same-named siblings renames the second onto the
   # first's key. Both keys are separately monotonic — 88 -> 83 is a tightening
@@ -759,6 +775,38 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
       before_siblings: { SIBLING_POPULATION => 2 },
       after_siblings: { SIBLING_POPULATION => 2 }
     )
+  end
+
+  test "rejects a fallback twin that inherits its deleted sibling's baseline key" do
+    before_source = <<~RUBY
+      class A
+        def run
+          if ready
+          end
+          if ready
+          end
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+          if ready
+            if nested
+            end
+          end
+        end
+      end
+    RUBY
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { FALLBACK => 1 }, { FALLBACK => 1 },
+      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
+      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_equal FALLBACK, problem.key
   end
 
   test "rejects reordered families with an unbaselined sibling even below the recorded floor" do
