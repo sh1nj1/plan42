@@ -49,7 +49,7 @@ bump_version() {
 version_bump_level() {
   local range="$1"
   local messages
-  messages="$(git log --format=%B "$range" -- "$DESKTOP_DIR")"
+  messages="$(git log --format=%B "$range")"
 
   if grep -Eq '(^|\n)(BREAKING CHANGE:|[A-Za-z]+(\([^)]+\))?!:)' <<< "$messages"; then
     printf 'major\n'
@@ -113,8 +113,86 @@ release_notes() {
   {
     printf '# Collavre Desktop %s\n\n' "$version"
     printf '## Changes\n\n'
-    git log --format='- %s (%h)' "$range" -- "$DESKTOP_DIR"
+    git log --format='- %s (%h)' "$range"
   } > "$ARTIFACT_DIR/release-notes.md"
+}
+
+is_prerelease() {
+  [[ "${1%%+*}" == *-* ]]
+}
+
+write_checksum() {
+  local artifact="$1"
+  local checksum="$2"
+  local artifact_dir artifact_name
+  artifact_dir="$(dirname "$artifact")"
+  artifact_name="$(basename "$artifact")"
+  (
+    cd "$artifact_dir"
+    shasum -a 256 "$artifact_name"
+  ) > "$checksum"
+}
+
+release_commit_message() {
+  local version="$1"
+  printf 'chore(desktop): release v%s' "$version"
+}
+
+ensure_release_tag() {
+  local tag="$1"
+  local version="$2"
+  local expected_message
+  expected_message="$(release_commit_message "$version")"
+
+  [[ "$(git log -1 --format=%s HEAD)" == "$expected_message" ]] || \
+    die "resume requires HEAD to be the release commit: $expected_message"
+
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    [[ "$(git rev-parse "$tag^{commit}")" == "$(git rev-parse HEAD)" ]] || \
+      die "existing tag $tag does not point to the release commit"
+  else
+    git tag -a "$tag" -m "Collavre Desktop $version"
+  fi
+}
+
+publish_release() {
+  local tag="$1"
+  local version="$2"
+  local artifact="$3"
+  local checksum="${artifact}.sha256"
+  local -a prerelease_flag=()
+
+  if is_prerelease "$version"; then
+    prerelease_flag+=(--prerelease)
+  fi
+
+  if gh release view "$tag" >/dev/null 2>&1; then
+    local -a missing_assets=()
+    local asset release_is_draft
+    release_is_draft="$(gh release view "$tag" --json isDraft --jq .isDraft)"
+    for asset in "$(basename "$artifact")" "$(basename "$checksum")"; do
+      if ! gh release view "$tag" --json assets --jq ".assets[].name | select(. == \"$asset\")" | grep -Fxq "$asset"; then
+	missing_assets+=("$ARTIFACT_DIR/$asset")
+      fi
+    done
+
+    if ((${#missing_assets[@]})); then
+      gh release upload "$tag" "${missing_assets[@]}"
+    fi
+    if [[ "$release_is_draft" == "true" ]]; then
+      gh release edit "$tag" --draft=false \
+	--title "Collavre Desktop $version" \
+	--notes-file "$ARTIFACT_DIR/release-notes.md" \
+	"${prerelease_flag[@]}"
+    fi
+    return
+  fi
+
+  gh release create "$tag" "$artifact" "$checksum" \
+    --title "Collavre Desktop $version" \
+    --notes-file "$ARTIFACT_DIR/release-notes.md" \
+    --verify-tag \
+    "${prerelease_flag[@]}"
 }
 
 check_prerequisites() {
@@ -205,7 +283,7 @@ build_notarized_dmg() {
   trap - RETURN
 
   checksum="$ARTIFACT_DIR/Collavre-Desktop_${version}_aarch64.dmg.sha256"
-  shasum -a 256 "$artifact" > "$checksum"
+  write_checksum "$artifact" "$checksum"
   RELEASE_ARTIFACT="$artifact"
 }
 
@@ -216,55 +294,79 @@ main() {
   git fetch origin main --tags
   git pull --ff-only origin main
 
-  local current_version previous_tag range bump suggested_version selected_version tag artifact
+  local current_version previous_tag range bump suggested_version selected_version tag artifact resume_version=""
+  if (($#)); then
+    [[ $# -eq 2 && "$1" == "--resume" ]] || die "usage: $0 [--resume VERSION]"
+    resume_version="$2"
+    valid_semver "$resume_version" || die "resume version must be valid semver"
+  fi
+
   current_version="$(desktop_version)"
   valid_semver "$current_version" || die "Tauri version is not valid semver: $current_version"
   [[ "$current_version" == "$(cargo_version)" && "$current_version" == "$(cargo_lock_version)" ]] || \
     die "Tauri, Cargo manifest, and Cargo lock versions must match"
 
-  previous_tag="$(git tag --list "${TAG_PREFIX}*" --sort=-v:refname | head -1)"
+  previous_tag="$(git tag --list "${TAG_PREFIX}*" --sort=-v:refname)"
+  if [[ -n "$resume_version" ]]; then
+    previous_tag="$(grep -Fxv "${TAG_PREFIX}${resume_version}" <<< "$previous_tag" | head -1 || true)"
+  else
+    previous_tag="$(head -1 <<< "$previous_tag")"
+  fi
   if [[ -n "$previous_tag" ]]; then
     range="$previous_tag..HEAD"
-    if [[ -z "$(git log --oneline "$range" -- "$DESKTOP_DIR")" ]]; then
+    if [[ -z "$(git log --oneline "$range")" ]]; then
       die "no desktop changes since $previous_tag"
     fi
   else
     range="HEAD"
   fi
-  bump="$(version_bump_level "$range")"
-  suggested_version="$(bump_version "$current_version" "$bump")"
+  if [[ -n "$resume_version" ]]; then
+    selected_version="$resume_version"
+    [[ "$current_version" == "$selected_version" ]] || \
+      die "resume version $selected_version does not match current version $current_version"
+  else
+    bump="$(version_bump_level "$range")"
+    suggested_version="$(bump_version "$current_version" "$bump")"
 
-  printf 'Current version: %s\n' "$current_version"
-  printf 'Suggested version: %s (%s bump)\n' "$suggested_version" "$bump"
-  read -r -p "Release version [$suggested_version]: " selected_version
-  selected_version="${selected_version:-$suggested_version}"
+    printf 'Current version: %s\n' "$current_version"
+    printf 'Suggested version: %s (%s bump)\n' "$suggested_version" "$bump"
+    read -r -p "Release version [$suggested_version]: " selected_version
+    selected_version="${selected_version:-$suggested_version}"
+  fi
   valid_semver "$selected_version" || die "release version must be valid semver"
   tag="${TAG_PREFIX}${selected_version}"
-  git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "tag already exists locally: $tag"
-  git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1 && die "tag already exists on origin: $tag"
+  if [[ -z "$resume_version" ]]; then
+    git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "tag already exists locally: $tag"
+    git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1 && die "tag already exists on origin: $tag"
+  fi
 
   printf '\nDesktop commits included in this release:\n'
-  git log --oneline "$range" -- "$DESKTOP_DIR"
-  read -r -p "Commit version $selected_version, build, notarize, and publish $tag? [y/N] " confirm
+  git log --oneline "$range"
+  if [[ -n "$resume_version" ]]; then
+    read -r -p "Rebuild, notarize, and resume publishing $tag? [y/N] " confirm
+  else
+    read -r -p "Commit version $selected_version, build, notarize, and publish $tag? [y/N] " confirm
+  fi
   [[ "$confirm" =~ ^[Yy]$ ]] || die "release cancelled"
 
   mkdir -p "$ARTIFACT_DIR"
   release_notes "$range" "$selected_version"
-  update_versions "$selected_version"
-  git add "$TAURI_CONFIG" "$CARGO_TOML" "$CARGO_LOCK"
-  git commit -m "chore(desktop): release v$selected_version"
+  if [[ -z "$resume_version" ]]; then
+    update_versions "$selected_version"
+    git add "$TAURI_CONFIG" "$CARGO_TOML" "$CARGO_LOCK"
+    git commit -m "$(release_commit_message "$selected_version")"
+  else
+    ensure_release_tag "$tag" "$selected_version"
+  fi
 
   run_checks
   build_notarized_dmg "$selected_version"
   artifact="$RELEASE_ARTIFACT"
 
-  git tag -a "$tag" -m "Collavre Desktop $selected_version"
+  ensure_release_tag "$tag" "$selected_version"
   git push origin main
   git push origin "$tag"
-  gh release create "$tag" "$artifact" "${artifact}.sha256" \
-    --title "Collavre Desktop $selected_version" \
-    --notes-file "$ARTIFACT_DIR/release-notes.md" \
-    --verify-tag
+  publish_release "$tag" "$selected_version" "$artifact"
 
   echo "[release-desktop] Published $tag"
 }

@@ -23,6 +23,11 @@ fi
 assert_equal "1.0.0" "$(bump_version "0.9.7" major)"
 assert_equal "0.10.0" "$(bump_version "0.9.7" minor)"
 assert_equal "0.9.8" "$(bump_version "0.9.7" patch)"
+is_prerelease "1.2.3-beta.1"
+if is_prerelease "1.2.3" || is_prerelease "1.2.3+build-1"; then
+  echo "stable version was treated as a prerelease" >&2
+  exit 1
+fi
 
 fixture_dir="$(mktemp -d)"
 trap 'rm -rf "$fixture_dir"' EXIT
@@ -50,7 +55,13 @@ git -C "$repo_dir" add .
 git -C "$repo_dir" commit --quiet -m "feat(desktop): add sharing"
 (
   cd "$repo_dir"
-  DESKTOP_DIR="$repo_dir/tools/desktop-app"
+  assert_equal "minor" "$(version_bump_level HEAD)"
+)
+printf 'rails feature\n' > "$repo_dir/README.md"
+git -C "$repo_dir" add .
+git -C "$repo_dir" commit --quiet -m "feat: add bundled Rails feature"
+(
+  cd "$repo_dir"
   assert_equal "minor" "$(version_bump_level HEAD)"
 )
 printf 'breaking\n' >> "$repo_dir/tools/desktop-app/README.md"
@@ -58,8 +69,20 @@ git -C "$repo_dir" add .
 git -C "$repo_dir" commit --quiet -m "feat(desktop)!: remove legacy setup"
 (
   cd "$repo_dir"
-  DESKTOP_DIR="$repo_dir/tools/desktop-app"
   assert_equal "major" "$(version_bump_level HEAD)"
 )
+git -C "$repo_dir" commit --quiet --allow-empty -m "$(release_commit_message "2.3.4")"
+(
+  cd "$repo_dir"
+  ensure_release_tag "desktop-v2.3.4" "2.3.4"
+  assert_equal "$(git rev-parse HEAD)" "$(git rev-parse desktop-v2.3.4^{commit})"
+)
+
+artifact_dir="$fixture_dir/artifacts"
+mkdir -p "$artifact_dir"
+printf 'dmg fixture\n' > "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg"
+write_checksum "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg" "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256"
+assert_equal "Collavre-Desktop_2.3.4_aarch64.dmg" "$(awk '{print $2}' "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256")"
+(cd "$artifact_dir" && shasum -a 256 -c "Collavre-Desktop_2.3.4_aarch64.dmg.sha256" >/dev/null)
 
 echo "release_desktop_test: passed"
