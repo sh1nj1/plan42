@@ -421,7 +421,7 @@ check_prerequisites() {
   [[ "$(git branch --show-current)" == "main" ]] || die "run from the main branch"
   [[ -z "$(git status --porcelain)" ]] || die "working tree is not clean"
 
-  for command in git gh ruby npm bundle cargo codesign security spctl xcrun shasum hdiutil; do
+  for command in git gh ruby node npm bundle cargo codesign security spctl xcrun shasum hdiutil curl tar; do
     require_command "$command"
   done
   check_desktop_build_prerequisites
@@ -430,12 +430,8 @@ check_prerequisites() {
   [[ -n "${APPLE_ID:-}" ]] || die "APPLE_ID is required"
   [[ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]] || die "APPLE_APP_SPECIFIC_PASSWORD is required"
   [[ -n "${APPLE_TEAM_ID:-}" ]] || die "APPLE_TEAM_ID is required"
-  if [[ -z "${NODE_RUNTIME_DIR:-}" ]]; then
-    if [[ -n "${NODE_RUNTIME_URL:-}" || -n "${NODE_RUNTIME_SHA256:-}" ]]; then
-      [[ -n "${NODE_RUNTIME_URL:-}" && -n "${NODE_RUNTIME_SHA256:-}" ]] || die "set both NODE_RUNTIME_URL and NODE_RUNTIME_SHA256"
-    else
-      require_command node
-    fi
+  if [[ -z "${NODE_RUNTIME_DIR:-}" && ( -n "${NODE_RUNTIME_URL:-}" || -n "${NODE_RUNTIME_SHA256:-}" ) ]]; then
+    [[ -n "${NODE_RUNTIME_URL:-}" && -n "${NODE_RUNTIME_SHA256:-}" ]] || die "set both NODE_RUNTIME_URL and NODE_RUNTIME_SHA256"
   fi
 
   security find-identity -v -p codesigning | grep -Fq "$APPLE_SIGNING_IDENTITY" || \

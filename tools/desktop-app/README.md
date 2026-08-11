@@ -106,10 +106,10 @@ the exact npm package before `npm ci` installs it. The generated lockfile keeps
 the resolved tarball integrity values inside the signed application bundle.
 
 For a local DMG build, no Node runtime environment variables are required. The
-script automatically bundles the Apple-Silicon Node installation found on
-`PATH`; it resolves Homebrew and version-manager symlinks before copying only
-that Node runtime. Set `NODE_RUNTIME_DIR` to override discovery, or set both
-`NODE_RUNTIME_URL` and `NODE_RUNTIME_SHA256` to use a verified archive.
+script downloads and verifies its pinned official Apple-Silicon Node archive
+(`v22.13.0`). Set `NODE_RUNTIME_DIR` only for a pre-verified expanded official
+archive, or set both `NODE_RUNTIME_URL` and `NODE_RUNTIME_SHA256` to use a
+different verified official archive.
 
 Tauri exposes internal setup commands for the first-run wizard:
 
@@ -184,8 +184,8 @@ export APPLE_TEAM_ID='TEAMID'
 script/release-desktop.sh
 ```
 
-The release script defaults to the Apple-Silicon Node runtime found on `PATH`.
-To pin the runtime archive, set both `NODE_RUNTIME_URL` and
+The release script defaults to a pinned, verified official Apple-Silicon Node
+archive. To use a different runtime archive, set both `NODE_RUNTIME_URL` and
 `NODE_RUNTIME_SHA256` before running it.
 
 The Apple signing identity and App Store app-specific password must be stored

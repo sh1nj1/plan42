@@ -6,10 +6,12 @@ fixture_dir="$(mktemp -d)"
 trap 'rm -rf "$fixture_dir"' EXIT
 
 desktop_dir="$fixture_dir/desktop-app"
-mkdir -p "$desktop_dir/scripts" "$fixture_dir/node-runtime/bin"
+runtime_dir="$fixture_dir/node-runtime"
+fake_bin="$fixture_dir/fake-bin"
+mkdir -p "$desktop_dir/scripts" "$runtime_dir/bin" "$fake_bin"
 cp "$PROJECT_ROOT/tools/desktop-app/scripts/bundle-proxy.sh" "$desktop_dir/scripts/bundle-proxy.sh"
 
-cat > "$fixture_dir/node-runtime/bin/node" <<'EOF'
+cat > "$runtime_dir/bin/node" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -28,7 +30,7 @@ case "${1:-}" in
   *) exit 1 ;;
 esac
 EOF
-cat > "$fixture_dir/node-runtime/bin/npm" <<'EOF'
+cat > "$runtime_dir/bin/npm" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -36,18 +38,57 @@ mkdir -p node_modules/cli-openai-proxy
 printf '%s\n' '{"version":"0.1.0"}' > node_modules/cli-openai-proxy/package.json
 printf '%s\n' '{"packages":{"node_modules/cli-openai-proxy":{"resolved":"https://registry.npmjs.org/cli-openai-proxy/-/cli-openai-proxy-0.1.0.tgz","integrity":"sha512-test-integrity"}}}' > package-lock.json
 EOF
-chmod +x "$fixture_dir/node-runtime/bin/node" "$fixture_dir/node-runtime/bin/npm"
+chmod +x "$runtime_dir/bin/node" "$runtime_dir/bin/npm"
 
-PATH="$fixture_dir/node-runtime/bin:$PATH" \
+cat > "$fake_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+output=""
+url=""
+while (($#)); do
+  case "$1" in
+    --output) output="$2"; shift 2 ;;
+    *) url="$1"; shift ;;
+  esac
+done
+[[ "$url" == "https://nodejs.org/dist/v22.13.0/node-v22.13.0-darwin-arm64.tar.xz" ]]
+: > "$output"
+EOF
+cat > "$fake_bin/shasum" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+read -r checksum archive
+[[ "$checksum" == "71b0893ef6a55295994f38002fada15c9a76a3cedeb36745fde0403741d183c6" ]]
+[[ "$archive" == *"node-runtime.tar.xz" ]]
+EOF
+cat > "$fake_bin/tar" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+destination=""
+while (($#)); do
+  case "$1" in
+    -C) destination="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+mkdir -p "$destination/node-v22.13.0-darwin-arm64"
+cp -R "$NODE_RUNTIME_FIXTURE_DIR/." "$destination/node-v22.13.0-darwin-arm64/"
+EOF
+chmod +x "$fake_bin/curl" "$fake_bin/shasum" "$fake_bin/tar"
+
+NODE_RUNTIME_FIXTURE_DIR="$runtime_dir" PATH="$fake_bin:$PATH" \
   env -u NODE_RUNTIME_DIR -u NODE_RUNTIME_URL -u NODE_RUNTIME_SHA256 \
   "$desktop_dir/scripts/bundle-proxy.sh" >/dev/null
 
 [[ -x "$desktop_dir/vendor/proxy/node/bin/node" ]] || {
-  echo "discovered Node runtime was not bundled" >&2
+  echo "default Node runtime was not bundled" >&2
   exit 1
 }
 [[ "$("$desktop_dir/vendor/proxy/node/bin/node" --version)" == "v22.15.0" ]] || {
-  echo "bundled Node runtime differs from the discovered runtime" >&2
+  echo "bundled Node runtime differs from the official archive fixture" >&2
   exit 1
 }
 grep -Fq '"node": "v22.15.0"' "$desktop_dir/vendor/proxy/manifest.json"
