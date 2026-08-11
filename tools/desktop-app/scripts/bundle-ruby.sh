@@ -56,4 +56,9 @@ export BUNDLE_WITHOUT="development:test:production"
 export BUNDLE_WITH="desktop"
 "$VENDORED_RUBY" -S bundle install --jobs 4
 
+# Native gem extensions are compiled after the initial Ruby relocation and keep
+# the Ruby build prefix in their Mach-O load commands. Rewrite them as well so
+# the staged .app never depends on the build checkout.
+"$SCRIPT_DIR/relocate-ruby.sh" "$RUBY_PREFIX" "$VENDOR_DIR/bundle"
+
 echo "[bundle-ruby] done. Ruby: $RUBY_PREFIX  Gems: $VENDOR_DIR/bundle"

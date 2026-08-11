@@ -6,6 +6,12 @@
 set -euo pipefail
 
 RUBY_PREFIX="$1"
+shift
+MACHO_ROOTS=("$RUBY_PREFIX")
+for root in "$@"; do
+  [ -d "$root" ] || { echo "missing Mach-O root: $root" >&2; exit 1; }
+  MACHO_ROOTS+=("$root")
+done
 
 [ -x "$RUBY_PREFIX/bin/ruby" ] || { echo "missing Ruby executable: $RUBY_PREFIX/bin/ruby" >&2; exit 1; }
 RUBY_LIBRARY="$("$RUBY_PREFIX/bin/ruby" -rrbconfig -e 'puts File.join(RbConfig::CONFIG.fetch("libdir"), RbConfig::CONFIG.fetch("LIBRUBY_SO"))')"
@@ -36,7 +42,7 @@ relative_library_dir() {
 }
 
 ruby_macho_files() {
-  find "$RUBY_PREFIX" -type f \( -path "$RUBY_PREFIX/bin/ruby" -o -name '*.bundle' -o -name '*.dylib' \) ! -path '*.dSYM/*' -print0
+  find "${MACHO_ROOTS[@]}" -type f \( -path "$RUBY_PREFIX/bin/ruby" -o -name '*.bundle' -o -name '*.dylib' \) ! -path '*.dSYM/*' -print0
 }
 
 while IFS= read -r -d '' binary; do
@@ -84,4 +90,4 @@ else
   exit 1
 fi
 
-echo "[relocate-ruby] Ruby runtime is self-contained at $RUBY_PREFIX"
+echo "[relocate-ruby] Ruby runtime and native extensions are self-contained at $RUBY_PREFIX"
