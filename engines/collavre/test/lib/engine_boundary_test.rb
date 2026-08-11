@@ -64,11 +64,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # import itself rather than by grepping for the engine name, so a comment or
   # a string that mentions an engine is not a violation — the same rule the
   # Ruby loader detector follows, for the same reason.
+  # A template literal without interpolation is static just like a quoted
+  # string. Interpolated templates stay out: their resolved path is not known
+  # to this source-only check.
+  JS_SPECIFIER = "(?<quote>[\"'`])(?<specifier>[^\"'`$]+)\\k<quote>"
   JS_IMPORTS = [
-    /\bimport\s+(?:[\w*{}\n\r\t ,$]+?\s+from\s*)?["']([^"']+)["']/m,  # import x from "y" / import "y"
-    /\bexport\s+[\w*{}\n\r\t ,$]+?\s+from\s*["']([^"']+)["']/m,       # export { x } from "y"
-    /\brequire\s*\(\s*["']([^"']+)["']/,                              # require("y")
-    /\bimport\s*\(\s*["']([^"']+)["']/                                # import("y") — dynamic
+    /\bimport\s+(?:[\w*{}\n\r\t ,$]+?\s+from\s*)?#{JS_SPECIFIER}/m,  # import x from "y" / import "y"
+    /\bexport\s+[\w*{}\n\r\t ,$]+?\s+from\s*#{JS_SPECIFIER}/m,       # export { x } from "y"
+    /\brequire\s*\(\s*#{JS_SPECIFIER}/,                                  # require("y")
+    /\bimport\s*\(\s*#{JS_SPECIFIER}/                                    # import("y") — dynamic
   ].freeze
 
   # Two core migrations already reach satellites — one by constant behind
@@ -383,6 +387,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(export { thing } from "#{satellite}/thing";) => "#{satellite}/thing",
       %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = await import(`#{satellite}/thing`);) => "#{satellite}/thing",
       %(import {\n  a,\n  b\n} from "#{satellite}/thing";) => "#{satellite}/thing"
     }.each do |source, expected|
       assert_equal [ expected ], js_imports_in(source), "missed #{source.inspect}"
@@ -398,6 +403,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(console.warn("#{satellite} is not loaded");))
     assert_empty js_imports_in(%(import Thing from "#{CORE}/thing";))
     assert_empty js_imports_in(%(import Thing from "#{satellite}_stub/thing";))
+    assert_empty js_imports_in(%(import(`#{satellite}/\${name}`);))
     assert_empty js_imports_in(%(import Thing from "./components/thing";))
   end
 
@@ -499,7 +505,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # or by package name (`collavre_notion/thing`). #satellite_for already walks
   # every segment of the cleaned path, so neither depth nor spelling matters.
   def js_imports_in(source)
-    JS_IMPORTS.flat_map { |pattern| source.scan(pattern).flatten }
+    JS_IMPORTS.flat_map { |pattern| source.to_enum(:scan, pattern).map { Regexp.last_match[:specifier] } }
       .select { |specifier| satellite_for(specifier) }
       .uniq
   end

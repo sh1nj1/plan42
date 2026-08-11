@@ -57,6 +57,17 @@ def file_at(ref, path)
   status.success? ? out : nil
 end
 
+def sibling_populations_at(ref, paths)
+  ComplexityRatchet.sibling_populations(paths.to_h { |path| [ path, file_at(ref, path) ] })
+end
+
+def current_sibling_populations(paths)
+  ComplexityRatchet.sibling_populations(paths.to_h do |path|
+    full_path = File.join(ROOT, path)
+    [ path, File.file?(full_path) ? File.read(full_path) : nil ]
+  end)
+end
+
 case options[:mode]
 when :verify
   base_baseline = file_at(options[:ref], ComplexityRatchet::BASELINE_PATH)
@@ -66,6 +77,9 @@ when :verify
   end
 
   base_config = file_at(options[:ref], ComplexityRatchet::CONFIG_PATH)
+  before_entries = ComplexityRatchet.flatten(YAML.safe_load(base_baseline) || {})
+  after_entries = ComplexityRatchet.load_baseline(BASELINE)
+  baseline_paths = (before_entries.keys | after_entries.keys).map { |key| key.split(ComplexityRatchet::SEPARATOR, 2).first }
 
   # Three ways to unwind the ratchet, and only one of them touches the baseline.
   # Raising a Max deletes baseline entries wholesale, which reads as a refactor
@@ -74,8 +88,10 @@ when :verify
   # inherited half are both checked alongside the baseline.
   problems =
     ComplexityRatchet.verify_monotonic(
-      ComplexityRatchet.flatten(YAML.safe_load(base_baseline) || {}),
-      ComplexityRatchet.load_baseline(BASELINE)
+      before_entries,
+      after_entries,
+      before_siblings: sibling_populations_at(options[:ref], baseline_paths),
+      after_siblings: current_sibling_populations(baseline_paths)
     ) +
     ComplexityRatchet.verify_budget(
       base_config && (YAML.safe_load(base_config) || {}),

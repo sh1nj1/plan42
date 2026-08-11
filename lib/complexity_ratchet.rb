@@ -189,6 +189,14 @@ module ComplexityRatchet
       nest("[lambda]", node.location) { super }
     end
 
+    # Baseline entries only exist for scopes that are currently over budget,
+    # but sibling ordinals are assigned to every scope. Keep that population so
+    # --verify-baseline can notice when an unrecorded sibling disappears and a
+    # recorded sibling shifts onto its key.
+    def sibling_populations
+      @occurrences.select { |_path, count| count > 1 }
+    end
+
     private
 
     # RuboCop reports Metrics/BlockLength against the whole `send + block`
@@ -515,7 +523,7 @@ module ComplexityRatchet
     # worth plugging: skipping the gate afterwards means deleting a 438-entry
     # file, which is a reviewable event, whereas the path this actually closes —
     # `--regenerate` to make CI green — is a single command.
-    def verify_monotonic(before, after)
+    def verify_monotonic(before, after, before_siblings: {}, after_siblings: {})
       return [] if before.nil?
 
       after.filter_map { |key, value|
@@ -527,7 +535,22 @@ module ComplexityRatchet
           Problem.new(kind: :baseline_loosened, key: key, blocking: true,
             message: "baseline raised from #{recorded} to #{value} — the ratchet only turns one way")
         end
-      } + sibling_problems(before, after)
+      } + sibling_problems(before, after, before_siblings:, after_siblings:)
+    end
+
+    # The baseline cannot describe an under-budget sibling because RuboCop does
+    # not emit an offense for it. Compare the parsed scope populations from the
+    # base ref and the branch too: otherwise deleting a 90-line sibling next to
+    # an unrecorded 60-line sibling lets the latter grow to 80 under the former
+    # key, and every baseline-only comparison calls that an improvement.
+    def sibling_populations(sources)
+      sources.each_with_object({}) do |(path, source), populations|
+        next if source.nil?
+
+        EntityMap.for(source).sibling_populations.each do |entity, count|
+          populations[[ path, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)] = count
+        end
+      end
     end
 
     # Raising a Max in .rubocop_metrics.yml is the quiet way to unwind the
@@ -651,26 +674,47 @@ module ComplexityRatchet
     # choice is which way to be wrong, and a false positive here costs a
     # reviewer applying `complexity-baseline-reset` while a false negative
     # unwinds the ratchet silently.
-    def sibling_problems(before, after)
+    def sibling_problems(before, after, before_siblings:, after_siblings:)
       recorded = before.group_by { |key, _| family(key) }
       after.group_by { |key, _| family(key) }.flat_map do |name, entries|
         siblings = recorded[name]
-        next [] if siblings.nil? || entries.size >= siblings.size
+        next [] if siblings.nil?
 
         floor = siblings.map(&:last).min
+        baseline_shrank = entries.size < siblings.size
+        population_shrank = entries.any? do |key, _|
+          before_siblings.fetch(sibling_population_key(key), 0) > after_siblings.fetch(sibling_population_key(key), 0)
+        end
+        next [] unless baseline_shrank || population_shrank
+
         entries.filter_map do |key, value|
-          next unless before.key?(key) && value > floor
+          next unless before.key?(key)
+          next if baseline_shrank && value <= floor
 
           Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
-            message: "a same-named sibling was removed, so this entry may have inherited that sibling's " \
-                     "allowance — #{value} is above the #{floor} the family was recorded at")
+            message: sibling_problem_message(value, floor, baseline_shrank))
         end
+      end
+    end
+
+    def sibling_problem_message(value, floor, baseline_shrank)
+      if baseline_shrank
+        "a same-named sibling was removed, so this entry may have inherited that sibling's " \
+          "allowance — #{value} is above the #{floor} the family was recorded at"
+      else
+        "a same-named sibling disappeared from the source, so this entry's ordinal may have " \
+          "transferred from that sibling — reset the baseline only after reviewing the change"
       end
     end
 
     # Siblings share every part of a key except their ordinal.
     def family(key)
       key.gsub(/\(\d+\)/, "")
+    end
+
+    def sibling_population_key(key)
+      file, _cop, entity = key.split(SEPARATOR, 3)
+      [ file, entity.gsub(/\(\d+\)/, "") ].join(SEPARATOR)
     end
 
     # A cop that was gating has to keep gating, at a limit no higher, over a

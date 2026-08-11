@@ -103,6 +103,19 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     assert_equal "Sample#run[block:each](2)", path_for(source, 6)
   end
 
+  test "keeps the population of siblings that are below the budget" do
+    source = <<~RUBY
+      class Sample
+        def run
+          items.each { |item| item }
+          others.each { |item| item }
+        end
+      end
+    RUBY
+
+    assert_equal({ "Sample#run[block:each]" => 2 }, ComplexityRatchet::EntityMap.for(source).sibling_populations)
+  end
+
   test "sibling scopes are counted per parent, not per file" do
     source = <<~RUBY
       class Sample
@@ -587,6 +600,7 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
 
   SIB  = "a.rb | Metrics/BlockLength | A#run[block:each]"
   SIB2 = "a.rb | Metrics/BlockLength | A#run[block:each](2)"
+  SIBLING_POPULATION = "a.rb | A#run[block:each]"
 
   # Deleting the first of two same-named siblings renames the second onto the
   # first's key. Both keys are separately monotonic — 88 -> 83 is a tightening
@@ -604,6 +618,43 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
 
   test "accepts a survivor that stayed within the family's smallest limit" do
     assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, SIB2 => 78 }, { SIB => 78 })
+  end
+
+  test "rejects a shifted survivor when only its deleted sibling was baselined" do
+    # The second sibling was below budget at 60, so it has no baseline key.
+    # Its presence still has to survive long enough to stop it inheriting the
+    # deleted 90-line sibling's unsuffixed key after growing to 80.
+    before_source = <<~RUBY
+      class A
+        def run
+          high.each { |item| item }
+          low.each { |item| item }
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+          low.each { |item| item }
+        end
+      end
+    RUBY
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 90 }, { SIB => 80 },
+      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
+      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_equal SIB, problem.key
+  end
+
+  test "accepts an unchanged population when only one sibling is baselined" do
+    assert_empty ComplexityRatchet.verify_monotonic(
+      { SIB => 90 }, { SIB => 80 },
+      before_siblings: { SIBLING_POPULATION => 2 },
+      after_siblings: { SIBLING_POPULATION => 2 }
+    )
   end
 
   # Nothing was removed, so neither sibling can have inherited anything.

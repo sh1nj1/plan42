@@ -208,6 +208,14 @@ like any other deliberate change — a false positive costs a reviewer's
 signature, a false negative unwinds the ratchet silently. No family in this
 repo currently has two baselined siblings, so today it fires on neither.
 
+The same comparison also reads the sibling population from the base and current
+source, not only from baseline entries. This catches the inverse case: a
+90-line sibling is recorded, its 60-line twin is below budget and therefore
+absent from the baseline, then the first is deleted and the survivor grows to
+80 under the inherited unsuffixed key. The population changed even though the
+baseline still has one entry, so verification requires the reset label rather
+than accepting the apparent improvement.
+
 Chained blocks — `items.each do … end.map do … end` — need more than an ordinal,
 because they share a start line *and* a start column: a block offense covers the
 whole `send + block` range, and the outer send begins at the receiver. So an
@@ -266,11 +274,12 @@ about an engine is still fine.
 
 **Importing** covers the engine's JavaScript, which is the larger half of what
 it ships — 247 packaged `.js`/`.jsx` files against 405 Ruby ones. `import`,
-`export … from`, `require()` and dynamic `import()` specifiers are matched, and
+`export … from`, `require()` and dynamic `import()` specifiers are matched,
+including no-substitution template literals, and
 resolved through the same `Pathname#cleanpath` walk as a Ruby require path, so
 both `collavre_slack/thing` and `../../../collavre_slack/app/javascript/thing`
-count while a comment or a log message mentioning an engine does not. This is a
-real path rather than a theoretical one: `script/build.cjs` bundles every
+count while an interpolated template, comment, or log message mentioning an
+engine does not. This is a real path rather than a theoretical one: `script/build.cjs` bundles every
 engine's `app/javascript/*` entry points together, so a core module importing a
 satellite resolves fine in this monorepo and breaks a host that installs the
 core gem on its own.
