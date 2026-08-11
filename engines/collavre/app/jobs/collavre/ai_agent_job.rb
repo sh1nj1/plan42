@@ -354,8 +354,8 @@ module Collavre
       end
     end
 
-    # Is this dispatch subject to the topic concurrency limit at all? Workflow
-    # subtasks and other topic-less dispatches are not.
+    # Is this dispatch subject to the topic concurrency limit at all?
+    # Topic-less dispatches are not.
     def topic_admission_scoped?(context)
       context.is_a?(Hash) && context.key?("topic")
     end

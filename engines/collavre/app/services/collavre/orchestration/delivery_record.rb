@@ -449,7 +449,7 @@ module Collavre
       # to disagree about it.
       #
       # Scoped exactly like AgentOrchestrator.delivered_comment_ids — same agent,
-      # topic, creative and trigger event — so a workflow subtask in another
+      # topic, creative and trigger event — so a dispatch in another
       # creative, or a different event over the same comment, is a different
       # question and not an answer to this one.
       def self.covering_task(agent, comment_id, context, trigger_event_name)

@@ -5,9 +5,9 @@ module Collavre
   # session whose WebSocket dropped without DELETE /api/v1/agent/:id.
   #
   # AgentChannel#unsubscribed makes the agent unroutable, but a task already
-  # in "delegated" still holds its ResourceTracker slot and (for workflow
-  # subtasks) blocks the parent workflow. The dispatch was broadcast to a
-  # now-dead stream, so no client remains to call /reply — without this job
+  # in "delegated" still holds its ResourceTracker slot. The dispatch was
+  # broadcast to a now-dead stream, so no client remains to call /reply —
+  # without this job
   # the slot stays held until StuckDetectorJob times out (minutes to hours).
   #
   # The grace delay lets transient WS blips self-heal: if the client
