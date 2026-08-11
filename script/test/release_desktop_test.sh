@@ -13,6 +13,21 @@ assert_equal() {
   }
 }
 
+build_prerequisite_command="$(
+  require_command() { printf '%s\n' "$1"; }
+  cargo() { [[ "$1" == "tauri" && "$2" == "--version" ]]; }
+  check_desktop_build_prerequisites
+)"
+assert_equal "ruby-build" "$build_prerequisite_command"
+if (
+  require_command() { :; }
+  cargo() { return 1; }
+  check_desktop_build_prerequisites
+) 2>/dev/null; then
+  echo "missing Tauri CLI was accepted" >&2
+  exit 1
+fi
+
 valid_semver "0.1.0"
 valid_semver "1.2.3-beta.1+build.8"
 valid_semver "1.2.3-0+build.01"

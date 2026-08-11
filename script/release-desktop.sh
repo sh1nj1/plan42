@@ -26,6 +26,15 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command is unavailable: $1"
 }
 
+check_desktop_build_prerequisites() {
+  # `cargo` can be installed without its separately-installed Tauri CLI
+  # subcommand. Check both build-only dependencies before making a version
+  # commit, so a failed local build is never left to recover with --resume.
+  require_command ruby-build
+  cargo tauri --version >/dev/null 2>&1 || \
+    die "Tauri CLI is unavailable; install it with: cargo install tauri-cli --version '^2'"
+}
+
 valid_semver() {
   local version="$1"
   local prerelease identifier
@@ -404,6 +413,7 @@ check_prerequisites() {
   for command in git gh ruby npm bundle cargo codesign security spctl xcrun shasum hdiutil; do
     require_command "$command"
   done
+  check_desktop_build_prerequisites
 
   [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]] || die "APPLE_SIGNING_IDENTITY is required"
   [[ -n "${APPLE_ID:-}" ]] || die "APPLE_ID is required"
