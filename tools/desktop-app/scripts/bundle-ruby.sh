@@ -26,9 +26,9 @@ command -v ruby-build >/dev/null 2>&1 || {
 mkdir -p "$VENDOR_DIR"
 
 if [ -x "$RUBY_PREFIX/bin/ruby" ]; then
-  load_relative="$("$RUBY_PREFIX/bin/ruby" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE")')"
-  if [ "$load_relative" = "yes" ]; then
-    echo "[bundle-ruby] reusing self-relocating vendored Ruby at $RUBY_PREFIX"
+  ruby_build_is_portable="$("$RUBY_PREFIX/bin/ruby" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE") == "yes"')"
+  if [ "$ruby_build_is_portable" = "true" ]; then
+    echo "[bundle-ruby] reusing portable vendored Ruby at $RUBY_PREFIX"
   else
     echo "[bundle-ruby] replacing non-relocating vendored Ruby at $RUBY_PREFIX"
     rm -rf "$RUBY_PREFIX" "$VENDOR_DIR/bundle"

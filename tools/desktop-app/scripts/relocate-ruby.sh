@@ -28,8 +28,10 @@ if [[ "$gmp_load_command" = /* ]]; then
 fi
 [ -f "$gmp_destination" ] || { echo "missing bundled GMP library: $gmp_destination" >&2; exit 1; }
 
-# Convert the libraries' install names first. Consumers below use @rpath, with
-# an rpath calculated from the consumer's own directory.
+# Convert the libraries' install names first. The Ruby executable carries the
+# app-local lib rpath, and dyld applies it to extensions loaded by that process.
+# This avoids adding an rpath to every native gem — newly compiled extensions
+# may not reserve enough Mach-O header space for another load command.
 if ! otool -D "$RUBY_LIBRARY" | grep -Fxq "@rpath/$(basename "$RUBY_LIBRARY")"; then
   install_name_tool -id "@rpath/$(basename "$RUBY_LIBRARY")" "$RUBY_LIBRARY"
 fi
@@ -37,9 +39,19 @@ if ! otool -D "$gmp_destination" | grep -Fxq "@rpath/$gmp_name"; then
   install_name_tool -id "@rpath/$gmp_name" "$gmp_destination"
 fi
 
-relative_library_dir() {
-  /usr/bin/ruby -rpathname -e 'puts Pathname.new(ARGV[1]).relative_path_from(Pathname.new(ARGV[0]))' "$1" "$RUBY_PREFIX/lib"
+ensure_rpath() {
+  local binary="$1"
+  local rpath="$2"
+  if ! otool -l "$binary" | grep -A2 'LC_RPATH' | grep -Fq "path $rpath "; then
+    install_name_tool -add_rpath "$rpath" "$binary" >/dev/null 2>&1
+  fi
 }
+
+# The executable and libruby have enough header space for their app-local rpath.
+# Loaded native gems inherit this lookup path, so they do not need individual
+# rpaths (which recent gem builds may not have room to add).
+ensure_rpath "$RUBY_PREFIX/bin/ruby" "@loader_path/../lib"
+ensure_rpath "$RUBY_LIBRARY" "@loader_path/."
 
 ruby_macho_files() {
   find "${MACHO_ROOTS[@]}" -type f \( -path "$RUBY_PREFIX/bin/ruby" -o -name '*.bundle' -o -name '*.dylib' \) ! -path '*.dSYM/*' -print0
@@ -47,26 +59,11 @@ ruby_macho_files() {
 
 while IFS= read -r -d '' binary; do
   dependencies="$(otool -L "$binary" | awk 'NR > 1 { print $1 }')"
-  needs_rpath=false
   if printf '%s\n' "$dependencies" | grep -Fxq "$RUBY_LIBRARY"; then
-  install_name_tool -change "$RUBY_LIBRARY" "@rpath/$(basename "$RUBY_LIBRARY")" "$binary" >/dev/null 2>&1
-    needs_rpath=true
-  fi
-  if printf '%s\n' "$dependencies" | grep -Fxq "@rpath/$(basename "$RUBY_LIBRARY")"; then
-    needs_rpath=true
+    install_name_tool -change "$RUBY_LIBRARY" "@rpath/$(basename "$RUBY_LIBRARY")" "$binary" >/dev/null 2>&1
   fi
   if [[ "$gmp_load_command" = /* ]] && printf '%s\n' "$dependencies" | grep -Fxq "$gmp_load_command"; then
     install_name_tool -change "$gmp_load_command" "@rpath/$gmp_name" "$binary" >/dev/null 2>&1
-    needs_rpath=true
-  fi
-  if printf '%s\n' "$dependencies" | grep -Fxq "@rpath/$gmp_name"; then
-    needs_rpath=true
-  fi
-
-  [ "$needs_rpath" = true ] || continue
-  rpath="@loader_path/$(relative_library_dir "$(dirname "$binary")")"
-  if ! otool -l "$binary" | grep -A2 'LC_RPATH' | grep -Fq "path $rpath "; then
-    install_name_tool -add_rpath "$rpath" "$binary" >/dev/null 2>&1
   fi
 done < <(ruby_macho_files)
 
