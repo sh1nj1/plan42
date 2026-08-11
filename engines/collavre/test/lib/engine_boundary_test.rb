@@ -60,7 +60,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # satellite resolves in this monorepo and breaks a host that installs the
   # core gem on its own. Ruby was the whole scan until now; this is the larger
   # half of what the gemspec packages.
-  JS_FILE = /\.(js|jsx|mjs|cjs)\z/
+  JS_FILE = /\.(js|jsx|mjs|cjs)(?:\.tt)?\z/
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -397,6 +397,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       "core engine scan found #{scanned} JS files — script/build.cjs bundles them, so they are shipped code"
     assert_equal packaged, scanned
     assert_includes core_sources, root.join("skills/collavre/scripts/collavre").to_s
+    assert_includes core_sources, root.join("lib/generators/collavre/install/templates/build.cjs.tt").to_s
   end
 
   test "detector flags a satellite imported from core JavaScript" do
