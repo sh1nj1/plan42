@@ -354,6 +354,34 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute_includes emails, unavailable_agent.email
   end
 
+  test "onboarding mention search limits matching agents before checking permissions" do
+    learner = User.create!(name: "Limited onboarding learner", email: "limited-onboarding-search@example.com", password: "password")
+    helper = User.create!(
+      name: "Limited onboarding helper", email: "limited-onboarding-search-helper@example.com", password: "password",
+      llm_vendor: "openai", searchable: true
+    )
+    User.create!(
+      name: "Limited onboarding unavailable helper", email: "limited-onboarding-search-unavailable@example.com", password: "password",
+      llm_vendor: "openai", searchable: true
+    )
+    onboarding_session = User.stub(:accessible_ai_agents_for, User.where(id: helper.id)) do
+      Collavre::Onboarding::Seeder.new(user: learner).call
+    end
+    sign_in_as(learner, password: "password")
+
+    candidate_ids = nil
+    Creatives::PermissionFilter.stub(:permitted_user_ids, ->(_creative, ids, min_permission:) {
+      candidate_ids = ids
+      ids
+    }) do
+      get collavre.search_users_path,
+          params: { q: "limited onboarding", creative_id: onboarding_session.practice_creatives.second.id, limit: 1 }
+    end
+
+    assert_response :success
+    assert_equal [ helper.id ], candidate_ids
+  end
+
   test "ai user defaults to non-searchable when checkbox is unchecked" do
     sign_in_as(@regular_user, password: "password")
 

@@ -24,17 +24,6 @@ module Collavre
         Collavre::User.mentionable_for(creative)
       end
 
-      # An onboarding practice tree grants feedback access to one available AI
-      # helper. Keep the picker aligned with the dispatch permission check so a
-      # learner cannot choose a visible agent that cannot answer in the tree.
-      session = Collavre::Onboarding::Session.for_creative(creative)
-      if params[:scope] != "contacts" && session
-        eligible_agent_ids = scope.ai_agents.select do |agent|
-          creative.has_permission?(agent, :feedback)
-        end.map(&:id)
-        scope = scope.where(id: eligible_agent_ids)
-      end
-
       users = scope
       if term.present?
         users = users.where("LOWER(users.email) LIKE :term OR LOWER(users.name) LIKE :term", term: "#{term}%")
@@ -44,7 +33,17 @@ module Collavre
       limit = 20 if limit <= 0
       limit = 50 if limit > 50
 
-      user_ids = users.select(:id).distinct.limit(limit).pluck(:id)
+      # An onboarding practice tree grants feedback access to one available AI
+      # helper. Apply the picker search and limit before checking permissions,
+      # then resolve the remaining candidates through the permission cache in
+      # one batch so keystrokes do not load every searchable agent.
+      session = Collavre::Onboarding::Session.for_creative(creative)
+      user_ids = if params[:scope] != "contacts" && session
+        candidate_ids = users.ai_agents.select(:id).distinct.limit(limit).pluck(:id)
+        Creatives::PermissionFilter.permitted_user_ids(creative, candidate_ids, min_permission: :feedback)
+      else
+        users.select(:id).distinct.limit(limit).pluck(:id)
+      end
       users = Collavre::User.where(id: user_ids)
       render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
     end

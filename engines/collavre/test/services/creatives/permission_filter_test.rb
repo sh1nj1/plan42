@@ -327,5 +327,22 @@ module Creatives
       refute ranks.key?(@origin.id),
         "no public share => absent for an anonymous viewer (not the owner, no user entry)"
     end
+
+    test "permitted_user_ids resolves candidate users in one permission-cache batch" do
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @origin, user: @stranger, permission: "feedback")
+        CreativeShare.create!(creative: @origin, user: nil, permission: "feedback")
+        CreativeShare.find_by!(creative: @origin, user: @shared_user).update!(permission: "no_access")
+      end
+
+      permitted_ids = Creatives::PermissionFilter.permitted_user_ids(
+        @origin,
+        [ @owner.id, @shared_user.id, @stranger.id ],
+        min_permission: :feedback
+      )
+
+      assert_equal [ @owner.id, @stranger.id ], permitted_ids,
+        "owner and direct feedback share qualify, while a user-specific deny overrides public feedback"
+    end
   end
 end
