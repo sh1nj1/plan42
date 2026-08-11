@@ -23,7 +23,7 @@ describe("DesktopProxySetupController", () => {
            data-desktop-proxy-setup-unavailable-value="Desktop support is unavailable"
            data-desktop-proxy-setup-failed-value="Setup failed">
         <input type="checkbox" data-desktop-proxy-setup-target="consent">
-        <button data-desktop-proxy-setup-target="submit"></button>
+      <button disabled data-desktop-proxy-setup-target="submit"></button>
         <p hidden data-desktop-proxy-setup-target="error"></p>
       </div>`
     application = Application.start()
@@ -48,6 +48,8 @@ describe("DesktopProxySetupController", () => {
   })
 
   test("enables installation only after consent", () => {
+    expect(controller.submitTarget.disabled).toBe(true)
+
     controller.consentTarget.checked = false
     controller.toggle()
     expect(controller.submitTarget.disabled).toBe(true)
@@ -57,9 +59,21 @@ describe("DesktopProxySetupController", () => {
     expect(controller.submitTarget.disabled).toBe(false)
   })
 
+  test("does not start installation without consent", async () => {
+    const invoke = jest.fn()
+    window.__TAURI__ = { core: { invoke } }
+
+    await controller.install()
+
+    expect(csrfFetch).not.toHaveBeenCalled()
+    expect(invoke).not.toHaveBeenCalled()
+    expect(controller.submitTarget.disabled).toBe(true)
+  })
+
   test("registers through Tauri and retains the adapter step", async () => {
     const invoke = jest.fn().mockResolvedValue({ adapters: [ "claude" ] })
     window.__TAURI__ = { core: { invoke } }
+    controller.consentTarget.checked = true
     csrfFetch.mockResolvedValue({ ok: true, json: async () => ({ token: "grant" }) })
     const navigate = jest.spyOn(controller, "navigate").mockImplementation(() => {})
 
