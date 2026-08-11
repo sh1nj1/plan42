@@ -36,6 +36,7 @@ struct Sidecar {
 struct ManagedProxy {
     child: Child,
     port: u16,
+    credentials: ProxyCredentials,
 }
 
 struct ProxySidecar(Mutex<Option<ManagedProxy>>);
@@ -282,6 +283,7 @@ fn generate_sidecar_secret() -> Result<String, String> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
+#[derive(Clone)]
 struct ProxyCredentials {
     admin_key: String,
     completion_key: String,
@@ -455,7 +457,7 @@ fn spawn_proxy(
     app: &tauri::AppHandle,
     data: &Path,
     config: &ProxyConfig,
-    credentials: ProxyCredentials,
+    credentials: &ProxyCredentials,
 ) -> Result<Child, String> {
     let root = proxy_root(app);
     let node = root.join("node/bin/node");
@@ -475,7 +477,7 @@ fn spawn_proxy(
     fs::create_dir_all(&log_dir).ok();
     let mut command = Command::new(node);
     command.arg(entrypoint).current_dir(&state);
-    configure_desktop_proxy_environment(&mut command, config, &credentials, &state);
+    configure_desktop_proxy_environment(&mut command, config, credentials, &state);
 
     // The proxy inherits HOME and receives an expanded executable-only PATH:
     // the user's already logged-in Claude/Codex CLIs own their authentication.
@@ -555,6 +557,24 @@ fn managed_proxy_port(sidecar: &ProxySidecar) -> Option<u16> {
         .flatten()
 }
 
+/// Return the credentials held by the live managed process, not a later
+/// Keychain read. A setup retry must register exactly the keys passed to the
+/// proxy's environment.
+fn managed_proxy_credentials(sidecar: &ProxySidecar) -> Result<Option<ProxyCredentials>, String> {
+    let mut proxy = sidecar
+        .0
+        .lock()
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?;
+    let exited = proxy
+        .as_mut()
+        .and_then(|process| process.child.try_wait().ok().flatten())
+        .is_some();
+    if exited {
+        proxy.take();
+    }
+    Ok(proxy.as_ref().map(|process| process.credentials.clone()))
+}
+
 fn stop_managed_proxy(sidecar: &ProxySidecar) -> Result<(), String> {
     let mut proxy = sidecar
         .0
@@ -568,36 +588,38 @@ fn stop_managed_proxy(sidecar: &ProxySidecar) -> Result<(), String> {
 }
 
 fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> Result<(), String> {
-    let mut child = sidecar
-        .0
-        .lock()
-        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?;
-    let exited = child
-        .as_mut()
-        .and_then(|process| process.child.try_wait().ok().flatten())
-        .is_some();
-    if exited {
-        child.take();
-        let _ = fs::remove_file(proxy_pidfile_path(data));
+    let credentials = proxy_credentials()?;
+    start_proxy_with_credentials(app, data, sidecar, credentials).map(|_| ())
+}
+
+fn start_proxy_with_credentials(
+    app: &tauri::AppHandle,
+    data: &Path,
+    sidecar: &ProxySidecar,
+    credentials: ProxyCredentials,
+) -> Result<ProxyCredentials, String> {
+    // A newly generated key cannot authenticate a proxy that is already
+    // running with its old environment. Stop it before deciding whether to
+    // reuse a child so the replacement receives all current Keychain values.
+    if credentials.regenerated {
+        stop_managed_proxy(sidecar)?;
     }
-    if child.is_some() {
-        return Ok(());
+    if let Some(credentials) = managed_proxy_credentials(sidecar)? {
+        return Ok(credentials);
     }
-    drop(child);
     let mut config = read_proxy_config(data)
         .ok_or_else(|| "Desktop proxy setup has not been approved.".to_string())?;
     let manifest = bundled_proxy_manifest(app)?;
     if config.version != manifest.version {
         return Err("The desktop proxy version changed. Re-run desktop proxy setup.".to_string());
     }
-    let credentials = proxy_credentials()?;
     invalidate_proxy_registration_after_key_regeneration(
         data,
         &mut config,
         credentials.regenerated,
     )?;
     reap_orphan_proxy(data);
-    let child = spawn_proxy(app, data, &config, credentials)?;
+    let child = spawn_proxy(app, data, &config, &credentials)?;
     fs::write(proxy_pidfile_path(data), child.id().to_string())
         .map_err(|_| "Could not record the desktop proxy process.".to_string())?;
     sidecar
@@ -607,6 +629,7 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
         .replace(ManagedProxy {
             child,
             port: config.port,
+            credentials: credentials.clone(),
         });
     let healthy = sidecar
         .0
@@ -627,10 +650,13 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
             "cli-openai-proxy did not pass its health check. See desktop-proxy.log.".to_string(),
         );
     }
-    Ok(())
+    Ok(credentials)
 }
 
-fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<ProxyStatus, String> {
+fn install_proxy(
+    app: &tauri::AppHandle,
+    sidecar: &ProxySidecar,
+) -> Result<ProxyCredentials, String> {
     let data = data_dir(app);
     fs::create_dir_all(&data)
         .map_err(|_| "Could not create the Collavre data directory.".to_string())?;
@@ -658,8 +684,9 @@ fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<Proxy
         replace_occupied_proxy_port(&mut config, free_port());
     }
     write_proxy_config(&data, &config)?;
-    start_proxy(app, &data, sidecar)?;
-    Ok(proxy_status(app, &data, sidecar))
+    let credentials = proxy_credentials()?;
+    let credentials = start_proxy_with_credentials(app, &data, sidecar, credentials)?;
+    Ok(credentials)
 }
 
 /// Complete the user-approved setup without exposing Keychain secrets to the
@@ -683,11 +710,10 @@ fn desktop_proxy_complete_setup(
     // Tauri command is callable from loopback pages, so an arbitrary string
     // must not be allowed to trigger those side effects.
     validate_registration_grant(server_port, &registration_token)?;
-    install_proxy(&app, &sidecar)?;
+    let credentials = install_proxy(&app, &sidecar)?;
     let data = data_dir(&app);
     let config = read_proxy_config(&data)
         .ok_or_else(|| "Desktop proxy configuration is missing after installation.".to_string())?;
-    let credentials = proxy_credentials()?;
     let adapters = detected_adapters();
     let request = GatewayRegistration {
         registration_token: &registration_token,
@@ -1329,9 +1355,9 @@ mod tests {
         append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
         generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
         invalidate_proxy_registration_when_gateway_is_missing, lsof_reports_process,
-        managed_proxy_runs_on_port, migrate_proxy_config, normalized_proxy_config, nvm_bin_paths,
-        parse_bundled_proxy_manifest, read_proxy_config, reap_orphan_proxy,
-        register_authenticated_gateway, registered_authenticated_gateway_exists,
+        managed_proxy_credentials, managed_proxy_runs_on_port, migrate_proxy_config,
+        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
+        reap_orphan_proxy, register_authenticated_gateway, registered_authenticated_gateway_exists,
         replace_occupied_proxy_port, revalidate_registered_gateway_after_rails_health,
         valid_sidecar_challenge_response, wait_until_proxy_healthy, write_proxy_config,
         GatewayRegistration, HmacSha256, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
@@ -1787,10 +1813,22 @@ mod tests {
         let sidecar = ProxySidecar(Mutex::new(Some(ManagedProxy {
             child,
             port: 34_567,
+            credentials: ProxyCredentials {
+                admin_key: "admin-key".to_string(),
+                completion_key: "completion-key".to_string(),
+                identity_secret: "identity-secret".to_string(),
+                regenerated: false,
+            },
         })));
 
         assert!(managed_proxy_runs_on_port(&sidecar, 34_567));
         assert!(!managed_proxy_runs_on_port(&sidecar, 45_678));
+        let credentials = managed_proxy_credentials(&sidecar)
+            .expect("read managed proxy credentials")
+            .expect("managed proxy credentials");
+        assert_eq!("admin-key", credentials.admin_key);
+        assert_eq!("completion-key", credentials.completion_key);
+        assert_eq!("identity-secret", credentials.identity_secret);
 
         let mut proxy = sidecar
             .0
