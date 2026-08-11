@@ -27,6 +27,26 @@ module Collavre
       assert_includes response.body, "onboarding-card"
     end
 
+    test "speculative workspace requests do not consume onboarding auto-open state" do
+      user = User.create!(name: "Prefetched visit", email: "prefetched-onboarding@example.com", password: "password")
+      sign_in_as(user, password: "password")
+
+      get creatives_path, headers: { "X-Sec-Purpose" => "prefetch" }
+      assert_response :success
+      assert_nil Onboarding::Session.for_user(user.reload)
+
+      head creatives_path
+      assert_response :success
+      assert_nil Onboarding::Session.for_user(user.reload)
+
+      get creatives_path
+      assert_response :success
+      session = Onboarding::Session.for_user(user.reload)
+      assert session
+      refute session.data.key?("chat_autoopen_pending")
+      assert_includes response.body, "onboarding-card"
+    end
+
     test "advances and completes onboarding through the namespaced services" do
       user = User.create!(name: "Learner", email: "onboarding-actions@example.com", password: "password")
       sign_in_as(user, password: "password")
@@ -109,6 +129,11 @@ module Collavre
       assert_response :success
       assert_equal "Updated practice item", second.reload.description
       assert_equal "comment", Onboarding::Session.for_user(user).data.fetch("current_step")
+
+      get onboarding_path, as: :json
+
+      assert_response :success
+      assert_equal creatives_path(id: second), response.parsed_body.fetch("navigation_path")
     end
   end
 end

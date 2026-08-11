@@ -622,6 +622,7 @@ module Collavre
     private
 
       def ensure_onboarding_for_workspace_root
+        return if request.head? || turbo_prefetch_request?
         return unless Current.user&.creative_workspace_enabled? && params[:id].blank?
         return if Current.user.onboarding_completed_at?
 

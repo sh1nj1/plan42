@@ -104,9 +104,13 @@ module Collavre
       end
 
       def navigation_path(step = current_step, script_name: nil)
-        return unless step&.key == :progress
+        target = case step&.key
+        when :progress then root
+        when :comment then target_creative(step)
+        end
+        return unless target
 
-        Collavre::Engine.routes.url_helpers.creatives_path(id: root.id, script_name: script_name)
+        Collavre::Engine.routes.url_helpers.creatives_path(id: target.id, script_name: script_name)
       end
 
       def update!(attributes = {})
