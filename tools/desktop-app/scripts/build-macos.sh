@@ -18,14 +18,45 @@ DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
 STAGING="$DESKTOP_DIR/staging/app"
 TAURI_SOURCE_DIR="$(cd -P "$DESKTOP_DIR/src-tauri" && pwd)"
+# Cargo accepts target directories that do not exist yet, so `realpath` cannot
+# normalize them reliably. Collapse lexical `.` and `..` components instead,
+# preserving Cargo's src-tauri-relative interpretation for both its output and
+# the staging exclusion below.
+normalize_target_dir() {
+	local path="$1"
+	local component
+	local last_index
+	local -a path_components=()
+	local -a normalized_components=()
+
+	[[ "$path" == /* ]] || path="$TAURI_SOURCE_DIR/$path"
+	IFS=/ read -r -a path_components <<< "$path"
+
+	for component in "${path_components[@]}"; do
+		case "$component" in
+			""|.) ;;
+			..)
+				if ((${#normalized_components[@]})); then
+					last_index=$((${#normalized_components[@]} - 1))
+					unset "normalized_components[$last_index]"
+				fi
+				;;
+			*) normalized_components+=("$component") ;;
+		esac
+	done
+
+	local normalized_path=""
+	for component in "${normalized_components[@]}"; do
+		normalized_path+="/$component"
+	done
+	printf '%s\n' "${normalized_path:-/}"
+}
+
 # Resolve a caller-provided relative CARGO_TARGET_DIR where Cargo resolves it:
 # from src-tauri. Export the normalized value too, so Cargo and the post-build
 # checks below always operate on the same directory.
 if [ -n "${CARGO_TARGET_DIR:-}" ]; then
-  case "$CARGO_TARGET_DIR" in
-    /*) TAURI_TARGET_DIR="$CARGO_TARGET_DIR" ;;
-    *) TAURI_TARGET_DIR="$TAURI_SOURCE_DIR/$CARGO_TARGET_DIR" ;;
-  esac
+  TAURI_TARGET_DIR="$(normalize_target_dir "$CARGO_TARGET_DIR")"
 else
   TAURI_TARGET_DIR="$TAURI_SOURCE_DIR/target"
 fi
