@@ -148,7 +148,39 @@ drives esbuild from `node_modules` — Node.js is a build prerequisite.
 The app icon is generated during the build from `public/icon-*.png` (the app's
 own brand icon) into the git-ignored `src-tauri/icons/` — nothing to prepare.
 
-First launch: right-click → **Open** (the build is unsigned; Gatekeeper).
+This is a local development build. Use the release script below for a signed
+and notarized distribution build.
+
+## Publish a desktop release
+
+`script/release-desktop.sh` is the single operator entry point. The canonical
+version is `src-tauri/tauri.conf.json`; the script keeps Cargo's manifest and
+lockfile package versions in sync, proposes a semantic bump from desktop commit
+messages, then requires an explicit version and final confirmation before
+creating the version commit.
+
+It runs the desktop Rust and Rails test suites, creates the Apple-Silicon DMG,
+checks its code signature, submits and staples it with Apple notarization,
+writes a SHA-256 checksum, and only then creates a GitHub Release. The Git tag
+format is `desktop-v<semver>` and release notes are generated from desktop
+commits since the preceding desktop tag.
+
+Run it only from a clean, current `main` checkout on an Apple-Silicon Mac:
+
+```bash
+export APPLE_SIGNING_IDENTITY='Developer ID Application: Example, Inc. (TEAMID)'
+export APPLE_ID='releases@example.com'
+export APPLE_APP_SPECIFIC_PASSWORD='xxxx-xxxx-xxxx-xxxx'
+export APPLE_TEAM_ID='TEAMID'
+export NODE_RUNTIME_URL='https://nodejs.org/dist/v<node-version>/node-v<node-version>-darwin-arm64.tar.xz'
+export NODE_RUNTIME_SHA256='<official-node-sha256>'
+script/release-desktop.sh
+```
+
+The Apple signing identity and App Store app-specific password must be stored
+only in the protected release environment or the release operator's keychain;
+they are never committed. The GitHub CLI must already be authenticated with
+permission to push `main`, tags, and releases.
 
 ## Known follow-ups (out of v1 scope)
 
@@ -156,7 +188,7 @@ First launch: right-click → **Open** (the build is unsigned; Gatekeeper).
   variants in the `desktop` env.
 - **OAuth** — client secrets can't ship in a distributed binary; desktop v1 uses
   password auth (PKCE/loopback OAuth later).
-- **Signing / notarization / .dmg / auto-update** — deferred.
+- **Auto-update** — deferred.
 - **Windows / Linux** — deferred (the Rust shell and Rails env are already
   cross-platform; packaging scripts are macOS-only for now).
 - **Relocatable Ruby** — the vendored Ruby is happiest when the app lives at a
