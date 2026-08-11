@@ -86,13 +86,23 @@ module Collavre
         assert_equal :first_steps, session.scenario.key
       end
 
-      test "builds progress navigation inside a mounted engine" do
+      test "builds step navigation inside a mounted engine" do
         user = User.create!(name: "Mounted learner", email: "mounted-onboarding@example.com", password: "password")
+        User.create!(
+          name: "Mounted helper", email: "mounted-helper@example.com", password: "password",
+          llm_vendor: "openai", searchable: true
+        )
         session = Seeder.new(user: user).call
-        progress_step = session.scenario.steps.find { |step| step.key == :progress }
+        steps = session.scenario.steps.index_by(&:key)
 
         assert_equal "/collavre/creatives?id=#{session.root.id}",
-                     session.navigation_path(progress_step, script_name: "/collavre")
+                     session.navigation_path(steps.fetch(:progress), script_name: "/collavre")
+        assert_equal "/collavre/creatives?id=#{session.root.id}",
+                     session.navigation_path(steps.fetch(:editor), script_name: "/collavre")
+        assert_equal "/collavre/creatives?id=#{session.practice_creatives.second.id}",
+                     session.navigation_path(steps.fetch(:comment), script_name: "/collavre")
+        assert_equal "/collavre/creatives?id=#{session.practice_creatives.second.id}",
+                     session.navigation_path(steps.fetch(:mention), script_name: "/collavre")
       end
 
       test "does not add onboarding to an existing workspace" do

@@ -105,8 +105,8 @@ module Collavre
 
       def navigation_path(step = current_step, script_name: nil)
         target = case step&.key
-        when :progress then root
-        when :comment then target_creative(step)
+        when :progress, :editor then root
+        when :comment, :mention then target_creative(step)
         end
         return unless target
 
