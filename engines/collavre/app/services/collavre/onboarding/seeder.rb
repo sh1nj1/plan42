@@ -63,7 +63,7 @@ module Collavre
         agent = User.accessible_ai_agents_for(user)
                     .where.not("name LIKE ?", "%:%")
                     .where("LOWER(name) IN (?)", unambiguous_names)
-                    .first
+                    .find { |candidate| canonical_mention_resolves_to?(candidate) }
         return unless agent
 
         share = CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
@@ -75,6 +75,10 @@ module Collavre
         # its permission synchronously after all practice children exist.
         Creatives::PermissionCacheBuilder.propagate_share(share)
         agent
+      end
+
+      def canonical_mention_resolves_to?(agent)
+        MentionParser.resolve_user("@#{agent.name}:")&.id == agent.id
       end
 
       def t(key)

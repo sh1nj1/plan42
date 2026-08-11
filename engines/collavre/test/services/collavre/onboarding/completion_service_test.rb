@@ -116,6 +116,30 @@ module Collavre
         OnboardingCleanupJob.perform_now(user.id, session.session_id)
         refute Creative.exists?(session.root.id)
       end
+
+      test "replays cleanup after an externally claimed onboarding task settles beyond the retry window" do
+        user = User.create!(name: "External claim finisher", email: "external-claim-finisher@example.com", password: "password")
+        agent = User.create!(name: "External claim helper", email: "external-claim-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        creative = session.practice_creatives.second
+        topic = creative.topics.create!(name: "External claim", user: user)
+        comment = Comment.create!(creative: creative, user: user, content: "Please help")
+        task = Task.create!(name: "External response", status: "delegated", agent: agent,
+                            trigger_event_payload: { "comment" => { "id" => comment.id } },
+                            creative: creative, topic_id: topic.id)
+
+        CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
+        clear_enqueued_jobs
+        OnboardingCleanupJob.perform_now(user.id, session.session_id, OnboardingCleanupJob::RETRY_DELAYS.length)
+
+        claimed_task = AiAgent::TaskClaimService.new.claim(agent: agent, topic: topic, requested_task_id: task.id)
+        reply = Comment.create!(creative: creative, topic: topic, user: agent, content: "I can help")
+
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+          AiAgent::TaskClaimService.new.finalize(agent: agent, task: claimed_task, comment: reply)
+        end
+      end
     end
   end
 end

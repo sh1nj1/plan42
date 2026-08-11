@@ -26,7 +26,7 @@ module Collavre
       # concurrent /reply calls. If update! fired the trigger-loop check here, the
       # job could run (cooldown_seconds: 0) before comment.save commits, find no
       # agent comment, and leave the loop stuck in "running". #finalize replays
-      # both callbacks after the comment is persisted via
+      # all completion callbacks after the comment is persisted via
       # Task#fire_completion_callbacks_after_external_claim.
       def claim(agent:, topic:, requested_task_id:)
         scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
@@ -68,8 +68,9 @@ module Collavre
         # Replay the after_update_commit callbacks that were bypassed by
         # update_all in #claim — now that the reply comment is linked,
         # TriggerLoopCheckJob can read it and decide whether to advance/await/
-        # complete the drop-trigger loop, and the stop-button broadcast has a
-        # comment to render.
+        # complete the drop-trigger loop, the stop-button broadcast has a
+        # comment to render, and an onboarding cleanup can safely follow an
+        # externally completed task.
         task.fire_completion_callbacks_after_external_claim
 
         # Clear the typing indicator immediately on reply. ClaudeChannelPresenceJob

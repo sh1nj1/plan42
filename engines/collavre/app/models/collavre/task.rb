@@ -89,11 +89,13 @@ module Collavre
     # saved_change_to_attribute? which is false outside a save lifecycle, so
     # the callbacks themselves would no-op when called directly. This method
     # is the supported escape hatch for AgentsController#finalize_claimed_task
-    # to drive the same side effects (trigger-loop continuation + stop-button
-    # broadcast) once the related reply_comment has been persisted.
+    # to drive the same side effects (trigger-loop continuation, stop-button
+    # broadcast, and deferred onboarding cleanup) once the related reply_comment
+    # has been persisted.
     def fire_completion_callbacks_after_external_claim
       check_trigger_loop_completion if trigger_loop_completion_eligible?
       broadcast_stop_button_removal if terminal_status?
+      schedule_onboarding_cleanup unless active?
     end
 
     # What a persisted row says about whether this turn ever handed anything
