@@ -17,6 +17,8 @@ export default class CommonPopup {
     this.closeOnOutsideClick = closeOnOutsideClick
     this.items = []
     this.activeIndex = -1
+    // Pending showAt placement frame, so hide() can cancel it.
+    this._openFrame = null
 
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
     this.handleViewportResize = this.handleViewportResize.bind(this)
@@ -44,7 +46,17 @@ export default class CommonPopup {
     this.element.style.display = 'block'
     this.element.style.visibility = 'hidden'
 
-    requestAnimationFrame(() => {
+    cancelAnimationFrame(this._openFrame)
+    this._openFrame = requestAnimationFrame(() => {
+      this._openFrame = null
+      // The popup can be gone before this frame runs: hide() on a rapid
+      // open/close, or a Turbo navigation that tears the element out of the
+      // document without closing the popup. Registering here regardless would
+      // leave document/visualViewport holding this popup and its detached
+      // element forever, and hide()'s removals already ran against listeners
+      // that did not exist yet.
+      if (!this.isOpen() || !this.element.isConnected) return
+
       this.updatePosition(anchorRect)
       this.element.style.visibility = 'visible'
       // Register the outside-click listeners only after the opening event has
@@ -261,6 +273,10 @@ export default class CommonPopup {
 
   hide(reason = 'manual') {
     if (!this.element || !this.isOpen()) return
+    // Drop a placement frame that has not run yet, so it cannot re-show and
+    // re-register listeners after this close.
+    cancelAnimationFrame(this._openFrame)
+    this._openFrame = null
     this.element.style.display = 'none'
     this.element.style.visibility = ''
     this.items = []

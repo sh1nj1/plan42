@@ -110,15 +110,23 @@ describe('CommonPopup viewport-fit placement', () => {
 
     describe('reposition after async content', () => {
         let realRaf
+        let realCancelRaf
 
         beforeEach(() => {
             jest.useFakeTimers()
             realRaf = window.requestAnimationFrame
+            realCancelRaf = window.cancelAnimationFrame
+            // Stubbed as a pair: the timer id doubles as the frame handle, so
+            // cancelAnimationFrame actually drops the pending callback the way
+            // the browser would. Stubbing only requestAnimationFrame would make
+            // cancellation silently no-op and hide regressions.
             window.requestAnimationFrame = (cb) => setTimeout(cb, 0)
+            window.cancelAnimationFrame = (handle) => clearTimeout(handle)
         })
 
         afterEach(() => {
             window.requestAnimationFrame = realRaf
+            window.cancelAnimationFrame = realCancelRaf
             jest.useRealTimers()
         })
 
@@ -180,6 +188,57 @@ describe('CommonPopup viewport-fit placement', () => {
 
             popup.hide()
             expect(listeners.resize).toBeUndefined()
+        })
+
+        // The placement frame runs a tick after showAt, so a close that lands in
+        // between must not leave document/visualViewport holding this popup:
+        // hide()'s removeEventListener calls run before the additions would.
+        test('registers nothing when the popup is closed before its placement frame runs', () => {
+            const listeners = stubVisualViewport(768)
+            const addSpy = jest.spyOn(document, 'addEventListener')
+            const popup = build({ popupHeight: 400 })
+
+            popup.showAt({ left: 200, top: 300, bottom: 320 })
+            popup.hide()
+            jest.advanceTimersByTime(20)
+
+            expect(listeners.resize).toBeUndefined()
+            expect(addSpy.mock.calls.some(([type]) => type === 'mousedown' || type === 'touchstart')).toBe(false)
+            // The cancelled frame must not re-show what hide() closed.
+            expect(element.style.display).toBe('none')
+            addSpy.mockRestore()
+        })
+
+        // Turbo swaps the page without closing the popup: the element is gone
+        // from the document but still reads display:block.
+        test('registers nothing when the element is detached before its placement frame runs', () => {
+            const listeners = stubVisualViewport(768)
+            const addSpy = jest.spyOn(document, 'addEventListener')
+            const popup = build({ popupHeight: 400 })
+
+            popup.showAt({ left: 200, top: 300, bottom: 320 })
+            element.remove()
+            jest.advanceTimersByTime(20)
+
+            expect(listeners.resize).toBeUndefined()
+            expect(addSpy.mock.calls.some(([type]) => type === 'mousedown' || type === 'touchstart')).toBe(false)
+            addSpy.mockRestore()
+        })
+
+        // Reopening before the first frame fires must drop the superseded one,
+        // so the popup is never placed against the anchor it has abandoned.
+        test('supersedes a pending placement frame when reopened', () => {
+            const popup = build({ popupHeight: 400 })
+            const placeSpy = jest.spyOn(popup, 'updatePosition')
+
+            popup.showAt({ left: 200, top: 300, bottom: 320 })
+            popup.showAt({ left: 200, top: 700, bottom: 720 })
+            jest.advanceTimersByTime(20)
+
+            expect(placeSpy).toHaveBeenCalledTimes(1)
+            expect(placeSpy).toHaveBeenCalledWith({ left: 200, top: 700, bottom: 720 })
+            expect(element.style.top).toBe('296px')
+            placeSpy.mockRestore()
         })
     })
 })
