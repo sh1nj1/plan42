@@ -112,7 +112,7 @@ version_bump_level() {
   local messages
   messages="$(git log --format=%B "$range")"
 
-  if grep -Eq '(^|\n)(BREAKING CHANGE:|[A-Za-z]+(\([^)]+\))?!:)' <<< "$messages"; then
+  if grep -Eq '(^|\n)(BREAKING[ -]CHANGE:|[A-Za-z]+(\([^)]+\))?!:)' <<< "$messages"; then
     printf 'major\n'
   elif grep -Eq '(^|\n)feat(\([^)]+\))?:' <<< "$messages"; then
     printf 'minor\n'
@@ -341,39 +341,42 @@ publish_release() {
   local version="$2"
   local artifact="$3"
   local checksum="${artifact}.sha256"
-  local -a prerelease_flag=()
+  local -a create_args=(release create "$tag" --draft
+    --title "Collavre Desktop $version"
+    --notes-file "$ARTIFACT_DIR/release-notes.md"
+    --verify-tag)
 
-  if is_prerelease "$version"; then
-    prerelease_flag+=(--prerelease)
-  fi
+  is_prerelease "$version" && create_args+=(--prerelease)
 
   if gh release view "$tag" >/dev/null 2>&1; then
-    local -a missing_assets=()
-    local asset release_is_draft
+    local release_is_draft
     release_is_draft="$(gh release view "$tag" --json isDraft --jq .isDraft)"
-    for asset in "$(basename "$artifact")" "$(basename "$checksum")"; do
-      if ! gh release view "$tag" --json assets --jq ".assets[].name | select(. == \"$asset\")" | grep -Fxq "$asset"; then
-	missing_assets+=("$ARTIFACT_DIR/$asset")
-      fi
-    done
-
-    if ((${#missing_assets[@]})); then
-      gh release upload "$tag" "${missing_assets[@]}"
-    fi
     if [[ "$release_is_draft" == "true" ]]; then
-      gh release edit "$tag" --draft=false \
-	--title "Collavre Desktop $version" \
-	--notes-file "$ARTIFACT_DIR/release-notes.md" \
-	"${prerelease_flag[@]}"
+      # A failed upload can leave a draft with only one stale asset. Replace
+      # both artifacts from this build before publishing so the checksum and
+      # DMG always describe the same release output.
+      gh release upload "$tag" "$artifact" "$checksum" --clobber
+      publish_draft_release "$tag" "$version"
     fi
     return
   fi
 
-  gh release create "$tag" "$artifact" "$checksum" \
-    --title "Collavre Desktop $version" \
-    --notes-file "$ARTIFACT_DIR/release-notes.md" \
-    --verify-tag \
-    "${prerelease_flag[@]}"
+  # Create a draft first. A retry can then replace both assets atomically at
+  # the release level before the draft is made public.
+  gh "${create_args[@]}"
+  gh release upload "$tag" "$artifact" "$checksum" --clobber
+  publish_draft_release "$tag" "$version"
+}
+
+publish_draft_release() {
+  local tag="$1"
+  local version="$2"
+  local -a edit_args=(release edit "$tag" --draft=false
+    --title "Collavre Desktop $version"
+    --notes-file "$ARTIFACT_DIR/release-notes.md")
+
+  is_prerelease "$version" && edit_args+=(--prerelease)
+  gh "${edit_args[@]}"
 }
 
 check_prerequisites() {

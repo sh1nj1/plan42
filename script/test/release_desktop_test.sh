@@ -90,6 +90,13 @@ git -C "$repo_dir" commit --quiet -m "feat(desktop)!: remove legacy setup"
   cd "$repo_dir"
   assert_equal "major" "$(version_bump_level HEAD)"
 )
+git -C "$repo_dir" commit --quiet --allow-empty \
+  -m "fix(desktop): change desktop protocol" \
+  -m "BREAKING-CHANGE: desktop protocol is incompatible with earlier releases"
+(
+  cd "$repo_dir"
+  assert_equal "major" "$(version_bump_level HEAD~1..HEAD)"
+)
 git -C "$repo_dir" commit --quiet --allow-empty -m "$(release_commit_message "2.3.4")"
 (
   cd "$repo_dir"
@@ -191,5 +198,19 @@ printf 'dmg fixture\n' > "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg"
 write_checksum "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg" "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256"
 assert_equal "Collavre-Desktop_2.3.4_aarch64.dmg" "$(awk '{print $2}' "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256")"
 (cd "$artifact_dir" && shasum -a 256 -c "Collavre-Desktop_2.3.4_aarch64.dmg.sha256" >/dev/null)
+
+gh_log="$fixture_dir/gh.log"
+gh() {
+  printf '%s\n' "$*" >> "$gh_log"
+  if [[ "$1 $2 $3" == "release view desktop-v2.3.4" ]]; then
+    if [[ "${4:-}" == "--json" ]]; then
+      printf 'true\n'
+    fi
+    return 0
+  fi
+}
+publish_release "desktop-v2.3.4" "2.3.4" "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg"
+grep -Fqx "release upload desktop-v2.3.4 $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256 --clobber" "$gh_log"
+grep -Fqx "release edit desktop-v2.3.4 --draft=false --title Collavre Desktop 2.3.4 --notes-file $artifact_dir/release-notes.md" "$gh_log"
 
 echo "release_desktop_test: passed"
