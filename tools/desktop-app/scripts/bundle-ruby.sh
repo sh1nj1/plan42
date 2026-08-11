@@ -78,6 +78,10 @@ export BUNDLE_WITH="desktop"
 # release builder. Compile them for this Ruby instead so relocation can bundle
 # every dependency from the local build environment.
 export BUNDLE_FORCE_RUBY_PLATFORM=true
+# Nokogiri's bundled-library probe compiles Ruby 3.4 headers with `-Werror` and
+# fails on current Xcode. Build it against the local system libraries instead;
+# relocate-ruby.sh collects their non-system dylib dependencies into the app.
+export NOKOGIRI_USE_SYSTEM_LIBRARIES="${NOKOGIRI_USE_SYSTEM_LIBRARIES:-true}"
 "$VENDORED_RUBY" -S bundle install --jobs 4
 
 # Native gem extensions are compiled after the initial Ruby relocation and keep
