@@ -92,6 +92,13 @@ module ComplexityRatchet
 
   MAX_WAIVER_DAYS = 90
 
+  # The two keys --verify-baseline understands well enough to judge a change to:
+  # `Enabled` must stay true, `Max` may only fall. Every other key a Metrics cop
+  # accepts is compared for equality instead, because a loosening dressed up as
+  # a setting (`Exclude`, `AllowedPatterns`, `CountAsOne`) is indistinguishable
+  # from a tightening without re-implementing RuboCop's scope resolution.
+  BUDGET_KEYS = %w[Enabled Max].freeze
+
   # Resolves a source line to the fully-qualified name of the entity that starts
   # on it. Baseline keys have to survive ordinary editing: a line number shifts
   # every time something is inserted above it, and a bare method name is not
@@ -110,34 +117,37 @@ module ComplexityRatchet
 
     def initialize
       @paths = {}
+      @ranges = {}
       @stack = []
       @occurrences = Hash.new(0)
       super()
     end
 
-    def [](line)
-      @paths[line]
+    # `last_line` is optional so a caller with only a line still gets an answer,
+    # but passing it is what separates two scopes that open on the same line.
+    def [](line, last_line = nil)
+      @ranges[[ line, last_line ]] || @paths[line]
     end
 
     def visit_class_node(node)
-      nest(node.constant_path.slice, node.location.start_line) { super }
+      nest(node.constant_path.slice, node.location) { super }
     end
 
     def visit_module_node(node)
-      nest(node.constant_path.slice, node.location.start_line) { super }
+      nest(node.constant_path.slice, node.location) { super }
     end
 
     def visit_singleton_class_node(node)
-      nest("<<#{node.expression.slice}", node.location.start_line) { super }
+      nest("<<#{node.expression.slice}", node.location) { super }
     end
 
     def visit_def_node(node)
-      nest("#{node.receiver ? '.' : '#'}#{node.name}", node.location.start_line) { super }
+      nest("#{node.receiver ? '.' : '#'}#{node.name}", node.location) { super }
     end
 
     # RuboCop reports Metrics/BlockLength against the whole `send + block`
-    # range, so the offense line is the call's line rather than the `do`. Record
-    # both so either resolves to the block.
+    # range, so the offense line is the call's line rather than the `do`. The
+    # `do` line is recorded too, as a fallback for anything that points there.
     #
     # `node.block` is a BlockArgumentNode for `foo(&blk)`, which has no body and
     # is not a scope — only a literal BlockNode introduces one.
@@ -146,16 +156,27 @@ module ComplexityRatchet
 
       node.receiver&.accept(self)
       node.arguments&.accept(self)
-      nest("[block:#{node.name}]", node.location.start_line, node.block.location.start_line) do
+      nest("[block:#{node.name}]", node.location, node.block.location.start_line) do
         node.block.body&.accept(self)
       end
     end
 
     private
 
-    def nest(segment, *lines)
+    # Two indexes, because a start line alone is not an identity. In a chained
+    # block — `items.each do ... end.map do ... end` — both blocks are reported
+    # by RuboCop at the receiver's line and column, so a line-keyed map resolves
+    # both to the inner block and Measurement#record keeps only the larger: a
+    # new outer block hides behind a baselined inner one. Prism's node ranges
+    # match RuboCop's offense ranges exactly for classes, defs and blocks, so
+    # the end line separates them.
+    #
+    # The line-only map stays as the fallback for offenses whose range is not a
+    # scope's range (Metrics/BlockNesting points at a bare statement).
+    def nest(segment, location, *extra_lines)
       @stack.push(disambiguate(segment))
-      lines.each { |line| @paths[line] ||= path }
+      @ranges[[ location.start_line, location.end_line ]] ||= path
+      [ location.start_line, *extra_lines ].each { |line| @paths[line] ||= path }
       yield
     ensure
       @stack.pop
@@ -236,13 +257,14 @@ module ComplexityRatchet
 
       offenses.each do |offense|
         line = offense.dig("location", "start_line") || offense.dig("location", "line")
-        key = [ path, offense["cop_name"], entity_name(entities, lines, line) ].join(SEPARATOR)
+        last_line = offense.dig("location", "last_line")
+        key = [ path, offense["cop_name"], entity_name(entities, lines, line, last_line) ].join(SEPARATOR)
         record(acc, key, offense["message"])
       end
     end
 
-    def entity_name(entities, lines, line)
-      entities[line] || fallback_name(lines, line)
+    def entity_name(entities, lines, line, last_line = nil)
+      entities[line, last_line] || fallback_name(lines, line)
     end
 
     # Metrics/BlockNesting and friends point at a bare statement rather than a
@@ -461,13 +483,20 @@ module ComplexityRatchet
     # reports zero new debt, and passes.
     #
     # Deletions themselves cannot be rejected — a real refactor deletes entries
-    # too, and that is the ratchet working. So the budget is pinned instead: a
-    # limit may only tighten, an enabled cop may not be switched off, the
-    # excluded paths may only shrink, and the inherited config may not move.
+    # too, and that is the ratchet working. So the budget is pinned instead.
+    #
+    # The rule is an allowlist, not a list of known tricks: `Max` may fall, and
+    # everything else in this file must stay put. Enumerating the ways to widen
+    # a cop's reach is a losing game — `Max` is only the loudest one, and
+    # `Exclude`, `Include`, `AllowedMethods`, `AllowedPatterns` and `CountAsOne`
+    # all silence offenses just as completely while the `Max` on the line above
+    # still reads as strict. A tightening that trips this is not blocked, only
+    # made explicit: it goes through the reset label like any other budget
+    # change, which is the point.
     def verify_budget(before, after)
       return [] if before.nil?
 
-      limit_problems(before, after) + exclude_problems(before, after) + inherit_problems(before, after)
+      cop_problems(before, after) + exclude_problems(before, after) + global_problems(before, after)
     end
 
     # Keys present in the measurement but absent from the baseline are NOT
@@ -480,30 +509,49 @@ module ComplexityRatchet
 
     private
 
-    def limit_problems(before, after)
-      current = budgets(after)
+    # A cop that was gating has to keep gating, at a limit no higher, over a
+    # scope no smaller, with no new escape valve bolted on. A cop that only
+    # appears in `after` is new coverage and is left alone.
+    def cop_problems(before, after)
+      metrics(before).filter_map do |cop, body|
+        current = after[cop]
 
-      budgets(before).filter_map do |cop, limit|
-        if !current.key?(cop)
+        if !enabled?(current)
           problem(:budget_disabled, cop,
-            "was enabled in #{CONFIG_PATH} and is now off — switching a cop off deletes every baseline entry it holds")
-        elsif current[cop].nil?
+            "was enabled in #{CONFIG_PATH} and is now off or gone — switching a cop off deletes every baseline entry it holds")
+        elsif body["Max"] && current["Max"].nil?
           problem(:budget_implicit, cop,
-            "lost its explicit Max in #{CONFIG_PATH} — the budget has to stay written down to stay comparable")
-        elsif limit && current[cop] > limit
+            "lost its explicit Max in #{CONFIG_PATH} — an inherited limit moves on a gem upgrade and cannot be compared next PR")
+        elsif body["Max"] && current["Max"] > body["Max"]
           problem(:budget_loosened, cop,
-            "budget raised from #{limit} to #{current[cop]} in #{CONFIG_PATH} — the ratchet only turns one way")
+            "budget raised from #{body['Max']} to #{current['Max']} in #{CONFIG_PATH} — the ratchet only turns one way")
+        else
+          settings_problem(cop, body, current)
         end
       end
     end
 
-    # A new cop, or a Max that only appears now, is a tightening — not reported.
-    def budgets(config)
-      config.filter_map { |cop, body|
-        next unless cop.start_with?("Metrics/") && body.is_a?(Hash) && body["Enabled"]
+    # Everything that is not `Enabled` or `Max`. RuboCop has no shortage of keys
+    # that make a cop stop reporting without touching its limit — a per-cop
+    # `Exclude: ['**/*']` disables MethodLength repository-wide while the config
+    # still says `Max: 25` — so the check is "unchanged", not "not one of the
+    # ones I thought of".
+    def settings_problem(cop, before, after)
+      changed = (before.keys | after.keys).reject { |key| BUDGET_KEYS.include?(key) }
+        .reject { |key| before[key] == after[key] }
+      return nil if changed.empty?
 
-        [ cop, body["Max"] ]
-      }.to_h
+      problem(:budget_setting_changed, cop,
+        "#{changed.sort.join(', ')} changed in #{CONFIG_PATH} — keys like Exclude, Include, AllowedMethods, " \
+        "AllowedPatterns and CountAsOne silence offenses without moving Max")
+    end
+
+    def metrics(config)
+      config.select { |cop, body| cop.start_with?("Metrics/") && enabled?(body) }
+    end
+
+    def enabled?(body)
+      body.is_a?(Hash) && body["Enabled"] == true
     end
 
     # Excluding a path is the .rubocop_todo.yml amnesty this whole design exists
@@ -520,17 +568,33 @@ module ComplexityRatchet
       Array(config.dig("AllCops", "Exclude"))
     end
 
-    # The explicit Metrics keys override anything inherited, so an inherit swap
-    # cannot loosen a Max — but it can bring in AllCops/Exclude entries, which
-    # is the same amnesty by another route. Cheap to pin, and a legitimate move
-    # goes through the reset label like any other budget change.
-    def inherit_problems(before, after)
-      %w[inherit_gem inherit_from].filter_map do |key|
+    # Everything outside the Metrics cops: `inherit_gem`/`inherit_from` (an
+    # inherited config can widen AllCops/Exclude), `inherit_mode` (which decides
+    # whether Exclude merges with the inherited list or replaces it), and
+    # AllCops keys other than Exclude, which is compared above because it is the
+    # one that may legitimately shrink.
+    def global_problems(before, after)
+      keys = (before.keys | after.keys).reject { |key| key.start_with?("Metrics/") || key == "AllCops" }
+
+      keys.filter_map { |key|
         next if before[key] == after[key]
 
         problem(:budget_inherit_changed, key,
-          "changed in #{CONFIG_PATH} (#{before[key].inspect} -> #{after[key].inspect}) — an inherited config can widen AllCops/Exclude")
-      end
+          "#{key} changed in #{CONFIG_PATH} (#{before[key].inspect} -> #{after[key].inspect}) — " \
+          "an inherited or global setting can widen AllCops/Exclude")
+      } + allcops_problems(before, after)
+    end
+
+    # AllCops/Exclude is compared by #exclude_problems, because it is the one
+    # key here that may legitimately shrink. The rest — Include, NewCops,
+    # EnabledByDefault — has to hold still.
+    def allcops_problems(before, after)
+      mine, theirs = [ before, after ].map { |config| (config["AllCops"] || {}).except("Exclude") }
+      return [] if mine == theirs
+
+      changed = (mine.keys | theirs.keys).reject { |key| mine[key] == theirs[key] }.sort
+      [ problem(:budget_scope_narrowed, "AllCops",
+        "#{changed.join(', ')} changed in #{CONFIG_PATH} — narrowing what RuboCop reads hides entities from the ratchet") ]
     end
 
     def problem(kind, key, message)

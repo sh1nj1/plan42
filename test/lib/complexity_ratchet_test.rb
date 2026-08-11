@@ -12,8 +12,8 @@ require Rails.root.join("lib/complexity_ratchet").to_s
 # properties the gate depends on: entity keys survive editing, and the baseline
 # can only ever tighten.
 class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
-  def path_for(source, line)
-    ComplexityRatchet::EntityMap.for(source)[line]
+  def path_for(source, line, last_line = nil)
+    ComplexityRatchet::EntityMap.for(source)[line, last_line]
   end
 
   test "names a method inside a nested namespace" do
@@ -133,6 +133,33 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
 
     assert_equal path_for(before, 2), path_for(after, 4)
   end
+
+  # Sibling ordinals fixed twins that start on different lines. Chained blocks
+  # start on the SAME line: RuboCop reports both `each` and `map` below at the
+  # receiver's line and column, because a block offense covers the whole
+  # `send + block` range and the outer send begins at `items`. Only the end line
+  # separates them, and Prism's node ranges match RuboCop's offense ranges
+  # exactly for classes, defs and blocks.
+  test "chained blocks opening on one line resolve to different entities" do
+    source = <<~RUBY
+      class Sample
+        def run
+          items.each do |i|
+            i
+          end.map do |o|
+            o
+          end
+        end
+      end
+    RUBY
+
+    assert_equal "Sample#run[block:each]", path_for(source, 3, 5)
+    assert_equal "Sample#run[block:map]", path_for(source, 3, 7)
+
+    # Without an end line there is still an answer, so an offense whose range is
+    # not a scope's range keeps resolving to something rather than to nil.
+    assert_equal "Sample#run[block:each]", path_for(source, 3)
+  end
 end
 
 class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
@@ -155,8 +182,8 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     ComplexityRatchet::Measurement.new(root: @dir).fold(payload)
   end
 
-  def offense(cop, message, line)
-    { "cop_name" => cop, "message" => message, "location" => { "start_line" => line } }
+  def offense(cop, message, line, last_line = nil)
+    { "cop_name" => cop, "message" => message, "location" => { "start_line" => line, "last_line" => last_line } }
   end
 
   test "extracts the measured value and keys it by path, cop and entity" do
@@ -232,6 +259,40 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
 
     baselined_sibling_only = result.reject { |key, _| key.end_with?("(2)") }.transform_values { 90 }
     check = ComplexityRatchet::Check.new(actual: result, baseline: baselined_sibling_only)
+
+    refute_predicate check, :pass?
+    assert_equal :new_offense, check.blocking_problems.sole.kind
+  end
+
+  # The same hiding place one level down. Sibling blocks at least start on
+  # different lines; chained blocks share a start line AND a start column, so
+  # the ordinal cannot help — both offenses below are reported at line 3. Only
+  # the end line tells them apart, which is why the map is keyed by range.
+  test "a chained block does not hide behind the block it is chained onto" do
+    File.write(File.join(@dir, "sample.rb"), <<~RUBY)
+      class Sample
+        def run
+          items.each do |i|
+            i
+          end.map do |o|
+            o
+          end
+        end
+      end
+    RUBY
+
+    result = fold([
+      offense("Metrics/BlockLength", "Block has too many lines. [90/70]", 3, 5),
+      offense("Metrics/BlockLength", "Block has too many lines. [80/70]", 3, 7)
+    ])
+
+    assert_equal({
+      "sample.rb | Metrics/BlockLength | Sample#run[block:each]" => 90,
+      "sample.rb | Metrics/BlockLength | Sample#run[block:map]" => 80
+    }, result)
+
+    inner_only = result.slice("sample.rb | Metrics/BlockLength | Sample#run[block:each]")
+    check = ComplexityRatchet::Check.new(actual: result, baseline: inner_only)
 
     refute_predicate check, :pass?
     assert_equal :new_offense, check.blocking_problems.sole.kind
@@ -479,6 +540,62 @@ class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
 
   test "rejects a moved inherit, which can widen Exclude from outside the file" do
     after = with("inherit_gem" => { "rubocop-rails-omakase" => "loose.yml" })
+
+    assert_equal :budget_inherit_changed, ComplexityRatchet.verify_budget(BEFORE, after).sole.kind
+  end
+
+  # Max is the loudest way to loosen a cop, not the only one. A per-cop
+  # `Exclude: ['**/*']` turns MethodLength off repository-wide while the line
+  # above it still reads `Max: 25`; --regenerate then deletes every entry that
+  # cop held and both gates go green. Same for the keys that exempt code by name
+  # rather than by path.
+  test "rejects a per-cop Exclude that silences the cop while Max stays put" do
+    after = with("Metrics/MethodLength" => { "Enabled" => true, "Max" => 25, "Exclude" => [ "**/*" ] })
+    problem = ComplexityRatchet.verify_budget(BEFORE, after).sole
+
+    assert_equal :budget_setting_changed, problem.kind
+    assert_equal "Metrics/MethodLength", problem.key
+    assert_includes problem.message, "Exclude"
+  end
+
+  test "rejects the other per-cop keys that silence offenses without moving Max" do
+    {
+      "Include" => [ "nothing/**/*" ],
+      "AllowedMethods" => [ "call" ],
+      "AllowedPatterns" => [ "." ],
+      "CountAsOne" => %w[array hash heredoc],
+      "CountComments" => false
+    }.each do |key, value|
+      after = with("Metrics/MethodLength" => { "Enabled" => true, "Max" => 25, key => value })
+      problem = ComplexityRatchet.verify_budget(BEFORE, after).sole
+
+      assert_equal :budget_setting_changed, problem.kind, "#{key} was accepted"
+      assert_includes problem.message, key
+    end
+  end
+
+  # Enumerating loosening keys is a losing game — this is an allowlist, so a
+  # tightening trips it too. That is deliberate: it is not blocked, it goes
+  # through the reset label, and a reviewer sees the budget move.
+  test "reports a per-cop setting even when it tightens" do
+    after = with("Metrics/AbcSize" => { "Enabled" => true, "Max" => 35, "CountRepeatedAttributes" => true })
+
+    assert_equal :budget_setting_changed, ComplexityRatchet.verify_budget(BEFORE, after).sole.kind
+  end
+
+  # AllCops/Exclude may shrink, so it is compared separately. Everything else
+  # under AllCops narrows what RuboCop reads at all.
+  test "rejects an AllCops change other than Exclude" do
+    after = with("AllCops" => BEFORE["AllCops"].merge("Include" => [ "app/**/*.rb" ]))
+    problem = ComplexityRatchet.verify_budget(BEFORE, after).sole
+
+    assert_equal :budget_scope_narrowed, problem.kind
+    assert_equal "AllCops", problem.key
+    assert_includes problem.message, "Include"
+  end
+
+  test "rejects a new top-level key that can change how the config resolves" do
+    after = with("inherit_mode" => { "merge" => [ "Exclude" ] })
 
     assert_equal :budget_inherit_changed, ComplexityRatchet.verify_budget(BEFORE, after).sole.kind
   end

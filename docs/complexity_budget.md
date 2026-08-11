@@ -52,9 +52,9 @@ The rules:
    recorded value always tracks reality and the ratchet only turns one way.
 4. The baseline cannot be loosened. `--verify-baseline` fails any PR that raises
    a value or adds a key.
-5. The budget cannot be loosened either. The same command fails any PR that
-   raises a `Max`, switches an enabled cop off, drops a `Max` so the limit stops
-   being explicit, adds a path to `AllCops/Exclude`, or moves `inherit_gem`.
+5. The budget cannot be loosened either. The same command allows exactly two
+   edits to `.rubocop_metrics.yml` — lowering a `Max`, and shrinking
+   `AllCops/Exclude` — and reports every other change to it.
 6. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs a
    non-blank owner, a non-blank reason, and an expiry no more than 90 days out.
    An expired or blank-field waiver fails CI.
@@ -67,6 +67,18 @@ this repo, `Metrics/MethodLength: 25 -> 200` deletes 160 of 438 entries, reports
 zero new debt, and turns every gate green while new code inherits the weaker
 limit. Deletions cannot simply be rejected (refactors produce them), so the
 budget itself is pinned instead.
+
+Rule 5 is an allowlist rather than a list of known tricks, because `Max` is only
+the loudest way to loosen a cop. A per-cop `Exclude: ['**/*']` under
+`Metrics/MethodLength` silences it repository-wide — 159 baseline entries on this
+repo — while the line above still reads `Max: 25`; `Include`, `AllowedMethods`,
+`AllowedPatterns` and `CountAsOne` do the same thing more quietly, and
+`inherit_mode` changes whether `AllCops/Exclude` merges with the inherited list
+or replaces it. Every one of those is a real bypass, and the next RuboCop release
+may add another. So anything that is not "lower a `Max`" or "shrink
+`AllCops/Exclude`" is reported. A genuine tightening trips this too: it is not
+blocked, it goes through `complexity-baseline-reset` like any other budget
+change, which is the point — the budget moves where a reviewer can see it.
 
 Two caveats on rule 4. `--verify-baseline` passes when the base ref predates the
 baseline file, which is what lets the bootstrap commit land; the residual way
@@ -136,6 +148,13 @@ sibling already in the baseline. The ordinal counts within the parent scope, so
 edits elsewhere in the file leave it alone; adding or reordering same-named
 siblings does shift it, and shows up as a new entity to fix or waive.
 
+Chained blocks — `items.each do … end.map do … end` — need more than an ordinal,
+because they share a start line *and* a start column: a block offense covers the
+whole `send + block` range, and the outer send begins at the receiver. So an
+entity is looked up by its full line range, not its first line. Prism's node
+ranges match RuboCop's offense ranges exactly for classes, defs and blocks; the
+first-line map is kept as the fallback for offenses that do not sit on a scope.
+
 Tests are excluded. A 900-line test class is a list, not a god object: it has no
 callers, holds no shared mutable state, and splitting it buys nothing. Test bloat
 is real, but it is a coverage-quality problem, not a coupling one, and mixing it
@@ -147,15 +166,21 @@ in would bury the app-code signal under thousands of block-length offenses.
 loads one of its files. It asserts only that half of the rule — see *Rejected
 alternatives* for why the `IntegrationRegistry` half is not enforced here.
 
-**Loading** covers every Kernel entry point that resolves through `$LOAD_PATH`:
+**Loading** covers every entry point that resolves through `$LOAD_PATH`:
 `require`, `require_relative`, `require_dependency`, `load`, and `autoload`.
 Each reaches a satellite file while leaving behind no constant and no gemspec
-entry, so all five are invisible to the other two checks. Targets are read from
-the tokens after the call and normalized with `Pathname#cleanpath`, so traversal
-(`require_relative "../../collavre_slack/..."`) is caught and prose that merely
-mentions an engine is not. `load` and `autoload` only count on `Kernel` — a bare
-call or an explicit `Kernel.` receiver — because `YAML.load "config/collavre_slack/x.yml"`
-is a file read, not a dependency, and a gate that cries wolf gets deleted.
+entry, so all five are invisible to the other two checks. Targets are read by
+walking the argument list after the call and normalized with
+`Pathname#cleanpath`, so traversal (`require_relative "../../collavre_slack/..."`)
+is caught and prose that merely mentions an engine is not.
+
+The receiver rule differs by method. `require` and `load` count only on `Kernel`
+— a bare call or an explicit `Kernel.` receiver — because
+`YAML.load "config/collavre_slack/x.yml"` is a file read, not a dependency, and a
+gate that cries wolf gets deleted. `autoload` counts on any receiver, because it
+is `Module#autoload` and a module receiver is its ordinary form:
+`Collavre.autoload :Notion, "collavre_notion/foo"` registers the constant and
+loads that file on first reference.
 
 **What gets scanned** is read from `collavre.gemspec`'s own file list, plus the
 gemspec itself, filtered to `.rb` / `.rake` / `.erb` / `Rakefile`. It is not a

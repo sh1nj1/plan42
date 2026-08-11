@@ -31,10 +31,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   SATELLITE_CONSTANTS = SATELLITES.to_h { |name| [ name.camelize, name ] }.freeze
 
-  # Every Kernel entry point that resolves a path through $LOAD_PATH. `load` and
+  # Every entry point that resolves a path through $LOAD_PATH. `load` and
   # `autoload` are not `require`, but they reach a satellite file just as well
-  # and leave behind neither a constant nor a gemspec entry.
+  # and leave behind neither a constant nor a gemspec entry. See
+  # #loader_receiver? for why `autoload` is matched on any receiver and the rest
+  # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
+
+  # The only token types that can sit between a loader and its path argument.
+  # #feature_after walks the argument list with these rather than taking the
+  # first string within a fixed window: `autoload(:Foo, "x")` puts the literal
+  # seven tokens out, and a window wide enough for it would start reading
+  # whatever else shares the line.
+  ARGUMENT_TOKENS = %i[PARENTHESIS_LEFT SYMBOL_BEGIN CONSTANT IDENTIFIER COMMA STRING_BEGIN].freeze
 
   RUBY_FILE = /\.(rb|rake|erb)\z/
 
@@ -155,6 +164,28 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(registry.load_all("#{satellite}")))
   end
 
+  # `autoload` is Module#autoload, so a module receiver is its ordinary form —
+  # the opposite of `load`, where the bare call is the ordinary one. Holding
+  # both to the Kernel rule would have missed the spelling people actually
+  # write.
+  test "detector flags autoload on a module receiver" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre.autoload :Foo, "#{satellite}/foo"))
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre::Integrations.autoload(:Foo, "#{satellite}/foo")))
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(mod&.autoload :Foo, "#{satellite}/foo"))
+  end
+
+  # Reaching the literal in `autoload(:Foo, "x")` means walking further than the
+  # old fixed window, so this pins where the walk stops: once the argument list
+  # closes, a string later on the same line is somebody else's.
+  test "detector does not read past the end of a loader's argument list" do
+    satellite = SATELLITES.first
+
+    assert_empty requires_in(%(load(path) || warn("#{satellite} is missing")))
+    assert_empty requires_in(%(require_relative File.join(__dir__, "#{satellite}")))
+  end
+
   # A hand-written glob has now missed shipped Ruby twice — `.rake`, then `db/`
   # and the `Rakefile`. These pin the file classes that were invisible, so the
   # coverage regression fails here rather than going quiet again.
@@ -237,21 +268,36 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     all = tokens(source)
     all.each_with_index.filter_map { |token, index|
       next unless token.type == :IDENTIFIER && LOADER_METHODS.include?(token.value)
-      next unless kernel_call?(all, index)
+      next unless loader_receiver?(all, index, token.value)
 
-      # `require "x"`, `require("x")` and `autoload :Foo, "x"` — the literal is
-      # within five tokens, which is where the argument list ends for all of
-      # them. Anything further out is a different expression on the same line.
-      feature = all[index + 1, 5].to_a.find { |candidate| candidate.type == :STRING_CONTENT }&.value
+      feature = feature_after(all, index)
       feature if satellite_for(feature)
     }.uniq
   end
 
-  # `YAML.load "collavre_slack/settings.yml"` is a file read, not a dependency
-  # on the engine, and `load` is common enough as a method name that matching it
-  # on any receiver would make this test cry wolf. Only Kernel's loaders count.
-  def kernel_call?(all, index)
-    return true unless index >= 1 && all[index - 1].type == :DOT
+  def feature_after(all, index)
+    all[(index + 1)..].to_a.each do |token|
+      return token.value if token.type == :STRING_CONTENT
+      return nil unless ARGUMENT_TOKENS.include?(token.type)
+    end
+    nil
+  end
+
+  # The receiver rule differs by method, because the methods differ.
+  #
+  # `autoload` is `Module#autoload`, and a module receiver is its ordinary form:
+  # `Collavre.autoload :Notion, "collavre_notion/foo"` registers the constant
+  # and loads that file on first reference — a real dependency that names no
+  # satellite constant and adds no gemspec entry. Restricting it to Kernel would
+  # miss the common spelling and catch only the rare one.
+  #
+  # `require` and `load` stay on Kernel. `YAML.load "collavre_slack/x.yml"` is a
+  # file read, not a dependency on the engine, and `load` is common enough as a
+  # method name that matching any receiver would make this test cry wolf.
+  def loader_receiver?(all, index, method)
+    receiver = index >= 1 && [ :DOT, :AMPERSAND_DOT ].include?(all[index - 1].type)
+    return true unless receiver
+    return true if method == "autoload"
 
     all[index - 2]&.value == "Kernel"
   end
