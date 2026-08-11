@@ -69,7 +69,7 @@ module Collavre
       def scenario
         ScenarioRegistry.fetch(
           data.fetch("scenario_key"),
-          include_agent_mention: data["agent_mention_enabled"] == true
+          include_agent_mention: agent_mention_available?
         )
       end
 
@@ -115,6 +115,14 @@ module Collavre
       end
 
       private
+
+      def agent_mention_available?
+        return false unless data["agent_mention_enabled"] == true
+
+        User.mentionable_for(root).ai_agents.any? do |agent|
+          root.has_permission?(agent, :feedback)
+        end
+      end
 
       def target_creative(step)
         case step&.target

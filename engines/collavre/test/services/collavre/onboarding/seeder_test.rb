@@ -41,6 +41,21 @@ module Collavre
         end
       end
 
+      test "omits the agent mention step when the seeded agent loses feedback access" do
+        user = User.create!(name: "Agent access learner", email: "agent-access-learner@example.com", password: "password")
+        agent = User.create!(
+          name: "Temporary helper", email: "temporary-helper@example.com", password: "password",
+          llm_vendor: "openai", searchable: true
+        )
+        session = Seeder.new(user: user).call
+
+        CreativeShare.find_by!(creative: session.root, user: agent).destroy!
+
+        refute_includes session.scenario.steps.map(&:key), :mention
+        session.update!(current_step: "mention")
+        assert_nil session.current_step
+      end
+
       test "resolves a practice creative to its scenario root" do
         user = User.create!(name: "Practice learner", email: "practice-learner@example.com", password: "password")
         seeded_session = Seeder.new(user: user).call
