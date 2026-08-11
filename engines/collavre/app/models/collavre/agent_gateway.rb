@@ -22,7 +22,7 @@ module Collavre
     normalizes :base_url, with: ->(value) { value.to_s.strip.sub(%r{/+\z}, "") }
     normalizes :tenant_id, with: ->(value) { value.to_s.strip }
 
-    validates :name, :base_url, :admin_key, :completion_key, :tenant_id, presence: true
+    validates :name, :base_url, :admin_key, :tenant_id, presence: true
     validates :name, uniqueness: { scope: :owner_id }
     validates :tenant_id, format: { with: /\A[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,199}\z/ }
     validate :base_url_is_http
@@ -31,9 +31,16 @@ module Collavre
     validate :desktop_managed_credentials_are_immutable
     validate :desktop_managed_gateway_uses_shared_workspace
     validate :identity_secret_is_usable
+    validate :completion_key_is_present_when_assigned_to_agents
+    around_update :serialize_completion_key_removal
+    before_update :validate_completion_key_removal_under_lock
     after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
 
     scope :active, -> { where(active: true) }
+
+    def chat_capable?
+      completion_key.present?
+    end
 
     def completion_base_url
       "#{proxy_base_url}/v1"
@@ -133,6 +140,36 @@ module Collavre
       return if identity_secret.to_s.bytesize >= MIN_IDENTITY_SECRET_BYTES
 
       errors.add(:identity_secret, :too_short, count: MIN_IDENTITY_SECRET_BYTES)
+    end
+
+    def completion_key_is_present_when_assigned_to_agents
+      return if completion_key.present? || !agents.exists?
+
+      errors.add(:completion_key, :required_for_agents)
+    end
+
+    # An agent assignment and key removal both depend on the same invariant.
+    # Re-check under the gateway row lock so two requests that validated a
+    # previously key-bearing, unassigned gateway cannot both commit.
+    def serialize_completion_key_removal
+      return yield unless will_save_change_to_completion_key? && completion_key.blank?
+
+      locked_gateway = self.class.find(id)
+      locked_gateway.with_lock do
+        begin
+          @completion_key_removal_lock = locked_gateway
+          yield
+        ensure
+          @completion_key_removal_lock = nil
+        end
+      end
+    end
+
+    def validate_completion_key_removal_under_lock
+      return unless @completion_key_removal_lock&.agents&.exists?
+
+      errors.add(:completion_key, :required_for_agents)
+      throw :abort
     end
 
     def workspace_credentials_changed?

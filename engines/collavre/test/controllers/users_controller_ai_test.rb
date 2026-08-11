@@ -96,6 +96,32 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal @admin.id, agent.created_by_id
   end
 
+  test "does not offer or assign a provisioning-only gateway to a CLI Proxy agent" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Provisioning-only proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin"
+    )
+
+    get new_ai_users_url
+    assert_response :success
+    assert_select "select[name='agent_gateway_id'] option[value='#{gateway.id}']", count: 0
+
+    assert_no_difference("Collavre::User.count") do
+      post create_ai_users_url, params: {
+        ai_id: "keyless_proxy_bot",
+        name: "Keyless Proxy Bot",
+        system_prompt: "Help",
+        llm_vendor: "cli_proxy",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: gateway.id
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
   test "rejects another user's gateway for a CLI Proxy agent" do
     foreign_gateway = Collavre::AgentGateway.create!(
       owner: users(:two),

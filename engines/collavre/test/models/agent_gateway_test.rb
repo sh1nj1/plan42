@@ -43,6 +43,36 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_includes gateway.errors.details[:identity_secret].pluck(:error), :too_short
   end
 
+  test "completion key is optional" do
+    gateway = build_gateway(completion_key: nil)
+
+    gateway.save!
+
+    assert_nil gateway.reload.completion_key
+  end
+
+  test "completion key cannot be removed while assigned to an AI agent" do
+    gateway = build_gateway
+    gateway.save!
+    create_agent(gateway)
+
+    gateway.completion_key = nil
+
+    assert_not gateway.valid?
+    assert_includes gateway.errors.details[:completion_key].pluck(:error), :required_for_agents
+  end
+
+  test "completion key removal rechecks assignments while saving" do
+    gateway = build_gateway
+    gateway.save!
+    create_agent(gateway)
+    gateway.completion_key = nil
+
+    assert_not gateway.save(validate: false)
+    assert_includes gateway.errors.details[:completion_key].pluck(:error), :required_for_agents
+    assert_equal "completion", gateway.reload.completion_key
+  end
+
   test "identity secret is required before a shared gateway can serve multiple agents" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!

@@ -24,6 +24,7 @@ en:
               immutable: "cannot be changed for a desktop-managed gateway"
             completion_key:
               immutable: "cannot be changed for a desktop-managed gateway"
+              required_for_agents: "is required while the gateway is assigned to an AI agent"
             workspace_mode:
               desktop_shared_only: "must remain shared for a desktop-managed gateway"
             tenant_id:
@@ -36,6 +37,7 @@ en:
           attributes:
             agent_gateway:
               identity_required: "requires an identity secret when shared with another AI agent"
+              completion_key_required: "requires a completion key for AI agent chat"
   collavre:
     agent_gateways:
       title: My Agent Gateways
@@ -52,6 +54,9 @@ en:
       admin_key: Admin key
       admin_key_help: A value from the proxy AUTH_ADMIN_KEYS setting. Used only by the Collavre server.
       completion_key: Completion key
+      completion_key_help: Optional. Required only for AI agent chat completions.
+      clear_completion_key_label: Remove stored completion key
+      clear_completion_key_help: After saving, this gateway can be used only for provisioning until a new completion key is added.
       identity_secret: Identity secret
       identity_secret_help: Must match USER_IDENTITY_HMAC_SECRET and contain at least 32 bytes. Required for per-user mode or multiple AI agents.
       tenant_id: Tenant ID
