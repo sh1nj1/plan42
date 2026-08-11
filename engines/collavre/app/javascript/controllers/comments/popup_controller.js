@@ -624,7 +624,7 @@ export default class extends Controller {
           this.openForCreative({ highlightId: this.commentIdFromUrl() })
         }, 0)
       })
-    } else if (this.hasListTarget) {
+    } else if (this.hasListTarget && !this.listTarget.querySelector('.onboarding-card')) {
       this.listTarget.classList.add('docked-empty')
       this.listTarget.textContent = el.dataset.dockedEmptyText || ''
     }

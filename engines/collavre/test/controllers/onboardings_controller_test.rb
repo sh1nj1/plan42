@@ -13,7 +13,7 @@ module Collavre
       assert_response :success
       session = Onboarding::Session.for_user(user.reload)
       assert session
-      assert_includes response.body, "onboarding-card"
+      assert_select "#comments-popup[data-creative-id='#{session.root.id}']", count: 1
       refute session.data.key?("chat_autoopen_pending")
 
       get onboarding_path, as: :json
@@ -24,7 +24,7 @@ module Collavre
       get creatives_path
       assert_response :success
       refute_includes response.body, "data-creative-id=\"#{session.root.id}\""
-      assert_includes response.body, "onboarding-card"
+      assert_select "#comments-popup #comments-list .onboarding-card", count: 1
     end
 
     test "speculative workspace requests do not consume onboarding auto-open state" do
@@ -44,7 +44,7 @@ module Collavre
       session = Onboarding::Session.for_user(user.reload)
       assert session
       refute session.data.key?("chat_autoopen_pending")
-      assert_includes response.body, "onboarding-card"
+      assert_select "#comments-popup[data-creative-id='#{session.root.id}']", count: 1
     end
 
     test "advances and completes onboarding through the namespaced services" do

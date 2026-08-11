@@ -1084,6 +1084,29 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, "My first chat message"
   end
 
+  test "comment creation reuses the active onboarding session for both progress events" do
+    onboarding_session = Collavre::Onboarding::Seeder.new(user: @user, force: true).call
+    practice_creative = onboarding_session.practice_creatives.second
+    session_lookups = 0
+
+    Collavre::Onboarding::Session.stub(:for_user, ->(_user) { session_lookups += 1; onboarding_session }) do
+      post creative_comments_path(practice_creative), params: { comment: { content: "My first chat message" } }
+    end
+
+    assert_response :created
+    assert_equal 1, session_lookups
+  end
+
+  test "comment creation skips onboarding lookup after onboarding is complete" do
+    @user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: Time.current)
+
+    Collavre::Onboarding::Session.stub(:for_user, ->(_user) { flunk "completed onboarding must not be queried" }) do
+      post creative_comments_path(@creative), params: { comment: { content: "Ordinary chat message" } }
+    end
+
+    assert_response :created
+  end
+
   test "index shows notification guidance for an empty inbox System topic" do
     inbox = Creative.inbox_for(@user)
     system_topic = inbox.system_topic

@@ -3,6 +3,7 @@
 <% auto_fullscreen = local_assigns.fetch(:auto_fullscreen, false) %>
 <% docked = local_assigns.fetch(:docked, false) %>
 <% creative = local_assigns[:creative] %>
+<% onboarding_creative = local_assigns[:onboarding_creative] %>
 <div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics comments--contexts comments--drop-trigger share-modal" class="popup-box"
      data-creative-path-template="<%= creative_path('__CREATIVE_ID__') %>"
      data-fullscreen="<%= fullscreen %>"
@@ -157,7 +158,13 @@
   </div>
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
-  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
+  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list">
+    <% if creative.blank? && onboarding_creative.present? %>
+      <%= render "collavre/onboarding/card", creative: onboarding_creative %>
+    <% else %>
+      <%= t('app.loading') %>
+    <% end %>
+  </div>
   <div id="typing-indicator-row">
     <button type="button" id="scroll-prev-msg-btn" class="scroll-prev-msg-btn" data-action="click->comments--list#scrollToPreviousMessage" title="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>" aria-label="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>">&#8963;</button>
     <div id="typing-scroll-viewport" data-comments--presence-target="scrollRow">

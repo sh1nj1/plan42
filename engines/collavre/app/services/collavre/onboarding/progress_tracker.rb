@@ -5,22 +5,23 @@ module Collavre
     # Records only successful domain operations. Client clicks are restricted to
     # the explicitly UI-only first step; all write steps arrive from controllers.
     class ProgressTracker
-      def self.record(user:, event:, creative: nil, comment: nil, before_description: nil, before_progress: nil)
+      def self.record(user:, event:, creative: nil, comment: nil, before_description: nil, before_progress: nil, session: nil)
         new(user: user, event: event, creative: creative, comment: comment,
-            before_description: before_description, before_progress: before_progress).record
+            before_description: before_description, before_progress: before_progress, session: session).record
       end
 
-      def initialize(user:, event:, creative:, comment:, before_description:, before_progress:)
+      def initialize(user:, event:, creative:, comment:, before_description:, before_progress:, session:)
         @user = user
         @event = event.to_sym
         @creative = creative
         @comment = comment
         @before_description = before_description
         @before_progress = before_progress
+        @session = session
       end
 
       def record
-        session = Session.for_user(user)
+        session = @session || Session.for_user(user)
         return unless session
 
         step = session.current_step

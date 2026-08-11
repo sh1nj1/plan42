@@ -132,6 +132,17 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
+    test('docked empty workspace preserves the server-rendered onboarding card', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        controller.listTarget.innerHTML = '<div class="onboarding-card">Guide</div>'
+
+        controller.enterDockedMode()
+
+        expect(controller.listTarget.querySelector('.onboarding-card')).not.toBeNull()
+        expect(controller.listTarget.classList.contains('docked-empty')).toBe(false)
+    })
+
     test('docked close button keeps the close icon while expanded and shows a chevron when collapsed', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
