@@ -35,7 +35,7 @@ commas):
 
 - `allowed_hosts` — a JSON array, or a `"a,b"` comma-separated string.
 - `bind_host` — omit to stay on loopback (`127.0.0.1`); set `"0.0.0.0"` to open.
-- `port` — omit for an ephemeral port.
+- `port` — omit to use the stable default, `4000`.
 
 A missing or malformed file is the normal closed-loopback case and is ignored
 (the app never fails to launch over a bad config).
@@ -49,7 +49,7 @@ tools/desktop-app/
     Cargo.toml
     tauri.conf.json
     build.rs
-    src/{main,lib}.rs        # free port → spawn sidecar → health-gate /up → webview
+    src/{main,lib}.rs        # stable port → spawn sidecar → health-gate /up → webview
     capabilities/default.json
     dist/index.html          # placeholder (real UI is the server-rendered app)
   scripts/

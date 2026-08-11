@@ -1,7 +1,7 @@
 //! Collavre Desktop shell.
 //!
 //! Responsibilities (and nothing else — the UI is the server-rendered Rails app):
-//!   1. Pick a free loopback port.
+//!   1. Start the sidecar on a stable loopback port.
 //!   2. Spawn the bundled Rails sidecar (`bin/desktop-server`) pointed at a
 //!      writable data dir under the OS app-data location.
 //!   3. Health-gate `GET /up` until the server is ready.
@@ -22,6 +22,9 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+
+const DEFAULT_PORT: u16 = 4000;
+const DESKTOP_USER_AGENT: &str = concat!("CollavreDesktop/", env!("CARGO_PKG_VERSION"));
 
 /// Holds the sidecar child so we can stop it on exit.
 struct Sidecar {
@@ -104,6 +107,13 @@ fn free_port() -> u16 {
         .local_addr()
         .expect("local addr")
         .port()
+}
+
+/// Returns a valid configured port or the stable desktop default.
+fn desktop_port(port: Option<&str>) -> u16 {
+    port.and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port != 0)
+        .unwrap_or(DEFAULT_PORT)
 }
 
 /// Locate the macOS application resource directory from its executable.
@@ -1353,7 +1363,7 @@ fn apply_desktop_config(data: &Path) {
 mod tests {
     use super::{
         append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
-        generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
+        desktop_port, generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
         invalidate_proxy_registration_when_gateway_is_missing, lsof_reports_process,
         managed_proxy_credentials, managed_proxy_runs_on_port, migrate_proxy_config,
         normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
@@ -1361,7 +1371,7 @@ mod tests {
         replace_occupied_proxy_port, revalidate_registered_gateway_after_rails_health,
         valid_sidecar_challenge_response, wait_until_proxy_healthy, write_proxy_config,
         GatewayRegistration, HmacSha256, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
-        Sidecar, URL_SAFE_NO_PAD,
+        Sidecar, DEFAULT_PORT, DESKTOP_USER_AGENT, URL_SAFE_NO_PAD,
     };
     use base64::Engine;
     use hmac::Mac;
@@ -1378,6 +1388,23 @@ mod tests {
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
+    }
+
+    #[test]
+    fn desktop_port_defaults_to_the_stable_port() {
+        assert_eq!(desktop_port(None), DEFAULT_PORT);
+        assert_eq!(desktop_port(Some("not-a-port")), DEFAULT_PORT);
+        assert_eq!(desktop_port(Some("0")), DEFAULT_PORT);
+    }
+
+    #[test]
+    fn desktop_port_honors_a_valid_override() {
+        assert_eq!(desktop_port(Some("47821")), 47_821);
+    }
+
+    #[test]
+    fn desktop_user_agent_has_a_stable_prefix() {
+        assert!(DESKTOP_USER_AGENT.starts_with("CollavreDesktop/"));
     }
 
     #[cfg(unix)]
@@ -2047,14 +2074,11 @@ pub fn run() {
             // read below so the values actually take effect this launch.
             apply_desktop_config(&data);
 
-            // Honor a caller-supplied PORT so open mode gets a stable URL/firewall
-            // rule; fall back to an ephemeral loopback port for the default
-            // single-user case. The same `port` feeds the sidecar, health check,
-            // and webview URL, so reading it here keeps all three consistent.
-            let port = std::env::var("PORT")
-                .ok()
-                .and_then(|p| p.parse::<u16>().ok())
-                .unwrap_or_else(free_port);
+            // Keep the default URL stable for loopback OAuth callbacks and local
+            // firewall rules. A valid caller-supplied PORT still wins. The same
+            // value feeds the sidecar, health check, and webview URL.
+            let configured_port = std::env::var("PORT").ok();
+            let port = desktop_port(configured_port.as_deref());
             // Reap any sidecar orphaned by a prior crash before we spawn — it
             // still holds this data dir's SQLite write locks.
             reap_orphan_sidecar(&data);
@@ -2074,6 +2098,11 @@ pub fn run() {
                 // handler. Returning true accepts its suggested destination and
                 // filename, including downloads triggered by `<a download>`.
                 .on_download(|_, _| true)
+                // Let browser-level drag and drop reach the Rails application.
+                .disable_drag_drop_handler()
+                // Lets Rails tailor desktop-only fallbacks without depending on
+                // platform-specific browser detection.
+                .user_agent(DESKTOP_USER_AGENT)
                 .build()?;
 
             // Health-gate startup off the UI thread so the splash keeps animating.
