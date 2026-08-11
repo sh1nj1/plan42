@@ -31,7 +31,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   SATELLITE_CONSTANTS = SATELLITES.to_h { |name| [ name.camelize, name ] }.freeze
 
-  REQUIRE_METHODS = %w[require require_relative require_dependency].freeze
+  # Every Kernel entry point that resolves a path through $LOAD_PATH. `load` and
+  # `autoload` are not `require`, but they reach a satellite file just as well
+  # and leave behind neither a constant nor a gemspec entry.
+  LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
 
   RUBY_FILE = /\.(rb|rake|erb)\z/
 
@@ -130,6 +133,28 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(require_relative "../../support/net/http"))
   end
 
+  # `require` is not Ruby's only load-path entry point. `load` and `autoload`
+  # reach the same file with the same effect and were invisible here, so a core
+  # file could take a satellite dependency that named no constant, added no
+  # gemspec entry, and used no require.
+  test "detector flags a satellite reached by load or autoload" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/some_service.rb" ], requires_in(%(load "#{satellite}/some_service.rb"))
+    assert_equal [ "#{satellite}/some_service.rb" ], requires_in(%(Kernel.load("#{satellite}/some_service.rb")))
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(autoload :Foo, "#{satellite}/foo"))
+  end
+
+  # `load` is an ordinary method name. Flagging it on any receiver would fail
+  # this test on a YAML read that happens to sit under a satellite path, and a
+  # gate that cries wolf gets deleted.
+  test "detector ignores load on a receiver other than Kernel" do
+    satellite = SATELLITES.first
+
+    assert_empty requires_in(%(YAML.load "config/#{satellite}/settings.yml"))
+    assert_empty requires_in(%(registry.load_all("#{satellite}")))
+  end
+
   # A hand-written glob has now missed shipped Ruby twice — `.rake`, then `db/`
   # and the `Rakefile`. These pin the file classes that were invisible, so the
   # coverage regression fails here rather than going quiet again.
@@ -205,18 +230,30 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # names no constant and adds no gemspec entry — invisible to both other
   # checks.
   #
-  # The require target is matched on the token that follows the call, not by
-  # grepping for the engine name, so prose that happens to mention an engine
+  # The target is matched on the tokens that follow the call, not by grepping
+  # for the engine name, so prose that happens to mention an engine
   # ("collavre_slack is not loaded" in a warn) is not a violation.
   def requires_in(source)
     all = tokens(source)
     all.each_with_index.filter_map { |token, index|
-      next unless token.type == :IDENTIFIER && REQUIRE_METHODS.include?(token.value)
+      next unless token.type == :IDENTIFIER && LOADER_METHODS.include?(token.value)
+      next unless kernel_call?(all, index)
 
-      # `require "x"` and `require("x")` — the literal is within three tokens.
-      feature = all[index + 1, 3].to_a.find { |candidate| candidate.type == :STRING_CONTENT }&.value
+      # `require "x"`, `require("x")` and `autoload :Foo, "x"` — the literal is
+      # within five tokens, which is where the argument list ends for all of
+      # them. Anything further out is a different expression on the same line.
+      feature = all[index + 1, 5].to_a.find { |candidate| candidate.type == :STRING_CONTENT }&.value
       feature if satellite_for(feature)
     }.uniq
+  end
+
+  # `YAML.load "collavre_slack/settings.yml"` is a file read, not a dependency
+  # on the engine, and `load` is common enough as a method name that matching it
+  # on any receiver would make this test cry wolf. Only Kernel's loaders count.
+  def kernel_call?(all, index)
+    return true unless index >= 1 && all[index - 1].type == :DOT
+
+    all[index - 2]&.value == "Kernel"
   end
 
   # The engine is identified from every path segment after normalization, not

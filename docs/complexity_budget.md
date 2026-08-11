@@ -52,9 +52,21 @@ The rules:
    recorded value always tracks reality and the ratchet only turns one way.
 4. The baseline cannot be loosened. `--verify-baseline` fails any PR that raises
    a value or adds a key.
-5. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs a
+5. The budget cannot be loosened either. The same command fails any PR that
+   raises a `Max`, switches an enabled cop off, drops a `Max` so the limit stops
+   being explicit, adds a path to `AllCops/Exclude`, or moves `inherit_gem`.
+6. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs a
    non-blank owner, a non-blank reason, and an expiry no more than 90 days out.
    An expired or blank-field waiver fails CI.
+
+Rule 5 exists because rule 4 alone is not enough, and the gap is not obvious:
+raising a `Max` makes RuboCop stop emitting the offenses that cop held,
+`--regenerate` then deletes their baseline entries, and a deletion is what a
+real refactor looks like — so the baseline check waves it through. Measured on
+this repo, `Metrics/MethodLength: 25 -> 200` deletes 160 of 438 entries, reports
+zero new debt, and turns every gate green while new code inherits the weaker
+limit. Deletions cannot simply be rejected (refactors produce them), so the
+budget itself is pinned instead.
 
 Two caveats on rule 4. `--verify-baseline` passes when the base ref predates the
 baseline file, which is what lets the bootstrap commit land; the residual way
@@ -132,8 +144,18 @@ in would bury the app-code signal under thousands of block-length offenses.
 ## The engine boundary
 
 `EngineBoundaryTest` fails when a core engine file names a satellite constant or
-requires one of its files. It asserts only that half of the rule — see *Rejected
+loads one of its files. It asserts only that half of the rule — see *Rejected
 alternatives* for why the `IntegrationRegistry` half is not enforced here.
+
+**Loading** covers every Kernel entry point that resolves through `$LOAD_PATH`:
+`require`, `require_relative`, `require_dependency`, `load`, and `autoload`.
+Each reaches a satellite file while leaving behind no constant and no gemspec
+entry, so all five are invisible to the other two checks. Targets are read from
+the tokens after the call and normalized with `Pathname#cleanpath`, so traversal
+(`require_relative "../../collavre_slack/..."`) is caught and prose that merely
+mentions an engine is not. `load` and `autoload` only count on `Kernel` — a bare
+call or an explicit `Kernel.` receiver — because `YAML.load "config/collavre_slack/x.yml"`
+is a file read, not a dependency, and a gate that cries wolf gets deleted.
 
 **What gets scanned** is read from `collavre.gemspec`'s own file list, plus the
 gemspec itself, filtered to `.rb` / `.rake` / `.erb` / `Rakefile`. It is not a

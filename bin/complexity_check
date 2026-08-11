@@ -35,6 +35,7 @@ end.parse!
 
 BASELINE = File.join(ROOT, ComplexityRatchet::BASELINE_PATH)
 WAIVERS  = File.join(ROOT, ComplexityRatchet::WAIVERS_PATH)
+CONFIG   = File.join(ROOT, ComplexityRatchet::CONFIG_PATH)
 
 def abort_with(message)
   warn message
@@ -48,34 +49,45 @@ def report(problems)
   end
 end
 
-# --verify-baseline reads the baseline as it exists on the merge base, so it
-# only ever judges what this branch changed. nil means the ref predates the
-# baseline file entirely.
-def baseline_at(ref)
-  path = ComplexityRatchet::BASELINE_PATH
+# --verify-baseline reads the base ref's own copy of a file, so it only ever
+# judges what this branch changed. nil means the ref predates that file.
+def file_at(ref, path)
   out, _err, status = Open3.capture3("git", "show", "#{ref}:#{path}", chdir: ROOT)
-  return nil unless status.success?
-
-  ComplexityRatchet.flatten(YAML.safe_load(out) || {})
+  status.success? ? out : nil
 end
 
 case options[:mode]
 when :verify
-  base = baseline_at(options[:ref])
-  if base.nil?
+  base_baseline = file_at(options[:ref], ComplexityRatchet::BASELINE_PATH)
+  if base_baseline.nil?
     puts "#{options[:ref]} predates #{ComplexityRatchet::BASELINE_PATH} — nothing to verify."
     exit 0
   end
 
-  problems = ComplexityRatchet.verify_monotonic(base, ComplexityRatchet.load_baseline(BASELINE))
+  base_config = file_at(options[:ref], ComplexityRatchet::CONFIG_PATH)
+
+  # Two ways to unwind the ratchet, and only one of them touches the baseline.
+  # Raising a Max deletes baseline entries wholesale, which reads as a refactor
+  # to verify_monotonic — so the budget is checked as well as the baseline.
+  problems =
+    ComplexityRatchet.verify_monotonic(
+      ComplexityRatchet.flatten(YAML.safe_load(base_baseline) || {}),
+      ComplexityRatchet.load_baseline(BASELINE)
+    ) +
+    ComplexityRatchet.verify_budget(
+      base_config && (YAML.safe_load(base_config) || {}),
+      YAML.safe_load_file(CONFIG) || {}
+    )
+
   if problems.empty?
-    puts "Complexity baseline is unchanged or tightened relative to #{options[:ref]}."
+    puts "Complexity baseline and budget are unchanged or tightened relative to #{options[:ref]}."
     exit 0
   end
 
   report(problems)
-  abort_with("\nThe complexity baseline may only shrink. Fix the entity, or add a time-boxed " \
-             "waiver to #{ComplexityRatchet::WAIVERS_PATH} with an owner, a reason, and an expiry.")
+  abort_with("\nThe complexity baseline and the budget in #{ComplexityRatchet::CONFIG_PATH} may only tighten. " \
+             "Fix the entity, or add a time-boxed waiver to #{ComplexityRatchet::WAIVERS_PATH} " \
+             "with an owner, a reason, and an expiry.")
 end
 
 actual = ComplexityRatchet::Measurement.call(root: ROOT)

@@ -409,6 +409,85 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
   end
 end
 
+# verify_monotonic reads the baseline; these read the budget the baseline is
+# measured against. Both are needed, because raising a Max makes the offenses
+# vanish, `--regenerate` deletes their entries, and a deletion is indistinguish-
+# able from a refactor to a check that only looks at the baseline.
+class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
+  BEFORE = {
+    "inherit_gem" => { "rubocop-rails-omakase" => "rubocop.yml" },
+    "AllCops" => { "Exclude" => [ "db/**/*", "tmp/**/*" ] },
+    "Metrics/MethodLength" => { "Enabled" => true, "Max" => 25 },
+    "Metrics/AbcSize" => { "Enabled" => true, "Max" => 35 }
+  }.freeze
+
+  def with(overrides)
+    BEFORE.merge(overrides)
+  end
+
+  test "accepts an unchanged budget" do
+    assert_empty ComplexityRatchet.verify_budget(BEFORE, BEFORE.dup)
+  end
+
+  test "accepts a tightened limit and a newly added cop" do
+    after = with(
+      "Metrics/MethodLength" => { "Enabled" => true, "Max" => 20 },
+      "Metrics/BlockNesting" => { "Enabled" => true, "Max" => 3 }
+    )
+
+    assert_empty ComplexityRatchet.verify_budget(BEFORE, after)
+  end
+
+  # The measured bypass: MethodLength 25 -> 200 drops 160 of this repo's 438
+  # baseline entries, reports zero new debt, and passes every other check.
+  test "rejects a raised limit" do
+    after = with("Metrics/MethodLength" => { "Enabled" => true, "Max" => 200 })
+    problem = ComplexityRatchet.verify_budget(BEFORE, after).sole
+
+    assert_equal :budget_loosened, problem.kind
+    assert_equal "Metrics/MethodLength", problem.key
+    assert problem.blocking?
+  end
+
+  test "rejects a cop switched off or deleted outright" do
+    off = with("Metrics/AbcSize" => { "Enabled" => false, "Max" => 35 })
+    assert_equal :budget_disabled, ComplexityRatchet.verify_budget(BEFORE, off).sole.kind
+
+    deleted = BEFORE.except("Metrics/AbcSize")
+    assert_equal :budget_disabled, ComplexityRatchet.verify_budget(BEFORE, deleted).sole.kind
+  end
+
+  # Dropping Max leaves the cop enabled at whatever RuboCop's default happens to
+  # be, which moves on a gem upgrade. A budget that is not written down cannot
+  # be compared on the next PR.
+  test "rejects a limit that stops being explicit" do
+    after = with("Metrics/AbcSize" => { "Enabled" => true })
+
+    assert_equal :budget_implicit, ComplexityRatchet.verify_budget(BEFORE, after).sole.kind
+  end
+
+  test "rejects a widened Exclude but accepts a narrowed one" do
+    widened = with("AllCops" => { "Exclude" => [ "db/**/*", "tmp/**/*", "engines/collavre/app/services/**/*" ] })
+    problem = ComplexityRatchet.verify_budget(BEFORE, widened).sole
+
+    assert_equal :budget_scope_narrowed, problem.kind
+    assert_equal "engines/collavre/app/services/**/*", problem.key
+
+    narrowed = with("AllCops" => { "Exclude" => [ "db/**/*" ] })
+    assert_empty ComplexityRatchet.verify_budget(BEFORE, narrowed)
+  end
+
+  test "rejects a moved inherit, which can widen Exclude from outside the file" do
+    after = with("inherit_gem" => { "rubocop-rails-omakase" => "loose.yml" })
+
+    assert_equal :budget_inherit_changed, ComplexityRatchet.verify_budget(BEFORE, after).sole.kind
+  end
+
+  test "a base ref that predates the config file has nothing to verify" do
+    assert_empty ComplexityRatchet.verify_budget(nil, BEFORE.dup)
+  end
+end
+
 class ComplexityRatchetRegenerateTest < ActiveSupport::TestCase
   KEY = "a.rb | Metrics/MethodLength | A#b"
   OTHER = "b.rb | Metrics/AbcSize | B#c"

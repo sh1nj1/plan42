@@ -450,12 +450,91 @@ module ComplexityRatchet
       end
     end
 
+    # Raising a Max in .rubocop_metrics.yml is the quiet way to unwind the
+    # ratchet, and verify_monotonic cannot see it: RuboCop stops emitting the
+    # offenses that cop held, `--regenerate` drops their baseline entries, and
+    # verify_monotonic only inspects the keys that remain. Both gates go green
+    # while every future entity inherits the weaker limit — no reset label, no
+    # diff to the baseline except deletions that look like a refactor.
+    #
+    # Measured on this repo: MethodLength 25 -> 200 deletes 160 of 438 entries,
+    # reports zero new debt, and passes.
+    #
+    # Deletions themselves cannot be rejected — a real refactor deletes entries
+    # too, and that is the ratchet working. So the budget is pinned instead: a
+    # limit may only tighten, an enabled cop may not be switched off, the
+    # excluded paths may only shrink, and the inherited config may not move.
+    def verify_budget(before, after)
+      return [] if before.nil?
+
+      limit_problems(before, after) + exclude_problems(before, after) + inherit_problems(before, after)
+    end
+
     # Keys present in the measurement but absent from the baseline are NOT
     # added: adding them is what --verify-baseline exists to reject. They are
     # returned so the CLI can point at the real fix.
     def regenerate(baseline, actual)
       updated = baseline.filter_map { |key, _| [ key, actual[key] ] if actual.key?(key) }.to_h
       [ updated, actual.keys - baseline.keys ]
+    end
+
+    private
+
+    def limit_problems(before, after)
+      current = budgets(after)
+
+      budgets(before).filter_map do |cop, limit|
+        if !current.key?(cop)
+          problem(:budget_disabled, cop,
+            "was enabled in #{CONFIG_PATH} and is now off — switching a cop off deletes every baseline entry it holds")
+        elsif current[cop].nil?
+          problem(:budget_implicit, cop,
+            "lost its explicit Max in #{CONFIG_PATH} — the budget has to stay written down to stay comparable")
+        elsif limit && current[cop] > limit
+          problem(:budget_loosened, cop,
+            "budget raised from #{limit} to #{current[cop]} in #{CONFIG_PATH} — the ratchet only turns one way")
+        end
+      end
+    end
+
+    # A new cop, or a Max that only appears now, is a tightening — not reported.
+    def budgets(config)
+      config.filter_map { |cop, body|
+        next unless cop.start_with?("Metrics/") && body.is_a?(Hash) && body["Enabled"]
+
+        [ cop, body["Max"] ]
+      }.to_h
+    end
+
+    # Excluding a path is the .rubocop_todo.yml amnesty this whole design exists
+    # to avoid: excluded code is invisible to every cop and can grow without
+    # limit. Removing an exclude widens the scan, so only additions are rejected.
+    def exclude_problems(before, after)
+      (excludes(after) - excludes(before)).map do |path|
+        problem(:budget_scope_narrowed, path,
+          "added to AllCops/Exclude in #{CONFIG_PATH} — excluded code is invisible to the ratchet and can grow without limit")
+      end
+    end
+
+    def excludes(config)
+      Array(config.dig("AllCops", "Exclude"))
+    end
+
+    # The explicit Metrics keys override anything inherited, so an inherit swap
+    # cannot loosen a Max — but it can bring in AllCops/Exclude entries, which
+    # is the same amnesty by another route. Cheap to pin, and a legitimate move
+    # goes through the reset label like any other budget change.
+    def inherit_problems(before, after)
+      %w[inherit_gem inherit_from].filter_map do |key|
+        next if before[key] == after[key]
+
+        problem(:budget_inherit_changed, key,
+          "changed in #{CONFIG_PATH} (#{before[key].inspect} -> #{after[key].inspect}) — an inherited config can widen AllCops/Exclude")
+      end
+    end
+
+    def problem(kind, key, message)
+      Problem.new(kind: kind, key: key, message: message, blocking: true)
     end
   end
 end
