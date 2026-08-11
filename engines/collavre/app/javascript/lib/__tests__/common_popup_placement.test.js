@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import { jest } from '@jest/globals'
-import CommonPopup from '../common_popup'
+import CommonPopup, { elementAnchor } from '../common_popup'
 
 // Viewport-fit placement: a popup anchored to a caret sitting just above the
 // chat composer has almost no room below it. updatePosition must flip above the
@@ -239,6 +239,136 @@ describe('CommonPopup viewport-fit placement', () => {
             expect(placeSpy).toHaveBeenCalledWith({ left: 200, top: 700, bottom: 720 })
             expect(element.style.top).toBe('296px')
             placeSpy.mockRestore()
+        })
+    })
+
+    // A rect captured at open time stops describing the anchor as soon as the
+    // anchor moves, and the one event that reliably moves it is the same one
+    // that triggers a re-place: the on-screen keyboard shrinks the viewport and
+    // comments--presence pushes the composer up off the keyboard on that very
+    // resize. Callers that can re-measure pass a provider instead of a rect.
+    describe('live anchor providers', () => {
+        let realRaf
+        let realCancelRaf
+
+        beforeEach(() => {
+            jest.useFakeTimers()
+            realRaf = window.requestAnimationFrame
+            realCancelRaf = window.cancelAnimationFrame
+            window.requestAnimationFrame = (cb) => setTimeout(cb, 0)
+            window.cancelAnimationFrame = (handle) => clearTimeout(handle)
+        })
+
+        afterEach(() => {
+            window.requestAnimationFrame = realRaf
+            window.cancelAnimationFrame = realCancelRaf
+            jest.useRealTimers()
+        })
+
+        const openAndSettle = (popup, anchor) => {
+            popup.showAt(anchor)
+            jest.advanceTimersByTime(20)
+        }
+
+        test('re-measures the anchor on every reposition', () => {
+            const popup = build({ popupHeight: 300 })
+            let caret = { left: 200, top: 300, bottom: 320 }
+            openAndSettle(popup, () => caret)
+            expect(element.style.top).toBe('324px')
+
+            // The composer scrolled: the caret is 120px higher than at open.
+            caret = { left: 200, top: 180, bottom: 200 }
+            popup.reposition()
+
+            expect(element.style.top).toBe('204px')
+        })
+
+        test('follows the anchor the keyboard pushed up, not its opening rect', () => {
+            const listeners = stubVisualViewport(768)
+            const popup = build({ popupHeight: 300 })
+            // Caret on a composer pinned to the bottom of a full-height viewport.
+            let caret = { left: 200, top: 700, bottom: 720 }
+            openAndSettle(popup, () => caret)
+            expect(element.style.top).toBe('396px')
+
+            // The keyboard takes the bottom 368px. comments--presence lifts the
+            // composer clear of it on the same resize, so the caret rides up
+            // with it — its opening rect now sits *under* the keyboard.
+            window.visualViewport.height = 400
+            caret = { left: 200, top: 332, bottom: 352 }
+            listeners.resize()
+
+            // Flipped above the lifted caret: 332 - 4 - 300.
+            expect(element.style.top).toBe('28px')
+        })
+
+        test('keeps the last measured rect when the anchor disappears', () => {
+            const popup = build({ popupHeight: 300 })
+            let caret = { left: 200, top: 300, bottom: 320 }
+            openAndSettle(popup, () => caret)
+            expect(element.style.top).toBe('324px')
+
+            // Turbo tore the textarea out: nothing left to measure. Reading a
+            // detached element's rect would report all zeros and fling the
+            // popup into the top-left corner.
+            caret = null
+            popup.reposition()
+
+            expect(element.style.top).toBe('324px')
+        })
+
+        test('keeps the last measured rect when the provider throws', () => {
+            const popup = build({ popupHeight: 300 })
+            let broken = false
+            openAndSettle(popup, () => {
+                if (broken) throw new Error('anchor gone')
+                return { left: 200, top: 300, bottom: 320 }
+            })
+            expect(element.style.top).toBe('324px')
+
+            broken = true
+            expect(() => popup.reposition()).not.toThrow()
+            expect(element.style.top).toBe('324px')
+        })
+
+        test('drops the provider on hide so the next open cannot reuse it', () => {
+            const popup = build({ popupHeight: 300 })
+            const provider = jest.fn(() => ({ left: 200, top: 300, bottom: 320 }))
+            openAndSettle(popup, provider)
+            popup.hide()
+
+            const callsWhileOpen = provider.mock.calls.length
+            openAndSettle(popup, { left: 200, top: 100, bottom: 120 })
+            popup.reposition()
+
+            expect(provider).toHaveBeenCalledTimes(callsWhileOpen)
+            expect(element.style.top).toBe('124px')
+        })
+
+        describe('elementAnchor', () => {
+            test('measures the element live', () => {
+                const anchor = document.createElement('button')
+                document.body.appendChild(anchor)
+                anchor.getBoundingClientRect = () => ({ left: 10, top: 500, bottom: 540 })
+                const provider = elementAnchor(anchor)
+
+                expect(provider().top).toBe(500)
+                anchor.getBoundingClientRect = () => ({ left: 10, top: 200, bottom: 240 })
+                expect(provider().top).toBe(200)
+            })
+
+            test('returns nothing once the element has left the document', () => {
+                const anchor = document.createElement('button')
+                document.body.appendChild(anchor)
+                const provider = elementAnchor(anchor)
+                anchor.remove()
+
+                expect(provider()).toBeNull()
+            })
+
+            test('returns nothing when there is no element at all', () => {
+                expect(elementAnchor(null)()).toBeNull()
+            })
         })
     })
 })

@@ -34,7 +34,7 @@ export default class extends CommonPopupController {
         super.disconnect()
     }
 
-    open(anchorRect, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
+    open(anchor, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
         this._openGeneration++
         this.onSelectCallback = onSelectCallback
         this.onCloseCallback = onCloseCallback
@@ -46,7 +46,7 @@ export default class extends CommonPopupController {
         this.inputTarget.value = ''
         // Clear any CommonPopup item state; we render our own DOM into the list.
         this.popup.setItems([])
-        super.open(anchorRect)
+        super.open(anchor)
 
         requestAnimationFrame(() => {
             this.inputTarget.focus()

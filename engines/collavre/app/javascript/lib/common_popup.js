@@ -7,6 +7,14 @@ const BOUNDS_PADDING = 8
 // slightly beats rendering a sliver.
 const MIN_POPUP_HEIGHT = 160
 
+// Anchor provider for a popup hung off a live element. Pass this to showAt
+// instead of the element's rect so placement can re-measure it later; returns
+// null once the element leaves the document, where its rect would read as all
+// zeros and drag the popup into the top-left corner.
+export function elementAnchor(element) {
+  return () => (element?.isConnected ? element.getBoundingClientRect() : null)
+}
+
 export default class CommonPopup {
   constructor(element, { listElement, onSelect, renderItem, onClose, closeOnOutsideClick = true } = {}) {
     this.element = element
@@ -19,20 +27,32 @@ export default class CommonPopup {
     this.activeIndex = -1
     // Pending showAt placement frame, so hide() can cancel it.
     this._openFrame = null
+    // Set by showAt when the caller can re-measure its anchor — see anchorRect.
+    this._anchorProvider = null
+    this._anchorRect = null
 
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
     this.handleViewportResize = this.handleViewportResize.bind(this)
   }
 
-  showAt(anchorRect, boundsElement = null) {
+  // `anchor` is either a rect or a function returning one. Prefer the function
+  // (see elementAnchor / caretAnchor): a rect is a snapshot, and the anchor can
+  // move while the popup is open — the on-screen keyboard shrinks the viewport
+  // and comments--presence lifts the composer clear of it on that same resize,
+  // so by the time we re-place, the opening rect points under the keyboard.
+  // Rects stay supported for anchors with nothing to re-measure, such as one
+  // derived from a text selection that has since been cleared.
+  showAt(anchor, boundsElement = null) {
     if (!this.element) return
 
     // When set, the popup is caged inside this element's rect (e.g. the chat
     // box) instead of the viewport — see updatePosition.
     this._boundsElement = boundsElement
-    // Kept so reposition() can re-place against the same anchor after the
-    // popup's content has changed size.
-    this._anchorRect = anchorRect
+    this._anchorProvider = typeof anchor === 'function' ? anchor : null
+    // Last known anchor geometry, so reposition() can re-place after the
+    // popup's content has changed size, and so a provider that stops resolving
+    // has something to fall back on.
+    this._anchorRect = this._anchorProvider ? null : anchor
     this._placedAbove = false
 
     // Re-opening while already open (e.g. clicking the same typo mark twice):
@@ -57,7 +77,7 @@ export default class CommonPopup {
       // that did not exist yet.
       if (!this.isOpen() || !this.element.isConnected) return
 
-      this.updatePosition(anchorRect)
+      this.updatePosition(this.anchorRect())
       this.element.style.visibility = 'visible'
       // Register the outside-click listeners only after the opening event has
       // finished propagating. When a popup is opened from a mousedown handler
@@ -83,7 +103,24 @@ export default class CommonPopup {
   // that placeholder height implied.
   reposition() {
     if (!this.isOpen()) return
-    this.updatePosition(this._anchorRect)
+    this.updatePosition(this.anchorRect())
+  }
+
+  // The anchor's geometry now, not as it was when showAt ran.
+  anchorRect() {
+    if (!this._anchorProvider) return this._anchorRect
+
+    let rect = null
+    try {
+      rect = this._anchorProvider()
+    } catch {
+      rect = null
+    }
+    // The anchor can go away mid-open (Turbo swap, a textarea replaced by a
+    // stream update). Keep the last place we saw it rather than collapsing to
+    // the origin.
+    if (rect) this._anchorRect = rect
+    return this._anchorRect
   }
 
   handleViewportResize() {
@@ -287,6 +324,7 @@ export default class CommonPopup {
     document.removeEventListener('touchstart', this.handleOutsideClick)
     window.visualViewport?.removeEventListener('resize', this.handleViewportResize)
     this._anchorRect = null
+    this._anchorProvider = null
 
     if (typeof this.onClose === 'function') {
       this.onClose(reason)
