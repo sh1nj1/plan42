@@ -52,7 +52,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # string, because the live case in this repo is an STI type inside a SQL
   # heredoc. Comments lex as COMMENT, not STRING_CONTENT, so prose about an
   # engine is still not a violation.
-  SATELLITE_IN_STRING = /\b(#{SATELLITE_CONSTANTS.keys.join('|')})\b/
+  #
+  # The nested segments are captured too, so a reference is recorded as the
+  # class it actually reaches rather than as its engine namespace — see
+  # KNOWN_VIOLATIONS for why that distinction is the whole point.
+  SATELLITE_IN_STRING = /\b(?:#{SATELLITE_CONSTANTS.keys.join('|')})(?:::[A-Z]\w*)*\b/
 
   RUBY_FILE = /\.(rb|rake|erb)\z/
 
@@ -61,12 +65,28 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # production cannot be edited. Recording them is the honest option: narrowing
   # the scan to hide them would also hide every migration written from here on.
   #
+  # Recorded as a multiset of the exact classes reached, not as the engine
+  # namespace. Waiving "CollavreGithub" for a file waives every present and
+  # future reference to anything under it, so the exception quietly widens into
+  # permanent amnesty for that whole engine; waiving `CollavreGithub::Account`
+  # three times waives those three and nothing else. A fourth occurrence, or a
+  # different class under the same engine, is a new violation.
+  #
   # Entries are asserted below to still be real violations, so a stale one
-  # fails the suite instead of quietly granting permanent amnesty — the same
-  # rule the complexity baseline follows.
+  # fails the suite instead of rotting into a blind spot — the same rule the
+  # complexity baseline follows.
   KNOWN_VIOLATIONS = {
-    "engines/collavre/db/migrate/20260120045354_encrypt_oauth_tokens.rb" => %w[CollavreGithub CollavreNotion],
-    "engines/collavre/db/migrate/20260527000100_backfill_dismissed_at_for_legacy_detached_channels.rb" => %w[CollavreGithub]
+    "engines/collavre/db/migrate/20260120045354_encrypt_oauth_tokens.rb" => [
+      "CollavreGithub::Account",         # defined? guard
+      "CollavreGithub::Account",         # encrypt_column argument
+      "CollavreGithub::Account",         # say_with_time message
+      "CollavreNotion::NotionAccount",   # defined? guard
+      "CollavreNotion::NotionAccount",   # encrypt_column argument
+      "CollavreNotion::NotionAccount"    # say_with_time message
+    ],
+    "engines/collavre/db/migrate/20260527000100_backfill_dismissed_at_for_legacy_detached_channels.rb" => [
+      "CollavreGithub::GithubPrChannel" # STI type in the SQL
+    ]
   }.freeze
 
   test "satellite engines exist to be checked" do
@@ -101,19 +121,39 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   test "detector flags a real satellite constant reference" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
-    assert_equal [ satellite ], constants_in("#{satellite}::Account.find(1)")
-    assert_equal [ satellite ], constants_in("if defined?(#{satellite})\n  1\nend")
+    assert_equal [ "#{satellite}::Account" ], names(constant_references_in("#{satellite}::Account.find(1)"))
+    assert_equal [ satellite ], names(constant_references_in("if defined?(#{satellite})\n  1\nend"))
+  end
+
+  # A waiver names one class, so the detector has to report one class. Stopping
+  # at the engine namespace would make every entry in KNOWN_VIOLATIONS an
+  # engine-wide exception no matter how it was written.
+  test "detector reports the class reached, not just the engine namespace" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ "#{satellite}::Accounts::Token" ], names(constant_references_in("#{satellite}::Accounts::Token.new"))
+    assert_empty names(constant_references_in("Wrapper::#{satellite}.call"))
+  end
+
+  # Duplicates are what make a waiver cancel one occurrence instead of a class
+  # of them, so the detector must not collapse them.
+  test "detector keeps every occurrence rather than collapsing duplicates" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    source = "#{satellite}::Account.first\n#{satellite}::Account.last\n"
+
+    assert_equal [ "#{satellite}::Account" ] * 2, names(constant_references_in(source))
+    assert_equal [ "#{satellite}::Account" ] * 2, names(string_references_in(%("#{satellite}::Account" + "#{satellite}::Account")))
   end
 
   test "detector ignores satellite names in comments and strings" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
-    assert_empty constants_in("# see #{satellite} for the pattern")
-    assert_empty constants_in(%(warn "#{satellite} is not loaded"))
+    assert_empty names(constant_references_in("# see #{satellite} for the pattern"))
+    assert_empty names(constant_references_in(%(warn "#{satellite} is not loaded")))
   end
 
   test "detector ignores the core engine's own constants" do
-    assert_empty constants_in("Collavre::Creative.first")
+    assert_empty names(constant_references_in("Collavre::Creative.first"))
   end
 
   # Rails resolves a class from a string in several places, and none of them
@@ -121,9 +161,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   test "detector flags a satellite class named in a string" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
-    assert_equal [ satellite ], constant_strings_in(%(belongs_to :account, class_name: "#{satellite}::Account"))
-    assert_equal [ satellite ], constant_strings_in(%("#{satellite}::Account".constantize))
-    assert_equal [ satellite ], constant_strings_in(%(Object.const_get("#{satellite}")))
+    assert_equal [ "#{satellite}::Account" ], names(string_references_in(%(belongs_to :account, class_name: "#{satellite}::Account")))
+    assert_equal [ "#{satellite}::Account" ], names(string_references_in(%("#{satellite}::Account".constantize)))
+    assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
 
   # The live case in this repo: an STI type inside a SQL heredoc, which lexes as
@@ -133,15 +173,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITE_CONSTANTS.keys.first
     source = "execute <<~SQL\n  UPDATE channels SET x = 1 WHERE type = '#{satellite}::PrChannel'\nSQL\n"
 
-    assert_equal [ satellite ], constant_strings_in(source)
+    assert_equal [ "#{satellite}::PrChannel" ], names(string_references_in(source))
   end
 
   test "string detector ignores comments and the core engine's own constants" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
-    assert_empty constant_strings_in("# see #{satellite}::Account for the pattern")
-    assert_empty constant_strings_in(%("Collavre::Creative"))
-    assert_empty constant_strings_in(%("#{satellite}Extra::Account"))
+    assert_empty names(string_references_in("# see #{satellite}::Account for the pattern"))
+    assert_empty names(string_references_in(%("Collavre::Creative")))
+    assert_empty names(string_references_in(%("#{satellite}Extra::Account")))
   end
 
   test "detector flags a require of a satellite engine" do
@@ -234,18 +274,49 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  # The failure mode a file-level waiver has: it was written for one reference
+  # and silently covers the next one too. Both halves matter — a waived
+  # occurrence must stay waived, or the list is useless, and an unwaived one
+  # must surface, or the list is amnesty.
+  test "a waiver cancels one occurrence rather than every reference to the engine" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    source = "#{satellite}::Account.first\n#{satellite}::Account.last\n#{satellite}::Repository.all\n"
+
+    assert_equal [ "#{satellite}::Account", "#{satellite}::Account", "#{satellite}::Repository" ],
+      references_in(source).map(&:first)
+
+    # Exactly what is recorded for the live migrations: the same class, listed
+    # once per occurrence.
+    assert_empty unwaived(references_in(source), [ "#{satellite}::Account" ] * 2 + [ "#{satellite}::Repository" ])
+
+    # A third `::Account` is a new dependency even though `::Account` is waived.
+    assert_equal [ [ "#{satellite}::Account", :constant ] ],
+      unwaived(references_in(source), [ "#{satellite}::Account" ] + [ "#{satellite}::Repository" ])
+
+    # And a different class under a waived engine is never covered by it.
+    assert_equal [ [ "#{satellite}::Repository", :constant ] ],
+      unwaived(references_in(source), [ "#{satellite}::Account" ] * 2)
+  end
+
   # A recorded exception is the strongest thing this test can hand out. If the
-  # migration is ever squashed away, or the reference removed, the entry has to
-  # go with it — otherwise the list rots into a permanent blind spot.
+  # migration is ever squashed away, or a reference removed, the entry has to go
+  # with it — otherwise the list rots into a permanent blind spot.
+  #
+  # Compared as a multiset, so an added occurrence fails here as surely as a
+  # removed one. An entry may only ever cover what is in the file right now.
   test "recorded exceptions are still real violations" do
-    KNOWN_VIOLATIONS.each do |path, constants|
+    KNOWN_VIOLATIONS.each do |path, recorded|
       full = Rails.root.join(path)
       assert File.file?(full), "#{path} is recorded in KNOWN_VIOLATIONS but no longer exists — delete the entry"
 
-      source = File.read(full)
-      found = (constants_in(source) | constant_strings_in(source)).sort
-      assert_equal constants.sort, found,
-        "#{path} no longer references exactly #{constants.join(', ')} — update or delete its KNOWN_VIOLATIONS entry"
+      found = references_in(File.read(full)).map(&:first)
+      assert_equal recorded.sort, found.sort, <<~MESSAGE
+        #{path} no longer references exactly what KNOWN_VIOLATIONS records for it.
+
+        A waiver covers the occurrences listed and no others, so update the entry
+        to match the file — or delete it if the dependency is gone. Do not widen
+        it to cover a new reference.
+      MESSAGE
     end
   end
 
@@ -273,27 +344,82 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     source = File.read(path)
     # ERB is not Ruby, so lex only the fragments between the tags.
     ruby = path.end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
+    # Requires are deliberately absent from the waiver: no core file has one
+    # today, and a new one is never the frozen-migration case the list exists
+    # for.
     known = KNOWN_VIOLATIONS.fetch(relative(path), [])
 
-    (constants_in(ruby) - known).map { |constant|
-      "  #{relative(path)} references #{constant} (engines/#{SATELLITE_CONSTANTS[constant]})"
-    } + (constant_strings_in(ruby) - known).map { |constant|
-      "  #{relative(path)} names #{constant} in a string (engines/#{SATELLITE_CONSTANTS[constant]})"
+    unwaived(references_in(ruby), known).map { |name, kind|
+      phrasing = kind == :string ? "names #{name} in a string" : "references #{name}"
+      "  #{relative(path)} #{phrasing} (engines/#{engine_for(name)})"
     } + requires_in(ruby).map { |feature|
       "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
     }
+  end
+
+  # Multiset subtraction, not Array#-. `found - known` removes *every*
+  # occurrence of a waived name, so a file waived for one reference to a class
+  # is waived for ten. Each recorded entry cancels exactly one occurrence.
+  def unwaived(references, known)
+    remaining = known.dup
+    references.reject { |name, _kind| (index = remaining.index(name)) && remaining.delete_at(index) }
+  end
+
+  # Every satellite reference as a [fully-qualified name, :constant | :string]
+  # pair, duplicates preserved. Duplicates are what make a waiver cancel one
+  # occurrence rather than a whole class of them.
+  #
+  # Sorted by line so that #unwaived, which cancels recorded entries in order,
+  # blames the last occurrence of a name rather than the first. Occurrences of
+  # one name are interchangeable to the waiver, so something has to be blamed;
+  # blaming the newest one points the failure at the line somebody just wrote.
+  def references_in(source)
+    located = constant_references_in(source).map { |name, line| [ name, :constant, line ] } +
+      string_references_in(source).map { |name, line| [ name, :string, line ] }
+
+    # sort_by is not stable, and two references can share a line.
+    located.each_with_index.sort_by { |(_name, _kind, line), index| [ line, index ] }
+      .map { |(name, kind, _line), _index| [ name, kind ] }
+  end
+
+  def engine_for(name)
+    SATELLITE_CONSTANTS[name.split("::").first]
+  end
+
+  # The detectors carry a line alongside each name so #references_in can order
+  # them; the assertions above only care about the names.
+  def names(located)
+    located.map(&:first)
   end
 
   # Lexing rather than grepping: `# see CollavreSlack for the pattern` and
   # "CollavreNotion" inside a doc string are not dependencies, and the two
   # existing mentions in the core engine are both comments. A regex would fail
   # this test on day one for no reason.
-  def constants_in(source)
-    tokens(source)
-      .select { |token| token.type == :CONSTANT }
-      .map(&:value)
-      .uniq
-      .select { |value| SATELLITE_CONSTANTS.key?(value) }
+  #
+  # The `::`-joined tail is walked so the result is the class actually reached,
+  # not just its engine namespace. Reporting `CollavreGithub` for
+  # `CollavreGithub::Account` is fine for a message but useless for a waiver,
+  # which has to name one reference rather than one engine.
+  def constant_references_in(source)
+    all = tokens(source)
+    all.each_with_index.filter_map { |token, index|
+      next unless token.type == :CONSTANT && SATELLITE_CONSTANTS.key?(token.value)
+      # A nested segment of somebody else's path, e.g. `Wrapper::CollavreSlack`.
+      next if index >= 2 && all[index - 1].type == :COLON_COLON && all[index - 2].type == :CONSTANT
+
+      [ qualified_from(all, index), token.location.start_line ]
+    }
+  end
+
+  def qualified_from(all, index)
+    name = all[index].value.dup
+    cursor = index + 1
+    while all[cursor]&.type == :COLON_COLON && all[cursor + 1]&.type == :CONSTANT
+      name << "::" << all[cursor + 1].value
+      cursor += 2
+    end
+    name
   end
 
   # `belongs_to :account, class_name: "CollavreNotion::NotionAccount"` compiles
@@ -307,12 +433,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # produced four rounds of misses on the loader check. A satellite class name
   # written into a string literal in core code is the violation, whatever reads
   # it afterwards.
-  def constant_strings_in(source)
+  def string_references_in(source)
     tokens(source)
       .select { |token| token.type == :STRING_CONTENT }
-      .flat_map { |token| token.value.scan(SATELLITE_IN_STRING) }
-      .flatten
-      .uniq
+      .flat_map { |token| token.value.scan(SATELLITE_IN_STRING).map { |name| [ name, token.location.start_line ] } }
   end
 
   # A constant is not the only way to reach a satellite. Every engine is on the

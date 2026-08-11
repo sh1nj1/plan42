@@ -212,6 +212,15 @@ recording is not amnesty: a separate
 test asserts each entry is *still* a real violation, so when the migration is
 squashed away the stale entry fails instead of rotting into a blind spot.
 
+Entries name the **exact class reached, once per occurrence** — three separate
+`CollavreGithub::Account` lines mean three entries. A waiver written as the
+engine namespace (`CollavreGithub`) would cover every present and future
+reference to anything under that engine, turning a one-line exception into
+permanent amnesty for the whole engine; the multiset form cancels one occurrence
+each. A fourth occurrence of a waived class, or a different class under the same
+engine, is a new violation and fails both the boundary test and the staleness
+test.
+
 Adding an entry is not the normal response to a failure. Invert the dependency
 instead: expose a hook from `collavre` and let the satellite register itself.
 
