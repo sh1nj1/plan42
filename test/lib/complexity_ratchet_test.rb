@@ -440,6 +440,26 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     assert_equal({ "sample.rb | Metrics/BlockNesting | Sample#wide~if ready(2)" => 1 }, result)
   end
 
+  test "fallback ordinals use the same abbreviation as their measurement keys" do
+    condition = Array.new(20, "ready").join(" && ")
+    statement = "if #{condition}"
+    File.write(File.join(@dir, "sample.rb"), <<~RUBY)
+      class Sample
+        def wide
+          #{statement}
+          end
+          #{statement}
+          end
+        end
+      end
+    RUBY
+
+    result = fold([ offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 5) ])
+
+    abbreviated = "#{statement[0, 97]}..."
+    assert_equal({ "sample.rb | Metrics/BlockNesting | Sample#wide~#{abbreviated}(2)" => 1 }, result)
+  end
+
   test "skips files with no offenses" do
     payload = { "files" => [ { "path" => "sample.rb", "offenses" => [] }, { "path" => "other.rb" } ] }
 

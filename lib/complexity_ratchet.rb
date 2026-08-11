@@ -173,7 +173,8 @@ module ComplexityRatchet
     # Record direct statements while their enclosing scope is on the stack.
     def visit_statements_node(node)
       node.body.each do |statement|
-        @fallback_statements[[ path, statement.location.slice.lines.first.strip.gsub(/\s+/, " ") ]] << [ statement.location.start_line, statement.location.end_line ]
+        text = statement.location.slice.lines.first.strip.gsub(/\s+/, " ")
+        @fallback_statements[[ path, abbreviate(text) ]] << [ statement.location.start_line, statement.location.end_line ]
       end
       super
     end
