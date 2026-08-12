@@ -469,7 +469,7 @@ module ComplexityRatchet
     attr_reader :root, :config
 
     def run_rubocop
-      command = [ "bundle", "exec", "rubocop", "-c", config,
+      command = [ "bundle", "exec", "rubocop", "-c", config, "--ignore-disable-comments",
                   "--only", "Metrics", "--format", "json", "--no-color" ]
       stdout, stderr, status = Open3.capture3(*command, chdir: root)
       # RuboCop exits 1 whenever offenses exist, which is the normal case here.

@@ -793,6 +793,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(try {} catch {}\n/import("#{satellite}\\/thing")/.test(text)))
   end
 
+  test "detector ignores regex literals after extends" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(class X extends /import("#{satellite}\\/thing")/.constructor {}))
+  end
+
+  test "detector scans imports after an extends property" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const receiver = { extends: 8 }; const value = receiver.extends / import("#{satellite}/thing") / 2))
+  end
+
   test "detector ignores regex literals after a spread operator" do
     satellite = SATELLITES.first
 
@@ -1392,6 +1405,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if js_statement_closing_brace?(tokens)
     return true if js_export_default?(tokens)
 
+    return true if js_class_extends_clause?(tokens)
     return true if previous.first == :word && js_expression_starting_keyword?(previous.last)
 
     js_for_of_header?(tokens)
@@ -1431,6 +1445,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def js_expression_starting_keyword?(value)
     %w[return throw case else do yield await void typeof delete new in instanceof].include?(value)
+  end
+
+  def js_class_extends_clause?(tokens)
+    tokens.last == [ :word, "extends" ] && tokens[-2] != [ :punctuation, "." ]
   end
 
   def js_for_of_header?(tokens)

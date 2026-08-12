@@ -671,6 +671,20 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     assert_empty ComplexityRatchet::Measurement.new(root: @dir).fold(payload)
   end
 
+  test "ignores inline RuboCop suppression directives when measuring metrics" do
+    captured_command = nil
+    payload = { "files" => [] }.to_json
+
+    Open3.stub(:capture3, ->(*command, chdir:) {
+      captured_command = command
+      [ payload, "", nil ]
+    }) do
+      ComplexityRatchet::Measurement.new(root: @dir).call
+    end
+
+    assert_includes captured_command, "--ignore-disable-comments"
+  end
+
   test "a new block does not hide behind a bigger sibling with the same call" do
     # The whole failure mode in one test: two `each` blocks in one method used
     # to fold to a single key, and #record keeps the maximum. A block added at
