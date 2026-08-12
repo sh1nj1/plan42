@@ -59,8 +59,30 @@ export function updateProgressHtml(html, progress, displayText) {
   return template.innerHTML
 }
 
+export function replaceProgressControl(html, controlHtml) {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const replacementTemplate = document.createElement('template')
+  replacementTemplate.innerHTML = controlHtml
+
+  const currentControl = template.content.querySelector(
+    '[data-progress-toggle="true"], .creative-progress-complete, .creative-progress-incomplete'
+  )
+  const replacementControl = replacementTemplate.content.querySelector(
+    '[data-progress-toggle="true"], .creative-progress-complete, .creative-progress-incomplete'
+  )
+  if (!currentControl || !replacementControl) return html
+
+  currentControl.replaceWith(replacementControl.cloneNode(true))
+  return template.innerHTML
+}
+
 function applyRowProperties(row, node) {
   if (!row || !node) return
+  // Preserve Turbo-mutated child markup before accepting server-side templates.
+  // This must run first: synchronizing after assignment would overwrite a new
+  // progress control with the stale DOM from the previous render.
+  syncProgressHtmlFromDom(row)
   let dirty = false
 
   if (node.id != null && row.creativeId !== node.id) {
@@ -191,12 +213,6 @@ function applyRowProperties(row, node) {
   }
 
   if (dirty && typeof row.requestUpdate === 'function') {
-    // Before Lit re-renders, sync progressHtml from current DOM.
-    // Turbo Streams may have replaced badge elements directly in the DOM
-    // (e.g. comment badge count), but the Lit progressHtml string still
-    // holds the stale initial HTML. On re-render, Lit would overwrite
-    // the Turbo-updated DOM with the stale string, losing badges.
-    syncProgressHtmlFromDom(row)
     row.requestUpdate()
   }
 }

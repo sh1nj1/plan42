@@ -1,5 +1,5 @@
 import { Turbo } from "@hotwired/turbo-rails"
-import { createRow, applyRowProperties, updateProgressHtml } from "../creatives/tree_renderer"
+import { createRow, applyRowProperties, replaceProgressControl, updateProgressHtml } from "../creatives/tree_renderer"
 import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
@@ -331,7 +331,7 @@ function handleDestroyed(creative) {
     restoreTreeEmptyState()
 }
 
-export function updateProgressForRow(row, progress, progressText) {
+export function updateProgressForRow(row, progress, progressText, progressHtml = null) {
     if (progress == null) return
     const pct = Math.round(progress * 100)
     // progressText from server: completion mark string, empty string (=complete but no mark), or null
@@ -340,7 +340,9 @@ export function updateProgressForRow(row, progress, progressText) {
     row.dataset.progressValue = String(progress)
 
     if (row.progressHtml) {
-	const updated = updateProgressHtml(row.progressHtml, progress, displayText)
+        const updated = progressHtml && !row.selectMode
+            ? replaceProgressControl(row.progressHtml, progressHtml)
+            : updateProgressHtml(row.progressHtml, progress, displayText)
 
         if (updated !== row.progressHtml) {
             row.progressHtml = updated
@@ -354,7 +356,7 @@ function updateAncestorProgress(ancestors) {
     ancestors.forEach(anc => {
         // findRowsForCreative already handles origin_id fallback for linked creatives
         const rows = findRowsForCreative(anc.id, anc.origin_id)
-        if (rows[0]) updateProgressForRow(rows[0], anc.progress, anc.progress_text)
+        if (rows[0]) updateProgressForRow(rows[0], anc.progress, anc.progress_text, anc.progress_html)
     })
 }
 

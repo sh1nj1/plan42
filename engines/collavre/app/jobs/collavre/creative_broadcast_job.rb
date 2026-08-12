@@ -96,6 +96,7 @@ module Collavre
 
         # Per-user progress text
         creative.send(:add_progress_text!, user_data, target_user)
+        add_ancestor_progress_controls!(user_data[:ancestors], target_user, user_map)
 
         # For created action, render per-user progress_html (includes chat button,
         # badge with turbo-cable-stream-source subscription, and progress span).
@@ -152,6 +153,7 @@ module Collavre
             mapped_id ? anc.merge(id: mapped_id, origin_id: anc[:id]) : anc
           end
         end
+        add_ancestor_progress_controls!(user_data[:ancestors], target_user, user_map)
 
         json_payload = { action: "destroyed", creative: user_data }.to_json
         Turbo::StreamsChannel.broadcast_action_to(
@@ -171,47 +173,65 @@ module Collavre
     # - comment button (hidden via no-comments class — 0 comments initially)
     # - the same progress control used by normal server rendering
     def render_progress_html(creative, user, skip_permission_check: false)
-      origin = creative.effective_origin
-      progress = creative.progress || 0
-      can_write = creative.has_permission?(user, :write)
-      progress_part = Collavre::ApplicationController.helpers.render_progress_control(
-        creative,
-        progress,
-        has_children: creative.children.exists?,
-        can_write: can_write
-      )
+      I18n.with_locale(user.locale.presence || I18n.default_locale) do
+        origin = creative.effective_origin
+        progress_part = render_progress_control_html(creative, user)
 
-      # Comment part — only render if user has feedback permission (matching helper behavior)
-      # When skip_permission_check is true, the user was already verified by find_broadcast_users
-      # (which checks :read permission on target + ancestors). Feedback permission is a subset
-      # of read permission in practice, so we can safely render the comment button.
-      comment_part = ""
-      has_feedback = skip_permission_check ||
-                     creative.has_permission?(user, :feedback) ||
-                     permission_via_ancestors(creative, user, :feedback)
-      if has_feedback
-        # Generate signed stream name for turbo-cable-stream-source
-        stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
-        stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
+        # Comment part — only render if user has feedback permission (matching helper behavior)
+        # When skip_permission_check is true, the user was already verified by find_broadcast_users
+        # (which checks :read permission on target + ancestors). Feedback permission is a subset
+        # of read permission in practice, so we can safely render the comment button.
+        comment_part = ""
+        has_feedback = skip_permission_check ||
+                       creative.has_permission?(user, :feedback) ||
+                       permission_via_ancestors(creative, user, :feedback)
+        if has_feedback
+          # Generate signed stream name for turbo-cable-stream-source
+          stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
+          stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
 
-        # Badge (no comments yet — hidden)
-        badge_id = "comment-badge-#{origin.id}"
-        badge = %(<span id="#{badge_id}" class="badge" style="display:none" data-count="0" data-controller="comment-badge" data-comment-badge-has-comments-value="false"></span>)
+          # Badge (no comments yet — hidden)
+          badge_id = "comment-badge-#{origin.id}"
+          badge = %(<span id="#{badge_id}" class="badge" style="display:none" data-count="0" data-controller="comment-badge" data-comment-badge-has-comments-value="false"></span>)
 
-        # Comment button — no-comments hides via visibility:hidden (0 comments initially)
-        comment_icon = read_svg("comment.svg", class: "comment-icon")
-        btn_classes = "comments-btn creative-action-btn no-comments"
-        comment_btn = %(<button name="show-comments-btn" class="#{btn_classes}" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
-        comment_btn += %(#{comment_icon}#{badge}</button>)
+          # Comment button — no-comments hides via visibility:hidden (0 comments initially)
+          comment_icon = read_svg("comment.svg", class: "comment-icon")
+          btn_classes = "comments-btn creative-action-btn no-comments"
+          comment_btn = %(<button name="show-comments-btn" class="#{btn_classes}" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
+          comment_btn += %(#{comment_icon}#{badge}</button>)
 
-        comment_part = "#{stream_tag}#{comment_btn}"
+          comment_part = "#{stream_tag}#{comment_btn}"
+        end
+
+        # Wrap in creative-row-end div — order: progress, then comment (matching helper)
+        %(<div class="creative-row-end">#{progress_part}#{comment_part}</div>)
       end
-
-      # Wrap in creative-row-end div — order: progress, then comment (matching helper)
-      %(<div class="creative-row-end">#{progress_part}#{comment_part}</div>)
     rescue StandardError => e
       Rails.logger.warn "[CreativeBroadcastJob] render_progress_html failed for creative##{creative.id} user##{user.id}: #{e.message}"
       nil
+    end
+
+    def add_ancestor_progress_controls!(ancestors, user, user_map)
+      ancestors&.each do |ancestor|
+        origin_id = ancestor[:origin_id] || ancestor[:id]
+        creative = Creative.find_by(id: user_map[origin_id] || origin_id)
+        next unless creative
+
+        ancestor[:progress] = creative.progress
+        ancestor[:progress_text] = creative.send(:format_progress_text, creative.progress, user)
+        ancestor[:progress_html] = render_progress_control_html(creative, user)
+      end
+    end
+
+    def render_progress_control_html(creative, user)
+      I18n.with_locale(user.locale.presence || I18n.default_locale) do
+        Collavre::ApplicationController.helpers.render_progress_control(
+          creative,
+          creative.progress || 0,
+          has_children: creative.children.exists?,
+          can_write: creative.has_permission?(user, :write)
+        )
+      end
     end
 
     # Check permission via ancestor chain (fallback when creative_shares_caches is not yet populated)

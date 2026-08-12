@@ -157,6 +157,20 @@ module Collavre
       assert_includes html, 'type="checkbox"'
     end
 
+    test "render_progress_html uses the recipient locale for checkbox labels" do
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, parent: @root, description: "Localized checkbox leaf", progress: 0)
+      end
+      @shared_user.update!(locale: "ko")
+
+      html = I18n.with_locale(:en) do
+        CreativeBroadcastJob.new.send(:render_progress_html, leaf, @shared_user, skip_permission_check: true)
+      end
+
+      assert_includes html, "완료로 표시"
+    end
+
     test "render_progress_html includes comment button when skip_permission_check" do
       job = CreativeBroadcastJob.new
       html = job.send(:render_progress_html, @child, @shared_user, skip_permission_check: true)
