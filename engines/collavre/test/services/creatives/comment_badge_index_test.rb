@@ -35,6 +35,17 @@ module Creatives
       assert_equal 2, @index.unread_count_for(creative)
     end
 
+    test "can index unread counts without querying visible counts" do
+      creative = Creative.create!(user: @user, description: "Tree badge", sequence: 913)
+      comment_on(creative, "one")
+
+      @index.stub(:visible_counts, ->(_) { flunk("visible counts should not be queried for a tree badge") }) do
+        @index.index([ creative.reload ], include_visible_counts: false)
+      end
+
+      assert_equal 1, @index.unread_count_for(creative)
+    end
+
     test "does not count another user's private comments" do
       creative = Creative.create!(user: @user, description: "Private visibility", sequence: 910)
       comment_on(creative, "public")

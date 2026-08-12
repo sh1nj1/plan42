@@ -50,7 +50,9 @@ module Creatives
       @visible_by_origin_id = {}
     end
 
-    def index(origins)
+    # Tree rendering only needs unread totals. Callers that render a standalone
+    # badge also need visible-comment state to decide whether a zero is shown.
+    def index(origins, include_visible_counts: true)
       pending = origins.uniq(&:id).reject { |o| @unread_by_origin_id.key?(o.id) }
       return if pending.empty?
 
@@ -60,7 +62,7 @@ module Creatives
       origin_ids.each do |origin_id|
         @unread_by_origin_id[origin_id] = unread_counts.fetch(origin_id, 0)
       end
-      @visible_by_origin_id.merge!(visible_counts(origin_ids))
+      @visible_by_origin_id.merge!(visible_counts(origin_ids)) if include_visible_counts
 
       suppress_for_present_user(pending.map(&:id))
     end
