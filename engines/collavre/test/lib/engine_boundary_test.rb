@@ -350,7 +350,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{feature}.rb" ], requires_in(%(::Kernel.public_send(:load, "#{feature}.rb")))
     assert_equal [ feature ], requires_in(%(Kernel.__send__(:require, "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.send("require", "#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
+    assert_empty requires_in(%(registry.method(:require).call("#{feature}")))
     assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
   end
 
@@ -735,6 +737,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]?.("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.["require"]("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module?.require("#{satellite}/template")))
@@ -1471,9 +1474,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # `module["require"]()` is equivalent to `module.require()`, while a
   # bracket call on any other object remains application code.
   def js_module_bracket_loader?(tokens, index)
+    receiver = index - 2
+    receiver -= 2 if tokens[receiver] == [ :punctuation, "." ] && tokens[receiver - 1] == [ :punctuation, "?" ]
+
     tokens[index - 1] == [ :punctuation, "[" ] &&
-      tokens[index - 2] == [ :word, "module" ] &&
-      (index < 3 || tokens[index - 3] != [ :punctuation, "." ]) &&
+      tokens[receiver] == [ :word, "module" ] &&
+      (receiver.zero? || tokens[receiver - 1] != [ :punctuation, "." ]) &&
       tokens[index + 1] == [ :punctuation, "]" ] &&
       js_call_open_at(tokens, index + 1)
   end
@@ -1798,7 +1804,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # Limit this to static symbols or strings so a dynamic dispatch is not
   # mistaken for a dependency that cannot be known statically.
   def loader_method(call)
-    direct_loader_method(call) || reflected_loader_method(call)
+    direct_loader_method(call) || reflected_loader_method(call) || method_object_loader_method(call)
   end
 
   def direct_loader_method(call)
@@ -1809,6 +1815,21 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless %w[send public_send __send__].include?(call.name.to_s)
 
     method_name = call.arguments&.arguments&.first
+    return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
+
+    method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
+  end
+
+  # A statically selected `Kernel.method(:require).call(path)` invokes the
+  # native loader just like direct and reflective dispatch. Restrict this to
+  # Kernel so an application-defined Method object is not treated as a loader.
+  def method_object_loader_method(call)
+    return unless call.name == :call
+
+    method_call = call.receiver
+    return unless method_call.is_a?(Prism::CallNode) && method_call.name == :method && kernel?(method_call.receiver)
+
+    method_name = method_call.arguments&.arguments&.first
     return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
 
     method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
@@ -1872,6 +1893,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def loader_receiver?(call)
     return true if call.receiver.nil?
     return true if loader_method(call) == "autoload"
+    return true if method_object_loader_method(call)
 
     kernel?(call.receiver)
   end
