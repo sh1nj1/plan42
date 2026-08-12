@@ -572,6 +572,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(if (ready) {} else /import "#{satellite}\/thing"/.test(text);))
     assert_empty js_imports_in(%(do /import "#{satellite}\/thing"/.test(text); while (ready);))
     assert_empty js_imports_in(%(function* matches() { yield /import "#{satellite}\/thing"/ }))
+    assert_empty js_imports_in(%(export default /import "#{satellite}\/thing"/))
     assert_empty js_imports_in(%(for (const char of /import "#{satellite}\/thing"/.source) {}))
     assert_empty js_imports_in(%(function matches() {}\n/import "#{satellite}\/thing"/.test(text)))
     assert_equal [ "#{satellite}/thing" ],
@@ -1060,10 +1061,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     return true if control_flow_condition?(tokens)
     return true if js_statement_closing_brace?(tokens)
+    return true if js_export_default?(tokens)
 
     return true if previous.first == :word && %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last)
 
     js_for_of_header?(tokens)
+  end
+
+  def js_export_default?(tokens)
+    tokens.last(2) == [ [ :word, "export" ], [ :word, "default" ] ]
   end
 
   def js_spread_operator?(tokens)
