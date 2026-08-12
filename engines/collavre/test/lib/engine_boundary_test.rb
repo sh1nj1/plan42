@@ -732,6 +732,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = require.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require.resolve?.("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta.resolve.call(import.meta, "#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta.resolve["call"](import.meta, "#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta.resolve.apply(import.meta, ["#{satellite}/thing"]);) => "#{satellite}/thing",
+      %(const t = import.meta.resolve["apply"](import.meta, ["#{satellite}/thing"]);) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -1729,7 +1733,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       when "require"
         next unless js_commonjs_loader?(tokens, index)
 
-        js_call_specifier(tokens, index) || js_require_call_specifier(tokens, index) || js_require_apply_specifier(tokens, index) || js_require_resolve_specifier(tokens, index)
+        js_call_specifier(tokens, index) ||
+          js_function_call_specifier(tokens, index) ||
+          js_function_apply_specifier(tokens, index) ||
+          js_require_resolve_specifier(tokens, index)
       when "import"
         next js_import_meta_resolve_specifier(tokens, index) if js_import_meta_resolve?(tokens, index)
         next if tokens[index - 1] == [ :punctuation, "." ]
@@ -1772,8 +1779,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     closing = index + 1
 
     js_call_specifier(tokens, closing) ||
-      js_require_call_specifier(tokens, closing) ||
-      js_require_apply_specifier(tokens, closing) ||
+      js_function_call_specifier(tokens, closing) ||
+      js_function_apply_specifier(tokens, closing) ||
       js_require_bound_specifier(tokens, closing)
   end
 
@@ -1808,38 +1815,61 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_import_meta_resolve_specifier(tokens, index)
-    open = js_call_open_at(tokens, index + 4)
-    return unless open
-
-    js_static_string_at(tokens, open + 1)
+    resolve = index + 4
+    js_call_specifier(tokens, resolve) ||
+      js_function_call_specifier(tokens, resolve) ||
+      js_function_apply_specifier(tokens, resolve)
   end
 
-  # `require.call(this_arg, specifier)` invokes the native CommonJS loader;
-  # the first argument only supplies JavaScript's `this` value. The caller has
-  # already established that this is bare `require` or `module.require`, not
-  # an application method with the same name.
-  def js_require_call_specifier(tokens, index)
+  # A statically selected native function invoked through `call` retains its
+  # original behavior; the first argument only supplies JavaScript's `this`
+  # value. Callers establish that the function is a native loader or resolver.
+  def js_function_call_specifier(tokens, index)
     call = js_function_property_at(tokens, index, "call")
     return unless call
 
     open = js_call_open_at(tokens, call)
-    return unless open && tokens[open + 2] == [ :punctuation, "," ]
+    comma = open && js_first_call_argument_comma(tokens, open)
+    return unless comma
 
-    js_static_string_at(tokens, open + 3)
+    js_static_string_at(tokens, comma + 1)
   end
 
-  # `require.apply(this_arg, [specifier])` is the array-argument counterpart
-  # to `require.call(this_arg, specifier)`. Only a single static specifier is
-  # useful to this scanner; computed or multiple arguments stay unknown.
-  def js_require_apply_specifier(tokens, index)
+  # A statically selected native function invoked through `apply` receives the
+  # specifier in its array argument. Only one static specifier is useful to this
+  # scanner; computed or multiple arguments stay unknown.
+  def js_function_apply_specifier(tokens, index)
     apply = js_function_property_at(tokens, index, "apply")
     return unless apply
 
     open = js_call_open_at(tokens, apply)
-    return unless open && tokens[open + 2] == [ :punctuation, "," ] && tokens[open + 3] == [ :punctuation, "[" ]
+    comma = open && js_first_call_argument_comma(tokens, open)
+    return unless comma && tokens[comma + 1] == [ :punctuation, "[" ]
 
-    specifier, close = js_static_string_expression_at(tokens, open + 4)
+    specifier, close = js_static_string_expression_at(tokens, comma + 2)
     specifier if specifier && tokens[close] == [ :punctuation, "]" ] && tokens[close + 1] == [ :punctuation, ")" ]
+  end
+
+  def js_first_call_argument_comma(tokens, opening)
+    depths = Hash.new(0)
+    pairs = { "(" => ")", "[" => "]", "{" => "}" }
+
+    (opening + 1).upto(tokens.length - 1) do |index|
+      token = tokens[index]
+      next unless token.first == :punctuation
+
+      value = token.last
+      return index if value == "," && depths.values.all?(&:zero?)
+      return unless depths["("] == 1 if value == ")"
+
+      if pairs.key?(value)
+        depths[value] += 1
+      elsif (opening_token = pairs.key(value))
+        depths[opening_token] -= 1
+      end
+    end
+
+    nil
   end
 
   def js_function_property_at(tokens, index, name)
