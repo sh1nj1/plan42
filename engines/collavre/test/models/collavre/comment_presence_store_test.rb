@@ -64,11 +64,11 @@ module Collavre
     end
 
     test "distinguishes All Messages from a missing topic report" do
-      CommentPresenceStore.set_topic(9_901, 4, nil, rendered_topic_ids: [ 12 ])
+      CommentPresenceStore.set_topic(9_901, 4, nil, rendered_topic_ids: [ 12 ], rendered_legacy_topic: true)
 
       assert_nil CommentPresenceStore.topic_for(9_901, 4)
       assert CommentPresenceStore.viewing_all_topics?(9_901, 4)
-      assert_equal [ CommentPresenceStore::ALL_TOPICS, 12 ], CommentPresenceStore.viewing_topics(9_901, 4)
+      assert_equal [ CommentPresenceStore::ALL_TOPICS, 12, CommentPresenceStore::LEGACY_TOPIC ], CommentPresenceStore.viewing_topics(9_901, 4)
     end
 
     test "renews the selected topic entry with the subscription lease" do

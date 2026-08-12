@@ -37,6 +37,7 @@ export default class extends Controller {
     this.selectedTopicId = null
     this.mainTopicId = null
     this.renderedAllTopicIds = null
+    this.renderedAllIncludesLegacy = false
 
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
@@ -76,7 +77,10 @@ export default class extends Controller {
 
     this.selectedTopicId = nextSelectedTopicId
     this.mainTopicId = nextMainTopicId
-    if (selectionChanged) this.renderedAllTopicIds = null
+    if (selectionChanged) {
+      this.renderedAllTopicIds = null
+      this.renderedAllIncludesLegacy = false
+    }
 
     if (selectionChanged) {
       this.reportViewingTopic()
@@ -91,10 +95,11 @@ export default class extends Controller {
   }
 
   handleRenderedAllTopics(event) {
-    const { creativeId, topicIds } = event.detail || {}
+    const { creativeId, topicIds, includesLegacy } = event.detail || {}
     if (String(creativeId) !== String(this.creativeId) || this.selectedTopicId) return
 
     this.renderedAllTopicIds = Array.isArray(topicIds) ? topicIds : []
+    this.renderedAllIncludesLegacy = Boolean(includesLegacy)
     this.reportViewingTopic()
   }
 
@@ -122,6 +127,7 @@ export default class extends Controller {
     }
     this.creativeId = creativeId
     this.renderedAllTopicIds = null
+    this.renderedAllIncludesLegacy = false
     this.loadParticipants()
     this.subscribe()
     this.renderParticipants([])
@@ -299,6 +305,7 @@ export default class extends Controller {
     const payload = { topic_id: this.selectedTopicId }
     if (!this.selectedTopicId && Array.isArray(this.renderedAllTopicIds)) {
       payload.rendered_topic_ids = this.renderedAllTopicIds
+      if (this.renderedAllIncludesLegacy) payload.rendered_legacy_topic = true
     }
     this.presenceSubscription.perform('viewing_topic', payload)
   }

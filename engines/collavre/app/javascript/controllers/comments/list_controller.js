@@ -145,6 +145,7 @@ export default class extends Controller {
     this.creativeId = creativeId
     this.renderedAllTopicIds = null
     this.renderedAllTopicWatermarks = null
+    this.renderedAllIncludesLegacy = false
     this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
     this.highlightAfterLoad = highlightId || pendingHighlight || this.deepLinkCommentId
@@ -169,6 +170,7 @@ export default class extends Controller {
     this.creativeId = null
     this.renderedAllTopicIds = null
     this.renderedAllTopicWatermarks = null
+    this.renderedAllIncludesLegacy = false
     this.highlightAfterLoad = null
     this.highlightCreativeId = null
     this.suppressTopicChangeLoad = false
@@ -251,7 +253,11 @@ export default class extends Controller {
       if (!this.currentTopicId && Array.isArray(this.renderedAllTopicIds)) {
         this.element.dispatchEvent(new CustomEvent('comments--list:rendered-all-topics', {
           bubbles: true,
-          detail: { creativeId: this.creativeId, topicIds: this.renderedAllTopicIds },
+          detail: {
+            creativeId: this.creativeId,
+            topicIds: this.renderedAllTopicIds,
+            includesLegacy: this.renderedAllIncludesLegacy,
+          },
         }))
       }
       this.markCommentsRead()
@@ -388,8 +394,10 @@ export default class extends Controller {
         this.renderedAllTopicIds = renderedTopicIds.split(',').filter(Boolean)
         try {
           this.renderedAllTopicWatermarks = renderedTopicWatermarks ? JSON.parse(renderedTopicWatermarks) : null
+          this.renderedAllIncludesLegacy = Boolean(this.renderedAllTopicWatermarks && Object.hasOwn(this.renderedAllTopicWatermarks, '_legacy'))
         } catch (_error) {
           this.renderedAllTopicWatermarks = null
+          this.renderedAllIncludesLegacy = false
         }
       }
       // A load superseded while in flight must not retopic anything: its own HTML

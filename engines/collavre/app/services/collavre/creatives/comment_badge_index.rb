@@ -109,7 +109,7 @@ module Creatives
         # All Messages renders Main and the active-topic snapshot returned with
         # its list. A topic restored after that response stays unread until the
         # list is reloaded and reports it in a new snapshot.
-        counts.delete(nil)
+        counts.delete(nil) if viewing_topics.include?(CommentPresenceStore::LEGACY_TOPIC)
       end
 
       # Another subscription can be viewing an archived topic while this one is
@@ -232,7 +232,7 @@ module Creatives
       def topic_is_viewed?(topic_id, viewing_topics)
         return viewing_topics.include?(topic_id) unless viewing_topics.include?(CommentPresenceStore::ALL_TOPICS)
 
-        topic_id.nil? || viewing_topics.include?(topic_id)
+        topic_id.nil? ? viewing_topics.include?(CommentPresenceStore::LEGACY_TOPIC) : viewing_topics.include?(topic_id)
       end
     end
   end

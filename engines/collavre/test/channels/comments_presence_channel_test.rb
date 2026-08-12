@@ -149,6 +149,17 @@ module Collavre
       CommentPresenceStore.remove(@creative.id, @owner.id, subscription_id: subscription.instance_variable_get(:@presence_subscription_id)) if subscription
     end
 
+    test "All Messages records a rendered legacy lane explicitly" do
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+
+      perform :viewing_topic, topic_id: nil, rendered_legacy_topic: true
+
+      assert_includes CommentPresenceStore.viewing_topics(@creative.id, @owner.id), CommentPresenceStore::LEGACY_TOPIC
+    ensure
+      CommentPresenceStore.remove(@creative.id, @owner.id, subscription_id: subscription.instance_variable_get(:@presence_subscription_id)) if subscription
+    end
+
     test "heartbeat renews the active presence subscription lease" do
       stub_connection current_user: @owner
       subscribe creative_id: @creative.id

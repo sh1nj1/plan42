@@ -5,6 +5,7 @@ module Collavre
     SUBSCRIPTIONS_KEY_PREFIX = "comment_presence_subscriptions:"
     LOCK_KEY_PREFIX = "comment_presence_lock:"
     ALL_TOPICS = "all"
+    LEGACY_TOPIC = "_legacy"
     LEGACY_SUBSCRIPTION_ID = "legacy"
     LOCK_TTL = 2.seconds
     SUBSCRIPTION_TTL = 90.seconds
@@ -44,17 +45,18 @@ module Collavre
       end
     end
 
-    def self.set_topic(creative_id, user_id, topic_id, subscription_id: LEGACY_SUBSCRIPTION_ID, rendered_topic_ids: [])
+    def self.set_topic(creative_id, user_id, topic_id, subscription_id: LEGACY_SUBSCRIPTION_ID, rendered_topic_ids: [], rendered_legacy_topic: false)
       with_lock(creative_id) do
         subscriptions = subscription_ids(creative_id, user_id)
         subscriptions << subscription_id unless subscriptions.include?(subscription_id)
         write_subscriptions(creative_id, user_id, subscriptions)
         renew_subscription(creative_id, user_id, subscription_id)
-        Rails.cache.write(
-          topic_key(creative_id, user_id, subscription_id),
-          topic_id ? topic_id.to_i : [ ALL_TOPICS, *Array(rendered_topic_ids).map(&:to_i) ].uniq,
-          expires_in: SUBSCRIPTION_TTL
-        )
+        viewed_topics = if topic_id
+          topic_id.to_i
+        else
+          [ ALL_TOPICS, *Array(rendered_topic_ids).map(&:to_i), *(rendered_legacy_topic ? [ LEGACY_TOPIC ] : []) ].uniq
+        end
+        Rails.cache.write(topic_key(creative_id, user_id, subscription_id), viewed_topics, expires_in: SUBSCRIPTION_TTL)
 
         ids = list(creative_id)
         ids << user_id unless ids.include?(user_id)

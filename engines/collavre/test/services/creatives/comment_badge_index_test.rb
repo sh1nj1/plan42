@@ -270,6 +270,34 @@ module Creatives
       CommentPresenceStore.remove(creative.id, @user.id)
     end
 
+    test "All Messages keeps an unrendered legacy lane unread" do
+      creative = Creative.create!(user: @user, description: "Legacy snapshot", sequence: 921)
+      rendered_topic = creative.topics.create!(name: "Rendered", user: @user)
+      legacy_comment = Comment.create!(creative: creative, user: @author, content: "unseen legacy")
+      legacy_comment.update_column(:topic_id, nil)
+      Comment.create!(creative: creative, topic: rendered_topic, user: @author, content: "rendered")
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil, rendered_topic_ids: [ rendered_topic.id ])
+
+      assert_equal({ nil => 1 }, @index.unread_counts_by_topic(creative))
+      badge = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user ]).fetch(@user.id)
+      assert_equal 1, badge.unread_count
+    ensure
+      CommentPresenceStore.remove(creative.id, @user.id)
+    end
+
+    test "All Messages suppresses a rendered legacy lane" do
+      creative = Creative.create!(user: @user, description: "Rendered legacy snapshot", sequence: 922)
+      legacy_comment = Comment.create!(creative: creative, user: @author, content: "rendered legacy")
+      legacy_comment.update_column(:topic_id, nil)
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil, rendered_legacy_topic: true)
+
+      assert_empty @index.unread_counts_by_topic(creative)
+      badge = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user ]).fetch(@user.id)
+      assert_equal 0, badge.unread_count
+    ensure
+      CommentPresenceStore.remove(creative.id, @user.id)
+    end
+
     # nil, not 0 — the caller has to be able to tell "not batched" from "nothing
     # unread", or an un-indexed node would quietly render an empty badge.
     test "an unindexed creative reports nil" do

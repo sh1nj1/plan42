@@ -155,13 +155,15 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     @viewing_topic_id = topic_id.present? && Topic.find_by(id: topic_id, creative_id: @creative_id)&.id
     return if topic_id.present? && !@viewing_topic_id
     rendered_topic_ids = rendered_topic_ids_for(data) unless @viewing_topic_id
+    rendered_legacy_topic = rendered_legacy_topic_for(data) unless @viewing_topic_id
 
     CommentPresenceStore.set_topic(
       @creative_id,
       current_user.id,
       @viewing_topic_id,
       subscription_id: @presence_subscription_id,
-      rendered_topic_ids: rendered_topic_ids
+      rendered_topic_ids: rendered_topic_ids,
+      rendered_legacy_topic: rendered_legacy_topic
     )
     Comment.broadcast_badge(Creative.find(@creative_id), current_user)
   end
@@ -219,6 +221,10 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     return [] unless ids.is_a?(Array)
 
     Topic.where(creative_id: @creative_id, id: ids).pluck(:id)
+  end
+
+  def rendered_legacy_topic_for(data)
+    ActiveModel::Type::Boolean.new.cast(data["rendered_legacy_topic"] || data[:rendered_legacy_topic])
   end
 
   # Transmitted to the connection that asked, never broadcast: the stream is per

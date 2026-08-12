@@ -214,6 +214,20 @@ describe('CommentsPresenceController', () => {
     })
   })
 
+  test('reports a rendered legacy lane with the All Messages snapshot', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = null
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '123', topicIds: ['10'], includesLegacy: true } })
+
+    expect(perform).toHaveBeenCalledWith('viewing_topic', {
+      topic_id: null,
+      rendered_topic_ids: ['10'],
+      rendered_legacy_topic: true,
+    })
+  })
+
   test('does not report a rendered snapshot from another creative', () => {
     const perform = jest.fn()
     controller.presenceSubscription = { perform }
