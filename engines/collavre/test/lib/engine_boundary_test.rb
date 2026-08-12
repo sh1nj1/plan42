@@ -845,6 +845,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = import.meta.resolve["call"](import.meta, "#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve.apply(import.meta, ["#{satellite}/thing"]);) => "#{satellite}/thing",
       %(const t = import.meta.resolve["apply"](import.meta, ["#{satellite}/thing"]);) => "#{satellite}/thing",
+      %(const t = import.meta.resolve.bind(null)("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta.resolve.bind(null, "#{satellite}/thing")();) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -1940,7 +1942,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     resolve = js_function_property_at(tokens, index + 2, "resolve")
     js_call_specifier(tokens, resolve) ||
       js_function_call_specifier(tokens, resolve) ||
-      js_function_apply_specifier(tokens, resolve)
+      js_function_apply_specifier(tokens, resolve) ||
+      js_require_bound_specifier(tokens, resolve)
   end
 
   # A statically selected native function invoked through `call` retains its
