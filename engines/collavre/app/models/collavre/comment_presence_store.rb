@@ -75,7 +75,7 @@ module Collavre
     # cannot leave a user suppressing badges indefinitely.
     def self.renew(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
       with_lock(creative_id) do
-        return unless stored_subscription_ids(creative_id, user_id).include?(subscription_id)
+        return false unless stored_subscription_ids(creative_id, user_id).include?(subscription_id)
 
         subscriptions = subscription_ids(creative_id, user_id)
         subscriptions << subscription_id unless subscriptions.include?(subscription_id)
@@ -85,6 +85,7 @@ module Collavre
         ids = list(creative_id)
         ids << user_id unless ids.include?(user_id)
         write_present_user_ids(creative_id, ids)
+        true
       end
     end
 

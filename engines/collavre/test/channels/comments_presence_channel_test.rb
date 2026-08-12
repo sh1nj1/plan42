@@ -176,6 +176,45 @@ module Collavre
       CommentPresenceStore.remove(@creative.id, @owner.id, subscription_id: subscription_id) if subscription_id
     end
 
+    test "heartbeat restores an expired subscription with its reported topic" do
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+      subscription_id = subscription.instance_variable_get(:@presence_subscription_id)
+      perform :viewing_topic, topic_id: @topic.id
+
+      Rails.cache.delete(CommentPresenceStore.subscriptions_key(@creative.id, @owner.id))
+      Rails.cache.delete(CommentPresenceStore.subscription_lease_key(@creative.id, @owner.id, subscription_id))
+      Rails.cache.delete(CommentPresenceStore.topic_key(@creative.id, @owner.id, subscription_id))
+      assert_empty CommentPresenceStore.list(@creative.id)
+
+      perform :heartbeat
+
+      assert_equal [ @owner.id ], CommentPresenceStore.list(@creative.id)
+      assert_equal @topic.id, CommentPresenceStore.topic_for(@creative.id, @owner.id)
+    ensure
+      CommentPresenceStore.remove(@creative.id, @owner.id, subscription_id: subscription_id) if subscription_id
+    end
+
+    test "heartbeat restores an expired All Messages snapshot" do
+      rendered_topic = @creative.topics.create!(name: "Rendered", user: @owner)
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+      subscription_id = subscription.instance_variable_get(:@presence_subscription_id)
+      perform :viewing_topic, topic_id: nil, rendered_topic_ids: [ rendered_topic.id ]
+
+      Rails.cache.delete(CommentPresenceStore.subscriptions_key(@creative.id, @owner.id))
+      Rails.cache.delete(CommentPresenceStore.subscription_lease_key(@creative.id, @owner.id, subscription_id))
+      Rails.cache.delete(CommentPresenceStore.topic_key(@creative.id, @owner.id, subscription_id))
+      assert_empty CommentPresenceStore.list(@creative.id)
+
+      perform :heartbeat
+
+      assert_equal [ @owner.id ], CommentPresenceStore.list(@creative.id)
+      assert_equal [ CommentPresenceStore::ALL_TOPICS, rendered_topic.id ], CommentPresenceStore.viewing_topics(@creative.id, @owner.id)
+    ensure
+      CommentPresenceStore.remove(@creative.id, @owner.id, subscription_id: subscription_id) if subscription_id
+    end
+
     # The client wipes its agent state on every topic switch and asks for the new
     # topic's snapshot, so this replay — not a heartbeat — is what puts a paused
     # turn's indicator and Stop button back. It goes to the connection that asked
