@@ -275,15 +275,15 @@ module ComplexityRatchet
     def block_anchor(node)
       anchor = node.location.slice[0...(node.block.location.start_offset - node.location.start_offset)]
         .gsub(/\s+/, " ").strip
-      return anchor unless node.is_a?(Prism::CallNode) && %i[lambda proc].include?(node.name)
+      return anchor unless node.is_a?(Prism::CallNode)
 
       callable_context_anchor(node) || anchor
     end
 
-    # `proc do` and `lambda do` are call-shaped blocks, but their call node
-    # starts after an enclosing assignment or argument list. Preserve that
-    # context when it identifies the callable, just as #lambda_anchor does for
-    # arrow literals; otherwise HANDLER and DISPATCHER both look like `proc`.
+    # A call-shaped anonymous block begins after an enclosing assignment or
+    # argument list. Preserve that context when it identifies the block, just
+    # as #lambda_anchor does for arrow literals; otherwise HANDLER and OTHER
+    # can share an anchor such as `Enumerator.new`.
     def callable_context_anchor(node)
       before_call = @source.byteslice(0, node.location.start_offset)
       current_line = before_call.split("\n").last.to_s.strip

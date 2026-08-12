@@ -390,6 +390,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}/example" ], template_paths_in(%(controller.render("#{satellite}/example")))
     assert_equal [ "#{satellite}/example" ], template_paths_in(%(ApplicationController.render("#{satellite}/example")))
+    assert_equal [ "#{satellite}/example" ], template_paths_in(%(ApplicationController.renderer.render(template: "#{satellite}/example")))
+    assert_equal [ "#{satellite}/example" ],
+      template_paths_in(%(ApplicationController.renderer.new(http_host: "example.test").render(template: "#{satellite}/example")))
+    assert_equal [ "#{satellite}/example" ],
+      template_paths_in(%(ApplicationController.renderer.with_defaults(http_host: "example.test").render(template: "#{satellite}/example")))
   end
 
   # Formatting was the recurring miss: parentheses moved the literal, and a call
@@ -1401,7 +1406,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return false unless node.is_a?(Prism::CallNode) && TEMPLATE_RENDER_METHODS.include?(node.name.to_s)
 
     receiver = node.receiver
-    receiver.nil? || receiver.slice.match?(/(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self)\z/)
+    receiver.nil? || rails_render_receiver?(receiver.slice)
+  end
+
+  def rails_render_receiver?(source)
+    source.match?(/(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self)\z/) ||
+      source.match?(/(?:\A|::)\w*Controller\.renderer(?:\.(?:new|with_defaults)\(.*\))?\z/)
   end
 
   def template_arguments(call)

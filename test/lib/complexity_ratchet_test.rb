@@ -274,6 +274,21 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  test "keeps assignment context in other anonymous block anchors" do
+    source = <<~RUBY
+      class Sample
+        HANDLER = Enumerator.new do
+          first
+        end
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample[block:new]" => [ "HANDLER =" ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   # Both views come from one parse now. They have to stay keyed identically, or
   # verify_monotonic would look up an anchor under a key the population never
   # produced and silently compare nothing.
@@ -1127,6 +1142,33 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
       end
     RUBY
     key = "a.rb | Metrics/BlockLength | Sample[block:proc]"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { key => 90 }, { key => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "source anchor"
+  end
+
+  test "rejects another anonymous block replaced with a different assignment" do
+    before_source = <<~RUBY
+      class Sample
+        HANDLER = Enumerator.new do
+          first
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class Sample
+        OTHER = Enumerator.new do
+          second
+        end
+      end
+    RUBY
+    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
 
     problem = ComplexityRatchet.verify_monotonic(
       { key => 90 }, { key => 80 },
