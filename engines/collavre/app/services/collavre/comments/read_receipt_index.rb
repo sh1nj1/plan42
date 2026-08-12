@@ -59,13 +59,14 @@ module Collavre
       # even when a topic-filtered page spans thousands of hidden public comments.
       def pointers
         pointer_table = CommentReadPointer.arel_table
+        named_pointer_table = CommentReadPointer.arel_table.alias("named_receipt_pointers")
         public_comments = Comment.arel_table.alias("receipt_comments")
         effective_comment_id = Comment
           .from(public_comments)
           .select(public_comments[:id].maximum)
           .where(public_comments[:creative_id].eq(pointer_table[:creative_id]))
           .where(public_comments[:private].eq(false))
-          .where(pointer_table[:topic_id].eq(nil).or(same_topic(public_comments[:topic_id], pointer_table[:topic_id])))
+          .where(matches_pointer_topic(pointer_table, named_pointer_table, public_comments))
           .where(public_comments[:id].lteq(pointer_table[:last_read_comment_id]))
           .arel
 
@@ -76,12 +77,23 @@ module Collavre
           .includes(user: { avatar_attachment: :blob })
       end
 
-      # SQL's `NULL = NULL` is not true, although Main comments and the legacy
-      # creative-wide pointer both use NULL. Treat those two NULLs as the same
-      # topic while keeping every named topic isolated.
-      def same_topic(comment_topic_id, pointer_topic_id)
-        comment_topic_id.eq(pointer_topic_id).or(
-          comment_topic_id.eq(nil).and(pointer_topic_id.eq(nil))
+      # Legacy pointers represent the NULL-topic lane after the migration. They
+      # can still cover a named topic that has no per-topic pointer, but never
+      # override a named pointer for the same user, creative, and topic.
+      def matches_pointer_topic(pointer_table, named_pointer_table, public_comments)
+        named_pointer_exists = CommentReadPointer
+          .unscoped
+          .from(named_pointer_table)
+          .select(Arel.sql("1"))
+          .where(named_pointer_table[:user_id].eq(pointer_table[:user_id]))
+          .where(named_pointer_table[:creative_id].eq(pointer_table[:creative_id]))
+          .where(named_pointer_table[:topic_id].eq(public_comments[:topic_id]))
+          .where(named_pointer_table[:topic_id].not_eq(nil))
+          .arel.exists
+
+        legacy_match = public_comments[:topic_id].eq(nil).or(named_pointer_exists.not)
+        pointer_table[:topic_id].eq(nil).and(legacy_match).or(
+          pointer_table[:topic_id].not_eq(nil).and(pointer_table[:topic_id].eq(public_comments[:topic_id]))
         )
       end
     end

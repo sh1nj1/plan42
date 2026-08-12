@@ -4,7 +4,7 @@ require Rails.root.join(
 )
 
 class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
-  test "rollback preserves the latest topic watermark in the legacy pointer" do
+  test "rollback preserves unread topics by using the lowest topic watermark" do
     user = users(:one)
     creative = Creative.create!(user: user, description: "Rollback read pointers", sequence: 920)
     first_topic = creative.topics.create!(name: "First", user: user)
@@ -17,7 +17,7 @@ class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
 
     AddTopicToCommentReadPointers.new.send(:consolidate_topic_watermarks)
 
-    assert_equal latest_comment.id, legacy_pointer.reload.last_read_comment_id
+    assert_equal first_comment.id, legacy_pointer.reload.last_read_comment_id
   end
 
   test "rollback creates a legacy pointer when only topic pointers exist" do
@@ -33,6 +33,6 @@ class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
     AddTopicToCommentReadPointers.new.send(:consolidate_topic_watermarks)
 
     legacy_pointer = CommentReadPointer.find_by!(user: user, creative: creative, topic: nil)
-    assert_equal latest_comment.id, legacy_pointer.last_read_comment_id
+    assert_equal first_comment.id, legacy_pointer.last_read_comment_id
   end
 end

@@ -113,6 +113,18 @@ module Collavre
         assert_equal({ legacy.id => [ @reader ], named.id => [ @reader ] }, receipts_for([ legacy, named ]))
       end
 
+      test "a legacy pointer does not override a named topic pointer" do
+        topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
+        legacy = comment("legacy")
+        first = comment("first", topic: topic)
+        second = comment("second", topic: topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: second.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: topic, last_read_comment_id: first.id)
+
+        assert_equal({ legacy.id => [ @reader ], first.id => [ @reader ] }, receipts_for([ legacy, first, second ]))
+      end
+
       test "duplicate legacy and topic receipts render one avatar" do
         topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
         named = comment("named", topic: topic)
