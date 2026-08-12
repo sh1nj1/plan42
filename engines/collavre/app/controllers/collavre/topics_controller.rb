@@ -167,6 +167,8 @@ module Collavre
 
       Topic.transaction do
         topic.comments.update_all(creative_id: target_creative.id)
+        CommentReadPointer.where(creative: source_creative, topic: topic)
+          .update_all(creative_id: target_creative.id)
         topic.update!(creative: target_creative)
 
         # The assignment is exclusive: Matcher#match_by_primary_agent returns []

@@ -277,6 +277,25 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
   end
 
+  test "moving a topic moves its read pointers with it" do
+    target_creative = creatives(:root_parent)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @user, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal target_creative.id, pointer.reload.creative_id
+    assert_nil Collavre::CommentReadPointer.find_by(user: @user, creative: @creative, topic: @topic)
+
+    patch move_creative_topic_url(target_creative, @topic), params: { target_creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_equal @creative.id, pointer.reload.creative_id
+  end
+
   test "moving a topic keeps comments_count in sync on both creatives" do
     target_creative = creatives(:root_parent)
     Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "a")
