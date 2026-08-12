@@ -567,6 +567,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(fn(.../import "#{satellite}\\/thing"/.exec(text));))
   end
 
+  test "detector scans imports after a TypeScript postfix non-null assertion" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const ratio = value! / (import("#{satellite}/thing"), 1);))
+  end
+
   # Same rule the Ruby loader detector follows: the specifier is the violation,
   # not the engine name appearing somewhere in the file.
   test "detector ignores a satellite named outside a JS import" do
@@ -1079,7 +1086,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_regex_start?(tokens)
     previous = tokens.last
     return true if previous.nil?
-    return false if js_postfix_update?(tokens)
+    return false if js_postfix_update?(tokens) || js_postfix_non_null_assertion?(tokens)
 
     expression_starters = [ "(", "[", "{", ",", ":", ";", "=", "!", "?", "+", "-", "*", "%", "&", "|", "^", "~", "<", ">" ]
     return true if previous.first == :punctuation && expression_starters.include?(previous.last)
@@ -1112,6 +1119,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     operand = tokens[-3]
     operand && (operand.first != :punctuation || [ ")", "]", "}" ].include?(operand.last))
+  end
+
+  # TypeScript's postfix `!` assertion follows an operand, unlike unary `!`.
+  # A following slash is therefore division, so it must not consume a dynamic
+  # import as though it began a regex literal.
+  def js_postfix_non_null_assertion?(tokens)
+    return false unless tokens.last == [ :punctuation, "!" ]
+
+    operand = tokens[-2]
+    operand && (operand.first != :punctuation || [ ")", "]" ].include?(operand.last))
   end
 
   def js_for_of_header?(tokens)

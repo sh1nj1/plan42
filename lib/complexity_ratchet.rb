@@ -310,13 +310,14 @@ module ComplexityRatchet
         .gsub(/\s+/, " ").strip
       return anchor unless node.is_a?(Prism::CallNode)
 
-      callable_context_anchor(node) || anchor
+      callable_context_anchor(node) || enclosing_collection_anchor || anchor
     end
 
     # A call-shaped anonymous block begins after an enclosing assignment or
     # argument list. Preserve that context when it identifies the block, just
     # as #lambda_anchor does for arrow literals; otherwise HANDLER and OTHER
-    # can share an anchor such as `Enumerator.new`.
+    # can share an anchor such as `Enumerator.new`. A collection containing the
+    # call supplies the same ownership context when neither local form applies.
     def callable_context_anchor(node)
       before_call = @source.byteslice(0, node.location.start_offset)
       current_line = before_call.split("\n").last.to_s.strip
