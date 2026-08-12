@@ -325,12 +325,16 @@ module ComplexityRatchet
     # identity. The visitor stack supplies that parent relationship directly.
     def enclosing_call_anchor(node)
       parent = @call_stack.reverse_each.find do |candidate|
-        candidate != node && candidate.arguments&.arguments&.include?(node)
+        candidate != node && candidate.arguments&.arguments&.any? { argument_contains?(node, _1) }
       end
       return unless parent
 
       prefix_length = node.location.start_offset - parent.location.start_offset
       parent.location.slice[0...prefix_length].gsub(/\s+/, " ").strip
+    end
+
+    def argument_contains?(node, argument)
+      argument.equal?(node) || argument.compact_child_nodes.any? { argument_contains?(node, _1) }
     end
 
     # The literal is anonymous, but its statement prefix is stable when it is
