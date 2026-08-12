@@ -579,6 +579,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
           http_host: "example.test"
         ).render(template: "#{satellite}/example")
       RUBY
+    assert_equal [ "#{satellite}/example" ],
+      template_paths_in(%(self.view_context.render(template: "#{satellite}/example")))
   end
 
   # Formatting was the recurring miss: parentheses moved the literal, and a call
@@ -2035,7 +2037,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def rails_render_receiver?(source)
-    source.match?(/(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self)\z/) ||
+    source.match?(/(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self|self\.view_context)\z/) ||
       source.match?(/(?:\A|::)\w*Controller\.renderer(?:\.(?:new|with_defaults)\(.*\))?\z/m)
   end
 
