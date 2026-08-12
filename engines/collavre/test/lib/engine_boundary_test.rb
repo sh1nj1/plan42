@@ -277,6 +277,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITE_CONSTANTS.keys.first
 
     assert_equal [ "#{satellite}::Account" ], names(string_references_in(%(belongs_to :account, class_name: "#{satellite}::Account")))
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(has_many :messages, through: :links, source_type: "#{satellite}::Message")))
     assert_equal [ "#{satellite}::Account" ], names(string_references_in(%("#{satellite}::Account".constantize)))
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
@@ -2228,7 +2230,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     elsif node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name)
       string = static_string_concatenation(node.receiver)
       found << [ string, node.location.start_line ] if string
-    elsif node.is_a?(Prism::AssocNode) && %w[class_name type].include?(association_key_name(node))
+    elsif node.is_a?(Prism::AssocNode) && %w[class_name source_type type].include?(association_key_name(node))
       string = static_string_concatenation(node.value)
       found << [ string, node.location.start_line ] if string
     end
