@@ -902,14 +902,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(registry.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.call(null, "#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require["call"](null, "#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.apply(null, ["#{satellite}/template"])))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require["apply"](null, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.bind(null)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.bind(null, "#{satellite}/template")()))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require.bind(module)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].call(module, "#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]["call"](module, "#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].apply(module, ["#{satellite}/template"])))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]["apply"](module, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].bind(module)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.("#{satellite}/template")))
@@ -1754,9 +1758,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # already established that this is bare `require` or `module.require`, not
   # an application method with the same name.
   def js_require_call_specifier(tokens, index)
-    return unless tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, "call" ]
+    call = js_function_property_at(tokens, index, "call")
+    return unless call
 
-    open = js_call_open_at(tokens, index + 2)
+    open = js_call_open_at(tokens, call)
     return unless open && tokens[open + 2] == [ :punctuation, "," ]
 
     js_static_string_at(tokens, open + 3)
@@ -1766,13 +1771,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # to `require.call(this_arg, specifier)`. Only a single static specifier is
   # useful to this scanner; computed or multiple arguments stay unknown.
   def js_require_apply_specifier(tokens, index)
-    return unless tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, "apply" ]
+    apply = js_function_property_at(tokens, index, "apply")
+    return unless apply
 
-    open = js_call_open_at(tokens, index + 2)
+    open = js_call_open_at(tokens, apply)
     return unless open && tokens[open + 2] == [ :punctuation, "," ] && tokens[open + 3] == [ :punctuation, "[" ]
 
     specifier, close = js_static_string_expression_at(tokens, open + 4)
     specifier if specifier && tokens[close] == [ :punctuation, "]" ] && tokens[close + 1] == [ :punctuation, ")" ]
+  end
+
+  def js_function_property_at(tokens, index, name)
+    return index + 2 if tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, name ]
+    index + 3 if tokens[index + 1] == [ :punctuation, "[" ] && tokens[index + 2] == [ :string, name ] && tokens[index + 3] == [ :punctuation, "]" ]
   end
 
   # `require.bind(this_arg)(specifier)` retains the native CommonJS loader.
