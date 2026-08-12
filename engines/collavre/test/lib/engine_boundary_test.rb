@@ -763,6 +763,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       js_imports_in(%(class X {}; const ratio = {} / import("#{satellite}/thing")))
   end
 
+  test "detector scans imports after function expressions" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const ratio = function() {} / import("#{satellite}/thing") / value))
+  end
+
   test "detector ignores regex literals after bindingless catch blocks" do
     satellite = SATELLITES.first
 
@@ -1462,7 +1469,28 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     head = tokens[parenthesis - 1]&.last
     return true if %w[if while for with switch catch].include?(head)
 
-    tokens[0...parenthesis].any? { |token| token == [ :word, "function" ] }
+    js_function_declaration_body?(tokens, parenthesis)
+  end
+
+  def js_function_declaration_body?(tokens, parenthesis)
+    function = (parenthesis - 1).downto(0).find do |index|
+      token = tokens[index]
+      break if token.first == :punctuation && %w[; { } ( =].include?(token.last)
+
+      token == [ :word, "function" ]
+    end
+    return false unless function
+
+    prefix = function - 1
+    while prefix >= 0 && js_function_declaration_modifier?(tokens[prefix])
+      prefix -= 1
+    end
+
+    prefix.negative? || tokens[prefix]&.first == :punctuation && %w[; { }].include?(tokens[prefix].last)
+  end
+
+  def js_function_declaration_modifier?(token)
+    token.first == :word && %w[export default declare async].include?(token.last)
   end
 
   def js_declaration_body?(tokens, opening)
