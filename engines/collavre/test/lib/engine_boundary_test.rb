@@ -141,7 +141,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   test "core engine gemspec declares no satellite dependency" do
-    satellite_deps = satellite_gem_dependencies(core_gemspec.dependencies.map(&:name))
+    dependency_names = core_gemspec.dependencies.map(&:name) + gemspec_dependency_names_in(core_gemspec_source)
+    satellite_deps = satellite_gem_dependencies(dependency_names).uniq
 
     assert_empty satellite_deps,
       "engines/#{CORE}/#{CORE}.gemspec depends on #{satellite_deps.join(', ')} — the core engine cannot require a satellite"
@@ -150,6 +151,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   test "gemspec detector rejects published satellites outside this checkout" do
     assert_equal %w[collavre_salesforce collavre_slack],
       satellite_gem_dependencies(%w[collavre collavre_salesforce collavre_slack])
+  end
+
+  test "gemspec detector rejects conditional satellite dependencies" do
+    source = <<~RUBY
+      Gem::Specification.new do |spec|
+        spec.add_dependency "collavre_windows", ">= 1.0" if Gem.win_platform?
+        spec.add_runtime_dependency("collavre_macos", "~> 2.0") unless Gem.win_platform?
+        add_dependency "collavre_linux" if Gem.win_platform?
+        dependency_source.add_dependency "collavre_unrelated"
+      end
+    RUBY
+
+    assert_equal %w[collavre_linux collavre_macos collavre_windows],
+      satellite_gem_dependencies(gemspec_dependency_names_in(source)).sort
   end
 
   test "path detector rejects published satellites outside this checkout" do
@@ -1139,6 +1154,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def core_gemspec
     @core_gemspec ||= Gem::Specification.load(ENGINES_ROOT.join(CORE, "#{CORE}.gemspec").to_s)
+  end
+
+  def core_gemspec_source
+    File.read(ENGINES_ROOT.join(CORE, "#{CORE}.gemspec"))
   end
 
   def violations_in(path)
@@ -2652,6 +2671,40 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def satellite_gem_dependencies(dependencies)
     dependencies.grep(SATELLITE_GEM_NAME)
+  end
+
+  # Gem::Specification.load evaluates the gemspec in the current environment.
+  # A conditional dependency may therefore be absent in CI but present when the
+  # core gem is built elsewhere. Read literal declarations from the syntax tree
+  # as well, while retaining the evaluated specification for dynamic entries.
+  def gemspec_dependency_names_in(source)
+    gemspec_dependency_calls(Prism.parse(source).value).filter_map { |call| gemspec_dependency_name(call) }
+  end
+
+  def gemspec_dependency_name(call)
+    static_string_concatenation(call.arguments&.arguments&.first)
+  end
+
+  def gemspec_dependency_calls(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    found << node if gemspec_dependency_call?(node)
+    node.compact_child_nodes.each { |child| gemspec_dependency_calls(child, found) }
+    found
+  end
+
+  def gemspec_dependency_call?(node)
+    return false unless node.is_a?(Prism::CallNode)
+    return false unless %i[add_dependency add_runtime_dependency].include?(node.name)
+
+    node.receiver.nil? || gemspec_spec_receiver?(node.receiver)
+  end
+
+  def gemspec_spec_receiver?(receiver)
+    return receiver.name == :spec if receiver.is_a?(Prism::LocalVariableReadNode)
+
+    receiver.is_a?(Prism::CallNode) && receiver.receiver.nil? && receiver.name == :spec &&
+      receiver.arguments.nil?
   end
 
   def satellite_constant?(name)
