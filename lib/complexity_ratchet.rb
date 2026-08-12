@@ -282,8 +282,12 @@ module ComplexityRatchet
     # smaller version of the same unique lambda without making its body part of
     # the identity.
     def lambda_anchor(node)
-      prefix = @source.byteslice(0, node.location.start_offset).split("\n").last.to_s.strip
-      prefix.empty? ? "[lambda]" : prefix
+      before_lambda = @source.byteslice(0, node.location.start_offset)
+      prefix = before_lambda.split("\n").last.to_s.strip
+      return prefix unless prefix.empty?
+
+      preceding_line = before_lambda.rstrip.split("\n").last.to_s.strip
+      preceding_line.end_with?("=") ? preceding_line : "[lambda]"
     end
 
     # Two indexes, because a start line alone is not an identity. In a chained

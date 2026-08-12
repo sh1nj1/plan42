@@ -205,6 +205,22 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  test "keeps the preceding assignment anchor of a multiline unique lambda" do
+    source = <<~RUBY
+      class Sample
+        HANDLER =
+          -> do
+            first
+          end
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample[lambda]" => [ "HANDLER =" ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   test "keeps the anchor of a uniquely named block" do
     source = <<~RUBY
       class Sample

@@ -37,6 +37,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
+  CONSTANT_RESOLUTION_METHODS = %w[const_get].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
 
@@ -201,6 +202,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in("Object.const_get(:#{satellite})"))
   end
 
+  test "detector ignores satellite symbols used as ordinary data" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_empty names(string_references_in("logger.info(event: :#{satellite})"))
+  end
+
   test "string detector resolves Ruby escapes before checking satellite constants" do
     satellite = SATELLITE_CONSTANTS.keys.first
     escaped = satellite.sub(/[A-Z]/) { |letter| "\\u%04X" % letter.ord }
@@ -231,6 +238,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}/some_service" ], requires_in(%(require "#{satellite}/some_service"))
     assert_equal [ satellite ], requires_in(%(require_relative("#{satellite}")))
+    assert_equal [ "#{satellite}/some_service" ],
+      requires_in(%(require "collavre_" + "#{satellite.delete_prefix('collavre_')}/some_service"))
   end
 
   test "detector ignores requires of the core engine and third-party gems" do
@@ -437,6 +446,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(export { thing } from "#{satellite}/thing";) => "#{satellite}/thing",
       %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
+      %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import(`#{satellite}/thing`);) => "#{satellite}/thing",
       %(import Thing from "#{escaped_satellite}/thing";) => "#{satellite}/thing",
       %(const t = await import(`#{escaped_satellite}/thing`);) => "#{satellite}/thing",
@@ -463,6 +474,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(/* import "#{satellite}/thing" */))
     assert_empty js_imports_in(%(const example = 'import "#{satellite}/thing";))
     assert_empty js_imports_in(%(const pattern = /import "#{satellite}\/thing"/;))
+    assert_empty js_imports_in(%(if (ready) /import "#{satellite}\/thing"/.test(text);))
   end
 
   test "detector ignores import examples in JSX text while keeping JSX expressions" do
@@ -905,7 +917,24 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     expression_starters = [ "(", "[", "{", ",", ":", ";", "=", "!", "?", "+", "-", "*", "%", "&", "|", "^", "~", "<", ">" ]
     return true if previous.first == :punctuation && expression_starters.include?(previous.last)
 
+    return true if control_flow_condition?(tokens)
+
     previous == [ :word, "return" ] || previous == [ :word, "throw" ] || previous == [ :word, "case" ]
+  end
+
+  def control_flow_condition?(tokens)
+    return false unless tokens.last == [ :punctuation, ")" ]
+
+    depth = 0
+    tokens.each_index.reverse_each do |index|
+      token = tokens[index]
+      depth += 1 if token == [ :punctuation, ")" ]
+      next unless token == [ :punctuation, "(" ]
+
+      depth -= 1
+      return %w[if while for with switch catch].include?(tokens[index - 1]&.last) if depth.zero?
+    end
+    false
   end
 
   # A regex literal is not module syntax, even when it contains the exact text
@@ -1018,9 +1047,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def js_call_specifier(tokens, index)
     return unless tokens[index + 1] == [ :punctuation, "(" ]
-    return unless tokens[index + 2]&.first == :string
 
-    tokens[index + 2].last
+    js_static_string_at(tokens, index + 2)
+  end
+
+  def js_static_string_at(tokens, index)
+    return unless tokens[index]&.first == :string
+
+    value = tokens[index].last.dup
+    while tokens[index + 1] == [ :punctuation, "+" ] && tokens[index + 2]&.first == :string
+      value << tokens[index + 2].last
+      index += 2
+    end
+    tokens[index + 1] == [ :punctuation, "+" ] ? nil : value
   end
 
   def js_bare_import_specifier(tokens, index)
@@ -1145,7 +1184,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # written into a string literal in core code is the violation, whatever reads
   # it afterwards.
   def string_references_in(source)
-    located_string_literals_in(Prism.parse(source).value)
+    root = Prism.parse(source).value
+    (located_string_literals_in(root) + constant_resolution_symbols_in(root))
       .flat_map { |value, line| value.scan(SATELLITE_IN_STRING).map { |name| [ name, line ] } }
   end
 
@@ -1163,12 +1203,24 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def located_string_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::StringNode) || node.is_a?(Prism::SymbolNode)
+    if node.is_a?(Prism::StringNode)
       found << [ node.unescaped, node.location.start_line ]
     else
       node.compact_child_nodes.each { |child| located_string_literals_in(child, found) }
     end
 
+    found
+  end
+
+  def constant_resolution_symbols_in(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    if node.is_a?(Prism::CallNode) && CONSTANT_RESOLUTION_METHODS.include?(node.name.to_s)
+      node.arguments&.arguments.to_a&.grep(Prism::SymbolNode)&.each do |symbol|
+        found << [ symbol.unescaped, symbol.location.start_line ]
+      end
+    end
+    node.compact_child_nodes.each { |child| constant_resolution_symbols_in(child, found) }
     found
   end
 
@@ -1248,7 +1300,22 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # The static parts of an interpolated string count: the engine name in
   # "#{root}/collavre_slack/foo" is still a literal reference to it.
   def string_arguments(call)
-    call.arguments&.arguments.to_a.flat_map { |argument| string_literals_in(argument) }
+    call.arguments&.arguments.to_a.flat_map do |argument|
+      static_concatenation = static_string_concatenation(argument)
+      static_concatenation.nil? ? string_literals_in(argument) : [ static_concatenation ]
+    end
+  end
+
+  def static_string_concatenation(node)
+    return node.unescaped if node.is_a?(Prism::StringNode)
+    return unless node.is_a?(Prism::CallNode) && node.name == :+
+
+    arguments = node.arguments&.arguments
+    return unless arguments&.one?
+
+    left = static_string_concatenation(node.receiver)
+    right = static_string_concatenation(arguments.first)
+    left + right if left && right
   end
 
   def string_literals_in(node)
