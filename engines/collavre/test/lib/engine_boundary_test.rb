@@ -412,6 +412,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       template_paths_in(%(ApplicationController.renderer.new(http_host: "example.test").render(template: "#{satellite}/example")))
     assert_equal [ "#{satellite}/example" ],
       template_paths_in(%(ApplicationController.renderer.with_defaults(http_host: "example.test").render(template: "#{satellite}/example")))
+    assert_equal [ "#{satellite}/example" ],
+      template_paths_in(<<~RUBY)
+        ApplicationController.renderer.with_defaults(
+          http_host: "example.test"
+        ).render(template: "#{satellite}/example")
+      RUBY
   end
 
   # Formatting was the recurring miss: parentheses moved the literal, and a call
@@ -500,6 +506,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(import "#{satellite}/side_effect";) => "#{satellite}/side_effect",
       %(export { thing } from "#{satellite}/thing";) => "#{satellite}/thing",
       %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -543,6 +550,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(if (ready) {} else /import "#{satellite}\/thing"/.test(text);))
     assert_empty js_imports_in(%(do /import "#{satellite}\/thing"/.test(text); while (ready);))
     assert_empty js_imports_in(%(function* matches() { yield /import "#{satellite}\/thing"/ }))
+    assert_empty js_imports_in(%(for (const char of /import "#{satellite}\/thing"/.source) {}))
   end
 
   test "detector ignores import examples in JSX text while keeping JSX expressions" do
@@ -992,7 +1000,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     return true if control_flow_condition?(tokens)
 
-    %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last) && previous.first == :word
+    %w[return throw case else do yield await void typeof delete new in of instanceof].include?(previous.last) && previous.first == :word
   end
 
   def control_flow_condition?(tokens)
@@ -1155,7 +1163,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       when "require"
         next unless js_commonjs_loader?(tokens, index)
 
-        js_call_specifier(tokens, index)
+        js_call_specifier(tokens, index) || js_require_resolve_specifier(tokens, index)
       when "import"
         next if tokens[index - 1] == [ :punctuation, "." ]
 
@@ -1180,6 +1188,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless tokens[index + 1] == [ :punctuation, "(" ]
 
     js_static_string_at(tokens, index + 2)
+  end
+
+  def js_require_resolve_specifier(tokens, index)
+    return unless tokens[index + 1] == [ :punctuation, "." ] &&
+      tokens[index + 2] == [ :word, "resolve" ] &&
+      tokens[index + 3] == [ :punctuation, "(" ]
+
+    js_static_string_at(tokens, index + 4)
   end
 
   def js_static_string_at(tokens, index)
@@ -1440,7 +1456,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def rails_render_receiver?(source)
     source.match?(/(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self)\z/) ||
-      source.match?(/(?:\A|::)\w*Controller\.renderer(?:\.(?:new|with_defaults)\(.*\))?\z/)
+      source.match?(/(?:\A|::)\w*Controller\.renderer(?:\.(?:new|with_defaults)\(.*\))?\z/m)
   end
 
   def template_arguments(call)
