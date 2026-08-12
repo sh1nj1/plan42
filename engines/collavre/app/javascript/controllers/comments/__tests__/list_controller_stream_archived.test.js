@@ -109,6 +109,18 @@ describe('CommentsListController archived streams in All Messages', () => {
     expect(controller.renderedAllTopicWatermarks).toEqual({ 2: 8 })
   })
 
+  test('blocks a restored topic absent from the rendered All Messages snapshot', () => {
+    const controller = buildController({ archivedIds: [] })
+    controller.renderedAllTopicIds = ['2']
+    const event = streamEvent({ html: comment(3, 9) })
+
+    controller.handleStreamRender(event)
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(badgeEvents).toEqual([{ topicId: '3' }])
+    expect(controller.markCommentsRead).not.toHaveBeenCalled()
+  })
+
   test('does not mark a foreign message read', () => {
     const controller = buildController({ currentTopicId: '2' })
     const event = streamEvent({ html: comment(5) })

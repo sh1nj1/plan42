@@ -61,6 +61,33 @@ describe('CommentsListController read pointer updates', () => {
     })
   })
 
+  test('extends the All Messages read bound when pagination renders an older topic', async () => {
+    controller.currentTopicId = null
+    controller.renderedAllTopicIds = ['1', '2']
+    controller.renderedAllTopicWatermarks = { 1: 20 }
+    controller.loadingOlder = false
+    controller.allOlderLoaded = false
+    controller.listTarget = document.createElement('div')
+    controller.listTarget.innerHTML = '<div class="comment-item" data-comment-id="20" data-topic-id="1"></div>'
+    Object.defineProperty(controller.listTarget, 'scrollHeight', { value: 100 })
+    controller.listTarget.scrollTop = 0
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => null },
+      text: async () => '<div class="comment-item" data-comment-id="10" data-topic-id="2"></div>',
+    })
+
+    controller.loadOlderComments()
+    await Promise.resolve()
+    await Promise.resolve()
+    await jest.advanceTimersByTimeAsync(2000)
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 1: 20, 2: 10 })
+    expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toEqual({
+      creative_id: '42', topic_id: null, topic_ids: ['1', '2'], topic_watermarks: { 1: 20, 2: 10 }
+    })
+  })
+
   test('does not reload topic unread counts after a failed read pointer update', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false })
 

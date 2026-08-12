@@ -287,6 +287,8 @@ export default class extends Controller {
         // Prepend to start (Visual Top)
         this.listTarget.insertAdjacentHTML('afterbegin', html)
         renderMarkdownInContainer(this.listTarget)
+        this.recordRenderedAllTopicWatermarks(this.listTarget.querySelectorAll('.comment-item'))
+        this.markCommentsRead()
 
         // Restore scroll position
         const newScrollHeight = this.listTarget.scrollHeight
@@ -318,6 +320,8 @@ export default class extends Controller {
         // Append to end (Visual Bottom)
         this.listTarget.insertAdjacentHTML('beforeend', html)
         renderMarkdownInContainer(this.listTarget)
+        this.recordRenderedAllTopicWatermarks(this.listTarget.querySelectorAll('.comment-item'))
+        this.markCommentsRead()
       })
       .finally(() => {
         this.loadingNewer = false
@@ -625,19 +629,27 @@ export default class extends Controller {
   // extends that bound for its already-rendered topic before the read debounce
   // captures it. Do not add a topic absent from the initial snapshot: it may
   // have been unarchived after the list loaded, leaving older comments unseen.
-  recordRenderedAllTopicWatermark(comment) {
-    if (!comment || this.currentTopicId || !Array.isArray(this.renderedAllTopicIds)) return
+  recordRenderedAllTopicWatermarks(comments) {
+    if (this.currentTopicId || !Array.isArray(this.renderedAllTopicIds)) return
 
-    const topicId = comment.dataset.topicId
-    const commentId = Number.parseInt(comment.dataset.commentId, 10)
-    if (!topicId || !Number.isSafeInteger(commentId) || commentId <= 0) return
-    if (!this.renderedAllTopicIds.some((id) => String(id) === String(topicId))) return
+    const renderedComments = comments instanceof Element ? [comments] : Array.from(comments || [])
+    renderedComments.forEach((comment) => {
+      const topicId = comment.dataset.topicId
+      const commentId = Number.parseInt(comment.dataset.commentId, 10)
+      if (!topicId || !Number.isSafeInteger(commentId) || commentId <= 0) return
+      if (!this.renderedAllTopicIds.some((id) => String(id) === String(topicId))) return
 
-    this.renderedAllTopicWatermarks ||= {}
-    const previousId = Number.parseInt(this.renderedAllTopicWatermarks[topicId], 10)
-    if (!Number.isSafeInteger(previousId) || commentId > previousId) {
-      this.renderedAllTopicWatermarks[topicId] = commentId
-    }
+      this.renderedAllTopicWatermarks ||= {}
+      const previousId = Number.parseInt(this.renderedAllTopicWatermarks[topicId], 10)
+      if (!Number.isSafeInteger(previousId) || commentId > previousId) {
+        this.renderedAllTopicWatermarks[topicId] = commentId
+      }
+    })
+  }
+
+  isOutsideRenderedAllTopics(topicId) {
+    return Array.isArray(this.renderedAllTopicIds) &&
+      !this.renderedAllTopicIds.some((id) => String(id) === String(topicId))
   }
 
   handleStreamRender(event) {
@@ -669,7 +681,7 @@ export default class extends Controller {
         // Both cases badge the topic instead of appending.
         const isForeignTopic = currentTopicId
           ? String(currentTopicId) !== String(messageTopicId)
-          : this.isArchivedTopicMessage(messageTopicId)
+          : this.isArchivedTopicMessage(messageTopicId) || this.isOutsideRenderedAllTopics(messageTopicId)
 
         if (isForeignTopic) {
           event.preventDefault()
@@ -712,7 +724,7 @@ export default class extends Controller {
       // debounce, so a reconnect or popup close cannot turn a viewed live
       // message back into an unread one.
       if (event.target.action === 'append') {
-        this.recordRenderedAllTopicWatermark(appendedComment)
+        this.recordRenderedAllTopicWatermarks(appendedComment)
         this.markCommentsRead()
       }
     }
