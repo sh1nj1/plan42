@@ -24,7 +24,7 @@ module Collavre
       get creatives_path
       assert_response :success
       refute_includes response.body, "data-creative-id=\"#{session.root.id}\""
-      assert_select "#comments-popup #comments-list .onboarding-card", count: 1
+      assert_select "#comments-popup #comments-list .onboarding-card[data-onboarding-card-session-id-value='#{session.session_id}']", count: 1
     end
 
     test "speculative workspace requests do not consume onboarding auto-open state" do

@@ -1,13 +1,13 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../lib/api/csrf_fetch'
 
-const WORKSPACE_TREE_DISMISSED_KEY = 'collavre:onboarding:workspace-tree-dismissed'
+const WORKSPACE_TREE_DISMISSED_KEY_PREFIX = 'collavre:onboarding:workspace-tree-dismissed'
 
 // A read-only runner: it highlights an anchored UI element but never invokes a
 // write. Domain actions advance only after their server-side controller succeeds.
 export default class extends Controller {
   static targets = ['instruction', 'step', 'next', 'finish']
-  static values = { stateUrl: String, advanceUrl: String, completeUrl: String, currentStep: String }
+  static values = { stateUrl: String, advanceUrl: String, completeUrl: String, currentStep: String, sessionId: String }
 
   connect() {
     this.refreshGeneration = 0
@@ -126,10 +126,14 @@ export default class extends Controller {
 
   handleWorkspaceTreeClosed() {
     this.workspaceTreeDismissed = true
-    window.sessionStorage.setItem(WORKSPACE_TREE_DISMISSED_KEY, 'true')
+    window.sessionStorage.setItem(this.workspaceTreeDismissedKey(), 'true')
   }
 
   workspaceTreeWasDismissed() {
-    return window.sessionStorage.getItem(WORKSPACE_TREE_DISMISSED_KEY) === 'true'
+    return window.sessionStorage.getItem(this.workspaceTreeDismissedKey()) === 'true'
+  }
+
+  workspaceTreeDismissedKey() {
+    return `${WORKSPACE_TREE_DISMISSED_KEY_PREFIX}:${this.sessionIdValue}`
   }
 }

@@ -150,6 +150,30 @@ describe('OnboardingCardController', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
   })
 
+  test('opens the workspace tree drawer for a reset onboarding session after a previous session was dismissed', async () => {
+    document.body.insertAdjacentHTML('beforeend', `
+<section class="creative-workspace-tree-region" data-controller="workspace-tree">
+  <button data-workspace-tree-target="panelToggle" aria-expanded="false"></button>
+</section>
+    `)
+
+    await controller.refresh()
+
+    const panel = document.querySelector('[data-controller="workspace-tree"]')
+    const toggle = panel.querySelector('button')
+    panel.classList.remove('is-open')
+    toggle.setAttribute('aria-expanded', 'false')
+    panel.dispatchEvent(new CustomEvent('workspace-tree:panel-closed', { bubbles: true }))
+
+    controller.element.dataset.onboardingCardSessionIdValue = 'reset-session'
+    controller.disconnect()
+    controller.connect()
+    await flush()
+
+    expect(panel.classList.contains('is-open')).toBe(true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
   test('serializes slow polling responses and refreshes again afterward', async () => {
     let resolveSlowResponse
     const slowResponse = new Promise((resolve) => { resolveSlowResponse = resolve })
@@ -266,7 +290,8 @@ function cardMarkup() {
     <div data-controller="onboarding-card"
          data-onboarding-card-state-url-value="/onboarding"
          data-onboarding-card-advance-url-value="/onboarding/advance"
-         data-onboarding-card-complete-url-value="/onboarding/complete">
+         data-onboarding-card-complete-url-value="/onboarding/complete"
+         data-onboarding-card-session-id-value="initial-session">
       <p data-onboarding-card-target="instruction"></p>
       <div data-onboarding-card-target="step" data-step-key="welcome"></div>
       <div data-onboarding-card-target="step" data-step-key="done"></div>
