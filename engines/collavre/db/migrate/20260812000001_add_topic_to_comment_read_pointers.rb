@@ -32,6 +32,8 @@ class AddTopicToCommentReadPointers < ActiveRecord::Migration[8.0]
   private
 
   def consolidate_topic_watermarks
+    create_missing_legacy_pointers
+
     execute <<~SQL.squish
       UPDATE comment_read_pointers AS legacy_pointers
       SET last_read_comment_id = (
@@ -49,6 +51,17 @@ class AddTopicToCommentReadPointers < ActiveRecord::Migration[8.0]
             AND topic_pointers.creative_id = legacy_pointers.creative_id
             AND topic_pointers.topic_id IS NOT NULL
         ), 0)
+    SQL
+  end
+
+  def create_missing_legacy_pointers
+    execute <<~SQL.squish
+      INSERT INTO comment_read_pointers (user_id, creative_id, last_read_comment_id, created_at, updated_at)
+      SELECT topic_pointers.user_id, topic_pointers.creative_id, MAX(topic_pointers.last_read_comment_id), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      FROM comment_read_pointers AS topic_pointers
+      LEFT JOIN comment_read_pointers AS legacy_pointers ON legacy_pointers.user_id = topic_pointers.user_id AND legacy_pointers.creative_id = topic_pointers.creative_id AND legacy_pointers.topic_id IS NULL
+      WHERE topic_pointers.topic_id IS NOT NULL AND legacy_pointers.id IS NULL
+      GROUP BY topic_pointers.user_id, topic_pointers.creative_id
     SQL
   end
 end

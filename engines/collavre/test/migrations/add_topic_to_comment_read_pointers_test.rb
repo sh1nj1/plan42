@@ -19,4 +19,20 @@ class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
 
     assert_equal latest_comment.id, legacy_pointer.reload.last_read_comment_id
   end
+
+  test "rollback creates a legacy pointer when only topic pointers exist" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Topic-only rollback pointers", sequence: 921)
+    first_topic = creative.topics.create!(name: "First", user: user)
+    second_topic = creative.topics.create!(name: "Second", user: user)
+    first_comment = Comment.create!(creative: creative, topic: first_topic, user: users(:two), content: "first")
+    latest_comment = Comment.create!(creative: creative, topic: second_topic, user: users(:two), content: "latest")
+    CommentReadPointer.create!(user: user, creative: creative, topic: first_topic, last_read_comment_id: first_comment.id)
+    CommentReadPointer.create!(user: user, creative: creative, topic: second_topic, last_read_comment_id: latest_comment.id)
+
+    AddTopicToCommentReadPointers.new.send(:consolidate_topic_watermarks)
+
+    legacy_pointer = CommentReadPointer.find_by!(user: user, creative: creative, topic: nil)
+    assert_equal latest_comment.id, legacy_pointer.last_read_comment_id
+  end
 end
