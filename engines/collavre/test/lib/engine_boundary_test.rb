@@ -351,6 +351,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(Kernel.__send__(:require, "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.send("require", "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(method(:require).call("#{feature}")))
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
     assert_empty requires_in(%(registry.method(:require).call("#{feature}")))
     assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
@@ -1820,14 +1821,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
   end
 
-  # A statically selected `Kernel.method(:require).call(path)` invokes the
-  # native loader just like direct and reflective dispatch. Restrict this to
-  # Kernel so an application-defined Method object is not treated as a loader.
+  # A statically selected `Kernel.method(:require).call(path)` or
+  # `method(:require).call(path)` invokes the native loader just like direct
+  # and reflective dispatch. Restrict this to Kernel so an application-defined
+  # Method object is not treated as a loader.
   def method_object_loader_method(call)
     return unless call.name == :call
 
     method_call = call.receiver
-    return unless method_call.is_a?(Prism::CallNode) && method_call.name == :method && kernel?(method_call.receiver)
+    return unless method_call.is_a?(Prism::CallNode) && method_call.name == :method
+    return unless method_call.receiver.nil? || kernel?(method_call.receiver)
 
     method_name = method_call.arguments&.arguments&.first
     return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
