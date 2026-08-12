@@ -150,4 +150,27 @@ class CreativeShareTest < ActiveSupport::TestCase
     assert_equal true, broadcasts.last[1][:has_access_changed]
     assert_equal false, broadcasts.last[1][:can_comment_changed]
   end
+
+  test "a named share reconciles only its recipient's topic pointers" do
+    owner = users(:one)
+    recipient = users(:two)
+    unaffected_reader = users(:three)
+    source = Creative.create!(user: owner, description: "Pointer source")
+    destination = Creative.create!(user: owner, description: "Pointer destination")
+    topic = destination.topics.create!(name: "Moved topic", user: owner)
+    comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "read comment")
+    share = CreativeShare.create!(creative: destination, user: recipient, permission: :read)
+    CommentReadPointer.create!(user: recipient, creative: source, topic: topic, last_read_comment: comment)
+    CommentReadPointer.create!(user: unaffected_reader, creative: source, topic: topic, last_read_comment: comment)
+    checked_user_ids = []
+
+    CreativeShare.stub :read_access_from_shares?, ->(_creative, user) {
+      checked_user_ids << user.id
+      false
+    } do
+      share.send(:reconcile_topic_read_pointers_for_permission_change)
+    end
+
+    assert_equal [ recipient.id ], checked_user_ids
+  end
 end

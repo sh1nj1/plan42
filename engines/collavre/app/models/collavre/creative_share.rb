@@ -225,9 +225,12 @@ module Collavre
     def reconcile_topic_read_pointers_for_permission_change
       destination_ids = reconciliation_creative_ids
       access_by_destination_and_user = {}
+      affected_user_ids = reconciliation_user_ids
 
-      CommentReadPointer.joins(:topic)
-        .where(topics: { creative_id: destination_ids })
+      pointers = CommentReadPointer.joins(:topic).where(topics: { creative_id: destination_ids })
+      pointers = pointers.where(user_id: affected_user_ids) if affected_user_ids
+
+      pointers
         .includes(:topic, :user)
         .find_each do |pointer|
           destination = pointer.topic.creative
@@ -253,6 +256,14 @@ module Collavre
       return ids unless previous_creative
 
       ids | previous_creative.effective_origin.self_and_descendants.pluck(:id)
+    end
+
+    # A named share can change access only for its prior or current recipient.
+    # Public shares affect every reader, so they deliberately keep the full scan.
+    def reconciliation_user_ids
+      return nil unless user_id || user_id_before_last_save
+
+      [ user_id, user_id_before_last_save ].compact.uniq
     end
 
     def self.read_access_from_shares?(destination, reader)

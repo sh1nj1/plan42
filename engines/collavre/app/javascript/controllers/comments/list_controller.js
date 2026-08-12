@@ -250,16 +250,7 @@ export default class extends Controller {
         this.formController.focusTextarea()
       }
       this.element.dispatchEvent(new CustomEvent('comments--list:loaded', { bubbles: true }))
-      if (!this.currentTopicId && Array.isArray(this.renderedAllTopicIds)) {
-        this.element.dispatchEvent(new CustomEvent('comments--list:rendered-all-topics', {
-          bubbles: true,
-          detail: {
-            creativeId: this.creativeId,
-            topicIds: this.renderedAllTopicIds,
-            includesLegacy: this.renderedAllIncludesLegacy,
-          },
-        }))
-      }
+      this.reportRenderedAllTopics()
       this.markCommentsRead()
 
     }).catch((error) => {
@@ -301,7 +292,11 @@ export default class extends Controller {
         // Prepend to start (Visual Top)
         this.listTarget.insertAdjacentHTML('afterbegin', html)
         renderMarkdownInContainer(this.listTarget)
-        this.recordRenderedAllTopicWatermarks(this.listTarget.querySelectorAll('.comment-item'))
+        const addedTopic = this.recordRenderedAllTopicWatermarks(
+          this.listTarget.querySelectorAll('.comment-item'),
+          { includeNewTopics: true },
+        )
+        if (addedTopic) this.reportRenderedAllTopics()
         this.markCommentsRead()
 
         // Restore scroll position
@@ -336,7 +331,11 @@ export default class extends Controller {
         // Append to end (Visual Bottom)
         this.listTarget.insertAdjacentHTML('beforeend', html)
         renderMarkdownInContainer(this.listTarget)
-        this.recordRenderedAllTopicWatermarks(this.listTarget.querySelectorAll('.comment-item'))
+        const addedTopic = this.recordRenderedAllTopicWatermarks(
+          this.listTarget.querySelectorAll('.comment-item'),
+          { includeNewTopics: true },
+        )
+        if (addedTopic) this.reportRenderedAllTopics()
         this.markCommentsRead()
       })
       .finally(() => {
@@ -667,17 +666,24 @@ export default class extends Controller {
   // All Messages sends a bounded per-topic snapshot so a later archive change
   // cannot mark comments the list did not render as read. A visible live append
   // extends that bound for its already-rendered topic before the read debounce
-  // captures it. Do not add a topic absent from the initial snapshot: it may
-  // have been unarchived after the list loaded, leaving older comments unseen.
-  recordRenderedAllTopicWatermarks(comments) {
-    if (this.currentTopicId || !Array.isArray(this.renderedAllTopicIds)) return
+  // captures it. Only pagination may add a new topic: its comment is already
+  // visible in the DOM. Live streams still fence topics outside the initial
+  // snapshot because older history for those topics may be unseen.
+  recordRenderedAllTopicWatermarks(comments, { includeNewTopics = false } = {}) {
+    if (this.currentTopicId || !Array.isArray(this.renderedAllTopicIds)) return false
 
+    let addedTopic = false
     const renderedComments = comments instanceof Element ? [comments] : Array.from(comments || [])
     renderedComments.forEach((comment) => {
       const topicId = comment.dataset.topicId
       const commentId = Number.parseInt(comment.dataset.commentId, 10)
       if (!topicId || !Number.isSafeInteger(commentId) || commentId <= 0) return
-      if (!this.renderedAllTopicIds.some((id) => String(id) === String(topicId))) return
+      if (!this.renderedAllTopicIds.some((id) => String(id) === String(topicId))) {
+        if (!includeNewTopics) return
+
+        this.renderedAllTopicIds.push(String(topicId))
+        addedTopic = true
+      }
 
       this.renderedAllTopicWatermarks ||= {}
       const previousId = Number.parseInt(this.renderedAllTopicWatermarks[topicId], 10)
@@ -685,6 +691,21 @@ export default class extends Controller {
         this.renderedAllTopicWatermarks[topicId] = commentId
       }
     })
+
+    return addedTopic
+  }
+
+  reportRenderedAllTopics() {
+    if (this.currentTopicId || !Array.isArray(this.renderedAllTopicIds)) return
+
+    this.element.dispatchEvent(new CustomEvent('comments--list:rendered-all-topics', {
+      bubbles: true,
+      detail: {
+        creativeId: this.creativeId,
+        topicIds: this.renderedAllTopicIds,
+        includesLegacy: this.renderedAllIncludesLegacy,
+      },
+    }))
   }
 
   isOutsideRenderedAllTopics(topicId) {

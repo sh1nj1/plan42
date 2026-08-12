@@ -63,7 +63,7 @@ describe('CommentsListController read pointer updates', () => {
 
   test('extends the All Messages read bound when pagination renders an older topic', async () => {
     controller.currentTopicId = null
-    controller.renderedAllTopicIds = ['1', '2']
+    controller.renderedAllTopicIds = ['1']
     controller.renderedAllTopicWatermarks = { 1: 20 }
     controller.loadingOlder = false
     controller.allOlderLoaded = false
@@ -77,12 +77,17 @@ describe('CommentsListController read pointer updates', () => {
       text: async () => '<div class="comment-item" data-comment-id="10" data-topic-id="2"></div>',
     })
 
+    const renderedSnapshots = []
+    controller.element.addEventListener('comments--list:rendered-all-topics', (event) => renderedSnapshots.push(event.detail))
+
     controller.loadOlderComments()
     await Promise.resolve()
     await Promise.resolve()
     await jest.advanceTimersByTimeAsync(2000)
 
+    expect(controller.renderedAllTopicIds).toEqual(['1', '2'])
     expect(controller.renderedAllTopicWatermarks).toEqual({ 1: 20, 2: 10 })
+    expect(renderedSnapshots).toEqual([{ creativeId: '42', topicIds: ['1', '2'], includesLegacy: undefined }])
     expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toEqual({
       creative_id: '42', topic_id: null, topic_ids: ['1', '2'], topic_watermarks: { 1: 20, 2: 10 }
     })
