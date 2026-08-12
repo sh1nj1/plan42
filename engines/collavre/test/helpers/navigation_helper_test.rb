@@ -154,12 +154,38 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[href='/collavre/features?locale=ko']", count: 1
   end
 
-  test "help partial preserves the configured link and opens it in the current window" do
+  test "help partial opens a configured off-site link in a new tab" do
     SystemSetting.stub(:help_menu_link, "https://docs.example.com/help") do
       render partial: "collavre/shared/navigation/help_button"
     end
 
     assert_select "a#creative-guide-link[href='https://docs.example.com/help']", count: 1
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured same-host link in the current window" do
+    SystemSetting.stub(:help_menu_link, "http://#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[href='http://#{request.host}/docs']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial opens a configured relative link in the current window" do
+    SystemSetting.stub(:help_menu_link, "/docs/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[href='/docs/help']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial treats an unparseable configured link as internal" do
+    SystemSetting.stub(:help_menu_link, "http://exa mple.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
     assert_select "a#creative-guide-link[target]", count: 0
   end
 
@@ -182,7 +208,9 @@ class NavigationHelperTest < ActionView::TestCase
       visible: -> { true }
     )
 
-    render partial: "collavre/shared/navigation"
+    SystemSetting.stub(:help_menu_link, "") do
+      render partial: "collavre/shared/navigation"
+    end
 
     assert_includes rendered, 'class="mobile-only"'
     assert_includes rendered, 'creative-guide-link'

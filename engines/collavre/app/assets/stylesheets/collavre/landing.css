@@ -631,6 +631,14 @@ body.dark-mode .landing-shot-dark { display: block; }
   text-decoration: underline;
 }
 
+/* The signed-in reader's way back into the app. It carries more weight than the
+   crumbs beside it because on the desktop shell, whose single webview has no
+   back button, it is the only exit from the guide. */
+.feature-guide-breadcrumb .feature-guide-back-to-app {
+  color: var(--color-active);
+  font-weight: 500;
+}
+
 /* The whole card is the link, so strip the anchor's own presentation and let
    .landing-feature-card keep supplying it. */
 .feature-guide-link-card {

@@ -264,6 +264,32 @@ module Collavre
       assert_not_includes @response.body, escaped("collavre.features.pages.topic_management.tagline", locale: :en)
     end
 
+    # The guide uses the landing layout, which carries no application navigation.
+    # A signed-in reader arrived from the "?" menu, so the breadcrumb has to offer
+    # the way back — it is the only exit in the desktop shell, whose single
+    # webview has no back button.
+    test "guide pages offer signed-in readers a link back into the app" do
+      sign_in_as users(:one), password: "password"
+
+      %w[/features /features/mention_agent].each do |path|
+        get path
+
+        assert_response :success
+        assert_select ".feature-guide-breadcrumb a.feature-guide-back-to-app[href=?]", "/",
+                      text: I18n.t("collavre.features.nav.back_to_app", app_name: I18n.t("app.name")),
+                      count: 1
+      end
+    end
+
+    test "guide pages omit the back-to-app link when signed out" do
+      %w[/features /features/mention_agent].each do |path|
+        get path
+
+        assert_response :success
+        assert_select ".feature-guide-back-to-app", count: 0
+      end
+    end
+
     test "show renders the breadcrumb separator from i18n in both locales" do
       %i[en ko].each do |locale|
         get "/features/mention_agent", params: { locale: locale }

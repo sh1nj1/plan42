@@ -1,0 +1,15 @@
+<%# Breadcrumb for the guide pages. These use the landing layout, which carries no
+    application navigation, so a signed-in reader who arrived from the "?" menu
+    gets an explicit way back into the app. That is the only exit in the desktop
+    shell, whose single webview has no back button. %>
+<nav class="feature-guide-breadcrumb">
+  <% if authenticated? %>
+    <%= link_to t('collavre.features.nav.back_to_app', app_name: t('app.name')), main_app.root_path, class: "feature-guide-back-to-app" %>
+    <span aria-hidden="true"><%= t('collavre.features.nav.separator') %></span>
+  <% end %>
+  <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name) %>
+  <% if local_assigns[:show_all_features] %>
+    <span aria-hidden="true"><%= t('collavre.features.nav.separator') %></span>
+    <%= link_to t('collavre.features.nav.all'), collavre.features_path(locale: I18n.locale, script_name: request.script_name) %>
+  <% end %>
+</nav>

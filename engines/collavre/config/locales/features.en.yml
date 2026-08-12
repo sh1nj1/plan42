@@ -3,6 +3,7 @@ en:
   collavre:
     features:
       nav:
+        back_to_app: "← Back to %{app_name}"
         landing: "Home"
         all: "All features"
         all_arrow: "← All features"

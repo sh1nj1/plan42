@@ -61,6 +61,17 @@ module Collavre
       value.is_a?(Proc) ? instance_exec(&value) : value
     end
 
+    # True when a URL leaves this application — an absolute URL whose host is not
+    # ours. Relative paths and same-host absolute URLs are ours, so they stay in
+    # the current window. A malformed setting is treated as internal: the anchor
+    # then behaves like any other in-app link rather than silently opening a tab.
+    def external_link?(url)
+      host = URI.parse(url.to_s).host
+      host.present? && host != request.host
+    rescue URI::InvalidURIError
+      false
+    end
+
     private
 
     def render_nav_button(item)
