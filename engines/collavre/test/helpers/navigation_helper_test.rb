@@ -281,6 +281,34 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
   end
 
+  # A browser repairs the missing slash and lands on docs.example.com, because
+  # the scheme is not the one this page was served over.
+  test "help partial opens a configured link with a foreign scheme and a missing slash in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https:/docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens an unparseable link with a foreign scheme and a missing slash in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https:/münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # Same spelling, our own scheme: a browser reads the rest as a path on our
+  # origin rather than as a host.
+  test "help partial keeps a configured link with our scheme and a missing slash in the current window" do
+    SystemSetting.stub(:help_menu_link, "http:/docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
   # URI::InvalidComponentError is not a URI::InvalidURIError. Letting it escape
   # would raise on every page that carries the navigation.
   test "help partial renders a configured link that raises an invalid component error" do

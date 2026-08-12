@@ -72,21 +72,12 @@ module Collavre
     # what we compare. Relative paths and same-origin absolute URLs are ours and
     # stay in the current window.
     #
-    # Wherever Ruby's parser and a browser disagree, the value is treated as
-    # off-site, decided by whether it is written with an authority. Ruby rejects
-    # an internationalized domain that a browser punycodes and navigates to, and
-    # it finds no host in "///docs.example.com/help" where a browser skips the
-    # extra slashes and lands on docs.example.com. "Ours" is the wrong guess in
-    # both, and it is the guess that strands the reader. Something written
-    # without an authority is a relative path, however odd, and stays internal.
-    # The cost is a same-origin URL written with extra slashes opening a tab.
-    AUTHORITY_PREFIX = %r{\A(?:[a-z][a-z0-9+.\-]*:)?//}i
-
+    # Where Ruby's parser hands back no host at all, the spelling decides —
+    # see #leaves_origin_by_spelling?.
     def external_link?(url)
       value = url.to_s
-      written_with_authority = value.match?(AUTHORITY_PREFIX)
       uri = URI.parse(value)
-      return written_with_authority if uri.host.blank?
+      return leaves_origin_by_spelling?(value) if uri.host.blank?
 
       scheme = uri.scheme.presence&.downcase || request.scheme
       port = uri.port || URI.scheme_list[scheme.upcase]&.default_port
@@ -97,10 +88,31 @@ module Collavre
     # subclass — "mailto://x@y.com" raises it, and letting it escape would take
     # down every page carrying the navigation.
     rescue URI::Error
-      written_with_authority
+      leaves_origin_by_spelling?(value)
     end
 
     private
+
+    # Ruby's parser and a browser disagree about several spellings, and Ruby
+    # losing the host is where that shows: it rejects an internationalized
+    # domain the browser punycodes, and finds nothing in "///docs.example.com"
+    # or "https:/docs.example.com" where the browser skips the slashes and takes
+    # the next segment as the host. Reading those as ours is the guess that
+    # strands the reader, so the decision falls back to how the value is
+    # written. An explicit "//" authority leaves. So does an http(s) scheme that
+    # is not the one we are served over — with a matching scheme the browser
+    # reads the rest as a path on our origin instead, which is why the scheme is
+    # compared rather than merely detected. Everything else — a relative path,
+    # "mailto:" — is ours.
+    AUTHORITY_PREFIX = %r{\A(?:[a-z][a-z0-9+.\-]*:)?//}i
+    SPECIAL_SCHEME_PREFIX = /\A(https?):/i
+
+    def leaves_origin_by_spelling?(value)
+      return true if value.match?(AUTHORITY_PREFIX)
+
+      scheme = value[SPECIAL_SCHEME_PREFIX, 1]
+      scheme.present? && scheme.downcase != request.scheme
+    end
 
     def render_nav_button(item)
       path = resolve_nav_value(item[:path])
