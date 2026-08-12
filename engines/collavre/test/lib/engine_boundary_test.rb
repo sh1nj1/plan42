@@ -236,6 +236,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal %w[lib/appended.rb lib/macos.rb lib/replaced.rb lib/shared.rb lib/windows.rb], gemspec_file_names_in(source).sort
   end
 
+  test "gemspec detector expands statically declared conditional package globs" do
+    source = <<~RUBY
+      Gem::Specification.new do |manifest|
+        manifest.files.concat Dir["test/lib/*.rb"] if Gem.win_platform?
+      end
+    RUBY
+
+    assert_includes gemspec_file_names_in(source, root: ENGINES_ROOT.join(CORE)), "test/lib/engine_boundary_test.rb"
+  end
+
   test "gemspec detector does not carry a receiver alias into a shadowing block" do
     source = <<~RUBY
       Gem::Specification.new do |gemspec|
@@ -1270,11 +1280,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # then `db/` (154 files) and the `Rakefile` — because the glob and the
   # packaging manifest were maintained separately and drifted. Reading the
   # manifest means whatever the engine ships is scanned by construction,
-  # including directories added later. Literal declarations supplement the
-  # evaluated list so platform-specific files are checked on every platform.
+  # including directories added later. Literal declarations and static globs
+  # supplement the evaluated list so platform-specific files are checked on
+  # every platform.
   def core_sources
     root = ENGINES_ROOT.join(CORE)
-    packaged = (core_gemspec.files + gemspec_file_names_in(core_gemspec_source)).uniq.select do |path|
+    packaged = (core_gemspec.files + gemspec_file_names_in(core_gemspec_source, root:)).uniq.select do |path|
       ruby_source?(path) || javascript_source?(root.join(path).to_s) || css_source?(path) || File.basename(path) == "Rakefile"
     end
 
@@ -2861,9 +2872,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # Gem::Specification.load evaluates platform guards. Literal file additions
   # have to be read statically too, or the current platform can hide a shipped
   # source file from the engine boundary scan.
-  def gemspec_file_names_in(source)
+  def gemspec_file_names_in(source, root: nil)
     gemspec_file_declaration_calls(Prism.parse(source).value).flat_map do |call|
-      static_file_paths(gemspec_file_arguments(call))
+      static_file_paths(gemspec_file_arguments(call), root:)
     end
   end
 
@@ -2968,12 +2979,23 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       gemspec_spec_receiver?(node.receiver, gemspec_receivers)
   end
 
-  def static_file_paths(arguments)
+  def static_file_paths(arguments, root: nil)
     arguments.to_a.flat_map do |argument|
       if argument.is_a?(Prism::ArrayNode)
-        static_file_paths(argument.elements)
+        static_file_paths(argument.elements, root:)
       else
-        static_string_concatenation(argument).then { |path| path ? [ path ] : [] }
+        static_dir_glob_paths(argument, root:) || static_string_concatenation(argument).then { |path| path ? [ path ] : [] }
+      end
+    end
+  end
+
+  def static_dir_glob_paths(node, root:)
+    return unless root && node.is_a?(Prism::CallNode) && %i[[] glob].include?(node.name)
+    return unless node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :Dir
+
+    static_file_paths(node.arguments&.arguments).flat_map do |pattern|
+      Dir.glob(root.join(pattern)).filter_map do |path|
+        Pathname.new(path).relative_path_from(root).to_s if File.file?(path)
       end
     end
   end
