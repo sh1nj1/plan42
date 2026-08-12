@@ -14,7 +14,8 @@ module Collavre
       #      echoes the dispatch's task_id). Without task_id (legacy clients),
       #      oldest-first.
       #   2. Inside a transaction: SELECT FOR UPDATE the row, re-check
-      #      status == 'delegated' under the lock, then update! to 'done'.
+      #      status == 'delegated' under the lock, then transition it to
+      #      'running'.
       #      Concurrent claimers block on the lock; the loser sees the
       #      already-flipped status post-lock and returns nil so the caller can
       #      refuse the duplicate.
@@ -23,11 +24,9 @@ module Collavre
       # (which enqueues TriggerLoopCheckJob) and broadcast_stop_button_removal
       # (which reads reply_comment). Both depend on the reply comment already
       # existing — but reply() claims BEFORE comment.save to win the race against
-      # concurrent /reply calls. If update! fired the trigger-loop check here, the
-      # job could run (cooldown_seconds: 0) before comment.save commits, find no
-      # agent comment, and leave the loop stuck in "running". #finalize replays
-      # all completion callbacks after the comment is persisted via
-      # Task#fire_completion_callbacks_after_external_claim.
+      # concurrent /reply calls. Keeping the task active until #finalize also
+      # prevents deferred onboarding cleanup from deleting the Creative before
+      # the reply can be persisted.
       def claim(agent:, topic:, requested_task_id:)
         scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
         candidate =
@@ -43,7 +42,7 @@ module Collavre
           locked = Task.lock.find_by(id: candidate.id)
           next unless locked && locked.status == "delegated"
 
-          Task.where(id: locked.id).update_all(status: "done", pending_tool_call: nil, updated_at: Time.current)
+          Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
           claimed = locked.reload
         end
         claimed
@@ -63,15 +62,12 @@ module Collavre
           Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
         end
 
-        Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+        # Complete the task only after the reply is linked. This runs the normal
+        # completion callbacks after TriggerLoopCheckJob, stop-button updates,
+        # and deferred onboarding cleanup can safely observe the reply.
+        task.update!(status: "done")
 
-        # Replay the after_update_commit callbacks that were bypassed by
-        # update_all in #claim — now that the reply comment is linked,
-        # TriggerLoopCheckJob can read it and decide whether to advance/await/
-        # complete the drop-trigger loop, the stop-button broadcast has a
-        # comment to render, and an onboarding cleanup can safely follow an
-        # externally completed task.
-        task.fire_completion_callbacks_after_external_claim
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
 
         # Clear the typing indicator immediately on reply. ClaudeChannelPresenceJob
         # would also stop on its next beat (task no longer "delegated"), but that

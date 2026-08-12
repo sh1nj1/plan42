@@ -1101,9 +1101,9 @@ module Collavre
           # worker (cooldown_seconds: 0), TriggerLoopCheckJob could run
           # before comment.save committed, fail to find an agent comment,
           # and leave the drop-trigger loop stuck at state="running" even
-          # though the reply is saved a moment later. The fix moves the
-          # callback replay into finalize_claimed_task (post-save) via
-          # Task#fire_completion_callbacks_after_external_claim.
+          # though the reply is saved a moment later. The fix defers the
+          # terminal transition and its callbacks to TaskClaimService#finalize,
+          # after the comment is persisted.
           reg = register_agent("trigger-loop-timing-test")
           ai_user = User.find(reg["agent_id"])
 
@@ -1167,13 +1167,13 @@ module Collavre
         end
 
         test "Claude Channel reply enqueues TriggerLoopCheckJob for drop-trigger loops" do
-          # claim_delegated_task must use update! (not update_all) so that
-          # Task's after_update_commit :check_trigger_loop_completion fires
-          # on the delegated → done transition. Otherwise drop-trigger loops
-          # whose continue step is delegated to a Claude Channel agent stay
-          # stuck at state="running" because TriggerLoopCheckJob never
-          # enqueues — normal agent completions go through update! so they
-          # advance the loop; Claude replies must match that contract.
+          # The post-save completion must use update! (not update_all) so that
+          # Task's after_update_commit :check_trigger_loop_completion fires on
+          # the running → done transition. Otherwise drop-trigger loops whose
+          # continue step is delegated to a Claude Channel agent stay stuck at
+          # state="running" because TriggerLoopCheckJob never enqueues — normal
+          # agent completions go through update!, so Claude replies must match
+          # that contract.
           reg = register_agent("trigger-loop-callback-test")
           ai_user = User.find(reg["agent_id"])
 

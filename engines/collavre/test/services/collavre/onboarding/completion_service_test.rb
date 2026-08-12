@@ -134,6 +134,11 @@ module Collavre
         OnboardingCleanupJob.perform_now(user.id, session.session_id, OnboardingCleanupJob::RETRY_DELAYS.length)
 
         claimed_task = AiAgent::TaskClaimService.new.claim(agent: agent, topic: topic, requested_task_id: task.id)
+
+        assert_equal "running", claimed_task.reload.status
+        refute CompletionService.new(user: user).clean_up_when_agent_turn_settles(session.session_id)
+        assert Creative.exists?(session.root.id)
+
         reply = Comment.create!(creative: creative, topic: topic, user: agent, content: "I can help")
 
         assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
