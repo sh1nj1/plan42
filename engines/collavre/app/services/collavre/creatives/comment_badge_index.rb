@@ -15,16 +15,33 @@ module Creatives
 
     Badge = Struct.new(:unread_count, :visible_comments, keyword_init: true)
 
-    # The comment-created fanout has one origin and many recipients. Each
-    # recipient needs their own topic watermarks, so reuse the canonical index
-    # rather than maintaining a second, creative-wide implementation here.
+    # The comment-created fanout has one origin and many recipients. Join every
+    # recipient to the comments it can see and both of its possible pointers in
+    # one grouped query. This preserves the topic-watermark semantics without
+    # rebuilding a one-origin index (and its cache and SQL work) per recipient.
     def self.for_users(origin:, users:)
-      users.compact.uniq(&:id).to_h do |user|
-        index = new(user: user)
-        index.index([ origin ])
+      recipients = users.compact.uniq(&:id)
+      return {} if recipients.empty?
+
+      counts_by_user_id = counts_for_users(origin, recipients.map(&:id))
+      present_user_ids = CommentPresenceStore.list(origin.id)
+      viewing_topics_by_user_id = CommentPresenceStore.viewing_topics_for(origin.id, present_user_ids)
+      active_topic_ids = if viewing_topics_by_user_id.values.flatten.include?(CommentPresenceStore::ALL_TOPICS)
+        origin.topics.active.pluck(:id)
+      else
+        []
+      end
+
+      recipients.to_h do |user|
+        counts_by_topic = counts_by_user_id.fetch(user.id, {})
+        viewing_topics = viewing_topics_by_user_id.fetch(user.id, [])
+        unread_count = counts_by_topic.sum do |topic_id, counts|
+          topic_is_viewed?(topic_id, viewing_topics, active_topic_ids) ? 0 : counts.fetch(:unread)
+        end
+
         [ user.id, Badge.new(
-          unread_count: index.unread_count_for(origin),
-          visible_comments: index.visible_comments?(origin)
+          unread_count: unread_count,
+          visible_comments: counts_by_topic.values.sum { |counts| counts.fetch(:visible) }.positive?
         ) ]
       end
     end
@@ -164,6 +181,63 @@ module Creatives
 
     def visible_comments
       user ? Comment.visible_to(user) : Comment.public_only
+    end
+
+    class << self
+      private
+
+      # The topic pointer is joined first; the retained creative-wide pointer
+      # supplies the fallback. Starting with recipients rather than comments
+      # lets the grouped result retain which user each public comment belongs
+      # to, without materialising comment history in Ruby.
+      def counts_for_users(origin, user_ids)
+        user_table = Collavre.configuration.user_class_name.constantize.arel_table
+        comment_table = Comment.arel_table
+        topic_pointer_table = CommentReadPointer.arel_table.alias("topic_read_pointers")
+        legacy_pointer_table = CommentReadPointer.arel_table.alias("legacy_read_pointers")
+
+        visible_to_user = comment_table[:private].eq(false)
+          .or(comment_table[:user_id].eq(user_table[:id]))
+          .or(comment_table[:approver_id].eq(user_table[:id]))
+        joins = user_table.join(comment_table, Arel::Nodes::InnerJoin)
+          .on(comment_table[:creative_id].eq(origin.id).and(visible_to_user))
+          .join(topic_pointer_table, Arel::Nodes::OuterJoin)
+          .on(
+            topic_pointer_table[:user_id].eq(user_table[:id])
+              .and(topic_pointer_table[:creative_id].eq(origin.id))
+              .and(topic_pointer_table[:topic_id].eq(comment_table[:topic_id]))
+          )
+          .join(legacy_pointer_table, Arel::Nodes::OuterJoin)
+          .on(
+            legacy_pointer_table[:user_id].eq(user_table[:id])
+              .and(legacy_pointer_table[:creative_id].eq(origin.id))
+              .and(legacy_pointer_table[:topic_id].eq(nil))
+          )
+        watermark = Arel::Nodes::NamedFunction.new(
+          "COALESCE",
+          [ topic_pointer_table[:last_read_comment_id], legacy_pointer_table[:last_read_comment_id], 0 ]
+        )
+        unread_count = Arel::Nodes::NamedFunction.new(
+          "SUM",
+          [ Arel::Nodes::Case.new.when(comment_table[:id].gt(watermark)).then(1).else(0) ]
+        ).as("unread_count")
+        visible_count = Arel::Nodes::NamedFunction.new("COUNT", [ comment_table[:id] ]).as("visible_count")
+
+        relation = Collavre.configuration.user_class_name.constantize.where(user_table[:id].in(user_ids))
+          .joins(joins.join_sources)
+          .group(user_table[:id], comment_table[:topic_id])
+          .select(user_table[:id], comment_table[:topic_id], unread_count, visible_count)
+
+        relation.each_with_object(Hash.new { |hash, user_id| hash[user_id] = {} }) do |row, counts|
+          counts[row.id][row.topic_id] = { unread: row.unread_count.to_i, visible: row.visible_count.to_i }
+        end
+      end
+
+      def topic_is_viewed?(topic_id, viewing_topics, active_topic_ids)
+        return viewing_topics.include?(topic_id) unless viewing_topics.include?(CommentPresenceStore::ALL_TOPICS)
+
+        topic_id.nil? || active_topic_ids.include?(topic_id)
+      end
     end
   end
 end

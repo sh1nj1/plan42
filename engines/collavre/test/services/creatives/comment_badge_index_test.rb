@@ -195,6 +195,42 @@ module Creatives
       assert badges.fetch(viewer.id).visible_comments
     end
 
+    test "fanout batches topic pointers without rebuilding an index for each recipient" do
+      creative = Creative.create!(user: @user, description: "Batched topic fanout", sequence: 917)
+      topic = creative.topics.create!(name: "Updates", user: @user)
+      viewer = User.create!(email: "topic-badge-viewer@example.com", password: TEST_PASSWORD, name: "Topic Badge Viewer")
+      first = Comment.create!(creative: creative, topic: topic, user: @author, content: "read")
+      Comment.create!(creative: creative, topic: topic, user: @author, content: "unread")
+      Comment.create!(creative: creative, topic: topic, user: @user, content: "owner private", private: true)
+      CommentReadPointer.create!(user: @user, creative: creative, topic: topic, last_read_comment_id: first.id)
+
+      Collavre::Creatives::CommentBadgeIndex.stub(:new, ->(*) { flunk("fanout must not build a per-user index") }) do
+        badges = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user, viewer ])
+
+        assert_equal 2, badges.fetch(@user.id).unread_count
+        assert_equal 2, badges.fetch(viewer.id).unread_count
+      end
+    end
+
+    test "fanout keeps archived-topic counts while a recipient views All Messages" do
+      creative = Creative.create!(user: @user, description: "All Messages fanout", sequence: 918)
+      active_topic = creative.topics.create!(name: "Active", user: @user)
+      archived_topic = creative.topics.create!(name: "Archived", user: @user, archived_at: Time.current)
+      Comment.create!(creative: creative, user: @author, content: "main")
+      Comment.create!(creative: creative, topic: active_topic, user: @author, content: "active")
+      Comment.create!(creative: creative, topic: archived_topic, user: @author, content: "archived")
+      CommentPresenceStore.add(creative.id, @user.id)
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil)
+
+      badge = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user ]).fetch(@user.id)
+
+      assert_equal 1, badge.unread_count
+      assert badge.visible_comments
+    ensure
+      Rails.cache.delete(CommentPresenceStore.key(creative.id))
+      Rails.cache.delete(CommentPresenceStore.topic_key(creative.id, @user.id))
+    end
+
     # nil, not 0 — the caller has to be able to tell "not batched" from "nothing
     # unread", or an un-indexed node would quietly render an empty badge.
     test "an unindexed creative reports nil" do

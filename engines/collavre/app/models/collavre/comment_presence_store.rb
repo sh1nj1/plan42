@@ -58,6 +58,27 @@ module Collavre
       Rails.cache.read_multi(*ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) }).values.compact.uniq
     end
 
+    # Fetch selected topics for all present recipients in cache batches. Badge
+    # fanout has one creative and many recipients, so calling #viewing_topics
+    # for each one would otherwise turn the cache work back into an N+1.
+    def self.viewing_topics_for(creative_id, user_ids)
+      ids = Array(user_ids).uniq
+      return {} if ids.empty?
+
+      subscriptions_by_user_id = ids.index_by { |user_id| subscriptions_key(creative_id, user_id) }
+      cached_subscriptions = Rails.cache.read_multi(*subscriptions_by_user_id.values)
+      topic_keys_by_user_id = ids.to_h do |user_id|
+        subscription_ids = cached_subscriptions.fetch(subscriptions_key(creative_id, user_id), [])
+        subscription_ids = [ LEGACY_SUBSCRIPTION_ID ] if subscription_ids.empty?
+        [ user_id, subscription_ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) } ]
+      end
+      cached_topics = Rails.cache.read_multi(*topic_keys_by_user_id.values.flatten)
+
+      topic_keys_by_user_id.transform_values do |topic_keys|
+        topic_keys.filter_map { |topic_key| cached_topics[topic_key] }.uniq
+      end
+    end
+
     def self.list(creative_id)
       Rails.cache.read(key(creative_id)) || []
     end
