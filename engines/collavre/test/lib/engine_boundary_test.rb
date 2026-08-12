@@ -145,6 +145,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       satellite_gem_dependencies(%w[collavre collavre_salesforce collavre_slack])
   end
 
+  test "path detector rejects published satellites outside this checkout" do
+    satellite = "collavre_salesforce"
+    feature = "#{satellite}/thing"
+
+    assert_equal satellite, satellite_for(feature)
+    assert_equal [ feature ], requires_in(%(require "#{feature}"))
+    assert_equal [ feature ], js_imports_in(%(import "#{feature}"))
+    assert_equal [ feature ], template_paths_in(%(render template: "#{feature}"))
+    assert_equal [ feature ], asset_paths_in(%(asset_path "#{feature}"))
+    assert_equal [ feature ], css_asset_paths_in(%(@import "#{feature}";))
+  end
+
   # The three tests above pass today because the codebase is clean, which means
   # they would also pass if the detector were broken. These pin the detector
   # itself.
@@ -633,13 +645,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   # A computed path still names the engine literally, so the static part of an
-  # interpolated string counts. The negative matters as much: an exact segment
-  # match means a longer name that merely starts with an engine's is not a hit.
-  test "detector flags an interpolated path and ignores a longer look-alike" do
+  # interpolated string counts. Only the reserved `collavre_` prefix identifies
+  # a satellite; unrelated path segments must remain ordinary data.
+  test "detector flags an interpolated satellite path and ignores unrelated paths" do
     satellite = SATELLITES.first
 
     assert_equal [ "/#{satellite}/foo" ], requires_in(%(require "\#{root}/#{satellite}/foo"))
-    assert_empty requires_in(%(require "\#{root}/#{satellite}_stub/foo"))
+    assert_empty requires_in(%(require "\#{root}/collaboration_stub/foo"))
   end
 
   # A hand-written glob has now missed shipped Ruby twice — `.rake`, then `db/`
@@ -862,7 +874,6 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(// see #{satellite}/thing for the pattern))
     assert_empty js_imports_in(%(console.warn("#{satellite} is not loaded");))
     assert_empty js_imports_in(%(import Thing from "#{CORE}/thing";))
-    assert_empty js_imports_in(%(import Thing from "#{satellite}_stub/thing";))
     assert_empty js_imports_in(%(import(`#{satellite}/\${name}`);))
     assert_empty js_imports_in(%(import Thing from "./components/thing";))
     assert_empty js_imports_in(%(// import "#{satellite}/thing"\n))
@@ -2528,11 +2539,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # with ".." and `require "./collavre_notion/x"` starts with "." — so matching
   # only the leading segment lets both through while the dependency is real.
   # Ruby allows an explicit `.rb` suffix too, so remove it before comparing the
-  # final feature segment with an engine directory.
+  # final feature segment with the reserved satellite prefix. This covers
+  # published satellites that are not checked out in this monorepo too.
   def satellite_for(feature)
     return nil if feature.nil?
 
-    Pathname.new(feature.delete_suffix(".rb")).cleanpath.each_filename.find { |segment| SATELLITES.include?(segment) }
+    Pathname.new(feature.delete_suffix(".rb")).cleanpath.each_filename.find { |segment| segment.match?(SATELLITE_GEM_NAME) }
   end
 
   def satellite_gem_dependencies(dependencies)
