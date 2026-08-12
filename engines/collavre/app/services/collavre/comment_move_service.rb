@@ -88,7 +88,7 @@ module Collavre
     # conservative and may re-show later destination comments as unread.
     def preserve_unread_state_for_topic_move(comment, destination_topic_id)
       source_topic_id = comment.topic_id
-      CommentReadPointer.where(creative: creative).distinct.pluck(:user_id).each do |user_id|
+      readers_affected_by(comment).each do |user_id|
         pointers = CommentReadPointer.where(user_id: user_id, creative: creative)
                                     .index_by(&:topic_id)
         source_watermark = pointers[source_topic_id]&.last_read_comment_id || pointers[nil]&.last_read_comment_id || 0
@@ -100,6 +100,14 @@ module Collavre
         )
         destination_pointer.update!(last_read_comment_id: comment.id - 1)
       end
+    end
+
+    # Private comments are visible only to their author and approver. Rewinding
+    # another user's cursor would make unrelated destination comments unread.
+    def readers_affected_by(comment)
+      return CommentReadPointer.where(creative: creative).distinct.pluck(:user_id) unless comment.private?
+
+      [ comment.user_id, comment.approver_id ].compact.uniq
     end
 
     def broadcast_move_removal(comment, original_creative)

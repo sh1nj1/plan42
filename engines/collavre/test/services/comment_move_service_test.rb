@@ -59,5 +59,20 @@ module Collavre
       assert_equal moved.id - 1, pointer.last_read_comment_id
       assert_operator Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative)[destination.id], :>=, 1
     end
+
+    test "moving a private comment does not rewind a pointer for a user who cannot view it" do
+      source = @creative.topics.create!(name: "Source", user: @user)
+      destination = @creative.topics.create!(name: "Destination", user: @user)
+      other_user = users(:three)
+      source_before = Comment.create!(creative: @creative, topic: source, user: users(:two), content: "source before")
+      moved = Comment.create!(creative: @creative, topic: source, user: users(:two), approver: @user, private: true, content: "private unread")
+      read_destination = Comment.create!(creative: @creative, topic: destination, user: users(:two), content: "read destination")
+      CommentReadPointer.create!(user: other_user, creative: @creative, topic: source, last_read_comment_id: source_before.id)
+      destination_pointer = CommentReadPointer.create!(user: other_user, creative: @creative, topic: destination, last_read_comment_id: read_destination.id)
+
+      CommentMoveService.new(creative: @creative, user: @user).call(comment_ids: [ moved.id ], target_topic_id: destination.id)
+
+      assert_equal read_destination.id, destination_pointer.reload.last_read_comment_id
+    end
   end
 end
