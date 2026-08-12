@@ -149,12 +149,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       Gem::Specification.new do |gemspec|
         gemspec.add_dependency "collavre_windows", ">= 1.0" if Gem.win_platform?
         gemspec.add_runtime_dependency("collavre_macos", "~> 2.0") unless Gem.win_platform?
+        gemspec.add_development_dependency "collavre_linux" if Gem.win_platform?
         add_dependency "collavre_linux" if Gem.win_platform?
         dependency_source.add_dependency "collavre_unrelated"
       end
     RUBY
 
-    assert_equal %w[collavre_linux collavre_macos collavre_windows],
+    assert_equal %w[collavre_linux collavre_linux collavre_macos collavre_windows],
       satellite_gem_dependencies(gemspec_dependency_names_in(source)).sort
   end
 
@@ -500,6 +501,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(Kernel.send(:"req\#{"uire"}", "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.send("req\#{"uire"}", "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.method(:"req\#{"uire"}").call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.method("req\#{"uire"}").call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.public_method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(::Kernel.public_method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.singleton_method(:require).call("#{feature}")))
@@ -519,6 +522,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(public_method(:require).call("#{feature}")))
     assert_empty requires_in(%(registry.method(:require)["#{feature}"]))
     assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
+    assert_empty requires_in(%(Kernel.method(:"req\#{loader_name}").call("#{feature}")))
   end
 
   test "detector flags private Kernel loaders reflected through Object" do
@@ -2568,12 +2572,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     method_call = call.receiver
     return unless method_call.is_a?(Prism::CallNode) && %i[method public_method singleton_method].include?(method_call.name)
 
-    method_name = method_call.arguments&.arguments&.first
-    return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
-    return unless LOADER_METHODS.include?(method_name.unescaped)
-    return unless method_object_loader_receiver?(method_call, method_name.unescaped)
+    method_name = static_symbol_part(method_call.arguments&.arguments&.first)
+    return unless LOADER_METHODS.include?(method_name)
+    return unless method_object_loader_receiver?(method_call, method_name)
 
-    method_name.unescaped
+    method_name
   end
 
   def method_object_loader_receiver?(method_call, method_name)
@@ -2799,7 +2802,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def gemspec_dependency_call?(node, gemspec_receivers)
     return false unless node.is_a?(Prism::CallNode)
-    return false unless %i[add_dependency add_runtime_dependency].include?(node.name)
+    return false unless %i[add_dependency add_runtime_dependency add_development_dependency].include?(node.name)
 
     node.receiver.nil? || gemspec_spec_receiver?(node.receiver, gemspec_receivers)
   end
