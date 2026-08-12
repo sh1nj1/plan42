@@ -732,6 +732,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = require.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require.resolve?.("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta?.resolve("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta?.["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve.call(import.meta, "#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve["call"](import.meta, "#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve.apply(import.meta, ["#{satellite}/thing"]);) => "#{satellite}/thing",
@@ -928,6 +931,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITES.first
 
     assert_empty js_imports_in(%(registry.import("#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.import.meta.resolve("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(import("#{satellite}/template")))
   end
 
@@ -1808,14 +1812,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_import_meta_resolve?(tokens, index)
-    tokens[index + 1] == [ :punctuation, "." ] &&
+    (index.zero? || tokens[index - 1] != [ :punctuation, "." ]) &&
+      tokens[index + 1] == [ :punctuation, "." ] &&
       tokens[index + 2] == [ :word, "meta" ] &&
-      tokens[index + 3] == [ :punctuation, "." ] &&
-      tokens[index + 4] == [ :word, "resolve" ]
+      js_function_property_at(tokens, index + 2, "resolve")
   end
 
   def js_import_meta_resolve_specifier(tokens, index)
-    resolve = index + 4
+    resolve = js_function_property_at(tokens, index + 2, "resolve")
     js_call_specifier(tokens, resolve) ||
       js_function_call_specifier(tokens, resolve) ||
       js_function_apply_specifier(tokens, resolve)
