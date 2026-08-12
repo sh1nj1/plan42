@@ -68,4 +68,29 @@ describe('CommentsListController read pointer updates', () => {
     expect(global.fetch).toHaveBeenCalledWith('/comment_read_pointers/update', expect.objectContaining({ method: 'POST' }))
     expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ creative_id: '42', topic_id: null })
   })
+
+  test('flushes a pending read pointer update before switching topics', () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    controller.resetToLatest = jest.fn()
+    controller.markCommentsRead()
+
+    controller.handleTopicChange({ detail: { topicId: '9' } })
+
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ creative_id: '42', topic_id: null })
+    expect(controller.currentTopicId).toBe('9')
+  })
+
+  test('flushes a pending read pointer update before opening another creative', () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    controller.resetState = jest.fn()
+    controller.loadInitialComments = jest.fn()
+    controller.listTarget = document.createElement('div')
+    Object.defineProperty(controller, 'presenceController', { value: null })
+    controller.markCommentsRead()
+
+    controller.onPopupOpened({ creativeId: '43', topicId: '9' })
+
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ creative_id: '42', topic_id: null })
+    expect(controller.creativeId).toBe('43')
+  })
 })

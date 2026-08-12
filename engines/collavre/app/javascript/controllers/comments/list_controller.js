@@ -86,9 +86,11 @@ export default class extends Controller {
     // onPopupOpened sets up highlightAfterLoad. Suppress these to avoid a
     // race where a non-highlight load overwrites the deep-link highlight load.
     if (this.suppressTopicChangeLoad) {
+      this.flushPendingRead()
       this.currentTopicId = nextTopicId
       return
     }
+    this.flushPendingRead()
     this.currentTopicId = nextTopicId
     // A user-selected topic supersedes any outstanding deep-link window.
     // The old request is discarded by the topic/version guards below, while
@@ -99,7 +101,7 @@ export default class extends Controller {
   }
 
   disconnect() {
-    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
+    this.flushPendingRead()
     this.listTarget.removeEventListener('scroll', this.handleScroll)
     PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
       this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
@@ -135,6 +137,7 @@ export default class extends Controller {
   }
 
   onPopupOpened({ creativeId, highlightId, topicId } = {}) {
+    this.flushPendingRead()
     const normalizedCreativeId = String(creativeId || '')
     const pendingHighlight = String(this.highlightCreativeId || '') === normalizedCreativeId
       ? this.highlightAfterLoad
@@ -159,11 +162,7 @@ export default class extends Controller {
   }
 
   onPopupClosed() {
-    if (this.markReadTimeout) {
-      window.clearTimeout(this.markReadTimeout)
-      this.markReadTimeout = null
-      this.updateReadPointer(this.creativeId, this.currentTopicId || null)
-    }
+    this.flushPendingRead()
     this._loadCommentsVersion += 1
     this.creativeId = null
     this.highlightAfterLoad = null
@@ -443,12 +442,26 @@ export default class extends Controller {
     if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     const creativeId = this.creativeId
     const topicId = this.currentTopicId || null
+    const pendingRead = { creativeId, topicId }
+    this.pendingRead = pendingRead
     this.markReadTimeout = window.setTimeout(() => {
       this.markReadTimeout = null
+      if (this.pendingRead !== pendingRead) return
+      this.pendingRead = null
       if (!this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
 
       this.updateReadPointer(creativeId, topicId)
     }, 2000);
+  }
+
+  flushPendingRead() {
+    const pendingRead = this.pendingRead
+    if (!pendingRead) return
+
+    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
+    this.markReadTimeout = null
+    this.pendingRead = null
+    this.updateReadPointer(pendingRead.creativeId, pendingRead.topicId)
   }
 
   updateReadPointer(creativeId, topicId) {

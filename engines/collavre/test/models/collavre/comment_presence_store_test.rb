@@ -112,5 +112,26 @@ module Collavre
       assert_equal [ 4 ], CommentPresenceStore.list(9_901)
       assert_equal [ "second" ], CommentPresenceStore.subscription_ids(9_901, 4)
     end
+
+    test "does not release a successor's presence lock after its lease expires" do
+      entered = Queue.new
+      release = Queue.new
+      first = Thread.new do
+        SecureRandom.stub(:uuid, "first-owner") do
+          CommentPresenceStore.with_lock(9_901) do
+            entered << true
+            release.pop
+          end
+        end
+      end
+      entered.pop
+
+      # Simulate another process acquiring the lock after the first lease expires.
+      Rails.cache.write(CommentPresenceStore.lock_key(9_901), "successor", expires_in: CommentPresenceStore::LOCK_TTL)
+      release << true
+      first.join
+
+      assert_equal "successor", Rails.cache.read(CommentPresenceStore.lock_key(9_901))
+    end
   end
 end

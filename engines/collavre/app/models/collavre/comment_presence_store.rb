@@ -139,13 +139,35 @@ module Collavre
     # process dies while holding it.
     def self.with_lock(creative_id, &block)
       key = lock_key(creative_id)
-      until Rails.cache.write(key, true, unless_exist: true, expires_in: LOCK_TTL)
+      token = SecureRandom.uuid
+      until Rails.cache.write(key, token, unless_exist: true, expires_in: LOCK_TTL)
         sleep(0.05)
       end
 
       block.call
     ensure
-      Rails.cache.delete(key) if key
+      release_lock(key, token) if key && token
+    end
+
+    # A lock may expire while its holder is paused. Only its owner may release
+    # it, so an expired holder cannot delete the lease acquired by its successor.
+    def self.release_lock(key, token)
+      if defined?(SolidCache::Store) && Rails.cache.is_a?(SolidCache::Store)
+        release_solid_cache_lock(key, token)
+      elsif Rails.cache.read(key) == token
+        Rails.cache.delete(key)
+      end
+    end
+
+    def self.release_solid_cache_lock(key, token)
+      value = SolidCache::Entry.read(key)
+      entry = Rails.cache.send(:deserialize_entry, value)
+      return unless entry&.value == token
+
+      SolidCache::Entry.where(
+        key_hash: Digest::SHA256.digest(key).unpack1("q>"),
+        value: value
+      ).delete_all
     end
   end
 end
