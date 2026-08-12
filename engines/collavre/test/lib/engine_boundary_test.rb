@@ -49,7 +49,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   ].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
-  IMAGE_TAG_PATH_OPTIONS = %w[srcset].freeze
+  ASSET_HELPER_PATH_OPTIONS = {
+    "image_tag" => { "srcset" => :srcset },
+    "video_tag" => { "poster" => :path }
+  }.freeze
   ASSET_HELPER_METHODS = %w[
     asset_path asset_url path_to_asset
     stylesheet_link_tag stylesheet_path stylesheet_url path_to_stylesheet
@@ -577,9 +580,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], asset_paths_in(%(self.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(self.view_context.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(image_tag "logo.svg", srcset: { "#{path}" => "2x" }))
+    assert_equal [ path ], asset_paths_in(%(video_tag "core.mp4", poster: "#{path}"))
     assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
     assert_empty asset_paths_in(%(image_tag "logo.svg", srcset: { "logo@2x.svg" => "#{path}" }))
     assert_empty asset_paths_in(%(asset_path "logo.svg", srcset: { "#{path}" => "2x" }))
+    assert_empty asset_paths_in(%(image_tag "logo.svg", poster: "#{path}"))
     assert_empty asset_paths_in(%(asset_path("https://cdn.example/#{path}")))
     assert_empty asset_paths_in(%(asset_path("//cdn.example/#{path}")))
     assert_equal [ "file:///tmp/#{path}" ], asset_paths_in(%(asset_path("file:///tmp/#{path}")))
@@ -2337,13 +2342,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def asset_helper_option_values(call, node)
-    return [] unless call.name == :image_tag
+    path_options = ASSET_HELPER_PATH_OPTIONS[call.name.to_s]
+    return [] unless path_options
 
     node.elements.flat_map do |association|
       next [] unless association.is_a?(Prism::AssocNode)
-      next [] unless IMAGE_TAG_PATH_OPTIONS.include?(association_key_name(association))
+      option_type = path_options[association_key_name(association)]
+      next [] unless option_type
 
-      srcset_path_values(association.value)
+      option_type == :srcset ? srcset_path_values(association.value) : template_path_values(association.value)
     end
   end
 
