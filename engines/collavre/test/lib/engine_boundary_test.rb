@@ -366,6 +366,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       template_paths_in(%(render(partial: "#{satellite}/integrations/modal")))
     assert_equal [ "#{satellite}/application" ],
       template_paths_in(%(render layout: "#{satellite}/application"))
+    assert_equal [ "#{satellite}/integrations/modal" ],
+      template_paths_in(%(render "collavre_" + "#{satellite.delete_prefix('collavre_')}/integrations/modal"))
+    assert_equal [ "#{satellite}/integrations/modal" ],
+      template_paths_in(%(render template: "collavre_" + "#{satellite.delete_prefix('collavre_')}/integrations/modal"))
   end
 
   test "template detector ignores ordinary rendered data" do
@@ -468,6 +472,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     }.each do |source, expected|
       assert_equal [ expected ], js_imports_in(source), "missed #{source.inspect}"
     end
+  end
+
+  test "detector scans imports evaluated inside template literal expressions" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const value = `${import("#{satellite}/thing")}`;))
+    assert_empty js_imports_in(%(const example = `import "#{satellite}/thing"`;))
   end
 
   # Same rule the Ruby loader detector follows: the specifier is the violation,
@@ -886,7 +898,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     case source[cursor]
     when /\s/ then cursor + 1
     when "/" then js_scan_slash(source, cursor, tokens)
-    when "'", "\"", "`" then js_scan_pair(js_string_token(source, cursor), tokens)
+    when "'", "\"" then js_scan_pair(js_string_token(source, cursor), tokens)
+    when "`" then js_scan_template(source, cursor, tokens)
     when /[A-Za-z_$]/ then js_scan_word(source, cursor, tokens)
     else
       tokens << [ :punctuation, source[cursor] ]
@@ -980,6 +993,64 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
 
     [ [ :regex, value ], cursor ]
+  end
+
+  # A template's raw text is data, but each `${...}` body is executable source.
+  # Preserve static templates as strings for `import(`path`)`, and scan only the
+  # expression bodies of interpolated templates so prose does not become a
+  # module reference while dynamic imports still do.
+  def js_scan_template(source, cursor, tokens)
+    value = +""
+    static = true
+    cursor += 1
+
+    while (character = source[cursor])
+      if character == "\\"
+        escaped, cursor = js_escape(source, cursor)
+        value << escaped
+      elsif character == "`"
+        tokens << [ :string, value ] if static
+        return cursor + 1
+      elsif character == "$" && source[cursor + 1] == "{"
+        static = false
+        expression_tokens, cursor = js_template_expression_tokens(source, cursor + 2)
+        tokens.concat(expression_tokens)
+      else
+        value << character
+        cursor += 1
+      end
+    end
+
+    tokens << [ :dynamic_string, value ] unless static
+    cursor
+  end
+
+  # This uses the ordinary token scanner inside an interpolation so comments,
+  # regexes and quoted braces retain their JavaScript meaning. Braces only
+  # delimit the template expression when they occur as punctuation tokens.
+  def js_template_expression_tokens(source, cursor)
+    tokens = []
+    depth = 1
+
+    while (character = source[cursor])
+      if character == "{"
+        depth += 1
+        tokens << [ :punctuation, character ]
+        cursor += 1
+      elsif character == "}"
+        depth -= 1
+        return [ tokens, cursor + 1 ] if depth.zero?
+
+        tokens << [ :punctuation, character ]
+        cursor += 1
+      elsif character == "`"
+        cursor = js_scan_template(source, cursor, tokens)
+      else
+        cursor = js_scan_token(source, cursor, tokens)
+      end
+    end
+
+    [ tokens, cursor ]
   end
 
   def js_string_token(source, cursor)
@@ -1306,18 +1377,22 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def template_arguments(call)
     call.arguments&.arguments.to_a.flat_map do |argument|
       case argument
-      when Prism::StringNode, Prism::InterpolatedStringNode
-        string_literals_in(argument)
+      when Prism::StringNode, Prism::InterpolatedStringNode, Prism::CallNode
+        template_path_values(argument)
       when Prism::KeywordHashNode
         argument.elements.flat_map do |association|
           next [] unless association.is_a?(Prism::AssocNode)
           next [] unless TEMPLATE_RENDER_OPTIONS.include?(association.key&.unescaped)
 
-          string_literals_in(association.value)
+          template_path_values(association.value)
         end
       else []
       end
     end
+  end
+
+  def template_path_values(node)
+    static_string_concatenation(node) || string_literals_in(node)
   end
 
   def loader_calls(node, found = [])
