@@ -33,6 +33,20 @@ body.creative-workspace .creative-content {
     max-width: none;
 }
 
+/* The rule above drops the viewport-based max-width that used to cap row width.
+   Without it, the flex wrappers between the grid column and .creative-content
+   keep their default min-width: auto, so they refuse to shrink below the
+   min-content width of their contents. Text still wraps (min-content is one
+   word), but unbreakable blocks -- code blocks and tables -- overflow the
+   column. Zeroing min-width lets the flex chain shrink to the column. */
+body.creative-workspace .creative-row-start,
+body.creative-workspace .creative-tree-li,
+body.creative-workspace .indent1,
+body.creative-workspace .indent2,
+body.creative-workspace .indent3 {
+    min-width: 0;
+}
+
 .creative-workspace-tree-region {
     grid-column: 1;
     min-width: 0;
