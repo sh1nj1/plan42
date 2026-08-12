@@ -293,7 +293,8 @@ module Collavre
         permissions_by_user[user.id] = effective_ids.index_with do |creative_id|
           effective = effective_creatives.fetch(creative_id)
           permission = user_permissions[user.id].fetch(creative_id, public_permissions[creative_id])
-          effective.user_id == user.id || permission.to_i >= CreativeShare.permissions[:write]
+          permission_rank = CreativeShare.permissions.fetch(permission.to_s, 0)
+          effective.user_id == user.id || permission_rank >= CreativeShare.permissions[:write]
         end
       end
     end

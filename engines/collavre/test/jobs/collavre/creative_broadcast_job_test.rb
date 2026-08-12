@@ -176,6 +176,19 @@ module Collavre
       assert_empty per_ancestor_queries, "expected batched ancestor-control reads, got:\n#{per_ancestor_queries.join("\n")}"
     end
 
+    test "batch write permissions recognizes enum write cache values" do
+      permission = CreativeSharesCache.where(creative: @child, user: @shared_user).pick(:permission)
+      assert_equal "write", permission
+
+      permissions = CreativeBroadcastJob.new.send(
+        :batch_write_permissions,
+        { @child.id => @child },
+        [ @shared_user ]
+      )
+
+      assert permissions.dig(@shared_user.id, @child.id)
+    end
+
     # --- destroyed action ---
 
     test "destroyed action does not raise with valid options" do
