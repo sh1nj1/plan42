@@ -296,6 +296,26 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, pointer.reload.creative_id
   end
 
+  test "moving a topic leaves source-only readers' pointers behind" do
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 951)
+    source_only_reader = users(:two)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    Collavre::CreativeShare.create!(
+      creative: @creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+    pointer = Collavre::CommentReadPointer.create!(
+      user: source_only_reader, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal @creative.id, pointer.reload.creative_id
+    assert_nil Collavre::CommentReadPointer.find_by(
+      user: source_only_reader, creative: target_creative, topic: @topic
+    )
+  end
+
   test "moving a topic keeps comments_count in sync on both creatives" do
     target_creative = creatives(:root_parent)
     Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "a")

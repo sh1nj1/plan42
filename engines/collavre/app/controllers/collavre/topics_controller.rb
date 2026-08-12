@@ -167,8 +167,7 @@ module Collavre
 
       Topic.transaction do
         topic.comments.update_all(creative_id: target_creative.id)
-        CommentReadPointer.where(creative: source_creative, topic: topic)
-          .update_all(creative_id: target_creative.id)
+        move_read_pointers_for_topic(topic, source_creative, target_creative)
         topic.update!(creative: target_creative)
 
         # The assignment is exclusive: Matcher#match_by_primary_agent returns []
@@ -359,6 +358,17 @@ module Collavre
           user: view_context.user_json(candidate[:user], email: true),
           permission: candidate[:permission]
         }
+      end
+    end
+
+    # A source-only participant must not acquire a visible read receipt in a
+    # creative they cannot read. Keep that participant's pointer with the source
+    # until they are granted access to the destination.
+    def move_read_pointers_for_topic(topic, source_creative, target_creative)
+      CommentReadPointer.where(creative: source_creative, topic: topic).includes(:user).find_each do |pointer|
+        next unless target_creative.has_permission?(pointer.user, :read)
+
+        pointer.update_column(:creative_id, target_creative.id)
       end
     end
 
