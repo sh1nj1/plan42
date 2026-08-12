@@ -521,6 +521,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
     assert_empty asset_paths_in(%(asset_path("https://cdn.example/#{path}")))
     assert_empty asset_paths_in(%(asset_path("//cdn.example/#{path}")))
+    assert_equal [ "file:///tmp/#{path}" ], asset_paths_in(%(asset_path("file:///tmp/#{path}")))
 
     erb_path = ENGINES_ROOT.join(CORE, "app/views/collavre/example.html.erb")
     assert_includes ruby_violations_in(erb_path.to_s, erb_template_ruby_source(%(<%= stylesheet_link_tag "#{path}" %>))),
@@ -545,6 +546,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty css_asset_paths_in(%(.notice { content: "url(#{path})" }))
     assert_empty css_asset_paths_in(%(.integration { background: url("https://cdn.example/#{path}") }))
     assert_empty css_asset_paths_in(%(.integration { background: url("//cdn.example/#{path}") }))
+    assert_equal [ "file:///tmp/#{path}" ], css_asset_paths_in(%(.integration { background: url("file:///tmp/#{path}") }))
     assert_includes css_violations_in(css_path.to_s, %(@import "#{path}";)),
       "  engines/#{CORE}/app/assets/stylesheets/collavre/application.css references asset \"#{path}\" (engines/#{satellite})"
 
@@ -925,6 +927,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.["require"]("#{satellite}/template")))
+    assert_equal [ "//tmp/#{satellite}/template" ], js_imports_in(%(require("//tmp/#{satellite}/template")))
+    assert_equal [ "file:///tmp/#{satellite}/template" ], js_imports_in(%(import("file:///tmp/#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module["require"].call(module, "#{satellite}/template")))
@@ -2066,7 +2070,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def asset_paths_in(source)
     asset_helper_calls(Prism.parse(source).value).flat_map { |call|
       call.arguments&.arguments.to_a.flat_map { |argument| asset_path_values(argument) }
-    }.select { |path| satellite_for(path) }.uniq
+    }.reject { |path| remote_asset_url?(path) }.select { |path| satellite_for(path) }.uniq
   end
 
   # CSS imports and URLs resolve through the asset pipeline at runtime. A core
@@ -2078,6 +2082,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       match = Regexp.last_match
       match.captures.compact.first if css_code_position?(source, match.begin(0))
     end
+      .reject { |path| remote_asset_url?(path) }
       .select { |path| satellite_for(path) }
       .uniq
   end
@@ -2377,9 +2382,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # final feature segment with an engine directory.
   def satellite_for(feature)
     return nil if feature.nil?
-    return nil if feature.match?(%r{\A(?:[a-z][a-z\d+.-]*:|//)}i)
 
     Pathname.new(feature.delete_suffix(".rb")).cleanpath.each_filename.find { |segment| SATELLITES.include?(segment) }
+  end
+
+  # Network URLs are fetched externally rather than resolved through Propshaft.
+  # Local `file:` URLs still name files, so keep them in the boundary scanner.
+  def remote_asset_url?(path)
+    path.match?(%r{\A(?:https?:|//)}i)
   end
 
   def tokens(source)
