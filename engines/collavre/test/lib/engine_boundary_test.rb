@@ -413,6 +413,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.public_method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(::Kernel.public_method(:require).call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.singleton_method(:require).call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(::Kernel.singleton_method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Object.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(self.method(:require).call("#{feature}")))
@@ -421,6 +423,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
     assert_empty requires_in(%(registry.method(:require).call("#{feature}")))
     assert_empty requires_in(%(registry.public_method(:require).call("#{feature}")))
+    assert_empty requires_in(%(registry.singleton_method(:require).call("#{feature}")))
+    assert_empty requires_in(%(registry.singleton_method(:autoload).call("#{feature}")))
     assert_empty requires_in(%(Object.public_method(:require).call("#{feature}")))
     assert_empty requires_in(%(self.public_method(:require).call("#{feature}")))
     assert_empty requires_in(%(public_method(:require).call("#{feature}")))
@@ -2336,6 +2340,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   # A statically selected `Kernel.method(:require).call(path)`,
   # `Kernel.public_method(:require).call(path)`,
+  # `Kernel.singleton_method(:require).call(path)`,
   # `Object.method(:require).call(path)`, `self.method(:require).call(path)`,
   # or `method(:require).call(path)` invokes the native loader just like direct
   # and reflective dispatch. Object inherits Kernel's private loaders;
@@ -2344,7 +2349,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless %i[call []].include?(call.name)
 
     method_call = call.receiver
-    return unless method_call.is_a?(Prism::CallNode) && %i[method public_method].include?(method_call.name)
+    return unless method_call.is_a?(Prism::CallNode) && %i[method public_method singleton_method].include?(method_call.name)
 
     method_name = method_call.arguments&.arguments&.first
     return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
@@ -2355,6 +2360,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def method_object_loader_receiver?(method_call, method_name)
+    return kernel?(method_call.receiver) if method_call.name == :singleton_method
     return true if method_name == "autoload"
     return kernel?(method_call.receiver) if method_call.name == :public_method
 
