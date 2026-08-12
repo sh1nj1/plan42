@@ -551,6 +551,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(do /import "#{satellite}\/thing"/.test(text); while (ready);))
     assert_empty js_imports_in(%(function* matches() { yield /import "#{satellite}\/thing"/ }))
     assert_empty js_imports_in(%(for (const char of /import "#{satellite}\/thing"/.source) {}))
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const ratio = object.of / import("#{satellite}/thing")))
   end
 
   test "detector ignores import examples in JSX text while keeping JSX expressions" do
@@ -1000,7 +1002,29 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     return true if control_flow_condition?(tokens)
 
-    %w[return throw case else do yield await void typeof delete new in of instanceof].include?(previous.last) && previous.first == :word
+    return true if previous.first == :word && %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last)
+
+    js_for_of_header?(tokens)
+  end
+
+  def js_for_of_header?(tokens)
+    return false unless tokens.last == [ :word, "of" ]
+
+    depth = 0
+    tokens.each_index.reverse_each do |index|
+      token = tokens[index]
+      depth += 1 if token == [ :punctuation, ")" ]
+      next unless token == [ :punctuation, "(" ]
+
+      if depth.zero?
+        return tokens[index - 1] == [ :word, "for" ] ||
+          (tokens[index - 2] == [ :word, "for" ] && tokens[index - 1] == [ :word, "await" ])
+      end
+
+      depth -= 1
+    end
+
+    false
   end
 
   def control_flow_condition?(tokens)

@@ -1367,6 +1367,14 @@ class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
     assert problem.blocking?
   end
 
+  test "rejects a nonfinite limit" do
+    after = with("Metrics/AbcSize" => { "Enabled" => true, "Max" => Float::NAN })
+    problem = ComplexityRatchet.verify_budget(BEFORE, after).sole
+
+    assert_equal :budget_invalid_max, problem.kind
+    assert_includes problem.message, "finite"
+  end
+
   test "rejects a cop switched off or deleted outright" do
     off = with("Metrics/AbcSize" => { "Enabled" => false, "Max" => 35 })
     assert_equal :budget_disabled, ComplexityRatchet.verify_budget(BEFORE, off).sole.kind

@@ -46,13 +46,11 @@ module ComplexityRatchet
   # The rest of the budget: CONFIG_PATH sets Enabled and Max and inherits every
   # other Metrics setting from the RuboCop gems pinned here. See #verify_toolchain.
   LOCK_PATH     = "Gemfile.lock"
-
   # The measured value inside a RuboCop Metrics message:
   #   "Method has too many lines. [38/25]"                    -> 38
   #   "Assignment Branch Condition size ... [<7, 42, 8> 43.55/35]" -> 43.55
   # Metrics/BlockNesting carries no number; those offenses are counted instead.
   VALUE_PATTERN = /\[(?:<[^>]*>\s*)?([\d.]+)\/[\d.]+\]/
-
   SEPARATOR = " | "
 
   BASELINE_HEADER = <<~YAML
@@ -94,13 +92,6 @@ module ComplexityRatchet
   YAML
 
   MAX_WAIVER_DAYS = 90
-
-  # The two keys --verify-baseline understands well enough to judge a change to:
-  # `Enabled` must stay true, `Max` may only fall. Every other key a Metrics cop
-  # accepts is compared for equality instead, because a loosening dressed up as
-  # a setting (`Exclude`, `AllowedPatterns`, `CountAsOne`) is indistinguishable
-  # from a tightening without re-implementing RuboCop's scope resolution.
-  BUDGET_KEYS = %w[Enabled Max].freeze
 
   # Resolves a source line to the fully-qualified name of the entity that starts
   # on it. Baseline keys have to survive ordinary editing: a line number shifts
@@ -873,6 +864,7 @@ module ComplexityRatchet
         elsif body["Max"] && current["Max"].nil?
           problem(:budget_implicit, cop,
             "lost its explicit Max in #{CONFIG_PATH} — an inherited limit moves on a gem upgrade and cannot be compared next PR")
+        elsif body["Max"] && !(current["Max"].is_a?(Numeric) && current["Max"].finite? && current["Max"] >= 0) then problem(:budget_invalid_max, cop, "Max must be finite and nonnegative in #{CONFIG_PATH} (got #{current['Max'].inspect})")
         elsif body["Max"] && current["Max"] > body["Max"]
           problem(:budget_loosened, cop,
             "budget raised from #{body['Max']} to #{current['Max']} in #{CONFIG_PATH} — the ratchet only turns one way")
@@ -888,7 +880,7 @@ module ComplexityRatchet
     # still says `Max: 25` — so the check is "unchanged", not "not one of the
     # ones I thought of".
     def settings_problem(cop, before, after)
-      changed = (before.keys | after.keys).reject { |key| BUDGET_KEYS.include?(key) }
+      changed = (before.keys | after.keys).reject { |key| %w[Enabled Max].include?(key) }
         .reject { |key| before[key] == after[key] }
       return nil if changed.empty?
 
