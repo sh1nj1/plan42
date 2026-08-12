@@ -1042,6 +1042,36 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
     )
   end
 
+  test "rejects an allowance change for ambiguous siblings with an incomplete baseline" do
+    before_source = <<~RUBY
+      class A
+        def run
+          items.each { |item| high(item) }
+          items.each { |item| low(item) }
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+          items.each { |item| low(item) }
+          items.each { |item| high(item) }
+        end
+      end
+    RUBY
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { SIB => 90 }, { SIB => 80 },
+      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
+      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source),
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "not baselined"
+  end
+
   test "rejects a fallback twin that inherits its deleted sibling's baseline key" do
     before_source = <<~RUBY
       class A

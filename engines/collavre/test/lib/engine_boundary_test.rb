@@ -639,6 +639,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require?.("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]?.("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
   end
@@ -1200,7 +1203,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_specifiers(tokens)
     tokens.each_with_index.filter_map do |(kind, value), index|
       if kind == :string && value == "require"
-        next js_static_string_at(tokens, index + 3) if js_module_bracket_loader?(tokens, index)
+        next js_static_string_at(tokens, js_call_open_at(tokens, index + 1) + 1) if js_module_bracket_loader?(tokens, index)
       end
       next unless kind == :word
 
@@ -1236,13 +1239,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       tokens[index - 2] == [ :word, "module" ] &&
       (index < 3 || tokens[index - 3] != [ :punctuation, "." ]) &&
       tokens[index + 1] == [ :punctuation, "]" ] &&
-      tokens[index + 2] == [ :punctuation, "(" ]
+      js_call_open_at(tokens, index + 1)
   end
 
   def js_call_specifier(tokens, index)
-    return unless tokens[index + 1] == [ :punctuation, "(" ]
+    open = js_call_open_at(tokens, index)
+    return unless open
 
-    js_static_string_at(tokens, index + 2)
+    js_static_string_at(tokens, open + 1)
+  end
+
+  def js_call_open_at(tokens, index)
+    return index + 1 if tokens[index + 1] == [ :punctuation, "(" ]
+    index + 3 if tokens[index + 1] == [ :punctuation, "?" ] &&
+      tokens[index + 2] == [ :punctuation, "." ] && tokens[index + 3] == [ :punctuation, "(" ]
   end
 
   def js_require_resolve_specifier(tokens, index)

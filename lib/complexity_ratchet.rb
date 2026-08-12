@@ -816,7 +816,7 @@ module ComplexityRatchet
     end
 
     def sibling_entry_problem(key, value, before, floor, changes, baseline_incomplete)
-      return unless before.key?(key) && (value > floor || changes[:unique_anchor_changed] || !changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? || changes[:anchors_reordered] && baseline_incomplete)
+      return unless before.key?(key) && (value > floor || changes[:unique_anchor_changed] || !changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? || changes.values_at(:anchors_reordered, :anchors_ambiguous).any? && baseline_incomplete)
 
       Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
         message: sibling_problem_message(value, floor, changes[:baseline_shrank], changes[:anchors_reordered], changes[:anchors_ambiguous], changes[:unique_anchor_changed], baseline_incomplete))
@@ -832,6 +832,8 @@ module ComplexityRatchet
       elsif anchors_reordered && baseline_incomplete
         "same-named siblings changed order while at least one sibling was not baselined, so an " \
           "allowance may have moved to a previously unrecorded entity"
+      elsif anchors_ambiguous && baseline_incomplete
+        "same-named siblings are indistinguishable and one is not baselined, so an allowance may have moved"
       elsif anchors_reordered
         "same-named siblings changed order, so this entry may have inherited that sibling's " \
           "allowance — #{value} is above the #{floor} the family was recorded at"
@@ -851,9 +853,7 @@ module ComplexityRatchet
     # or an anchor is a property of the source, not of the cop that measured it.
     def sibling_key(path, entity) = [ path, family(entity) ].join(SEPARATOR)
 
-    def sibling_population_key(key)
-      key.split(SEPARATOR, 3).then { |file, _cop, entity| sibling_key(file, entity) }
-    end
+    def sibling_population_key(key) = key.split(SEPARATOR, 3).then { |file, _cop, entity| sibling_key(file, entity) }
 
     def sibling_anchors_reordered?(key, before, after)
       previous, current = [ before, after ].map { |anchors| anchors[sibling_population_key(key)] }
@@ -866,7 +866,7 @@ module ComplexityRatchet
     # Do not flag an unchanged baseline, or every PR would fail merely because
     # an existing ambiguous family exists.
     def sibling_anchors_ambiguous?(key, entries, siblings, before, after)
-      return false if entries.sort_by(&:first) == siblings.sort_by(&:first)
+      return false if entries.sort == siblings.sort
 
       sibling_key = sibling_population_key(key)
       previous = before[sibling_key]
