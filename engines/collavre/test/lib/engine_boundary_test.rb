@@ -41,6 +41,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     autoload? const_defined? const_get const_source_location
     const_set remove_const private_constant public_constant deprecate_constant
   ].freeze
+  INHERITED_CONSTANT_LOOKUP_METHODS = %w[
+    autoload? const_defined? const_get const_source_location
+  ].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
 
@@ -243,10 +246,21 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
-  test "detector ignores satellite symbols on nested constant receivers" do
+  test "detector flags inherited satellite constant lookup symbols" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
-    %w[const_defined? const_set remove_const private_constant].each do |method|
+    %w[autoload? const_defined? const_get const_source_location].each do |method|
+      assert_equal [ satellite ], names(string_references_in("Wrapper.#{method}(:#{satellite})")), method
+    end
+    %w[autoload? const_defined? const_get const_source_location].each do |method|
+      assert_empty names(string_references_in("Wrapper.#{method}(:#{satellite}, false)")), method
+    end
+  end
+
+  test "detector ignores satellite symbols on nested constant mutators" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    %w[const_set remove_const private_constant].each do |method|
       assert_empty names(string_references_in("Wrapper.#{method}(:#{satellite})")), method
     end
   end
@@ -375,6 +389,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(registry.method(:require).call("#{feature}")))
     assert_empty requires_in(%(registry.method(:require)["#{feature}"]))
     assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
+  end
+
+  test "detector flags private Kernel loaders reflected through Object" do
+    satellite = SATELLITES.first
+    feature = "#{satellite}/some_service"
+
+    assert_equal [ feature ], requires_in(%(Object.send(:require, "#{feature}")))
+    assert_equal [ feature ], requires_in(%(::Object.__send__(:require, "#{feature}")))
+    assert_empty requires_in(%(Object.public_send(:require, "#{feature}")))
   end
 
   # The counterpart. A nested `Wrapper::Kernel` is somebody else's constant and
@@ -561,6 +584,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_violations_in(path, %(<%= import("#{satellite}/thing") %>))
     assert_equal [ "  engines/#{CORE}/app/javascript/entry.js.erb requires \"#{satellite}/thing\" (engines/#{satellite})" ],
       js_violations_in(path, %(<% require "#{satellite}/thing" %>))
+  end
+
+  test "JavaScript generator templates scan ERB directives as Ruby" do
+    satellite = SATELLITES.first
+    path = ENGINES_ROOT.join(CORE, "lib/generators/collavre/install/templates/build.cjs.tt").to_s
+    source = <<~ERB
+      <% require "#{satellite}/generator" %>
+      module.exports = {};
+    ERB
+
+    assert javascript_source?(path, source)
+    assert_equal [ "  engines/#{CORE}/lib/generators/collavre/install/templates/build.cjs.tt requires \"#{satellite}/generator\" (engines/#{satellite})" ],
+      js_violations_in(path, source)
   end
 
   test "Ruby and Rake generator templates are scanned as Ruby sources" do
@@ -899,7 +935,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_violations_in(path, source)
-    template = path.delete_suffix(".tt").end_with?(".erb")
+    template = path.end_with?(".tt") || path.delete_suffix(".tt").end_with?(".erb")
     extension = File.extname(path.delete_suffix(".tt").delete_suffix(".erb"))
     javascript = template ? javascript_erb_template_source(source) : source
     violations = js_imports_in(javascript, jsx: %w[.jsx .tsx].include?(extension), tsx: extension == ".tsx").map do |specifier|
@@ -1761,7 +1797,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def constant_resolution_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::CallNode) && constant_symbol_method(node) && top_level_object_receiver?(node.receiver)
+    if node.is_a?(Prism::CallNode) && constant_symbol_receiver?(node)
       constant_symbol_arguments(node).each do |argument|
         if argument.is_a?(Prism::SymbolNode)
           found << [ argument.unescaped, argument.location.start_line ]
@@ -1897,6 +1933,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     constant_symbol_method(call) == call.name.to_s ? arguments : arguments.drop(1)
   end
 
+  # A class's default constant lookup follows its ancestors, which reaches
+  # Object's top-level constants. Mutators always target the receiver's own
+  # namespace, while an explicit false disables inherited lookup.
+  def constant_symbol_receiver?(call)
+    method = constant_symbol_method(call)
+    return false unless method
+    return true if top_level_object_receiver?(call.receiver)
+    return false unless INHERITED_CONSTANT_LOOKUP_METHODS.include?(method)
+
+    !constant_symbol_arguments(call)[1].is_a?(Prism::FalseNode)
+  end
+
   # A statically selected `Kernel.method(:require).call(path)`,
   # `Object.method(:require).call(path)`, or `method(:require).call(path)`
   # invokes the native loader just like direct and reflective dispatch. Object
@@ -1980,8 +2028,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if call.receiver.nil?
     return true if loader_method(call) == "autoload"
     return true if method_object_loader_method(call)
+    return true if object_reflective_kernel_loader?(call)
 
     kernel?(call.receiver)
+  end
+
+  def object_reflective_kernel_loader?(call)
+    top_level_object_receiver?(call.receiver) && %i[send __send__].include?(call.name) && reflected_loader_method(call)
   end
 
   # Every spelling that reaches the real Kernel, not just the bare constant.
