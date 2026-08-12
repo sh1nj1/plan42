@@ -71,7 +71,10 @@ export default class extends Controller {
     this.selectedTopicId = nextSelectedTopicId
     this.mainTopicId = nextMainTopicId
 
-    if (selectionChanged) this.requestRunningAgents()
+    if (selectionChanged) {
+      this.reportViewingTopic()
+      this.requestRunningAgents()
+    }
 
     if (topicId) {
       this.refreshChannelChips(topicId)
@@ -121,6 +124,7 @@ export default class extends Controller {
     const topicId = topicsCtrl?.currentTopicId
     this.selectedTopicId = topicId || null
     this.mainTopicId = topicsCtrl?.mainTopicId || null
+    this.reportViewingTopic()
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -256,6 +260,7 @@ export default class extends Controller {
             this.listController?.loadInitialComments()
           }
           this.hasPresenceConnected = true
+          this.reportViewingTopic()
         },
         received: (data) => this.handlePresenceMessage(data),
       },
@@ -268,6 +273,12 @@ export default class extends Controller {
       this.presenceSubscription = null
     }
     this.stoppedTyping()
+  }
+
+  reportViewingTopic() {
+    if (!this.presenceSubscription) return
+
+    this.presenceSubscription.perform('viewing_topic', { topic_id: this.selectedTopicId })
   }
 
   handlePresenceMessage(data) {

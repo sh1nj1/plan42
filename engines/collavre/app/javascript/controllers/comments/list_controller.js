@@ -441,9 +441,10 @@ export default class extends Controller {
     if (!this.creativeId) return
     if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     const creativeId = this.creativeId
+    const topicId = this.currentTopicId || null
     this.markReadTimeout = window.setTimeout(() => {
       this.markReadTimeout = null
-      if (!this.element.isConnected || this.creativeId !== creativeId) return
+      if (!this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
 
       fetch('/comment_read_pointers/update', {
         method: 'POST',
@@ -451,13 +452,12 @@ export default class extends Controller {
           'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ creative_id: creativeId }),
+        body: JSON.stringify({ creative_id: creativeId, topic_id: topicId }),
       }).then((response) => {
-        if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId) return
+        if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
 
-        // Read pointers are creative-wide, so a successful update changes every
-        // topic's count. Reload the chips immediately instead of leaving their
-        // initial unread numbers on screen until another topic event occurs.
+        // A successful topic read changes its chip and the aggregate creative
+        // badge. Reload immediately instead of leaving stale counts on screen.
         this.popupController?.topicsController?.loadTopics?.()
       }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);

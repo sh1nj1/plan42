@@ -122,6 +122,20 @@ module Collavre
       end
     end
 
+    test "viewing topic records only a topic on the subscribed creative" do
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+
+      perform :viewing_topic, topic_id: @topic.id
+      assert_equal @topic.id, CommentPresenceStore.topic_for(@creative.id, @owner.id)
+
+      other_topic = Creative.create!(user: @owner, description: "Other").main_topic
+      perform :viewing_topic, topic_id: other_topic.id
+      assert_equal @topic.id, CommentPresenceStore.topic_for(@creative.id, @owner.id)
+    ensure
+      CommentPresenceStore.remove(@creative.id, @owner.id)
+    end
+
     # The client wipes its agent state on every topic switch and asks for the new
     # topic's snapshot, so this replay — not a heartbeat — is what puts a paused
     # turn's indicator and Stop button back. It goes to the connection that asked

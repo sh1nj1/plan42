@@ -137,12 +137,23 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     if @creative_id && current_user
       CommentPresenceStore.remove(@creative_id, current_user.id)
       creative = Creative.find(@creative_id)
-      pointer = CommentReadPointer.find_or_initialize_by(user: current_user, creative: creative)
-      pointer.last_read_comment_id = creative.comments.maximum(:id)
-      pointer.save!
       Comment.broadcast_badge(creative, current_user)
       broadcast_presence
     end
+  end
+
+  # Presence is creative-wide for participant avatars, but unread suppression is
+  # topic-specific. A client reports the topic it is actively rendering so a
+  # message in another topic keeps its badge while the chat popup is open.
+  def viewing_topic(data)
+    return unless @creative_id && current_user
+
+    topic_id = data["topic_id"] || data[:topic_id]
+    @viewing_topic_id = topic_id.present? && Topic.find_by(id: topic_id, creative_id: @creative_id)&.id
+    return if topic_id.present? && !@viewing_topic_id
+
+    CommentPresenceStore.set_topic(@creative_id, current_user.id, @viewing_topic_id)
+    Comment.broadcast_badge(Creative.find(@creative_id), current_user)
   end
 
   def typing(data)

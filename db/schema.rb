@@ -169,10 +169,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000004) do
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
     t.integer "last_read_comment_id"
+    t.integer "topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["creative_id"], name: "index_comment_read_pointers_on_creative_id"
-    t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_user_id_and_creative_id", unique: true
+    t.index ["topic_id"], name: "index_comment_read_pointers_on_topic_id"
+    t.index ["user_id", "creative_id", "topic_id"], name: "index_comment_read_pointers_on_user_creative_and_topic", unique: true
     t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
   end
 
@@ -1038,6 +1040,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000004) do
   add_foreign_key "comment_reactions", "comments"
   add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"
+  add_foreign_key "comment_read_pointers", "topics", on_delete: :cascade
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comment_snapshots", "comments", column: "result_comment_id", on_delete: :nullify
   add_foreign_key "comment_snapshots", "creatives"

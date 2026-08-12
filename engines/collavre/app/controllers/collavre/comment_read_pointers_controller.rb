@@ -2,35 +2,57 @@ module Collavre
   class CommentReadPointersController < ApplicationController
     def update
       creative = Creative.find(params[:creative_id]).effective_origin
-      last_id = creative.comments.visible_to(Current.user).maximum(:id)
-      pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative)
+      topic = params[:topic_id].present? && creative.topics.find_by(id: params[:topic_id])
+      return head :unprocessable_entity if params[:topic_id].present? && !topic
 
-      previous_last_read_id = pointer.last_read_comment_id
-      pointer.last_read_comment_id = last_id
-      pointer.save!
+      if topic
+        update_topic_pointer(creative, topic)
+      else
+        update_all_topic_pointers(creative)
+      end
 
       Comment.broadcast_badge(creative, Current.user)
-
-      if previous_last_read_id && previous_last_read_id != last_id
-        broadcast_read_receipts(creative, previous_last_read_id)
-      end
-      broadcast_read_receipts(creative, last_id)
 
       render json: { success: true }
     end
 
     private
 
-    def broadcast_read_receipts(creative, comment_id)
+    def update_topic_pointer(creative, topic)
+      last_id = creative.comments.visible_to(Current.user).where(topic: topic).maximum(:id)
+      update_pointer(creative, topic, last_id)
+    end
+
+    # All Messages is a genuine read of every topic. Keep the old creative-wide
+    # row updated as a fallback for topics created after this read, then advance
+    # every current topic independently so their later traffic remains unread.
+    def update_all_topic_pointers(creative)
+      visible_comments = creative.comments.visible_to(Current.user)
+      update_pointer(creative, nil, visible_comments.maximum(:id))
+      creative.topics.find_each do |topic|
+        update_pointer(creative, topic, visible_comments.where(topic: topic).maximum(:id))
+      end
+    end
+
+    def update_pointer(creative, topic, last_id)
+      pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative, topic: topic)
+      previous_last_read_id = pointer.last_read_comment_id
+      pointer.update!(last_read_comment_id: last_id)
+
+      broadcast_read_receipts(creative, previous_last_read_id, topic: topic) if previous_last_read_id && previous_last_read_id != last_id
+      broadcast_read_receipts(creative, last_id, topic: topic)
+    end
+
+    def broadcast_read_receipts(creative, comment_id, topic:)
       return unless comment_id
 
       # We map to the nearest PUBLIC comment to avoid leaking the existence/ID of private comments
       # via the public action cable channel.
       # Trade-off: Private-only threads (with no preceding public comment) will not get real-time read updates.
-      effective_id = find_nearest_public_comment_id(creative, comment_id)
+      effective_id = find_nearest_public_comment_id(creative, comment_id, topic: topic)
       return unless effective_id
 
-      users = fetch_users_on_effective_id(creative, effective_id)
+      users = fetch_users_on_effective_id(creative, effective_id, topic: topic)
 
       present_user_ids = CommentPresenceStore.list(creative.id)
 
@@ -42,14 +64,15 @@ module Collavre
       )
     end
 
-    def find_nearest_public_comment_id(creative, comment_id)
-      creative.comments.public_only.where("id <= ?", comment_id).maximum(:id)
+    def find_nearest_public_comment_id(creative, comment_id, topic:)
+      creative.comments.public_only.where(topic: topic).where("id <= ?", comment_id).maximum(:id)
     end
 
-    def fetch_users_on_effective_id(creative, effective_id)
-      next_public_id = creative.comments.public_only.where("id > ?", effective_id).minimum(:id)
+    def fetch_users_on_effective_id(creative, effective_id, topic:)
+      public_comments = creative.comments.public_only.where(topic: topic)
+      next_public_id = public_comments.where("id > ?", effective_id).minimum(:id)
 
-      query = CommentReadPointer.where(creative: creative)
+      query = CommentReadPointer.where(creative: creative, topic: topic)
                                 .where("last_read_comment_id >= ?", effective_id)
 
       query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id

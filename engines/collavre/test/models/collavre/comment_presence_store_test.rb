@@ -4,7 +4,10 @@ module Collavre
   class CommentPresenceStoreTest < ActiveSupport::TestCase
     setup do
       @ids = [ 9_901, 9_902, 9_903 ]
-      @ids.each { |id| Rails.cache.delete(CommentPresenceStore.key(id)) }
+      @ids.each do |id|
+        Rails.cache.delete(CommentPresenceStore.key(id))
+        (1..10).each { |user_id| Rails.cache.delete(CommentPresenceStore.topic_key(id, user_id)) }
+      end
     end
 
     test "list_many returns presence for every creative asked about" do
@@ -41,6 +44,16 @@ module Collavre
       CommentPresenceStore.add(9_901, 4)
 
       assert_equal({ 9_901 => [ 4 ] }, CommentPresenceStore.list_many([ 9_901, 9_901 ]))
+    end
+
+    test "tracks the topic a present user is viewing" do
+      CommentPresenceStore.add(9_901, 4)
+      CommentPresenceStore.set_topic(9_901, 4, 12)
+
+      assert_equal 12, CommentPresenceStore.topic_for(9_901, 4)
+
+      CommentPresenceStore.remove(9_901, 4)
+      assert_nil CommentPresenceStore.topic_for(9_901, 4)
     end
   end
 end

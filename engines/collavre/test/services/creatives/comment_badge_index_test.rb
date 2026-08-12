@@ -101,15 +101,30 @@ module Creatives
       assert_equal({ first_topic.id => 1, second_topic.id => 1 }, @index.unread_counts_by_topic(creative))
     end
 
+    test "uses a topic pointer without clearing unread comments in another topic" do
+      creative = Creative.create!(user: @user, description: "Independent topic badges", sequence: 916)
+      first_topic = creative.topics.create!(name: "First", user: @user)
+      second_topic = creative.topics.create!(name: "Second", user: @user)
+      first = Comment.create!(creative: creative, topic: first_topic, user: @author, content: "first")
+      Comment.create!(creative: creative, topic: second_topic, user: @author, content: "second")
+      CommentReadPointer.create!(user: @user, creative: creative, topic: first_topic, last_read_comment_id: first.id)
+
+      assert_equal({ second_topic.id => 1 }, @index.unread_counts_by_topic(creative))
+      @index.index([ creative ])
+      assert_equal 1, @index.unread_count_for(creative)
+    end
+
     test "suppresses topic unread counts while the user is present" do
       creative = Creative.create!(user: @user, description: "Present topic badges", sequence: 915)
       topic = creative.topics.create!(name: "Updates", user: @user)
       Comment.create!(creative: creative, topic: topic, user: @author, content: "unread")
       Collavre::CommentPresenceStore.add(creative.id, @user.id)
+      Collavre::CommentPresenceStore.set_topic(creative.id, @user.id, topic.id)
 
       assert_empty @index.unread_counts_by_topic(creative)
     ensure
       Rails.cache.delete(Collavre::CommentPresenceStore.key(creative.id))
+      Rails.cache.delete(Collavre::CommentPresenceStore.topic_key(creative.id, @user.id))
     end
 
     # The batch is one query for the whole level, so a per-origin watermark must
@@ -170,21 +185,20 @@ module Creatives
       assert_nil @index.unread_count_for(creative)
     end
 
-    # Presence suppression is applied here, not by the caller: it is a cache read
-    # per origin, so it has to ride along with the batch. The count handed out is
-    # the one the badge renders.
-    test "a user with the chat open sees nothing unread" do
+    test "a user viewing a topic does not count that topic as unread" do
       creative = Creative.create!(user: @user, description: "Watching", sequence: 907)
       comment_on(creative, "one")
       comment_on(creative, "two")
 
       Collavre::CommentPresenceStore.add(creative.id, @user.id)
+      Collavre::CommentPresenceStore.set_topic(creative.id, @user.id, creative.main_topic.id)
 
       @index.index([ creative.reload ])
 
       assert_equal 0, @index.unread_count_for(creative)
     ensure
       Rails.cache.delete(Collavre::CommentPresenceStore.key(creative.id))
+      Rails.cache.delete(Collavre::CommentPresenceStore.topic_key(creative.id, @user.id))
     end
 
     test "presence of another user does not suppress our badge" do

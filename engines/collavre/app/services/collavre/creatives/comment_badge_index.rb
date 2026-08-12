@@ -15,31 +15,16 @@ module Creatives
 
     Badge = Struct.new(:unread_count, :visible_comments, keyword_init: true)
 
-    # The comment-created fanout has one origin and many recipients. Keep its
-    # pointer, presence, and private-comment lookups batched instead of making
-    # each recipient construct a one-origin index. This deliberately mirrors
-    # `Comment.visible_to(user)`: private comments are visible to their author
-    # and their approver.
+    # The comment-created fanout has one origin and many recipients. Each
+    # recipient needs their own topic watermarks, so reuse the canonical index
+    # rather than maintaining a second, creative-wide implementation here.
     def self.for_users(origin:, users:)
-      user_ids = users.map(&:id).uniq
-      return {} if user_ids.empty?
-
-      pointers = CommentReadPointer.where(user_id: user_ids, creative: origin).index_by(&:user_id)
-      last_read_ids = pointers.transform_values { |pointer| pointer.last_read_comment_id || 0 }
-      present_user_ids = CommentPresenceStore.list(origin.id)
-
-      any_public = origin.comments.public_only.exists?
-      private_visible_counts, unread_private_counts = private_counts_for_users(origin, user_ids, last_read_ids)
-      unread_public_by_threshold = unread_public_counts(origin, last_read_ids.values + [ 0 ])
-
-      user_ids.to_h do |user_id|
-        threshold = last_read_ids.fetch(user_id, 0)
-        unread_count = unread_public_by_threshold.fetch(threshold, 0) + unread_private_counts.fetch(user_id, 0)
-        unread_count = 0 if present_user_ids.include?(user_id)
-
-        [ user_id, Badge.new(
-          unread_count: unread_count,
-          visible_comments: any_public || private_visible_counts.fetch(user_id, 0).positive?
+      users.compact.uniq(&:id).to_h do |user|
+        index = new(user: user)
+        index.index([ origin ])
+        [ user.id, Badge.new(
+          unread_count: index.unread_count_for(origin),
+          visible_comments: index.visible_comments?(origin)
         ) ]
       end
     end
@@ -78,18 +63,13 @@ module Creatives
     end
 
     # The topic strip needs the same display-ready unread state as the creative
-    # badge, split by topic. The read pointer remains creative-wide for now, so
-    # opening any topic clears every topic count together.
+    # badge, split by topic. A topic watermark wins; a legacy creative-wide
+    # watermark is only the fallback for a topic without its own row.
     def unread_counts_by_topic(origin)
-      return {} if user && CommentPresenceStore.list(origin.id).include?(user.id)
-
-      last_read_id = CommentReadPointer.where(user: user, creative: origin)
-        .pick(:last_read_comment_id).to_i
-
-      visible_comments.where(creative: origin)
-        .where(Comment.arel_table[:id].gt(last_read_id))
-        .group(:topic_id)
-        .count
+      counts = unread_counts_by_topic_without_presence(origin)
+      viewing_topic_id = user && CommentPresenceStore.topic_for(origin.id, user.id)
+      counts.delete(viewing_topic_id) if viewing_topic_id
+      counts
     end
 
     private
@@ -101,7 +81,16 @@ module Creatives
       return unless user
 
       CommentPresenceStore.list_many(origin_ids).each do |origin_id, present_user_ids|
-        @unread_by_origin_id[origin_id] = 0 if present_user_ids.include?(user.id)
+        next unless present_user_ids.include?(user.id)
+
+        viewing_topic_id = CommentPresenceStore.topic_for(origin_id, user.id)
+        next unless viewing_topic_id
+
+        origin = Creative.find_by(id: origin_id)
+        next unless origin
+
+        @unread_by_origin_id[origin_id] -= unread_counts_by_topic_without_presence(origin)
+          .fetch(viewing_topic_id, 0)
       end
     end
 
@@ -114,8 +103,10 @@ module Creatives
         watermarks.merge!(CommentReadPointer
           .where(user_id: user&.id, creative_id: origin_id_batch)
           .where.not(last_read_comment_id: nil)
-          .pluck(:creative_id, :last_read_comment_id)
-          .to_h)
+          .pluck(:creative_id, :topic_id, :last_read_comment_id)
+          .each_with_object({}) do |(creative_id, topic_id, last_read_id), rows|
+            (rows[creative_id] ||= {})[topic_id] = last_read_id
+          end)
       end
     end
 
@@ -129,20 +120,30 @@ module Creatives
       end
     end
 
-    # Origins with no pointer all share the implicit zero watermark, so keep
-    # them in one IN condition. Only origins with a real watermark need an OR.
     def unread_counts_for_batch(origin_ids, watermarks)
-      without_watermark, with_watermark = origin_ids.partition { |origin_id| !watermarks.key?(origin_id) }
-      scopes = []
-      scopes << Comment.where(creative_id: without_watermark) if without_watermark.any?
-      scopes.concat(with_watermark.map { |origin_id| unread_scope(origin_id, watermarks.fetch(origin_id)) })
-      return {} if scopes.empty?
-
+      scopes = origin_ids.map { |origin_id| unread_scope(origin_id, watermarks.fetch(origin_id, {})) }
       visible_comments.merge(scopes.reduce { |combined, scope| combined.or(scope) }).group(:creative_id).count
     end
 
-    def unread_scope(origin_id, last_read_id)
-      Comment.where(creative_id: origin_id).where(Comment.arel_table[:id].gt(last_read_id))
+    def unread_scope(origin_id, watermarks)
+      legacy_watermark = watermarks.fetch(nil, 0)
+      topic_watermarks = watermarks.except(nil)
+      return Comment.where(creative_id: origin_id).where(Comment.arel_table[:id].gt(legacy_watermark)) if topic_watermarks.empty?
+
+      comment_table = Comment.arel_table
+      topic_ids = topic_watermarks.keys
+      fallback_scope = Comment.where(creative_id: origin_id).where(comment_table[:id].gt(legacy_watermark))
+      fallback_scope = fallback_scope.where(topic_id: nil).or(fallback_scope.where.not(topic_id: topic_ids))
+      topic_scopes = topic_watermarks.map do |topic_id, last_read_id|
+        Comment.where(creative_id: origin_id, topic_id: topic_id).where(comment_table[:id].gt(last_read_id))
+      end
+
+      ([ fallback_scope ] + topic_scopes).reduce { |combined, scope| combined.or(scope) }
+    end
+
+    def unread_counts_by_topic_without_presence(origin)
+      watermarks = read_watermarks([ origin.id ]).fetch(origin.id, {})
+      visible_comments.merge(unread_scope(origin.id, watermarks)).group(:topic_id).count
     end
 
     def visible_counts(origin_ids)
@@ -153,79 +154,6 @@ module Creatives
 
     def visible_comments
       user ? Comment.visible_to(user) : Comment.public_only
-    end
-
-    class << self
-      private
-
-      def unread_public_counts(origin, thresholds)
-        thresholds.uniq.to_h do |threshold|
-          [ threshold, origin.comments.public_only.where(Comment.arel_table[:id].gt(threshold)).count ]
-        end
-      end
-
-      def private_counts_for_users(origin, user_ids, last_read_ids)
-        visible_counts = Hash.new(0)
-        unread_counts = Hash.new(0)
-
-        # Keep the history in the database: comment badge fanout happens for
-        # every create and destroy, so plucking every private comment turns a
-        # long conversation into proportional Ruby memory and bandwidth. The
-        # two recipient columns need separate grouped counts. Subtract their
-        # overlap so a comment authored and approved by the same user counts
-        # once, just like Comment.visible_to(user).
-        origin.comments.where(private: true).then do |private_comments|
-          user_ids.each_slice(QUERY_BATCH_SIZE) do |user_id_batch|
-            add_counts!(visible_counts, private_counts_by_recipient(private_comments, :user_id, user_id_batch))
-            add_counts!(visible_counts, private_counts_by_recipient(private_comments, :approver_id, user_id_batch))
-            subtract_counts!(visible_counts, private_counts_for_same_recipient(private_comments, user_id_batch))
-
-            add_counts!(unread_counts, unread_private_counts_by_recipient(private_comments, :user_id, user_id_batch, last_read_ids))
-            add_counts!(unread_counts, unread_private_counts_by_recipient(private_comments, :approver_id, user_id_batch, last_read_ids))
-            subtract_counts!(unread_counts, unread_private_counts_by_recipient(private_comments, :user_id, user_id_batch, last_read_ids, same_recipient: true))
-          end
-        end
-
-        [ visible_counts, unread_counts ]
-      end
-
-      def private_counts_by_recipient(comments, recipient_column, user_ids)
-        comments.where(recipient_column => user_ids).group(recipient_column).count
-      end
-
-      def private_counts_for_same_recipient(comments, user_ids)
-        comment_table = Comment.arel_table
-
-        comments.where(user_id: user_ids, approver_id: user_ids)
-          .where(comment_table[:user_id].eq(comment_table[:approver_id]))
-          .group(:user_id)
-          .count
-      end
-
-      # A per-recipient CASE keeps each user's watermark in SQL while the
-      # grouped result remains one count per recipient. Batching also keeps the
-      # CASE expression beneath SQLite's bind-variable and expression limits.
-      def unread_private_counts_by_recipient(comments, recipient_column, user_ids, last_read_ids, same_recipient: false)
-        comment_table = Comment.arel_table
-        recipient = comment_table[recipient_column]
-        watermark = user_ids.reduce(Arel::Nodes::Case.new(recipient)) do |case_expression, user_id|
-          case_expression.when(user_id).then(last_read_ids.fetch(user_id, 0))
-        end
-
-        scope = comments.where(recipient_column => user_ids)
-          .where(comment_table[:id].gt(watermark))
-        scope = scope.where(comment_table[:user_id].eq(comment_table[:approver_id])) if same_recipient
-
-        scope.group(recipient_column).count
-      end
-
-      def add_counts!(target, counts)
-        counts.each { |user_id, count| target[user_id] += count }
-      end
-
-      def subtract_counts!(target, counts)
-        counts.each { |user_id, count| target[user_id] -= count }
-      end
     end
   end
 end
