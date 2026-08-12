@@ -40,6 +40,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
+  ASSOCIATION_DECLARATION_METHODS = %w[belongs_to has_many has_one has_and_belongs_to_many].freeze
   CONSTANT_SYMBOL_METHODS = %w[
     autoload? const_defined? const_get const_source_location
     const_set remove_const private_constant public_constant deprecate_constant
@@ -283,6 +284,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
 
+  test "detector only resolves association options on association declarations" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(has_many :messages, through: :links, source_type: "#{satellite}::Message")))
+    assert_empty names(string_references_in(%(render json: { type: "#{satellite}::Message" })))
+    assert_empty names(string_references_in(%q{Rails.logger.info(class_name: "#{satellite}::Message")}))
+  end
+
   test "detector folds a static string passed to constant resolution" do
     satellite = SATELLITE_CONSTANTS.keys.first
     midpoint = satellite.length / 2
@@ -520,6 +530,21 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty requires_in(%(Object.public_send(:require, "#{feature}")))
     assert_empty requires_in(%(Object.new.public_send(:require, "#{feature}")))
     assert_empty requires_in(%(Object.new(:argument).send(:require, "#{feature}")))
+  end
+
+  test "detector flags Kernel loaders reflected through unbound methods" do
+    satellite = SATELLITES.first
+    feature = "#{satellite}/some_service"
+
+    assert_equal [ feature ],
+      requires_in(%(Kernel.instance_method(:require).bind(Object.new).call("#{feature}")))
+    assert_equal [ feature ],
+      requires_in(%(Kernel.instance_method(:require).bind(Object.new)["#{feature}"]))
+    assert_equal [ feature ],
+      requires_in(%(Kernel.instance_method(:require).bind_call(Object.new, "#{feature}")))
+    assert_empty requires_in(%(registry.instance_method(:require).bind(Object.new).call("#{feature}")))
+    assert_empty requires_in(%(Kernel.instance_method(loader_name).bind(Object.new).call("#{feature}")))
+    assert_empty requires_in(%(Kernel.instance_method(:autoload).bind(Object.new).call(:Thing, "#{feature}")))
   end
 
   # The counterpart. A nested `Wrapper::Kernel` is somebody else's constant and
@@ -2230,9 +2255,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     elsif node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name)
       string = static_string_concatenation(node.receiver)
       found << [ string, node.location.start_line ] if string
-    elsif node.is_a?(Prism::AssocNode) && %w[class_name source_type type].include?(association_key_name(node))
-      string = static_string_concatenation(node.value)
-      found << [ string, node.location.start_line ] if string
+    elsif rails_association_call?(node)
+      association_class_option_literals(node).each do |option|
+        string = static_string_concatenation(option.value)
+        found << [ string, option.location.start_line ] if string
+      end
     end
     node.compact_child_nodes.each { |child| constant_resolving_string_literals_in(child, found) }
     found
@@ -2240,6 +2267,24 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def association_key_name(node)
     node.key.unescaped if node.key.respond_to?(:unescaped)
+  end
+
+  # Association options resolve class names; ordinary hashes do not. Inspect
+  # only direct option hashes of Rails' association DSL, so an API payload such
+  # as `render json: { type: "CollavreSlack::Message" }` remains data instead
+  # of being treated as a dependency.
+  def rails_association_call?(node)
+    node.is_a?(Prism::CallNode) && node.receiver.nil? && ASSOCIATION_DECLARATION_METHODS.include?(node.name.to_s)
+  end
+
+  def association_class_option_literals(call)
+    call.arguments&.arguments.to_a.select do |argument|
+      argument.is_a?(Prism::HashNode) || argument.is_a?(Prism::KeywordHashNode)
+    end.flat_map do |options|
+      options.elements.grep(Prism::AssocNode).select do |option|
+        %w[class_name source_type type].include?(association_key_name(option))
+      end
+    end
   end
 
   def active_support_inflector_constantize?(node)
@@ -2463,7 +2508,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # Limit this to static symbols or strings so a dynamic dispatch is not
   # mistaken for a dependency that cannot be known statically.
   def loader_method(call)
-    direct_loader_method(call) || reflected_loader_method(call) || method_object_loader_method(call)
+    direct_loader_method(call) || reflected_loader_method(call) || method_object_loader_method(call) || unbound_method_loader_method(call)
   end
 
   def direct_loader_method(call)
@@ -2535,6 +2580,29 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     method_call.receiver.nil? || self_receiver?(method_call.receiver) || kernel?(method_call.receiver) || top_level_object_receiver?(method_call.receiver)
   end
 
+  # `Kernel.instance_method(:require)` is an UnboundMethod. Binding it to an
+  # Object instance produces the same native loader Method that direct
+  # reflection yields, while `bind_call` invokes it in one step.
+  def unbound_method_loader_method(call)
+    return kernel_unbound_loader_method(call.receiver) if call.name == :bind_call
+    return unless %i[call []].include?(call.name)
+
+    bind_call = call.receiver
+    return unless bind_call.is_a?(Prism::CallNode) && bind_call.name == :bind
+
+    kernel_unbound_loader_method(bind_call.receiver)
+  end
+
+  def kernel_unbound_loader_method(call)
+    return unless call.is_a?(Prism::CallNode) && call.name == :instance_method && kernel?(call.receiver)
+
+    method_name = call.arguments&.arguments&.first
+    return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
+    return unless LOADER_METHODS.include?(method_name.unescaped) && method_name.unescaped != "autoload"
+
+    method_name.unescaped
+  end
+
   # Literals nested in a loader argument still contribute to the path the
   # loader receives: `require File.join(__dir__, "collavre_slack/engine")` is
   # a real dependency. The walk starts at each argument, not at the entire
@@ -2551,7 +2619,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def loader_arguments(call)
     arguments = call.arguments&.arguments.to_a
-    reflected_loader_method(call) ? arguments.drop(1) : arguments
+    reflected_loader_method(call) || unbound_method_bind_call?(call) ? arguments.drop(1) : arguments
+  end
+
+  def unbound_method_bind_call?(call)
+    call.name == :bind_call && unbound_method_loader_method(call)
   end
 
   def static_string_concatenation(node)
@@ -2619,6 +2691,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if self_receiver?(call.receiver)
     return true if loader_method(call) == "autoload"
     return true if method_object_loader_method(call)
+    return true if unbound_method_loader_method(call)
     return true if object_reflective_kernel_loader?(call)
 
     kernel?(call.receiver)
