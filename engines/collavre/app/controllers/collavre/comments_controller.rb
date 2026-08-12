@@ -66,10 +66,11 @@ module Collavre
         # Main view: exclude comments from archived topics
         archived_topic_ids = @creative.topics.archived.pluck(:id)
         scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
-        # The client retains this snapshot until it reloads the message list.
-        # Topic-strip updates alone must not let a newly unarchived topic advance
-        # its read pointer before its existing messages have been rendered.
-        @rendered_all_topic_ids = @creative.topics.active.order(:id).pluck(:id)
+        # The client retains the rendered-topic snapshot until it reloads the
+        # message list. Build it from @comments below: topic-strip updates alone
+        # must not let a newly unarchived, or not-yet-rendered, topic suppress its
+        # unread badge or advance its read pointer.
+        @rendering_all_messages = true
       end
 
       # Default order: Newest first (id DESC)
@@ -121,14 +122,13 @@ module Collavre
         scope.limit(limit).to_a.reverse
       end
 
-      if @rendered_all_topic_ids
-        response.headers["X-Rendered-Topic-Ids"] = @rendered_all_topic_ids.join(",")
+      if @rendering_all_messages
         # A topic can be archived after this list is rendered. Send the highest
         # comment ID actually present for each topic so a later read update cannot
         # consume comments that were hidden after that transition.
         rendered_topic_watermarks = @comments.group_by(&:topic_id)
                                              .transform_values { |comments| comments.map(&:id).max }
-                                             .slice(*@rendered_all_topic_ids)
+        response.headers["X-Rendered-Topic-Ids"] = rendered_topic_watermarks.keys.sort.join(",")
         response.headers["X-Rendered-Topic-Watermarks"] = rendered_topic_watermarks.to_json
       end
 
