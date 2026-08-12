@@ -1479,6 +1479,37 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
     assert_includes problem.message, "source anchor"
   end
 
+  test "rejects a nested collection lambda replaced with a different assignment" do
+    before_source = <<~RUBY
+      class Sample
+        HANDLERS = { foo: [
+          -> do
+            first
+          end
+        ] }
+      end
+    RUBY
+    after_source = <<~RUBY
+      class Sample
+        OTHER = { foo: [
+          -> do
+            second
+          end
+        ] }
+      end
+    RUBY
+    key = "a.rb | Metrics/BlockLength | Sample[lambda]"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { key => 90 }, { key => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "source anchor"
+  end
+
   test "accepts same-count siblings when their anchors keep the same order" do
     anchors = { SIBLING_POPULATION => [ "first.each", "second.each" ] }
 

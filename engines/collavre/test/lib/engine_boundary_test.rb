@@ -348,6 +348,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ feature ], requires_in(%(Kernel.send(:require, "#{feature}")))
     assert_equal [ "#{feature}.rb" ], requires_in(%(::Kernel.public_send(:load, "#{feature}.rb")))
+    assert_equal [ feature ], requires_in(%(Kernel.__send__(:require, "#{feature}")))
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
     assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
   end
@@ -372,6 +373,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre.autoload :Foo, "#{satellite}/foo"))
     assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre::Integrations.autoload(:Foo, "#{satellite}/foo")))
     assert_equal [ "#{satellite}/foo" ], requires_in(%(mod&.autoload :Foo, "#{satellite}/foo"))
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre.send(:autoload, :Foo, "#{satellite}/foo")))
   end
 
   # The path has to belong to the loader itself. A string in a *neighbouring*
@@ -1790,9 +1792,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     found
   end
 
-  # `Kernel.send(:require, path)` and `Kernel.public_send(:load, path)` invoke
-  # the same loaders as direct calls. Limit this to static symbols so a dynamic
-  # dispatch is not mistaken for a dependency that cannot be known statically.
+  # `Kernel.send(:require, path)`, `Kernel.public_send(:load, path)`, and
+  # `Kernel.__send__(:require, path)` invoke the same loaders as direct calls.
+  # Limit this to static symbols so a dynamic dispatch is not mistaken for a
+  # dependency that cannot be known statically.
   def loader_method(call)
     direct_loader_method(call) || reflected_loader_method(call)
   end
@@ -1802,7 +1805,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def reflected_loader_method(call)
-    return unless %w[send public_send].include?(call.name.to_s)
+    return unless %w[send public_send __send__].include?(call.name.to_s)
 
     method_name = call.arguments&.arguments&.first
     method_name.unescaped if method_name.is_a?(Prism::SymbolNode) && LOADER_METHODS.include?(method_name.unescaped)
@@ -1865,7 +1868,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # method name that matching any receiver would make this test cry wolf.
   def loader_receiver?(call)
     return true if call.receiver.nil?
-    return true if call.name == :autoload
+    return true if loader_method(call) == "autoload"
 
     kernel?(call.receiver)
   end

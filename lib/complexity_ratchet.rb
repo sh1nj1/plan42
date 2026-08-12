@@ -377,15 +377,13 @@ module ComplexityRatchet
     end
 
     def enclosing_collection_anchor
-      collection = @collection_stack.last
-      return unless collection
-
-      before_collection = @source.byteslice(0, collection.location.start_offset)
-      prefix = before_collection.split("\n").last.to_s.strip
-      prefix = before_collection.rstrip.split("\n").last.to_s.strip if prefix.empty?
-      return if prefix.empty?
-
-      "#{prefix} #{collection.location.slice[0]}"
+      anchor = @collection_stack.filter_map do |collection|
+        before_collection = @source.byteslice(0, collection.location.start_offset)
+        prefix = before_collection.split("\n").last.to_s.strip
+        prefix = before_collection.rstrip.split("\n").last.to_s.strip if prefix.empty?
+        "#{prefix} #{collection.location.slice[0]}" unless prefix.empty?
+      end.join(" ")
+      anchor unless anchor.empty?
     end
 
     # Two indexes, because a start line alone is not an identity. In a chained
