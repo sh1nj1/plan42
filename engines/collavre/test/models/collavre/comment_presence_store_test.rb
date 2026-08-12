@@ -144,56 +144,44 @@ module Collavre
       assert_equal [ "second" ], CommentPresenceStore.subscription_ids(9_901, 4)
     end
 
-    test "does not release a successor's presence lock after its lease expires" do
-      entered = Queue.new
-      release = Queue.new
-      first = Thread.new do
-        SecureRandom.stub(:uuid, "first-owner") do
-          CommentPresenceStore.with_lock(9_901) do
-            entered << true
-            release.pop
-          end
+    test "uses a non-expiring advisory lock for PostgreSQL cache storage" do
+      connection = Class.new do
+        attr_reader :queries
+
+        def initialize
+          @queries = []
         end
-      end
-      entered.pop
 
-      # Simulate another process acquiring the lock after the first lease expires.
-      Rails.cache.write(CommentPresenceStore.lock_key(9_901), "successor", expires_in: CommentPresenceStore::LOCK_TTL)
-      release << true
-      first.join
+        def adapter_name
+          "PostgreSQL"
+        end
 
-      assert_equal "successor", Rails.cache.read(CommentPresenceStore.lock_key(9_901))
-    end
+        def quote(value)
+          value.to_s
+        end
 
-    test "normalizes the Solid Cache lock key before conditionally releasing it" do
-      key = CommentPresenceStore.lock_key(9_901)
-      normalized_key = "test:#{key}"
-      serialized_entry = "serialized-entry"
-      entry = Struct.new(:value).new("owner")
-      cache = Minitest::Mock.new
-      cache.expect(:send, normalized_key, [ :normalize_key, key, nil ])
-      cache.expect(:send, entry, [ :deserialize_entry, serialized_entry ])
-      deleted = false
-      relation = Object.new
-      relation.define_singleton_method(:delete_all) { deleted = true }
+        def select_value(query)
+          queries << query
+          true
+        end
+      end.new
+      pool = Struct.new(:connection) do
+        def with_connection
+          yield connection
+        end
+      end.new(connection)
 
-      SolidCache::Entry.stub(:read, ->(actual_key) {
-        assert_equal normalized_key, actual_key
-        serialized_entry
-      }) do
-        SolidCache::Entry.stub(:where, ->(conditions) {
-          assert_equal Digest::SHA256.digest(normalized_key).unpack1("q>"), conditions.fetch(:key_hash)
-          assert_equal serialized_entry, conditions.fetch(:value)
-          relation
-        }) do
-          Rails.stub(:cache, cache) do
-            CommentPresenceStore.send(:release_solid_cache_lock, key, "owner")
-          end
+      SolidCache::Entry.stub(:connection, connection) do
+        SolidCache::Entry.stub(:connection_pool, pool) do
+          assert_equal :locked, CommentPresenceStore.with_lock(9_901) { :locked }
         end
       end
 
-      cache.verify
-      assert deleted
+      advisory_key = Digest::SHA256.digest("#{CommentPresenceStore::LOCK_PURPOSE}:9901").unpack1("q>")
+      assert_equal [
+        "SELECT pg_advisory_lock(#{advisory_key})",
+        "SELECT pg_advisory_unlock(#{advisory_key})"
+      ], connection.queries
     end
   end
 end

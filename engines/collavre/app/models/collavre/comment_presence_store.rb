@@ -1,3 +1,6 @@
+require "digest"
+require "monitor"
+
 module Collavre
   class CommentPresenceStore
     KEY_PREFIX = "comment_presence:"
@@ -7,8 +10,11 @@ module Collavre
     ALL_TOPICS = "all"
     LEGACY_TOPIC = "_legacy"
     LEGACY_SUBSCRIPTION_ID = "legacy"
-    LOCK_TTL = 2.seconds
+    LOCK_PURPOSE = "collavre:comment_presence".freeze
     SUBSCRIPTION_TTL = 90.seconds
+
+    @mutex_registry_guard = Mutex.new
+    @mutex_registry = {}
 
     def self.add(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
       with_lock(creative_id) do
@@ -220,41 +226,65 @@ module Collavre
       end
     end
 
-    # Membership changes update two cache entries, so serialize them across
-    # Action Cable processes. The expiring lock recovers automatically if a
-    # process dies while holding it.
+    # Membership changes update several cache entries, so serialize them across
+    # Action Cable processes. PostgreSQL advisory locks are held for the life of
+    # the database session: they cannot expire while a holder is still mutating
+    # state, and PostgreSQL releases them when a crashed process disconnects.
+    # SQLite is used for the single-process desktop app and tests.
     def self.with_lock(creative_id, &block)
-      key = lock_key(creative_id)
-      token = SecureRandom.uuid
-      until Rails.cache.write(key, token, unless_exist: true, expires_in: LOCK_TTL)
-        sleep(0.05)
+      if postgres_cache?
+        with_postgres_lock(creative_id, &block)
+      else
+        with_process_lock(creative_id, &block)
       end
+    end
 
-      block.call
+    def self.postgres_cache?
+      defined?(SolidCache::Entry) && SolidCache::Entry.connection.adapter_name.casecmp?("PostgreSQL")
+    end
+
+    def self.with_postgres_lock(creative_id)
+      SolidCache::Entry.connection_pool.with_connection do |connection|
+        advisory_key = advisory_lock_key(creative_id)
+        # Register cleanup before acquisition so an interruption after the
+        # server grants the lock cannot return a locked session to the pool.
+        unlock_required = true
+        connection.select_value("SELECT pg_advisory_lock(#{connection.quote(advisory_key)})")
+        yield
+      ensure
+        if unlock_required
+          connection.select_value("SELECT pg_advisory_unlock(#{connection.quote(advisory_key)})")
+        end
+      end
+    end
+
+    def self.advisory_lock_key(creative_id)
+      Digest::SHA256.digest("#{LOCK_PURPOSE}:#{creative_id}").unpack1("q>")
+    end
+
+    def self.with_process_lock(creative_id)
+      mutex = register_mutex(creative_id)
+      mutex.synchronize { yield }
     ensure
-      release_lock(key, token) if key && token
+      unregister_mutex(creative_id, mutex) if mutex
     end
 
-    # A lock may expire while its holder is paused. Only its owner may release
-    # it, so an expired holder cannot delete the lease acquired by its successor.
-    def self.release_lock(key, token)
-      if defined?(SolidCache::Store) && Rails.cache.is_a?(SolidCache::Store)
-        release_solid_cache_lock(key, token)
-      elsif Rails.cache.read(key) == token
-        Rails.cache.delete(key)
+    def self.register_mutex(creative_id)
+      @mutex_registry_guard.synchronize do
+        entry = (@mutex_registry[creative_id] ||= { mutex: Monitor.new, users: 0 })
+        entry[:users] += 1
+        entry[:mutex]
       end
     end
 
-    def self.release_solid_cache_lock(key, token)
-      normalized_key = Rails.cache.send(:normalize_key, key, nil)
-      value = SolidCache::Entry.read(normalized_key)
-      entry = Rails.cache.send(:deserialize_entry, value)
-      return unless entry&.value == token
+    def self.unregister_mutex(creative_id, mutex)
+      @mutex_registry_guard.synchronize do
+        entry = @mutex_registry[creative_id]
+        return unless entry && entry[:mutex].equal?(mutex)
 
-      SolidCache::Entry.where(
-        key_hash: Digest::SHA256.digest(normalized_key).unpack1("q>"),
-        value: value
-      ).delete_all
+        entry[:users] -= 1
+        @mutex_registry.delete(creative_id) if entry[:users].zero?
+      end
     end
   end
 end
