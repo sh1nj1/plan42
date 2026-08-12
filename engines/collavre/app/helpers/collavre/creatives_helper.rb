@@ -125,7 +125,10 @@ module Collavre
         data: {
           progress_toggle: true,
           creative_id: creative.id,
-          current_progress: value,
+          # progress is a decimal, so the raw value serializes as "1.0" and the
+          # CSS/JS state checks against "1" would never match. Both sides of the
+          # toggle only ever mean 0 or 1, so emit it as an integer.
+          current_progress: complete ? 1 : 0,
           new_progress: new_value,
           mark_complete: t("collavre.creatives.index.mark_complete"),
           mark_incomplete: t("collavre.creatives.index.mark_incomplete")

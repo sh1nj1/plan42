@@ -27,6 +27,12 @@ async function mountRow(progressHtml) {
 
 const INCOMPLETE_TOGGLE = '<span class="progress-toggle-wrap" data-progress-toggle="true" data-creative-id="7" data-current-progress="0" data-new-progress="1" data-mark-complete="Mark complete" data-mark-incomplete="Mark incomplete" title="Mark complete"><input type="checkbox" class="progress-toggle-checkbox" aria-label="Mark complete"><span class="progress-toggle-mark" aria-hidden="true"> </span></span>'
 
+const COMPLETE_TOGGLE = INCOMPLETE_TOGGLE
+  .replace('data-current-progress="0" data-new-progress="1"', 'data-current-progress="1" data-new-progress="0"')
+  .replace('title="Mark complete"', 'title="Mark incomplete"')
+  .replace('<input type="checkbox"', '<input type="checkbox" checked')
+  .replace('aria-label="Mark complete"', 'aria-label="Mark incomplete"')
+
 afterEach(() => {
   csrfFetch.mockReset()
   document.body.innerHTML = ''
@@ -78,6 +84,47 @@ test('flips the completion state optimistically so the mark shows before the req
   resolveFetch({ ok: true, json: async () => ({ progress: 1 }) })
   await Promise.resolve()
   await row.updateComplete
+})
+
+// Space (and a click landing on the box itself) runs the input's own activation:
+// the browser flips `checked` before the click reaches this handler. Reading the
+// checkbox instead of the dataset would invert the state back while the PATCH is
+// in flight, so a completed row would still read as checked. `checkbox.click()`
+// drives the same activation path Space does — jsdom has no Space-to-click
+// default action. Its canceled-activation restore inverts the current value
+// where browsers reassign the saved one, so the browser-faithful check lives in
+// test/system/creative_progress_toggle_keyboard_test.rb.
+test('unchecks the box when the completed checkbox itself is activated', async () => {
+  let resolveFetch
+  csrfFetch.mockReturnValue(new Promise((resolve) => { resolveFetch = resolve }))
+  const row = await mountRow(COMPLETE_TOGGLE)
+  const toggle = row.querySelector('[data-progress-toggle]')
+  const checkbox = toggle.querySelector('input')
+
+  checkbox.click()
+
+  expect(toggle.dataset.currentProgress).toBe('0')
+  expect(toggle.dataset.newProgress).toBe('1')
+  expect(checkbox.checked).toBe(false)
+
+  resolveFetch({ ok: true, json: async () => ({ progress: 0 }) })
+  await Promise.resolve()
+  await row.updateComplete
+})
+
+test('rolls the box back to unchecked when activating it directly fails', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {})
+  csrfFetch.mockResolvedValue({ ok: false, status: 422 })
+  const row = await mountRow(INCOMPLETE_TOGGLE)
+  const toggle = row.querySelector('[data-progress-toggle]')
+  const checkbox = toggle.querySelector('input')
+
+  checkbox.click()
+  await Promise.resolve()
+  await row.updateComplete
+
+  expect(toggle.dataset.currentProgress).toBe('0')
+  expect(checkbox.checked).toBe(false)
 })
 
 test('restores checkbox metadata when a toggle request fails', async () => {

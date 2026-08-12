@@ -540,16 +540,25 @@ class CreativeTreeRow extends LitElement {
   }
 
   async _handleProgressToggle(event) {
-    event.preventDefault();
-    event.stopPropagation();
     const wrap = event.currentTarget;
+    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
+    // Activating the input itself (Space, or a click landing on the box) flips
+    // `checked` before the click reaches this handler, and preventDefault would
+    // flip it back once dispatch finishes. Leave that activation alone and set
+    // the state explicitly below; cancel the default for every other target.
+    const nativeActivation = checkbox != null && event.target === checkbox;
+    if (!nativeActivation) event.preventDefault();
+    event.stopPropagation();
     const creativeId = wrap.dataset.creativeId;
     const newProgress = wrap.dataset.newProgress;
-    if (!creativeId || newProgress == null) return;
+    // The dataset is the source of truth: `checked` may already be flipped.
+    const wasComplete = wrap.dataset.currentProgress === "1";
+    if (!creativeId || newProgress == null) {
+      if (checkbox) checkbox.checked = wasComplete;
+      return;
+    }
 
     // Optimistic UI: toggle the always-visible checkbox immediately.
-    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
-    const wasComplete = checkbox?.checked;
     const previousCurrentProgress = wrap.dataset.currentProgress;
     const previousNewProgress = wrap.dataset.newProgress;
     const previousTitle = wrap.title;

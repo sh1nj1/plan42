@@ -270,6 +270,23 @@ class CreativesHelperTest < ActionView::TestCase
     end
   end
 
+  # The view passes creative.progress, a decimal, so a raw value would serialize
+  # as "1.0"/"0.0" and the CSS and JS state checks against "1"/"0" would never
+  # match. Pass the value the way the view does, not a literal Integer.
+  test "render_progress_toggle emits the completion state as an integer" do
+    user = users(:one)
+    complete = Creative.create!(user: user, description: "Completed leaf", progress: 1)
+    incomplete = Creative.create!(user: user, description: "Open leaf", progress: 0)
+
+    Current.set(user: user) do
+      complete_html = render_progress_control(complete, complete.progress, has_children: false, can_write: true)
+      incomplete_html = render_progress_control(incomplete, incomplete.progress, has_children: false, can_write: true)
+
+      assert_includes complete_html, 'data-current-progress="1"'
+      assert_includes incomplete_html, 'data-current-progress="0"'
+    end
+  end
+
   test "render_progress_toggle keeps the checkbox reachable by keyboard" do
     user = users(:one)
     creative = Creative.create!(user: user, description: "Keyboard leaf", progress: 0)
