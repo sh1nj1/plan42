@@ -25,7 +25,9 @@ module Collavre
       system_topic = @creative.inbox? ? @creative.system_topic(fallback_user: Current.user) : nil
 
       active_topics = @creative.topics.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at).to_a
-      archived_topics = @creative.topics.archived.order(:created_at)
+      archived_topics = @creative.topics.archived.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at).to_a
+      unread_counts_by_topic = Creatives::CommentBadgeIndex.new(user: Current.user)
+        .unread_counts_by_topic(@creative)
 
       last_topic_id = if Current.user
                         UserCreativePreference
@@ -37,8 +39,8 @@ module Collavre
       main_topic_id = main_topic.id
 
       render json: {
-        topics: active_topics.map { |t| topic_json(t) },
-        archived_topics: archived_topics,
+        topics: active_topics.map { |t| topic_json(t, unread_count: unread_counts_by_topic.fetch(t.id, 0)) },
+        archived_topics: archived_topics.map { |t| topic_json(t, unread_count: unread_counts_by_topic.fetch(t.id, 0)) },
         can_manage: can_manage,
         can_create_topic: can_write,
         can_set_primary_agent: can_write,
@@ -382,12 +384,14 @@ module Collavre
       "#{prefix}#{next_number}"
     end
 
-    def topic_json(topic)
+    def topic_json(topic, unread_count: nil)
       data = topic.slice(:id, :name, :source_topic_id)
       if topic.primary_agent
         data[:primary_agent] = agent_json(topic.primary_agent)
       end
       data[:agent_locked] = topic.session_id.present?
+      data[:archived_at] = topic.archived_at if topic.archived_at
+      data[:unread_count] = unread_count unless unread_count.nil?
       data
     end
 

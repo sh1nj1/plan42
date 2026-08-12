@@ -88,6 +88,30 @@ module Creatives
       assert_equal 0, @index.unread_count_for(creative)
     end
 
+    test "groups visible unread comments by topic using the creative read pointer" do
+      creative = Creative.create!(user: @user, description: "Topic badges", sequence: 914)
+      first_topic = creative.topics.create!(name: "First", user: @user)
+      second_topic = creative.topics.create!(name: "Second", user: @user)
+      read_comment = Comment.create!(creative: creative, topic: first_topic, user: @author, content: "read")
+      Comment.create!(creative: creative, topic: first_topic, user: @author, content: "unread")
+      Comment.create!(creative: creative, topic: second_topic, user: @user, content: "private", private: true)
+      Comment.create!(creative: creative, topic: second_topic, user: @author, content: "hidden", private: true)
+      CommentReadPointer.create!(user: @user, creative: creative, last_read_comment_id: read_comment.id)
+
+      assert_equal({ first_topic.id => 1, second_topic.id => 1 }, @index.unread_counts_by_topic(creative))
+    end
+
+    test "suppresses topic unread counts while the user is present" do
+      creative = Creative.create!(user: @user, description: "Present topic badges", sequence: 915)
+      topic = creative.topics.create!(name: "Updates", user: @user)
+      Comment.create!(creative: creative, topic: topic, user: @author, content: "unread")
+      Collavre::CommentPresenceStore.add(creative.id, @user.id)
+
+      assert_empty @index.unread_counts_by_topic(creative)
+    ensure
+      Rails.cache.delete(Collavre::CommentPresenceStore.key(creative.id))
+    end
+
     # The batch is one query for the whole level, so a per-origin watermark must
     # not leak across origins.
     test "each origin is counted against its own watermark" do

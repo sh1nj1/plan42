@@ -70,6 +70,18 @@ describe('TopicsController archived topic messages', () => {
   })
 
   describe('selecting an archived topic', () => {
+    test('renders unread counts on active and archived topic chips', () => {
+      controller.topics = [{ id: 1, name: 'Main', unread_count: 2 }, { id: 2, name: 'Alpha', unread_count: 0 }]
+      controller.archivedTopics = [{ id: 3, name: 'Zeta', unread_count: 4 }]
+      controller.showingArchived = true
+
+      render()
+
+      expect(controller.listTarget.querySelector('.topic-tag[data-id="1"] .topic-unread-badge').textContent).toBe('2')
+      expect(controller.listTarget.querySelector('.topic-tag[data-id="2"] .topic-unread-badge')).toBeNull()
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="3"] .topic-unread-badge').textContent).toBe('4')
+    })
+
     test('archived chips carry the select action so clicking one opens it', () => {
       controller.showingArchived = true
       render()

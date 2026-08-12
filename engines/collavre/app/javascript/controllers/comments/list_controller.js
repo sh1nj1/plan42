@@ -452,6 +452,13 @@ export default class extends Controller {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ creative_id: creativeId }),
+      }).then((response) => {
+        if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId) return
+
+        // Read pointers are creative-wide, so a successful update changes every
+        // topic's count. Reload the chips immediately instead of leaving their
+        // initial unread numbers on screen until another topic event occurs.
+        this.popupController?.topicsController?.loadTopics?.()
       }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);
   }

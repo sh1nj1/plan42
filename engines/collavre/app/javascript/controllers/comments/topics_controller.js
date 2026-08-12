@@ -280,11 +280,14 @@ export default class extends Controller {
                 ? this.renderAgentAvatar(topic.primary_agent, releasableTopicId)
                 : ''
             const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
+            const unreadBadge = topic.unread_count > 0
+                ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
+                : ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
             let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
-                        ${agentAvatar}${branchIcon}#${topic.name}`
+                        ${agentAvatar}${branchIcon}#${topic.name}${unreadBadge}`
             if (canManage && !isMainTopic) {
                 s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
                 s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
@@ -312,10 +315,13 @@ export default class extends Controller {
                 this.archivedTopics.forEach(topic => {
                     const isActive = String(this.currentTopicId) === String(topic.id) ? ' active' : ''
                     const hasNew = this.archivedWithNewMessages.has(String(topic.id)) ? ' has-new-messages' : ''
+                    const unreadBadge = topic.unread_count > 0
+                        ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
+                        : ''
                     html += `<span class="topic-tag topic-archived${isActive}${hasNew}"
                                    data-action="click->comments--topics#select"
                                    data-id="${topic.id}">
-                              #${topic.name}
+                              #${topic.name}${unreadBadge}
                               ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
                              </span>`
                 })
