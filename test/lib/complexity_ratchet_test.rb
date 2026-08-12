@@ -221,6 +221,23 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  test "keeps the enclosing call anchor of a multiline unique lambda" do
+    source = <<~RUBY
+      class Sample
+        register(
+          -> do
+            first
+          end
+        )
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample[lambda]" => [ "register(" ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   test "keeps the anchor of a uniquely named block" do
     source = <<~RUBY
       class Sample
@@ -1047,6 +1064,37 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
         DISPATCHER = -> do
           second
         end
+      end
+    RUBY
+    key = "a.rb | Metrics/BlockLength | Sample[lambda]"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { key => 90 }, { key => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "source anchor"
+  end
+
+  test "rejects a multiline lambda replaced with a different enclosing call" do
+    before_source = <<~RUBY
+      class Sample
+        register(
+          -> do
+            first
+          end
+        )
+      end
+    RUBY
+    after_source = <<~RUBY
+      class Sample
+        subscribe(
+          -> do
+            second
+          end
+        )
       end
     RUBY
     key = "a.rb | Metrics/BlockLength | Sample[lambda]"

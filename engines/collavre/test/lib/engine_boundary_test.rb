@@ -196,6 +196,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
 
+  test "detector folds a static string passed to constant resolution" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    midpoint = satellite.length / 2
+    prefix = satellite[...midpoint]
+    suffix = satellite[midpoint..]
+
+    assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{prefix}" + "#{suffix}"))))
+  end
+
   test "detector flags a satellite class named by a static symbol" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -479,6 +488,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(if (ready) /import "#{satellite}\/thing"/.test(text);))
     assert_empty js_imports_in(%(if (ready) {} else /import "#{satellite}\/thing"/.test(text);))
     assert_empty js_imports_in(%(do /import "#{satellite}\/thing"/.test(text); while (ready);))
+    assert_empty js_imports_in(%(function* matches() { yield /import "#{satellite}\/thing"/ }))
   end
 
   test "detector ignores import examples in JSX text while keeping JSX expressions" do
@@ -923,7 +933,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     return true if control_flow_condition?(tokens)
 
-    %w[return throw case else do].include?(previous.last) && previous.first == :word
+    %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last) && previous.first == :word
   end
 
   def control_flow_condition?(tokens)
@@ -1206,7 +1216,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # it afterwards.
   def string_references_in(source)
     root = Prism.parse(source).value
-    (located_string_literals_in(root) + constant_resolution_symbols_in(root))
+    (located_string_literals_in(root) + constant_resolution_literals_in(root))
       .flat_map { |value, line| value.scan(SATELLITE_IN_STRING).map { |name| [ name, line ] } }
   end
 
@@ -1233,15 +1243,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     found
   end
 
-  def constant_resolution_symbols_in(node, found = [])
+  def constant_resolution_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
     if node.is_a?(Prism::CallNode) && CONSTANT_RESOLUTION_METHODS.include?(node.name.to_s)
-      node.arguments&.arguments.to_a&.grep(Prism::SymbolNode)&.each do |symbol|
-        found << [ symbol.unescaped, symbol.location.start_line ]
+      node.arguments&.arguments.to_a&.each do |argument|
+        if argument.is_a?(Prism::SymbolNode)
+          found << [ argument.unescaped, argument.location.start_line ]
+        elsif argument.is_a?(Prism::CallNode) && argument.name == :+
+          value = static_string_concatenation(argument)
+          found << [ value, argument.location.start_line ] if value
+        end
       end
     end
-    node.compact_child_nodes.each { |child| constant_resolution_symbols_in(child, found) }
+    node.compact_child_nodes.each { |child| constant_resolution_literals_in(child, found) }
     found
   end
 

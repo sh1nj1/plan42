@@ -287,7 +287,7 @@ module ComplexityRatchet
       return prefix unless prefix.empty?
 
       preceding_line = before_lambda.rstrip.split("\n").last.to_s.strip
-      preceding_line.end_with?("=") ? preceding_line : "[lambda]"
+      preceding_line.end_with?("=", "(") ? preceding_line : "[lambda]"
     end
 
     # Two indexes, because a start line alone is not an identity. In a chained
