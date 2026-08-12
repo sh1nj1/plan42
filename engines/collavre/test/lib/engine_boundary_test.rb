@@ -54,7 +54,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # KNOWN_VIOLATIONS for why that distinction is the whole point.
   SATELLITE_IN_STRING = /\b(?:#{SATELLITE_CONSTANTS.keys.join('|')})(?:::[A-Z]\w*)*\b/
 
-  RUBY_FILE = /\.(rb|rake|erb)\z/
+  RUBY_FILE = /\.(rb|rake|erb)(?:\.tt)?\z/
 
   # The engine ships 247 JavaScript files and script/build.cjs bundles every
   # engine's `app/javascript/*` together, so a core module importing a
@@ -470,6 +470,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "Ruby and Rake generator templates are scanned as Ruby sources" do
+    %w[initializer.rb.tt task.rake.tt].each do |path|
+      assert ruby_source?(path), "#{path} is a shipped Ruby source template"
+    end
+  end
+
   test "TSX generator templates use JSX scanning" do
     satellite = SATELLITES.first
     path = ENGINES_ROOT.join(CORE, "lib/generators/collavre/install/templates/view.tsx.tt")
@@ -704,7 +710,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def core_sources
     root = ENGINES_ROOT.join(CORE)
     packaged = core_gemspec.files.select do |path|
-      path.match?(RUBY_FILE) || javascript_source?(root.join(path).to_s) || File.basename(path) == "Rakefile"
+      ruby_source?(path) || javascript_source?(root.join(path).to_s) || File.basename(path) == "Rakefile"
     end
 
     # The gemspec does not package itself, and it is Ruby that can require.
@@ -720,7 +726,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return js_violations_in(path, source) if javascript_source?(path, source)
 
     # ERB is not Ruby, so lex only the fragments between the tags.
-    ruby = path.end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
+    ruby = path.delete_suffix(".tt").end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
     # Requires are deliberately absent from the waiver: no core file has one
     # today, and a new one is never the frozen-migration case the list exists
     # for.
@@ -741,6 +747,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     js_imports_in(source, jsx: %w[.jsx .tsx].include?(extension), tsx: extension == ".tsx").map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
+  end
+
+  def ruby_source?(path)
+    path.match?(RUBY_FILE)
   end
 
   # The gem packages one extensionless Node executable. Its shebang, not its
