@@ -27,7 +27,15 @@ module Collavre
 
         rendered = rendered_public_ids.to_set
 
-        pointers.each_with_object({}) do |pointer, result|
+        receipt_pointers = pointers.to_a
+        users_with_topic_pointers = receipt_pointers.filter_map { |pointer| pointer.user_id if pointer.topic_id }.to_set
+
+        receipt_pointers.each_with_object({}) do |pointer, result|
+          # The migration retains a legacy creative-wide pointer beside each
+          # topic pointer. Once a user has topic pointers, only they describe
+          # the conversation being rendered; retaining the legacy row would
+          # duplicate the avatar or attach it to a different topic.
+          next if pointer.topic_id.nil? && users_with_topic_pointers.include?(pointer.user_id)
           next if pointer.last_read_comment_id > rendered_window_max_id
 
           effective_id = pointer[:receipt_comment_id]
@@ -60,6 +68,7 @@ module Collavre
           .select(public_comments[:id].maximum)
           .where(public_comments[:creative_id].eq(pointer_table[:creative_id]))
           .where(public_comments[:private].eq(false))
+          .where(pointer_table[:topic_id].eq(nil).or(same_topic(public_comments[:topic_id], pointer_table[:topic_id])))
           .where(public_comments[:id].lteq(pointer_table[:last_read_comment_id]))
           .arel
 
@@ -68,6 +77,15 @@ module Collavre
           .where.not(last_read_comment_id: nil)
           .select(pointer_table[Arel.star], effective_comment_id.as("receipt_comment_id"))
           .includes(user: { avatar_attachment: :blob })
+      end
+
+      # SQL's `NULL = NULL` is not true, although Main comments and the legacy
+      # creative-wide pointer both use NULL. Treat those two NULLs as the same
+      # topic while keeping every named topic isolated.
+      def same_topic(comment_topic_id, pointer_topic_id)
+        comment_topic_id.eq(pointer_topic_id).or(
+          comment_topic_id.eq(nil).and(pointer_topic_id.eq(nil))
+        )
       end
     end
   end

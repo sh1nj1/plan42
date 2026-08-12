@@ -24,6 +24,7 @@ const buildController = ({ currentTopicId = '', archivedIds = [], withPopup = tr
   controller.manualSearchQuery = searchQuery
   controller.currentTopicId = currentTopicId
   controller.allNewerLoaded = true
+  controller.markCommentsRead = jest.fn()
 
   // popupController is a prototype getter reaching into this.application; an
   // own property shadows it without standing up a Stimulus application.
@@ -73,6 +74,17 @@ describe('CommentsListController archived streams in All Messages', () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(badgeEvents).toEqual([])
+    expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not mark a foreign message read', () => {
+    const controller = buildController({ currentTopicId: '2' })
+    const event = streamEvent({ html: comment(5) })
+
+    controller.handleStreamRender(event)
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(controller.markCommentsRead).not.toHaveBeenCalled()
   })
 
   test('lets a topic-less comment through without consulting the topics controller', () => {

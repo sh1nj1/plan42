@@ -67,8 +67,7 @@ module Creatives
     # watermark is only the fallback for a topic without its own row.
     def unread_counts_by_topic(origin)
       counts = unread_counts_by_topic_without_presence(origin)
-      viewing_topic_id = user && CommentPresenceStore.topic_for(origin.id, user.id)
-      counts.delete(viewing_topic_id) if viewing_topic_id
+      suppress_viewing_topics!(counts, origin) if user
       counts
     end
 
@@ -83,14 +82,24 @@ module Creatives
       CommentPresenceStore.list_many(origin_ids).each do |origin_id, present_user_ids|
         next unless present_user_ids.include?(user.id)
 
-        viewing_topic_id = CommentPresenceStore.topic_for(origin_id, user.id)
-        next unless viewing_topic_id
-
         origin = Creative.find_by(id: origin_id)
         next unless origin
 
-        @unread_by_origin_id[origin_id] -= unread_counts_by_topic_without_presence(origin)
-          .fetch(viewing_topic_id, 0)
+        all_counts = unread_counts_by_topic_without_presence(origin)
+        remaining_counts = all_counts.dup
+        suppress_viewing_topics!(remaining_counts, origin)
+        @unread_by_origin_id[origin_id] -= all_counts.values.sum - remaining_counts.values.sum
+      end
+    end
+
+    def suppress_viewing_topics!(counts, origin)
+      if CommentPresenceStore.viewing_all_topics?(origin.id, user.id)
+        # All Messages renders Main plus every active topic. Archived topics are
+        # intentionally excluded by CommentsController#index and stay unread.
+        counts.delete(nil)
+        origin.topics.active.pluck(:id).each { |topic_id| counts.delete(topic_id) }
+      elsif (viewing_topic_id = CommentPresenceStore.topic_for(origin.id, user.id))
+        counts.delete(viewing_topic_id)
       end
     end
 

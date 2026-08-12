@@ -2,6 +2,7 @@ module Collavre
   class CommentPresenceStore
     KEY_PREFIX = "comment_presence:"
     TOPIC_KEY_PREFIX = "comment_presence_topic:"
+    ALL_TOPICS = "all"
 
     def self.add(creative_id, user_id)
       ids = list(creative_id)
@@ -22,11 +23,16 @@ module Collavre
     end
 
     def self.set_topic(creative_id, user_id, topic_id)
-      topic_id ? Rails.cache.write(topic_key(creative_id, user_id), topic_id.to_i) : Rails.cache.delete(topic_key(creative_id, user_id))
+      Rails.cache.write(topic_key(creative_id, user_id), topic_id ? topic_id.to_i : ALL_TOPICS)
     end
 
     def self.topic_for(creative_id, user_id)
-      Rails.cache.read(topic_key(creative_id, user_id))
+      value = Rails.cache.read(topic_key(creative_id, user_id))
+      value == ALL_TOPICS ? nil : value
+    end
+
+    def self.viewing_all_topics?(creative_id, user_id)
+      Rails.cache.read(topic_key(creative_id, user_id)) == ALL_TOPICS
     end
 
     def self.list(creative_id)

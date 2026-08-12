@@ -80,6 +80,27 @@ module Collavre
         assert_empty receipts_for([ first, last ])
       end
 
+      test "topic pointers only render receipts in their own topic" do
+        first_topic = Topic.create!(creative: @creative, name: "First", user: @owner)
+        second_topic = Topic.create!(creative: @creative, name: "Second", user: @owner)
+        first = comment("first", topic: first_topic)
+        second = comment("second", topic: second_topic)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: second_topic, last_read_comment_id: second.id)
+
+        assert_equal({ second.id => [ @reader ] }, receipts_for([ first, second ]))
+      end
+
+      test "topic pointers take precedence over the retained legacy pointer" do
+        first_topic = Topic.create!(creative: @creative, name: "First", user: @owner)
+        second_topic = Topic.create!(creative: @creative, name: "Second", user: @owner)
+        first = comment("first", topic: first_topic)
+        second = comment("second", topic: second_topic)
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: second.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: first_topic, last_read_comment_id: first.id)
+
+        assert_equal({ first.id => [ @reader ] }, receipts_for([ first, second ]))
+      end
+
       test "several readers on the same comment are grouped" do
         first = comment("a")
         second = comment("b")

@@ -642,7 +642,10 @@ export default class extends Controller {
       // Optional: Show a "New messages" indicator?
       // For now, strict requirement: "do not add to DOM".
     } else {
-
+      // The append is about to become visible. Mark it read after the existing
+      // debounce, so a reconnect or popup close cannot turn a viewed live
+      // message back into an unread one.
+      if (event.target.action === 'append') this.markCommentsRead()
     }
   }
 

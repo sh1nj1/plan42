@@ -127,6 +127,24 @@ module Creatives
       Rails.cache.delete(Collavre::CommentPresenceStore.topic_key(creative.id, @user.id))
     end
 
+    test "suppresses active topic counts while the user is viewing All Messages" do
+      creative = Creative.create!(user: @user, description: "All Messages badges", sequence: 914)
+      active_topic = creative.topics.create!(name: "Active", user: @user)
+      archived_topic = creative.topics.create!(name: "Archived", user: @user, archived_at: Time.current)
+      Comment.create!(creative: creative, user: @author, content: "main")
+      Comment.create!(creative: creative, topic: active_topic, user: @author, content: "active")
+      Comment.create!(creative: creative, topic: archived_topic, user: @author, content: "archived")
+      CommentPresenceStore.add(creative.id, @user.id)
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil)
+
+      assert_equal({ archived_topic.id => 1 }, @index.unread_counts_by_topic(creative))
+      @index.index([ creative ])
+      assert_equal 1, @index.unread_count_for(creative)
+    ensure
+      Rails.cache.delete(CommentPresenceStore.key(creative.id))
+      Rails.cache.delete(CommentPresenceStore.topic_key(creative.id, @user.id))
+    end
+
     # The batch is one query for the whole level, so a per-origin watermark must
     # not leak across origins.
     test "each origin is counted against its own watermark" do

@@ -55,5 +55,12 @@ module Collavre
       CommentPresenceStore.remove(9_901, 4)
       assert_nil CommentPresenceStore.topic_for(9_901, 4)
     end
+
+    test "distinguishes All Messages from a missing topic report" do
+      CommentPresenceStore.set_topic(9_901, 4, nil)
+
+      assert_nil CommentPresenceStore.topic_for(9_901, 4)
+      assert CommentPresenceStore.viewing_all_topics?(9_901, 4)
+    end
   end
 end

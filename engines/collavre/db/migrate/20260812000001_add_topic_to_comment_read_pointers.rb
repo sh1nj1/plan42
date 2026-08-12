@@ -16,9 +16,12 @@ class AddTopicToCommentReadPointers < ActiveRecord::Migration[8.0]
 
     add_index :comment_read_pointers, %i[user_id creative_id topic_id], unique: true,
               name: "index_comment_read_pointers_on_user_creative_and_topic"
+    add_index :comment_read_pointers, %i[user_id creative_id], unique: true,
+              where: "topic_id IS NULL", name: "index_comment_read_pointers_on_legacy_pointer"
   end
 
   def down
+    remove_index :comment_read_pointers, name: "index_comment_read_pointers_on_legacy_pointer"
     remove_index :comment_read_pointers, name: "index_comment_read_pointers_on_user_creative_and_topic"
     execute "DELETE FROM comment_read_pointers WHERE topic_id IS NOT NULL"
     remove_reference :comment_read_pointers, :topic, foreign_key: true
