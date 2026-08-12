@@ -847,6 +847,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = import.meta.resolve["apply"](import.meta, ["#{satellite}/thing"]);) => "#{satellite}/thing",
       %(const t = import.meta.resolve.bind(null)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve.bind(null, "#{satellite}/thing")();) => "#{satellite}/thing",
+      %(const t = import.meta.resolve.bind(import.meta, "#{satellite}/thing")();) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -2020,7 +2021,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     closing = js_matching_close_parenthesis(tokens, bound_arguments)
     return unless closing
 
-    return js_static_string_at(tokens, bound_arguments + 3) if tokens[bound_arguments + 2] == [ :punctuation, "," ]
+    comma = js_first_call_argument_comma(tokens, bound_arguments)
+    return js_static_string_at(tokens, comma + 1) if comma
 
     js_call_specifier(tokens, closing)
   end
