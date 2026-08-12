@@ -6,6 +6,7 @@ module Collavre
       @ids = [ 9_901, 9_902, 9_903 ]
       @ids.each do |id|
         Rails.cache.delete(CommentPresenceStore.key(id))
+        Rails.cache.delete(CommentPresenceStore.lock_key(id))
         (1..10).each do |user_id|
           Rails.cache.delete(CommentPresenceStore.topic_key(id, user_id))
           Rails.cache.delete(CommentPresenceStore.subscriptions_key(id, user_id))
@@ -87,6 +88,29 @@ module Collavre
       CommentPresenceStore.set_topic(9_901, 4, 12, subscription_id: "archived")
 
       assert_equal({ 4 => [ CommentPresenceStore::ALL_TOPICS, 12 ] }, CommentPresenceStore.viewing_topics_for(9_901, [ 4 ]))
+    end
+
+    test "serializes concurrent subscription membership updates" do
+      entered = Queue.new
+      release = Queue.new
+      first = Thread.new do
+        CommentPresenceStore.with_lock(9_901) do
+          entered << true
+          release.pop
+        end
+      end
+      entered.pop
+
+      second = Thread.new { CommentPresenceStore.add(9_901, 4, subscription_id: "second") }
+      sleep(0.1)
+      assert_empty CommentPresenceStore.list(9_901)
+
+      release << true
+      first.join
+      second.join
+
+      assert_equal [ 4 ], CommentPresenceStore.list(9_901)
+      assert_equal [ "second" ], CommentPresenceStore.subscription_ids(9_901, 4)
     end
   end
 end

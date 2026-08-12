@@ -23,8 +23,32 @@ class AddTopicToCommentReadPointers < ActiveRecord::Migration[8.0]
   def down
     remove_index :comment_read_pointers, name: "index_comment_read_pointers_on_legacy_pointer"
     remove_index :comment_read_pointers, name: "index_comment_read_pointers_on_user_creative_and_topic"
+    consolidate_topic_watermarks
     execute "DELETE FROM comment_read_pointers WHERE topic_id IS NOT NULL"
     remove_reference :comment_read_pointers, :topic, foreign_key: true
     add_index :comment_read_pointers, %i[user_id creative_id], unique: true
+  end
+
+  private
+
+  def consolidate_topic_watermarks
+    execute <<~SQL.squish
+      UPDATE comment_read_pointers AS legacy_pointers
+      SET last_read_comment_id = (
+        SELECT MAX(topic_pointers.last_read_comment_id)
+        FROM comment_read_pointers AS topic_pointers
+        WHERE topic_pointers.user_id = legacy_pointers.user_id
+          AND topic_pointers.creative_id = legacy_pointers.creative_id
+          AND topic_pointers.topic_id IS NOT NULL
+      )
+      WHERE legacy_pointers.topic_id IS NULL
+        AND COALESCE(legacy_pointers.last_read_comment_id, 0) < COALESCE((
+          SELECT MAX(topic_pointers.last_read_comment_id)
+          FROM comment_read_pointers AS topic_pointers
+          WHERE topic_pointers.user_id = legacy_pointers.user_id
+            AND topic_pointers.creative_id = legacy_pointers.creative_id
+            AND topic_pointers.topic_id IS NOT NULL
+        ), 0)
+    SQL
   end
 end

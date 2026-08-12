@@ -3,38 +3,44 @@ module Collavre
     KEY_PREFIX = "comment_presence:"
     TOPIC_KEY_PREFIX = "comment_presence_topic:"
     SUBSCRIPTIONS_KEY_PREFIX = "comment_presence_subscriptions:"
+    LOCK_KEY_PREFIX = "comment_presence_lock:"
     ALL_TOPICS = "all"
     LEGACY_SUBSCRIPTION_ID = "legacy"
+    LOCK_TTL = 2.seconds
 
     def self.add(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
-      subscriptions = subscription_ids(creative_id, user_id)
-      unless subscriptions.include?(subscription_id)
-        subscriptions << subscription_id
-        Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions)
-      end
+      with_lock(creative_id) do
+        subscriptions = subscription_ids(creative_id, user_id)
+        unless subscriptions.include?(subscription_id)
+          subscriptions << subscription_id
+          Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions)
+        end
 
-      ids = list(creative_id)
-      unless ids.include?(user_id)
-        ids << user_id
-        Rails.cache.write(key(creative_id), ids)
+        ids = list(creative_id)
+        unless ids.include?(user_id)
+          ids << user_id
+          Rails.cache.write(key(creative_id), ids)
+        end
+        ids
       end
-      ids
     end
 
     def self.remove(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
-      subscriptions = subscription_ids(creative_id, user_id)
-      subscriptions.delete(subscription_id)
-      Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions) if subscriptions.any?
-      Rails.cache.delete(subscriptions_key(creative_id, user_id)) if subscriptions.empty?
-      Rails.cache.delete(topic_key(creative_id, user_id, subscription_id))
+      with_lock(creative_id) do
+        subscriptions = subscription_ids(creative_id, user_id)
+        subscriptions.delete(subscription_id)
+        Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions) if subscriptions.any?
+        Rails.cache.delete(subscriptions_key(creative_id, user_id)) if subscriptions.empty?
+        Rails.cache.delete(topic_key(creative_id, user_id, subscription_id))
 
-      return list(creative_id) if subscriptions.any?
+        next list(creative_id) if subscriptions.any?
 
-      ids = list(creative_id)
-      if ids.delete(user_id)
-        Rails.cache.write(key(creative_id), ids)
+        ids = list(creative_id)
+        if ids.delete(user_id)
+          Rails.cache.write(key(creative_id), ids)
+        end
+        ids
       end
-      ids
     end
 
     def self.set_topic(creative_id, user_id, topic_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
@@ -120,8 +126,26 @@ module Collavre
       "#{SUBSCRIPTIONS_KEY_PREFIX}#{creative_id}:#{user_id}"
     end
 
+    def self.lock_key(creative_id)
+      "#{LOCK_KEY_PREFIX}#{creative_id}"
+    end
+
     def self.subscription_ids(creative_id, user_id)
       Rails.cache.read(subscriptions_key(creative_id, user_id)) || []
+    end
+
+    # Membership changes update two cache entries, so serialize them across
+    # Action Cable processes. The expiring lock recovers automatically if a
+    # process dies while holding it.
+    def self.with_lock(creative_id, &block)
+      key = lock_key(creative_id)
+      until Rails.cache.write(key, true, unless_exist: true, expires_in: LOCK_TTL)
+        sleep(0.05)
+      end
+
+      block.call
+    ensure
+      Rails.cache.delete(key) if key
     end
   end
 end
