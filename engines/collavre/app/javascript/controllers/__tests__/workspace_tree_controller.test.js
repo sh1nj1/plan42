@@ -327,6 +327,8 @@ describe('WorkspaceTreeController', () => {
   test('closes an open drawer when the user clicks outside it', () => {
     const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
     const treeRegion = panelToggle.closest('section')
+    const panelClosed = jest.fn()
+    treeRegion.addEventListener('workspace-tree:panel-closed', panelClosed)
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 })
     panelToggle.click()
 
@@ -334,6 +336,7 @@ describe('WorkspaceTreeController', () => {
 
     expect(treeRegion.classList.contains('is-open')).toBe(false)
     expect(panelToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(panelClosed).toHaveBeenCalledTimes(1)
   })
 
   test('keeps the tree open after an outside click at three-panel width', () => {

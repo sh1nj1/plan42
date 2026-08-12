@@ -248,11 +248,18 @@ export default class extends Controller {
   togglePanel() {
     const open = this.element.classList.toggle('is-open')
     this.panelToggleTarget.setAttribute('aria-expanded', String(open))
+    if (!open) this.announcePanelClosed()
   }
 
   closePanel() {
+    const wasOpen = this.element.classList.contains('is-open')
     this.element.classList.remove('is-open')
     this.panelToggleTarget.setAttribute('aria-expanded', 'false')
+    if (wasOpen) this.announcePanelClosed()
+  }
+
+  announcePanelClosed() {
+    this.element.dispatchEvent(new CustomEvent('workspace-tree:panel-closed', { bubbles: true }))
   }
 
   handleOutsidePanelClick(event) {

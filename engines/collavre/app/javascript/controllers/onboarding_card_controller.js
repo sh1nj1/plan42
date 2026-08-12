@@ -1,6 +1,8 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../lib/api/csrf_fetch'
 
+const WORKSPACE_TREE_DISMISSED_KEY = 'collavre:onboarding:workspace-tree-dismissed'
+
 // A read-only runner: it highlights an anchored UI element but never invokes a
 // write. Domain actions advance only after their server-side controller succeeds.
 export default class extends Controller {
@@ -11,8 +13,10 @@ export default class extends Controller {
     this.refreshGeneration = 0
     this.refreshPromise = null
     this.refreshPending = false
-    this.workspaceTreeGuided = false
     this.refresh = this.refresh.bind(this)
+    this.handleWorkspaceTreeClosed = this.handleWorkspaceTreeClosed.bind(this)
+    this.workspaceTreeDismissed = this.workspaceTreeWasDismissed()
+    document.addEventListener('workspace-tree:panel-closed', this.handleWorkspaceTreeClosed)
     this.refresh()
     this.timer = window.setInterval(this.refresh, 1200)
   }
@@ -21,6 +25,7 @@ export default class extends Controller {
     this.refreshGeneration += 1
     this.refreshPending = false
     if (this.timer) window.clearInterval(this.timer)
+    document.removeEventListener('workspace-tree:panel-closed', this.handleWorkspaceTreeClosed)
     document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
   }
 
@@ -111,12 +116,20 @@ export default class extends Controller {
 
   openWorkspaceTree() {
     const panel = document.querySelector('[data-controller~="workspace-tree"]')
-    if (!panel || this.workspaceTreeGuided) return
+    if (!panel || this.workspaceTreeDismissed) return
 
-    this.workspaceTreeGuided = true
     if (panel.classList.contains('is-open')) return
 
     panel.classList.add('is-open')
     panel.querySelector('[data-workspace-tree-target~="panelToggle"]')?.setAttribute('aria-expanded', 'true')
+  }
+
+  handleWorkspaceTreeClosed() {
+    this.workspaceTreeDismissed = true
+    window.sessionStorage.setItem(WORKSPACE_TREE_DISMISSED_KEY, 'true')
+  }
+
+  workspaceTreeWasDismissed() {
+    return window.sessionStorage.getItem(WORKSPACE_TREE_DISMISSED_KEY) === 'true'
   }
 }

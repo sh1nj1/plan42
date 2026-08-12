@@ -15,6 +15,7 @@ describe('OnboardingCardController', () => {
   let state
 
   beforeEach(async () => {
+    window.sessionStorage.clear()
     state = {
       current_step: 'welcome',
       instruction: 'Select the practice Creative.',
@@ -40,6 +41,7 @@ describe('OnboardingCardController', () => {
   afterEach(() => {
     application.stop()
     document.body.innerHTML = ''
+    window.sessionStorage.clear()
     delete global.fetch
     delete window.Turbo
     jest.restoreAllMocks()
@@ -125,7 +127,7 @@ describe('OnboardingCardController', () => {
     expect(panel.querySelector('button').getAttribute('aria-expanded')).toBe('true')
   })
 
-  test('does not reopen the workspace tree drawer after the learner closes it', async () => {
+  test('does not reopen the workspace tree drawer after the learner closes it across card reconnects', async () => {
     document.body.insertAdjacentHTML('beforeend', `
 <section class="creative-workspace-tree-region" data-controller="workspace-tree">
   <button data-workspace-tree-target="panelToggle" aria-expanded="false"></button>
@@ -138,8 +140,11 @@ describe('OnboardingCardController', () => {
     const toggle = panel.querySelector('button')
     panel.classList.remove('is-open')
     toggle.setAttribute('aria-expanded', 'false')
+    panel.dispatchEvent(new CustomEvent('workspace-tree:panel-closed', { bubbles: true }))
 
-    await controller.refresh()
+    controller.disconnect()
+    controller.connect()
+    await flush()
 
     expect(panel.classList.contains('is-open')).toBe(false)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
