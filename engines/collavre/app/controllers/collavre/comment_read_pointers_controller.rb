@@ -1,5 +1,6 @@
 module Collavre
   class CommentReadPointersController < ApplicationController
+    LEGACY_TOPIC_WATERMARK_KEY = "_legacy"
     def update
       creative = Creative.find(params[:creative_id]).effective_origin
       topic = params[:topic_id].present? && creative.topics.find_by(id: params[:topic_id])
@@ -30,6 +31,7 @@ module Collavre
     def update_all_topic_pointers(creative, rendered_topic_ids, rendered_topic_watermarks)
       visible_comments = creative.comments.visible_to(Current.user)
       raw_topic_watermarks = rendered_topic_watermarks.respond_to?(:to_unsafe_h) ? rendered_topic_watermarks.to_unsafe_h : rendered_topic_watermarks.to_h
+      legacy_watermark = raw_topic_watermarks[LEGACY_TOPIC_WATERMARK_KEY].to_i
       topic_watermarks = raw_topic_watermarks.filter_map do |topic_id, comment_id|
         [ topic_id.to_i, comment_id.to_i ] if topic_id.to_i.positive? && comment_id.to_i.positive?
       end.to_h
@@ -39,8 +41,10 @@ module Collavre
           last_id = visible_comments.where(topic: topic).where("comments.id <= ?", topic_watermarks.fetch(topic.id)).maximum(:id)
           update_pointer(creative, topic, last_id)
         end
-        return
       end
+
+      update_legacy_pointer(creative, visible_comments, legacy_watermark) if legacy_watermark.positive?
+      return if topic_watermarks.any? || legacy_watermark.positive?
 
       # Current clients send the active-topic snapshot that produced the open
       # All Messages list. Keep the active-topic fallback for clients deployed
@@ -72,6 +76,11 @@ module Collavre
 
       broadcast_read_receipts(creative, previous_last_read_id, topic: topic) if previous_last_read_id && previous_last_read_id != updated_last_read_id
       broadcast_read_receipts(creative, updated_last_read_id, topic: topic)
+    end
+
+    def update_legacy_pointer(creative, visible_comments, watermark)
+      last_id = visible_comments.where(topic_id: nil).where("comments.id <= ?", watermark).maximum(:id)
+      update_pointer(creative, nil, last_id)
     end
 
     def broadcast_read_receipts(creative, comment_id, topic:)

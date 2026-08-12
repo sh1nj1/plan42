@@ -123,6 +123,20 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal newer.id, pointer.last_read_comment_id
   end
 
+  test "All Messages records a bounded legacy topic-less read" do
+    legacy = Comment.create!(creative: @creative, user: users(:two), content: "legacy")
+    legacy.update_column(:topic_id, nil)
+
+    post "/comment_read_pointers/update", params: {
+      creative_id: @creative.id,
+      topic_watermarks: { "_legacy" => legacy.id }
+    }, as: :json
+
+    assert_response :success
+    pointer = CommentReadPointer.find_by!(user: @user, creative: @creative.effective_origin, topic: nil)
+    assert_equal legacy.id, pointer.last_read_comment_id
+  end
+
   test "rejects a topic from another creative" do
     foreign_topic = Creative.create!(user: @user, description: "Foreign").main_topic
 

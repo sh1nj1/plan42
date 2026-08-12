@@ -34,13 +34,14 @@ module Collavre
       if target_creative_id.present?
         target_creative = Creative.find_by(id: target_creative_id)
         raise MoveError, I18n.t("collavre.comments.move_invalid_target") unless target_creative
-        [ target_creative.effective_origin, nil ]
+        target_origin = target_creative.effective_origin
+        [ target_origin, target_origin.main_topic.id ]
       elsif !target_topic_id.nil?
         new_topic_id = target_topic_id.presence
         if new_topic_id.present? && !creative.topics.exists?(id: new_topic_id)
           raise MoveError, I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic")
         end
-        [ creative, new_topic_id ]
+        [ creative, new_topic_id || creative.main_topic.id ]
       else
         raise MoveError, I18n.t("collavre.comments.move_invalid_target")
       end
@@ -68,6 +69,7 @@ module Collavre
           next if same_creative && same_topic
 
           if same_creative
+            preserve_unread_state_for_topic_move(comment, new_topic_id)
             comment.update!(topic_id: new_topic_id)
           else
             comment.update!(creative: target_origin, topic_id: new_topic_id)
@@ -77,6 +79,27 @@ module Collavre
         end
       end
       moved_count
+    end
+
+    # A topic watermark is an ordered cursor, so a comment moved into a topic
+    # whose cursor is already beyond its id would otherwise become read without
+    # the recipient seeing it. Lower only affected recipients' destination
+    # cursor to just before the moved comment; this is deliberately
+    # conservative and may re-show later destination comments as unread.
+    def preserve_unread_state_for_topic_move(comment, destination_topic_id)
+      source_topic_id = comment.topic_id
+      CommentReadPointer.where(creative: creative).distinct.pluck(:user_id).each do |user_id|
+        pointers = CommentReadPointer.where(user_id: user_id, creative: creative)
+                                    .index_by(&:topic_id)
+        source_watermark = pointers[source_topic_id]&.last_read_comment_id || pointers[nil]&.last_read_comment_id || 0
+        destination_watermark = pointers[destination_topic_id]&.last_read_comment_id || pointers[nil]&.last_read_comment_id || 0
+        next unless source_watermark < comment.id && destination_watermark >= comment.id
+
+        destination_pointer = pointers[destination_topic_id] || CommentReadPointer.find_or_create_by!(
+          user_id: user_id, creative: creative, topic_id: destination_topic_id
+        )
+        destination_pointer.update!(last_read_comment_id: comment.id - 1)
+      end
     end
 
     def broadcast_move_removal(comment, original_creative)

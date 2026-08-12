@@ -1,5 +1,6 @@
 module Collavre
   class CommentsController < ApplicationController
+    LEGACY_TOPIC_WATERMARK_KEY = "_legacy"
     include Collavre::Comments::CommentScoping
     include Collavre::Comments::ApprovalActions
     include Collavre::Comments::Conversion
@@ -128,7 +129,12 @@ module Collavre
         # consume comments that were hidden after that transition.
         rendered_topic_watermarks = @comments.group_by(&:topic_id)
                                              .transform_values { |comments| comments.map(&:id).max }
-        response.headers["X-Rendered-Topic-Ids"] = rendered_topic_watermarks.keys.sort.join(",")
+        legacy_watermark = rendered_topic_watermarks.delete(nil)
+        # Older moved comments may still have no topic. Keep their legacy lane
+        # explicit rather than sorting nil with numeric topic ids or dropping
+        # their read bound from the All Messages response.
+        rendered_topic_watermarks[LEGACY_TOPIC_WATERMARK_KEY] = legacy_watermark if legacy_watermark
+        response.headers["X-Rendered-Topic-Ids"] = rendered_topic_watermarks.keys.grep(Integer).sort.join(",")
         response.headers["X-Rendered-Topic-Watermarks"] = rendered_topic_watermarks.to_json
       end
 

@@ -736,6 +736,23 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
+  test "All Messages serializes legacy topic-less comments without sorting nil topic ids" do
+    creative = Creative.create!(user: @user, description: "Legacy Main snapshot", sequence: 9_913)
+    topic = creative.topics.create!(name: "Topic", user: @user)
+    legacy_comment = Comment.create!(creative: creative, user: users(:two), content: "legacy")
+    legacy_comment.update_column(:topic_id, nil)
+    topic_comment = Comment.create!(creative: creative, topic: topic, user: users(:two), content: "topic")
+
+    get creative_comments_path(creative)
+
+    assert_response :success
+    assert_equal topic.id.to_s, response.headers["X-Rendered-Topic-Ids"]
+    assert_equal(
+      { "_legacy" => legacy_comment.id, topic.id.to_s => topic_comment.id },
+      JSON.parse(response.headers["X-Rendered-Topic-Watermarks"])
+    )
+  end
+
   test "topic view hides topic links and filters comments" do
     topic = @creative.topics.create!(name: "Design", user: @user)
     other_comment = @creative.comments.create!(content: "Main lane comment", user: @user)
