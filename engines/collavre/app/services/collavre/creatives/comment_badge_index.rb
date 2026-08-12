@@ -150,21 +150,64 @@ module Creatives
       def private_counts_for_users(origin, user_ids, last_read_ids)
         visible_counts = Hash.new(0)
         unread_counts = Hash.new(0)
-        user_id_set = user_ids.to_set
 
-        origin.comments.where(private: true)
-          .where("comments.user_id IN (:user_ids) OR comments.approver_id IN (:user_ids)", user_ids: user_ids)
-          .pluck(:id, :user_id, :approver_id)
-          .each do |comment_id, author_id, approver_id|
-            [ author_id, approver_id ].compact.uniq.each do |user_id|
-              next unless user_id_set.include?(user_id)
+        # Keep the history in the database: comment badge fanout happens for
+        # every create and destroy, so plucking every private comment turns a
+        # long conversation into proportional Ruby memory and bandwidth. The
+        # two recipient columns need separate grouped counts. Subtract their
+        # overlap so a comment authored and approved by the same user counts
+        # once, just like Comment.visible_to(user).
+        origin.comments.where(private: true).then do |private_comments|
+          user_ids.each_slice(QUERY_BATCH_SIZE) do |user_id_batch|
+            add_counts!(visible_counts, private_counts_by_recipient(private_comments, :user_id, user_id_batch))
+            add_counts!(visible_counts, private_counts_by_recipient(private_comments, :approver_id, user_id_batch))
+            subtract_counts!(visible_counts, private_counts_for_same_recipient(private_comments, user_id_batch))
 
-              visible_counts[user_id] += 1
-              unread_counts[user_id] += 1 if comment_id > last_read_ids.fetch(user_id, 0)
-            end
+            add_counts!(unread_counts, unread_private_counts_by_recipient(private_comments, :user_id, user_id_batch, last_read_ids))
+            add_counts!(unread_counts, unread_private_counts_by_recipient(private_comments, :approver_id, user_id_batch, last_read_ids))
+            subtract_counts!(unread_counts, unread_private_counts_by_recipient(private_comments, :user_id, user_id_batch, last_read_ids, same_recipient: true))
           end
+        end
 
         [ visible_counts, unread_counts ]
+      end
+
+      def private_counts_by_recipient(comments, recipient_column, user_ids)
+        comments.where(recipient_column => user_ids).group(recipient_column).count
+      end
+
+      def private_counts_for_same_recipient(comments, user_ids)
+        comment_table = Comment.arel_table
+
+        comments.where(user_id: user_ids, approver_id: user_ids)
+          .where(comment_table[:user_id].eq(comment_table[:approver_id]))
+          .group(:user_id)
+          .count
+      end
+
+      # A per-recipient CASE keeps each user's watermark in SQL while the
+      # grouped result remains one count per recipient. Batching also keeps the
+      # CASE expression beneath SQLite's bind-variable and expression limits.
+      def unread_private_counts_by_recipient(comments, recipient_column, user_ids, last_read_ids, same_recipient: false)
+        comment_table = Comment.arel_table
+        recipient = comment_table[recipient_column]
+        watermark = user_ids.reduce(Arel::Nodes::Case.new(recipient)) do |case_expression, user_id|
+          case_expression.when(user_id).then(last_read_ids.fetch(user_id, 0))
+        end
+
+        scope = comments.where(recipient_column => user_ids)
+          .where(comment_table[:id].gt(watermark))
+        scope = scope.where(comment_table[:user_id].eq(comment_table[:approver_id])) if same_recipient
+
+        scope.group(recipient_column).count
+      end
+
+      def add_counts!(target, counts)
+        counts.each { |user_id, count| target[user_id] += count }
+      end
+
+      def subtract_counts!(target, counts)
+        counts.each { |user_id, count| target[user_id] -= count }
       end
     end
   end

@@ -109,6 +109,24 @@ module Creatives
       assert_not_nil @index.unread_count_for(origins.last)
     end
 
+    test "batch counts private comments per recipient and watermark without double counting self-approved comments" do
+      creative = Creative.create!(user: @user, description: "Private batch counts", sequence: 912)
+      viewer = User.create!(email: "badge-viewer@example.com", password: TEST_PASSWORD, name: "Badge Viewer")
+      first = Comment.create!(creative: creative, user: @user, content: "owner private", private: true)
+      shared = Comment.create!(creative: creative, user: @user, approver: viewer, content: "shared private", private: true)
+      Comment.create!(creative: creative, user: viewer, approver: viewer, content: "self-approved private", private: true)
+
+      CommentReadPointer.create!(user: @user, creative: creative, last_read_comment_id: first.id)
+      CommentReadPointer.create!(user: viewer, creative: creative, last_read_comment_id: shared.id)
+
+      badges = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user, viewer ])
+
+      assert_equal 1, badges.fetch(@user.id).unread_count
+      assert badges.fetch(@user.id).visible_comments
+      assert_equal 1, badges.fetch(viewer.id).unread_count
+      assert badges.fetch(viewer.id).visible_comments
+    end
+
     # nil, not 0 — the caller has to be able to tell "not batched" from "nothing
     # unread", or an un-indexed node would quietly render an empty badge.
     test "an unindexed creative reports nil" do
