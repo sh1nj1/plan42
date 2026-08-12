@@ -198,6 +198,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
   end
 
+  test "gemspec detector tracks specification receiver aliases assigned under conditionals" do
+    source = <<~RUBY
+      Gem::Specification.new do |gemspec|
+        target = gemspec if Gem.win_platform?
+        target.add_dependency "collavre_windows" if Gem.win_platform?
+      end
+    RUBY
+
+    assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
+  end
+
   test "gemspec detector does not carry a receiver alias into a shadowing block" do
     source = <<~RUBY
       Gem::Specification.new do |gemspec|
@@ -2839,9 +2850,27 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # Gem specifications commonly use a shorter local name. Follow only direct
   # assignments so an arbitrary expression is never mistaken for the spec.
   def gemspec_receivers_after(statement, receivers)
-    return receivers unless statement.is_a?(Prism::LocalVariableWriteNode)
+    case statement
+    when Prism::LocalVariableWriteNode
+      gemspec_spec_receiver?(statement.value, receivers) ? receivers | [ statement.name ] : receivers - [ statement.name ]
+    when Prism::IfNode
+      conditional_receiver_states(statement, receivers).reduce(:|)
+    else
+      receivers
+    end
+  end
 
-    gemspec_spec_receiver?(statement.value, receivers) ? receivers | [ statement.name ] : receivers - [ statement.name ]
+  def conditional_receiver_states(statement, receivers)
+    states = [ receivers ]
+    states << gemspec_receivers_after_statements(statement.statements, receivers)
+    states << gemspec_receivers_after(statement.subsequent, receivers) if statement.subsequent
+    states
+  end
+
+  def gemspec_receivers_after_statements(statements, receivers)
+    statements&.body&.reduce(receivers) do |current_receivers, child|
+      gemspec_receivers_after(child, current_receivers)
+    end || receivers
   end
 
   def gemspec_dependency_call?(node, gemspec_receivers)
