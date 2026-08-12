@@ -46,9 +46,9 @@ module Collavre
     after_destroy :touch_creative_subtree
 
     after_commit :dispatch_share_cache_invalidation, on: [ :create, :update ]
-    after_create :reconcile_stranded_topic_read_pointers
-    after_update :reconcile_stranded_topic_read_pointers, if: :access_granted?
-    after_destroy :reconcile_stranded_topic_read_pointers
+    after_create :reconcile_topic_read_pointers_for_permission_change
+    after_update :reconcile_topic_read_pointers_for_permission_change, if: :permission_context_changed?
+    after_destroy :reconcile_topic_read_pointers_for_permission_change
     after_commit :broadcast_share_change, on: [ :create, :update ]
     after_destroy_commit :remove_cache
     after_destroy_commit :broadcast_share_destroy
@@ -213,28 +213,51 @@ module Collavre
       )
     end
 
-    # A topic can be moved before one of its source readers is shared on the
-    # destination. The move deliberately leaves that reader's pointer on the
-    # source to avoid exposing it there. Once access is granted (including when
-    # a no_access override is removed), restore the pointer to the topic's
-    # current creative so its read history follows it.
-    def reconcile_stranded_topic_read_pointers
-      destination = creative.effective_origin
-      return unless destination.all_shared_users(:read).any? { |share| share.user_id == user_id }
+    # A topic can move before one of its readers has access to the destination.
+    # Its pointer remains at the source to avoid exposing a read receipt there.
+    # Reconcile every topic in the changed creative's subtree after a share
+    # mutation: a direct, inherited, or public grant restores stranded pointers;
+    # revoking access removes destination pointers so their receipts cannot leak.
+    #
+    # Permission caches are refreshed asynchronously, so this resolves the
+    # persisted share hierarchy directly rather than consulting has_permission?.
+    def reconcile_topic_read_pointers_for_permission_change
+      destination_ids = creative.effective_origin.self_and_descendants.pluck(:id)
+      access_by_destination_and_user = {}
 
       CommentReadPointer.joins(:topic)
-        .where(user_id: user_id, topics: { creative_id: destination.id })
-        .where.not(creative_id: destination.id)
+        .where(topics: { creative_id: destination_ids })
+        .includes(:topic, :user)
         .find_each do |pointer|
-          pointer.update_column(:creative_id, destination.id)
+          destination = pointer.topic.creative
+          access_key = [ destination.id, pointer.user_id ]
+          has_access = access_by_destination_and_user.fetch(access_key) do
+            access_by_destination_and_user[access_key] = read_access_from_shares?(destination, pointer.user)
+          end
+
+          if has_access
+            pointer.update_column(:creative_id, destination.id) unless pointer.creative_id == destination.id
+          elsif pointer.creative_id == destination.id
+            pointer.delete
+          end
         end
     end
 
-    def access_granted?
-      return false unless user_id && permission_allows_access?(permission)
+    def read_access_from_shares?(destination, reader)
+      return false unless reader
+      return true if destination.user_id == reader.id
 
-      previously_new_record? || saved_change_to_user_id? ||
-        (saved_change_to_permission? && !permission_allows_access?(permission_before_last_save))
+      ancestor_ids = [ destination.id ] + destination.ancestors.pluck(:id)
+      shares = CreativeShare.where(creative_id: ancestor_ids, user_id: [ reader.id, nil ]).to_a
+      personal_share = CreativeShare.closest_parent_share(ancestor_ids, shares.select { |share| share.user_id == reader.id })
+      public_share = CreativeShare.closest_parent_share(ancestor_ids, shares.select { |share| share.user_id.nil? })
+      effective_share = personal_share || public_share
+
+      effective_share && CreativeShare.permissions.fetch(effective_share.permission) >= CreativeShare.permissions.fetch("read")
+    end
+
+    def permission_context_changed?
+      saved_change_to_permission? || saved_change_to_user_id? || saved_change_to_creative_id?
     end
 
     def permission_allows_access?(value)
