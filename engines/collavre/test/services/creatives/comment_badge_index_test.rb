@@ -11,18 +11,18 @@ module Creatives
       @index = Collavre::Creatives::CommentBadgeIndex.new(user: @user)
     end
 
-    test "counts only public comments newer than the read watermark" do
+    test "counts only visible comments newer than the read watermark" do
       creative = Creative.create!(user: @user, description: "Watermarked", sequence: 900)
       first = comment_on(creative, "one")
       comment_on(creative, "two")
       comment_on(creative, "three")
-      comment_on(creative, "private", private: true)
+      Comment.create!(creative: creative, user: @user, content: "private", private: true)
 
       CommentReadPointer.create!(user: @user, creative: creative, last_read_comment_id: first.id)
 
       @index.index([ creative.reload ])
 
-      assert_equal 2, @index.unread_count_for(creative), "two public comments follow the watermark; the private one never counts"
+      assert_equal 3, @index.unread_count_for(creative), "two public comments and the user's private comment follow the watermark"
     end
 
     test "without a read pointer every comment is unread" do
@@ -33,6 +33,36 @@ module Creatives
       @index.index([ creative.reload ])
 
       assert_equal 2, @index.unread_count_for(creative)
+    end
+
+    test "does not count another user's private comments" do
+      creative = Creative.create!(user: @user, description: "Private visibility", sequence: 910)
+      comment_on(creative, "public")
+      comment_on(creative, "private", private: true)
+
+      @index.index([ creative.reload ])
+
+      assert_equal 1, @index.unread_count_for(creative)
+      assert @index.visible_comments?(creative)
+    end
+
+    test "each user gets their own private visibility" do
+      creative = Creative.create!(user: @user, description: "Batch visibility", sequence: 911)
+      shared_user = User.create!(email: "badge-shared@example.com", password: TEST_PASSWORD, name: "Badge Shared")
+      CreativeShare.create!(creative: creative, user: shared_user, shared_by: @user, permission: :feedback)
+      comment_on(creative, "public")
+      Comment.create!(creative: creative, user: @user, content: "owner private", private: true)
+      Comment.create!(creative: creative, user: shared_user, content: "shared private", private: true)
+
+      owner_index = Collavre::Creatives::CommentBadgeIndex.new(user: @user)
+      shared_index = Collavre::Creatives::CommentBadgeIndex.new(user: shared_user)
+      owner_index.index([ creative ])
+      shared_index.index([ creative ])
+
+      assert_equal 2, owner_index.unread_count_for(creative)
+      assert_equal 2, shared_index.unread_count_for(creative)
+      assert owner_index.visible_comments?(creative)
+      assert shared_index.visible_comments?(creative)
     end
 
     test "a watermark at the newest comment leaves nothing unread" do
