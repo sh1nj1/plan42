@@ -1524,6 +1524,21 @@ body.chat-fullscreen {
     border-color: var(--color-secondary-active);
 }
 
+.topic-unread-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.3em;
+    height: 1.3em;
+    padding: 0 0.35em;
+    border-radius: 999px;
+    background: var(--color-danger);
+    color: var(--color-badge-text);
+    font-size: 0.75em;
+    font-weight: bold;
+    line-height: 1;
+}
+
 .topic-tag.has-new-messages {
     position: relative;
     border-color: var(--color-active);

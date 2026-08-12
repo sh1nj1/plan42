@@ -15,6 +15,22 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  test "index includes unread counts for active and archived topics" do
+    archived_topic = @creative.topics.create!(name: "Archived", user: @user)
+    archived_topic.archive!
+    read_comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: users(:two), content: "read")
+    Collavre::Comment.create!(creative: @creative, topic: @topic, user: users(:two), content: "active unread")
+    Collavre::Comment.create!(creative: @creative, topic: archived_topic, user: users(:two), content: "archived unread")
+    Collavre::CommentReadPointer.create!(user: @user, creative: @creative, last_read_comment_id: read_comment.id)
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal 1, json["topics"].find { |topic| topic["id"] == @topic.id }["unread_count"]
+    assert_equal 1, json["archived_topics"].find { |topic| topic["id"] == archived_topic.id }["unread_count"]
+  end
+
   test "index returns effective_creative_id for linked creative (origin id)" do
     linked = Collavre::Creative.create!(user: @user, description: "linked wrapper", origin: @creative)
     get collavre.creative_topics_url(linked), as: :json

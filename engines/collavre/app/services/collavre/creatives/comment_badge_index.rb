@@ -77,6 +77,21 @@ module Creatives
       @visible_by_origin_id[origin.id].to_i.positive?
     end
 
+    # The topic strip needs the same display-ready unread state as the creative
+    # badge, split by topic. The read pointer remains creative-wide for now, so
+    # opening any topic clears every topic count together.
+    def unread_counts_by_topic(origin)
+      return {} if user && CommentPresenceStore.list(origin.id).include?(user.id)
+
+      last_read_id = CommentReadPointer.where(user: user, creative: origin)
+        .pick(:last_read_comment_id).to_i
+
+      visible_comments.where(creative: origin)
+        .where(Comment.arel_table[:id].gt(last_read_id))
+        .group(:topic_id)
+        .count
+    end
+
     private
 
     attr_reader :user
