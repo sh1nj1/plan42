@@ -234,8 +234,10 @@ module ComplexityRatchet
         .merge(fallback_sibling_populations) { |_path, scopes, statements| scopes + statements }
     end
 
-    # A block call prefix distinguishes replacements that keep the same key.
-    def sibling_anchors = @sibling_anchors.select { |path, _| path.include?("[block:") }
+    # Anchors distinguish replacements that keep the same ordinalised key.
+    # Unique blocks keep theirs too, because a changed call can otherwise
+    # replace the block while retaining its unsuffixed identity.
+    def sibling_anchors = @sibling_anchors.select { |path, _| path.include?("[block:") || @occurrences[path] > 1 }
 
     private
 

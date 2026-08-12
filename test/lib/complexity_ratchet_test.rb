@@ -170,6 +170,26 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  test "keeps lambda anchors for sibling verification" do
+    source = <<~RUBY
+      class Sample
+        HANDLERS = [
+          -> do
+            first
+          end,
+          -> do
+            second
+          end
+        ]
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample[lambda]" => [ "[lambda]", "[lambda]" ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   test "keeps the anchor of a uniquely named block" do
     source = <<~RUBY
       class Sample
@@ -1004,6 +1024,44 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
 
     assert_equal :baseline_sibling_shift, problem.kind
     assert_equal SIB, problem.key
+    assert_includes problem.message, "indistinguishable anchors"
+  end
+
+  test "rejects changed allowances for same-count lambda siblings" do
+    before_source = <<~RUBY
+      class Sample
+        HANDLERS = [
+          -> do
+            first
+          end,
+          -> do
+            second
+          end
+        ]
+      end
+    RUBY
+    after_source = <<~RUBY
+      class Sample
+        HANDLERS = [
+          -> do
+            second
+          end,
+          -> do
+            first
+          end
+        ]
+      end
+    RUBY
+    first = "a.rb | Metrics/BlockLength | Sample[lambda]"
+    second = "a.rb | Metrics/BlockLength | Sample[lambda](2)"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { first => 90, second => 80 }, { first => 85, second => 75 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
     assert_includes problem.message, "indistinguishable anchors"
   end
 

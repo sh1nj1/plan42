@@ -475,6 +475,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       js_imports_in(%(<div>{ready && <code>{import("#{satellite}/thing")}</code>}</div>), jsx: true)
   end
 
+  test "detector masks JSX children in components named with valid identifier starts" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(<_Code>import "#{satellite}/thing"</_Code>), jsx: true)
+    assert_empty js_imports_in(%(<$Code>import "#{satellite}/thing"</$Code>), jsx: true)
+  end
+
   test "detector scans module syntax after JSX tag delimiters" do
     satellite = SATELLITES.first
 
@@ -733,7 +740,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return [ nil, cursor + 2, true, false ] if source[cursor, 3] == "</>"
     return if tsx && tsx_generic_at?(source, cursor)
 
-    match = source[cursor..].match(/\A<\/?([A-Za-z][A-Za-z0-9:._-]*)\b/)
+    match = source[cursor..].match(/\A<\/?([A-Za-z_$][A-Za-z0-9_$:._-]*)\b/)
     return unless match
 
     closing = source[cursor + 1] == "/"
