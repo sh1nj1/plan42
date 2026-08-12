@@ -61,7 +61,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # satellite resolves in this monorepo and breaks a host that installs the
   # core gem on its own. Ruby was the whole scan until now; this is the larger
   # half of what the gemspec packages.
-  JS_FILE = /\.(js|jsx|ts|tsx|mjs|cjs|mts|cts)(?:\.tt)?\z/
+  JS_FILE = /\.(js|jsx|ts|tsx|mjs|cjs|mts|cts)(?:\.(?:erb|tt))*\z/
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -479,6 +479,21 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "JavaScript ERB templates retain static imports outside ERB directives" do
+    satellite = SATELLITES.first
+    path = ENGINES_ROOT.join(CORE, "app/javascript/entry.js.erb").to_s
+    source = <<~ERB
+      <% if enabled? %>
+      import Thing from "#{satellite}/thing"
+      <% end %>
+    ERB
+
+    assert javascript_source?(path, source)
+    assert_equal [ "  engines/#{CORE}/app/javascript/entry.js.erb imports \"#{satellite}/thing\" (engines/#{satellite})" ],
+      js_violations_in(path, source)
+    assert_empty js_violations_in(path, %(<%= import("#{satellite}/thing") %>))
+  end
+
   test "Ruby and Rake generator templates are scanned as Ruby sources" do
     %w[initializer.rb.tt task.rake.tt].each do |path|
       assert ruby_source?(path), "#{path} is a shipped Ruby source template"
@@ -792,10 +807,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_violations_in(path, source)
-    extension = File.extname(path.delete_suffix(".tt"))
+    template = path.delete_suffix(".tt").end_with?(".erb")
+    extension = File.extname(path.delete_suffix(".tt").delete_suffix(".erb"))
+    source = javascript_erb_template_source(source) if template
     js_imports_in(source, jsx: %w[.jsx .tsx].include?(extension), tsx: extension == ".tsx").map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
+  end
+
+  # JavaScript outside ERB tags ships as executable source; the tags themselves
+  # are Ruby evaluated at render time. Mask them without shifting line numbers
+  # so imports in the static JavaScript remain visible to the token scanner.
+  def javascript_erb_template_source(source)
+    source.gsub(/<%=?-?.*?-?%>/m) { |directive| directive.gsub(/[^\n]/, " ") }
   end
 
   def ruby_source?(path)
