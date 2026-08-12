@@ -70,26 +70,34 @@ module Collavre
     # inherits only our scheme: the browser resolves the omitted port to that
     # scheme's default, not to the port we happen to be served on, so that is
     # what we compare. Relative paths and same-origin absolute URLs are ours and
-    # stay in the current window. A setting URI.parse rejects is decided by
-    # whether it carries an authority: without one it is a relative path with
-    # something odd in it and stays internal, but with one it is off-site.
-    # Browsers accept hostnames Ruby's parser will not — an internationalized
-    # domain is punycoded and navigated to — so "ours" is the wrong guess there,
-    # and it is the guess that strands the reader.
+    # stay in the current window.
+    #
+    # Wherever Ruby's parser and a browser disagree, the value is treated as
+    # off-site, decided by whether it is written with an authority. Ruby rejects
+    # an internationalized domain that a browser punycodes and navigates to, and
+    # it finds no host in "///docs.example.com/help" where a browser skips the
+    # extra slashes and lands on docs.example.com. "Ours" is the wrong guess in
+    # both, and it is the guess that strands the reader. Something written
+    # without an authority is a relative path, however odd, and stays internal.
+    # The cost is a same-origin URL written with extra slashes opening a tab.
     AUTHORITY_PREFIX = %r{\A(?:[a-z][a-z0-9+.\-]*:)?//}i
 
     def external_link?(url)
       value = url.to_s
+      written_with_authority = value.match?(AUTHORITY_PREFIX)
       uri = URI.parse(value)
-      return false if uri.host.blank?
+      return written_with_authority if uri.host.blank?
 
       scheme = uri.scheme.presence&.downcase || request.scheme
       port = uri.port || URI.scheme_list[scheme.upcase]&.default_port
 
       [ scheme, uri.host.downcase, port ] !=
         [ request.scheme, request.host.downcase, request.port ]
-    rescue URI::InvalidURIError
-      value.match?(AUTHORITY_PREFIX)
+    # URI::InvalidComponentError is a sibling of URI::InvalidURIError, not a
+    # subclass — "mailto://x@y.com" raises it, and letting it escape would take
+    # down every page carrying the navigation.
+    rescue URI::Error
+      written_with_authority
     end
 
     private

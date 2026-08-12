@@ -263,6 +263,34 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
   end
 
+  # Ruby finds no host past the extra slashes; a browser skips them and lands on
+  # docs.example.com.
+  test "help partial opens a configured link with extra leading slashes in a new tab" do
+    SystemSetting.stub(:help_menu_link, "///docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured link with a scheme and extra slashes in a new tab" do
+    SystemSetting.stub(:help_menu_link, "http:///docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # URI::InvalidComponentError is not a URI::InvalidURIError. Letting it escape
+  # would raise on every page that carries the navigation.
+  test "help partial renders a configured link that raises an invalid component error" do
+    SystemSetting.stub(:help_menu_link, "mailto://support@example.com") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
   test "navigation partial renders mobile guest help and sign in buttons" do
     Navigation::Registry.instance.register(
       key: :help,
