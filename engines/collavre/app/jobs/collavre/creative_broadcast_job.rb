@@ -96,7 +96,7 @@ module Collavre
         end
 
         # Per-user can_write permission
-        user_data[:can_write] = creative.has_permission?(target_user, :write)
+        user_data[:can_write] = creative.has_permission?(target_user, :write) && !creative.effective_origin.read_only_source?
 
         # Per-user progress text
         creative.send(:add_progress_text!, user_data, target_user)
@@ -265,7 +265,7 @@ module Collavre
               effective: effective,
               progress: progress,
               has_children: has_children_by_id.include?(effective.id),
-              can_write: writable_by_user.dig(user.id, effective.id)
+              can_write: writable_by_user.dig(user.id, effective.id) && !effective.read_only_source?
             )
           }
         end
@@ -305,7 +305,7 @@ module Collavre
           creative,
           progress || effective.progress || 0,
           has_children: has_children.nil? ? effective.children.exists? : has_children,
-          can_write: can_write.nil? ? creative.has_permission?(user, :write) : can_write
+          can_write: (can_write.nil? ? creative.has_permission?(user, :write) : can_write) && !effective.read_only_source?
         )
       end
     end

@@ -99,6 +99,38 @@ module Collavre
       assert_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
     end
 
+    test "broadcasts read-only-source leaf progress as a non-interactive percentage" do
+      Creative.register_read_only_source("test_read_only_source")
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(
+          user: @owner,
+          parent: @root,
+          description: "Read-only progress leaf",
+          progress: 0,
+          data: { "source" => { "type" => "test_read_only_source" } }
+        )
+      end
+      broadcasts = []
+
+      Turbo::StreamsChannel.stub(:broadcast_action_to, ->(*, **kwargs) { broadcasts << kwargs }) do
+        CreativeBroadcastJob.perform_now(
+          leaf.id,
+          "updated",
+          current_user_id: @owner.id,
+          payload: leaf.broadcast_node_payload
+        )
+      end
+
+      payload = JSON.parse(broadcasts.fetch(0).fetch(:attributes).fetch(:data))
+      assert_equal false, payload.dig("creative", "can_write")
+      assert_includes payload.dig("creative", "progress_control_html"), "0%"
+      refute_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
+
+      html = CreativeBroadcastJob.new.send(:render_progress_html, leaf, @shared_user, skip_permission_check: true)
+      refute_includes html, "data-progress-toggle"
+    end
+
     test "ancestor controls use the effective origin children for linked shells" do
       linked_root = nil
       perform_enqueued_jobs do
