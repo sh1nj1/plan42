@@ -7,44 +7,76 @@ module Collavre
     ALL_TOPICS = "all"
     LEGACY_SUBSCRIPTION_ID = "legacy"
     LOCK_TTL = 2.seconds
+    SUBSCRIPTION_TTL = 90.seconds
 
     def self.add(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
       with_lock(creative_id) do
         subscriptions = subscription_ids(creative_id, user_id)
         unless subscriptions.include?(subscription_id)
           subscriptions << subscription_id
-          Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions)
         end
+        write_subscriptions(creative_id, user_id, subscriptions)
+        renew_subscription(creative_id, user_id, subscription_id)
 
         ids = list(creative_id)
         unless ids.include?(user_id)
           ids << user_id
-          Rails.cache.write(key(creative_id), ids)
         end
+        write_present_user_ids(creative_id, ids)
         ids
       end
     end
 
     def self.remove(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
       with_lock(creative_id) do
+        Rails.cache.delete(subscription_lease_key(creative_id, user_id, subscription_id))
         subscriptions = subscription_ids(creative_id, user_id)
-        subscriptions.delete(subscription_id)
-        Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions) if subscriptions.any?
-        Rails.cache.delete(subscriptions_key(creative_id, user_id)) if subscriptions.empty?
+        subscriptions.any? ? write_subscriptions(creative_id, user_id, subscriptions) : Rails.cache.delete(subscriptions_key(creative_id, user_id))
         Rails.cache.delete(topic_key(creative_id, user_id, subscription_id))
 
         next list(creative_id) if subscriptions.any?
 
         ids = list(creative_id)
         if ids.delete(user_id)
-          Rails.cache.write(key(creative_id), ids)
+          write_present_user_ids(creative_id, ids)
         end
         ids
       end
     end
 
     def self.set_topic(creative_id, user_id, topic_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
-      Rails.cache.write(topic_key(creative_id, user_id, subscription_id), topic_id ? topic_id.to_i : ALL_TOPICS)
+      with_lock(creative_id) do
+        subscriptions = subscription_ids(creative_id, user_id)
+        subscriptions << subscription_id unless subscriptions.include?(subscription_id)
+        write_subscriptions(creative_id, user_id, subscriptions)
+        renew_subscription(creative_id, user_id, subscription_id)
+        Rails.cache.write(
+          topic_key(creative_id, user_id, subscription_id),
+          topic_id ? topic_id.to_i : ALL_TOPICS,
+          expires_in: SUBSCRIPTION_TTL
+        )
+
+        ids = list(creative_id)
+        ids << user_id unless ids.include?(user_id)
+        write_present_user_ids(creative_id, ids)
+      end
+    end
+
+    # Action Cable's disconnect callback is best-effort. Refresh an expiring
+    # subscription lease while the socket remains connected so a crashed process
+    # cannot leave a user suppressing badges indefinitely.
+    def self.renew(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
+      with_lock(creative_id) do
+        return unless stored_subscription_ids(creative_id, user_id).include?(subscription_id)
+
+        subscriptions = subscription_ids(creative_id, user_id)
+        subscriptions << subscription_id unless subscriptions.include?(subscription_id)
+        write_subscriptions(creative_id, user_id, subscriptions)
+        renew_subscription(creative_id, user_id, subscription_id)
+        ids = list(creative_id)
+        ids << user_id unless ids.include?(user_id)
+        write_present_user_ids(creative_id, ids)
+      end
     end
 
     def self.topic_for(creative_id, user_id)
@@ -86,7 +118,7 @@ module Collavre
     end
 
     def self.list(creative_id)
-      Rails.cache.read(key(creative_id)) || []
+      list_many([ creative_id ]).fetch(creative_id)
     end
 
     # Presence for many creatives in one round trip.
@@ -109,8 +141,22 @@ module Collavre
       ids_by_cache_key = ids.index_by { |creative_id| key(creative_id) }
       cached = Rails.cache.read_multi(*ids_by_cache_key.keys)
 
-      ids_by_cache_key.each_with_object({}) do |(cache_key, creative_id), result|
-        result[creative_id] = cached[cache_key] || []
+      user_ids_by_creative_id = ids.to_h { |creative_id| [ creative_id, cached[key(creative_id)] || [] ] }
+      subscription_keys_by_pair = user_ids_by_creative_id.flat_map do |creative_id, user_ids|
+        user_ids.map { |user_id| [ [ creative_id, user_id ], subscriptions_key(creative_id, user_id) ] }
+      end.to_h
+      subscriptions = Rails.cache.read_multi(*subscription_keys_by_pair.values)
+      lease_keys = subscription_keys_by_pair.flat_map do |(creative_id, user_id), subscription_key|
+        Array(subscriptions[subscription_key]).map do |subscription_id|
+          subscription_lease_key(creative_id, user_id, subscription_id)
+        end
+      end
+      leases = Rails.cache.read_multi(*lease_keys)
+
+      user_ids_by_creative_id.each_with_object({}) do |(creative_id, user_ids), result|
+        result[creative_id] = user_ids.select do |user_id|
+          active_subscription_ids_from_cache(creative_id, user_id, subscriptions, leases).any?
+        end
       end
     end
 
@@ -126,12 +172,41 @@ module Collavre
       "#{SUBSCRIPTIONS_KEY_PREFIX}#{creative_id}:#{user_id}"
     end
 
+    def self.subscription_lease_key(creative_id, user_id, subscription_id = LEGACY_SUBSCRIPTION_ID)
+      "#{SUBSCRIPTIONS_KEY_PREFIX}#{creative_id}:#{user_id}:#{subscription_id}:lease"
+    end
+
     def self.lock_key(creative_id)
       "#{LOCK_KEY_PREFIX}#{creative_id}"
     end
 
     def self.subscription_ids(creative_id, user_id)
+      subscription_ids = stored_subscription_ids(creative_id, user_id)
+      lease_keys = subscription_ids.to_h { |subscription_id| [ subscription_id, subscription_lease_key(creative_id, user_id, subscription_id) ] }
+      leases = Rails.cache.read_multi(*lease_keys.values)
+      lease_keys.filter_map { |subscription_id, lease_key| subscription_id if leases[lease_key] }
+    end
+
+    def self.stored_subscription_ids(creative_id, user_id)
       Rails.cache.read(subscriptions_key(creative_id, user_id)) || []
+    end
+
+    def self.write_subscriptions(creative_id, user_id, subscriptions)
+      Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions, expires_in: SUBSCRIPTION_TTL)
+    end
+
+    def self.renew_subscription(creative_id, user_id, subscription_id)
+      Rails.cache.write(subscription_lease_key(creative_id, user_id, subscription_id), true, expires_in: SUBSCRIPTION_TTL)
+    end
+
+    def self.write_present_user_ids(creative_id, ids)
+      Rails.cache.write(key(creative_id), ids, expires_in: SUBSCRIPTION_TTL)
+    end
+
+    def self.active_subscription_ids_from_cache(creative_id, user_id, subscriptions, leases)
+      Array(subscriptions[subscriptions_key(creative_id, user_id)]).filter do |subscription_id|
+        leases[subscription_lease_key(creative_id, user_id, subscription_id)]
+      end
     end
 
     # Membership changes update two cache entries, so serialize them across

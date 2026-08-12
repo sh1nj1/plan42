@@ -272,14 +272,16 @@ export default class extends Controller {
     const minId = this.getMinId()
     if (!minId) return
 
+    const requestContext = this.paginationRequestContext()
     this.loadingOlder = true
 
     // Standard Column: Older messages are at Top.
     // We Prepend them.
     const currentScrollHeight = this.listTarget.scrollHeight
 
-    this.fetchComments({ before_id: minId })
+    this.fetchComments({ before_id: minId }, { pagination: true })
       .then((html) => {
+        if (!this.isCurrentPaginationContext(requestContext)) return
         if (html.trim() === '') {
           this.allOlderLoaded = true
           return
@@ -296,7 +298,7 @@ export default class extends Controller {
 
       })
       .finally(() => {
-        this.loadingOlder = false
+        if (this.isCurrentPaginationContext(requestContext)) this.loadingOlder = false
       })
   }
 
@@ -308,10 +310,12 @@ export default class extends Controller {
       return
     }
 
+    const requestContext = this.paginationRequestContext()
     this.loadingNewer = true
 
-    this.fetchComments({ after_id: maxId })
+    this.fetchComments({ after_id: maxId }, { pagination: true })
       .then((html) => {
+        if (!this.isCurrentPaginationContext(requestContext)) return
         if (html.trim() === '') {
 
           this.allNewerLoaded = true
@@ -324,11 +328,26 @@ export default class extends Controller {
         this.markCommentsRead()
       })
       .finally(() => {
-        this.loadingNewer = false
+        if (this.isCurrentPaginationContext(requestContext)) this.loadingNewer = false
       })
   }
 
-  fetchComments(params = {}, { loadVersion } = {}) {
+  paginationRequestContext() {
+    return {
+      creativeId: this.creativeId,
+      topicId: this.currentTopicId || null,
+      loadVersion: this._loadCommentsVersion,
+    }
+  }
+
+  isCurrentPaginationContext({ creativeId, topicId, loadVersion }) {
+    return this.element.isConnected &&
+      this.creativeId === creativeId &&
+      (this.currentTopicId || null) === topicId &&
+      this._loadCommentsVersion === loadVersion
+  }
+
+  fetchComments(params = {}, { loadVersion, pagination = false } = {}) {
     const urlParams = new URLSearchParams(params)
     if (this.manualSearchQuery) {
       urlParams.set('search', this.manualSearchQuery)
@@ -359,7 +378,7 @@ export default class extends Controller {
       // Only replace this snapshot for a full list load. Pagination requests
       // happen later and may observe a topic-strip archive change without
       // rendering that topic's existing history.
-      if (loadVersion !== undefined && !superseded && !this.currentTopicId && renderedTopicIds !== null) {
+      if (loadVersion !== undefined && !pagination && !superseded && !this.currentTopicId && renderedTopicIds !== null) {
         this.renderedAllTopicIds = renderedTopicIds.split(',').filter(Boolean)
         try {
           this.renderedAllTopicWatermarks = renderedTopicWatermarks ? JSON.parse(renderedTopicWatermarks) : null
@@ -371,7 +390,7 @@ export default class extends Controller {
       // is dropped, so moving currentTopicId (and the strip, and the form) to its
       // answer would leave the surviving load rendering into a selection it never
       // asked for.
-      if (serverTopicId !== null && serverTopicId !== undefined && !superseded) {
+      if (serverTopicId !== null && serverTopicId !== undefined && !pagination && !superseded) {
         // Server says we are in this topic. 
         // If it differs from current, update state.
 

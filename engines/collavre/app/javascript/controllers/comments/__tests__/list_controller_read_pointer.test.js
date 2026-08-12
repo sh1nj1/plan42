@@ -88,6 +88,38 @@ describe('CommentsListController read pointer updates', () => {
     })
   })
 
+  test('discards an older pagination response after switching conversations', async () => {
+    controller.currentTopicId = null
+    controller.renderedAllTopicIds = ['1']
+    controller.renderedAllTopicWatermarks = { 1: 20 }
+    controller.loadingOlder = false
+    controller.allOlderLoaded = false
+    controller._loadCommentsVersion = 4
+    controller.listTarget = document.createElement('div')
+    controller.listTarget.innerHTML = '<div class="comment-item" data-comment-id="20" data-topic-id="1"></div>'
+    Object.defineProperty(controller.listTarget, 'scrollHeight', { value: 100 })
+    controller.listTarget.scrollTop = 0
+    let resolveResponse
+    global.fetch = jest.fn().mockReturnValue(new Promise((resolve) => { resolveResponse = resolve }))
+
+    controller.loadOlderComments()
+    controller.creativeId = '43'
+    controller.currentTopicId = '9'
+    controller._loadCommentsVersion = 5
+    resolveResponse({
+      ok: true,
+      headers: { get: () => null },
+      text: async () => '<div class="comment-item" data-comment-id="10" data-topic-id="1"></div>',
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    await jest.advanceTimersByTimeAsync(2000)
+
+    expect(controller.listTarget.querySelector('[data-comment-id="10"]')).toBeNull()
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 1: 20 })
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
   test('does not reload topic unread counts after a failed read pointer update', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false })
 

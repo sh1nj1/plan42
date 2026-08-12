@@ -10,6 +10,9 @@ module Collavre
         (1..10).each do |user_id|
           Rails.cache.delete(CommentPresenceStore.topic_key(id, user_id))
           Rails.cache.delete(CommentPresenceStore.subscriptions_key(id, user_id))
+          %w[first second all archived orphan].each do |subscription_id|
+            Rails.cache.delete(CommentPresenceStore.subscription_lease_key(id, user_id, subscription_id))
+          end
         end
       end
     end
@@ -79,6 +82,17 @@ module Collavre
       assert_equal [ 12 ], CommentPresenceStore.viewing_topics(9_901, 4)
       CommentPresenceStore.remove(9_901, 4, subscription_id: "first")
       assert_empty CommentPresenceStore.list(9_901)
+    end
+
+    test "does not retain a crashed subscription after its lease expires" do
+      CommentPresenceStore.add(9_901, 4, subscription_id: "orphan")
+      CommentPresenceStore.set_topic(9_901, 4, 12, subscription_id: "orphan")
+
+      Rails.cache.delete(CommentPresenceStore.subscription_lease_key(9_901, 4, "orphan"))
+
+      assert_empty CommentPresenceStore.list(9_901)
+      assert_empty CommentPresenceStore.subscription_ids(9_901, 4)
+      assert_empty CommentPresenceStore.viewing_topics(9_901, 4)
     end
 
     test "fetches topics for all present users in one cache batch" do

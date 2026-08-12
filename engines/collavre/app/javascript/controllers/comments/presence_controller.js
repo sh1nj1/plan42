@@ -7,6 +7,7 @@ import { alertDialog } from '../../lib/utils/dialog'
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
+const PRESENCE_HEARTBEAT_INTERVAL = 30000
 
 // agent_status values that keep a task registered. thinking/streaming are the
 // agent producing output; pending_approval is it paused on a tool approval,
@@ -31,6 +32,7 @@ export default class extends Controller {
     this.streamingHeartbeatTimers = {} // { agentId: timeoutHandle }
     this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
+    this.presenceHeartbeatHandle = null
     this.currentUserId = document.body.dataset.currentUserId
     this.selectedTopicId = null
     this.mainTopicId = null
@@ -261,6 +263,7 @@ export default class extends Controller {
           }
           this.hasPresenceConnected = true
           this.reportViewingTopic()
+          this.startPresenceHeartbeat()
         },
         received: (data) => this.handlePresenceMessage(data),
       },
@@ -268,6 +271,7 @@ export default class extends Controller {
   }
 
   unsubscribe() {
+    this.stopPresenceHeartbeat()
     if (this.presenceSubscription) {
       this.presenceSubscription.unsubscribe()
       this.presenceSubscription = null
@@ -279,6 +283,20 @@ export default class extends Controller {
     if (!this.presenceSubscription) return
 
     this.presenceSubscription.perform('viewing_topic', { topic_id: this.selectedTopicId })
+  }
+
+  startPresenceHeartbeat() {
+    this.stopPresenceHeartbeat()
+    this.presenceHeartbeatHandle = setInterval(() => {
+      this.presenceSubscription?.perform('heartbeat')
+    }, PRESENCE_HEARTBEAT_INTERVAL)
+  }
+
+  stopPresenceHeartbeat() {
+    if (this.presenceHeartbeatHandle) {
+      clearInterval(this.presenceHeartbeatHandle)
+      this.presenceHeartbeatHandle = null
+    }
   }
 
   handlePresenceMessage(data) {

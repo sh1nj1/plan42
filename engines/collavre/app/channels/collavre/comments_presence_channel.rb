@@ -162,6 +162,19 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     Comment.broadcast_badge(Creative.find(@creative_id), current_user)
   end
 
+  # The browser keeps this lease alive while its Action Cable subscription is
+  # healthy. If the process or connection disappears without #unsubscribed,
+  # the lease simply expires and no longer suppresses unread badges.
+  def heartbeat
+    return unless @creative_id && current_user
+
+    CommentPresenceStore.renew(
+      @creative_id,
+      current_user.id,
+      subscription_id: @presence_subscription_id
+    )
+  end
+
   def typing(data)
     return unless @creative_id && current_user
 

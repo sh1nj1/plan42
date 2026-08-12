@@ -188,6 +188,19 @@ describe('CommentsPresenceController', () => {
     expect(perform).toHaveBeenNthCalledWith(2, 'stopped_typing', { topic_id: '45' })
   })
 
+  test('renews the presence lease while the subscription is connected', () => {
+    jest.useFakeTimers()
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+
+    controller.startPresenceHeartbeat()
+    jest.advanceTimersByTime(30000)
+    controller.stopPresenceHeartbeat()
+    jest.useRealTimers()
+
+    expect(perform).toHaveBeenCalledWith('heartbeat')
+  })
+
   test('does not request running agents without a presence subscription', () => {
     controller.selectedTopicId = '45'
 
