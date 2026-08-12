@@ -46,6 +46,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   ].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
+  ASSET_HELPER_METHODS = %w[
+    asset_path asset_url path_to_asset
+    stylesheet_link_tag stylesheet_path stylesheet_url path_to_stylesheet
+    javascript_include_tag javascript_path javascript_url path_to_javascript
+    image_tag image_path image_url path_to_image
+    video_tag video_path video_url path_to_video
+    audio_tag audio_path audio_url path_to_audio
+    font_path font_url path_to_font favicon_link_tag
+  ].freeze
 
   # A satellite class named inside a string is a dependency too — Rails
   # resolves `class_name:`, `constantize` and an STI `type` value to the real
@@ -481,6 +490,27 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ template ], template_paths_in(%(render :"#{template}"))
     assert_equal [ template ], template_paths_in(%(render template: :"#{template}"))
+  end
+
+  test "detector flags satellite paths passed to Rails asset helpers" do
+    satellite = SATELLITES.first
+    path = "#{satellite}/slack_integration"
+
+    %w[stylesheet_link_tag javascript_include_tag image_tag asset_path].each do |helper|
+      assert_equal [ path ], asset_paths_in(%(#{helper} "#{path}")), helper
+    end
+    assert_equal [ path ], asset_paths_in(%(stylesheet_link_tag "collavre_" + "#{satellite.delete_prefix('collavre_')}/slack_integration"))
+    assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
+
+    erb_path = ENGINES_ROOT.join(CORE, "app/views/collavre/example.html.erb")
+    assert_includes ruby_violations_in(erb_path.to_s, erb_template_ruby_source(%(<%= stylesheet_link_tag "#{path}" %>))),
+      "  engines/#{CORE}/app/views/collavre/example.html.erb references asset \"#{path}\" (engines/#{satellite})"
+  end
+
+  test "asset path detector ignores similarly named methods on arbitrary objects" do
+    satellite = SATELLITES.first
+
+    assert_empty asset_paths_in(%(registry.image_tag("#{satellite}/slack_integration")))
   end
 
   test "template detector ignores ordinary rendered data" do
@@ -931,6 +961,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
     } + template_paths_in(source).map { |template|
       "  #{relative(path)} renders template \"#{template}\" (engines/#{satellite_for(template)})"
+    } + asset_paths_in(source).map { |asset|
+      "  #{relative(path)} references asset \"#{asset}\" (engines/#{satellite_for(asset)})"
     }
   end
 
@@ -1841,6 +1873,34 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     render_calls(Prism.parse(source).value).flat_map { |call|
       template_arguments(call).select { |path| satellite_for(path) }
     }.uniq
+  end
+
+  # Asset helpers resolve a packaged path just like `render` resolves a view:
+  # the core gem can find a satellite asset in this monorepo, but a core-only
+  # host cannot. Restrict the scan to bare helpers, the normal ERB spelling, so
+  # an application object's coincidentally named method remains ordinary code.
+  def asset_paths_in(source)
+    asset_helper_calls(Prism.parse(source).value).flat_map { |call|
+      call.arguments&.arguments.to_a.flat_map { |argument| asset_path_values(argument) }
+    }.select { |path| satellite_for(path) }.uniq
+  end
+
+  def asset_helper_calls(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    found << node if rails_asset_helper_call?(node)
+    node.compact_child_nodes.each { |child| asset_helper_calls(child, found) }
+    found
+  end
+
+  def rails_asset_helper_call?(node)
+    node.is_a?(Prism::CallNode) && node.receiver.nil? && ASSET_HELPER_METHODS.include?(node.name.to_s)
+  end
+
+  def asset_path_values(node)
+    return [] if node.is_a?(Prism::KeywordHashNode)
+
+    template_path_values(node)
   end
 
   def render_calls(node, found = [])
