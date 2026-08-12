@@ -309,6 +309,9 @@ module ComplexityRatchet
     # smaller version of the same unique lambda without making its body part of
     # the identity.
     def lambda_anchor(node)
+      enclosing_anchor = enclosing_call_anchor(node)
+      return enclosing_anchor if enclosing_anchor
+
       before_lambda = @source.byteslice(0, node.location.start_offset)
       prefix = before_lambda.split("\n").last.to_s.strip
       return prefix unless prefix.empty?

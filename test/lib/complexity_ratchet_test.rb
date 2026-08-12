@@ -238,6 +238,24 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  test "keeps enclosing call anchor after an earlier multiline lambda argument" do
+    source = <<~RUBY
+      class Sample
+        register(
+          :handler,
+          -> do
+            first
+          end
+        )
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample[lambda]" => [ "register( :handler," ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   test "keeps the anchor of a uniquely named block" do
     source = <<~RUBY
       class Sample

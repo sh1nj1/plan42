@@ -638,7 +638,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(registry.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -1197,6 +1199,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def js_specifiers(tokens)
     tokens.each_with_index.filter_map do |(kind, value), index|
+      if kind == :string && value == "require"
+        next js_static_string_at(tokens, index + 3) if js_module_bracket_loader?(tokens, index)
+      end
       next unless kind == :word
 
       case value
@@ -1222,6 +1227,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true unless tokens[index - 1] == [ :punctuation, "." ]
 
     tokens[index - 2] == [ :word, "module" ] && tokens[index - 3] != [ :punctuation, "." ]
+  end
+
+  # `module["require"]()` is equivalent to `module.require()`, while a
+  # bracket call on any other object remains application code.
+  def js_module_bracket_loader?(tokens, index)
+    tokens[index - 1] == [ :punctuation, "[" ] &&
+      tokens[index - 2] == [ :word, "module" ] &&
+      (index < 3 || tokens[index - 3] != [ :punctuation, "." ]) &&
+      tokens[index + 1] == [ :punctuation, "]" ] &&
+      tokens[index + 2] == [ :punctuation, "(" ]
   end
 
   def js_call_specifier(tokens, index)
