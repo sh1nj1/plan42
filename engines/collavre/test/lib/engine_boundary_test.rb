@@ -261,6 +261,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}/some_service" ], requires_in(%(require "#{satellite}/some_service"))
     assert_equal [ satellite ], requires_in(%(require_relative("#{satellite}")))
+    assert_equal [ "#{satellite}.rb" ], requires_in(%(require "#{satellite}.rb"))
     assert_equal [ "#{satellite}/some_service" ],
       requires_in(%(require "collavre_" + "#{satellite.delete_prefix('collavre_')}/some_service"))
   end
@@ -1830,10 +1831,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # `require_relative "../../collavre_slack/lib/collavre_slack/engine"` starts
   # with ".." and `require "./collavre_notion/x"` starts with "." — so matching
   # only the leading segment lets both through while the dependency is real.
+  # Ruby allows an explicit `.rb` suffix too, so remove it before comparing the
+  # final feature segment with an engine directory.
   def satellite_for(feature)
     return nil if feature.nil?
 
-    Pathname.new(feature).cleanpath.each_filename.find { |segment| SATELLITES.include?(segment) }
+    Pathname.new(feature.delete_suffix(".rb")).cleanpath.each_filename.find { |segment| SATELLITES.include?(segment) }
   end
 
   def tokens(source)
