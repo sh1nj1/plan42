@@ -588,6 +588,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(// import "#{satellite}/thing"\n))
     assert_empty js_imports_in(%(/* import "#{satellite}/thing" */))
     assert_empty js_imports_in(%(const example = 'import "#{satellite}/thing";))
+    assert_empty js_imports_in(%(function matches() { return ! /import "#{satellite}\/thing"/.test(text) }))
     assert_empty js_imports_in(%(const pattern = /import "#{satellite}\/thing"/;))
     assert_empty js_imports_in(%(if (ready) /import "#{satellite}\/thing"/.test(text);))
     assert_empty js_imports_in(%(if (ready) {}\n/import "#{satellite}\/thing"/.test(text)))
@@ -687,11 +688,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require?.("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]?.("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.module?.require("#{satellite}/template")))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -1096,7 +1100,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if js_statement_closing_brace?(tokens)
     return true if js_export_default?(tokens)
 
-    return true if previous.first == :word && %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last)
+    return true if previous.first == :word && js_expression_starting_keyword?(previous.last)
 
     js_for_of_header?(tokens)
   end
@@ -1128,7 +1132,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return false unless tokens.last == [ :punctuation, "!" ]
 
     operand = tokens[-2]
+    return false if operand&.first == :word && js_expression_starting_keyword?(operand.last)
+
     operand && (operand.first != :punctuation || [ ")", "]" ].include?(operand.last))
+  end
+
+  def js_expression_starting_keyword?(value)
+    %w[return throw case else do yield await void typeof delete new in instanceof].include?(value)
   end
 
   def js_for_of_header?(tokens)
@@ -1398,7 +1408,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_commonjs_loader?(tokens, index)
     return true unless tokens[index - 1] == [ :punctuation, "." ]
 
-    tokens[index - 2] == [ :word, "module" ] && tokens[index - 3] != [ :punctuation, "." ]
+    receiver = index - 2
+    receiver -= 1 if tokens[receiver] == [ :punctuation, "?" ]
+
+    tokens[receiver] == [ :word, "module" ] && tokens[receiver - 1] != [ :punctuation, "." ]
   end
 
   # `module["require"]()` is equivalent to `module.require()`, while a
