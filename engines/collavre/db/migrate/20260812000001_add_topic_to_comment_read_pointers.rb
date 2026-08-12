@@ -36,20 +36,24 @@ class AddTopicToCommentReadPointers < ActiveRecord::Migration[8.0]
 
     execute <<~SQL.squish
       UPDATE comment_read_pointers AS legacy_pointers
-      SET last_read_comment_id = (
+      SET last_read_comment_id = COALESCE((
         SELECT MIN(COALESCE(topic_pointers.last_read_comment_id, 0))
-        FROM comment_read_pointers AS topic_pointers
-        WHERE topic_pointers.user_id = legacy_pointers.user_id
+        FROM topics
+        LEFT JOIN comment_read_pointers AS topic_pointers
+          ON topic_pointers.user_id = legacy_pointers.user_id
           AND topic_pointers.creative_id = legacy_pointers.creative_id
-          AND topic_pointers.topic_id IS NOT NULL
-      )
+          AND topic_pointers.topic_id = topics.id
+        WHERE topics.creative_id = legacy_pointers.creative_id
+      ), 0)
       WHERE legacy_pointers.topic_id IS NULL
         AND COALESCE(legacy_pointers.last_read_comment_id, 0) > COALESCE((
           SELECT MIN(COALESCE(topic_pointers.last_read_comment_id, 0))
-          FROM comment_read_pointers AS topic_pointers
-          WHERE topic_pointers.user_id = legacy_pointers.user_id
+          FROM topics
+          LEFT JOIN comment_read_pointers AS topic_pointers
+            ON topic_pointers.user_id = legacy_pointers.user_id
             AND topic_pointers.creative_id = legacy_pointers.creative_id
-            AND topic_pointers.topic_id IS NOT NULL
+            AND topic_pointers.topic_id = topics.id
+          WHERE topics.creative_id = legacy_pointers.creative_id
         ), 0)
     SQL
   end
@@ -57,11 +61,25 @@ class AddTopicToCommentReadPointers < ActiveRecord::Migration[8.0]
   def create_missing_legacy_pointers
     execute <<~SQL.squish
       INSERT INTO comment_read_pointers (user_id, creative_id, last_read_comment_id, created_at, updated_at)
-      SELECT topic_pointers.user_id, topic_pointers.creative_id, MIN(COALESCE(topic_pointers.last_read_comment_id, 0)), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-      FROM comment_read_pointers AS topic_pointers
-      LEFT JOIN comment_read_pointers AS legacy_pointers ON legacy_pointers.user_id = topic_pointers.user_id AND legacy_pointers.creative_id = topic_pointers.creative_id AND legacy_pointers.topic_id IS NULL
-      WHERE topic_pointers.topic_id IS NOT NULL AND legacy_pointers.id IS NULL
-      GROUP BY topic_pointers.user_id, topic_pointers.creative_id
+      SELECT pointer_pairs.user_id, pointer_pairs.creative_id,
+             MIN(COALESCE(topic_pointers.last_read_comment_id, 0)),
+             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      FROM (
+        SELECT DISTINCT user_id, creative_id
+        FROM comment_read_pointers
+        WHERE topic_id IS NOT NULL
+      ) AS pointer_pairs
+      INNER JOIN topics ON topics.creative_id = pointer_pairs.creative_id
+      LEFT JOIN comment_read_pointers AS topic_pointers
+        ON topic_pointers.user_id = pointer_pairs.user_id
+        AND topic_pointers.creative_id = pointer_pairs.creative_id
+        AND topic_pointers.topic_id = topics.id
+      LEFT JOIN comment_read_pointers AS legacy_pointers
+        ON legacy_pointers.user_id = pointer_pairs.user_id
+        AND legacy_pointers.creative_id = pointer_pairs.creative_id
+        AND legacy_pointers.topic_id IS NULL
+      WHERE legacy_pointers.id IS NULL
+      GROUP BY pointer_pairs.user_id, pointer_pairs.creative_id
     SQL
   end
 end
