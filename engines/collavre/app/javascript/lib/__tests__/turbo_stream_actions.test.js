@@ -9,6 +9,12 @@ jest.unstable_mockModule('@hotwired/turbo-rails', () => ({ Turbo: fakeTurbo }))
 jest.unstable_mockModule('../../creatives/tree_renderer', () => ({
   createRow: jest.fn(),
   applyRowProperties: jest.fn(),
+  updateProgressHtml: jest.fn((html, progress) => progress === 1
+    ? html.replace('class="progress-toggle-checkbox"', 'class="progress-toggle-checkbox" checked="checked"')
+      .replace('data-current-progress="0"', 'data-current-progress="1"')
+      .replace('data-new-progress="1"', 'data-new-progress="0"')
+      .replace('title="Mark complete"', 'title="Mark incomplete"')
+    : html),
 }))
 
 await import('../turbo_stream_actions')

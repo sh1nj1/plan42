@@ -30,34 +30,33 @@ function syncProgressHtmlFromDom(row) {
 
 export function updateProgressHtml(html, progress, displayText) {
   const complete = Number(progress) === 1
-  const checkboxRegex = /<input\b[^>]*class="progress-toggle-checkbox"[^>]*>/
+  const template = document.createElement('template')
+  template.innerHTML = html
 
-  if (checkboxRegex.test(html)) {
-    let updated = html.replace(checkboxRegex, input => {
-      const unchecked = input.replace(/\schecked(?:="checked")?/g, '')
-      return complete ? unchecked.replace(/>$/, ' checked="checked">') : unchecked
-    })
+  const checkbox = template.content.querySelector('input.progress-toggle-checkbox')
+  if (checkbox) {
+    checkbox.toggleAttribute('checked', complete)
+    if (complete) checkbox.setAttribute('checked', 'checked')
 
-    updated = updated.replace(/<span\b[^>]*data-progress-toggle="true"[^>]*>/, wrap => {
-      const labelName = complete ? 'markIncomplete' : 'markComplete'
-      const label = wrap.match(new RegExp(`data-${labelName.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}="([^"]*)"`))?.[1]
-      let next = wrap
-        .replace(/data-current-progress="[^"]*"/, `data-current-progress="${progress}"`)
-        .replace(/data-new-progress="[^"]*"/, `data-new-progress="${complete ? 0 : 1}"`)
-      return label ? next.replace(/title="[^"]*"/, `title="${label}"`) : next
-    })
-    return updated
+    const toggle = template.content.querySelector('[data-progress-toggle="true"]')
+    if (toggle) {
+      const label = complete ? toggle.dataset.markIncomplete : toggle.dataset.markComplete
+      toggle.dataset.currentProgress = String(progress)
+      toggle.dataset.newProgress = complete ? '0' : '1'
+      if (label) toggle.title = label
+    }
+    return template.innerHTML
   }
 
-  const cssClass = complete ? 'creative-progress-complete' : 'creative-progress-incomplete'
-  const replaced = html.replace(
-    /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
-    `$1${displayText}$2`
+  const progressElement = template.content.querySelector(
+    '.creative-progress-complete, .creative-progress-incomplete'
   )
-  return replaced === html ? html : replaced.replace(
-    /class="creative-progress-(?:in)?complete"/,
-    `class="${cssClass}"`
-  )
+  if (!progressElement) return html
+
+  progressElement.textContent = displayText
+  progressElement.classList.toggle('creative-progress-complete', complete)
+  progressElement.classList.toggle('creative-progress-incomplete', !complete)
+  return template.innerHTML
 }
 
 function applyRowProperties(row, node) {

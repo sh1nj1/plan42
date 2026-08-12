@@ -1,5 +1,5 @@
 import { Turbo } from "@hotwired/turbo-rails"
-import { createRow, applyRowProperties } from "../creatives/tree_renderer"
+import { createRow, applyRowProperties, updateProgressHtml } from "../creatives/tree_renderer"
 import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
@@ -340,33 +340,7 @@ export function updateProgressForRow(row, progress, progressText) {
     row.dataset.progressValue = String(progress)
 
     if (row.progressHtml) {
-        const complete = Number(progress) === 1
-        const checkboxRegex = /<input\b[^>]*class="progress-toggle-checkbox"[^>]*>/
-        let updated = row.progressHtml
-
-        if (checkboxRegex.test(updated)) {
-            updated = updated.replace(checkboxRegex, input => {
-                const unchecked = input.replace(/\schecked(?:="checked")?/g, '')
-                return complete ? unchecked.replace(/>$/, ' checked="checked">') : unchecked
-            }).replace(/<span\b[^>]*data-progress-toggle="true"[^>]*>/, wrap => {
-                const labelName = complete ? 'mark-incomplete' : 'mark-complete'
-                const label = wrap.match(new RegExp(`data-${labelName}="([^"]*)"`))?.[1]
-                let next = wrap
-                    .replace(/data-current-progress="[^"]*"/, `data-current-progress="${progress}"`)
-                    .replace(/data-new-progress="[^"]*"/, `data-new-progress="${complete ? 0 : 1}"`)
-                return label ? next.replace(/title="[^"]*"/, `title="${label}"`) : next
-            })
-        } else {
-            const cssClass = complete ? 'creative-progress-complete' : 'creative-progress-incomplete'
-            const replaced = updated.replace(
-                /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
-                `$1${displayText}$2`
-            )
-            updated = replaced === updated ? updated : replaced.replace(
-                /class="creative-progress-(?:in)?complete"/,
-                `class="${cssClass}"`
-            )
-        }
+	const updated = updateProgressHtml(row.progressHtml, progress, displayText)
 
         if (updated !== row.progressHtml) {
             row.progressHtml = updated
