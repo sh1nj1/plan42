@@ -185,7 +185,7 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     RUBY
 
     assert_equal(
-      { "Sample[lambda]" => [ "[lambda]", "[lambda]" ] },
+      { "Sample[lambda]" => [ "HANDLERS = [", "HANDLERS = [" ] },
       ComplexityRatchet::EntityMap.for(source).sibling_anchors
     )
   end
@@ -1392,6 +1392,37 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
             second
           end
         )
+      end
+    RUBY
+    key = "a.rb | Metrics/BlockLength | Sample[lambda]"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { key => 90 }, { key => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "source anchor"
+  end
+
+  test "rejects a multiline collection lambda replaced with a different assignment" do
+    before_source = <<~RUBY
+      class Sample
+        HANDLERS = [
+          -> do
+            first
+          end
+        ]
+      end
+    RUBY
+    after_source = <<~RUBY
+      class Sample
+        OTHER = [
+          -> do
+            second
+          end
+        ]
       end
     RUBY
     key = "a.rb | Metrics/BlockLength | Sample[lambda]"

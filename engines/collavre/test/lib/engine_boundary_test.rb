@@ -587,6 +587,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(if (ready) {} else /import "#{satellite}\/thing"/.test(text);))
     assert_empty js_imports_in(%(do /import "#{satellite}\/thing"/.test(text); while (ready);))
     assert_empty js_imports_in(%(function* matches() { yield /import "#{satellite}\/thing"/ }))
+    assert_empty js_imports_in(%(class Example {}\n/import "#{satellite}\/thing"/.test(text)))
+    assert_empty js_imports_in(%(interface Example {}\n/import "#{satellite}\/thing"/.test(text)))
     assert_empty js_imports_in(%(export default /import "#{satellite}\/thing"/))
     assert_empty js_imports_in(%(for (const char of /import "#{satellite}\/thing"/.source) {}))
     assert_empty js_imports_in(%(function matches() {}\n/import "#{satellite}\/thing"/.test(text)))
@@ -1174,6 +1176,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def js_block_open?(tokens, opening)
     before = tokens[opening - 1]
+    return true if js_declaration_body?(tokens, opening)
     return true if before&.first == :word && %w[else try finally do].include?(before.last)
     return true if tokens[(opening - 2)...opening] == [ [ :punctuation, "=" ], [ :punctuation, ">" ] ]
     return false unless before == [ :punctuation, ")" ]
@@ -1185,6 +1188,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if %w[if while for with switch catch].include?(head)
 
     tokens[0...parenthesis].any? { |token| token == [ :word, "function" ] }
+  end
+
+  def js_declaration_body?(tokens, opening)
+    declaration = (opening - 1).downto(0).find do |index|
+      tokens[index].first == :word && %w[class interface enum namespace module].include?(tokens[index].last)
+    end
+    return false unless declaration
+
+    previous = tokens[declaration - 1]
+    declaration.zero? ||
+      previous&.first == :punctuation && %w[; { }].include?(previous.last) ||
+      previous&.first == :word && %w[export default declare abstract public private protected readonly].include?(previous.last)
   end
 
   def js_matching_open_parenthesis(tokens, closing)

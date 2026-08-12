@@ -119,6 +119,7 @@ module ComplexityRatchet
       @occurrences = Hash.new(0)
       @sibling_anchors = Hash.new { |hash, key| hash[key] = [] }
       @call_stack = []
+      @collection_stack = []
       super()
     end
 
@@ -221,6 +222,14 @@ module ComplexityRatchet
     # separate through the usual ordinal.
     def visit_lambda_node(node)
       nest("[lambda]", node.location, anchor: lambda_anchor(node)) { super }
+    end
+
+    def visit_array_node(node)
+      with_collection(node) { super }
+    end
+
+    def visit_hash_node(node)
+      with_collection(node) { super }
     end
 
     # Keep every sibling population so verification catches ordinal transfers
@@ -345,12 +354,37 @@ module ComplexityRatchet
       enclosing_anchor = enclosing_call_anchor(node)
       return enclosing_anchor if enclosing_anchor
 
+      collection_anchor = enclosing_collection_anchor
+      return collection_anchor if collection_anchor
+
       before_lambda = @source.byteslice(0, node.location.start_offset)
       prefix = before_lambda.split("\n").last.to_s.strip
       return prefix unless prefix.empty?
 
       preceding_line = before_lambda.rstrip.split("\n").last.to_s.strip
       preceding_line.end_with?("=", "(") ? preceding_line : "[lambda]"
+    end
+
+    # A lambda in an assigned collection begins after `[` or `{`, so its own
+    # line has no assignment context. Keep the collection's opening prefix to
+    # distinguish a replacement of HANDLERS from a replacement of OTHER.
+    def with_collection(node)
+      @collection_stack << node
+      yield
+    ensure
+      @collection_stack.pop
+    end
+
+    def enclosing_collection_anchor
+      collection = @collection_stack.last
+      return unless collection
+
+      before_collection = @source.byteslice(0, collection.location.start_offset)
+      prefix = before_collection.split("\n").last.to_s.strip
+      prefix = before_collection.rstrip.split("\n").last.to_s.strip if prefix.empty?
+      return if prefix.empty?
+
+      "#{prefix} #{collection.location.slice[0]}"
     end
 
     # Two indexes, because a start line alone is not an identity. In a chained
