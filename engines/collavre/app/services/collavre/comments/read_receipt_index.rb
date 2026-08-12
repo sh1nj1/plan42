@@ -28,19 +28,16 @@ module Collavre
         rendered = rendered_public_ids.to_set
 
         receipt_pointers = pointers.to_a
-        users_with_topic_pointers = receipt_pointers.filter_map { |pointer| pointer.user_id if pointer.topic_id }.to_set
+        receipt_users_by_comment_id = Hash.new { |hash, key| hash[key] = Set.new }
 
         receipt_pointers.each_with_object({}) do |pointer, result|
-          # The migration retains a legacy creative-wide pointer beside each
-          # topic pointer. Once a user has topic pointers, only they describe
-          # the conversation being rendered; retaining the legacy row would
-          # duplicate the avatar or attach it to a different topic.
-          next if pointer.topic_id.nil? && users_with_topic_pointers.include?(pointer.user_id)
           next if pointer.last_read_comment_id > rendered_window_max_id
 
           effective_id = pointer[:receipt_comment_id]
           next unless effective_id && rendered.include?(effective_id)
+          next if receipt_users_by_comment_id[effective_id].include?(pointer.user_id)
 
+          receipt_users_by_comment_id[effective_id] << pointer.user_id
           (result[effective_id] ||= []) << pointer.user
         end
       end

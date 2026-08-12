@@ -90,7 +90,7 @@ module Collavre
         assert_equal({ second.id => [ @reader ] }, receipts_for([ first, second ]))
       end
 
-      test "topic pointers take precedence over the retained legacy pointer" do
+      test "legacy and topic pointers render their different receipts" do
         first_topic = Topic.create!(creative: @creative, name: "First", user: @owner)
         second_topic = Topic.create!(creative: @creative, name: "Second", user: @owner)
         first = comment("first", topic: first_topic)
@@ -98,7 +98,29 @@ module Collavre
         CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: second.id)
         CommentReadPointer.create!(user: @reader, creative: @creative, topic: first_topic, last_read_comment_id: first.id)
 
-        assert_equal({ first.id => [ @reader ] }, receipts_for([ first, second ]))
+        assert_equal({ first.id => [ @reader ], second.id => [ @reader ] }, receipts_for([ first, second ]))
+      end
+
+      test "a legacy pointer still renders a topic-less comment for a reader with topic pointers" do
+        topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
+        legacy = comment("legacy")
+        legacy.update_column(:topic_id, nil)
+        named = comment("named", topic: topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: legacy.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: topic, last_read_comment_id: named.id)
+
+        assert_equal({ legacy.id => [ @reader ], named.id => [ @reader ] }, receipts_for([ legacy, named ]))
+      end
+
+      test "duplicate legacy and topic receipts render one avatar" do
+        topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
+        named = comment("named", topic: topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: named.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: topic, last_read_comment_id: named.id)
+
+        assert_equal({ named.id => [ @reader ] }, receipts_for([ named ]))
       end
 
       test "several readers on the same comment are grouped" do
