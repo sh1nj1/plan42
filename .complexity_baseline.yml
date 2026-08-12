@@ -153,15 +153,16 @@ engines/collavre/app/controllers/collavre/tasks_controller.rb:
 engines/collavre/app/controllers/collavre/topics_controller.rb:
   Metrics/AbcSize:
     Collavre::TopicsController#create: 42.72
+    Collavre::TopicsController#index: 45.63
     Collavre::TopicsController#missing_members_for_move: 39.45
     Collavre::TopicsController#move: 51.02
   Metrics/ClassLength:
-    Collavre::TopicsController: 274
+    Collavre::TopicsController: 278
   Metrics/CyclomaticComplexity:
     Collavre::TopicsController#missing_members_for_move: 14
   Metrics/MethodLength:
     Collavre::TopicsController#create: 32
-    Collavre::TopicsController#index: 26
+    Collavre::TopicsController#index: 28
     Collavre::TopicsController#move: 41
 engines/collavre/app/controllers/collavre/user_creative_preferences_controller.rb:
   Metrics/AbcSize:
