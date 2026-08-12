@@ -469,7 +469,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ feature ], requires_in(%(Object.send(:require, "#{feature}")))
     assert_equal [ feature ], requires_in(%(::Object.__send__(:require, "#{feature}")))
+    assert_equal [ feature ], requires_in(%(Object.new.send(:require, "#{feature}")))
+    assert_equal [ feature ], requires_in(%(Object.allocate.__send__(:require, "#{feature}")))
     assert_empty requires_in(%(Object.public_send(:require, "#{feature}")))
+    assert_empty requires_in(%(Object.new.public_send(:require, "#{feature}")))
+    assert_empty requires_in(%(Object.new(:argument).send(:require, "#{feature}")))
   end
 
   # The counterpart. A nested `Wrapper::Kernel` is somebody else's constant and
@@ -628,7 +632,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}/example" ], template_paths_in(%(controller.render("#{satellite}/example")))
     assert_equal [ "#{satellite}/example" ], template_paths_in(%(ApplicationController.render("#{satellite}/example")))
+    assert_equal [ "#{satellite}/example" ], template_paths_in(%(ActionController::Base.render(template: "#{satellite}/example")))
     assert_equal [ "#{satellite}/example" ], template_paths_in(%(ApplicationController.renderer.render(template: "#{satellite}/example")))
+    assert_equal [ "#{satellite}/example" ], template_paths_in(%(ActionController::Base.renderer.render(template: "#{satellite}/example")))
     assert_equal [ "#{satellite}/example" ],
       template_paths_in(%(ApplicationController.renderer.new(http_host: "example.test").render(template: "#{satellite}/example")))
     assert_equal [ "#{satellite}/example" ],
@@ -2331,8 +2337,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def rails_render_receiver?(source)
-    source.match?(/(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self|self\.view_context)\z/) ||
-      source.match?(/(?:\A|::)\w*Controller\.renderer(?:\.(?:new|with_defaults)\(.*\))?\z/m)
+    source.match?(/\A(?:::)?(?:ActionController::Base|(?:[A-Z]\w*::)*ApplicationController)\z|(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self|self\.view_context)\z/) ||
+      source.match?(/\A(?:::)?(?:ActionController::Base|(?:[A-Z]\w*::)*ApplicationController)\.renderer(?:\.(?:new|with_defaults)\(.*\))?\z|(?:\A|::)\w*Controller\.renderer(?:\.(?:new|with_defaults)\(.*\))?\z/m)
   end
 
   def template_arguments(call)
@@ -2533,7 +2539,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def object_reflective_kernel_loader?(call)
-    top_level_object_receiver?(call.receiver) && %i[send __send__].include?(call.name) && reflected_loader_method(call)
+    %i[send __send__].include?(call.name) && reflected_loader_method(call) &&
+      (top_level_object_receiver?(call.receiver) || ordinary_object_instance?(call.receiver))
+  end
+
+  def ordinary_object_instance?(node)
+    node.is_a?(Prism::CallNode) && %i[new allocate].include?(node.name) &&
+      (node.arguments.nil? || node.arguments.arguments.empty?) && top_level_object_receiver?(node.receiver)
   end
 
   def self_receiver?(node)
