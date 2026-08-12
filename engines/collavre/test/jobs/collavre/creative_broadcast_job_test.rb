@@ -144,6 +144,19 @@ module Collavre
       assert_includes html, "50%"
     end
 
+    test "render_progress_html uses the shared checkbox control for writable binary leaves" do
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, parent: @root, description: "Checkbox leaf", progress: 0)
+      end
+
+      job = CreativeBroadcastJob.new
+      html = job.send(:render_progress_html, leaf, @shared_user, skip_permission_check: true)
+
+      assert_includes html, 'data-progress-toggle="true"'
+      assert_includes html, 'type="checkbox"'
+    end
+
     test "render_progress_html includes comment button when skip_permission_check" do
       job = CreativeBroadcastJob.new
       html = job.send(:render_progress_html, @child, @shared_user, skip_permission_check: true)

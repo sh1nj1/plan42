@@ -169,17 +169,17 @@ module Collavre
     # Includes:
     # - turbo-cable-stream-source (per-user subscription for badge updates)
     # - comment button (hidden via no-comments class — 0 comments initially)
-    # - progress span
+    # - the same progress control used by normal server rendering
     def render_progress_html(creative, user, skip_permission_check: false)
       origin = creative.effective_origin
       progress = creative.progress || 0
-      pct = (progress * 100).round
-
-      # Progress span (comes first, matching helper output order)
-      css_class = pct >= 100 ? "creative-progress-complete" : "creative-progress-incomplete"
-      completion_mark = Collavre::SystemSetting.completion_mark
-      display_text = pct >= 100 && !completion_mark.nil? ? completion_mark : "#{pct}%"
-      progress_span = %(<span class="#{css_class}">#{display_text}</span>)
+      can_write = creative.has_permission?(user, :write)
+      progress_part = Collavre::ApplicationController.helpers.render_progress_control(
+        creative,
+        progress,
+        has_children: creative.children.exists?,
+        can_write: can_write
+      )
 
       # Comment part — only render if user has feedback permission (matching helper behavior)
       # When skip_permission_check is true, the user was already verified by find_broadcast_users
@@ -208,7 +208,7 @@ module Collavre
       end
 
       # Wrap in creative-row-end div — order: progress, then comment (matching helper)
-      %(<div class="creative-row-end">#{progress_span}#{comment_part}</div>)
+      %(<div class="creative-row-end">#{progress_part}#{comment_part}</div>)
     rescue StandardError => e
       Rails.logger.warn "[CreativeBroadcastJob] render_progress_html failed for creative##{creative.id} user##{user.id}: #{e.message}"
       nil

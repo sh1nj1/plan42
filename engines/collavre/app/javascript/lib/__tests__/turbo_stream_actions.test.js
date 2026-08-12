@@ -13,6 +13,7 @@ jest.unstable_mockModule('../../creatives/tree_renderer', () => ({
 
 await import('../turbo_stream_actions')
 const { createRow } = await import('../../creatives/tree_renderer')
+const { updateProgressForRow } = await import('../turbo_stream_actions')
 
 const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>'
 
@@ -118,4 +119,18 @@ test('remote destroyed streams keep the placeholder hidden while rows remain', (
 
   expect(container.querySelector('creative-tree-row[creative-id="8"]')).not.toBeNull()
   expect(container.querySelector('[data-creatives-empty-state]').hidden).toBe(true)
+})
+
+test('remote progress updates keep checkbox controls actionable', () => {
+  const row = {
+    dataset: {},
+    progressHtml: '<span class="progress-toggle-wrap" data-progress-toggle="true" data-current-progress="0" data-new-progress="1" data-mark-complete="Mark complete" data-mark-incomplete="Mark incomplete" title="Mark complete"><input type="checkbox" class="progress-toggle-checkbox"></span>',
+  }
+
+  updateProgressForRow(row, 1, '100%')
+
+  expect(row.progressHtml).toContain('checked="checked"')
+  expect(row.progressHtml).toContain('data-current-progress="1"')
+  expect(row.progressHtml).toContain('data-new-progress="0"')
+  expect(row.progressHtml).toContain('title="Mark incomplete"')
 })

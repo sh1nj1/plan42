@@ -547,13 +547,20 @@ class CreativeTreeRow extends LitElement {
     const newProgress = wrap.dataset.newProgress;
     if (!creativeId || newProgress == null) return;
 
-    // Optimistic UI: toggle checkbox and class immediately
+    // Optimistic UI: toggle the always-visible checkbox immediately.
     const checkbox = wrap.querySelector(".progress-toggle-checkbox");
-    const progressSpan = wrap.querySelector("[class^='creative-progress-']");
     const wasComplete = checkbox?.checked;
+    const previousCurrentProgress = wrap.dataset.currentProgress;
+    const previousNewProgress = wrap.dataset.newProgress;
+    const previousTitle = wrap.title;
     if (checkbox) checkbox.checked = !wasComplete;
-    if (progressSpan) {
-      progressSpan.className = newProgress === "1" ? "creative-progress-complete" : "creative-progress-incomplete";
+    const complete = newProgress === "1";
+    wrap.dataset.currentProgress = newProgress;
+    wrap.dataset.newProgress = complete ? "0" : "1";
+    const label = complete ? wrap.dataset.markIncomplete : wrap.dataset.markComplete;
+    if (label) {
+      wrap.title = label;
+      if (checkbox) checkbox.setAttribute("aria-label", label);
     }
     wrap.classList.add("progress-toggle-saving");
 
@@ -598,9 +605,10 @@ class CreativeTreeRow extends LitElement {
     } catch (err) {
       // Revert optimistic UI
       if (checkbox) checkbox.checked = wasComplete;
-      if (progressSpan) {
-        progressSpan.className = wasComplete ? "creative-progress-complete" : "creative-progress-incomplete";
-      }
+      wrap.dataset.currentProgress = previousCurrentProgress;
+      wrap.dataset.newProgress = previousNewProgress;
+      wrap.title = previousTitle;
+      if (checkbox) checkbox.setAttribute("aria-label", previousTitle);
       console.error("Progress toggle failed:", err);
     } finally {
       wrap.classList.remove("progress-toggle-saving");

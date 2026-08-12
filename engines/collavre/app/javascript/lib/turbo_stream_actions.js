@@ -331,30 +331,47 @@ function handleDestroyed(creative) {
     restoreTreeEmptyState()
 }
 
-function updateProgressForRow(row, progress, progressText) {
+export function updateProgressForRow(row, progress, progressText) {
     if (progress == null) return
     const pct = Math.round(progress * 100)
-    const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
     // progressText from server: completion mark string, empty string (=complete but no mark), or null
     const displayText = progressText != null ? (progressText || '\u00a0\u00a0') : `${pct}%`
 
     row.dataset.progressValue = String(progress)
 
     if (row.progressHtml) {
-        // Try regex replacement on existing progress HTML (preserves chat buttons etc.)
-        const regex = /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/
-        const updated = row.progressHtml.replace(regex, `$1${displayText}$2`)
-        if (updated !== row.progressHtml) {
-            // Also update ONLY the first progress class (not chat buttons etc.)
-            const classUpdated = updated.replace(
+        const complete = Number(progress) === 1
+        const checkboxRegex = /<input\b[^>]*class="progress-toggle-checkbox"[^>]*>/
+        let updated = row.progressHtml
+
+        if (checkboxRegex.test(updated)) {
+            updated = updated.replace(checkboxRegex, input => {
+                const unchecked = input.replace(/\schecked(?:="checked")?/g, '')
+                return complete ? unchecked.replace(/>$/, ' checked="checked">') : unchecked
+            }).replace(/<span\b[^>]*data-progress-toggle="true"[^>]*>/, wrap => {
+                const labelName = complete ? 'mark-incomplete' : 'mark-complete'
+                const label = wrap.match(new RegExp(`data-${labelName}="([^"]*)"`))?.[1]
+                let next = wrap
+                    .replace(/data-current-progress="[^"]*"/, `data-current-progress="${progress}"`)
+                    .replace(/data-new-progress="[^"]*"/, `data-new-progress="${complete ? 0 : 1}"`)
+                return label ? next.replace(/title="[^"]*"/, `title="${label}"`) : next
+            })
+        } else {
+            const cssClass = complete ? 'creative-progress-complete' : 'creative-progress-incomplete'
+            const replaced = updated.replace(
+                /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
+                `$1${displayText}$2`
+            )
+            updated = replaced === updated ? updated : replaced.replace(
                 /class="creative-progress-(?:in)?complete"/,
                 `class="${cssClass}"`
             )
-            row.progressHtml = classUpdated
-            row.dataset.progressHtml = classUpdated
         }
-        // If regex didn't match, do NOT create fresh HTML — preserve existing progressHtml
-        // (it contains chat buttons, comment badges, etc.)
+
+        if (updated !== row.progressHtml) {
+            row.progressHtml = updated
+            row.dataset.progressHtml = updated
+        }
     }
 }
 
