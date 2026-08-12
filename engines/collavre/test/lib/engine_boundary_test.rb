@@ -519,6 +519,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], asset_paths_in(%(self.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(self.view_context.asset_path("#{path}")))
     assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
+    assert_empty asset_paths_in(%(asset_path("https://cdn.example/#{path}")))
+    assert_empty asset_paths_in(%(asset_path("//cdn.example/#{path}")))
 
     erb_path = ENGINES_ROOT.join(CORE, "app/views/collavre/example.html.erb")
     assert_includes ruby_violations_in(erb_path.to_s, erb_template_ruby_source(%(<%= stylesheet_link_tag "#{path}" %>))),
@@ -541,6 +543,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], css_asset_paths_in(%(.integration { background: url("#{path}") }))
     assert_empty css_asset_paths_in(%(/* url("#{path}") */))
     assert_empty css_asset_paths_in(%(.notice { content: "url(#{path})" }))
+    assert_empty css_asset_paths_in(%(.integration { background: url("https://cdn.example/#{path}") }))
+    assert_empty css_asset_paths_in(%(.integration { background: url("//cdn.example/#{path}") }))
     assert_includes css_violations_in(css_path.to_s, %(@import "#{path}";)),
       "  engines/#{CORE}/app/assets/stylesheets/collavre/application.css references asset \"#{path}\" (engines/#{satellite})"
 
@@ -2373,6 +2377,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # final feature segment with an engine directory.
   def satellite_for(feature)
     return nil if feature.nil?
+    return nil if feature.match?(%r{\A(?:[a-z][a-z\d+.-]*:|//)}i)
 
     Pathname.new(feature.delete_suffix(".rb")).cleanpath.each_filename.find { |segment| SATELLITES.include?(segment) }
   end
