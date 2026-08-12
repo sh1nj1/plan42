@@ -4,6 +4,6 @@ class RemoveAndroidDevices < ActiveRecord::Migration[8.0]
   end
 
   def down
-    # Deleted device tokens cannot be restored.
+    raise ActiveRecord::IrreversibleMigration, "Android device tokens cannot be restored"
   end
 end
