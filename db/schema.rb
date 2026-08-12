@@ -174,6 +174,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000004) do
     t.integer "user_id", null: false
     t.index ["creative_id"], name: "index_comment_read_pointers_on_creative_id"
     t.index ["topic_id"], name: "index_comment_read_pointers_on_topic_id"
+    t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_legacy_pointer", unique: true, where: "topic_id IS NULL"
     t.index ["user_id", "creative_id", "topic_id"], name: "index_comment_read_pointers_on_user_creative_and_topic", unique: true
     t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
   end

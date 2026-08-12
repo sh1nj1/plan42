@@ -162,6 +162,7 @@ export default class extends Controller {
     if (this.markReadTimeout) {
       window.clearTimeout(this.markReadTimeout)
       this.markReadTimeout = null
+      this.updateReadPointer(this.creativeId, this.currentTopicId || null)
     }
     this._loadCommentsVersion += 1
     this.creativeId = null
@@ -446,21 +447,27 @@ export default class extends Controller {
       this.markReadTimeout = null
       if (!this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
 
-      fetch('/comment_read_pointers/update', {
-        method: 'POST',
-        headers: {
-          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ creative_id: creativeId, topic_id: topicId }),
-      }).then((response) => {
-        if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
-
-        // A successful topic read changes its chip and the aggregate creative
-        // badge. Reload immediately instead of leaving stale counts on screen.
-        this.popupController?.topicsController?.loadTopics?.()
-      }).catch(() => { /* ignore — creative may have been deleted */ })
+      this.updateReadPointer(creativeId, topicId)
     }, 2000);
+  }
+
+  updateReadPointer(creativeId, topicId) {
+    if (!creativeId) return
+
+    fetch('/comment_read_pointers/update', {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ creative_id: creativeId, topic_id: topicId }),
+    }).then((response) => {
+      if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
+
+      // A successful topic read changes its chip and the aggregate creative
+      // badge. Reload immediately instead of leaving stale counts on screen.
+      this.popupController?.topicsController?.loadTopics?.()
+    }).catch(() => { /* ignore — creative may have been deleted */ })
   }
 
   handlePrevMsgUserInput() {

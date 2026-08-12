@@ -65,10 +65,10 @@ module Collavre
       ids = Array(user_ids).uniq
       return {} if ids.empty?
 
-      subscriptions_by_user_id = ids.index_by { |user_id| subscriptions_key(creative_id, user_id) }
-      cached_subscriptions = Rails.cache.read_multi(*subscriptions_by_user_id.values)
+      subscription_keys_by_user_id = ids.to_h { |user_id| [ user_id, subscriptions_key(creative_id, user_id) ] }
+      cached_subscriptions = Rails.cache.read_multi(*subscription_keys_by_user_id.values)
       topic_keys_by_user_id = ids.to_h do |user_id|
-        subscription_ids = cached_subscriptions.fetch(subscriptions_key(creative_id, user_id), [])
+        subscription_ids = cached_subscriptions.fetch(subscription_keys_by_user_id.fetch(user_id), [])
         subscription_ids = [ LEGACY_SUBSCRIPTION_ID ] if subscription_ids.empty?
         [ user_id, subscription_ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) } ]
       end

@@ -116,9 +116,11 @@ module Creatives
         # intentionally excluded by CommentsController#index and stay unread.
         counts.delete(nil)
         origin.topics.active.pluck(:id).each { |topic_id| counts.delete(topic_id) }
-      else
-        viewing_topics.each { |topic_id| counts.delete(topic_id) }
       end
+
+      # Another subscription can be viewing an archived topic while this one is
+      # on All Messages. Suppress every explicitly rendered topic as well.
+      viewing_topics.excluding(CommentPresenceStore::ALL_TOPICS).each { |topic_id| counts.delete(topic_id) }
     end
 
     # `user_id: nil` for an anonymous visitor is the lookup the un-batched path
@@ -236,7 +238,7 @@ module Creatives
       def topic_is_viewed?(topic_id, viewing_topics, active_topic_ids)
         return viewing_topics.include?(topic_id) unless viewing_topics.include?(CommentPresenceStore::ALL_TOPICS)
 
-        topic_id.nil? || active_topic_ids.include?(topic_id)
+        topic_id.nil? || active_topic_ids.include?(topic_id) || viewing_topics.include?(topic_id)
       end
     end
   end

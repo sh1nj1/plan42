@@ -79,5 +79,14 @@ module Collavre
       CommentPresenceStore.remove(9_901, 4, subscription_id: "first")
       assert_empty CommentPresenceStore.list(9_901)
     end
+
+    test "fetches topics for all present users in one cache batch" do
+      CommentPresenceStore.add(9_901, 4, subscription_id: "all")
+      CommentPresenceStore.add(9_901, 4, subscription_id: "archived")
+      CommentPresenceStore.set_topic(9_901, 4, nil, subscription_id: "all")
+      CommentPresenceStore.set_topic(9_901, 4, 12, subscription_id: "archived")
+
+      assert_equal({ 4 => [ CommentPresenceStore::ALL_TOPICS, 12 ] }, CommentPresenceStore.viewing_topics_for(9_901, [ 4 ]))
+    end
   end
 end

@@ -56,4 +56,16 @@ describe('CommentsListController read pointer updates', () => {
 
     expect(topicsController.loadTopics).not.toHaveBeenCalled()
   })
+
+  test('flushes a pending read pointer update before closing the popup', () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    controller.resetState = jest.fn()
+    controller.listTarget = document.createElement('div')
+    controller.markCommentsRead()
+
+    controller.onPopupClosed()
+
+    expect(global.fetch).toHaveBeenCalledWith('/comment_read_pointers/update', expect.objectContaining({ method: 'POST' }))
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ creative_id: '42', topic_id: null })
+  })
 })

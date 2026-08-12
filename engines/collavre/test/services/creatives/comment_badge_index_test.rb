@@ -145,6 +145,29 @@ module Creatives
       Rails.cache.delete(CommentPresenceStore.topic_key(creative.id, @user.id))
     end
 
+    test "suppresses an archived topic viewed beside All Messages" do
+      creative = Creative.create!(user: @user, description: "All Messages with archived topic", sequence: 919)
+      archived_topic = creative.topics.create!(name: "Archived", user: @user, archived_at: Time.current)
+      Comment.create!(creative: creative, topic: archived_topic, user: @author, content: "archived")
+      CommentPresenceStore.add(creative.id, @user.id, subscription_id: "all")
+      CommentPresenceStore.add(creative.id, @user.id, subscription_id: "archived")
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil, subscription_id: "all")
+      CommentPresenceStore.set_topic(creative.id, @user.id, archived_topic.id, subscription_id: "archived")
+
+      assert_equal [ CommentPresenceStore::ALL_TOPICS, archived_topic.id ], CommentPresenceStore.viewing_topics(creative.id, @user.id)
+      assert_equal [ @user.id ], CommentPresenceStore.list(creative.id)
+      assert_equal(
+        { @user.id => [ CommentPresenceStore::ALL_TOPICS, archived_topic.id ] },
+        CommentPresenceStore.viewing_topics_for(creative.id, [ @user.id ])
+      )
+      assert_empty @index.unread_counts_by_topic(creative)
+      badge = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user ]).fetch(@user.id)
+      assert_equal 0, badge.unread_count
+    ensure
+      CommentPresenceStore.remove(creative.id, @user.id, subscription_id: "all")
+      CommentPresenceStore.remove(creative.id, @user.id, subscription_id: "archived")
+    end
+
     # The batch is one query for the whole level, so a per-origin watermark must
     # not leak across origins.
     test "each origin is counted against its own watermark" do
