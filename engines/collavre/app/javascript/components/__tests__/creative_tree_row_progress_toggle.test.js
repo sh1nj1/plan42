@@ -25,7 +25,7 @@ async function mountRow(progressHtml) {
   return row
 }
 
-const INCOMPLETE_TOGGLE = '<span class="progress-toggle-wrap" data-progress-toggle="true" data-creative-id="7" data-current-progress="0" data-new-progress="1" data-mark-complete="Mark complete" data-mark-incomplete="Mark incomplete" title="Mark complete"><input type="checkbox" class="progress-toggle-checkbox" aria-label="Mark complete"></span>'
+const INCOMPLETE_TOGGLE = '<span class="progress-toggle-wrap" data-progress-toggle="true" data-creative-id="7" data-current-progress="0" data-new-progress="1" data-mark-complete="Mark complete" data-mark-incomplete="Mark incomplete" title="Mark complete"><input type="checkbox" class="progress-toggle-checkbox" aria-label="Mark complete"><span class="progress-toggle-mark" aria-hidden="true"> </span></span>'
 
 afterEach(() => {
   csrfFetch.mockReset()
@@ -58,6 +58,26 @@ test('updates checkbox metadata and ancestor progress after a successful toggle'
   expect(csrfFetch).toHaveBeenCalledWith('/creatives/7', expect.objectContaining({ method: 'PATCH' }))
   expect(row.dataset.progressValue).toBe('1')
   expect(ancestor.progressHtml).toContain('50%')
+})
+
+test('flips the completion state optimistically so the mark shows before the request settles', async () => {
+  let resolveFetch
+  csrfFetch.mockReturnValue(new Promise((resolve) => { resolveFetch = resolve }))
+  const row = await mountRow(INCOMPLETE_TOGGLE)
+  const toggle = row.querySelector('[data-progress-toggle]')
+
+  toggle.click()
+
+  // CSS keys the mark/checkbox swap off data-current-progress, so the completed
+  // row reads as done immediately instead of waiting on the PATCH.
+  expect(toggle.dataset.currentProgress).toBe('1')
+  expect(toggle.dataset.newProgress).toBe('0')
+  expect(toggle.title).toBe('Mark incomplete')
+  expect(toggle.querySelector('.progress-toggle-mark')).not.toBeNull()
+
+  resolveFetch({ ok: true, json: async () => ({ progress: 1 }) })
+  await Promise.resolve()
+  await row.updateComplete
 })
 
 test('restores checkbox metadata when a toggle request fails', async () => {

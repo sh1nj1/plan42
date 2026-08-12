@@ -334,12 +334,21 @@ creative-tree-row.show-edit .creative-row {
     color: var(--text-muted);
 }
 
-/* Leaf creatives with binary progress are directly actionable. */
+/* Leaf creatives with binary progress are directly actionable. The checkbox and
+   the completion mark share one grid cell so the control keeps a single width
+   whichever state is showing. */
 .progress-toggle-wrap {
     cursor: pointer;
-    display: inline-flex;
+    display: inline-grid;
+    grid-template-areas: "progress-state";
     align-items: center;
+    justify-items: center;
+    min-width: 1.5em;
     padding-top: 4px;
+}
+
+.progress-toggle-wrap > * {
+    grid-area: progress-state;
 }
 
 .progress-toggle-checkbox {
@@ -348,6 +357,43 @@ creative-tree-row.show-edit .creative-row {
     margin: 0;
     cursor: pointer;
     accent-color: var(--color-brand);
+    transition: opacity 0.12s ease;
+}
+
+/* A completed leaf shows the admin completion mark (blank by default) instead of
+   a checked box, so finished rows read as quietly as completed parent rows. */
+.progress-toggle-mark {
+    color: var(--color-brand);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-checkbox {
+    opacity: 0;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-mark {
+    opacity: 1;
+}
+
+/* Hover or keyboard focus brings the checked box back, so an accidental
+   completion is undone in place instead of through the inline editor. */
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-checkbox,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-checkbox {
+    opacity: 1;
+}
+
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-mark,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-mark {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .progress-toggle-checkbox,
+    .progress-toggle-mark {
+        transition: none;
+    }
 }
 
 .progress-toggle-saving {

@@ -238,6 +238,49 @@ class CreativesHelperTest < ActionView::TestCase
     end
   end
 
+  test "render_progress_toggle renders the completion mark alongside the checkbox" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Completed leaf", progress: 1)
+
+    Current.set(user: user) do
+      Collavre::SystemSetting.stub(:completion_mark, "✓") do
+        html = render_progress_control(creative, 1, has_children: false, can_write: true)
+
+        assert_includes html, 'data-current-progress="1"'
+        assert_includes html, "progress-toggle-mark"
+        assert_includes html, "✓"
+        # The checkbox stays the accessible control; CSS is what hides it behind
+        # the mark until the row is hovered or focused.
+        assert_includes html, "progress-toggle-checkbox"
+        assert_includes html, 'checked="checked"'
+      end
+    end
+  end
+
+  test "render_progress_toggle falls back to a non-breaking space for a blank completion mark" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Quietly completed leaf", progress: 1)
+
+    Current.set(user: user) do
+      Collavre::SystemSetting.stub(:completion_mark, "") do
+        html = render_progress_control(creative, 1, has_children: false, can_write: true)
+
+        assert_includes html, %(<span class="progress-toggle-mark" aria-hidden="true"> </span>)
+      end
+    end
+  end
+
+  test "render_progress_toggle keeps the checkbox reachable by keyboard" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Keyboard leaf", progress: 0)
+
+    Current.set(user: user) do
+      html = render_progress_control(creative, 0, has_children: false, can_write: true)
+
+      refute_includes html, 'tabindex="-1"'
+    end
+  end
+
   test "render_creative_tree_markdown includes children of origin for linked creatives" do
     user = users(:one)
 
