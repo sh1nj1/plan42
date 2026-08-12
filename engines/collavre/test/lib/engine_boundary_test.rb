@@ -31,6 +31,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   SATELLITE_CONSTANTS = SATELLITES.to_h { |name| [ name.camelize, name ] }.freeze
   SATELLITE_GEM_NAME = /\Acollavre_/
+  SATELLITE_CONSTANT = /\ACollavre[A-Z]\w*\z/
+  SATELLITE_IN_SYMBOL = /\bCollavre[A-Z]\w*(?:::[A-Z]\w*)*\b/
 
   # Every entry point that resolves a path through $LOAD_PATH. `load` and
   # `autoload` are not `require`, but they reach a satellite file just as well
@@ -68,7 +70,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # The nested segments are captured too, so a reference is recorded as the
   # class it actually reaches rather than as its engine namespace — see
   # KNOWN_VIOLATIONS for why that distinction is the whole point.
-  SATELLITE_IN_STRING = /\b(?:#{SATELLITE_CONSTANTS.keys.join('|')})(?:::[A-Z]\w*)*\b/
+  SATELLITE_IN_STRING = /\bCollavre[A-Z]\w*(?:::[A-Z]\w*)+\b/
+  SATELLITE_ROOT_IN_STRING = /\bCollavre[A-Z]\w*\b(?!::)/
 
   RUBY_FILE = /\.(rb|rake|erb)(?:\.tt)?\z/
 
@@ -155,6 +158,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], template_paths_in(%(render template: "#{feature}"))
     assert_equal [ feature ], asset_paths_in(%(asset_path "#{feature}"))
     assert_equal [ feature ], css_asset_paths_in(%(@import "#{feature}";))
+  end
+
+  test "constant detector rejects published satellites outside this checkout" do
+    satellite = "CollavreSalesforce"
+
+    assert_equal [ "#{satellite}::Account" ], names(constant_references_in("#{satellite}::Account.find(1)"))
+    assert_equal [ "#{satellite}::Account" ], names(string_references_in(%("#{satellite}::Account".constantize)))
+    assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
+    assert_equal [ satellite ], names(string_references_in(%("#{satellite}".constantize)))
+    assert_equal [ satellite ], names(string_references_in(%(belongs_to :account, class_name: "#{satellite}")))
   end
 
   # The three tests above pass today because the codebase is clean, which means
@@ -334,7 +347,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_empty names(string_references_in("# see #{satellite}::Account for the pattern"))
     assert_empty names(string_references_in(%("Collavre::Creative")))
-    assert_empty names(string_references_in(%("#{satellite}Extra::Account")))
+    assert_empty names(string_references_in(%("CollaborationExtra::Account")))
   end
 
   test "detector flags a require of a satellite engine" do
@@ -2026,7 +2039,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def engine_for(name)
-    SATELLITE_CONSTANTS[name.split("::").first]
+    name.split("::").first.underscore
   end
 
   # The detectors carry a line alongside each name so #references_in can order
@@ -2047,7 +2060,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def constant_references_in(source)
     all = tokens(source)
     all.each_with_index.filter_map { |token, index|
-      next unless token.type == :CONSTANT && SATELLITE_CONSTANTS.key?(token.value)
+      next unless token.type == :CONSTANT && satellite_constant?(token.value)
       next if symbol_literal?(all, index)
       next if nested_in_another_namespace?(all, index)
 
@@ -2114,8 +2127,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # it afterwards.
   def string_references_in(source)
     root = Prism.parse(source).value
-    (located_string_literals_in(root) + constant_resolution_literals_in(root))
-      .flat_map { |value, line| value.scan(SATELLITE_IN_STRING).map { |name| [ name, line ] } }
+    literal_references = located_string_literals_in(root).flat_map do |value, line|
+      value.scan(SATELLITE_IN_STRING).map { |name| [ name, line ] }
+    end
+    resolution_references = constant_resolution_literals_in(root).flat_map do |value, line, kind|
+      expression = kind == :symbol ? SATELLITE_IN_SYMBOL : SATELLITE_ROOT_IN_STRING
+      value.scan(expression).map { |name| [ name, line ] }
+    end
+    resolving_root_references = constant_resolving_string_literals_in(root).flat_map do |value, line|
+      value.scan(SATELLITE_ROOT_IN_STRING).map { |name| [ name, line ] }
+    end
+
+    literal_references + resolution_references + resolving_root_references
   end
 
   # Prism tokens retain source escapes (`\\u0047`), but Ruby resolves them before
@@ -2150,13 +2173,36 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return found unless node.is_a?(Prism::Node)
 
     if node.is_a?(Prism::CallNode) && constant_symbol_receiver?(node)
-      constant_symbol_arguments(node).each do |argument|
-        symbol = static_symbol_concatenation(argument)
-        found << [ symbol, argument.location.start_line ] if symbol
-      end
+      constant_symbol_arguments(node).each { |argument| append_constant_resolution_literal(found, argument) }
     end
     node.compact_child_nodes.each { |child| constant_resolution_literals_in(child, found) }
     found
+  end
+
+  def append_constant_resolution_literal(found, argument)
+    symbol = static_symbol_concatenation(argument)
+    found << [ symbol, argument.location.start_line, :symbol ] if symbol
+
+    string = static_string_concatenation(argument)
+    found << [ string, argument.location.start_line, :string ] if string
+  end
+
+  def constant_resolving_string_literals_in(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    if node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name)
+      string = static_string_concatenation(node.receiver)
+      found << [ string, node.location.start_line ] if string
+    elsif node.is_a?(Prism::AssocNode) && %w[class_name type].include?(association_key_name(node))
+      string = static_string_concatenation(node.value)
+      found << [ string, node.location.start_line ] if string
+    end
+    node.compact_child_nodes.each { |child| constant_resolving_string_literals_in(child, found) }
+    found
+  end
+
+  def association_key_name(node)
+    node.key.unescaped if node.key.respond_to?(:unescaped)
   end
 
   # A constant is not the only way to reach a satellite. Every engine is on the
@@ -2549,6 +2595,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def satellite_gem_dependencies(dependencies)
     dependencies.grep(SATELLITE_GEM_NAME)
+  end
+
+  def satellite_constant?(name)
+    name.match?(SATELLITE_CONSTANT)
   end
 
   # Network URLs are fetched externally rather than resolved through Propshaft.
