@@ -235,6 +235,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "detector flags a satellite class named by a reflected constant API symbol" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    %w[send public_send __send__].each do |dispatch|
+      assert_equal [ satellite ], names(string_references_in("Object.#{dispatch}(:const_get, :#{satellite})")), dispatch
+    end
+  end
+
   test "detector ignores satellite symbols on nested constant receivers" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -390,6 +398,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre::Integrations.autoload(:Foo, "#{satellite}/foo")))
     assert_equal [ "#{satellite}/foo" ], requires_in(%(mod&.autoload :Foo, "#{satellite}/foo"))
     assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre.send(:autoload, :Foo, "#{satellite}/foo")))
+    assert_equal [ "#{satellite}/foo" ], requires_in(%(Collavre.method(:autoload).call(:Foo, "#{satellite}/foo")))
   end
 
   # The path has to belong to the loader itself. A string in a *neighbouring*
@@ -754,6 +763,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(registry.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.call(null, "#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.apply(null, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require("#{satellite}/template")))
@@ -766,6 +776,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module?.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.require.call(null, "#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.require.apply(null, ["#{satellite}/template"])))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -1472,7 +1483,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       when "require"
         next unless js_commonjs_loader?(tokens, index)
 
-        js_call_specifier(tokens, index) || js_require_call_specifier(tokens, index) || js_require_resolve_specifier(tokens, index)
+        js_call_specifier(tokens, index) || js_require_call_specifier(tokens, index) || js_require_apply_specifier(tokens, index) || js_require_resolve_specifier(tokens, index)
       when "import"
         next if tokens[index - 1] == [ :punctuation, "." ]
 
@@ -1543,6 +1554,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless open && tokens[open + 2] == [ :punctuation, "," ]
 
     js_static_string_at(tokens, open + 3)
+  end
+
+  # `require.apply(this_arg, [specifier])` is the array-argument counterpart
+  # to `require.call(this_arg, specifier)`. Only a single static specifier is
+  # useful to this scanner; computed or multiple arguments stay unknown.
+  def js_require_apply_specifier(tokens, index)
+    return unless tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, "apply" ]
+
+    open = js_call_open_at(tokens, index + 2)
+    return unless open && tokens[open + 2] == [ :punctuation, "," ] && tokens[open + 3] == [ :punctuation, "[" ]
+
+    specifier, close = js_static_string_expression_at(tokens, open + 4)
+    specifier if specifier && tokens[close] == [ :punctuation, "]" ] && tokens[close + 1] == [ :punctuation, ")" ]
   end
 
   def js_static_string_at(tokens, index)
@@ -1737,8 +1761,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def constant_resolution_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::CallNode) && CONSTANT_SYMBOL_METHODS.include?(node.name.to_s) && top_level_object_receiver?(node.receiver)
-      node.arguments&.arguments.to_a&.each do |argument|
+    if node.is_a?(Prism::CallNode) && constant_symbol_method(node) && top_level_object_receiver?(node.receiver)
+      constant_symbol_arguments(node).each do |argument|
         if argument.is_a?(Prism::SymbolNode)
           found << [ argument.unescaped, argument.location.start_line ]
         end
@@ -1858,6 +1882,21 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
   end
 
+  def constant_symbol_method(call)
+    return call.name.to_s if CONSTANT_SYMBOL_METHODS.include?(call.name.to_s)
+    return unless %w[send public_send __send__].include?(call.name.to_s)
+
+    method_name = call.arguments&.arguments&.first
+    return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
+
+    method_name.unescaped if CONSTANT_SYMBOL_METHODS.include?(method_name.unescaped)
+  end
+
+  def constant_symbol_arguments(call)
+    arguments = call.arguments&.arguments.to_a
+    constant_symbol_method(call) == call.name.to_s ? arguments : arguments.drop(1)
+  end
+
   # A statically selected `Kernel.method(:require).call(path)`,
   # `Object.method(:require).call(path)`, or `method(:require).call(path)`
   # invokes the native loader just like direct and reflective dispatch. Object
@@ -1867,12 +1906,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     method_call = call.receiver
     return unless method_call.is_a?(Prism::CallNode) && method_call.name == :method
-    return unless method_call.receiver.nil? || kernel?(method_call.receiver) || top_level_object_receiver?(method_call.receiver)
 
     method_name = method_call.arguments&.arguments&.first
     return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
+    return unless LOADER_METHODS.include?(method_name.unescaped)
+    return unless method_name.unescaped == "autoload" || method_call.receiver.nil? || kernel?(method_call.receiver) || top_level_object_receiver?(method_call.receiver)
 
-    method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
+    method_name.unescaped
   end
 
   # Literals nested in a loader argument still contribute to the path the
