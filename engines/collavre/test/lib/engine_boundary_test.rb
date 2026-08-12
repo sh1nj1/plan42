@@ -514,6 +514,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], asset_paths_in(%(ActionController::Base.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(view_context.asset_path("#{path}")))
+    assert_equal [ path ], asset_paths_in(%(self.helpers.asset_path("#{path}")))
+    assert_equal [ path ], asset_paths_in(%(self.view_context.asset_path("#{path}")))
     assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
 
     erb_path = ENGINES_ROOT.join(CORE, "app/views/collavre/example.html.erb")
@@ -2005,7 +2007,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def rails_asset_helper_receiver?(source)
-    source.match?(/\A(?:::)?ActionController::Base\.helpers\z|\A(?:helpers|view_context)\z/)
+    source.match?(/\A(?:::)?ActionController::Base\.helpers\z|\A(?:self\.)?(?:helpers|view_context)\z/)
   end
 
   def asset_path_values(node)
