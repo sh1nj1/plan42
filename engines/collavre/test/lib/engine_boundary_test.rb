@@ -222,6 +222,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
   end
 
+  test "gemspec detector scans aliases and dependencies sequentially within case branches" do
+    source = <<~RUBY
+      Gem::Specification.new do |gemspec|
+        case RUBY_PLATFORM
+        when /mingw/
+          target = gemspec
+          target.add_dependency "collavre_windows"
+        end
+      end
+    RUBY
+
+    assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
+  end
+
   test "gemspec detector finds statically declared conditional package files" do
     source = <<~RUBY
       Gem::Specification.new do |manifest|
@@ -2888,6 +2902,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return found unless node.is_a?(Prism::Node)
     return gemspec_calls_in_specification_block(node, found, gemspec_receivers, &matches) if specification_block
     return gemspec_calls_in_conditional(node, found, gemspec_receivers, &matches) if node.is_a?(Prism::IfNode)
+    return gemspec_calls_in_case(node, found, gemspec_receivers, &matches) if node.is_a?(Prism::CaseNode)
 
     gemspec_receivers -= block_parameter_names(node) if node.is_a?(Prism::BlockNode) && !specification_block
     found << node if matches.call(node, gemspec_receivers)
@@ -2916,6 +2931,22 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     found
   end
 
+  def gemspec_calls_in_case(node, found, gemspec_receivers, &matches)
+    gemspec_calls(node.predicate, found, gemspec_receivers:, specification_block: false, &matches)
+    node.conditions.each do |condition|
+      gemspec_calls_in_when(condition, found, gemspec_receivers, &matches)
+    end
+    gemspec_calls_in_statements(node.else_clause&.statements, found, gemspec_receivers, &matches)
+    found
+  end
+
+  def gemspec_calls_in_when(node, found, gemspec_receivers, &matches)
+    node.conditions.each do |condition|
+      gemspec_calls(condition, found, gemspec_receivers:, specification_block: false, &matches)
+    end
+    gemspec_calls_in_statements(node.statements, found, gemspec_receivers, &matches)
+  end
+
   def gemspec_calls_in_statements(statements, found, gemspec_receivers, &matches)
     receivers = gemspec_receivers
     statements&.body&.each do |statement|
@@ -2933,6 +2964,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       gemspec_spec_receiver?(statement.value, receivers) ? receivers | [ statement.name ] : receivers - [ statement.name ]
     when Prism::IfNode
       conditional_receiver_states(statement, receivers).reduce(:|)
+    when Prism::CaseNode
+      case_receiver_states(statement, receivers).reduce(:|)
     when Prism::ElseNode
       gemspec_receivers_after_statements(statement.statements, receivers)
     else
@@ -2944,6 +2977,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     states = [ receivers ]
     states << gemspec_receivers_after_statements(statement.statements, receivers)
     states << gemspec_receivers_after(statement.subsequent, receivers) if statement.subsequent
+    states
+  end
+
+  def case_receiver_states(statement, receivers)
+    states = [ receivers ]
+    statement.conditions.each do |condition|
+      states << gemspec_receivers_after_statements(condition.statements, receivers)
+    end
+    states << gemspec_receivers_after_statements(statement.else_clause.statements, receivers) if statement.else_clause
     states
   end
 
