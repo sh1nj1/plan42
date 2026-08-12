@@ -53,7 +53,7 @@ engines/collavre/app/controllers/collavre/api/v1/agents_controller.rb:
     Collavre::Api::V1::AgentsController#register: 42.07
     Collavre::Api::V1::AgentsController#reply: 38.92
   Metrics/ClassLength:
-    Collavre::Api::V1::AgentsController: 325
+    Collavre::Api::V1::AgentsController: 303
   Metrics/CyclomaticComplexity:
     Collavre::Api::V1::AgentsController#destroy: 16
   Metrics/MethodLength:
@@ -218,13 +218,13 @@ engines/collavre/app/helpers/collavre/creatives_helper.rb:
     Collavre::CreativesHelper#render_creative_tree_markdown: 20
 engines/collavre/app/jobs/collavre/ai_agent_job.rb:
   Metrics/AbcSize:
-    Collavre::AiAgentJob#perform: 178
+    Collavre::AiAgentJob#perform: 129.4
   Metrics/CyclomaticComplexity:
-    Collavre::AiAgentJob#perform: 47
+    Collavre::AiAgentJob#perform: 37
   Metrics/MethodLength:
-    Collavre::AiAgentJob#perform: 177
+    Collavre::AiAgentJob#perform: 126
   Metrics/PerceivedComplexity:
-    Collavre::AiAgentJob#perform: 52
+    Collavre::AiAgentJob#perform: 39
 engines/collavre/app/jobs/collavre/compress_job.rb:
   Metrics/AbcSize:
     Collavre::CompressJob#perform: 72.65
@@ -281,15 +281,13 @@ engines/collavre/app/jobs/collavre/trigger_loop_verify_job.rb:
     Collavre::TriggerLoopVerifyJob#perform: 20
 engines/collavre/app/models/collavre/comment.rb:
   Metrics/AbcSize:
-    Collavre::Comment#cancel_pending_tasks: 42.8
     Collavre::Comment#resume_trigger_loop_if_awaiting: 49.73
   Metrics/ClassLength:
-    Collavre::Comment: 326
+    Collavre::Comment: 315
   Metrics/CyclomaticComplexity:
     Collavre::Comment#dispatch_to_orchestration: 14
     Collavre::Comment#resume_trigger_loop_if_awaiting: 21
   Metrics/MethodLength:
-    Collavre::Comment#cancel_pending_tasks: 36
     Collavre::Comment#resume_trigger_loop_if_awaiting: 42
   Metrics/PerceivedComplexity:
     Collavre::Comment#resume_trigger_loop_if_awaiting: 21
@@ -375,7 +373,7 @@ engines/collavre/app/services/collavre/command_menu_service.rb:
     Collavre::CommandMenuService#format_args: 14
     Collavre::CommandMenuService#normalize_params: 21
   Metrics/MethodLength:
-    Collavre::CommandMenuService#built_in_items: 49
+    Collavre::CommandMenuService#built_in_items: 39
   Metrics/PerceivedComplexity:
     Collavre::CommandMenuService#normalize_params: 21
 engines/collavre/app/services/collavre/comment_snapshot_restore_service.rb:
@@ -398,9 +396,6 @@ engines/collavre/app/services/collavre/comments/topic_command.rb:
     Collavre::Comments::TopicCommand#create_topic: 55
   Metrics/PerceivedComplexity:
     Collavre::Comments::TopicCommand#create_topic: 18
-engines/collavre/app/services/collavre/comments/workflow_executor.rb:
-  Metrics/MethodLength:
-    Collavre::Comments::WorkflowExecutor#advance!: 31
 engines/collavre/app/services/collavre/creatives/creative_tree_serializer.rb:
   Metrics/AbcSize:
     Collavre::Creatives::CreativeTreeSerializer#serialize_simple: 42.25
@@ -534,11 +529,6 @@ engines/collavre/app/services/collavre/orchestration/delivery_record.rb:
 engines/collavre/app/services/collavre/orchestration/scheduler.rb:
   Metrics/MethodLength:
     Collavre::Orchestration::Scheduler#evaluate: 29
-engines/collavre/app/services/collavre/orchestration/stuck_detector.rb:
-  Metrics/AbcSize:
-    Collavre::Orchestration::StuckDetector#recover_stuck_task: 43.24
-  Metrics/MethodLength:
-    Collavre::Orchestration::StuckDetector#recover_stuck_task: 33
 engines/collavre/app/services/collavre/orchestration/task_coalescer.rb:
   Metrics/AbcSize:
     Collavre::Orchestration::TaskCoalescer#coalesce!: 46.69
