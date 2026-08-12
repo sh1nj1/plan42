@@ -27,9 +27,12 @@ module Collavre
 
         rendered = rendered_public_ids.to_set
 
-        receipt_pointers = pointers.to_a.select do |pointer|
-          CreativeShare.read_access_from_shares?(creative, pointer.user)
-        end
+        receipt_pointers = pointers.to_a
+        readable_user_ids = CreativeShare.readable_user_ids_from_shares(
+          creative,
+          receipt_pointers.map(&:user_id)
+        ).to_set
+        receipt_pointers.select! { |pointer| readable_user_ids.include?(pointer.user_id) }
         receipt_users_by_comment_id = Hash.new { |hash, key| hash[key] = Set.new }
 
         receipt_pointers.each_with_object({}) do |pointer, result|

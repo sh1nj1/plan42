@@ -268,15 +268,37 @@ module Collavre
 
     def self.read_access_from_shares?(destination, reader)
       return false unless reader
-      return true if destination.user_id == reader.id
+
+      readable_user_ids_from_shares(destination, [ reader.id ]).include?(reader.id)
+    end
+
+    # Resolves access for a group of readers from one snapshot of the creative's
+    # share hierarchy. Receipt rendering commonly has one pointer per topic, so
+    # checking every pointer independently would repeat the same ancestor and
+    # share queries for each topic.
+    def self.readable_user_ids_from_shares(destination, user_ids)
+      user_ids = user_ids.compact.uniq
+      return [] if user_ids.empty?
+
+      readable_user_ids = user_ids & [ destination.user_id ]
 
       ancestor_ids = [ destination.id ] + destination.ancestors.pluck(:id)
-      shares = CreativeShare.where(creative_id: ancestor_ids, user_id: [ reader.id, nil ]).to_a
-      personal_share = CreativeShare.closest_parent_share(ancestor_ids, shares.select { |share| share.user_id == reader.id })
-      public_share = CreativeShare.closest_parent_share(ancestor_ids, shares.select { |share| share.user_id.nil? })
-      effective_share = personal_share || public_share
+      shares_by_user_id = CreativeShare
+        .where(creative_id: ancestor_ids, user_id: user_ids + [ nil ])
+        .to_a
+        .group_by(&:user_id)
+      public_share = CreativeShare.closest_parent_share(ancestor_ids, shares_by_user_id[nil])
 
-      effective_share && CreativeShare.permissions.fetch(effective_share.permission) >= CreativeShare.permissions.fetch("read")
+      user_ids.each do |user_id|
+        next if readable_user_ids.include?(user_id)
+
+        personal_share = CreativeShare.closest_parent_share(ancestor_ids, shares_by_user_id[user_id])
+        effective_share = personal_share || public_share
+        readable_user_ids << user_id if effective_share &&
+          CreativeShare.permissions.fetch(effective_share.permission) >= CreativeShare.permissions.fetch("read")
+      end
+
+      readable_user_ids
     end
 
     def permission_context_changed?

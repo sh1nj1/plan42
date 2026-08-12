@@ -148,6 +148,16 @@ module Collavre
         assert_equal [ @owner, @reader ].map(&:id).sort, result[second.id].map(&:id).sort
       end
 
+      test "batches receipt permission checks for several topic pointers" do
+        topics = 3.times.map { |index| Topic.create!(creative: @creative, name: "Topic #{index}", user: @owner) }
+        comments = topics.map { |topic| comment(topic.name, topic: topic) }
+        comments.each do |comment|
+          CommentReadPointer.create!(user: @reader, creative: @creative, topic: comment.topic, last_read_comment_id: comment.id)
+        end
+
+        assert_equal 1, count_share_queries { receipts_for(comments) }
+      end
+
       test "a page with no public comments has no receipts" do
         private_comment = comment("secret", private: true)
         point_at(private_comment)
@@ -195,6 +205,19 @@ module Collavre
 
       def point_at(target, user: @reader)
         CommentReadPointer.create!(user: user, creative: @creative, last_read_comment_id: target.id)
+      end
+
+      def count_share_queries
+        CreativeShare.connection.clear_query_cache
+        queries = []
+        callback = lambda do |_name, _start, _finish, _id, payload|
+          if !payload[:cached] && payload[:sql].match?(/FROM [\"`]creative_shares[\"`]/i)
+            queries << payload[:sql]
+          end
+        end
+
+        ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+        queries.size
       end
     end
   end
