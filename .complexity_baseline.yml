@@ -205,16 +205,16 @@ engines/collavre/app/controllers/concerns/collavre/users_controller/registration
     Collavre::UsersController::Registration#create: 39
 engines/collavre/app/helpers/collavre/creatives_helper.rb:
   Metrics/AbcSize:
-    Collavre::CreativesHelper#render_creative_progress: 59.44
+    Collavre::CreativesHelper#render_creative_progress: 60.96
     Collavre::CreativesHelper#render_creative_tree_markdown: 54.16
   Metrics/CyclomaticComplexity:
-    Collavre::CreativesHelper#render_creative_progress: 17
+    Collavre::CreativesHelper#render_creative_progress: 16
     Collavre::CreativesHelper#render_creative_tree_markdown: 18
   Metrics/MethodLength:
-    Collavre::CreativesHelper#render_creative_progress: 55
+    Collavre::CreativesHelper#render_creative_progress: 56
     Collavre::CreativesHelper#render_creative_tree_markdown: 45
   Metrics/PerceivedComplexity:
-    Collavre::CreativesHelper#render_creative_progress: 20
+    Collavre::CreativesHelper#render_creative_progress: 19
     Collavre::CreativesHelper#render_creative_tree_markdown: 20
 engines/collavre/app/jobs/collavre/ai_agent_job.rb:
   Metrics/AbcSize:
@@ -298,15 +298,6 @@ engines/collavre/app/models/collavre/comment/approvable.rb:
     Collavre::Comment::Approvable#approval_status: 16
   Metrics/PerceivedComplexity:
     Collavre::Comment::Approvable#approval_status: 16
-engines/collavre/app/models/collavre/comment/broadcastable.rb:
-  Metrics/AbcSize:
-    Collavre::Comment::Broadcastable::ClassMethods#broadcast_badges: 63.38
-  Metrics/CyclomaticComplexity:
-    Collavre::Comment::Broadcastable::ClassMethods#broadcast_badges: 17
-  Metrics/MethodLength:
-    Collavre::Comment::Broadcastable::ClassMethods#broadcast_badges: 50
-  Metrics/PerceivedComplexity:
-    Collavre::Comment::Broadcastable::ClassMethods#broadcast_badges: 17
 engines/collavre/app/models/collavre/comment/notifiable.rb:
   Metrics/MethodLength:
     Collavre::Comment::Notifiable#create_inbox_comment: 38
