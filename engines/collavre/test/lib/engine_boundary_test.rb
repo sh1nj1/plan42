@@ -37,7 +37,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
-  CONSTANT_QUERY_METHODS = %w[const_defined? const_get const_source_location].freeze
+  CONSTANT_QUERY_METHODS = %w[autoload? const_defined? const_get const_source_location].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
 
@@ -221,6 +221,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in("Object.const_get(:#{satellite})"))
     assert_equal [ satellite ], names(string_references_in("Object.const_defined?(:#{satellite})"))
     assert_equal [ satellite ], names(string_references_in("Object.const_source_location(:#{satellite})"))
+    assert_equal [ satellite ], names(string_references_in("Object.autoload?(:#{satellite})"))
   end
 
   test "detector ignores satellite symbols used as ordinary data" do
