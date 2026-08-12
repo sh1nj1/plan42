@@ -3,7 +3,7 @@ require "test_helper"
 module CollavreOpenclaw
   # The OpenClaw adapter path in AiClientExtension#chat bypasses the base
   # Collavre::AiClient#chat (no `super`), so it must independently honor
-  # @log_interactions — otherwise unsubmitted typo-correction drafts leak to
+  # @log_interactions — otherwise sensitive request content can leak to
   # ActivityLog for OpenClaw-backed agents.
   class AiClientExtensionTest < ActiveSupport::TestCase
     # Minimal adapter so chat() doesn't touch the network. It tracks

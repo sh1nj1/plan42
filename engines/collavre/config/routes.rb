@@ -40,7 +40,6 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
-      get :typo_correction
       get :agent_connection, to: "agent_connections#show"
     end
   end
@@ -85,8 +84,6 @@ Collavre::Engine.routes.draw do
   end
 
   resources :llm_models, only: [ :destroy ]
-
-  resources :typo_corrections, only: [ :create ]
 
   resources :creative_imports, only: [ :create ]
   resources :tasks, only: [] do
