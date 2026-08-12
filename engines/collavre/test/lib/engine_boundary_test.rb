@@ -731,6 +731,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require.resolve?.("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = import.meta.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -1730,6 +1731,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
         js_call_specifier(tokens, index) || js_require_call_specifier(tokens, index) || js_require_apply_specifier(tokens, index) || js_require_resolve_specifier(tokens, index)
       when "import"
+        next js_import_meta_resolve_specifier(tokens, index) if js_import_meta_resolve?(tokens, index)
         next if tokens[index - 1] == [ :punctuation, "." ]
 
         js_bare_import_specifier(tokens, index) || js_call_specifier(tokens, index) || js_from_specifier(tokens, index + 1)
@@ -1793,6 +1795,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       tokens[index + 2] == [ :word, "resolve" ]
 
     open = js_call_open_at(tokens, index + 2)
+    return unless open
+
+    js_static_string_at(tokens, open + 1)
+  end
+
+  def js_import_meta_resolve?(tokens, index)
+    tokens[index + 1] == [ :punctuation, "." ] &&
+      tokens[index + 2] == [ :word, "meta" ] &&
+      tokens[index + 3] == [ :punctuation, "." ] &&
+      tokens[index + 4] == [ :word, "resolve" ]
+  end
+
+  def js_import_meta_resolve_specifier(tokens, index)
+    open = js_call_open_at(tokens, index + 4)
     return unless open
 
     js_static_string_at(tokens, open + 1)
