@@ -309,6 +309,60 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target]", count: 0
   end
 
+  # For a special scheme a browser reads "\" as "/", so two of them open an
+  # authority just as "//" does.
+  test "help partial opens a configured backslash authority in a new tab" do
+    SystemSetting.stub(:help_menu_link, "\\\\docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured mixed slash authority in a new tab" do
+    SystemSetting.stub(:help_menu_link, "/\\docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # One backslash is a path separator, not an authority.
+  test "help partial keeps a configured single backslash path in the current window" do
+    SystemSetting.stub(:help_menu_link, "\\docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # A browser strips the padding and navigates off-site; comparing the raw
+  # string would measure something it never sees.
+  test "help partial opens a configured off-site link padded with whitespace in a new tab" do
+    SystemSetting.stub(:help_menu_link, "  https://docs.example.com/help  ") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # Tabs and newlines are removed wherever they sit, so this is an off-site URL.
+  test "help partial opens a configured off-site link split by a tab in a new tab" do
+    SystemSetting.stub(:help_menu_link, "ht\ttps://docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial keeps a configured relative link padded with whitespace in the current window" do
+    SystemSetting.stub(:help_menu_link, " /docs/help ") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
   # URI::InvalidComponentError is not a URI::InvalidURIError. Letting it escape
   # would raise on every page that carries the navigation.
   test "help partial renders a configured link that raises an invalid component error" do

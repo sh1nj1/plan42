@@ -75,7 +75,7 @@ module Collavre
     # Where Ruby's parser hands back no host at all, the spelling decides —
     # see #leaves_origin_by_spelling?.
     def external_link?(url)
-      value = url.to_s
+      value = browser_normalized(url.to_s)
       uri = URI.parse(value)
       return leaves_origin_by_spelling?(value) if uri.host.blank?
 
@@ -93,18 +93,34 @@ module Collavre
 
     private
 
+    # What a browser throws away before it parses anything: every tab and
+    # newline wherever they sit, then leading and trailing C0 controls and
+    # spaces. A setting saved with stray whitespace would otherwise be measured
+    # against a string no browser ever sees — " https://docs.example.com/help"
+    # is off-site to them and unparseable to us.
+    IGNORED_IN_URL = /[\t\n\r]/
+    SURROUNDING_CONTROLS = /\A[\x00-\x20]+|[\x00-\x20]+\z/
+
+    def browser_normalized(value)
+      value.gsub(IGNORED_IN_URL, "").gsub(SURROUNDING_CONTROLS, "")
+    end
+
     # Ruby's parser and a browser disagree about several spellings, and Ruby
     # losing the host is where that shows: it rejects an internationalized
     # domain the browser punycodes, and finds nothing in "///docs.example.com"
     # or "https:/docs.example.com" where the browser skips the slashes and takes
     # the next segment as the host. Reading those as ours is the guess that
     # strands the reader, so the decision falls back to how the value is
-    # written. An explicit "//" authority leaves. So does an http(s) scheme that
-    # is not the one we are served over — with a matching scheme the browser
-    # reads the rest as a path on our origin instead, which is why the scheme is
-    # compared rather than merely detected. Everything else — a relative path,
-    # "mailto:" — is ours.
-    AUTHORITY_PREFIX = %r{\A(?:[a-z][a-z0-9+.\-]*:)?//}i
+    # written.
+    #
+    # Two of any slash start an authority and leave — for a special scheme the
+    # browser reads "\" as "/", so "\\docs.example.com" is an authority while a
+    # single "\" is just a path separator. So does an http(s) scheme that is not
+    # the one we are served over; with a matching scheme the browser reads the
+    # rest as a path on our origin instead, which is why the scheme is compared
+    # rather than merely detected. Everything else — a relative path, "mailto:"
+    # — is ours.
+    AUTHORITY_PREFIX = %r{\A(?:[a-z][a-z0-9+.\-]*:)?[/\\]{2}}i
     SPECIAL_SCHEME_PREFIX = /\A(https?):/i
 
     def leaves_origin_by_spelling?(value)
