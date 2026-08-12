@@ -153,6 +153,36 @@ module Collavre
       assert_includes html, "creative-progress-incomplete"
     end
 
+    test "ancestor controls ignore archived children for each recipient" do
+      @child.update!(archived_at: Time.current)
+
+      controls = CreativeBroadcastJob.new.send(
+        :build_ancestor_progress_controls,
+        [ { id: @root.id, progress: @root.progress } ],
+        [ @shared_user ],
+        {}
+      )
+
+      html = controls.dig(@shared_user.id, @root.id, :progress_html)
+      assert_includes html, "data-progress-toggle"
+    end
+
+    test "ancestor controls ignore children the recipient cannot read" do
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @child, user: @shared_user, permission: :no_access)
+      end
+
+      controls = CreativeBroadcastJob.new.send(
+        :build_ancestor_progress_controls,
+        [ { id: @root.id, progress: @root.progress } ],
+        [ @shared_user ],
+        {}
+      )
+
+      html = controls.dig(@shared_user.id, @root.id, :progress_html)
+      assert_includes html, "data-progress-toggle"
+    end
+
     test "ancestor controls batch creative and permission lookups across recipients" do
       another_user = users(:three)
       perform_enqueued_jobs do

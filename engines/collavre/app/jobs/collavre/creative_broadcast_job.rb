@@ -245,7 +245,7 @@ module Collavre
       displayed_ids = linked_by_user.values.flat_map(&:values)
       creatives_by_id = Creative.where(id: (origin_ids + effective_ids + displayed_ids).uniq).index_by(&:id)
       effective_creatives = effective_ids.index_with { |id| creatives_by_id[id] }.compact
-      has_children_by_id = Creative.where(parent_id: effective_creatives.keys).distinct.pluck(:parent_id).to_set
+      has_visible_children_by_user = visible_children_by_user(effective_creatives, users)
       writable_by_user = batch_write_permissions(effective_creatives, users)
 
       users.each_with_object({}) do |user, controls_by_user|
@@ -264,10 +264,26 @@ module Collavre
               user,
               effective: effective,
               progress: progress,
-              has_children: has_children_by_id.include?(effective.id),
+              has_children: has_visible_children_by_user.fetch(user.id, Set.new).include?(effective.id),
               can_write: writable_by_user.dig(user.id, effective.id) && !effective.read_only_source?
             )
           }
+        end
+      end
+    end
+
+    # Match ChildrenIndex's default tree semantics: archived children and
+    # children the recipient cannot read do not make a visible row a rollup.
+    # Candidate children are loaded once, then visibility is resolved in a
+    # bounded batch per recipient rather than once per ancestor.
+    def visible_children_by_user(effective_creatives, users)
+      child_rows = Creative.where(parent_id: effective_creatives.keys, archived_at: nil).pluck(:id, :parent_id)
+      child_ids = child_rows.map(&:first)
+
+      users.each_with_object({}) do |user, result|
+        readable_ids = Creatives::PermissionFilter.new(user: user).readable_ids(child_ids).to_set
+        result[user.id] = child_rows.each_with_object(Set.new) do |(child_id, parent_id), parent_ids|
+          parent_ids << parent_id if readable_ids.include?(child_id)
         end
       end
     end
