@@ -149,12 +149,20 @@ module Collavre
     end
 
     def schedule_onboarding_cleanup
-      creative = self.creative
-      session_id = creative&.data&.dig("onboarding", "session_id")
+      # The deferred-cleanup marker may have been added after this task loaded
+      # (for example, by onboarding reset), so do not inspect a stale belongs_to
+      # association from the running task instance.
+      creative = Creative.find_by(id: creative_id)
+      onboarding = creative&.data&.fetch("onboarding", {})
+      session_id = onboarding&.fetch("session_id", nil)
       return if session_id.blank?
 
       user = creative.user
-      return unless user&.onboarding_completed_at?
+      # A reset clears onboarding_completed_at for its replacement session.
+      # The retiring session records its own deferred cleanup eligibility on
+      # its tagged creatives, so its terminal turn remains able to finish
+      # cleanup after the bounded retry window.
+      return unless onboarding["cleanup_pending"] || user&.onboarding_completed_at?
 
       OnboardingCleanupJob.perform_later(user.id, session_id)
     end

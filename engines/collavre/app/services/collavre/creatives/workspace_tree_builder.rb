@@ -52,7 +52,10 @@ module Collavre
             label: Collavre::HtmlText.label(creative.effective_description),
             snippet: creative.creative_snippet,
             can_comment: allowed?(creative, :feedback),
-            progress: creative.progress,
+            # Linked creatives are placement shells. Their own progress is not
+            # updated when the origin advances, so the workspace must expose
+            # the origin's authoritative value.
+            progress: creative.origin&.progress || creative.progress,
             url: view_context.collavre.creatives_path(id: creative.id),
             has_children: visible_children.any?,
             children: children

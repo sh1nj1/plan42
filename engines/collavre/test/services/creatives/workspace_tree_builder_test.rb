@@ -91,6 +91,15 @@ module Creatives
       assert_empty nodes.first.fetch(:children).first.fetch(:children)
     end
 
+    test "uses the origin progress for a linked creative" do
+      origin = Creative.create!(user: users(:two), description: "Completed shared creative", progress: 1.0)
+      shell = Creative.create!(user: @user, origin: origin, description: "Local shell", progress: 0.0)
+
+      node = build_tree([ shell ]).sole
+
+      assert_equal 1.0, node.fetch(:progress)
+    end
+
     test "batches linked origins and permission ranks for each level" do
       shells = 4.times.map do |index|
         origin = Creative.create!(user: users(:two), description: "Shared root #{index}")

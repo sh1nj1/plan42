@@ -131,6 +131,36 @@ module Collavre
       ActiveJob::Base.queue_adapter = previous_adapter
     end
 
+    test "reset cleans a retired session when its agent turn settles after the retry window" do
+      previous_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+      clear_enqueued_jobs
+
+      user = User.create!(name: "Retired session cleanup", email: "retired-session-cleanup@example.com", password: "password")
+      agent = User.create!(name: "Retired session helper", email: "retired-session-helper@example.com", password: "password",
+                           llm_vendor: "openai", searchable: true)
+      sign_in_as(user, password: "password")
+      previous_session = Onboarding::Seeder.new(user: user).call
+      creative = previous_session.practice_creatives.second
+      comment = Comment.create!(creative: creative, user: user, content: "@Retired session helper: Please help")
+      task = Task.create!(name: "Pending retired reply", status: "pending_approval", trigger_event_name: "comment_created",
+                          trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent, creative: creative)
+
+      post reset_onboarding_path
+      clear_enqueued_jobs
+      OnboardingCleanupJob.perform_now(user.id, previous_session.session_id, OnboardingCleanupJob::RETRY_DELAYS.length)
+
+      assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, previous_session.session_id ]) do
+        task.update!(status: "done")
+      end
+
+      OnboardingCleanupJob.perform_now(user.id, previous_session.session_id)
+      refute Creative.exists?(creative.id)
+      assert Onboarding::Session.for_user(user.reload)
+    ensure
+      ActiveJob::Base.queue_adapter = previous_adapter
+    end
+
     test "reset enables workspace mode so the runner can be displayed" do
       user = User.create!(
         name: "Workspace disabled learner", email: "workspace-disabled-onboarding@example.com", password: "password",

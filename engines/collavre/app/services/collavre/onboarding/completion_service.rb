@@ -17,6 +17,7 @@ module Collavre
         owned = session_items(session_id)
         session_id ||= session_id_from(owned)
         if defer_pending_agent_cleanup && session_id.present? && pending_agent_turn?(owned)
+          mark_deferred_cleanup!(owned)
           OnboardingCleanupJob.perform_later(user.id, session_id)
         else
           destroy_items!(owned)
@@ -58,6 +59,19 @@ module Collavre
         # between these checks; querying the durable queued job first ensures
         # the subsequent Task query sees that handoff rather than missing both.
         queued_agent_job_for_comments?(comment_ids) || active_task_for_comments?(comment_ids)
+      end
+
+      # This belongs to the retiring session rather than the user. Resetting
+      # onboarding immediately starts another session and clears the user's
+      # completion timestamp, while the old agent turn still needs to trigger
+      # its one final cleanup after the bounded retry window.
+      def mark_deferred_cleanup!(owned)
+        owned.each do |creative|
+          onboarding = creative.data.fetch("onboarding", {}).deep_dup
+          next if onboarding["cleanup_pending"]
+
+          creative.update!(data: creative.data.merge("onboarding" => onboarding.merge("cleanup_pending" => true)))
+        end
       end
 
       def active_task_for_comments?(comment_ids)
