@@ -356,6 +356,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/thing" ], requires_in(%(load Pathname.new("#{satellite}/thing")))
   end
 
+  test "detector folds adjacent Ruby loader string literals" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      requires_in(%(require "collavre_" "#{satellite.delete_prefix('collavre_')}/thing"))
+  end
+
   test "detector flags a satellite template rendered by core" do
     satellite = SATELLITES.first
 
@@ -1459,6 +1466,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def static_string_concatenation(node)
     return node.unescaped if node.is_a?(Prism::StringNode)
+    if node.is_a?(Prism::InterpolatedStringNode)
+      parts = node.parts.map { |part| static_string_concatenation(part) }
+      return parts.join if parts.all?
+    end
     return unless node.is_a?(Prism::CallNode) && node.name == :+
 
     arguments = node.arguments&.arguments

@@ -841,6 +841,18 @@ class ComplexityRatchetBaselineTest < ActiveSupport::TestCase
     assert_empty ComplexityRatchet.load_baseline(path)
   end
 
+  test "rejects nonfinite baseline limits" do
+    File.write(path, <<~YAML)
+      a.rb:
+        Metrics/MethodLength:
+          A#run: .nan
+    YAML
+
+    error = assert_raises(ComplexityRatchet::Error) { ComplexityRatchet.load_baseline(path) }
+
+    assert_includes error.message, "finite nonnegative"
+  end
+
   test "a fallback entity name containing the separator survives the round trip" do
     entries = { "a.rb | Metrics/BlockNesting | ~x = a | b" => 1 }
     ComplexityRatchet.dump_baseline(path, entries)
@@ -912,6 +924,21 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
     assert_empty ComplexityRatchet.verify_monotonic(
       { plain => 90, numeric => 80 }, { plain => 85 }
     )
+  end
+
+  test "groups descendants of ordinalized scopes into the same sibling family" do
+    first = "a.rb | Metrics/MethodLength | A#run"
+    second = "a.rb | Metrics/MethodLength | A(2)#run"
+
+    # Reopening A twice gives the second `run` an ordinal on its enclosing
+    # scope. Deleting the first reopening transfers its allowance onto the
+    # survivor, just as deleting same-named leaf scopes does.
+    problem = ComplexityRatchet.verify_monotonic(
+      { first => 90, second => 80 }, { first => 85 }
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "80"
   end
 
   test "rejects a shifted survivor when only its deleted sibling was baselined" do

@@ -547,22 +547,14 @@ module ComplexityRatchet
       rounded == rounded.to_i ? rounded.to_i : rounded
     end
 
-    def load_baseline(path)
-      return {} unless File.exist?(path)
-
-      flatten(YAML.safe_load_file(path) || {})
-    end
+    def load_baseline(path) = File.exist?(path) ? flatten(YAML.safe_load_file(path) || {}).tap { |entries| validate_baseline_values!(entries) } : {}
 
     def dump_baseline(path, entries)
       File.write(path, BASELINE_HEADER + YAML.dump(nest(entries), line_width: -1))
     end
 
-    # On disk the baseline nests path -> cop -> entity; in memory it is a flat
-    # map of "path | cop | entity" keys. Nesting is not cosmetic: YAML falls
-    # back to the `? key` / `: value` explicit form once a mapping key passes
-    # 128 characters, and a flat key made of a full engine path plus a
-    # namespaced method name blows through that constantly — producing a
-    # three-line diff per entity instead of one.
+    # Baselines are nested on disk, but flattened to `path | cop | entity` in memory.
+    # Nesting prevents YAML from expanding long keys into its multi-line explicit form.
     def nest(entries)
       entries.sort.each_with_object({}) do |(key, value), acc|
         file, cop, entity = key.split(SEPARATOR, 3)
@@ -577,6 +569,8 @@ module ComplexityRatchet
         end
       end
     end
+
+    def validate_baseline_values!(entries) = entries.each { |key, value| raise Error, "baseline entry #{key.inspect} must be a finite nonnegative number (got #{value.inspect})" unless value.is_a?(Numeric) && value.finite? && value >= 0 }
 
     def load_waivers(path)
       return [] unless File.exist?(path)
@@ -836,11 +830,8 @@ module ComplexityRatchet
       end
     end
 
-    # Siblings share every part of a key except the ordinal appended by
-    # #disambiguate. Fallback source text can itself contain numeric parentheses
-    # (for example `process(2)`), so it uses an explicit ordinal marker instead
-    # of the ordinary scope suffix.
-    def family(key) = key.include?("~") ? key.sub(/\[fallback:\d+\]\z/, "") : key.sub(/\(\d+\)\z/, "")
+    # #disambiguate appends scope ordinals; fallback source text keeps literal numeric parentheses.
+    def family(key) = key.sub(/\A[^~]*/) { _1.gsub(/\(\d+\)(?=(?::|#|\.|\[)|\z)/, "") }.sub(/\[fallback:\d+\]\z/, "")
 
     # Sibling views are keyed by file and family, without the cop: a population
     # or an anchor is a property of the source, not of the cop that measured it.

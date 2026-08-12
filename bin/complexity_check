@@ -81,6 +81,7 @@ when :verify
 
   base_config = file_at(options[:ref], ComplexityRatchet::CONFIG_PATH)
   before_entries = ComplexityRatchet.flatten(YAML.safe_load(base_baseline) || {})
+  ComplexityRatchet.validate_baseline_values!(before_entries)
   after_entries = ComplexityRatchet.load_baseline(BASELINE)
   baseline_paths = (before_entries.keys | after_entries.keys).map { |key| key.split(ComplexityRatchet::SEPARATOR, 2).first }
 
