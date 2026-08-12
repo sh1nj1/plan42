@@ -215,6 +215,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITE_CONSTANTS.keys.first
 
     assert_empty names(string_references_in("logger.info(event: :#{satellite})"))
+    assert_empty references_in("logger.info(event: :#{satellite})")
   end
 
   test "string detector resolves Ruby escapes before checking satellite constants" do
@@ -1227,11 +1228,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     all = tokens(source)
     all.each_with_index.filter_map { |token, index|
       next unless token.type == :CONSTANT && SATELLITE_CONSTANTS.key?(token.value)
+      next if symbol_literal?(all, index)
       next if nested_in_another_namespace?(all, index)
 
       [ qualified_from(all, index), token.location.start_line ]
     }
   end
+
+  # Prism tokenizes `:CollavreSlack` as SYMBOL_BEGIN then CONSTANT. It is data
+  # unless a supported constant-resolution API consumes it, which is covered by
+  # #constant_resolution_literals_in instead of this general constant scanner.
+  def symbol_literal?(all, index) = all[index - 1]&.type == :SYMBOL_BEGIN
 
   # A satellite token preceded by `SomeConstant::` is usually a segment of
   # somebody else's path — `Wrapper::CollavreSlack` is Wrapper's own nested

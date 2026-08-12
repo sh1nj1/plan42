@@ -273,8 +273,24 @@ module ComplexityRatchet
     end
 
     def block_anchor(node)
-      node.location.slice[0...(node.block.location.start_offset - node.location.start_offset)]
+      anchor = node.location.slice[0...(node.block.location.start_offset - node.location.start_offset)]
         .gsub(/\s+/, " ").strip
+      return anchor unless node.is_a?(Prism::CallNode) && %i[lambda proc].include?(node.name)
+
+      callable_context_anchor(node) || anchor
+    end
+
+    # `proc do` and `lambda do` are call-shaped blocks, but their call node
+    # starts after an enclosing assignment or argument list. Preserve that
+    # context when it identifies the callable, just as #lambda_anchor does for
+    # arrow literals; otherwise HANDLER and DISPATCHER both look like `proc`.
+    def callable_context_anchor(node)
+      before_call = @source.byteslice(0, node.location.start_offset)
+      current_line = before_call.split("\n").last.to_s.strip
+      return current_line if current_line.end_with?("=", "(")
+
+      preceding_line = before_call.rstrip.split("\n").last.to_s.strip
+      preceding_line if current_line.empty? && preceding_line.end_with?("=", "(")
     end
 
     # The literal is anonymous, but its statement prefix is stable when it is
