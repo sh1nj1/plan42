@@ -28,9 +28,30 @@ body.creative-workspace > nav {
     min-width: 0;
 }
 
-body.creative-workspace .creative-content {
+body.creative-workspace .creative-content,
+body.creative-workspace .creative-title-content {
     min-width: 0;
     max-width: none;
+}
+
+/* The rule above drops the viewport-based max-width that used to cap row width.
+   Without it, the flex wrappers between the grid column and .creative-content
+   keep their default min-width: auto, so they refuse to shrink below the
+   min-content width of their contents. Text still wraps (min-content is one
+   word), but unbreakable blocks -- code blocks and tables -- overflow the
+   column. Zeroing min-width lets the flex chain shrink to the column.
+
+   The title row (the root creative) has its own chain: .creative-row-start >
+   h1.page-title > .creative-title-content. Shrinking only .creative-row-start
+   would let the title's min-content width paint through the shrunken parent,
+   so .page-title belongs in the same list. */
+body.creative-workspace .creative-row-start,
+body.creative-workspace .creative-tree-li,
+body.creative-workspace .page-title,
+body.creative-workspace .indent1,
+body.creative-workspace .indent2,
+body.creative-workspace .indent3 {
+    min-width: 0;
 }
 
 .creative-workspace-tree-region {
