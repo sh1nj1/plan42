@@ -72,4 +72,28 @@ class TopicListPopupTest < ApplicationSystemTestCase
     assert_no_selector "#topic-list-modal", visible: :visible
     assert_selector "#comment-topics .topic-tag.active[data-id='#{@active_topic.id}']", wait: 5
   end
+
+  test "search box takes focus on a desktop viewport" do
+    open_comments_popup
+    find("#comments-popup .topic-list-btn").click
+    assert_selector "#topic-list-modal", visible: :visible, wait: 5
+
+    assert_equal true, page.evaluate_script(
+      "document.activeElement === document.querySelector('#topic-list-modal input')"
+    )
+  end
+
+  test "search box stays unfocused on a mobile viewport so the keyboard stays down" do
+    # Resize before opening: the chat popup only picks up its mobile bottom-sheet
+    # layout at open time, so a mid-flight resize would slide it off screen.
+    resize_window_to(390, 844)
+    open_comments_popup
+
+    find("#comments-popup .topic-list-btn").click
+    assert_selector "#topic-list-modal", visible: :visible, wait: 5
+
+    assert_equal false, page.evaluate_script(
+      "document.activeElement === document.querySelector('#topic-list-modal input')"
+    )
+  end
 end

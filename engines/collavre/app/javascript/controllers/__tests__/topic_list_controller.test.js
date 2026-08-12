@@ -79,4 +79,43 @@ describe('TopicListController', () => {
         expect(cb).toHaveBeenCalledWith(item)
         expect(controller.popup.isOpen()).toBe(false)
     })
+
+    describe('search-box focus', () => {
+        const originalInnerWidth = window.innerWidth
+        const setViewportWidth = (value) =>
+            Object.defineProperty(window, 'innerWidth', { value, configurable: true })
+
+        afterEach(() => setViewportWidth(originalInnerWidth))
+
+        test('focuses the search box on desktop widths', () => {
+            setViewportWidth(1024)
+            controller.openForTopics(DATA, RECT, () => {})
+            expect(document.activeElement).toBe(controller.inputTarget)
+        })
+
+        test('does not focus the search box on mobile widths', () => {
+            setViewportWidth(390)
+            controller.openForTopics(DATA, RECT, () => {})
+            expect(document.activeElement).not.toBe(controller.inputTarget)
+        })
+
+        test('blurs the previously focused element on mobile so the keyboard closes', () => {
+            setViewportWidth(390)
+            const chatInput = document.createElement('textarea')
+            document.body.appendChild(chatInput)
+            chatInput.focus()
+            expect(document.activeElement).toBe(chatInput)
+
+            controller.openForTopics(DATA, RECT, () => {})
+
+            expect(document.activeElement).toBe(document.body)
+        })
+
+        test('tolerates a mobile open with nothing focused', () => {
+            setViewportWidth(390)
+            expect(document.activeElement).toBe(document.body)
+            expect(() => controller.openForTopics(DATA, RECT, () => {})).not.toThrow()
+            expect(document.activeElement).toBe(document.body)
+        })
+    })
 })
