@@ -77,6 +77,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # core gem on its own. Ruby was the whole scan until now; this is the larger
   # half of what the gemspec packages.
   JS_FILE = /\.(js|jsx|ts|tsx|mjs|cjs|mts|cts)(?:\.(?:erb|tt))*\z/
+  CSS_FILE = /\.css(?:\.(?:erb|tt))*\z/
+  CSS_ASSET_REFERENCE = /(?:@import\s+(?:url\(\s*)?|url\(\s*)(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)?/i
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -521,6 +523,28 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty asset_paths_in(%(registry.image_tag("#{satellite}/slack_integration")))
   end
 
+  test "detector flags satellite asset paths in packaged CSS" do
+    satellite = SATELLITES.first
+    path = "#{satellite}/slack_integration.css"
+    css_path = ENGINES_ROOT.join(CORE, "app/assets/stylesheets/collavre/application.css")
+
+    assert_equal [ path ], css_asset_paths_in(%(@import "#{path}";))
+    assert_equal [ path ], css_asset_paths_in(%(@import url("#{path}");))
+    assert_equal [ path ], css_asset_paths_in(%(.integration { background: url("#{path}") }))
+    assert_empty css_asset_paths_in(%(/* url("#{path}") */))
+    assert_empty css_asset_paths_in(%(.notice { content: "url(#{path})" }))
+    assert_includes css_violations_in(css_path.to_s, %(@import "#{path}";)),
+      "  engines/#{CORE}/app/assets/stylesheets/collavre/application.css references asset \"#{path}\" (engines/#{satellite})"
+
+    erb_path = css_path.sub_ext(".css.erb")
+    assert_includes css_violations_in(erb_path.to_s, %(<% require "#{satellite}/thing" %>)),
+      "  engines/#{CORE}/app/assets/stylesheets/collavre/application.css.erb requires \"#{satellite}/thing\" (engines/#{satellite})"
+
+    template_path = css_path.sub_ext(".css.tt")
+    assert_includes css_violations_in(template_path.to_s, %(<% require "#{satellite}/thing" %>)),
+      "  engines/#{CORE}/app/assets/stylesheets/collavre/application.css.tt requires \"#{satellite}/thing\" (engines/#{satellite})"
+  end
+
   test "template detector ignores ordinary rendered data" do
     satellite = SATELLITES.first
 
@@ -716,6 +740,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(class X {}; const ratio = {} / import("#{satellite}/thing")))
+  end
+
+  test "detector ignores regex literals after bindingless catch blocks" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(try {} catch {}\n/import("#{satellite}\\/thing")/.test(text)))
   end
 
   test "detector ignores regex literals after a spread operator" do
@@ -941,7 +971,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def core_sources
     root = ENGINES_ROOT.join(CORE)
     packaged = core_gemspec.files.select do |path|
-      ruby_source?(path) || javascript_source?(root.join(path).to_s) || File.basename(path) == "Rakefile"
+      ruby_source?(path) || javascript_source?(root.join(path).to_s) || css_source?(path) || File.basename(path) == "Rakefile"
     end
 
     # The gemspec does not package itself, and it is Ruby that can require.
@@ -955,6 +985,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def violations_in(path)
     source = File.read(path)
     return js_violations_in(path, source) if javascript_source?(path, source)
+    return css_violations_in(path, source) if css_source?(path)
 
     # ERB views are not Ruby, so lex only the fragments between their tags.
     # Ruby generator templates are Ruby with ERB placeholders, so retain their
@@ -989,6 +1020,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
     violations + (template ? ruby_violations_in(path, erb_template_ruby_source(source)) : [])
+  end
+
+  def css_violations_in(path, source)
+    template = path.end_with?(".tt") || path.delete_suffix(".tt").end_with?(".erb")
+    css = template ? javascript_erb_template_source(source) : source
+    violations = css_asset_paths_in(css).map do |asset|
+      "  #{relative(path)} references asset \"#{asset}\" (engines/#{satellite_for(asset)})"
+    end
+    return violations unless template
+
+    violations + ruby_violations_in(path, erb_template_ruby_source(source))
   end
 
   def ruby_source_for(path, source)
@@ -1041,6 +1083,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     head = source || File.binread(path, 256)
     head.b.match?(/\A#![^\n]*\b(?:node|nodejs|deno|bun)(?:\s|\z)/n)
+  end
+
+  def css_source?(path)
+    path.match?(CSS_FILE)
   end
 
   # A JS specifier reaches a satellite two ways, and both normalize the same as
@@ -1381,7 +1427,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_block_open?(tokens, opening)
     before = tokens[opening - 1]
     return true if js_declaration_body?(tokens, opening)
-    return true if before&.first == :word && %w[else try finally do].include?(before.last)
+    return true if before&.first == :word && %w[else try catch finally do].include?(before.last)
     return true if tokens[(opening - 2)...opening] == [ [ :punctuation, "=" ], [ :punctuation, ">" ] ]
     return false unless before == [ :punctuation, ")" ]
 
@@ -1901,6 +1947,43 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     asset_helper_calls(Prism.parse(source).value).flat_map { |call|
       call.arguments&.arguments.to_a.flat_map { |argument| asset_path_values(argument) }
     }.select { |path| satellite_for(path) }.uniq
+  end
+
+  # CSS imports and URLs resolve through the asset pipeline at runtime. A core
+  # stylesheet can therefore find a satellite asset in this monorepo while a
+  # core-only host cannot. Strip comments first, then inspect only static CSS
+  # path positions rather than arbitrary prose or declaration values.
+  def css_asset_paths_in(source)
+    source.to_enum(:scan, CSS_ASSET_REFERENCE).filter_map do
+      match = Regexp.last_match
+      match.captures.compact.first if css_code_position?(source, match.begin(0))
+    end
+      .select { |path| satellite_for(path) }
+      .uniq
+  end
+
+  def css_code_position?(source, position)
+    quote = nil
+    comment = false
+    cursor = 0
+
+    while cursor < position
+      character = source[cursor]
+      if comment
+        comment = false if character == "*" && source[cursor + 1] == "/"
+      elsif quote
+        cursor += 1 if character == "\\"
+        quote = nil if character == quote
+      elsif character == "/" && source[cursor + 1] == "*"
+        comment = true
+        cursor += 1
+      elsif [ "'", '"' ].include?(character)
+        quote = character
+      end
+      cursor += 1
+    end
+
+    !comment && quote.nil?
   end
 
   def asset_helper_calls(node, found = [])
