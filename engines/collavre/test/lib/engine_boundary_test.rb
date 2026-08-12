@@ -504,6 +504,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "  engines/#{CORE}/app/javascript/entry.js.erb imports \"#{satellite}/thing\" (engines/#{satellite})" ],
       js_violations_in(path, source)
     assert_empty js_violations_in(path, %(<%= import("#{satellite}/thing") %>))
+    assert_equal [ "  engines/#{CORE}/app/javascript/entry.js.erb requires \"#{satellite}/thing\" (engines/#{satellite})" ],
+      js_violations_in(path, %(<% require "#{satellite}/thing" %>))
   end
 
   test "Ruby and Rake generator templates are scanned as Ruby sources" do
@@ -816,24 +818,22 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     # ERB views are not Ruby, so lex only the fragments between their tags.
     # Ruby generator templates are Ruby with ERB placeholders, so retain their
     # static source and replace output tags with a syntactically valid value.
-    ruby = if path.delete_suffix(".tt").end_with?(".erb")
-      source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n")
-    elsif path.end_with?(".tt")
-      ruby_generator_template_source(source)
-    else
-      source
-    end
+    ruby = ruby_source_for(path, source)
+    ruby_violations_in(path, ruby)
+  end
+
+  def ruby_violations_in(path, source)
     # Requires are deliberately absent from the waiver: no core file has one
     # today, and a new one is never the frozen-migration case the list exists
     # for.
     known = KNOWN_VIOLATIONS.fetch(relative(path), [])
 
-    unwaived(references_in(ruby), known).map { |name, kind|
+    unwaived(references_in(source), known).map { |name, kind|
       phrasing = kind == :string ? "names #{name} in a string" : "references #{name}"
       "  #{relative(path)} #{phrasing} (engines/#{engine_for(name)})"
-    } + requires_in(ruby).map { |feature|
+    } + requires_in(source).map { |feature|
       "  #{relative(path)} requires \"#{feature}\" (engines/#{satellite_for(feature)})"
-    } + template_paths_in(ruby).map { |template|
+    } + template_paths_in(source).map { |template|
       "  #{relative(path)} renders template \"#{template}\" (engines/#{satellite_for(template)})"
     }
   end
@@ -841,10 +841,25 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_violations_in(path, source)
     template = path.delete_suffix(".tt").end_with?(".erb")
     extension = File.extname(path.delete_suffix(".tt").delete_suffix(".erb"))
-    source = javascript_erb_template_source(source) if template
-    js_imports_in(source, jsx: %w[.jsx .tsx].include?(extension), tsx: extension == ".tsx").map do |specifier|
+    javascript = template ? javascript_erb_template_source(source) : source
+    violations = js_imports_in(javascript, jsx: %w[.jsx .tsx].include?(extension), tsx: extension == ".tsx").map do |specifier|
       "  #{relative(path)} imports \"#{specifier}\" (engines/#{satellite_for(specifier)})"
     end
+    violations + (template ? ruby_violations_in(path, erb_template_ruby_source(source)) : [])
+  end
+
+  def ruby_source_for(path, source)
+    if path.delete_suffix(".tt").end_with?(".erb")
+      erb_template_ruby_source(source)
+    elsif path.end_with?(".tt")
+      ruby_generator_template_source(source)
+    else
+      source
+    end
+  end
+
+  def erb_template_ruby_source(source)
+    source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n")
   end
 
   # JavaScript outside ERB tags ships as executable source; the tags themselves
