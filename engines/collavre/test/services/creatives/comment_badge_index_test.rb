@@ -101,6 +101,14 @@ module Creatives
       assert_equal 0, @index.unread_count_for(fully_read)
     end
 
+    test "chunks a large unwatermarked level below SQLite's expression limit" do
+      origins = (1..1000).map { |id| Struct.new(:id).new(id) }
+
+      @index.index(origins)
+
+      assert_not_nil @index.unread_count_for(origins.last)
+    end
+
     # nil, not 0 — the caller has to be able to tell "not batched" from "nothing
     # unread", or an un-indexed node would quietly render an empty badge.
     test "an unindexed creative reports nil" do

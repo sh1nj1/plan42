@@ -31,11 +31,27 @@ module Collavre
       assert_equal({ @owner.id => true, @viewer.id => false }, show_zero_by_user_id)
     end
 
+    test "a private comment reveals the badge for its approver" do
+      Comment.create!(creative: @creative, user: @owner, approver: @viewer, content: "private", private: true)
+
+      assert_equal({ @owner.id => true, @viewer.id => true }, show_zero_by_user_id)
+    end
+
     test "a public comment outweighs another user's private one" do
       Comment.create!(creative: @creative, user: @owner, content: "private", private: true)
       Comment.create!(creative: @creative, user: @viewer, content: "public")
 
       assert_equal({ @owner.id => true, @viewer.id => true }, show_zero_by_user_id)
+    end
+
+    test "broadcast batches the presence lookup for every recipient" do
+      calls = 0
+
+      CommentPresenceStore.stub(:list, ->(_creative_id) { calls += 1; [] }) do
+        show_zero_by_user_id
+      end
+
+      assert_equal 1, calls
     end
 
     private

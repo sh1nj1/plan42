@@ -37,23 +37,24 @@ module Collavre
           users.uniq!
           return if users.empty?
 
+          badges_by_user_id = Creatives::CommentBadgeIndex.for_users(origin: origin, users: users)
+
           users.each do |u|
-            badge_index = Creatives::CommentBadgeIndex.new(user: u)
-            badge_index.index([ origin ])
+            badge = badges_by_user_id.fetch(u.id)
 
             Turbo::StreamsChannel.broadcast_replace_to(
               [ u, origin, :comment_badge ],
               target: "comment-badge-#{origin.id}",
               partial: "inbox/badge_component/count",
               locals: {
-                count: badge_index.unread_count_for(origin),
+                count: badge.unread_count,
                 badge_id: "comment-badge-#{origin.id}",
-                show_zero: badge_index.visible_comments?(origin)
+                show_zero: badge.visible_comments
               }
             )
 
             # Also update the global inbox badge when the creative is an inbox
-            broadcast_inbox_badge(origin, u, count: badge_index.unread_count_for(origin)) if origin.inbox?
+            broadcast_inbox_badge(origin, u, count: badge.unread_count) if origin.inbox?
           end
         end
 
