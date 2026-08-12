@@ -28,7 +28,14 @@ class WorkspaceContentWrapTest < ApplicationSystemTestCase
       notifications_enabled: false,
       creative_workspace_enabled: true
     )
-    @root = Creative.create!(description: "Wrap fixtures", user: @user)
+    # The root's description renders as the title row, which has its own flex
+    # chain (.creative-row-start > h1.page-title > .creative-title-content) and
+    # its own content class. Give it the unbreakable shapes too so the title
+    # chain is held to the same containment rule as the child rows.
+    @root = Creative.create!(
+      description: "<p>Wrap fixtures</p><pre><code>#{CODE_LINE}</code></pre>#{wide_table_html}",
+      user: @user
+    )
 
     # One child per content shape. Code blocks and tables are the shapes that
     # regressed; the prose and URL rows guard the cases that kept working, so a
@@ -79,7 +86,13 @@ class WorkspaceContentWrapTest < ApplicationSystemTestCase
   test "the flex wrappers between the column and the content can shrink" do
     visit_workspace(THREE_PANEL_WIDTH)
 
-    [ ".creative-row-start", ".creative-tree-li", ".indent1" ].each do |selector|
+    [
+      ".creative-row-start",
+      ".creative-tree-li",
+      ".indent1",
+      ".creative-tree-title .page-title",
+      ".creative-title-content"
+    ].each do |selector|
       next if page.evaluate_script("document.querySelectorAll('main #{selector}').length").zero?
 
       assert_equal "0px", computed_style(selector, "min-width"),
@@ -113,7 +126,9 @@ class WorkspaceContentWrapTest < ApplicationSystemTestCase
         var style = getComputedStyle(main);
         var limit = main.getBoundingClientRect().left + main.clientWidth -
                     parseFloat(style.paddingLeft || 0);
-        return Array.from(document.querySelectorAll('main .creative-content'))
+        return Array.from(document.querySelectorAll(
+          'main .creative-content, main .creative-title-content'
+        ))
           .filter(function (el) {
             return el.getBoundingClientRect().right > limit + #{OVERFLOW_TOLERANCE_PX};
           })
