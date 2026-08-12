@@ -48,7 +48,10 @@ module Collavre
         comment_ids = Comment.where(creative_id: owned).pluck(:id)
         return false if comment_ids.empty?
 
-        active_task_for_comments?(comment_ids) || queued_agent_job_for_comments?(comment_ids)
+        # Check the queue before Tasks. An AiAgentJob can hand off to a Task
+        # between these checks; querying the durable queued job first ensures
+        # the subsequent Task query sees that handoff rather than missing both.
+        queued_agent_job_for_comments?(comment_ids) || active_task_for_comments?(comment_ids)
       end
 
       def active_task_for_comments?(comment_ids)

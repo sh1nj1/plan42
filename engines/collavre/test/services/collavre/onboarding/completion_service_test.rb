@@ -83,6 +83,22 @@ module Collavre
         assert Creative.exists?(session.root.id)
       end
 
+      test "checks queued agent jobs before active tasks during cleanup" do
+        user = User.create!(name: "Cleanup ordering", email: "cleanup-ordering@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        Comment.create!(creative: session.practice_creatives.second, user: user, content: "Please help")
+        service = CompletionService.new(user: user)
+        checks = []
+
+        service.stub(:queued_agent_job_for_comments?, ->(_comment_ids) { checks << :queued; false }) do
+          service.stub(:active_task_for_comments?, ->(_comment_ids) { checks << :active; false }) do
+            refute service.send(:pending_agent_turn?, session.practice_creatives)
+          end
+        end
+
+        assert_equal [ :queued, :active ], checks
+      end
+
       test "removes a deferred session after its agent turn settles" do
         user = User.create!(name: "Settled finisher", email: "settled-finisher@example.com", password: "password")
         session = Seeder.new(user: user).call
