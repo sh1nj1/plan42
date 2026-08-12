@@ -43,7 +43,10 @@ export function updateProgressHtml(html, progress, displayText) {
       const label = complete ? toggle.dataset.markIncomplete : toggle.dataset.markComplete
       toggle.dataset.currentProgress = String(progress)
       toggle.dataset.newProgress = complete ? '0' : '1'
-      if (label) toggle.title = label
+      if (label) {
+        toggle.title = label
+        checkbox.setAttribute('aria-label', label)
+      }
     }
     return template.innerHTML
   }
@@ -187,7 +190,14 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'progressValue', rawProgress)
     // Update progress percentage in existing progressHtml without replacing full HTML
     // (preserves chat badges, comment counts, etc.)
-    if (templates.progress_html == null) {
+    if (node.progress_control_html != null) {
+      const updated = replaceProgressControl(row.progressHtml || '', node.progress_control_html)
+      if (updated !== (row.progressHtml || '')) {
+        row.progressHtml = updated
+        setDatasetValue(row, 'progressHtml', updated)
+        dirty = true
+      }
+    } else if (templates.progress_html == null) {
       let updated = row.progressHtml || ''
       if (updated) {
         updated = updateProgressHtml(updated, rawProgress, displayText)

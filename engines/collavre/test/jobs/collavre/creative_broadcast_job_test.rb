@@ -64,6 +64,41 @@ module Collavre
       end
     end
 
+    test "updated action broadcasts the recipient-specific progress control" do
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, parent: @root, description: "Progress control leaf", progress: 0.5)
+      end
+      broadcasts = []
+
+      Turbo::StreamsChannel.stub(:broadcast_action_to, ->(*, **kwargs) { broadcasts << kwargs }) do
+        CreativeBroadcastJob.perform_now(
+          leaf.id,
+          "updated",
+          current_user_id: @owner.id,
+          payload: leaf.broadcast_node_payload
+        )
+      end
+
+      payload = JSON.parse(broadcasts.fetch(0).fetch(:attributes).fetch(:data))
+      assert_includes payload.dig("creative", "progress_control_html"), "50%"
+      refute_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
+
+      leaf.update_column(:progress, 0)
+      broadcasts.clear
+      Turbo::StreamsChannel.stub(:broadcast_action_to, ->(*, **kwargs) { broadcasts << kwargs }) do
+        CreativeBroadcastJob.perform_now(
+          leaf.id,
+          "updated",
+          current_user_id: @owner.id,
+          payload: leaf.broadcast_node_payload
+        )
+      end
+
+      payload = JSON.parse(broadcasts.fetch(0).fetch(:attributes).fetch(:data))
+      assert_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
+    end
+
     # --- destroyed action ---
 
     test "destroyed action does not raise with valid options" do

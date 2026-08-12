@@ -106,6 +106,10 @@ module Collavre
           # target_user already passed find_broadcast_users permission check,
           # so we can skip the expensive permission_via_ancestors walk.
           user_data[:templates][:progress_html] = render_progress_html(creative, target_user, skip_permission_check: true)
+        elsif action == "updated"
+          # Keep unrelated row-end markup (such as comment badges) intact while
+          # replacing the progress control with the recipient-specific version.
+          user_data[:progress_control_html] = render_progress_control_html(creative, target_user)
         end
 
         json_payload = { action: action.to_s, creative: user_data }.to_json

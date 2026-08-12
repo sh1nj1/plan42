@@ -13,12 +13,14 @@ test('updates checkbox markup and the next action for binary progress broadcasts
   expect(complete).toContain('data-current-progress="1"')
   expect(complete).toContain('data-new-progress="0"')
   expect(complete).toContain('title="Mark incomplete"')
+  expect(complete).toContain('aria-label="Mark incomplete"')
 
   const incomplete = updateProgressHtml(complete, 0, '0%')
   expect(incomplete).not.toContain('checked="checked"')
   expect(incomplete).toContain('data-current-progress="0"')
   expect(incomplete).toContain('data-new-progress="1"')
   expect(incomplete).toContain('title="Mark complete"')
+  expect(incomplete).toContain('aria-label="Mark complete"')
 })
 
 test('keeps percentage markup working for non-interactive progress', () => {
@@ -53,4 +55,26 @@ test('keeps a broadcast progress template instead of restoring stale DOM markup'
   expect(row.progressHtml).toBe(TOGGLE_HTML)
   expect(row.dataset.progressHtml).toBe(TOGGLE_HTML)
   expect(row.requestUpdate).toHaveBeenCalledTimes(1)
+})
+
+test('replaces the progress control when a remote update changes binary eligibility', () => {
+  const row = document.createElement('creative-tree-row')
+  row.progressHtml = TOGGLE_HTML
+  row.dataset.progressHtml = row.progressHtml
+  row.requestUpdate = jest.fn()
+  const partial = '<span class="creative-progress-incomplete">50%</span>'
+
+  applyRowProperties(row, {
+    inline_editor_payload: { progress: 0.5 },
+    progress_control_html: partial,
+  })
+
+  expect(row.progressHtml).toBe(partial)
+
+  applyRowProperties(row, {
+    inline_editor_payload: { progress: 0 },
+    progress_control_html: TOGGLE_HTML,
+  })
+
+  expect(row.progressHtml).toBe(TOGGLE_HTML)
 })
