@@ -9,7 +9,7 @@ module Collavre
     # 2. Tasks with too many retries (escalated but not handled)
     #
     # Auto-escalation:
-    # - Creates InboxItem for admin users
+    # - Creates inbox comments for admin users
     # - Optionally creates a system comment
     #
     class StuckDetector

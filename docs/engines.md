@@ -15,7 +15,6 @@ The main application engine containing:
 - `Collavre::CreativeShare` - Access control (permission per creative per user)
 - `Collavre::Comment` - Threaded comments
 - `Collavre::Invitation` - Sharing invites
-- `Collavre::InboxItem` - Notification inbox
 - `Collavre::Topic` - Comment grouping
 - `Collavre::Tag` - Creative tags
 - `Collavre::Label` - Creative labels

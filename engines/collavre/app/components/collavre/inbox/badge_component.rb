@@ -14,13 +14,9 @@ module Collavre
       def count
         return @count if @count
 
-        if @creative && @user
-          # Use CommentReadPointer-based unread count for inbox creative
-          unread_count_for_creative
-        else
-          # Legacy fallback: InboxItem count
-          InboxItem.where(owner: @user, state: "new").count
-        end
+        return 0 unless @creative && @user
+
+        unread_count_for_creative
       end
 
       private

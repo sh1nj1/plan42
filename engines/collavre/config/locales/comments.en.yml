@@ -314,8 +314,3 @@ en:
       not_authorized: "You don't have permission to restore this snapshot."
       restore_confirm: "Restore original messages? The summary will be removed."
       restore_button: "Restore originals"
-    inbox_mailer:
-      daily_summary:
-        subject: Your inbox summary
-        greeting: 'Here are your unread messages:'
-        view: View
