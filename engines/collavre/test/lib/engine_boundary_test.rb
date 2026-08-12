@@ -30,6 +30,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     .freeze
 
   SATELLITE_CONSTANTS = SATELLITES.to_h { |name| [ name.camelize, name ] }.freeze
+  SATELLITE_GEM_NAME = /\Acollavre_/
 
   # Every entry point that resolves a path through $LOAD_PATH. `load` and
   # `autoload` are not `require`, but they reach a satellite file just as well
@@ -133,10 +134,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   test "core engine gemspec declares no satellite dependency" do
-    satellite_deps = core_gemspec.dependencies.map(&:name) & SATELLITES
+    satellite_deps = satellite_gem_dependencies(core_gemspec.dependencies.map(&:name))
 
     assert_empty satellite_deps,
       "engines/#{CORE}/#{CORE}.gemspec depends on #{satellite_deps.join(', ')} — the core engine cannot require a satellite"
+  end
+
+  test "gemspec detector rejects published satellites outside this checkout" do
+    assert_equal %w[collavre_salesforce collavre_slack],
+      satellite_gem_dependencies(%w[collavre collavre_salesforce collavre_slack])
   end
 
   # The three tests above pass today because the codebase is clean, which means
@@ -741,6 +747,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require.resolve?.("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require?.resolve("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require?.["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = module["require"]["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta?.resolve("#{satellite}/thing");) => "#{satellite}/thing",
@@ -1803,7 +1813,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     js_call_specifier(tokens, closing) ||
       js_function_call_specifier(tokens, closing) ||
       js_function_apply_specifier(tokens, closing) ||
-      js_require_bound_specifier(tokens, closing)
+      js_require_bound_specifier(tokens, closing) ||
+      js_require_resolve_specifier(tokens, closing)
   end
 
   def js_call_specifier(tokens, index)
@@ -1820,10 +1831,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_require_resolve_specifier(tokens, index)
-    return js_require_bound_specifier(tokens, index) unless tokens[index + 1] == [ :punctuation, "." ] &&
-      tokens[index + 2] == [ :word, "resolve" ]
+    resolve = js_function_property_at(tokens, index, "resolve")
+    return js_require_bound_specifier(tokens, index) unless resolve
 
-    open = js_call_open_at(tokens, index + 2)
+    open = js_call_open_at(tokens, resolve)
     return unless open
 
     js_static_string_at(tokens, open + 1)
@@ -2522,6 +2533,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return nil if feature.nil?
 
     Pathname.new(feature.delete_suffix(".rb")).cleanpath.each_filename.find { |segment| SATELLITES.include?(segment) }
+  end
+
+  def satellite_gem_dependencies(dependencies)
+    dependencies.grep(SATELLITE_GEM_NAME)
   end
 
   # Network URLs are fetched externally rather than resolved through Propshaft.
