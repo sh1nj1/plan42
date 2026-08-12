@@ -156,9 +156,6 @@ ko:
       topic_list: 토픽 목록
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
-      typo_keep_label: 유지
-      typo_custom_label: 직접 입력
-      typo_input_label: 교정
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.
       move_invalid_topic: 유효하지 않은 토픽입니다.
       move_not_allowed: 이 메시지를 이동할 권한이 없습니다.

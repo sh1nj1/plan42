@@ -79,15 +79,6 @@ module Collavre
     attribute :searchable, :boolean, default: false
     attribute :creative_workspace_enabled, :boolean, default: true
 
-    # Typo correction (2D gating: typing-device AND input-location must both be on).
-    attribute :typo_correction_enabled, :boolean, default: true
-    attribute :typo_correction_threshold, :integer, default: 80
-    attribute :typo_correction_on_soft_keyboard, :boolean, default: true
-    attribute :typo_correction_on_voice, :boolean, default: true
-    attribute :typo_correction_on_physical_keyboard, :boolean, default: false
-    attribute :typo_correction_in_chat, :boolean, default: true
-    attribute :typo_correction_in_editor, :boolean, default: false
-
     attribute :google_uid, :string
     attribute :google_access_token, :string
     attribute :google_refresh_token, :string
@@ -171,31 +162,6 @@ module Collavre
         Rails.logger.error("Failed to decrypt #{attr} for user #{id}: #{e.class}")
         nil
       end
-    end
-
-    TYPO_CORRECTION_DEVICES = %w[voice soft_keyboard physical_keyboard].freeze
-    TYPO_CORRECTION_LOCATIONS = %w[chat editor].freeze
-
-    # 2D gating: typo correction runs only when the master switch is on AND the
-    # originating typing device AND the input location are both enabled. Unknown
-    # device/location values are treated as disabled (fail closed).
-    def typo_correction_active_for?(device:, location:)
-      return false unless typo_correction_enabled
-
-      device_on = case device.to_s
-      when "voice" then typo_correction_on_voice
-      when "soft_keyboard" then typo_correction_on_soft_keyboard
-      when "physical_keyboard" then typo_correction_on_physical_keyboard
-      else false
-      end
-
-      location_on = case location.to_s
-      when "chat" then typo_correction_in_chat
-      when "editor" then typo_correction_in_editor
-      else false
-      end
-
-      device_on && location_on
     end
 
     # LLM_VENDOR_OPTIONS is resolved dynamically from the AiClient vendor-option
@@ -295,12 +261,6 @@ module Collavre
     validates :timezone,
               inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
               allow_nil: true
-    # Column is NOT NULL; clearing the profile field (or a crafted PATCH) casts to
-    # nil and would raise a DB error on save. Validate so the form re-renders.
-    validates :typo_correction_threshold,
-              presence: true,
-              numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
-
     def cli_proxy_gateway_belongs_to_creator
       return unless llm_vendor == "cli_proxy"
 

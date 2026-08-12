@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_12_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_12_000001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1004,13 +1004,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_000000) do
     t.string "theme"
     t.string "timezone"
     t.json "tools"
-    t.boolean "typo_correction_enabled", default: true, null: false
-    t.boolean "typo_correction_in_chat", default: true, null: false
-    t.boolean "typo_correction_in_editor", default: false, null: false
-    t.boolean "typo_correction_on_physical_keyboard", default: false, null: false
-    t.boolean "typo_correction_on_soft_keyboard", default: true, null: false
-    t.boolean "typo_correction_on_voice", default: true, null: false
-    t.integer "typo_correction_threshold", default: 80, null: false
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
