@@ -99,6 +99,51 @@ module Collavre
       assert_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
     end
 
+    test "ancestor controls use the effective origin children for linked shells" do
+      linked_root = nil
+      perform_enqueued_jobs do
+        linked_root = Creative.create!(
+          user: @shared_user,
+          origin_id: @root.id,
+          description: "Linked root shell"
+        )
+      end
+
+      controls = CreativeBroadcastJob.new.send(
+        :build_ancestor_progress_controls,
+        [ { id: @root.id, progress: @root.progress } ],
+        [ @shared_user ],
+        { @shared_user.id => { @root.id => linked_root.id } }
+      )
+
+      html = controls.dig(@shared_user.id, @root.id, :progress_html)
+      refute_includes html, "data-progress-toggle"
+      assert_includes html, "creative-progress-incomplete"
+    end
+
+    test "ancestor controls batch creative and permission lookups across recipients" do
+      another_user = users(:three)
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: another_user, permission: :write)
+      end
+      queries = []
+      callback = lambda do |_name, _start, _finish, _id, payload|
+        queries << payload[:sql] unless payload[:cached] || payload[:name] == "SCHEMA"
+      end
+
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        CreativeBroadcastJob.new.send(
+          :build_ancestor_progress_controls,
+          [ { id: @root.id, progress: @root.progress }, { id: @child.id, progress: @child.progress } ],
+          [ @shared_user, another_user ],
+          {}
+        )
+      end
+
+      per_ancestor_queries = queries.grep(/(?:FROM "creatives"|FROM "creative_shares_caches").*LIMIT 1/i)
+      assert_empty per_ancestor_queries, "expected batched ancestor-control reads, got:\n#{per_ancestor_queries.join("\n")}"
+    end
+
     # --- destroyed action ---
 
     test "destroyed action does not raise with valid options" do

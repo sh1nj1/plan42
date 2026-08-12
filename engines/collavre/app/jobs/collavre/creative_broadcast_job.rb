@@ -57,7 +57,7 @@ module Collavre
 
       # Batch-load all linked creatives for remapping (avoids N+1)
       origin_ids_to_remap = [ data[:parent_id], data[:after_id], data[:previous_sibling_id] ].compact
-      ancestor_origin_ids = (data[:ancestors] || []).map { |a| a[:id] }.compact
+      ancestor_origin_ids = (data[:ancestors] || []).filter_map { |ancestor| ancestor[:origin_id] || ancestor[:id] }
       all_origin_ids = (origin_ids_to_remap + ancestor_origin_ids).uniq
 
       linked_by_user = {}
@@ -67,9 +67,12 @@ module Collavre
           linked_by_user[linked.user_id][linked.origin_id] = linked.id
         end
       end
+      ancestor_progress_controls = build_ancestor_progress_controls(
+        data[:ancestors], target_users, linked_by_user
+      )
 
       target_users.each do |target_user|
-        user_data = data.dup
+        user_data = data.deep_dup
         user_map = linked_by_user[target_user.id] || {}
 
         # Add linked_id
@@ -86,8 +89,9 @@ module Collavre
         # Remap ancestor IDs
         if user_data[:ancestors].present?
           user_data[:ancestors] = user_data[:ancestors].map do |anc|
-            mapped_id = user_map[anc[:id]]
-            mapped_id ? anc.merge(id: mapped_id, origin_id: anc[:id]) : anc
+            origin_id = anc[:origin_id] || anc[:id]
+            mapped_id = user_map[origin_id]
+            mapped_id ? anc.merge(id: mapped_id, origin_id: origin_id) : anc
           end
         end
 
@@ -96,7 +100,7 @@ module Collavre
 
         # Per-user progress text
         creative.send(:add_progress_text!, user_data, target_user)
-        add_ancestor_progress_controls!(user_data[:ancestors], target_user, user_map)
+        add_ancestor_progress_controls!(user_data[:ancestors], target_user, ancestor_progress_controls)
 
         # For created action, render per-user progress_html (includes chat button,
         # badge with turbo-cable-stream-source subscription, and progress span).
@@ -133,7 +137,7 @@ module Collavre
       linked_map = (options[:destroy_linked_map] || {}).transform_keys(&:to_i)
 
       # Batch-load linked creatives for ancestor remapping
-      ancestor_origin_ids = (payload[:ancestors] || []).map { |a| a[:id] }.compact
+      ancestor_origin_ids = (payload[:ancestors] || []).filter_map { |ancestor| ancestor[:origin_id] || ancestor[:id] }
       all_origin_ids = [ payload[:parent_id], *ancestor_origin_ids ].compact.uniq
 
       linked_by_user = {}
@@ -143,9 +147,12 @@ module Collavre
           linked_by_user[linked.user_id][linked.origin_id] = linked.id
         end
       end
+      ancestor_progress_controls = build_ancestor_progress_controls(
+        payload[:ancestors], users, linked_by_user
+      )
 
       users.each do |target_user|
-        user_data = payload.dup
+        user_data = payload.deep_dup
         user_map = linked_by_user[target_user.id] || {}
 
         user_data[:linked_id] = linked_map[target_user.id] if linked_map[target_user.id]
@@ -153,11 +160,12 @@ module Collavre
 
         if user_data[:ancestors].present?
           user_data[:ancestors] = user_data[:ancestors].map do |anc|
-            mapped_id = user_map[anc[:id]]
-            mapped_id ? anc.merge(id: mapped_id, origin_id: anc[:id]) : anc
+            origin_id = anc[:origin_id] || anc[:id]
+            mapped_id = user_map[origin_id]
+            mapped_id ? anc.merge(id: mapped_id, origin_id: origin_id) : anc
           end
         end
-        add_ancestor_progress_controls!(user_data[:ancestors], target_user, user_map)
+        add_ancestor_progress_controls!(user_data[:ancestors], target_user, ancestor_progress_controls)
 
         json_payload = { action: "destroyed", creative: user_data }.to_json
         Turbo::StreamsChannel.broadcast_action_to(
@@ -215,25 +223,89 @@ module Collavre
       nil
     end
 
-    def add_ancestor_progress_controls!(ancestors, user, user_map)
+    def add_ancestor_progress_controls!(ancestors, user, controls_by_user)
       ancestors&.each do |ancestor|
         origin_id = ancestor[:origin_id] || ancestor[:id]
-        creative = Creative.find_by(id: user_map[origin_id] || origin_id)
-        next unless creative
+        control = controls_by_user.dig(user.id, origin_id)
+        next unless control
 
-        ancestor[:progress] = creative.progress
-        ancestor[:progress_text] = creative.send(:format_progress_text, creative.progress, user)
-        ancestor[:progress_html] = render_progress_control_html(creative, user)
+        ancestor.merge!(control)
       end
     end
 
-    def render_progress_control_html(creative, user)
+    # Build every recipient's ancestor controls in a bounded number of queries.
+    # The row shown to a recipient may be a linked shell, while its child state
+    # and permission resolve through the effective origin.
+    def build_ancestor_progress_controls(ancestors, users, linked_by_user)
+      origin_ids = ancestors.to_a.filter_map { |ancestor| ancestor[:origin_id] || ancestor[:id] }.uniq
+      return {} if origin_ids.empty?
+
+      effective_ids_by_origin = Creatives::EffectiveCreativeResolution.effective_creative_ids(origin_ids)
+      effective_ids = effective_ids_by_origin.values.uniq
+      displayed_ids = linked_by_user.values.flat_map(&:values)
+      creatives_by_id = Creative.where(id: (origin_ids + effective_ids + displayed_ids).uniq).index_by(&:id)
+      effective_creatives = effective_ids.index_with { |id| creatives_by_id[id] }.compact
+      has_children_by_id = Creative.where(parent_id: effective_creatives.keys).distinct.pluck(:parent_id).to_set
+      writable_by_user = batch_write_permissions(effective_creatives, users)
+
+      users.each_with_object({}) do |user, controls_by_user|
+        user_map = linked_by_user[user.id] || {}
+        controls_by_user[user.id] = origin_ids.each_with_object({}) do |origin_id, controls|
+          effective = effective_creatives[effective_ids_by_origin[origin_id]]
+          displayed = creatives_by_id[user_map[origin_id] || origin_id]
+          next unless effective && displayed
+
+          progress = effective.progress || 0
+          controls[origin_id] = {
+            progress: progress,
+            progress_text: effective.send(:format_progress_text, progress, user),
+            progress_html: render_progress_control_html(
+              displayed,
+              user,
+              effective: effective,
+              progress: progress,
+              has_children: has_children_by_id.include?(effective.id),
+              can_write: writable_by_user.dig(user.id, effective.id)
+            )
+          }
+        end
+      end
+    end
+
+    def batch_write_permissions(effective_creatives, users)
+      effective_ids = effective_creatives.keys
+      return {} if effective_ids.empty?
+
+      user_ids = users.map(&:id)
+      permission_rows = CreativeSharesCache.where(creative_id: effective_ids, user_id: [ nil, *user_ids ])
+                                           .pluck(:creative_id, :user_id, :permission)
+      public_permissions = {}
+      user_permissions = Hash.new { |hash, key| hash[key] = {} }
+      permission_rows.each do |creative_id, user_id, permission|
+        if user_id.nil?
+          public_permissions[creative_id] = permission
+        else
+          user_permissions[user_id][creative_id] = permission
+        end
+      end
+
+      users.each_with_object({}) do |user, permissions_by_user|
+        permissions_by_user[user.id] = effective_ids.index_with do |creative_id|
+          effective = effective_creatives.fetch(creative_id)
+          permission = user_permissions[user.id].fetch(creative_id, public_permissions[creative_id])
+          effective.user_id == user.id || permission.to_i >= CreativeShare.permissions[:write]
+        end
+      end
+    end
+
+    def render_progress_control_html(creative, user, effective: nil, progress: nil, has_children: nil, can_write: nil)
       I18n.with_locale(user.locale.presence || I18n.default_locale) do
+        effective ||= creative.effective_origin
         Collavre::ApplicationController.helpers.render_progress_control(
           creative,
-          creative.progress || 0,
-          has_children: creative.children.exists?,
-          can_write: creative.has_permission?(user, :write)
+          progress || effective.progress || 0,
+          has_children: has_children.nil? ? effective.children.exists? : has_children,
+          can_write: can_write.nil? ? creative.has_permission?(user, :write) : can_write
         )
       end
     end
