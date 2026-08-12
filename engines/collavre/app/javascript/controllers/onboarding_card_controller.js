@@ -11,6 +11,7 @@ export default class extends Controller {
     this.refreshGeneration = 0
     this.refreshPromise = null
     this.refreshPending = false
+    this.workspaceTreeGuided = false
     this.refresh = this.refresh.bind(this)
     this.refresh()
     this.timer = window.setInterval(this.refresh, 1200)
@@ -110,7 +111,10 @@ export default class extends Controller {
 
   openWorkspaceTree() {
     const panel = document.querySelector('[data-controller~="workspace-tree"]')
-    if (!panel || panel.classList.contains('is-open')) return
+    if (!panel || this.workspaceTreeGuided) return
+
+    this.workspaceTreeGuided = true
+    if (panel.classList.contains('is-open')) return
 
     panel.classList.add('is-open')
     panel.querySelector('[data-workspace-tree-target~="panelToggle"]')?.setAttribute('aria-expanded', 'true')

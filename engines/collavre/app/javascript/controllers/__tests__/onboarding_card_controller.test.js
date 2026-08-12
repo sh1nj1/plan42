@@ -125,6 +125,26 @@ describe('OnboardingCardController', () => {
     expect(panel.querySelector('button').getAttribute('aria-expanded')).toBe('true')
   })
 
+  test('does not reopen the workspace tree drawer after the learner closes it', async () => {
+    document.body.insertAdjacentHTML('beforeend', `
+<section class="creative-workspace-tree-region" data-controller="workspace-tree">
+  <button data-workspace-tree-target="panelToggle" aria-expanded="false"></button>
+</section>
+    `)
+
+    await controller.refresh()
+
+    const panel = document.querySelector('[data-controller="workspace-tree"]')
+    const toggle = panel.querySelector('button')
+    panel.classList.remove('is-open')
+    toggle.setAttribute('aria-expanded', 'false')
+
+    await controller.refresh()
+
+    expect(panel.classList.contains('is-open')).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
   test('serializes slow polling responses and refreshes again afterward', async () => {
     let resolveSlowResponse
     const slowResponse = new Promise((resolve) => { resolveSlowResponse = resolve })
