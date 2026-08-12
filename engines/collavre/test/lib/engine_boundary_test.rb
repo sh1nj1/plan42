@@ -402,6 +402,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Object.method(:require).call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(self.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.method(:require)["#{feature}"]))
     assert_equal [ feature ], requires_in(%(method(:require)["#{feature}"]))
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
@@ -510,6 +511,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       assert_equal [ path ], asset_paths_in(%(#{helper} "#{path}")), helper
     end
     assert_equal [ path ], asset_paths_in(%(stylesheet_link_tag "collavre_" + "#{satellite.delete_prefix('collavre_')}/slack_integration"))
+    assert_equal [ path ], asset_paths_in(%(ActionController::Base.helpers.asset_path("#{path}")))
+    assert_equal [ path ], asset_paths_in(%(helpers.asset_path("#{path}")))
+    assert_equal [ path ], asset_paths_in(%(view_context.asset_path("#{path}")))
     assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
 
     erb_path = ENGINES_ROOT.join(CORE, "app/views/collavre/example.html.erb")
@@ -1941,8 +1945,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   # Asset helpers resolve a packaged path just like `render` resolves a view:
   # the core gem can find a satellite asset in this monorepo, but a core-only
-  # host cannot. Restrict the scan to bare helpers, the normal ERB spelling, so
-  # an application object's coincidentally named method remains ordinary code.
+  # host cannot. Allow the standard Rails helper receivers in addition to the
+  # normal bare ERB spelling, while excluding application objects with a
+  # coincidentally named method.
   def asset_paths_in(source)
     asset_helper_calls(Prism.parse(source).value).flat_map { |call|
       call.arguments&.arguments.to_a.flat_map { |argument| asset_path_values(argument) }
@@ -1995,7 +2000,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def rails_asset_helper_call?(node)
-    node.is_a?(Prism::CallNode) && node.receiver.nil? && ASSET_HELPER_METHODS.include?(node.name.to_s)
+    node.is_a?(Prism::CallNode) && ASSET_HELPER_METHODS.include?(node.name.to_s) &&
+      (node.receiver.nil? || rails_asset_helper_receiver?(node.receiver.slice))
+  end
+
+  def rails_asset_helper_receiver?(source)
+    source.match?(/\A(?:::)?ActionController::Base\.helpers\z|\A(?:helpers|view_context)\z/)
   end
 
   def asset_path_values(node)
@@ -2107,9 +2117,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   # A statically selected `Kernel.method(:require).call(path)`,
-  # `Object.method(:require).call(path)`, or `method(:require).call(path)`
-  # invokes the native loader just like direct and reflective dispatch. Object
-  # inherits Kernel's private loaders; arbitrary receivers stay excluded.
+  # `Object.method(:require).call(path)`, `self.method(:require).call(path)`,
+  # or `method(:require).call(path)` invokes the native loader just like direct
+  # and reflective dispatch. Object inherits Kernel's private loaders;
+  # arbitrary receivers stay excluded.
   def method_object_loader_method(call)
     return unless %i[call []].include?(call.name)
 
@@ -2119,7 +2130,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     method_name = method_call.arguments&.arguments&.first
     return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
     return unless LOADER_METHODS.include?(method_name.unescaped)
-    return unless method_name.unescaped == "autoload" || method_call.receiver.nil? || kernel?(method_call.receiver) || top_level_object_receiver?(method_call.receiver)
+    return unless method_name.unescaped == "autoload" || method_call.receiver.nil? || self_receiver?(method_call.receiver) || kernel?(method_call.receiver) || top_level_object_receiver?(method_call.receiver)
 
     method_name.unescaped
   end
