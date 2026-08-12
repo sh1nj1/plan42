@@ -317,6 +317,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_010000) do
     t.index ["client_id"], name: "index_devices_on_client_id", unique: true
     t.index ["fcm_token"], name: "index_devices_on_fcm_token", unique: true
     t.index ["user_id"], name: "index_devices_on_user_id"
+    t.check_constraint "device_type != 2", name: "devices_no_android_device_type"
   end
 
   create_table "emails", force: :cascade do |t|
