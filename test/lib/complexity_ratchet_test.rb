@@ -289,6 +289,21 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     )
   end
 
+  test "keeps enclosing call context after earlier callable arguments" do
+    source = <<~RUBY
+      class Sample
+        register(:handler, Enumerator.new do
+          first
+        end)
+      end
+    RUBY
+
+    assert_equal(
+      { "Sample[block:new]" => [ "register(:handler," ] },
+      ComplexityRatchet::EntityMap.for(source).sibling_anchors
+    )
+  end
+
   # Both views come from one parse now. They have to stay keyed identically, or
   # verify_monotonic would look up an anchor under a key the population never
   # produced and silently compare nothing.
@@ -1193,6 +1208,33 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
         OTHER = Enumerator.new do
           second
         end
+      end
+    RUBY
+    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { key => 90 }, { key => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "source anchor"
+  end
+
+  test "rejects a callable block replaced after an earlier call argument" do
+    before_source = <<~RUBY
+      class Sample
+        register(:handler, Enumerator.new do
+          first
+        end)
+      end
+    RUBY
+    after_source = <<~RUBY
+      class Sample
+        subscribe(:handler, Enumerator.new do
+          second
+        end)
       end
     RUBY
     key = "a.rb | Metrics/BlockLength | Sample[block:new]"

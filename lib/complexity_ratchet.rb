@@ -118,6 +118,7 @@ module ComplexityRatchet
       @fallback_statements = Hash.new { |hash, key| hash[key] = [] }
       @occurrences = Hash.new(0)
       @sibling_anchors = Hash.new { |hash, key| hash[key] = [] }
+      @call_stack = []
       super()
     end
 
@@ -189,7 +190,10 @@ module ComplexityRatchet
     # which is not a scope). Enumerating a closed grammar is fine; the trouble on
     # this gate has always come from enumerating open-ended things instead.
     def visit_call_node(node)
+      @call_stack << node
       nest_block(node, "[block:#{node.name}]") { super }
+    ensure
+      @call_stack.pop
     end
 
     # `super do` and `super() do` — SuperNode and ForwardingSuperNode. Both key
@@ -281,7 +285,23 @@ module ComplexityRatchet
       return current_line if current_line.end_with?("=", "(")
 
       preceding_line = before_call.rstrip.split("\n").last.to_s.strip
-      preceding_line if current_line.empty? && preceding_line.end_with?("=", "(")
+      return preceding_line if current_line.empty? && preceding_line.end_with?("=", "(")
+
+      enclosing_call_anchor(node)
+    end
+
+    # A block-producing call may itself be an argument after an earlier value:
+    # `register(:name, Enumerator.new do ...)`. Its local prefix ends in a
+    # comma, so looking only at line suffixes loses the enclosing call's
+    # identity. The visitor stack supplies that parent relationship directly.
+    def enclosing_call_anchor(node)
+      parent = @call_stack.reverse_each.find do |candidate|
+        candidate != node && candidate.arguments&.arguments&.include?(node)
+      end
+      return unless parent
+
+      prefix_length = node.location.start_offset - parent.location.start_offset
+      parent.location.slice[0...prefix_length].gsub(/\s+/, " ").strip
     end
 
     # The literal is anonymous, but its statement prefix is stable when it is

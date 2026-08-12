@@ -553,6 +553,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(for (const char of /import "#{satellite}\/thing"/.source) {}))
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(const ratio = object.of / import("#{satellite}/thing")))
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const ratio = count++ / import("#{satellite}/thing")))
   end
 
   test "detector ignores import examples in JSX text while keeping JSX expressions" do
@@ -997,6 +999,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_regex_start?(tokens)
     previous = tokens.last
     return true if previous.nil?
+    return false if js_postfix_update?(tokens)
+
     expression_starters = [ "(", "[", "{", ",", ":", ";", "=", "!", "?", "+", "-", "*", "%", "&", "|", "^", "~", "<", ">" ]
     return true if previous.first == :punctuation && expression_starters.include?(previous.last)
 
@@ -1005,6 +1009,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if previous.first == :word && %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last)
 
     js_for_of_header?(tokens)
+  end
+
+  # The scanner stores `++` and `--` as two punctuation tokens. After an
+  # operand that pair is postfix, so a following slash is division; treating
+  # its second character as unary would consume a real dynamic import as regex.
+  def js_postfix_update?(tokens)
+    operator = tokens.last
+    return false unless operator&.first == :punctuation && %w[+ -].include?(operator.last)
+    return false unless tokens[-2] == operator
+
+    operand = tokens[-3]
+    operand && (operand.first != :punctuation || [ ")", "]", "}" ].include?(operand.last))
   end
 
   def js_for_of_header?(tokens)
