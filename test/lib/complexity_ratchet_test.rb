@@ -974,6 +974,42 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
     assert_includes problem.message, "80"
   end
 
+  test "rejects a descendant allowance transferred by reordered outer siblings" do
+    before_source = <<~RUBY
+      class A
+        def run
+        end
+      end
+      class A
+        def run
+        end
+      end
+    RUBY
+    after_source = <<~RUBY
+      class A
+        def run
+        end
+      end
+      class A
+        def run
+        end
+      end
+    RUBY
+    first = "a.rb | Metrics/MethodLength | A#run"
+    second = "a.rb | Metrics/MethodLength | A(2)#run"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { first => 90, second => 80 }, { first => 85, second => 80 },
+      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
+      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source),
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_equal first, problem.key
+  end
+
   test "rejects a shifted survivor when only its deleted sibling was baselined" do
     # The second sibling was below budget at 60, so it has no baseline key.
     # Its presence still has to survive long enough to stop it inheriting the

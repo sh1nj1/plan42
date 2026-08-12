@@ -228,6 +228,7 @@ module ComplexityRatchet
     def sibling_populations
       @occurrences.select { |_path, count| count > 1 }
         .merge(fallback_sibling_populations) { |_path, scopes, statements| scopes + statements }
+        .merge(ancestor_sibling_populations) { |_path, direct, ancestor| [ direct, ancestor ].max }
     end
 
     # Anchors distinguish replacements that keep the same ordinalised key.
@@ -235,6 +236,7 @@ module ComplexityRatchet
     # assignment can otherwise replace the scope while retaining its
     # unsuffixed identity.
     def sibling_anchors = @sibling_anchors.select { |path, _| path.match?(/\[(?:block:|lambda\])/) || @occurrences[path] > 1 }
+      .merge(ancestor_sibling_anchors) { |_path, direct, ancestor| direct + ancestor }
 
     private
 
@@ -244,6 +246,33 @@ module ComplexityRatchet
     def fallback_sibling_populations = @fallback_statements.filter_map do |(scope, text), statements|
         [ "#{scope}~#{abbreviate(text)}", statements.size ] if statements.size > 1
       end.to_h
+
+    # An ordinal on an outer scope is also an ordinal on everything nested in
+    # it. `A(2)#run` has no direct `#run` sibling, but swapping A's reopenings
+    # can still transfer a run allowance. Project that outer population and its
+    # anchors onto descendants so verification sees the shared family.
+    def ancestor_sibling_populations = ancestor_sibling_profiles { |_path, count, _anchors| count }
+
+    def ancestor_sibling_anchors = ancestor_sibling_profiles { |_path, _count, anchors| anchors }
+
+    def ancestor_sibling_profiles
+      @occurrences.filter_map { |path, count| [ path, count, @sibling_anchors[path] ] if count > 1 }
+        .each_with_object({}) do |(ancestor, count, anchors), profiles|
+          normalized_ancestor = normalize_scope_ordinals(ancestor)
+          @occurrences.each_key do |descendant|
+            normalized_descendant = normalize_scope_ordinals(descendant)
+            next unless descendant_of?(normalized_descendant, normalized_ancestor)
+
+            profile = yield(descendant, count, anchors)
+            existing = profiles[normalized_descendant]
+            profiles[normalized_descendant] = existing ? existing.is_a?(Array) ? existing + profile : [ existing, profile ].max : profile
+          end
+        end
+    end
+
+    def descendant_of?(path, ancestor) = path.start_with?("#{ancestor}#", "#{ancestor}.", "#{ancestor}::", "#{ancestor}[")
+
+    def normalize_scope_ordinals(path) = path.gsub(/\(\d+\)(?=(?::|#|\.|\[)|\z)/, "")
 
     def abbreviate(text) = text.length > 100 ? "#{text[0, 97]}..." : text
 

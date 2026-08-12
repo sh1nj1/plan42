@@ -507,6 +507,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(export { thing } from "#{satellite}/thing";) => "#{satellite}/thing",
       %(const t = require("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require.resolve("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require.resolve?.("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -529,6 +530,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(const value = `${import("#{satellite}/thing")}`;))
     assert_empty js_imports_in(%(const example = `import "#{satellite}/thing"`;))
+  end
+
+  test "detector ignores regex literals after a spread operator" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(fn(.../import "#{satellite}\\/thing"/.exec(text));))
   end
 
   # Same rule the Ruby loader detector follows: the specifier is the violation,
@@ -1008,12 +1015,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     expression_starters = [ "(", "[", "{", ",", ":", ";", "=", "!", "?", "+", "-", "*", "%", "&", "|", "^", "~", "<", ">" ]
     return true if previous.first == :punctuation && expression_starters.include?(previous.last)
+    return true if js_spread_operator?(tokens)
 
     return true if control_flow_condition?(tokens)
 
     return true if previous.first == :word && %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last)
 
     js_for_of_header?(tokens)
+  end
+
+  def js_spread_operator?(tokens)
+    tokens.last(3) == Array.new(3, [ :punctuation, "." ])
   end
 
   # The scanner stores `++` and `--` as two punctuation tokens. After an
@@ -1257,10 +1269,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def js_require_resolve_specifier(tokens, index)
     return unless tokens[index + 1] == [ :punctuation, "." ] &&
-      tokens[index + 2] == [ :word, "resolve" ] &&
-      tokens[index + 3] == [ :punctuation, "(" ]
+      tokens[index + 2] == [ :word, "resolve" ]
 
-    js_static_string_at(tokens, index + 4)
+    open = js_call_open_at(tokens, index + 2)
+    return unless open
+
+    js_static_string_at(tokens, open + 1)
   end
 
   def js_static_string_at(tokens, index)
