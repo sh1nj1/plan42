@@ -67,6 +67,25 @@ module Collavre
         refute Creative.exists?(session.root.id)
       end
 
+      test "defers cleanup for an active agent turn after its onboarding root is deleted" do
+        user = User.create!(name: "Deleted root awaiting finisher", email: "deleted-root-awaiting@example.com", password: "password")
+        agent = User.create!(name: "Deleted root helper", email: "deleted-root-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        creative = session.practice_creatives.second
+        comment = Comment.create!(creative: creative, user: user, content: "@Deleted root helper: Please help")
+        task = Task.create!(name: "Response", status: "running", trigger_event_name: "comment_created",
+                            trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent, creative: creative)
+        Creatives::DestroyService.new(creative: session.root, user: user).call
+
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+          Seeder.new(user: user).call
+        end
+
+        assert Creative.exists?(creative.id)
+        assert_equal "running", task.reload.status
+      end
+
       test "defers cleanup while the onboarding agent job is queued before its task exists" do
         user = User.create!(name: "Queued finisher", email: "queued-finisher@example.com", password: "password")
         agent = User.create!(name: "Queued helper", email: "queued-helper@example.com", password: "password",

@@ -9,12 +9,13 @@ module Collavre
 
       def call(defer_pending_agent_cleanup: false)
         session = Session.for_user(user)
-        session_id = session&.session_id
         # The session id, not current tree position, is the ownership boundary.
         # This keeps moved practice items from becoming permanent clutter. If
         # the root was deleted, every remaining tagged item is orphaned and
         # must be removed before onboarding can be reset or completed.
+        session_id = session&.session_id
         owned = session_items(session_id)
+        session_id ||= session_id_from(owned)
         if defer_pending_agent_cleanup && session_id.present? && pending_agent_turn?(owned)
           OnboardingCleanupJob.perform_later(user.id, session_id)
         else
@@ -42,6 +43,11 @@ module Collavre
           creative_session_id = creative.data&.dig("onboarding", "session_id")
           creative_session_id.present? && (session_id.nil? || creative_session_id == session_id)
         end
+      end
+
+      def session_id_from(owned)
+        session_ids = owned.filter_map { |creative| creative.data&.dig("onboarding", "session_id") }.uniq
+        session_ids.first if session_ids.one?
       end
 
       def pending_agent_turn?(owned)
