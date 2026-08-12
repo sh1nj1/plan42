@@ -37,7 +37,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
-  CONSTANT_QUERY_METHODS = %w[autoload? const_defined? const_get const_source_location].freeze
+  CONSTANT_SYMBOL_METHODS = %w[
+    autoload? const_defined? const_get const_source_location
+    const_set remove_const private_constant public_constant deprecate_constant
+  ].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
 
@@ -222,6 +225,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in("Object.const_defined?(:#{satellite})"))
     assert_equal [ satellite ], names(string_references_in("Object.const_source_location(:#{satellite})"))
     assert_equal [ satellite ], names(string_references_in("Object.autoload?(:#{satellite})"))
+  end
+
+  test "detector flags a satellite class named by a constant mutator symbol" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    %w[const_set remove_const private_constant public_constant deprecate_constant].each do |method|
+      assert_equal [ satellite ], names(string_references_in("Object.#{method}(:#{satellite})")), method
+    end
   end
 
   test "detector ignores satellite symbols used as ordinary data" do
@@ -560,6 +571,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(const value = `${import("#{satellite}/thing")}`;))
     assert_empty js_imports_in(%(const example = `import "#{satellite}/thing"`;))
+  end
+
+  test "detector scans imports after an interpolated template literal" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const ratio = `${() => {}}` / import("#{satellite}/thing");))
   end
 
   test "detector ignores regex literals after a spread operator" do
@@ -1288,7 +1306,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
         escaped, cursor = js_escape(source, cursor)
         value << escaped
       elsif character == "`"
-        tokens << [ :string, value ] if static
+        tokens << [ static ? :string : :dynamic_string, value ]
         return cursor + 1
       elsif character == "$" && source[cursor + 1] == "{"
         static = false
@@ -1299,7 +1317,6 @@ class EngineBoundaryTest < ActiveSupport::TestCase
         cursor += 1
       end
     end
-
     tokens << [ :dynamic_string, value ] unless static
     cursor
   end
@@ -1547,7 +1564,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   # Prism tokenizes `:CollavreSlack` as SYMBOL_BEGIN then CONSTANT. It is data
-  # unless a supported constant-query API consumes it, which is covered by
+  # unless a supported constant API consumes it, which is covered by
   # #constant_resolution_literals_in instead of this general constant scanner.
   def symbol_literal?(all, index) = all[index - 1]&.type == :SYMBOL_BEGIN
 
@@ -1640,7 +1657,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def constant_resolution_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::CallNode) && CONSTANT_QUERY_METHODS.include?(node.name.to_s)
+    if node.is_a?(Prism::CallNode) && CONSTANT_SYMBOL_METHODS.include?(node.name.to_s)
       node.arguments&.arguments.to_a&.each do |argument|
         if argument.is_a?(Prism::SymbolNode)
           found << [ argument.unescaped, argument.location.start_line ]
