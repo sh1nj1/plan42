@@ -235,6 +235,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "detector ignores satellite symbols on nested constant receivers" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    %w[const_defined? const_set remove_const private_constant].each do |method|
+      assert_empty names(string_references_in("Wrapper.#{method}(:#{satellite})")), method
+    end
+  end
+
   test "detector ignores satellite symbols used as ordinary data" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -352,8 +360,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(Kernel.send("require", "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(method(:require).call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.method(:require)["#{feature}"]))
+    assert_equal [ feature ], requires_in(%(method(:require)["#{feature}"]))
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
     assert_empty requires_in(%(registry.method(:require).call("#{feature}")))
+    assert_empty requires_in(%(registry.method(:require)["#{feature}"]))
     assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
   end
 
@@ -402,6 +413,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}/thing" ],
       requires_in(%(require "collavre_" "#{satellite.delete_prefix('collavre_')}/thing"))
+  end
+
+  test "detector folds static interpolations in Ruby loader paths" do
+    satellite = SATELLITES.first
+    suffix = satellite.delete_prefix("collavre_")
+    source = <<~RUBY
+      require "collavre_\#{"#{suffix}"}/thing"
+    RUBY
+
+    assert_equal [ "#{satellite}/thing" ], requires_in(source)
   end
 
   test "detector flags a satellite template rendered by core" do
@@ -1700,7 +1721,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def constant_resolution_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::CallNode) && CONSTANT_SYMBOL_METHODS.include?(node.name.to_s)
+    if node.is_a?(Prism::CallNode) && CONSTANT_SYMBOL_METHODS.include?(node.name.to_s) && top_level_object_receiver?(node.receiver)
       node.arguments&.arguments.to_a&.each do |argument|
         if argument.is_a?(Prism::SymbolNode)
           found << [ argument.unescaped, argument.location.start_line ]
@@ -1826,7 +1847,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # and reflective dispatch. Restrict this to Kernel so an application-defined
   # Method object is not treated as a loader.
   def method_object_loader_method(call)
-    return unless call.name == :call
+    return unless %i[call []].include?(call.name)
 
     method_call = call.receiver
     return unless method_call.is_a?(Prism::CallNode) && method_call.name == :method
@@ -1859,6 +1880,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def static_string_concatenation(node)
     return node.unescaped if node.is_a?(Prism::StringNode)
+    if node.is_a?(Prism::EmbeddedStatementsNode)
+      expressions = node.statements.body
+      return unless expressions.one?
+
+      return static_string_concatenation(expressions.first)
+    end
     if node.is_a?(Prism::InterpolatedStringNode)
       parts = node.parts.map { |part| static_string_concatenation(part) }
       return parts.join if parts.all?
@@ -1916,6 +1943,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     case node
     when Prism::ConstantReadNode then node.name == :Kernel
     when Prism::ConstantPathNode then node.name == :Kernel && top_level_path?(node.parent)
+    else false
+    end
+  end
+
+  def top_level_object_receiver?(node)
+    case node
+    when Prism::ConstantReadNode then node.name == :Object
+    when Prism::ConstantPathNode then node.name == :Object && top_level_path?(node.parent)
     else false
     end
   end
