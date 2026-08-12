@@ -736,6 +736,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(const example = `import "#{satellite}/thing"`;))
   end
 
+  test "detector folds static template literal interpolations" do
+    satellite = SATELLITES.first
+    suffix = satellite.delete_prefix("collavre_")
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const value = require(`collavre_${"#{suffix}"}/thing`);))
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const value = import(`collavre_${("#{suffix[0...1]}" + "#{suffix[1..]}")}/thing`);))
+    assert_empty js_imports_in(%(const value = import(`collavre_${suffix}/thing`);))
+  end
+
   test "detector scans imports after an interpolated template literal" do
     satellite = SATELLITES.first
 
@@ -1524,9 +1535,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
         tokens << [ static ? :string : :dynamic_string, value ]
         return cursor + 1
       elsif character == "$" && source[cursor + 1] == "{"
-        static = false
         expression_tokens, cursor = js_template_expression_tokens(source, cursor + 2)
-        tokens.concat(expression_tokens)
+        expression, expression_cursor = js_static_string_expression_at(expression_tokens, 0)
+        if expression && expression_cursor == expression_tokens.length
+          value << expression
+        else
+          static = false
+          tokens.concat(expression_tokens)
+        end
       else
         value << character
         cursor += 1
