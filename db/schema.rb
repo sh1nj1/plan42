@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_11_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_12_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -910,20 +910,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_000000) do
     t.datetime "created_at", null: false
     t.integer "creative_id"
     t.string "name"
-    t.integer "parent_task_id"
     t.json "pending_tool_call"
-    t.integer "retry_count", default: 0, null: false
     t.string "status", default: "pending"
     t.integer "topic_id"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
     t.string "waiting_notice_scope"
-    t.text "workflow_context"
-    t.json "workflow_state"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
-    t.index ["parent_task_id"], name: "index_tasks_on_parent_task_id"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
   end
 
@@ -1126,7 +1121,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_000000) do
   add_foreign_key "tags", "labels"
   add_foreign_key "task_actions", "tasks"
   add_foreign_key "tasks", "creatives", on_delete: :nullify
-  add_foreign_key "tasks", "tasks", column: "parent_task_id", on_delete: :nullify
   add_foreign_key "tasks", "users", column: "agent_id"
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "topics", column: "source_topic_id", on_delete: :nullify

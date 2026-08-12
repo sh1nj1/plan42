@@ -79,40 +79,6 @@ class AiAgentJobTest < ActiveJob::TestCase
                  "the job's done transition must not overwrite an external cancellation"
   end
 
-  test "does not retry an empty workflow response after the subtask is cancelled" do
-    parent_task = Task.create!(
-      name: "Workflow parent",
-      status: "running",
-      agent: @agent,
-      creative: @creative
-    )
-    sub_task = Task.create!(
-      name: "Workflow completion race",
-      status: "pending",
-      agent: @agent,
-      creative: @creative,
-      parent_task: parent_task,
-      trigger_event_name: "workflow_subtask",
-      trigger_event_payload: @context
-    )
-    fake_service = Object.new
-    fake_service.define_singleton_method(:call) do
-      sub_task.update!(status: "cancelled")
-      ""
-    end
-
-    retry_scheduled = false
-    AiAgentJob.stub :set, ->(**) { retry_scheduled = true } do
-      AiAgentService.stub :new, ->(_task) { fake_service } do
-        AiAgentJob.perform_now(sub_task)
-      end
-    end
-
-    assert_equal "cancelled", sub_task.reload.status,
-                 "the retry transition must not overwrite an external cancellation"
-    refute retry_scheduled, "a cancelled subtask must not schedule another attempt"
-  end
-
   test "handles service errors" do
     # Mock AiClient to raise error
     AiClient.stub :new, ->(*args) { raise StandardError, "AI Error" } do
@@ -707,10 +673,10 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected new task when existing task is done"
   end
 
-  test "claude channel workflow subtask without topic fails and notifies parent" do
+  test "claude channel dispatch without a topic fails the task" do
     claude_agent = User.create!(
-      email: "cc-workflow-agent@agent.collavre.local",
-      name: "Claude Workflow Agent",
+      email: "cc-topicless-agent@agent.collavre.local",
+      name: "Claude Topicless Agent",
       password: SecureRandom.hex(32),
       llm_vendor: "anthropic",
       llm_model: "claude-code",
@@ -722,47 +688,27 @@ class AiAgentJobTest < ActiveJob::TestCase
       searchable: false
     )
 
-    parent_creative = Creative.create!(user: @owner, description: "Workflow Parent")
-    parent_task = Task.create!(
-      name: "Workflow Parent",
-      status: "running",
-      agent: @owner,
-      creative_id: parent_creative.id
-    )
-
-    # Workflow subtasks are built without a topic — see WorkflowExecutor#build_subtask_context.
-    workflow_context = {
+    # A Claude Channel agent has nowhere to broadcast a dispatch that carries no
+    # topic, so ClaudeChannelAdapter raises and the job's rescue must mark the
+    # task failed rather than leave it running and holding the agent slot.
+    topicless_context = {
       "creative" => { "id" => @creative.id },
-      "comment" => { "id" => @comment.id, "content" => "Run subtask" }
+      "comment" => { "id" => @comment.id, "content" => "Run without a topic" }
     }
 
-    fail_called_with = nil
-    fake_executor = Class.new do
-      define_method(:fail_subtask!) do |sub_task, error_message: nil|
-        fail_called_with = { sub_task: sub_task, error_message: error_message }
-      end
-    end.new
+    task = Task.create!(
+      name: "Claude topicless task",
+      status: "running",
+      agent: claude_agent,
+      creative_id: @creative.id,
+      trigger_event_payload: topicless_context
+    )
 
-    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
-      assert_raises(Collavre::AiAgent::ClaudeChannelAdapter::UndeliverableError) do
-        # Create the task explicitly with parent_task_id; perform_now exercises the job path.
-        sub_task = Task.create!(
-          name: "Claude subtask",
-          status: "running",
-          agent: claude_agent,
-          parent_task_id: parent_task.id,
-          creative_id: @creative.id,
-          trigger_event_payload: workflow_context
-        )
-        AiAgentJob.perform_now(sub_task)
-      end
+    assert_raises(Collavre::AiAgent::ClaudeChannelAdapter::UndeliverableError) do
+      AiAgentJob.perform_now(task)
     end
 
-    sub_task = Task.where(agent_id: claude_agent.id, parent_task_id: parent_task.id).last
-    assert_equal "failed", sub_task.status
-    assert_not_nil fail_called_with, "Expected WorkflowExecutor#fail_subtask! to be invoked"
-    assert_equal sub_task.id, fail_called_with[:sub_task].id
-    assert_match(/Claude Channel/, fail_called_with[:error_message].to_s)
+    assert_equal "failed", task.reload.status
   end
 
   test "claude channel task is delegated before adapter deliver" do
@@ -955,146 +901,9 @@ class AiAgentJobTest < ActiveJob::TestCase
       "the offline-resumed task must be cancelled so it does not leak slots / queue space"
   end
 
-  test "claude channel offline-resumed workflow subtask fails parent workflow" do
-    # WorkflowExecutor builds subtasks with parent_task_id and no topic
-    # (see WorkflowExecutor#build_subtask_context). If the resumed task's
-    # session went offline (routing_expression blank) before the job fires,
-    # the offline guard must not only cancel the child but also propagate
-    # failure to the parent via WorkflowExecutor#fail_subtask! — otherwise
-    # the parent workflow stays "running" indefinitely because no rescue
-    # path runs (we never raise).
-    claude_agent = User.create!(
-      email: "cc-offline-subtask-agent@agent.collavre.local",
-      name: "Claude Offline Subtask Agent",
-      password: SecureRandom.hex(32),
-      llm_vendor: "anthropic",
-      llm_model: "claude-code",
-      routing_expression: nil,
-      created_by_id: @owner.id,
-      searchable: false
-    )
-
-    parent_creative = Creative.create!(user: @owner, description: "Offline Workflow Parent")
-    parent_task = Task.create!(
-      name: "Offline Workflow Parent",
-      status: "running",
-      agent: @owner,
-      creative_id: parent_creative.id
-    )
-
-    workflow_context = {
-      "creative" => { "id" => @creative.id },
-      "comment" => { "id" => @comment.id, "content" => "Offline subtask" }
-    }
-
-    sub_task = Task.create!(
-      name: "Claude offline subtask",
-      status: "pending",
-      agent: claude_agent,
-      parent_task_id: parent_task.id,
-      creative_id: @creative.id,
-      trigger_event_payload: workflow_context
-    )
-
-    fail_called_with = nil
-    fake_executor = Class.new do
-      define_method(:fail_subtask!) do |child, error_message: nil|
-        fail_called_with = { sub_task: child, error_message: error_message }
-      end
-    end.new
-
-    delivered = false
-    fake_adapter = Class.new do
-      define_method(:initialize) { |agent:, context:, task: nil| }
-      define_method(:deliver) { delivered = true; nil }
-    end
-
-    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
-      Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
-        AiAgentJob.perform_now(sub_task)
-      end
-    end
-
-    refute delivered, "adapter must not run for offline-resumed Claude Channel subtask"
-    assert_equal "failed", sub_task.reload.status,
-      "subtask must transition to failed so the parent workflow sees a terminal state"
-    assert_not_nil fail_called_with,
-      "Expected WorkflowExecutor#fail_subtask! to be invoked so the parent workflow fails"
-    assert_equal sub_task.id, fail_called_with[:sub_task].id
-    assert_match(/offline/i, fail_called_with[:error_message].to_s)
-  end
-
-  test "turn deadline on a workflow subtask fails the parent workflow" do
-    # Every external failer of a workflow subtask (StuckDetector, the offline
-    # guards above, comment deletion) calls fail_subtask! at the site that
-    # writes `failed`. The turn deadline is the one terminal exit the worker
-    # inflicts on itself — AgentLifecycleManager marks the row and raises
-    # TurnDeadlineError — so if the job's rescue doesn't notify the parent,
-    # nobody does, and the parent workflow stays "running" on a child that
-    # already failed underneath it.
-    parent_creative = Creative.create!(user: @owner, description: "Deadline Workflow Parent")
-    parent_task = Task.create!(
-      name: "Deadline Workflow Parent",
-      status: "running",
-      agent: @owner,
-      creative_id: parent_creative.id
-    )
-
-    # Workflow subtasks carry parent_task_id and no topic
-    # (see WorkflowExecutor#build_subtask_context).
-    workflow_context = {
-      "creative" => { "id" => @creative.id },
-      "comment" => { "id" => @comment.id, "content" => "Deadline subtask" }
-    }
-
-    sub_task = Task.create!(
-      name: "Deadline subtask",
-      status: "pending",
-      agent: @agent,
-      parent_task_id: parent_task.id,
-      creative_id: @creative.id,
-      trigger_event_payload: workflow_context
-    )
-
-    fail_called_with = nil
-    fake_executor = Class.new do
-      define_method(:fail_subtask!) do |child, error_message: nil|
-        fail_called_with = { sub_task: child, error_message: error_message }
-      end
-    end.new
-
-    # Mimic AgentLifecycleManager#check_cancelled!'s deadline exit: mark the
-    # row failed under the worker-settling protocol, then raise.
-    captured_deadline = 3600
-    fake_service_class = Class.new do
-      define_method(:initialize) { |task| @task = task }
-      define_method(:call) do
-        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
-        raise Collavre::TurnDeadlineError.new(captured_deadline)
-      end
-    end
-
-    Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 60 do
-      Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
-        Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task) } do
-          AiAgentJob.perform_now(sub_task)
-        end
-      end
-    end
-
-    assert_equal "failed", sub_task.reload.status,
-      "subtask must settle as failed after the deadline exit"
-    assert_not_nil fail_called_with,
-      "Expected WorkflowExecutor#fail_subtask! so the parent workflow fails instead of hanging"
-    assert_equal sub_task.id, fail_called_with[:sub_task].id
-    assert_equal "Turn exceeded the 3600s deadline", fail_called_with[:error_message]
-  end
-
-  test "turn deadline without a parent workflow does not touch WorkflowExecutor" do
-    # The non-workflow deadline path must stay on the plain cancellation exit:
-    # fail_subtask! flips its parent to failed, so calling it with no workflow
-    # parent would be a NoMethodError on nil at best.
-    executor_touched = false
+  test "turn deadline settles the task as failed" do
+    # AgentLifecycleManager marks the row under the worker-settling protocol and
+    # raises; the job's rescue must let that terminal status stand.
     fake_service_class = Class.new do
       define_method(:initialize) { |task| @task = task }
       define_method(:call) do
@@ -1104,59 +913,11 @@ class AiAgentJobTest < ActiveJob::TestCase
     end
 
     captured_task = nil
-    Collavre::Comments::WorkflowExecutor.stub :new, ->(_parent) { executor_touched = true } do
-      Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service_class.new(task) } do
-        AiAgentJob.perform_now(@agent.id, "test_event", @context)
-      end
+    Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service_class.new(task) } do
+      AiAgentJob.perform_now(@agent.id, "test_event", @context)
     end
 
-    refute executor_touched, "no parent workflow, so WorkflowExecutor must not be built"
     assert_equal "failed", captured_task.reload.status
-  end
-
-  test "turn deadline does not overwrite a parent workflow cancelled during unwind" do
-    parent_creative = Creative.create!(user: @owner, description: "Cancelled Deadline Parent")
-    parent_task = Task.create!(
-      name: "Cancelled Deadline Parent",
-      status: "running",
-      agent: @owner,
-      creative_id: parent_creative.id
-    )
-    sub_task = Task.create!(
-      name: "Cancelled deadline subtask",
-      status: "pending",
-      agent: @agent,
-      parent_task_id: parent_task.id,
-      creative_id: @creative.id,
-      trigger_event_payload: {
-        "creative" => { "id" => @creative.id },
-        "comment" => { "id" => @comment.id, "content" => "Cancelled deadline subtask" }
-      }
-    )
-
-    fake_service_class = Class.new do
-      define_method(:initialize) do |task, parent|
-        @task = task
-        @parent = parent
-      end
-      define_method(:call) do
-        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
-        @parent.update!(status: "cancelled")
-        raise Collavre::TurnDeadlineError.new(3600)
-      end
-    end
-
-    executor_touched = false
-    Collavre::Comments::WorkflowExecutor.stub :new, ->(_parent) { executor_touched = true } do
-      Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task, parent_task) } do
-        AiAgentJob.perform_now(sub_task)
-      end
-    end
-
-    assert_equal "failed", sub_task.reload.status
-    assert_equal "cancelled", parent_task.reload.status,
-                 "an explicit parent cancellation must win over child deadline reporting"
-    refute executor_touched, "a cancelled parent must not receive a failure notice"
   end
 
   # A resumed Task takes the branch above the agent_id guard, so the assignment

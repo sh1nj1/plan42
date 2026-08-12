@@ -305,17 +305,6 @@ module Collavre
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         end
-        if task.parent_task_id.present?
-          begin
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task, error_message: "Triggering comment was deleted"
-            )
-          rescue StandardError => e
-            Rails.logger.error(
-              "[Comment#cancel_pending_tasks] fail_subtask! failed for task #{task.id}: #{e.message}"
-            )
-          end
-        end
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
 

@@ -133,8 +133,8 @@ module Collavre
             # Fail any tasks still delegated to this agent — including dispatches
             # routed to *work* topics outside the registration inbox. With no live
             # session left, agent_id uniquely scopes this agent's delegated work;
-            # scoping by topic_id alone would leak the common case (a /work
-            # dispatch on a project topic) until stuck detection times out.
+            # scoping by topic_id alone would leak the common case (a dispatch on a
+            # project topic) until stuck detection times out.
             cancel_delegated_tasks_for_session(ai_user)
           elsif topic
             # One shared agent fans out to many concurrent sessions (the default
@@ -498,18 +498,6 @@ module Collavre
             task.update!(status: "cancelled", pending_tool_call: nil)
             tracker.release!(task.id)
 
-            if task.parent_task_id.present?
-              begin
-                Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-                  task, error_message: "Claude Channel session unregistered before reply"
-                )
-              rescue StandardError => e
-                Rails.logger.error(
-                  "[AgentsController] fail_subtask! failed for task #{task.id}: #{e.message}"
-                )
-              end
-            end
-
             Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
           end
         end
@@ -526,8 +514,6 @@ module Collavre
         # Release the tracker slot defensively for running tasks — release! is
         # idempotent (Set#delete no-ops on missing key) and we don't know from
         # the DB whether AiAgentJob had already reached tracker.reserve!.
-        # Parent subtasks are still failed so workflow executors don't deadlock
-        # waiting for a reply that will never come.
         def cancel_pending_tasks_for_session(agent)
           cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running]), agent)
         end
@@ -542,18 +528,6 @@ module Collavre
             task.update!(status: "cancelled")
             tracker.release!(task.id) if was_running
             drained_topics[task.topic_id] ||= task.creative_id
-
-            if task.parent_task_id.present?
-              begin
-                Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-                  task, error_message: "Claude Channel session unregistered before dispatch"
-                )
-              rescue StandardError => e
-                Rails.logger.error(
-                  "[AgentsController] fail_subtask! failed for queued task #{task.id}: #{e.message}"
-                )
-              end
-            end
           end
 
           # Drain each affected topic's queue once, AFTER all of this session's

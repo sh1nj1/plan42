@@ -33,8 +33,8 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   # somebody answers it, so the replayable set is unbounded and deployment-wide,
   # and every subscribe would otherwise load all of it just to keep one creative's
   # rows. tasks.creative_id is written from the same context["creative"]["id"] the
-  # payload carries (AiAgentJob#admit_or_defer!, park_waiter, WorkflowExecutor,
-  # WorkCommand), and is indexed. A row can only lose it to the FK's on_delete:
+  # payload carries (AiAgentJob#admit_or_defer!, park_waiter), and is indexed.
+  # A row can only lose it to the FK's on_delete:
   # :nullify, and a deleted creative already returns [] above.
   #
   # Ordered by id because the client appends these into a per-agent array and stops

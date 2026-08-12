@@ -173,8 +173,6 @@ en:
         calendar_args: "YYYY-MM-DD@HH:MM memo (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon)"
         topic_description: "Create a new topic with optional primary agent."
         topic_args: '"topic name" @agent_name'
-        work_description: "Create a workflow to execute tasks on child creatives via DFS traversal."
-        work_args: "@agent_name workflow_context"
         compress_description: "Summarize all messages in the current topic and remove originals."
         compress_args: "[additional instructions]"
         creative_description: "Insert a link to a creative. In AI chats, the linked creative tree is injected as context."
@@ -182,8 +180,6 @@ en:
         calendar_memo_hint: "Event memo (optional)"
         topic_name_hint: "Topic name"
         topic_agent_hint: "@agent_name (optional)"
-        work_agent_hint: "@agent_name"
-        work_context_hint: "Workflow context (optional)"
         compress_instructions_hint: "Additional instructions (optional)"
         form_submit: "OK"
         form_cancel: "Cancel"
@@ -212,23 +208,6 @@ en:
         session_topic_locked: 'Topic "%{name}" belongs to a live agent session. Its primary agent cannot be changed or released.'
         agent_no_creative_access: '@%{agent} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first.'
         session_agent_not_assignable: '@%{agent} is a live agent session and only responds in its own session topic, so it cannot be the primary agent here.'
-      work_command:
-        agent_not_found: "Please mention an AI agent to execute the workflow."
-        no_children: "This creative has no child creatives to work on."
-        all_already_tasked: "All child creatives already have active tasks."
-        started: 'Workflow started with @%{agent}: %{total} tasks queued (%{skipped} skipped).'
-        trigger_comment: '📋 [Workflow] %{context}'
-        subtask_started: '📋 @%{agent} starting work on "%{creative}" (%{current}/%{total})'
-        subtask_completed: '✅ @%{agent} completed "%{creative}" (%{completed}/%{total}, %{progress}%%)'
-        workflow_completed: '✅ Workflow completed by @%{agent}: %{completed} creatives processed.'
-        workflow_failed: 'Workflow failed by @%{agent} on "%{creative}": %{reason}'
-        workflow_stopped: '⏹️ Workflow stopped by @%{agent}. %{completed} completed, %{remaining} remaining.'
-        workflow_resumed: '▶️ Workflow resumed by @%{agent}. %{remaining} tasks remaining.'
-        stopped: 'Workflow stopped for @%{agent}.'
-        resumed: 'Workflow resumed for @%{agent}: %{remaining} tasks remaining.'
-        no_active_workflow: 'No active workflow found on this creative.'
-        no_resumable_workflow: 'No failed or stopped workflow found to resume.'
-        supervisor_instruction: "If you need clarification, have questions, or are unsure about anything, ask @%{supervisor}: instead of the user. They will guide you."
       versions:
         previous: Previous version
         next: Next version

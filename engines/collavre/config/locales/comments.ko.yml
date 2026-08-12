@@ -170,8 +170,6 @@ ko:
         calendar_args: "YYYY-MM-DD@HH:MM 메모 (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon/+월)"
         topic_description: "새 토픽을 생성합니다. Primary Agent를 지정할 수 있습니다."
         topic_args: '"토픽 이름" @에이전트이름'
-        work_description: "하위 크리에이티브들에 대해 DFS 순회를 통한 워크플로우를 실행합니다."
-        work_args: "@에이전트이름 워크플로우_컨텍스트"
         compress_description: "현재 토픽의 모든 메세지를 요약하고 원본을 삭제합니다."
         compress_args: "[추가 지시사항]"
         creative_description: "크리에이티브 링크를 삽입합니다. AI 채팅에서는 링크된 크리에이티브 트리가 컨텍스트로 주입됩니다."
@@ -179,8 +177,6 @@ ko:
         calendar_memo_hint: "이벤트 메모 (선택사항)"
         topic_name_hint: "토픽 이름"
         topic_agent_hint: "@에이전트이름 (선택사항)"
-        work_agent_hint: "@에이전트이름"
-        work_context_hint: "워크플로우 컨텍스트 (선택사항)"
         compress_instructions_hint: "추가 지시사항 (선택사항)"
         form_submit: "확인"
         form_cancel: "취소"
@@ -209,23 +205,6 @@ ko:
         session_topic_locked: '토픽 "%{name}"은(는) 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.'
         agent_no_creative_access: '@%{agent}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요.'
         session_agent_not_assignable: '@%{agent}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. 이 토픽의 Primary Agent로 지정할 수 없습니다.'
-      work_command:
-        agent_not_found: "워크플로우를 실행할 AI 에이전트를 멘션해주세요."
-        no_children: "이 크리에이티브에는 작업할 하위 크리에이티브가 없습니다."
-        all_already_tasked: "모든 하위 크리에이티브가 이미 활성 작업을 가지고 있습니다."
-        started: '워크플로우가 @%{agent}와 함께 시작되었습니다: %{total}개 작업 대기중 (%{skipped}개 생략).'
-        trigger_comment: '📋 [워크플로우] %{context}'
-        subtask_started: '📋 @%{agent}가 "%{creative}" 작업을 시작합니다 (%{current}/%{total})'
-        subtask_completed: '✅ @%{agent}가 "%{creative}" 완료 (%{completed}/%{total}, %{progress}%%)'
-        workflow_completed: '✅ @%{agent}가 워크플로우를 완료했습니다: %{completed}개 크리에이티브 처리됨.'
-        workflow_failed: '@%{agent} 워크플로우 실패 - "%{creative}": %{reason}'
-        workflow_stopped: '⏹️ @%{agent} 워크플로우가 중지되었습니다. %{completed}개 완료, %{remaining}개 남음.'
-        workflow_resumed: '▶️ @%{agent} 워크플로우가 재개되었습니다. %{remaining}개 작업 남음.'
-        stopped: '@%{agent}의 워크플로우가 중지되었습니다.'
-        resumed: '@%{agent}의 워크플로우가 재개되었습니다: %{remaining}개 작업 남음.'
-        no_active_workflow: '이 크리에이티브에 활성 워크플로우가 없습니다.'
-        no_resumable_workflow: '재개할 수 있는 실패/중지된 워크플로우가 없습니다.'
-        supervisor_instruction: "질문이 있거나 확인이 필요하면 사용자 대신 @%{supervisor}: 에게 물어보세요. 감독자가 안내해줄 것입니다."
       versions:
         previous: 이전 버전
         next: 다음 버전
