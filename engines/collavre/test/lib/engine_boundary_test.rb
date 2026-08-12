@@ -49,6 +49,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   ].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
+  IMAGE_TAG_PATH_OPTIONS = %w[srcset].freeze
   ASSET_HELPER_METHODS = %w[
     asset_path asset_url path_to_asset
     stylesheet_link_tag stylesheet_path stylesheet_url path_to_stylesheet
@@ -167,6 +168,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}::Account" ], names(string_references_in(%("#{satellite}::Account".constantize)))
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
     assert_equal [ satellite ], names(string_references_in(%("#{satellite}".constantize)))
+    assert_equal [ satellite ], names(string_references_in(%(ActiveSupport::Inflector.constantize("#{satellite}"))))
     assert_equal [ satellite ], names(string_references_in(%(belongs_to :account, class_name: "#{satellite}")))
   end
 
@@ -574,7 +576,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], asset_paths_in(%(view_context.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(self.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(self.view_context.asset_path("#{path}")))
+    assert_equal [ path ], asset_paths_in(%(image_tag "logo.svg", srcset: { "#{path}" => "2x" }))
     assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
+    assert_empty asset_paths_in(%(image_tag "logo.svg", srcset: { "logo@2x.svg" => "#{path}" }))
+    assert_empty asset_paths_in(%(asset_path "logo.svg", srcset: { "#{path}" => "2x" }))
     assert_empty asset_paths_in(%(asset_path("https://cdn.example/#{path}")))
     assert_empty asset_paths_in(%(asset_path("//cdn.example/#{path}")))
     assert_equal [ "file:///tmp/#{path}" ], asset_paths_in(%(asset_path("file:///tmp/#{path}")))
@@ -2196,7 +2201,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def constant_resolving_string_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name)
+    if active_support_inflector_constantize?(node)
+      string = static_string_call_argument(node)
+      found << [ string, node.location.start_line ] if string
+    elsif node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name)
       string = static_string_concatenation(node.receiver)
       found << [ string, node.location.start_line ] if string
     elsif node.is_a?(Prism::AssocNode) && %w[class_name type].include?(association_key_name(node))
@@ -2209,6 +2217,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def association_key_name(node)
     node.key.unescaped if node.key.respond_to?(:unescaped)
+  end
+
+  def active_support_inflector_constantize?(node)
+    node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name) &&
+      node.receiver&.slice&.match?(/\A(?:::)?ActiveSupport::Inflector\z/)
+  end
+
+  def static_string_call_argument(node)
+    arguments = node.arguments&.arguments
+    static_string_concatenation(arguments.first) if arguments&.one?
   end
 
   # A constant is not the only way to reach a satellite. Every engine is on the
@@ -2253,7 +2271,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # coincidentally named method.
   def asset_paths_in(source)
     asset_helper_calls(Prism.parse(source).value).flat_map { |call|
-      call.arguments&.arguments.to_a.flat_map { |argument| asset_path_values(argument) }
+      call.arguments&.arguments.to_a.flat_map { |argument| asset_path_values(call, argument) }
     }.reject { |path| remote_asset_url?(path) }.select { |path| satellite_for(path) }.uniq
   end
 
@@ -2312,10 +2330,29 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     source.match?(/\A(?:::)?(?:ActionController::Base|(?:[A-Z]\w*::)*ApplicationController)\.helpers\z|\A(?:self\.)?(?:helpers|view_context)\z/)
   end
 
-  def asset_path_values(node)
-    return [] if node.is_a?(Prism::KeywordHashNode)
+  def asset_path_values(call, node)
+    return asset_helper_option_values(call, node) if node.is_a?(Prism::KeywordHashNode)
 
     template_path_values(node)
+  end
+
+  def asset_helper_option_values(call, node)
+    return [] unless call.name == :image_tag
+
+    node.elements.flat_map do |association|
+      next [] unless association.is_a?(Prism::AssocNode)
+      next [] unless IMAGE_TAG_PATH_OPTIONS.include?(association_key_name(association))
+
+      srcset_path_values(association.value)
+    end
+  end
+
+  def srcset_path_values(node)
+    return template_path_values(node) unless node.is_a?(Prism::HashNode)
+
+    node.elements.filter_map do |association|
+      template_path_values(association.key) if association.is_a?(Prism::AssocNode)
+    end.flatten
   end
 
   def render_calls(node, found = [])
