@@ -21,6 +21,7 @@ const buildController = ({ manualSearchQuery = null } = {}) => {
     manualSearchQuery,
     resetToLatest: jest.fn(),
     markCommentsRead: jest.fn(),
+    recordRenderedAllTopicWatermarks: jest.fn(),
   }
 
   const controller = Object.create(CommentsFormController.prototype)
@@ -62,6 +63,9 @@ describe('CommentsFormController local submit during search', () => {
 
     expect(listItems()).toHaveLength(1)
     expect(listCtrl.resetToLatest).not.toHaveBeenCalled()
+    expect(listCtrl.recordRenderedAllTopicWatermarks).toHaveBeenCalledWith(
+      document.getElementById('comment_9'),
+    )
     // The placeholder is stale once a real comment lands.
     expect(document.getElementById('no-search-results')).toBeNull()
   })
