@@ -2,9 +2,17 @@ module Collavre
   class CommentPresenceStore
     KEY_PREFIX = "comment_presence:"
     TOPIC_KEY_PREFIX = "comment_presence_topic:"
+    SUBSCRIPTIONS_KEY_PREFIX = "comment_presence_subscriptions:"
     ALL_TOPICS = "all"
+    LEGACY_SUBSCRIPTION_ID = "legacy"
 
-    def self.add(creative_id, user_id)
+    def self.add(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
+      subscriptions = subscription_ids(creative_id, user_id)
+      unless subscriptions.include?(subscription_id)
+        subscriptions << subscription_id
+        Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions)
+      end
+
       ids = list(creative_id)
       unless ids.include?(user_id)
         ids << user_id
@@ -13,26 +21,41 @@ module Collavre
       ids
     end
 
-    def self.remove(creative_id, user_id)
+    def self.remove(creative_id, user_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
+      subscriptions = subscription_ids(creative_id, user_id)
+      subscriptions.delete(subscription_id)
+      Rails.cache.write(subscriptions_key(creative_id, user_id), subscriptions) if subscriptions.any?
+      Rails.cache.delete(subscriptions_key(creative_id, user_id)) if subscriptions.empty?
+      Rails.cache.delete(topic_key(creative_id, user_id, subscription_id))
+
+      return list(creative_id) if subscriptions.any?
+
       ids = list(creative_id)
       if ids.delete(user_id)
         Rails.cache.write(key(creative_id), ids)
       end
-      Rails.cache.delete(topic_key(creative_id, user_id))
       ids
     end
 
-    def self.set_topic(creative_id, user_id, topic_id)
-      Rails.cache.write(topic_key(creative_id, user_id), topic_id ? topic_id.to_i : ALL_TOPICS)
+    def self.set_topic(creative_id, user_id, topic_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
+      Rails.cache.write(topic_key(creative_id, user_id, subscription_id), topic_id ? topic_id.to_i : ALL_TOPICS)
     end
 
     def self.topic_for(creative_id, user_id)
-      value = Rails.cache.read(topic_key(creative_id, user_id))
+      value = viewing_topics(creative_id, user_id).find { |topic| topic != ALL_TOPICS }
       value == ALL_TOPICS ? nil : value
     end
 
     def self.viewing_all_topics?(creative_id, user_id)
-      Rails.cache.read(topic_key(creative_id, user_id)) == ALL_TOPICS
+      viewing_topics(creative_id, user_id).include?(ALL_TOPICS)
+    end
+
+    # A user can have several open chat subscriptions. Keep every subscription's
+    # selected topic so closing one tab cannot erase another tab's suppression.
+    def self.viewing_topics(creative_id, user_id)
+      ids = subscription_ids(creative_id, user_id)
+      ids << LEGACY_SUBSCRIPTION_ID if ids.empty? && Rails.cache.exist?(topic_key(creative_id, user_id))
+      Rails.cache.read_multi(*ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) }).values.compact.uniq
     end
 
     def self.list(creative_id)
@@ -68,8 +91,16 @@ module Collavre
       "#{KEY_PREFIX}#{creative_id}"
     end
 
-    def self.topic_key(creative_id, user_id)
-      "#{TOPIC_KEY_PREFIX}#{creative_id}:#{user_id}"
+    def self.topic_key(creative_id, user_id, subscription_id = LEGACY_SUBSCRIPTION_ID)
+      "#{TOPIC_KEY_PREFIX}#{creative_id}:#{user_id}:#{subscription_id}"
+    end
+
+    def self.subscriptions_key(creative_id, user_id)
+      "#{SUBSCRIPTIONS_KEY_PREFIX}#{creative_id}:#{user_id}"
+    end
+
+    def self.subscription_ids(creative_id, user_id)
+      Rails.cache.read(subscriptions_key(creative_id, user_id)) || []
     end
   end
 end

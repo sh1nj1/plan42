@@ -6,7 +6,10 @@ module Collavre
       @ids = [ 9_901, 9_902, 9_903 ]
       @ids.each do |id|
         Rails.cache.delete(CommentPresenceStore.key(id))
-        (1..10).each { |user_id| Rails.cache.delete(CommentPresenceStore.topic_key(id, user_id)) }
+        (1..10).each do |user_id|
+          Rails.cache.delete(CommentPresenceStore.topic_key(id, user_id))
+          Rails.cache.delete(CommentPresenceStore.subscriptions_key(id, user_id))
+        end
       end
     end
 
@@ -61,6 +64,20 @@ module Collavre
 
       assert_nil CommentPresenceStore.topic_for(9_901, 4)
       assert CommentPresenceStore.viewing_all_topics?(9_901, 4)
+    end
+
+    test "keeps topics from other subscriptions until their own disconnect" do
+      CommentPresenceStore.add(9_901, 4, subscription_id: "first")
+      CommentPresenceStore.add(9_901, 4, subscription_id: "second")
+      CommentPresenceStore.set_topic(9_901, 4, 12, subscription_id: "first")
+      CommentPresenceStore.set_topic(9_901, 4, 13, subscription_id: "second")
+
+      CommentPresenceStore.remove(9_901, 4, subscription_id: "second")
+
+      assert_equal [ 4 ], CommentPresenceStore.list(9_901)
+      assert_equal [ 12 ], CommentPresenceStore.viewing_topics(9_901, 4)
+      CommentPresenceStore.remove(9_901, 4, subscription_id: "first")
+      assert_empty CommentPresenceStore.list(9_901)
     end
   end
 end

@@ -54,6 +54,21 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal unread.id, second_topic.comments.maximum(:id)
   end
 
+  test "All Messages leaves archived topic comments unread" do
+    active_topic = @creative.topics.create!(name: "Active", user: @user)
+    archived_topic = @creative.topics.create!(name: "Archived", user: @user, archived_at: Time.current)
+    archived = Comment.create!(creative: @creative, topic: archived_topic, user: users(:two), content: "archived")
+    Comment.create!(creative: @creative, topic: active_topic, user: users(:two), content: "active")
+
+    post "/comment_read_pointers/update", params: { creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_nil CommentReadPointer.find_by(user: @user, creative: @creative.effective_origin, topic: archived_topic)
+    counts = Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative)
+    assert_equal({ archived_topic.id => 1 }, counts)
+    assert_equal archived.id, archived_topic.comments.maximum(:id)
+  end
+
   test "rejects a topic from another creative" do
     foreign_topic = Creative.create!(user: @user, description: "Foreign").main_topic
 

@@ -23,13 +23,13 @@ module Collavre
       update_pointer(creative, topic, last_id)
     end
 
-    # All Messages is a genuine read of every topic. Keep the old creative-wide
-    # row updated as a fallback for topics created after this read, then advance
-    # every current topic independently so their later traffic remains unread.
+    # All Messages renders Main plus active topics, not archived ones. Do not
+    # advance the retained legacy pointer here: an archived topic without its
+    # own pointer falls back to it, so moving that watermark would silently mark
+    # its hidden comments as read.
     def update_all_topic_pointers(creative)
       visible_comments = creative.comments.visible_to(Current.user)
-      update_pointer(creative, nil, visible_comments.maximum(:id))
-      creative.topics.find_each do |topic|
+      creative.topics.active.find_each do |topic|
         update_pointer(creative, topic, visible_comments.where(topic: topic).maximum(:id))
       end
     end

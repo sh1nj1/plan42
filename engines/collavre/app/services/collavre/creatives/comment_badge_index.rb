@@ -93,13 +93,14 @@ module Creatives
     end
 
     def suppress_viewing_topics!(counts, origin)
-      if CommentPresenceStore.viewing_all_topics?(origin.id, user.id)
+      viewing_topics = CommentPresenceStore.viewing_topics(origin.id, user.id)
+      if viewing_topics.include?(CommentPresenceStore::ALL_TOPICS)
         # All Messages renders Main plus every active topic. Archived topics are
         # intentionally excluded by CommentsController#index and stay unread.
         counts.delete(nil)
         origin.topics.active.pluck(:id).each { |topic_id| counts.delete(topic_id) }
-      elsif (viewing_topic_id = CommentPresenceStore.topic_for(origin.id, user.id))
-        counts.delete(viewing_topic_id)
+      else
+        viewing_topics.each { |topic_id| counts.delete(topic_id) }
       end
     end
 

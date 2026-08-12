@@ -123,8 +123,9 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     # #running_agents replays too, and reading @creative_id there would search the
     # origin for rows that only ever carried the shell's id.
     @requested_creative_id = requested.id
+    @presence_subscription_id = SecureRandom.uuid
     stream_from stream_name
-    CommentPresenceStore.add(@creative_id, current_user.id)
+    CommentPresenceStore.add(@creative_id, current_user.id, subscription_id: @presence_subscription_id)
     Comment.broadcast_badge(creative, current_user)
     broadcast_presence
     # Transmitted, not broadcast: stream_from attaches asynchronously, so a broadcast
@@ -135,7 +136,7 @@ class CommentsPresenceChannel < ApplicationCable::Channel
 
   def unsubscribed
     if @creative_id && current_user
-      CommentPresenceStore.remove(@creative_id, current_user.id)
+      CommentPresenceStore.remove(@creative_id, current_user.id, subscription_id: @presence_subscription_id)
       creative = Creative.find(@creative_id)
       Comment.broadcast_badge(creative, current_user)
       broadcast_presence
@@ -152,7 +153,12 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     @viewing_topic_id = topic_id.present? && Topic.find_by(id: topic_id, creative_id: @creative_id)&.id
     return if topic_id.present? && !@viewing_topic_id
 
-    CommentPresenceStore.set_topic(@creative_id, current_user.id, @viewing_topic_id)
+    CommentPresenceStore.set_topic(
+      @creative_id,
+      current_user.id,
+      @viewing_topic_id,
+      subscription_id: @presence_subscription_id
+    )
     Comment.broadcast_badge(Creative.find(@creative_id), current_user)
   end
 
