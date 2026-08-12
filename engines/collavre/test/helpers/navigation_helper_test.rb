@@ -228,12 +228,39 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target]", count: 0
   end
 
-  test "help partial treats an unparseable configured link as internal" do
-    SystemSetting.stub(:help_menu_link, "http://exa mple.com/help") do
+  test "help partial treats an unparseable relative configured link as internal" do
+    SystemSetting.stub(:help_menu_link, "/docs/hel lo") do
       render partial: "collavre/shared/navigation/help_button"
     end
 
     assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # URI.parse rejects these; browsers do not. An internationalized domain is
+  # punycoded and navigated to, so treating it as ours would replace the app
+  # with an off-site page.
+  test "help partial opens an unparseable configured link with a scheme in a new tab" do
+    SystemSetting.stub(:help_menu_link, "http://exa mple.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured internationalized domain in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https://münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a scheme-relative internationalized domain in a new tab" do
+    SystemSetting.stub(:help_menu_link, "//münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
   end
 
   test "navigation partial renders mobile guest help and sign in buttons" do
