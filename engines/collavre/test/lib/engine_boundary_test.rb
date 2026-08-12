@@ -903,10 +903,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.call(null, "#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.apply(null, ["#{satellite}/template"])))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.bind(null)("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.bind(null, "#{satellite}/template")()))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require.bind(module)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].call(module, "#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].apply(module, ["#{satellite}/template"])))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].bind(module)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require?.("#{satellite}/template")))
@@ -920,6 +924,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(registry.module?.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.require.call(null, "#{satellite}/template")))
     assert_empty js_imports_in(%(registry.require.apply(null, ["#{satellite}/template"])))
+    assert_empty js_imports_in(%(registry.require.bind(null)("#{satellite}/template")))
+    assert_empty js_imports_in(%(require.bind(null, "local/path")("#{satellite}/template")))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -1716,7 +1722,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     js_call_specifier(tokens, closing) ||
       js_require_call_specifier(tokens, closing) ||
-      js_require_apply_specifier(tokens, closing)
+      js_require_apply_specifier(tokens, closing) ||
+      js_require_bound_specifier(tokens, closing)
   end
 
   def js_call_specifier(tokens, index)
@@ -1733,7 +1740,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_require_resolve_specifier(tokens, index)
-    return unless tokens[index + 1] == [ :punctuation, "." ] &&
+    return js_require_bound_specifier(tokens, index) unless tokens[index + 1] == [ :punctuation, "." ] &&
       tokens[index + 2] == [ :word, "resolve" ]
 
     open = js_call_open_at(tokens, index + 2)
@@ -1766,6 +1773,36 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     specifier, close = js_static_string_expression_at(tokens, open + 4)
     specifier if specifier && tokens[close] == [ :punctuation, "]" ] && tokens[close + 1] == [ :punctuation, ")" ]
+  end
+
+  # `require.bind(this_arg)(specifier)` retains the native CommonJS loader.
+  # The bound `this` value cannot change what the loader resolves, so only the
+  # statically selected bare or `module.require` forms reach this extractor.
+  def js_require_bound_specifier(tokens, index)
+    return unless tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, "bind" ]
+
+    bound_arguments = js_call_open_at(tokens, index + 2)
+    return unless bound_arguments
+
+    closing = js_matching_close_parenthesis(tokens, bound_arguments)
+    return unless closing
+
+    return js_static_string_at(tokens, bound_arguments + 3) if tokens[bound_arguments + 2] == [ :punctuation, "," ]
+
+    js_call_specifier(tokens, closing)
+  end
+
+  def js_matching_close_parenthesis(tokens, opening)
+    depth = 0
+    opening.upto(tokens.length - 1) do |index|
+      token = tokens[index]
+      depth += 1 if token == [ :punctuation, "(" ]
+      next unless token == [ :punctuation, ")" ]
+
+      depth -= 1
+      return index if depth.zero?
+    end
+    nil
   end
 
   def js_static_string_at(tokens, index)
