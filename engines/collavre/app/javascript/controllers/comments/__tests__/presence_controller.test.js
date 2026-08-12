@@ -201,6 +201,28 @@ describe('CommentsPresenceController', () => {
     expect(perform).toHaveBeenCalledWith('heartbeat')
   })
 
+  test('reports the rendered All Messages topic snapshot', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = null
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '123', topicIds: ['10', '11'] } })
+
+    expect(perform).toHaveBeenCalledWith('viewing_topic', {
+      topic_id: null,
+      rendered_topic_ids: ['10', '11'],
+    })
+  })
+
+  test('does not report a rendered snapshot from another creative', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '456', topicIds: ['10'] } })
+
+    expect(perform).not.toHaveBeenCalled()
+  })
+
   test('does not request running agents without a presence subscription', () => {
     controller.selectedTopicId = '45'
 

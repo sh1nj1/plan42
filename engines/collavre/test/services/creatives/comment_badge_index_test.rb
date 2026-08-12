@@ -135,7 +135,7 @@ module Creatives
       Comment.create!(creative: creative, topic: active_topic, user: @author, content: "active")
       Comment.create!(creative: creative, topic: archived_topic, user: @author, content: "archived")
       CommentPresenceStore.add(creative.id, @user.id)
-      CommentPresenceStore.set_topic(creative.id, @user.id, nil)
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil, rendered_topic_ids: [ creative.main_topic.id, active_topic.id ])
 
       assert_equal({ archived_topic.id => 1 }, @index.unread_counts_by_topic(creative))
       @index.index([ creative ])
@@ -243,7 +243,7 @@ module Creatives
       Comment.create!(creative: creative, topic: active_topic, user: @author, content: "active")
       Comment.create!(creative: creative, topic: archived_topic, user: @author, content: "archived")
       CommentPresenceStore.add(creative.id, @user.id)
-      CommentPresenceStore.set_topic(creative.id, @user.id, nil)
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil, rendered_topic_ids: [ creative.main_topic.id, active_topic.id ])
 
       badge = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user ]).fetch(@user.id)
 
@@ -252,6 +252,22 @@ module Creatives
     ensure
       Rails.cache.delete(CommentPresenceStore.key(creative.id))
       Rails.cache.delete(CommentPresenceStore.topic_key(creative.id, @user.id))
+    end
+
+    test "All Messages keeps a topic restored after its rendered snapshot unread" do
+      creative = Creative.create!(user: @user, description: "Restored topic snapshot", sequence: 920)
+      rendered_topic = creative.topics.create!(name: "Rendered", user: @user)
+      restored_topic = creative.topics.create!(name: "Restored", user: @user, archived_at: Time.current)
+      Comment.create!(creative: creative, topic: rendered_topic, user: @author, content: "rendered")
+      Comment.create!(creative: creative, topic: restored_topic, user: @author, content: "unseen")
+      CommentPresenceStore.set_topic(creative.id, @user.id, nil, rendered_topic_ids: [ rendered_topic.id ])
+      restored_topic.update!(archived_at: nil)
+
+      assert_equal({ restored_topic.id => 1 }, @index.unread_counts_by_topic(creative))
+      badge = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user ]).fetch(@user.id)
+      assert_equal 1, badge.unread_count
+    ensure
+      CommentPresenceStore.remove(creative.id, @user.id)
     end
 
     # nil, not 0 — the caller has to be able to tell "not batched" from "nothing

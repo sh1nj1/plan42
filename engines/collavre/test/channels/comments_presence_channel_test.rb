@@ -136,6 +136,19 @@ module Collavre
       CommentPresenceStore.remove(@creative.id, @owner.id)
     end
 
+    test "All Messages records only the rendered topic snapshot" do
+      rendered_topic = @creative.topics.create!(name: "Rendered", user: @owner)
+      restored_topic = @creative.topics.create!(name: "Restored", user: @owner)
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+
+      perform :viewing_topic, topic_id: nil, rendered_topic_ids: [ rendered_topic.id, restored_topic.id + 10_000 ]
+
+      assert_equal [ CommentPresenceStore::ALL_TOPICS, rendered_topic.id ], CommentPresenceStore.viewing_topics(@creative.id, @owner.id)
+    ensure
+      CommentPresenceStore.remove(@creative.id, @owner.id, subscription_id: subscription.instance_variable_get(:@presence_subscription_id)) if subscription
+    end
+
     test "heartbeat renews the active presence subscription lease" do
       stub_connection current_user: @owner
       subscribe creative_id: @creative.id

@@ -248,6 +248,12 @@ export default class extends Controller {
         this.formController.focusTextarea()
       }
       this.element.dispatchEvent(new CustomEvent('comments--list:loaded', { bubbles: true }))
+      if (!this.currentTopicId && Array.isArray(this.renderedAllTopicIds)) {
+        this.element.dispatchEvent(new CustomEvent('comments--list:rendered-all-topics', {
+          bubbles: true,
+          detail: { creativeId: this.creativeId, topicIds: this.renderedAllTopicIds },
+        }))
+      }
       this.markCommentsRead()
 
     }).catch((error) => {

@@ -36,17 +36,20 @@ export default class extends Controller {
     this.currentUserId = document.body.dataset.currentUserId
     this.selectedTopicId = null
     this.mainTopicId = null
+    this.renderedAllTopicIds = null
 
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
     this.handleBlur = this.handleBlur.bind(this)
     this.handleTopicChange = this.handleTopicChange.bind(this)
+    this.handleRenderedAllTopics = this.handleRenderedAllTopics.bind(this)
 
     this.textareaTarget.addEventListener('input', this.handleInput)
     this.textareaTarget.addEventListener('focus', this.handleFocus)
     this.textareaTarget.addEventListener('blur', this.handleBlur)
     this.privateCheckboxTarget?.addEventListener('change', () => this.stoppedTyping())
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.addEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
   }
 
   disconnect() {
@@ -57,6 +60,7 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.removeEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
   }
 
   handleTopicChange(event) {
@@ -72,6 +76,7 @@ export default class extends Controller {
 
     this.selectedTopicId = nextSelectedTopicId
     this.mainTopicId = nextMainTopicId
+    if (selectionChanged) this.renderedAllTopicIds = null
 
     if (selectionChanged) {
       this.reportViewingTopic()
@@ -83,6 +88,14 @@ export default class extends Controller {
     } else {
       this.clearChannelChips()
     }
+  }
+
+  handleRenderedAllTopics(event) {
+    const { creativeId, topicIds } = event.detail || {}
+    if (String(creativeId) !== String(this.creativeId) || this.selectedTopicId) return
+
+    this.renderedAllTopicIds = Array.isArray(topicIds) ? topicIds : []
+    this.reportViewingTopic()
   }
 
   get listController() {
@@ -108,6 +121,7 @@ export default class extends Controller {
       this.resetAgentActivity()
     }
     this.creativeId = creativeId
+    this.renderedAllTopicIds = null
     this.loadParticipants()
     this.subscribe()
     this.renderParticipants([])
@@ -282,7 +296,11 @@ export default class extends Controller {
   reportViewingTopic() {
     if (!this.presenceSubscription) return
 
-    this.presenceSubscription.perform('viewing_topic', { topic_id: this.selectedTopicId })
+    const payload = { topic_id: this.selectedTopicId }
+    if (!this.selectedTopicId && Array.isArray(this.renderedAllTopicIds)) {
+      payload.rendered_topic_ids = this.renderedAllTopicIds
+    }
+    this.presenceSubscription.perform('viewing_topic', payload)
   }
 
   startPresenceHeartbeat() {

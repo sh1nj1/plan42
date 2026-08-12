@@ -145,19 +145,23 @@ class CommentsPresenceChannel < ApplicationCable::Channel
 
   # Presence is creative-wide for participant avatars, but unread suppression is
   # topic-specific. A client reports the topic it is actively rendering so a
-  # message in another topic keeps its badge while the chat popup is open.
+  # message in another topic keeps its badge while the chat popup is open. All
+  # Messages also reports the topic snapshot rendered in its list: an active
+  # topic restored later has not yet been viewed.
   def viewing_topic(data)
     return unless @creative_id && current_user
 
     topic_id = data["topic_id"] || data[:topic_id]
     @viewing_topic_id = topic_id.present? && Topic.find_by(id: topic_id, creative_id: @creative_id)&.id
     return if topic_id.present? && !@viewing_topic_id
+    rendered_topic_ids = rendered_topic_ids_for(data) unless @viewing_topic_id
 
     CommentPresenceStore.set_topic(
       @creative_id,
       current_user.id,
       @viewing_topic_id,
-      subscription_id: @presence_subscription_id
+      subscription_id: @presence_subscription_id,
+      rendered_topic_ids: rendered_topic_ids
     )
     Comment.broadcast_badge(Creative.find(@creative_id), current_user)
   end
@@ -209,6 +213,13 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   end
 
   private
+
+  def rendered_topic_ids_for(data)
+    ids = data["rendered_topic_ids"] || data[:rendered_topic_ids]
+    return [] unless ids.is_a?(Array)
+
+    Topic.where(creative_id: @creative_id, id: ids).pluck(:id)
+  end
 
   # Transmitted to the connection that asked, never broadcast: the stream is per
   # origin and shared by every viewer of it, so publishing one client's snapshot

@@ -64,10 +64,27 @@ module Collavre
     end
 
     test "distinguishes All Messages from a missing topic report" do
-      CommentPresenceStore.set_topic(9_901, 4, nil)
+      CommentPresenceStore.set_topic(9_901, 4, nil, rendered_topic_ids: [ 12 ])
 
       assert_nil CommentPresenceStore.topic_for(9_901, 4)
       assert CommentPresenceStore.viewing_all_topics?(9_901, 4)
+      assert_equal [ CommentPresenceStore::ALL_TOPICS, 12 ], CommentPresenceStore.viewing_topics(9_901, 4)
+    end
+
+    test "renews the selected topic entry with the subscription lease" do
+      CommentPresenceStore.set_topic(9_901, 4, 12)
+      topic_key = CommentPresenceStore.topic_key(9_901, 4)
+      original_write = Rails.cache.method(:write)
+      renewed = false
+
+      Rails.cache.stub(:write, ->(key, value, **options) {
+        renewed ||= key == topic_key && value == 12 && options[:expires_in] == CommentPresenceStore::SUBSCRIPTION_TTL
+        original_write.call(key, value, **options)
+      }) do
+        CommentPresenceStore.renew(9_901, 4)
+      end
+
+      assert renewed
     end
 
     test "keeps topics from other subscriptions until their own disconnect" do
@@ -98,7 +115,7 @@ module Collavre
     test "fetches topics for all present users in one cache batch" do
       CommentPresenceStore.add(9_901, 4, subscription_id: "all")
       CommentPresenceStore.add(9_901, 4, subscription_id: "archived")
-      CommentPresenceStore.set_topic(9_901, 4, nil, subscription_id: "all")
+      CommentPresenceStore.set_topic(9_901, 4, nil, subscription_id: "all", rendered_topic_ids: [ 12 ])
       CommentPresenceStore.set_topic(9_901, 4, 12, subscription_id: "archived")
 
       assert_equal({ 4 => [ CommentPresenceStore::ALL_TOPICS, 12 ] }, CommentPresenceStore.viewing_topics_for(9_901, [ 4 ]))

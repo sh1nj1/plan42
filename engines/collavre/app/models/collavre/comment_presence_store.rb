@@ -44,7 +44,7 @@ module Collavre
       end
     end
 
-    def self.set_topic(creative_id, user_id, topic_id, subscription_id: LEGACY_SUBSCRIPTION_ID)
+    def self.set_topic(creative_id, user_id, topic_id, subscription_id: LEGACY_SUBSCRIPTION_ID, rendered_topic_ids: [])
       with_lock(creative_id) do
         subscriptions = subscription_ids(creative_id, user_id)
         subscriptions << subscription_id unless subscriptions.include?(subscription_id)
@@ -52,7 +52,7 @@ module Collavre
         renew_subscription(creative_id, user_id, subscription_id)
         Rails.cache.write(
           topic_key(creative_id, user_id, subscription_id),
-          topic_id ? topic_id.to_i : ALL_TOPICS,
+          topic_id ? topic_id.to_i : [ ALL_TOPICS, *Array(rendered_topic_ids).map(&:to_i) ].uniq,
           expires_in: SUBSCRIPTION_TTL
         )
 
@@ -73,6 +73,7 @@ module Collavre
         subscriptions << subscription_id unless subscriptions.include?(subscription_id)
         write_subscriptions(creative_id, user_id, subscriptions)
         renew_subscription(creative_id, user_id, subscription_id)
+        renew_topic(creative_id, user_id, subscription_id)
         ids = list(creative_id)
         ids << user_id unless ids.include?(user_id)
         write_present_user_ids(creative_id, ids)
@@ -80,8 +81,10 @@ module Collavre
     end
 
     def self.topic_for(creative_id, user_id)
-      value = viewing_topics(creative_id, user_id).find { |topic| topic != ALL_TOPICS }
-      value == ALL_TOPICS ? nil : value
+      topics = viewing_topics(creative_id, user_id)
+      return if topics.include?(ALL_TOPICS)
+
+      topics.first
     end
 
     def self.viewing_all_topics?(creative_id, user_id)
@@ -93,7 +96,7 @@ module Collavre
     def self.viewing_topics(creative_id, user_id)
       ids = subscription_ids(creative_id, user_id)
       ids << LEGACY_SUBSCRIPTION_ID if ids.empty? && Rails.cache.exist?(topic_key(creative_id, user_id))
-      Rails.cache.read_multi(*ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) }).values.compact.uniq
+      Rails.cache.read_multi(*ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) }).values.flat_map { |topics| Array(topics) }.compact.uniq
     end
 
     # Fetch selected topics for all present recipients in cache batches. Badge
@@ -113,7 +116,7 @@ module Collavre
       cached_topics = Rails.cache.read_multi(*topic_keys_by_user_id.values.flatten)
 
       topic_keys_by_user_id.transform_values do |topic_keys|
-        topic_keys.filter_map { |topic_key| cached_topics[topic_key] }.uniq
+        topic_keys.flat_map { |topic_key| Array(cached_topics[topic_key]) }.compact.uniq
       end
     end
 
@@ -197,6 +200,12 @@ module Collavre
 
     def self.renew_subscription(creative_id, user_id, subscription_id)
       Rails.cache.write(subscription_lease_key(creative_id, user_id, subscription_id), true, expires_in: SUBSCRIPTION_TTL)
+    end
+
+    def self.renew_topic(creative_id, user_id, subscription_id)
+      key = topic_key(creative_id, user_id, subscription_id)
+      topic = Rails.cache.read(key)
+      Rails.cache.write(key, topic, expires_in: SUBSCRIPTION_TTL) unless topic.nil?
     end
 
     def self.write_present_user_ids(creative_id, ids)

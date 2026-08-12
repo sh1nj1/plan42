@@ -26,17 +26,11 @@ module Creatives
       counts_by_user_id = counts_for_users(origin, recipients.map(&:id))
       present_user_ids = CommentPresenceStore.list(origin.id)
       viewing_topics_by_user_id = CommentPresenceStore.viewing_topics_for(origin.id, present_user_ids)
-      active_topic_ids = if viewing_topics_by_user_id.values.flatten.include?(CommentPresenceStore::ALL_TOPICS)
-        origin.topics.active.pluck(:id)
-      else
-        []
-      end
-
       recipients.to_h do |user|
         counts_by_topic = counts_by_user_id.fetch(user.id, {})
         viewing_topics = viewing_topics_by_user_id.fetch(user.id, [])
         unread_count = counts_by_topic.sum do |topic_id, counts|
-          topic_is_viewed?(topic_id, viewing_topics, active_topic_ids) ? 0 : counts.fetch(:unread)
+          topic_is_viewed?(topic_id, viewing_topics) ? 0 : counts.fetch(:unread)
         end
 
         [ user.id, Badge.new(
@@ -112,10 +106,10 @@ module Creatives
     def suppress_viewing_topics!(counts, origin)
       viewing_topics = CommentPresenceStore.viewing_topics(origin.id, user.id)
       if viewing_topics.include?(CommentPresenceStore::ALL_TOPICS)
-        # All Messages renders Main plus every active topic. Archived topics are
-        # intentionally excluded by CommentsController#index and stay unread.
+        # All Messages renders Main and the active-topic snapshot returned with
+        # its list. A topic restored after that response stays unread until the
+        # list is reloaded and reports it in a new snapshot.
         counts.delete(nil)
-        origin.topics.active.pluck(:id).each { |topic_id| counts.delete(topic_id) }
       end
 
       # Another subscription can be viewing an archived topic while this one is
@@ -235,10 +229,10 @@ module Creatives
         end
       end
 
-      def topic_is_viewed?(topic_id, viewing_topics, active_topic_ids)
+      def topic_is_viewed?(topic_id, viewing_topics)
         return viewing_topics.include?(topic_id) unless viewing_topics.include?(CommentPresenceStore::ALL_TOPICS)
 
-        topic_id.nil? || active_topic_ids.include?(topic_id) || viewing_topics.include?(topic_id)
+        topic_id.nil? || viewing_topics.include?(topic_id)
       end
     end
   end
