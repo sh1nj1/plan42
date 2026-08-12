@@ -29,7 +29,6 @@ module Collavre
     has_many :creative_shares_caches, class_name: "Collavre::CreativeSharesCache", dependent: :delete_all
     has_many :shared_creative_shares, class_name: "Collavre::CreativeShare", foreign_key: :shared_by_id,
                                       dependent: :nullify, inverse_of: :shared_by
-    has_many :inbox_items, class_name: "Collavre::InboxItem", foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
     has_many :invitations, class_name: "Collavre::Invitation", foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
     has_many :labels, class_name: "Collavre::Label", foreign_key: :owner_id, dependent: :destroy

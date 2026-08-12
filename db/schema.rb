@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_12_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_12_010000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -375,23 +375,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_000000) do
     t.datetime "processed_at"
     t.index ["created_at"], name: "index_github_webhook_deliveries_on_created_at"
     t.index ["delivery_guid"], name: "index_github_webhook_deliveries_on_delivery_guid", unique: true
-  end
-
-  create_table "inbox_items", force: :cascade do |t|
-    t.integer "comment_id"
-    t.datetime "created_at", null: false
-    t.integer "creative_id"
-    t.string "link"
-    t.text "message"
-    t.string "message_key"
-    t.json "message_params", default: {}, null: false
-    t.integer "owner_id", null: false
-    t.string "state", default: "new", null: false
-    t.datetime "updated_at", null: false
-    t.index ["comment_id"], name: "index_inbox_items_on_comment_id"
-    t.index ["creative_id"], name: "index_inbox_items_on_creative_id"
-    t.index ["owner_id"], name: "index_inbox_items_on_owner_id"
-    t.index ["state"], name: "index_inbox_items_on_state"
   end
 
   create_table "integration_settings", force: :cascade do |t|
@@ -1074,9 +1057,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_000000) do
   add_foreign_key "github_accounts", "users"
   add_foreign_key "github_repository_links", "creatives"
   add_foreign_key "github_repository_links", "github_accounts"
-  add_foreign_key "inbox_items", "comments", on_delete: :nullify
-  add_foreign_key "inbox_items", "creatives", on_delete: :nullify
-  add_foreign_key "inbox_items", "users", column: "owner_id"
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "creatives"

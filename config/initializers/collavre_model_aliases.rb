@@ -28,7 +28,6 @@ Rails.application.config.to_prepare do
 
   # Jobs
   set_alias(Object, :AiAgentJob, Collavre::AiAgentJob)
-  set_alias(Object, :InboxSummaryJob, Collavre::InboxSummaryJob)
   set_alias(Object, :NotionExportJob, CollavreNotion::NotionExportJob)
   set_alias(Object, :NotionSyncJob, CollavreNotion::NotionSyncJob)
 
@@ -57,7 +56,6 @@ Rails.application.config.to_prepare do
   set_alias(Object, :NavigationHelper, Collavre::NavigationHelper)
 
   # Mailers
-  set_alias(Object, :InboxMailer, Collavre::InboxMailer)
   set_alias(Object, :InvitationMailer, Collavre::InvitationMailer)
   set_alias(Object, :PasswordsMailer, Collavre::PasswordsMailer)
   set_alias(Object, :EmailVerificationMailer, Collavre::EmailVerificationMailer)
@@ -124,7 +122,6 @@ Rails.application.config.to_prepare do
   set_alias(Object, :Contact, Collavre::Contact)
   set_alias(Object, :Device, Collavre::Device)
   set_alias(Object, :Email, Collavre::Email)
-  set_alias(Object, :InboxItem, Collavre::InboxItem)
   set_alias(Object, :Invitation, Collavre::Invitation)
   set_alias(Object, :Plan, Collavre::Plan)
   set_alias(Object, :Topic, Collavre::Topic)

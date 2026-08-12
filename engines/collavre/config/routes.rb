@@ -78,10 +78,6 @@ Collavre::Engine.routes.draw do
   resources :contacts, only: [ :destroy ]
   resources :devices, only: [ :create ]
 
-  resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
-    get :count, on: :collection
-  end
-
   resources :user_themes, only: [ :index, :create, :destroy ] do
     member do
       post :apply

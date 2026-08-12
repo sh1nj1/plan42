@@ -198,6 +198,10 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal 1, Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
   end
 
+  test "inbox badge without an inbox creative has no unread count" do
+    assert_equal 0, Collavre::Inbox::BadgeComponent.new(user: users(:one)).count
+  end
+
   test "creating and destroying a comment maintains creatives.comments_count" do
     user = User.create!(email: "cc-counter@example.com", password: TEST_PASSWORD, name: "CC")
     creative = Creative.create!(user: user, description: "Root")
