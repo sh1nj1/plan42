@@ -8,7 +8,7 @@ module Collavre
       if topic
         update_topic_pointer(creative, topic)
       else
-        update_all_topic_pointers(creative)
+        update_all_topic_pointers(creative, params[:topic_ids])
       end
 
       Comment.broadcast_badge(creative, Current.user)
@@ -27,9 +27,18 @@ module Collavre
     # advance the retained legacy pointer here: an archived topic without its
     # own pointer falls back to it, so moving that watermark would silently mark
     # its hidden comments as read.
-    def update_all_topic_pointers(creative)
+    def update_all_topic_pointers(creative, rendered_topic_ids)
       visible_comments = creative.comments.visible_to(Current.user)
-      creative.topics.active.find_each do |topic|
+      # Current clients send the active-topic snapshot that produced the open
+      # All Messages list. Keep the active-topic fallback for clients deployed
+      # before the snapshot header/API pair.
+      topics = if rendered_topic_ids.present?
+        creative.topics.where(id: Array(rendered_topic_ids))
+      else
+        creative.topics.active
+      end
+
+      topics.find_each do |topic|
         update_pointer(creative, topic, visible_comments.where(topic: topic).maximum(:id))
       end
     end

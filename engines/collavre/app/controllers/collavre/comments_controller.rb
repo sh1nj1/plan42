@@ -66,6 +66,10 @@ module Collavre
         # Main view: exclude comments from archived topics
         archived_topic_ids = @creative.topics.archived.pluck(:id)
         scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
+        # The client retains this snapshot until it reloads the message list.
+        # Topic-strip updates alone must not let a newly unarchived topic advance
+        # its read pointer before its existing messages have been rendered.
+        response.headers["X-Rendered-Topic-Ids"] = @creative.topics.active.order(:id).pluck(:id).join(",")
       end
 
       # Default order: Newest first (id DESC)

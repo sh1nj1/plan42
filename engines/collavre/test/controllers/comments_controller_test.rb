@@ -712,6 +712,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, topic_comment.content
     assert_includes @response.body, "comment-topic-switch"
     assert_includes @response.body, "##{topic.name}"
+    assert_equal @creative.topics.active.order(:id).pluck(:id).join(","), response.headers["X-Rendered-Topic-Ids"]
   end
 
   test "topic view hides topic links and filters comments" do

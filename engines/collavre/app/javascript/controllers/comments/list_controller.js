@@ -143,6 +143,7 @@ export default class extends Controller {
       ? this.highlightAfterLoad
       : null
     this.creativeId = creativeId
+    this.renderedAllTopicIds = null
     this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
     this.highlightAfterLoad = highlightId || pendingHighlight || this.deepLinkCommentId
@@ -165,6 +166,7 @@ export default class extends Controller {
     this.flushPendingRead()
     this._loadCommentsVersion += 1
     this.creativeId = null
+    this.renderedAllTopicIds = null
     this.highlightAfterLoad = null
     this.highlightCreativeId = null
     this.suppressTopicChangeLoad = false
@@ -345,6 +347,13 @@ export default class extends Controller {
       }
 
       const serverTopicId = response.headers.get("X-Topic-Id")
+      const renderedTopicIds = response.headers.get("X-Rendered-Topic-Ids")
+      // Only replace this snapshot for a full list load. Pagination requests
+      // happen later and may observe a topic-strip archive change without
+      // rendering that topic's existing history.
+      if (loadVersion !== undefined && !this.currentTopicId && renderedTopicIds !== null) {
+        this.renderedAllTopicIds = renderedTopicIds.split(',').filter(Boolean)
+      }
       // A load superseded while in flight must not retopic anything: its own HTML
       // is dropped, so moving currentTopicId (and the strip, and the form) to its
       // answer would leave the surviving load rendering into a selection it never
@@ -442,7 +451,8 @@ export default class extends Controller {
     if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     const creativeId = this.creativeId
     const topicId = this.currentTopicId || null
-    const pendingRead = { creativeId, topicId }
+    const topicIds = topicId ? null : this.renderedAllTopicIds
+    const pendingRead = { creativeId, topicId, topicIds }
     this.pendingRead = pendingRead
     this.markReadTimeout = window.setTimeout(() => {
       this.markReadTimeout = null
@@ -450,7 +460,7 @@ export default class extends Controller {
       this.pendingRead = null
       if (!this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
 
-      this.updateReadPointer(creativeId, topicId)
+      this.updateReadPointer(creativeId, topicId, topicIds)
     }, 2000);
   }
 
@@ -461,10 +471,10 @@ export default class extends Controller {
     if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     this.markReadTimeout = null
     this.pendingRead = null
-    this.updateReadPointer(pendingRead.creativeId, pendingRead.topicId)
+    this.updateReadPointer(pendingRead.creativeId, pendingRead.topicId, pendingRead.topicIds)
   }
 
-  updateReadPointer(creativeId, topicId) {
+  updateReadPointer(creativeId, topicId, topicIds = null) {
     if (!creativeId) return
 
     fetch('/comment_read_pointers/update', {
@@ -473,7 +483,11 @@ export default class extends Controller {
         'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ creative_id: creativeId, topic_id: topicId }),
+      body: JSON.stringify({
+        creative_id: creativeId,
+        topic_id: topicId,
+        ...(topicIds ? { topic_ids: topicIds } : {}),
+      }),
     }).then((response) => {
       if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
 

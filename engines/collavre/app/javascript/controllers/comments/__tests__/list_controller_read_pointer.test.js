@@ -48,6 +48,18 @@ describe('CommentsListController read pointer updates', () => {
     expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ creative_id: '42', topic_id: '9' })
   })
 
+  test('keeps the rendered All Messages topic snapshot in a read update', async () => {
+    controller.renderedAllTopicIds = ['1', '2']
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+
+    controller.markCommentsRead()
+    await jest.advanceTimersByTimeAsync(2000)
+
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
+      creative_id: '42', topic_id: null, topic_ids: ['1', '2']
+    })
+  })
+
   test('does not reload topic unread counts after a failed read pointer update', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false })
 
