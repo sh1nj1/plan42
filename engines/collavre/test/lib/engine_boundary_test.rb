@@ -222,6 +222,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{prefix}" + "#{suffix}"))))
   end
 
+  test "detector folds a static interpolated symbol passed to constant resolution" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    midpoint = satellite.length / 2
+    prefix = satellite[...midpoint]
+    suffix = satellite[midpoint..]
+
+    assert_equal [ satellite ], names(string_references_in(%(Object.const_get(:"#{prefix}\#{"#{suffix}"}"))))
+    assert_equal [ satellite ], names(string_references_in(%(Object.const_get(:"#{prefix}\#{:#{suffix}}"))))
+    assert_empty names(string_references_in(%(Object.const_get(:"#{prefix}\#{suffix}"))))
+  end
+
   test "detector folds a static string before scanning class references" do
     satellite = SATELLITE_CONSTANTS.keys.first
     midpoint = satellite.length / 2
@@ -913,6 +924,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require["apply"](null, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.bind(null)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.bind(null, "#{satellite}/template")()))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require["bind"](null)("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.bind(null)("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.["bind"](null)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require.bind(module)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
@@ -921,6 +935,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].apply(module, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]["apply"](module, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].bind(module)("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]["bind"](module)("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require?.("#{satellite}/template")))
@@ -1807,9 +1822,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # The bound `this` value cannot change what the loader resolves, so only the
   # statically selected bare or `module.require` forms reach this extractor.
   def js_require_bound_specifier(tokens, index)
-    return unless tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, "bind" ]
+    bind = js_function_property_at(tokens, index, "bind")
+    return unless bind
 
-    bound_arguments = js_call_open_at(tokens, index + 2)
+    bound_arguments = js_call_open_at(tokens, bind)
     return unless bound_arguments
 
     closing = js_matching_close_parenthesis(tokens, bound_arguments)
@@ -2027,9 +2043,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     if node.is_a?(Prism::CallNode) && constant_symbol_receiver?(node)
       constant_symbol_arguments(node).each do |argument|
-        if argument.is_a?(Prism::SymbolNode)
-          found << [ argument.unescaped, argument.location.start_line ]
-        end
+        symbol = static_symbol_concatenation(argument)
+        found << [ symbol, argument.location.start_line ] if symbol
       end
     end
     node.compact_child_nodes.each { |child| constant_resolution_literals_in(child, found) }
@@ -2303,6 +2318,24 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     left = static_string_concatenation(node.receiver)
     right = static_string_concatenation(arguments.first)
     left + right if left && right
+  end
+
+  def static_symbol_concatenation(node)
+    return node.unescaped if node.is_a?(Prism::SymbolNode)
+    if node.is_a?(Prism::EmbeddedStatementsNode)
+      expressions = node.statements.body
+      return unless expressions.one?
+
+      return static_symbol_part(expressions.first)
+    end
+    return unless node.is_a?(Prism::InterpolatedSymbolNode)
+
+    parts = node.parts.map { |part| static_symbol_part(part) }
+    parts.join if parts.all?
+  end
+
+  def static_symbol_part(node)
+    static_symbol_concatenation(node) || static_string_concatenation(node)
   end
 
   def string_literals_in(node)
