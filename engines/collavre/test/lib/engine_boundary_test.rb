@@ -63,19 +63,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     font_path font_url path_to_font favicon_link_tag
   ].freeze
 
-  # A satellite class named inside a string is a dependency too — Rails
-  # resolves `class_name:`, `constantize` and an STI `type` value to the real
-  # constant at run time, and the core engine breaks if the satellite renames
-  # it. Matched anywhere inside the literal rather than only as the whole
-  # string, because the live case in this repo is an STI type inside a SQL
-  # heredoc. Comments lex as COMMENT, not STRING_CONTENT, so prose about an
-  # engine is still not a violation.
-  #
   # The nested segments are captured too, so a reference is recorded as the
   # class it actually reaches rather than as its engine namespace — see
   # KNOWN_VIOLATIONS for why that distinction is the whole point.
-  SATELLITE_IN_STRING = /\bCollavre[A-Z]\w*(?:::[A-Z]\w*)+\b/
-  SATELLITE_ROOT_IN_STRING = /\bCollavre[A-Z]\w*\b(?!::)/
+  SATELLITE_CONSTANT_IN_STRING = /\bCollavre[A-Z]\w*(?:::[A-Z]\w*)*\b/
+  SQL_STI_TYPE = /\btype\s*=\s*['\"](Collavre[A-Z]\w*(?:::[A-Z]\w*)+)['\"]/i
 
   RUBY_FILE = /\.(rb|rake|erb)(?:\.tt)?\z/
 
@@ -111,10 +103,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     "engines/collavre/db/migrate/20260120045354_encrypt_oauth_tokens.rb" => [
       "CollavreGithub::Account",         # defined? guard
       "CollavreGithub::Account",         # encrypt_column argument
-      "CollavreGithub::Account",         # say_with_time message
       "CollavreNotion::NotionAccount",   # defined? guard
-      "CollavreNotion::NotionAccount",   # encrypt_column argument
-      "CollavreNotion::NotionAccount"    # say_with_time message
+      "CollavreNotion::NotionAccount"    # encrypt_column argument
     ],
     "engines/collavre/db/migrate/20260527000100_backfill_dismissed_at_for_legacy_detached_channels.rb" => [
       "CollavreGithub::GithubPrChannel" # STI type in the SQL
@@ -266,7 +256,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     source = "#{satellite}::Account.first\n#{satellite}::Account.last\n"
 
     assert_equal [ "#{satellite}::Account" ] * 2, names(constant_references_in(source))
-    assert_equal [ "#{satellite}::Account" ] * 2, names(string_references_in(%("#{satellite}::Account" + "#{satellite}::Account")))
+    assert_equal [ "#{satellite}::Account" ] * 2,
+      names(string_references_in(%("#{satellite}::Account".constantize; "#{satellite}::Account".constantize)))
   end
 
   test "detector ignores satellite names in comments and strings" do
@@ -394,6 +385,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty names(string_references_in("# see #{satellite}::Account for the pattern"))
     assert_empty names(string_references_in(%("Collavre::Creative")))
     assert_empty names(string_references_in(%("CollaborationExtra::Account")))
+  end
+
+  test "string detector ignores satellite names used as ordinary prose" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_empty names(string_references_in(%(Rails.logger.warn("#{satellite}::Account unavailable"))))
+    assert_empty names(string_references_in(%(say_with_time "Updating #{satellite}::Account")))
   end
 
   test "detector flags a require of a satellite engine" do
@@ -2187,56 +2185,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # `belongs_to :account, class_name: "CollavreNotion::NotionAccount"` compiles
   # to a CONSTANT token nowhere, declares nothing in the gemspec, and requires
   # no file — yet the association resolves the class at run time and the core
-  # engine breaks when the satellite renames it.
-  #
-  # Deliberately not keyed on the API that consumes the string. `class_name`,
-  # `constantize`, `const_get`, `safe_constantize`, `serialize` and an STI `type`
-  # column all resolve one, and enumerating them is the same losing game that
-  # produced four rounds of misses on the loader check. A satellite class name
-  # written into a string literal in core code is the violation, whatever reads
-  # it afterwards.
+  # engine breaks when the satellite renames it. A class-looking string is not
+  # enough by itself, though: log and display strings never resolve a constant.
   def string_references_in(source)
     root = Prism.parse(source).value
-    literal_references = located_string_literals_in(root).flat_map do |value, line|
-      value.scan(SATELLITE_IN_STRING).map { |name| [ name, line ] }
-    end
     resolution_references = constant_resolution_literals_in(root).flat_map do |value, line, kind|
-      expression = kind == :symbol ? SATELLITE_IN_SYMBOL : SATELLITE_ROOT_IN_STRING
+      expression = kind == :symbol ? SATELLITE_IN_SYMBOL : SATELLITE_CONSTANT_IN_STRING
       value.scan(expression).map { |name| [ name, line ] }
     end
     resolving_root_references = constant_resolving_string_literals_in(root).flat_map do |value, line|
-      value.scan(SATELLITE_ROOT_IN_STRING).map { |name| [ name, line ] }
+      value.scan(SATELLITE_CONSTANT_IN_STRING).map { |name| [ name, line ] }
     end
+    sql_sti_references = sql_sti_type_literals_in(root)
 
-    literal_references + resolution_references + resolving_root_references
-  end
-
-  # Prism tokens retain source escapes (`\\u0047`), but Ruby resolves them before
-  # code reaches `constantize` or `const_get`. StringNode#unescaped is therefore
-  # the value the program will actually use. Interpolated strings expose their
-  # static StringNode parts separately, preserving the existing partial-path
-  # coverage without treating an expression as literal text.
-  #
-  # Named apart from #string_literals_in on purpose: the two return different
-  # shapes, and while they shared a name Ruby kept only the second definition.
-  # Every string reference then came back with a nil line, which #references_in
-  # sorts as 0 — so a satellite name in a string was always blamed before a
-  # constant reference above it, whatever the file actually said.
-  def located_string_literals_in(node, found = [])
-    return found unless node.is_a?(Prism::Node)
-
-    if node.is_a?(Prism::StringNode)
-      found << [ node.unescaped, node.location.start_line ]
-    else
-      concatenation = static_string_concatenation(node)
-      if concatenation && string_literals_in(node).none? { |value| value.match?(SATELLITE_IN_STRING) }
-        found << [ concatenation, node.location.start_line ]
-      else
-        node.compact_child_nodes.each { |child| located_string_literals_in(child, found) }
-      end
-    end
-
-    found
+    resolution_references + resolving_root_references + sql_sti_references
   end
 
   def constant_resolution_literals_in(node, found = [])
@@ -2286,6 +2248,30 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def static_string_call_argument(node)
     arguments = node.arguments&.arguments
     static_string_concatenation(arguments.first) if arguments&.one?
+  end
+
+  # Raw SQL is the one non-Ruby resolver context we ship: an STI `type` written
+  # by a migration is resolved when Rails later instantiates that row. Keep this
+  # narrow to the migration DSL's bare `execute`, so an unrelated object's SQL
+  # string remains ordinary data.
+  def sql_sti_type_literals_in(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    if node.is_a?(Prism::CallNode) && node.name == :execute && node.receiver.nil?
+      string = static_sql_call_argument(node)
+      found.concat(string.to_enum(:scan, SQL_STI_TYPE).map { [ Regexp.last_match(1), node.location.start_line ] }) if string
+    end
+    node.compact_child_nodes.each { |child| sql_sti_type_literals_in(child, found) }
+    found
+  end
+
+  def static_sql_call_argument(node)
+    arguments = node.arguments&.arguments
+    return unless arguments&.one?
+
+    value = arguments.first
+    value = value.receiver if value.is_a?(Prism::CallNode) && value.name == :squish && value.arguments.nil?
+    static_string_concatenation(value)
   end
 
   # A constant is not the only way to reach a satellite. Every engine is on the
