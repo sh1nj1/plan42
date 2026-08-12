@@ -1,5 +1,12 @@
 <% default_help_url = collavre.features_path(locale: I18n.locale, script_name: request.script_name) %>
-<% help_url = SystemSetting.help_menu_link.presence || default_help_url %>
+<% configured_help_url = SystemSetting.help_menu_link.presence %>
+<%# A configured value whose scheme executes instead of naming a page is
+    dropped for the built-in guide. Sending it to a new tab would not defuse it
+    — that tab starts on an about:blank carrying our origin — and the "?" menu
+    is reachable by every reader, so a stored setting would otherwise be one
+    click away from running with their session. %>
+<% configured_help_url = nil if executable_url?(configured_help_url) %>
+<% help_url = configured_help_url || default_help_url %>
 <%# The built-in guide navigates in the current window: it is one of our own
     pages, so the browser's back button — plus the guide's own return link — is
     the way back, and a new tab left users with no way to return at all.

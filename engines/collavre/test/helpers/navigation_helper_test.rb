@@ -430,6 +430,54 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target]", count: 0
   end
 
+  # A scheme that executes is never rendered, in any window. Opening a new tab
+  # would not defuse it: that tab starts on an about:blank carrying our origin.
+  test "help partial drops a configured javascript link for the built-in guide" do
+    SystemSetting.stub(:help_menu_link, "javascript:fetch('/evil')") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial drops a configured javascript link written in mixed case" do
+    SystemSetting.stub(:help_menu_link, "JaVaScRiPt:fetch('/evil')") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+  end
+
+  # A browser drops the tab before it reads the scheme, so the check has to run
+  # on the normalized value rather than on what was saved.
+  test "help partial drops a configured javascript link split by a tab" do
+    SystemSetting.stub(:help_menu_link, "java\tscript:fetch('/evil')") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+  end
+
+  test "help partial drops a configured vbscript link for the built-in guide" do
+    SystemSetting.stub(:help_menu_link, "vbscript:msgbox(1)") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+  end
+
+  # The match is anchored to the colon here too: a path may be named after the
+  # language without being written in it.
+  test "help partial keeps a configured path named after a script language" do
+    SystemSetting.stub(:help_menu_link, "/javascript-guide/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[href='/javascript-guide/help']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
   test "navigation partial renders mobile guest help and sign in buttons" do
     Navigation::Registry.instance.register(
       key: :help,

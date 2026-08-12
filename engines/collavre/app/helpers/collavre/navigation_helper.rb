@@ -91,6 +91,17 @@ module Collavre
       leaves_origin_by_spelling?(value)
     end
 
+    # True when a URL runs code in whatever document it is clicked from instead
+    # of naming a page to go to. Such a value is never a help page, and no
+    # window target makes it safe: the one guard the HTML Standard places on a
+    # "javascript:" navigation is that the initiator is same origin-domain with
+    # the target, and a "_blank" auxiliary context starts on an about:blank that
+    # inherits the opener's origin — so the script runs there too, with our
+    # cookies. It has to be dropped rather than re-targeted.
+    def executable_url?(url)
+      browser_normalized(url.to_s).match?(EXECUTABLE_SCHEME)
+    end
+
     private
 
     # What a browser throws away before it parses anything: every tab and
@@ -133,6 +144,12 @@ module Collavre
     # equally harmless, so the list is drawn around what the scheme *would*
     # render rather than around which shell happens to block it.
     DOCUMENT_SCHEME = /\A(?:about|blob|data|file|filesystem|view-source):/i
+
+    # Schemes that execute rather than point anywhere — see #executable_url?.
+    # Kept apart from DOCUMENT_SCHEME because the question they answer is a
+    # different one: not "which window does this open in" but "may this be an
+    # href at all". The answer is no, so the value never reaches external_link?.
+    EXECUTABLE_SCHEME = /\A(?:javascript|vbscript):/i
 
     def leaves_origin_by_spelling?(value)
       return true if value.match?(AUTHORITY_PREFIX)
