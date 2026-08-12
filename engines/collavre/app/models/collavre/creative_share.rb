@@ -46,7 +46,9 @@ module Collavre
     after_destroy :touch_creative_subtree
 
     after_commit :dispatch_share_cache_invalidation, on: [ :create, :update ]
-    after_commit :reconcile_stranded_topic_read_pointers, on: [ :create, :update ], if: :access_granted?
+    after_create :reconcile_stranded_topic_read_pointers
+    after_update :reconcile_stranded_topic_read_pointers, if: :access_granted?
+    after_destroy :reconcile_stranded_topic_read_pointers
     after_commit :broadcast_share_change, on: [ :create, :update ]
     after_destroy_commit :remove_cache
     after_destroy_commit :broadcast_share_destroy
@@ -213,8 +215,9 @@ module Collavre
 
     # A topic can be moved before one of its source readers is shared on the
     # destination. The move deliberately leaves that reader's pointer on the
-    # source to avoid exposing it there. Once access is granted, restore the
-    # pointer to the topic's current creative so its read history follows it.
+    # source to avoid exposing it there. Once access is granted (including when
+    # a no_access override is removed), restore the pointer to the topic's
+    # current creative so its read history follows it.
     def reconcile_stranded_topic_read_pointers
       destination = creative.effective_origin
       return unless destination.all_shared_users(:read).any? { |share| share.user_id == user_id }

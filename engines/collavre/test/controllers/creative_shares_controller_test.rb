@@ -39,6 +39,43 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, pointer.reload.creative_id
   end
 
+  test "removing a destination no_access share restores a pointer stranded by a topic move" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination_parent = Collavre::Creative.create!(user: @owner, description: "Pointer destination parent")
+    destination = Collavre::Creative.create!(
+      user: @owner, parent: destination_parent, description: "Pointer destination"
+    )
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    blocked_share = nil
+    perform_enqueued_jobs do
+      Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+      Collavre::CreativeShare.create!(
+        creative: destination_parent, user: @target_user, shared_by: @owner, permission: :read
+      )
+      blocked_share = Collavre::CreativeShare.create!(
+        creative: destination, user: @target_user, shared_by: @owner, permission: :no_access
+      )
+    end
+
+    refute destination.has_permission?(@target_user, :read)
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
+
+    assert_response :success
+    assert_equal source.id, pointer.reload.creative_id
+
+    perform_enqueued_jobs { blocked_share.destroy! }
+
+    assert destination.reload.has_permission?(@target_user, :read)
+    assert_equal destination.id, pointer.reload.creative_id
+  end
+
   test "non-owner cannot share non-searchable AI agent" do
     # Create a non-searchable AI agent owned by @owner
     ai_agent = User.create!(
