@@ -414,7 +414,7 @@ module ComplexityRatchet
       text = "#{text[0, 97]}..." if text.length > 100
       base = [ entities.enclosing_path(line, last_line), "~#{text}" ].compact.join
       ordinal = entities.fallback_ordinal(line, last_line, text)
-      ordinal && ordinal > 1 ? "#{base}(#{ordinal})" : base
+      ordinal && ordinal > 1 ? "#{base}[fallback:#{ordinal}]" : base
     end
 
     def record(acc, key, message)
@@ -836,8 +836,11 @@ module ComplexityRatchet
       end
     end
 
-    # Siblings share every part of a key except their ordinal.
-    def family(key) = key.gsub(/\(\d+\)/, "")
+    # Siblings share every part of a key except the ordinal appended by
+    # #disambiguate. Fallback source text can itself contain numeric parentheses
+    # (for example `process(2)`), so it uses an explicit ordinal marker instead
+    # of the ordinary scope suffix.
+    def family(key) = key.include?("~") ? key.sub(/\[fallback:\d+\]\z/, "") : key.sub(/\(\d+\)\z/, "")
 
     # Sibling views are keyed by file and family, without the cop: a population
     # or an anchor is a property of the source, not of the cop that measured it.

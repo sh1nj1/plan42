@@ -546,7 +546,7 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
 
     assert_equal({
       "sample.rb | Metrics/BlockNesting | Sample#wide~if ready" => 1,
-      "sample.rb | Metrics/BlockNesting | Sample#wide~if ready(2)" => 1
+      "sample.rb | Metrics/BlockNesting | Sample#wide~if ready[fallback:2]" => 1
     }, result)
   end
 
@@ -564,7 +564,7 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
 
     result = fold([ offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 5) ])
 
-    assert_equal({ "sample.rb | Metrics/BlockNesting | Sample#wide~if ready(2)" => 1 }, result)
+    assert_equal({ "sample.rb | Metrics/BlockNesting | Sample#wide~if ready[fallback:2]" => 1 }, result)
   end
 
   test "fallback ordinals use the same abbreviation as their measurement keys" do
@@ -584,7 +584,7 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     result = fold([ offense("Metrics/BlockNesting", "Avoid more than 3 levels of block nesting.", 5) ])
 
     abbreviated = "#{statement[0, 97]}..."
-    assert_equal({ "sample.rb | Metrics/BlockNesting | Sample#wide~#{abbreviated}(2)" => 1 }, result)
+    assert_equal({ "sample.rb | Metrics/BlockNesting | Sample#wide~#{abbreviated}[fallback:2]" => 1 }, result)
   end
 
   test "skips files with no offenses" do
@@ -885,6 +885,18 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
 
   test "accepts a survivor that stayed within the family's smallest limit" do
     assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, SIB2 => 78 }, { SIB => 78 })
+  end
+
+  test "keeps numeric parentheses in fallback source identities out of sibling families" do
+    plain = "a.rb | Metrics/BlockNesting | A#run~process"
+    numeric = "a.rb | Metrics/BlockNesting | A#run~process(2)"
+
+    # `process(2)` is source text, not the `(2)` ordinal that #disambiguate
+    # appends to a sibling. Removing the numeric sibling must not hold the
+    # independent `process` entry to its lower allowance.
+    assert_empty ComplexityRatchet.verify_monotonic(
+      { plain => 90, numeric => 80 }, { plain => 85 }
+    )
   end
 
   test "rejects a shifted survivor when only its deleted sibling was baselined" do

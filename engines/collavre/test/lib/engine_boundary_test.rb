@@ -379,6 +379,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty template_paths_in(%(render json: { error: "#{satellite}/not_a_template" }))
   end
 
+  test "template detector ignores non-Rails renderers" do
+    satellite = SATELLITES.first
+
+    assert_empty template_paths_in(%(template.render("#{satellite}/example")))
+  end
+
+  test "template detector recognizes explicit Rails render receivers" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/example" ], template_paths_in(%(controller.render("#{satellite}/example")))
+    assert_equal [ "#{satellite}/example" ], template_paths_in(%(ApplicationController.render("#{satellite}/example")))
+  end
+
   # Formatting was the recurring miss: parentheses moved the literal, and a call
   # split across lines put an IGNORED_NEWLINE where the old token walk stopped.
   # Reading the parsed arguments makes layout irrelevant, so these are all one
@@ -1376,9 +1389,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def render_calls(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    found << node if node.is_a?(Prism::CallNode) && TEMPLATE_RENDER_METHODS.include?(node.name.to_s)
+    found << node if rails_render_call?(node)
     node.compact_child_nodes.each { |child| render_calls(child, found) }
     found
+  end
+
+  # Bare calls and conventional controller receivers use Rails' view API. A
+  # method named `render` on an arbitrary receiver (for example a Liquid
+  # template) receives data rather than a Rails template path.
+  def rails_render_call?(node)
+    return false unless node.is_a?(Prism::CallNode) && TEMPLATE_RENDER_METHODS.include?(node.name.to_s)
+
+    receiver = node.receiver
+    receiver.nil? || receiver.slice.match?(/(?:\A|::)\w*Controller\z|\A(?:controller|view_context|self)\z/)
   end
 
   def template_arguments(call)
