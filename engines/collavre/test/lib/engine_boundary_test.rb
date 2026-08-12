@@ -513,6 +513,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], asset_paths_in(%(stylesheet_link_tag "collavre_" + "#{satellite.delete_prefix('collavre_')}/slack_integration"))
     assert_equal [ path ], asset_paths_in(%(ActionController::Base.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(ApplicationController.helpers.asset_path("#{path}")))
+    assert_equal [ path ], asset_paths_in(%(Collavre::ApplicationController.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(view_context.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(self.helpers.asset_path("#{path}")))
@@ -2039,7 +2040,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def rails_asset_helper_receiver?(source)
-    source.match?(/\A(?:::)?(?:ActionController::Base|ApplicationController)\.helpers\z|\A(?:self\.)?(?:helpers|view_context)\z/)
+    source.match?(/\A(?:::)?(?:ActionController::Base|(?:[A-Z]\w*::)*ApplicationController)\.helpers\z|\A(?:self\.)?(?:helpers|view_context)\z/)
   end
 
   def asset_path_values(node)
