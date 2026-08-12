@@ -405,6 +405,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       template_paths_in(%(render template: "collavre_" + "#{satellite.delete_prefix('collavre_')}/integrations/modal"))
   end
 
+  test "detector flags a satellite template rendered with a symbol path" do
+    satellite = SATELLITES.first
+    template = "#{satellite}/integrations/modal"
+
+    assert_equal [ template ], template_paths_in(%(render :"#{template}"))
+    assert_equal [ template ], template_paths_in(%(render template: :"#{template}"))
+  end
+
   test "template detector ignores ordinary rendered data" do
     satellite = SATELLITES.first
 
@@ -1744,7 +1752,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def template_arguments(call)
     call.arguments&.arguments.to_a.flat_map do |argument|
       case argument
-      when Prism::StringNode, Prism::InterpolatedStringNode, Prism::CallNode
+      when Prism::StringNode, Prism::SymbolNode, Prism::InterpolatedStringNode, Prism::CallNode
         template_path_values(argument)
       when Prism::KeywordHashNode
         argument.elements.flat_map do |association|
@@ -1759,6 +1767,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def template_path_values(node)
+    return [ node.unescaped ] if node.is_a?(Prism::SymbolNode)
+
     static_string_concatenation(node) || string_literals_in(node)
   end
 
