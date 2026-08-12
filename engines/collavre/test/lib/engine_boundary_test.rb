@@ -37,7 +37,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
-  CONSTANT_RESOLUTION_METHODS = %w[const_get].freeze
+  CONSTANT_QUERY_METHODS = %w[const_defined? const_get const_source_location].freeze
   TEMPLATE_RENDER_METHODS = %w[render render_to_string].freeze
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
 
@@ -215,10 +215,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       names(string_references_in(%(belongs_to :account, class_name: "#{prefix}" + "#{suffix}::Account")))
   end
 
-  test "detector flags a satellite class named by a static symbol" do
+  test "detector flags a satellite class named by a constant query symbol" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
     assert_equal [ satellite ], names(string_references_in("Object.const_get(:#{satellite})"))
+    assert_equal [ satellite ], names(string_references_in("Object.const_defined?(:#{satellite})"))
+    assert_equal [ satellite ], names(string_references_in("Object.const_source_location(:#{satellite})"))
   end
 
   test "detector ignores satellite symbols used as ordinary data" do
@@ -1376,7 +1378,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   # Prism tokenizes `:CollavreSlack` as SYMBOL_BEGIN then CONSTANT. It is data
-  # unless a supported constant-resolution API consumes it, which is covered by
+  # unless a supported constant-query API consumes it, which is covered by
   # #constant_resolution_literals_in instead of this general constant scanner.
   def symbol_literal?(all, index) = all[index - 1]&.type == :SYMBOL_BEGIN
 
@@ -1469,7 +1471,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def constant_resolution_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::CallNode) && CONSTANT_RESOLUTION_METHODS.include?(node.name.to_s)
+    if node.is_a?(Prism::CallNode) && CONSTANT_QUERY_METHODS.include?(node.name.to_s)
       node.arguments&.arguments.to_a&.each do |argument|
         if argument.is_a?(Prism::SymbolNode)
           found << [ argument.unescaped, argument.location.start_line ]
