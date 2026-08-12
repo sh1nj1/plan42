@@ -485,6 +485,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "Ruby generator templates retain static loader calls around ERB output" do
+    satellite = SATELLITES.first
+    source = <<~RUBY
+      module <%= class_name %>
+        require "#{satellite}/install"
+      end
+    RUBY
+
+    assert_equal [ "#{satellite}/install" ], requires_in(ruby_generator_template_source(source))
+  end
+
   test "TSX generator templates use JSX scanning" do
     satellite = SATELLITES.first
     path = ENGINES_ROOT.join(CORE, "lib/generators/collavre/install/templates/view.tsx.tt")
@@ -557,10 +568,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(const example = 'import "#{satellite}/thing";))
     assert_empty js_imports_in(%(const pattern = /import "#{satellite}\/thing"/;))
     assert_empty js_imports_in(%(if (ready) /import "#{satellite}\/thing"/.test(text);))
+    assert_empty js_imports_in(%(if (ready) {}\n/import "#{satellite}\/thing"/.test(text)))
     assert_empty js_imports_in(%(if (ready) {} else /import "#{satellite}\/thing"/.test(text);))
     assert_empty js_imports_in(%(do /import "#{satellite}\/thing"/.test(text); while (ready);))
     assert_empty js_imports_in(%(function* matches() { yield /import "#{satellite}\/thing"/ }))
     assert_empty js_imports_in(%(for (const char of /import "#{satellite}\/thing"/.source) {}))
+    assert_empty js_imports_in(%(function matches() {}\n/import "#{satellite}\/thing"/.test(text)))
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(const ratio = object.of / import("#{satellite}/thing")))
     assert_equal [ "#{satellite}/thing" ],
@@ -752,8 +765,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     source = File.read(path)
     return js_violations_in(path, source) if javascript_source?(path, source)
 
-    # ERB is not Ruby, so lex only the fragments between the tags.
-    ruby = path.delete_suffix(".tt").end_with?(".erb") ? source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n") : source
+    # ERB views are not Ruby, so lex only the fragments between their tags.
+    # Ruby generator templates are Ruby with ERB placeholders, so retain their
+    # static source and replace output tags with a syntactically valid value.
+    ruby = if path.delete_suffix(".tt").end_with?(".erb")
+      source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n")
+    elsif path.end_with?(".tt")
+      ruby_generator_template_source(source)
+    else
+      source
+    end
     # Requires are deliberately absent from the waiver: no core file has one
     # today, and a new one is never the frozen-migration case the list exists
     # for.
@@ -778,6 +799,23 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def ruby_source?(path)
     path.match?(RUBY_FILE)
+  end
+
+  # Generator `.rb.tt` and `.rake.tt` files are Ruby source with ERB embedded
+  # in expression positions. Parsing their raw text makes Prism recover past a
+  # malformed declaration (for example, `module <%= class_name %>`) and can
+  # skip a later loader. Keep control-flow tags as Ruby, discard ERB comments,
+  # and substitute output tags with a valid constant while preserving lines.
+  def ruby_generator_template_source(source)
+    source.gsub(/<%(-?)([=#]?)(.*?)(-?)%>/m) do
+      type = Regexp.last_match(2)
+      replacement = case type
+      when "=" then +"GeneratedTemplateValue"
+      when "#" then +""
+      else Regexp.last_match(3)
+      end
+      replacement << "\n" * (Regexp.last_match(0).count("\n") - replacement.count("\n"))
+    end
   end
 
   # The gem packages one extensionless Node executable. Its shebang, not its
@@ -1021,6 +1059,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if js_spread_operator?(tokens)
 
     return true if control_flow_condition?(tokens)
+    return true if js_statement_closing_brace?(tokens)
 
     return true if previous.first == :word && %w[return throw case else do yield await void typeof delete new in instanceof].include?(previous.last)
 
@@ -1076,6 +1115,59 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       return %w[if while for with switch catch].include?(tokens[index - 1]&.last) if depth.zero?
     end
     false
+  end
+
+  # A closing brace can end either an operand (`const value = {}`) or a
+  # statement block. Only the latter can be followed by a regex literal at the
+  # start of the next statement. The scanner need not model every expression;
+  # matching the braces and recognising block forms keeps ordinary object
+  # division as division while covering function and control-flow bodies.
+  def js_statement_closing_brace?(tokens)
+    return false unless tokens.last == [ :punctuation, "}" ]
+
+    opening = js_matching_open_brace(tokens)
+    opening && js_block_open?(tokens, opening)
+  end
+
+  def js_matching_open_brace(tokens)
+    depth = 0
+    tokens.each_index.reverse_each do |index|
+      token = tokens[index]
+      depth += 1 if token == [ :punctuation, "}" ]
+      next unless token == [ :punctuation, "{" ]
+
+      depth -= 1
+      return index if depth.zero?
+    end
+    nil
+  end
+
+  def js_block_open?(tokens, opening)
+    before = tokens[opening - 1]
+    return true if before&.first == :word && %w[else try finally do].include?(before.last)
+    return true if tokens[(opening - 2)...opening] == [ [ :punctuation, "=" ], [ :punctuation, ">" ] ]
+    return false unless before == [ :punctuation, ")" ]
+
+    parenthesis = js_matching_open_parenthesis(tokens, opening - 1)
+    return false unless parenthesis
+
+    head = tokens[parenthesis - 1]&.last
+    return true if %w[if while for with switch catch].include?(head)
+
+    tokens[0...parenthesis].any? { |token| token == [ :word, "function" ] }
+  end
+
+  def js_matching_open_parenthesis(tokens, closing)
+    depth = 0
+    closing.downto(0) do |index|
+      token = tokens[index]
+      depth += 1 if token == [ :punctuation, ")" ]
+      next unless token == [ :punctuation, "(" ]
+
+      depth -= 1
+      return index if depth.zero?
+    end
+    nil
   end
 
   # A regex literal is not module syntax, even when it contains the exact text
