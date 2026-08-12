@@ -12,7 +12,7 @@ module Collavre
     # match on, so a metadata save that omits it makes the row undiscoverable and
     # `inbox_for` creates a duplicate inbox for that user.
     # ---------------------------------------------------------------------------
-    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind onboarding].freeze
 
     SubtreeTouchTransactionRecord = Data.define(:creative_id) do
       def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true

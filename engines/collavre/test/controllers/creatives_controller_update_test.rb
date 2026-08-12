@@ -123,6 +123,22 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "update_metadata preserves onboarding state against a stale payload" do
+    onboarding_session = Collavre::Onboarding::Seeder.new(user: @user, force: true).call
+    root = onboarding_session.root
+    original_onboarding = root.data.fetch("onboarding").deep_dup
+
+    patch update_metadata_creative_url(root), params: {
+      data: { "other" => "new-value" }.to_json
+    }
+
+    assert_response :success
+    root.reload
+    assert_equal original_onboarding, root.data["onboarding"]
+    assert_equal "new-value", root.data["other"]
+    assert_equal root.id, Collavre::Onboarding::Session.for_user(@user).root.id
+  end
+
   test "update_metadata rejects non-hash JSON arrays without clobbering markdown fields" do
     creative = Creative.create!(
       description: "<p>html</p>",
