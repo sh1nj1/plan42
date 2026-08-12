@@ -497,6 +497,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{feature}.rb" ], requires_in(%(::Kernel.public_send(:load, "#{feature}.rb")))
     assert_equal [ feature ], requires_in(%(Kernel.__send__(:require, "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.send("require", "#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.send(:"req\#{"uire"}", "#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.send("req\#{"uire"}", "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.public_method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(::Kernel.public_method(:require).call("#{feature}")))
@@ -953,6 +955,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}/thing" ],
       js_imports_in(%(const value = receiver.return / import("#{satellite}/thing") / 2))
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const value = this.#return / import("#{satellite}/thing") / 2))
   end
 
   test "detector ignores regex literals after a spread operator" do
@@ -1559,7 +1563,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if js_export_default?(tokens)
 
     return true if js_class_extends_clause?(tokens)
-    return true if previous.first == :word && tokens[-2] != [ :punctuation, "." ] &&
+    return true if previous.first == :word && ![ ".", "#" ].include?(tokens[-2]&.last) &&
       js_expression_starting_keyword?(previous.last)
 
     js_for_of_header?(tokens)
@@ -2518,10 +2522,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def reflected_loader_method(call)
     return unless %w[send public_send __send__].include?(call.name.to_s)
 
-    method_name = call.arguments&.arguments&.first
-    return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
+    method_name = static_symbol_part(call.arguments&.arguments&.first)
+    return unless method_name
 
-    method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
+    method_name if LOADER_METHODS.include?(method_name)
   end
 
   def constant_symbol_method(call)
