@@ -448,6 +448,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
+      %(const t = require("collavre_" + ("#{satellite.delete_prefix('collavre_')}/thing"));) => "#{satellite}/thing",
+      %(const t = await import(("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing"));) => "#{satellite}/thing",
       %(const t = await import(`#{satellite}/thing`);) => "#{satellite}/thing",
       %(import Thing from "#{escaped_satellite}/thing";) => "#{satellite}/thing",
       %(const t = await import(`#{escaped_satellite}/thing`);) => "#{satellite}/thing",
@@ -475,6 +477,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(const example = 'import "#{satellite}/thing";))
     assert_empty js_imports_in(%(const pattern = /import "#{satellite}\/thing"/;))
     assert_empty js_imports_in(%(if (ready) /import "#{satellite}\/thing"/.test(text);))
+    assert_empty js_imports_in(%(if (ready) {} else /import "#{satellite}\/thing"/.test(text);))
+    assert_empty js_imports_in(%(do /import "#{satellite}\/thing"/.test(text); while (ready);))
   end
 
   test "detector ignores import examples in JSX text while keeping JSX expressions" do
@@ -919,7 +923,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     return true if control_flow_condition?(tokens)
 
-    previous == [ :word, "return" ] || previous == [ :word, "throw" ] || previous == [ :word, "case" ]
+    %w[return throw case else do].include?(previous.last) && previous.first == :word
   end
 
   def control_flow_condition?(tokens)
@@ -1052,14 +1056,31 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_static_string_at(tokens, index)
-    return unless tokens[index]&.first == :string
+    value, = js_static_string_expression_at(tokens, index)
+    value
+  end
 
-    value = tokens[index].last.dup
-    while tokens[index + 1] == [ :punctuation, "+" ] && tokens[index + 2]&.first == :string
-      value << tokens[index + 2].last
-      index += 2
+  def js_static_string_expression_at(tokens, index)
+    value, cursor = js_static_string_atom_at(tokens, index)
+    return unless value
+
+    while tokens[cursor] == [ :punctuation, "+" ]
+      right, cursor = js_static_string_atom_at(tokens, cursor + 1)
+      return unless right
+
+      value << right
     end
-    tokens[index + 1] == [ :punctuation, "+" ] ? nil : value
+    [ value, cursor ]
+  end
+
+  def js_static_string_atom_at(tokens, index)
+    return [ tokens[index].last.dup, index + 1 ] if tokens[index]&.first == :string
+    return unless tokens[index] == [ :punctuation, "(" ]
+
+    value, cursor = js_static_string_expression_at(tokens, index + 1)
+    return unless value && tokens[cursor] == [ :punctuation, ")" ]
+
+    [ value, cursor + 1 ]
   end
 
   def js_bare_import_specifier(tokens, index)
