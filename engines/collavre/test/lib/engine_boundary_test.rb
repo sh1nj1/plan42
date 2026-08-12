@@ -360,6 +360,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(Kernel.send("require", "#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(method(:require).call("#{feature}")))
+    assert_equal [ feature ], requires_in(%(Object.method(:require).call("#{feature}")))
     assert_equal [ feature ], requires_in(%(Kernel.method(:require)["#{feature}"]))
     assert_equal [ feature ], requires_in(%(method(:require)["#{feature}"]))
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
@@ -752,6 +753,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_empty js_imports_in(%(registry.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.call(null, "#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require("#{satellite}/template")))
@@ -763,6 +765,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module?.require("#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.require.call(null, "#{satellite}/template")))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -1469,7 +1472,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       when "require"
         next unless js_commonjs_loader?(tokens, index)
 
-        js_call_specifier(tokens, index) || js_require_resolve_specifier(tokens, index)
+        js_call_specifier(tokens, index) || js_require_call_specifier(tokens, index) || js_require_resolve_specifier(tokens, index)
       when "import"
         next if tokens[index - 1] == [ :punctuation, "." ]
 
@@ -1527,6 +1530,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless open
 
     js_static_string_at(tokens, open + 1)
+  end
+
+  # `require.call(this_arg, specifier)` invokes the native CommonJS loader;
+  # the first argument only supplies JavaScript's `this` value. The caller has
+  # already established that this is bare `require` or `module.require`, not
+  # an application method with the same name.
+  def js_require_call_specifier(tokens, index)
+    return unless tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, "call" ]
+
+    open = js_call_open_at(tokens, index + 2)
+    return unless open && tokens[open + 2] == [ :punctuation, "," ]
+
+    js_static_string_at(tokens, open + 3)
   end
 
   def js_static_string_at(tokens, index)
@@ -1842,16 +1858,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
   end
 
-  # A statically selected `Kernel.method(:require).call(path)` or
-  # `method(:require).call(path)` invokes the native loader just like direct
-  # and reflective dispatch. Restrict this to Kernel so an application-defined
-  # Method object is not treated as a loader.
+  # A statically selected `Kernel.method(:require).call(path)`,
+  # `Object.method(:require).call(path)`, or `method(:require).call(path)`
+  # invokes the native loader just like direct and reflective dispatch. Object
+  # inherits Kernel's private loaders; arbitrary receivers stay excluded.
   def method_object_loader_method(call)
     return unless %i[call []].include?(call.name)
 
     method_call = call.receiver
     return unless method_call.is_a?(Prism::CallNode) && method_call.name == :method
-    return unless method_call.receiver.nil? || kernel?(method_call.receiver)
+    return unless method_call.receiver.nil? || kernel?(method_call.receiver) || top_level_object_receiver?(method_call.receiver)
 
     method_name = method_call.arguments&.arguments&.first
     return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
