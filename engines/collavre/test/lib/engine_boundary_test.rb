@@ -209,6 +209,33 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
   end
 
+  test "gemspec detector scans aliases and dependencies sequentially within conditionals" do
+    source = <<~RUBY
+      Gem::Specification.new do |gemspec|
+        if Gem.win_platform?
+          target = gemspec
+          target.add_dependency "collavre_windows"
+        end
+      end
+    RUBY
+
+    assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
+  end
+
+  test "gemspec detector finds statically declared conditional package files" do
+    source = <<~RUBY
+      Gem::Specification.new do |manifest|
+        manifest.files << "lib/windows.rb" if Gem.win_platform?
+        manifest.files.concat ["lib/macos.rb", "lib/shared.rb"]
+        manifest.files = ["lib/replaced.rb"] if Gem.linux?
+        manifest.files += ["lib/appended.rb"] if Gem.freebsd?
+        unrelated.files << "lib/ignored.rb"
+      end
+    RUBY
+
+    assert_equal %w[lib/appended.rb lib/macos.rb lib/replaced.rb lib/shared.rb lib/windows.rb], gemspec_file_names_in(source).sort
+  end
+
   test "gemspec detector does not carry a receiver alias into a shadowing block" do
     source = <<~RUBY
       Gem::Specification.new do |gemspec|
@@ -1243,10 +1270,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # then `db/` (154 files) and the `Rakefile` — because the glob and the
   # packaging manifest were maintained separately and drifted. Reading the
   # manifest means whatever the engine ships is scanned by construction,
-  # including directories added later.
+  # including directories added later. Literal declarations supplement the
+  # evaluated list so platform-specific files are checked on every platform.
   def core_sources
     root = ENGINES_ROOT.join(CORE)
-    packaged = core_gemspec.files.select do |path|
+    packaged = (core_gemspec.files + gemspec_file_names_in(core_gemspec_source)).uniq.select do |path|
       ruby_source?(path) || javascript_source?(root.join(path).to_s) || css_source?(path) || File.basename(path) == "Rakefile"
     end
 
@@ -2825,23 +2853,62 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def gemspec_dependency_calls(node, found = [], gemspec_receivers: [], specification_block: false)
+    gemspec_calls(node, found, gemspec_receivers:, specification_block:) do |candidate, receivers|
+      gemspec_dependency_call?(candidate, receivers)
+    end
+  end
+
+  # Gem::Specification.load evaluates platform guards. Literal file additions
+  # have to be read statically too, or the current platform can hide a shipped
+  # source file from the engine boundary scan.
+  def gemspec_file_names_in(source)
+    gemspec_file_declaration_calls(Prism.parse(source).value).flat_map do |call|
+      static_file_paths(gemspec_file_arguments(call))
+    end
+  end
+
+  def gemspec_file_declaration_calls(node, found = [], gemspec_receivers: [], specification_block: false)
+    gemspec_calls(node, found, gemspec_receivers:, specification_block:) do |candidate, receivers|
+      gemspec_file_declaration?(candidate, receivers)
+    end
+  end
+
+  def gemspec_calls(node, found, gemspec_receivers:, specification_block:, &matches)
     return found unless node.is_a?(Prism::Node)
-    return gemspec_dependency_calls_in_specification_block(node, found, gemspec_receivers) if specification_block
+    return gemspec_calls_in_specification_block(node, found, gemspec_receivers, &matches) if specification_block
+    return gemspec_calls_in_conditional(node, found, gemspec_receivers, &matches) if node.is_a?(Prism::IfNode)
 
     gemspec_receivers -= block_parameter_names(node) if node.is_a?(Prism::BlockNode) && !specification_block
-    found << node if gemspec_dependency_call?(node, gemspec_receivers)
+    found << node if matches.call(node, gemspec_receivers)
     node.compact_child_nodes.each do |child|
       nested_specification_block = gemspec_specification_block?(node, child)
       receivers = nested_specification_block ? gemspec_block_receivers(child) : gemspec_receivers
-      gemspec_dependency_calls(child, found, gemspec_receivers: receivers, specification_block: nested_specification_block)
+      gemspec_calls(child, found, gemspec_receivers: receivers, specification_block: nested_specification_block, &matches)
     end
     found
   end
 
-  def gemspec_dependency_calls_in_specification_block(block, found, gemspec_receivers)
+  def gemspec_calls_in_specification_block(block, found, gemspec_receivers, &matches)
+    gemspec_calls_in_statements(block.body, found, gemspec_receivers, &matches)
+  end
+
+  def gemspec_calls_in_conditional(node, found, gemspec_receivers, &matches)
+    gemspec_calls(node.predicate, found, gemspec_receivers:, specification_block: false, &matches)
+    gemspec_calls_in_statements(node.statements, found, gemspec_receivers, &matches)
+
+    case node.subsequent
+    when Prism::ElseNode
+      gemspec_calls_in_statements(node.subsequent.statements, found, gemspec_receivers, &matches)
+    when Prism::Node
+      gemspec_calls(node.subsequent, found, gemspec_receivers:, specification_block: false, &matches)
+    end
+    found
+  end
+
+  def gemspec_calls_in_statements(statements, found, gemspec_receivers, &matches)
     receivers = gemspec_receivers
-    block.body&.body&.each do |statement|
-      gemspec_dependency_calls(statement, found, gemspec_receivers: receivers)
+    statements&.body&.each do |statement|
+      gemspec_calls(statement, found, gemspec_receivers: receivers, specification_block: false, &matches)
       receivers = gemspec_receivers_after(statement, receivers)
     end
     found
@@ -2855,6 +2922,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       gemspec_spec_receiver?(statement.value, receivers) ? receivers | [ statement.name ] : receivers - [ statement.name ]
     when Prism::IfNode
       conditional_receiver_states(statement, receivers).reduce(:|)
+    when Prism::ElseNode
+      gemspec_receivers_after_statements(statement.statements, receivers)
     else
       receivers
     end
@@ -2878,6 +2947,35 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return false unless %i[add_dependency add_runtime_dependency add_development_dependency].include?(node.name)
 
     node.receiver.nil? || gemspec_spec_receiver?(node.receiver, gemspec_receivers)
+  end
+
+  def gemspec_file_declaration?(node, gemspec_receivers)
+    if node.is_a?(Prism::CallOperatorWriteNode)
+      return node.read_name == :files && node.binary_operator == :+ && gemspec_spec_receiver?(node.receiver, gemspec_receivers)
+    end
+
+    return false unless node.is_a?(Prism::CallNode) && %i[<< push concat files=].include?(node.name)
+
+    node.name == :files= ? gemspec_spec_receiver?(node.receiver, gemspec_receivers) : gemspec_files_receiver?(node.receiver, gemspec_receivers)
+  end
+
+  def gemspec_file_arguments(node)
+    node.is_a?(Prism::CallOperatorWriteNode) ? [ node.value ] : node.arguments&.arguments
+  end
+
+  def gemspec_files_receiver?(node, gemspec_receivers)
+    node.is_a?(Prism::CallNode) && node.name == :files && node.arguments.nil? &&
+      gemspec_spec_receiver?(node.receiver, gemspec_receivers)
+  end
+
+  def static_file_paths(arguments)
+    arguments.to_a.flat_map do |argument|
+      if argument.is_a?(Prism::ArrayNode)
+        static_file_paths(argument.elements)
+      else
+        static_string_concatenation(argument).then { |path| path ? [ path ] : [] }
+      end
+    end
   end
 
   def gemspec_specification_block?(node, child)
