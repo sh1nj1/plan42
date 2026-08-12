@@ -185,6 +185,32 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       satellite_gem_dependencies(gemspec_dependency_names_in(source)).sort
   end
 
+  test "gemspec detector tracks simple aliases of the specification receiver" do
+    source = <<~RUBY
+      Gem::Specification.new do |gemspec|
+        target = gemspec
+        target.add_dependency "collavre_windows" if Gem.win_platform?
+        target = Object.new
+        target.add_dependency "collavre_ignored"
+      end
+    RUBY
+
+    assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
+  end
+
+  test "gemspec detector does not carry a receiver alias into a shadowing block" do
+    source = <<~RUBY
+      Gem::Specification.new do |gemspec|
+        target = gemspec
+        sources.each do |target|
+          target.add_dependency "collavre_slack"
+        end
+      end
+    RUBY
+
+    assert_empty satellite_gem_dependencies(gemspec_dependency_names_in(source))
+  end
+
   test "path detector rejects published satellites outside this checkout" do
     satellite = "collavre_salesforce"
     feature = "#{satellite}/thing"
@@ -2789,6 +2815,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def gemspec_dependency_calls(node, found = [], gemspec_receivers: [], specification_block: false)
     return found unless node.is_a?(Prism::Node)
+    return gemspec_dependency_calls_in_specification_block(node, found, gemspec_receivers) if specification_block
 
     gemspec_receivers -= block_parameter_names(node) if node.is_a?(Prism::BlockNode) && !specification_block
     found << node if gemspec_dependency_call?(node, gemspec_receivers)
@@ -2798,6 +2825,23 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       gemspec_dependency_calls(child, found, gemspec_receivers: receivers, specification_block: nested_specification_block)
     end
     found
+  end
+
+  def gemspec_dependency_calls_in_specification_block(block, found, gemspec_receivers)
+    receivers = gemspec_receivers
+    block.body&.body&.each do |statement|
+      gemspec_dependency_calls(statement, found, gemspec_receivers: receivers)
+      receivers = gemspec_receivers_after(statement, receivers)
+    end
+    found
+  end
+
+  # Gem specifications commonly use a shorter local name. Follow only direct
+  # assignments so an arbitrary expression is never mistaken for the spec.
+  def gemspec_receivers_after(statement, receivers)
+    return receivers unless statement.is_a?(Prism::LocalVariableWriteNode)
+
+    gemspec_spec_receiver?(statement.value, receivers) ? receivers | [ statement.name ] : receivers - [ statement.name ]
   end
 
   def gemspec_dependency_call?(node, gemspec_receivers)
