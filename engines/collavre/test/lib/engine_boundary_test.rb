@@ -711,6 +711,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       js_imports_in(%(const ratio = `${() => {}}` / import("#{satellite}/thing");))
   end
 
+  test "detector scans imports after an object literal following a declaration" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(class X {}; const ratio = {} / import("#{satellite}/thing")))
+  end
+
   test "detector ignores regex literals after a spread operator" do
     satellite = SATELLITES.first
 
@@ -1389,7 +1396,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def js_declaration_body?(tokens, opening)
     declaration = (opening - 1).downto(0).find do |index|
-      tokens[index].first == :word && %w[class interface enum namespace module].include?(tokens[index].last)
+      token = tokens[index]
+      break if token.first == :punctuation && %w[; { }].include?(token.last)
+
+      token.first == :word && %w[class interface enum namespace module].include?(token.last)
     end
     return false unless declaration
 
