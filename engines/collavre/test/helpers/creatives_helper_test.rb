@@ -196,6 +196,48 @@ class CreativesHelperTest < ActionView::TestCase
     assert_equal 1, calls
   end
 
+  test "render_progress_control shows a checkbox for writable binary leaf progress" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Checkbox leaf", progress: 0)
+
+    Current.set(user: user) do
+      html = render_progress_control(creative, 0, has_children: false, can_write: true)
+
+      assert_includes html, 'data-progress-toggle="true"'
+      assert_includes html, 'type="checkbox"'
+      refute_includes html, "creative-progress-incomplete"
+    end
+  end
+
+  test "render_progress_control keeps percentages for non-binary leaves and parents" do
+    user = users(:one)
+    leaf = Creative.create!(user: user, description: "Partial leaf", progress: 0.5)
+    parent = Creative.create!(user: user, description: "Parent", progress: 0)
+
+    Current.set(user: user) do
+      partial_html = render_progress_control(leaf, 0.5, has_children: false, can_write: true)
+      parent_html = render_progress_control(parent, 0, has_children: true, can_write: true)
+
+      assert_includes partial_html, "50%"
+      refute_includes partial_html, "progress-toggle-checkbox"
+      assert_includes parent_html, "0%"
+      refute_includes parent_html, "progress-toggle-checkbox"
+    end
+  end
+
+  test "render_progress_control keeps percentages in select mode and for read-only users" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Non interactive leaf", progress: 1)
+
+    Current.set(user: user) do
+      select_mode_html = render_progress_control(creative, 1, has_children: false, can_write: true, select_mode: true)
+      read_only_html = render_progress_control(creative, 1, has_children: false, can_write: false)
+
+      refute_includes select_mode_html, "progress-toggle-checkbox"
+      refute_includes read_only_html, "progress-toggle-checkbox"
+    end
+  end
+
   test "render_creative_tree_markdown includes children of origin for linked creatives" do
     user = users(:one)
 

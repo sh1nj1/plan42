@@ -86,11 +86,13 @@ module Collavre
         end
         is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
         can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
-        progress_part = if is_leaf && can_write && !select_mode
-          render_progress_toggle(creative, progress_value)
-        else
-          render_progress_value(progress_value)
-        end
+        progress_part = render_progress_control(
+          creative,
+          progress_value,
+          has_children: !is_leaf,
+          can_write: can_write,
+          select_mode: select_mode
+        )
 
         safe_join([
           progress_part,
@@ -98,6 +100,14 @@ module Collavre
           tag.br,
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
+      end
+    end
+
+    def render_progress_control(creative, value, has_children:, can_write:, select_mode: false)
+      if !has_children && can_write && !select_mode && progress_toggleable?(value)
+        render_progress_toggle(creative, value)
+      else
+        render_progress_value(value)
       end
     end
 
@@ -112,7 +122,9 @@ module Collavre
           progress_toggle: true,
           creative_id: creative.id,
           current_progress: value,
-          new_progress: new_value
+          new_progress: new_value,
+          mark_complete: t("collavre.creatives.index.mark_complete"),
+          mark_incomplete: t("collavre.creatives.index.mark_incomplete")
         },
         title: tooltip
       ) do
@@ -123,8 +135,12 @@ module Collavre
           tabindex: -1,
           "aria-label": tooltip
         )
-        safe_join([ render_progress_value(value), checkbox ])
+        checkbox
       end
+    end
+
+    def progress_toggleable?(value)
+      value == 0 || value == 1
     end
 
     def render_progress_value(value)
