@@ -87,6 +87,25 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal unread.id, newly_unarchived_topic.comments.maximum(:id)
   end
 
+  test "All Messages does not mark a comment added after a rendered topic is archived as read" do
+    topic = @creative.topics.create!(name: "Later archived", user: @user)
+    rendered = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "rendered")
+    topic.update!(archived_at: Time.current)
+    hidden = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "hidden")
+
+    post "/comment_read_pointers/update", params: {
+      creative_id: @creative.id,
+      topic_ids: [ topic.id ],
+      topic_watermarks: { topic.id => rendered.id }
+    }, as: :json
+
+    assert_response :success
+    pointer = CommentReadPointer.find_by!(user: @user, creative: @creative.effective_origin, topic: topic)
+    assert_equal rendered.id, pointer.last_read_comment_id
+    assert_equal({ topic.id => 1 }, Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative))
+    assert_equal hidden.id, topic.comments.maximum(:id)
+  end
+
   test "rejects a topic from another creative" do
     foreign_topic = Creative.create!(user: @user, description: "Foreign").main_topic
 

@@ -69,7 +69,7 @@ module Collavre
         # The client retains this snapshot until it reloads the message list.
         # Topic-strip updates alone must not let a newly unarchived topic advance
         # its read pointer before its existing messages have been rendered.
-        response.headers["X-Rendered-Topic-Ids"] = @creative.topics.active.order(:id).pluck(:id).join(",")
+        @rendered_all_topic_ids = @creative.topics.active.order(:id).pluck(:id)
       end
 
       # Default order: Newest first (id DESC)
@@ -119,6 +119,17 @@ module Collavre
       else
         # Initial Load (Latest messages)
         scope.limit(limit).to_a.reverse
+      end
+
+      if @rendered_all_topic_ids
+        response.headers["X-Rendered-Topic-Ids"] = @rendered_all_topic_ids.join(",")
+        # A topic can be archived after this list is rendered. Send the highest
+        # comment ID actually present for each topic so a later read update cannot
+        # consume comments that were hidden after that transition.
+        rendered_topic_watermarks = @comments.group_by(&:topic_id)
+                                             .transform_values { |comments| comments.map(&:id).max }
+                                             .slice(*@rendered_all_topic_ids)
+        response.headers["X-Rendered-Topic-Watermarks"] = rendered_topic_watermarks.to_json
       end
 
       current_topic = if @comments.empty? && effective_topic_id.present?

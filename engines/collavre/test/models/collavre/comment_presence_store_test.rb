@@ -133,5 +133,36 @@ module Collavre
 
       assert_equal "successor", Rails.cache.read(CommentPresenceStore.lock_key(9_901))
     end
+
+    test "normalizes the Solid Cache lock key before conditionally releasing it" do
+      key = CommentPresenceStore.lock_key(9_901)
+      normalized_key = "test:#{key}"
+      serialized_entry = "serialized-entry"
+      entry = Struct.new(:value).new("owner")
+      cache = Minitest::Mock.new
+      cache.expect(:send, normalized_key, [ :normalize_key, key, nil ])
+      cache.expect(:send, entry, [ :deserialize_entry, serialized_entry ])
+      deleted = false
+      relation = Object.new
+      relation.define_singleton_method(:delete_all) { deleted = true }
+
+      SolidCache::Entry.stub(:read, ->(actual_key) {
+        assert_equal normalized_key, actual_key
+        serialized_entry
+      }) do
+        SolidCache::Entry.stub(:where, ->(conditions) {
+          assert_equal Digest::SHA256.digest(normalized_key).unpack1("q>"), conditions.fetch(:key_hash)
+          assert_equal serialized_entry, conditions.fetch(:value)
+          relation
+        }) do
+          Rails.stub(:cache, cache) do
+            CommentPresenceStore.send(:release_solid_cache_lock, key, "owner")
+          end
+        end
+      end
+
+      cache.verify
+      assert deleted
+    end
   end
 end

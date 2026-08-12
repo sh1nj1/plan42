@@ -144,6 +144,7 @@ export default class extends Controller {
       : null
     this.creativeId = creativeId
     this.renderedAllTopicIds = null
+    this.renderedAllTopicWatermarks = null
     this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
     this.highlightAfterLoad = highlightId || pendingHighlight || this.deepLinkCommentId
@@ -167,6 +168,7 @@ export default class extends Controller {
     this._loadCommentsVersion += 1
     this.creativeId = null
     this.renderedAllTopicIds = null
+    this.renderedAllTopicWatermarks = null
     this.highlightAfterLoad = null
     this.highlightCreativeId = null
     this.suppressTopicChangeLoad = false
@@ -348,17 +350,23 @@ export default class extends Controller {
 
       const serverTopicId = response.headers.get("X-Topic-Id")
       const renderedTopicIds = response.headers.get("X-Rendered-Topic-Ids")
+      const renderedTopicWatermarks = response.headers.get("X-Rendered-Topic-Watermarks")
+      const superseded = loadVersion !== undefined && loadVersion !== this._loadCommentsVersion
       // Only replace this snapshot for a full list load. Pagination requests
       // happen later and may observe a topic-strip archive change without
       // rendering that topic's existing history.
-      if (loadVersion !== undefined && !this.currentTopicId && renderedTopicIds !== null) {
+      if (loadVersion !== undefined && !superseded && !this.currentTopicId && renderedTopicIds !== null) {
         this.renderedAllTopicIds = renderedTopicIds.split(',').filter(Boolean)
+        try {
+          this.renderedAllTopicWatermarks = renderedTopicWatermarks ? JSON.parse(renderedTopicWatermarks) : null
+        } catch (_error) {
+          this.renderedAllTopicWatermarks = null
+        }
       }
       // A load superseded while in flight must not retopic anything: its own HTML
       // is dropped, so moving currentTopicId (and the strip, and the form) to its
       // answer would leave the surviving load rendering into a selection it never
       // asked for.
-      const superseded = loadVersion !== undefined && loadVersion !== this._loadCommentsVersion
       if (serverTopicId !== null && serverTopicId !== undefined && !superseded) {
         // Server says we are in this topic. 
         // If it differs from current, update state.
@@ -452,7 +460,8 @@ export default class extends Controller {
     const creativeId = this.creativeId
     const topicId = this.currentTopicId || null
     const topicIds = topicId ? null : this.renderedAllTopicIds
-    const pendingRead = { creativeId, topicId, topicIds }
+    const topicWatermarks = topicId ? null : this.renderedAllTopicWatermarks
+    const pendingRead = { creativeId, topicId, topicIds, topicWatermarks }
     this.pendingRead = pendingRead
     this.markReadTimeout = window.setTimeout(() => {
       this.markReadTimeout = null
@@ -460,7 +469,7 @@ export default class extends Controller {
       this.pendingRead = null
       if (!this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
 
-      this.updateReadPointer(creativeId, topicId, topicIds)
+      this.updateReadPointer(creativeId, topicId, topicIds, topicWatermarks)
     }, 2000);
   }
 
@@ -471,10 +480,10 @@ export default class extends Controller {
     if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     this.markReadTimeout = null
     this.pendingRead = null
-    this.updateReadPointer(pendingRead.creativeId, pendingRead.topicId, pendingRead.topicIds)
+    this.updateReadPointer(pendingRead.creativeId, pendingRead.topicId, pendingRead.topicIds, pendingRead.topicWatermarks)
   }
 
-  updateReadPointer(creativeId, topicId, topicIds = null) {
+  updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null) {
     if (!creativeId) return
 
     fetch('/comment_read_pointers/update', {
@@ -487,6 +496,7 @@ export default class extends Controller {
         creative_id: creativeId,
         topic_id: topicId,
         ...(topicIds ? { topic_ids: topicIds } : {}),
+        ...(topicWatermarks ? { topic_watermarks: topicWatermarks } : {}),
       }),
     }).then((response) => {
       if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return

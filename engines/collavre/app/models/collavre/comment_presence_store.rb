@@ -160,12 +160,13 @@ module Collavre
     end
 
     def self.release_solid_cache_lock(key, token)
-      value = SolidCache::Entry.read(key)
+      normalized_key = Rails.cache.send(:normalize_key, key, nil)
+      value = SolidCache::Entry.read(normalized_key)
       entry = Rails.cache.send(:deserialize_entry, value)
       return unless entry&.value == token
 
       SolidCache::Entry.where(
-        key_hash: Digest::SHA256.digest(key).unpack1("q>"),
+        key_hash: Digest::SHA256.digest(normalized_key).unpack1("q>"),
         value: value
       ).delete_all
     end
