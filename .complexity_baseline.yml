@@ -846,9 +846,6 @@ engines/collavre_slack/app/services/collavre_slack/slack_event_handler.rb:
   Metrics/MethodLength:
     CollavreSlack::SlackEventHandler#call: 32
     CollavreSlack::SlackEventHandler#find_or_map_user: 27
-lib/complexity_ratchet.rb:
-  Metrics/ModuleLength:
-    ComplexityRatchet: 257
 lib/local_engine_setup.rb:
   Metrics/AbcSize:
     LocalEngineSetup.run: 60.87
