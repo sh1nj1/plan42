@@ -61,7 +61,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # satellite resolves in this monorepo and breaks a host that installs the
   # core gem on its own. Ruby was the whole scan until now; this is the larger
   # half of what the gemspec packages.
-  JS_FILE = /\.(js|jsx|ts|tsx|mjs|cjs)(?:\.tt)?\z/
+  JS_FILE = /\.(js|jsx|ts|tsx|mjs|cjs|mts|cts)(?:\.tt)?\z/
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -443,7 +443,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   test "TypeScript sources are scanned as JavaScript modules" do
-    %w[entry.ts view.tsx entry.ts.tt view.tsx.tt].each do |path|
+    %w[entry.ts view.tsx entry.mts entry.cts entry.ts.tt view.tsx.tt entry.mts.tt entry.cts.tt].each do |path|
       assert javascript_source?(path), "#{path} is a shipped module source"
     end
   end
