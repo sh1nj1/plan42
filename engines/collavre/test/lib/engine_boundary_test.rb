@@ -512,6 +512,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
     assert_equal [ path ], asset_paths_in(%(stylesheet_link_tag "collavre_" + "#{satellite.delete_prefix('collavre_')}/slack_integration"))
     assert_equal [ path ], asset_paths_in(%(ActionController::Base.helpers.asset_path("#{path}")))
+    assert_equal [ path ], asset_paths_in(%(ApplicationController.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(view_context.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(self.helpers.asset_path("#{path}")))
@@ -896,6 +897,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require.apply(null, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].call(module, "#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"].apply(module, ["#{satellite}/template"])))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module.require?.("#{satellite}/template")))
@@ -904,6 +907,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.["require"]("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module["require"]("#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.module["require"].call(module, "#{satellite}/template")))
+    assert_empty js_imports_in(%(registry.module["require"].apply(module, ["#{satellite}/template"])))
     assert_empty js_imports_in(%(registry.module?.require("#{satellite}/template")))
     assert_empty js_imports_in(%(registry.require.call(null, "#{satellite}/template")))
     assert_empty js_imports_in(%(registry.require.apply(null, ["#{satellite}/template"])))
@@ -1631,7 +1636,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def js_specifiers(tokens)
     tokens.each_with_index.filter_map do |(kind, value), index|
       if kind == :string && value == "require"
-        next js_static_string_at(tokens, js_call_open_at(tokens, index + 1) + 1) if js_module_bracket_loader?(tokens, index)
+        next js_module_bracket_specifier(tokens, index) if js_module_bracket_loader?(tokens, index)
       end
       next unless kind == :word
 
@@ -1663,8 +1668,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     tokens[receiver] == [ :word, "module" ] && tokens[receiver - 1] != [ :punctuation, "." ]
   end
 
-  # `module["require"]()` is equivalent to `module.require()`, while a
-  # bracket call on any other object remains application code.
+  # `module["require"]` selects the native loader. A bracket selection on any
+  # other object remains application code.
   def js_module_bracket_loader?(tokens, index)
     receiver = index - 2
     receiver -= 2 if tokens[receiver] == [ :punctuation, "." ] && tokens[receiver - 1] == [ :punctuation, "?" ]
@@ -1672,8 +1677,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     tokens[index - 1] == [ :punctuation, "[" ] &&
       tokens[receiver] == [ :word, "module" ] &&
       (receiver.zero? || tokens[receiver - 1] != [ :punctuation, "." ]) &&
-      tokens[index + 1] == [ :punctuation, "]" ] &&
-      js_call_open_at(tokens, index + 1)
+      tokens[index + 1] == [ :punctuation, "]" ]
+  end
+
+  # A bracket-selected loader supports the same direct, `call`, and `apply`
+  # forms as the dot-selected `module.require` loader.
+  def js_module_bracket_specifier(tokens, index)
+    closing = index + 1
+
+    js_call_specifier(tokens, closing) ||
+      js_require_call_specifier(tokens, closing) ||
+      js_require_apply_specifier(tokens, closing)
   end
 
   def js_call_specifier(tokens, index)
@@ -2025,7 +2039,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def rails_asset_helper_receiver?(source)
-    source.match?(/\A(?:::)?ActionController::Base\.helpers\z|\A(?:self\.)?(?:helpers|view_context)\z/)
+    source.match?(/\A(?:::)?(?:ActionController::Base|ApplicationController)\.helpers\z|\A(?:self\.)?(?:helpers|view_context)\z/)
   end
 
   def asset_path_values(node)
