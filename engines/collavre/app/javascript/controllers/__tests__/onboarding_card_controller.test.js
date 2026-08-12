@@ -234,12 +234,16 @@ describe('OnboardingCardController', () => {
   })
 
   test('renders the completed state and ignores incomplete or failed responses', async () => {
-    state = { complete: true, instruction: 'All done.' }
+    state = { complete: true, instruction: 'All done.', completed_steps: ['welcome', 'done'] }
     await controller.refresh()
 
     expect(controller.instructionTarget.textContent).toBe('All done.')
     expect(controller.nextTarget.hidden).toBe(true)
     expect(controller.finishTarget.hidden).toBe(false)
+    expect(controller.currentStepValue).toBe('')
+    expect(controller.stepTargets.every((step) => !step.classList.contains('is-current'))).toBe(true)
+    expect(controller.stepTargets.every((step) => step.classList.contains('is-complete'))).toBe(true)
+    expect(document.querySelector('[data-guide-anchor="tree.node"]').classList.contains('guide-anchor-highlight')).toBe(false)
 
     state = {}
     await controller.refresh()

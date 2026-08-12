@@ -73,6 +73,9 @@ export default class extends Controller {
       this.instructionTarget.textContent = state.instruction
       this.nextTarget.hidden = true
       this.finishTarget.hidden = false
+      this.currentStepValue = ''
+      this.renderSteps(null, state.completed_steps)
+      this.highlight(null)
       return
     }
     if (!state.current_step) return
@@ -84,11 +87,15 @@ export default class extends Controller {
     this.instructionTarget.textContent = state.instruction
     this.nextTarget.hidden = state.completion !== 'ui'
     this.finishTarget.hidden = true
-    this.stepTargets.forEach((step) => {
-      step.classList.toggle('is-current', step.dataset.stepKey === state.current_step)
-      step.classList.toggle('is-complete', state.completed_steps.includes(step.dataset.stepKey))
-    })
+    this.renderSteps(state.current_step, state.completed_steps)
     this.highlight(state.anchor, state.anchor_key)
+  }
+
+  renderSteps(currentStep, completedSteps) {
+    this.stepTargets.forEach((step) => {
+      step.classList.toggle('is-current', step.dataset.stepKey === currentStep)
+      step.classList.toggle('is-complete', completedSteps.includes(step.dataset.stepKey))
+    })
   }
 
   currentPath() {
