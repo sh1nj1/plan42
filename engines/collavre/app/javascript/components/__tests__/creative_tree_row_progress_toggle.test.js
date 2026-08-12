@@ -127,6 +127,47 @@ test('rolls the box back to unchecked when activating it directly fails', async 
   expect(checkbox.checked).toBe(false)
 })
 
+// `pointer-events: none` on the saving row stops the mouse but not a checkbox
+// that already holds focus, so Space can re-enter the handler with the
+// optimistically inverted dataset and PATCH the opposite value. Two requests in
+// flight can settle out of order and leave the row on the losing one.
+test('ignores repeat activation while the PATCH is in flight', async () => {
+  csrfFetch.mockReturnValue(new Promise(() => {}))
+  const row = await mountRow(COMPLETE_TOGGLE)
+  const toggle = row.querySelector('[data-progress-toggle]')
+  const checkbox = toggle.querySelector('input')
+
+  checkbox.click()
+  checkbox.click()
+
+  expect(csrfFetch).toHaveBeenCalledTimes(1)
+  expect(toggle.dataset.currentProgress).toBe('0')
+  expect(toggle.dataset.newProgress).toBe('1')
+  expect(checkbox.checked).toBe(false)
+})
+
+// The server's progress_html replaces the toggle through unsafeHTML, which
+// discards the focused checkbox. Without restoring focus a keyboard user
+// toggles once and then Space scrolls the page instead of toggling back.
+test('keeps focus on the checkbox after the server re-renders the toggle', async () => {
+  csrfFetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ progress: 1, progress_html: COMPLETE_TOGGLE }),
+  })
+  const row = await mountRow(INCOMPLETE_TOGGLE)
+  const checkbox = row.querySelector('.progress-toggle-checkbox')
+  checkbox.focus()
+
+  checkbox.click()
+  await Promise.resolve()
+  await row.updateComplete
+  await row.updateComplete
+
+  const rendered = row.querySelector('.progress-toggle-checkbox')
+  expect(document.activeElement).toBe(rendered)
+  expect(rendered.checked).toBe(true)
+})
+
 test('restores checkbox metadata when a toggle request fails', async () => {
   jest.spyOn(console, 'error').mockImplementation(() => {})
   csrfFetch.mockResolvedValue({ ok: false, status: 422 })

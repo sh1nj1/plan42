@@ -25,12 +25,35 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
     "#creative-#{@leaf.id} .progress-toggle-wrap"
   end
 
-  def press_space_on_checkbox
+  def focus_checkbox
     checkbox = find("#{toggle_selector} .progress-toggle-checkbox", visible: :all)
     page.execute_script("arguments[0].focus()", checkbox)
-    assert page.evaluate_script("document.activeElement.classList.contains('progress-toggle-checkbox')"),
-           "expected the progress checkbox to hold focus"
+    assert checkbox_focused?, "expected the progress checkbox to hold focus"
+  end
+
+  def checkbox_focused?
+    page.evaluate_script(<<~JS)
+      !!document.activeElement &&
+        document.activeElement.classList.contains('progress-toggle-checkbox') &&
+        document.activeElement.closest('[data-creative-id="#{@leaf.id}"]') != null
+    JS
+  end
+
+  def assert_checkbox_keeps_focus(seconds: 3)
+    deadline = Time.current + seconds
+    while Time.current < deadline
+      assert checkbox_focused?, "expected focus to stay on the checkbox across every re-render"
+      sleep 0.2
+    end
+  end
+
+  def press_space
     page.driver.browser.action.send_keys(:space).perform
+  end
+
+  def press_space_on_checkbox
+    focus_checkbox
+    press_space
   end
 
   test "space toggles a leaf between complete and incomplete" do
@@ -63,5 +86,46 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
 
     assert_selector "#{toggle_selector}[data-current-progress='0']", wait: 5
     assert_no_selector "#{toggle_selector} .progress-toggle-checkbox:checked", visible: :all
+  end
+
+  # The server's markup replaces the toggle through unsafeHTML, so the focused
+  # checkbox is discarded. Focus once and never again: the second press has to
+  # land on the replacement, not scroll the page.
+  test "focus survives the server re-render so space toggles back" do
+    focus_checkbox
+    press_space
+
+    assert_selector "#{toggle_selector}[data-current-progress='1']", wait: 5
+    wait_for_network_idle(timeout: 10)
+    assert_equal 1, @leaf.reload.progress
+    # The broadcast for this update re-renders the row a second time, after the
+    # PATCH response already did, so focus has to survive both. Hold the
+    # assertion open rather than sampling once: a single sample passes in the
+    # gap between the two renders.
+    assert_checkbox_keeps_focus
+
+    press_space
+
+    assert_selector "#{toggle_selector}[data-current-progress='0']", wait: 5
+    wait_for_network_idle(timeout: 10)
+    assert_equal 0, @leaf.reload.progress
+  end
+
+  # `pointer-events: none` on the saving row stops the mouse but not a checkbox
+  # that already holds focus, so a second press before the PATCH settles would
+  # send the opposite value and the two could settle out of order.
+  test "space is ignored while the request is in flight" do
+    page.execute_script(<<~JS)
+      window.__patchCount = 0;
+      window.fetch = () => { window.__patchCount += 1; return new Promise(() => {}); };
+    JS
+
+    press_space_on_checkbox
+    assert_selector "#{toggle_selector}[data-current-progress='1']", wait: 5
+    press_space
+
+    assert_no_selector "#{toggle_selector}[data-current-progress='0']", wait: 2
+    assert_selector "#{toggle_selector} .progress-toggle-checkbox:checked", visible: :all
+    assert_equal 1, page.evaluate_script("window.__patchCount")
   end
 end
