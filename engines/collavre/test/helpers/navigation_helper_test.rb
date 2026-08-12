@@ -196,6 +196,29 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target]", count: 0
   end
 
+  # A scheme-relative URL inherits our scheme but not our port: the browser
+  # resolves "//host/docs" to the scheme's default port, so served on 4000 this
+  # link lands on port 80 — a different service.
+  test "help partial opens a configured scheme-relative link in a new tab when we run on a non-default port" do
+    request.host = "#{request.host}:4000"
+
+    SystemSetting.stub(:help_menu_link, "//#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured scheme-relative link carrying our non-default port in the current window" do
+    request.host = "#{request.host}:4000"
+
+    SystemSetting.stub(:help_menu_link, "//#{request.host}:4000/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
   test "help partial opens a configured relative link in the current window" do
     SystemSetting.stub(:help_menu_link, "/docs/help") do
       render partial: "collavre/shared/navigation/help_button"

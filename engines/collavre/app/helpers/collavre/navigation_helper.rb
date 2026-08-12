@@ -66,17 +66,19 @@ module Collavre
     # scheme or port on the same host is a different service (the desktop shell
     # runs on 127.0.0.1, where a docs server on another port shares our host but
     # none of our pages), and navigating in place would replace the app with
-    # something that cannot offer a way back. A scheme-relative or port-less URL
-    # inherits ours, so it still counts as internal. Relative paths and
-    # same-origin absolute URLs are ours and stay in the current window. A
-    # malformed setting is treated as internal: the anchor then behaves like any
-    # other in-app link rather than silently opening a tab.
+    # something that cannot offer a way back. A scheme-relative URL ("//host/x")
+    # inherits only our scheme: the browser resolves the omitted port to that
+    # scheme's default, not to the port we happen to be served on, so that is
+    # what we compare. Relative paths and same-origin absolute URLs are ours and
+    # stay in the current window. A malformed setting is treated as internal:
+    # the anchor then behaves like any other in-app link rather than silently
+    # opening a tab.
     def external_link?(url)
       uri = URI.parse(url.to_s)
       return false if uri.host.blank?
 
       scheme = uri.scheme.presence&.downcase || request.scheme
-      port = uri.port || request.port
+      port = uri.port || URI.scheme_list[scheme.upcase]&.default_port
 
       [ scheme, uri.host.downcase, port ] !=
         [ request.scheme, request.host.downcase, request.port ]
