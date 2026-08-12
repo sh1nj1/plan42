@@ -56,8 +56,9 @@ module Collavre
           # CommentBadgeIndex; re-checking here would be one cache read per node,
           # which is exactly what the batch exists to avoid.
           if unread_count.nil?
-            unread_count = unread_count_for(origin, comments_count)
-            unread_count = 0 if viewing_now?(origin)
+            badge_index = Creatives::CommentBadgeIndex.new(user: Current.user)
+            badge_index.index([ origin ])
+            unread_count = badge_index.unread_count_for(origin)
           end
           classes = [ "comments-btn", "creative-action-btn" ]
           classes << "no-comments" if comments_count.zero?
@@ -98,24 +99,6 @@ module Collavre
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
       end
-    end
-
-    # Unread comments on `origin` for the current user. With no read pointer,
-    # every comment is unread. Batched by CommentBadgeIndex for the browse tree;
-    # this is the single-creative path.
-    def unread_count_for(origin, comments_count)
-      pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
-      last_read_id = pointer&.last_read_comment_id
-      return comments_count unless last_read_id
-
-      origin.comments.where("id > ? and private = ?", last_read_id, false).count
-    end
-
-    # Someone with the chat open has read it, so their badge shows nothing.
-    def viewing_now?(origin)
-      return false unless Current.user
-
-      CommentPresenceStore.list(origin.id).include?(Current.user.id)
     end
 
     def render_progress_toggle(creative, value)
