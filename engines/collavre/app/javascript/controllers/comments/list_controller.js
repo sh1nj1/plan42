@@ -620,14 +620,35 @@ export default class extends Controller {
     return Boolean(this.popupController?.topicsController?.isArchivedTopic?.(topicId))
   }
 
+  // All Messages sends a bounded per-topic snapshot so a later archive change
+  // cannot mark comments the list did not render as read. A visible live append
+  // extends that bound for its already-rendered topic before the read debounce
+  // captures it. Do not add a topic absent from the initial snapshot: it may
+  // have been unarchived after the list loaded, leaving older comments unseen.
+  recordRenderedAllTopicWatermark(comment) {
+    if (!comment || this.currentTopicId || !this.renderedAllTopicWatermarks) return
+
+    const topicId = comment.dataset.topicId
+    const commentId = Number.parseInt(comment.dataset.commentId, 10)
+    if (!topicId || !Number.isSafeInteger(commentId) || commentId <= 0) return
+    if (!Object.hasOwn(this.renderedAllTopicWatermarks, topicId)) return
+
+    const previousId = Number.parseInt(this.renderedAllTopicWatermarks[topicId], 10)
+    if (!Number.isSafeInteger(previousId) || commentId > previousId) {
+      this.renderedAllTopicWatermarks[topicId] = commentId
+    }
+  }
+
   handleStreamRender(event) {
     // Only care about streams targeting our list
     if (event.target.target !== 'comments-list') return
 
     // Deduplication: If manually appended by form_controller, block the stream echo.
+    let appendedComment = null
     if (event.target.action === 'append') {
       const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
       const firstChild = templateContent?.firstElementChild
+      appendedComment = firstChild
 
       // Check for topic context mismatch. Runs ahead of the search block below:
       // both block the append, but only this one badges, and the badge is the
@@ -689,7 +710,10 @@ export default class extends Controller {
       // The append is about to become visible. Mark it read after the existing
       // debounce, so a reconnect or popup close cannot turn a viewed live
       // message back into an unread one.
-      if (event.target.action === 'append') this.markCommentsRead()
+      if (event.target.action === 'append') {
+        this.recordRenderedAllTopicWatermark(appendedComment)
+        this.markCommentsRead()
+      }
     }
   }
 

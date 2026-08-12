@@ -14,8 +14,8 @@ const streamEvent = ({ action = 'append', target = 'comments-list', html = '' } 
   }
 }
 
-const comment = (topicId) =>
-  `<div id="comment_9" class="comment-item" data-topic-id="${topicId}">hello</div>`
+const comment = (topicId, commentId = 9) =>
+  `<div id="comment_${commentId}" class="comment-item" data-comment-id="${commentId}" data-topic-id="${topicId}">hello</div>`
 
 // currentTopicId "" is the All Messages view. archivedIds stands in for the
 // topics controller's archived_topics, which is what the real lookup reads.
@@ -75,6 +75,25 @@ describe('CommentsListController archived streams in All Messages', () => {
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(badgeEvents).toEqual([])
     expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
+  })
+
+  test('extends the rendered All Messages watermark for a visible live append', () => {
+    const controller = buildController()
+    controller.renderedAllTopicWatermarks = { 2: 8 }
+
+    controller.handleStreamRender(streamEvent({ html: comment(2, 9) }))
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 2: 9 })
+    expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not add a topic absent from the rendered All Messages snapshot', () => {
+    const controller = buildController()
+    controller.renderedAllTopicWatermarks = { 2: 8 }
+
+    controller.handleStreamRender(streamEvent({ html: comment(3, 9) }))
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 2: 8 })
   })
 
   test('does not mark a foreign message read', () => {

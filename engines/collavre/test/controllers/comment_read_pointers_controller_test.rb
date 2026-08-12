@@ -106,6 +106,23 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal hidden.id, topic.comments.maximum(:id)
   end
 
+  test "All Messages never moves an existing topic pointer backwards" do
+    topic = @creative.topics.create!(name: "Concurrent", user: @user)
+    rendered = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "rendered")
+    newer = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "newer")
+    CommentReadPointer.create!(user: @user, creative: @creative.effective_origin, topic: topic, last_read_comment_id: newer.id)
+
+    post "/comment_read_pointers/update", params: {
+      creative_id: @creative.id,
+      topic_ids: [ topic.id ],
+      topic_watermarks: { topic.id => rendered.id }
+    }, as: :json
+
+    assert_response :success
+    pointer = CommentReadPointer.find_by!(user: @user, creative: @creative.effective_origin, topic: topic)
+    assert_equal newer.id, pointer.last_read_comment_id
+  end
+
   test "rejects a topic from another creative" do
     foreign_topic = Creative.create!(user: @user, description: "Foreign").main_topic
 

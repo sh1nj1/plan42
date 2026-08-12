@@ -57,12 +57,21 @@ module Collavre
     end
 
     def update_pointer(creative, topic, last_id)
-      pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative, topic: topic)
-      previous_last_read_id = pointer.last_read_comment_id
-      pointer.update!(last_read_comment_id: last_id)
+      pointer = CommentReadPointer.find_or_create_by!(user: Current.user, creative: creative, topic: topic)
+      previous_last_read_id = nil
+      updated_last_read_id = nil
 
-      broadcast_read_receipts(creative, previous_last_read_id, topic: topic) if previous_last_read_id && previous_last_read_id != last_id
-      broadcast_read_receipts(creative, last_id, topic: topic)
+      # A delayed All Messages update may contain an older rendered watermark
+      # than one already saved by another tab. Locking the row makes the
+      # read/maximum/write sequence forward-only under concurrent requests.
+      pointer.with_lock do
+        previous_last_read_id = pointer.last_read_comment_id
+        updated_last_read_id = [ previous_last_read_id, last_id ].compact.max
+        pointer.update!(last_read_comment_id: updated_last_read_id) if previous_last_read_id != updated_last_read_id
+      end
+
+      broadcast_read_receipts(creative, previous_last_read_id, topic: topic) if previous_last_read_id && previous_last_read_id != updated_last_read_id
+      broadcast_read_receipts(creative, updated_last_read_id, topic: topic)
     end
 
     def broadcast_read_receipts(creative, comment_id, topic:)
