@@ -78,8 +78,24 @@ class CreativeTreeRow extends LitElement {
     this._extractTemplates();
   }
 
+  // `progressHtml` is committed through unsafeHTML, so every render that changes
+  // it discards the toggle — including the broadcast that lands after the PATCH
+  // this row already applied. A keyboard user would toggle once and then Space
+  // would scroll the page, so remember focus here and restore it in updated().
+  update(changedProperties) {
+    this._progressHadFocus = this._progressToggle != null &&
+      this._progressToggle.contains(document.activeElement);
+    super.update(changedProperties);
+  }
+
   updated(changedProperties) {
     this._attachHandlers();
+
+    if (this._progressHadFocus) {
+      this._progressHadFocus = false;
+      const checkbox = this.querySelector(".progress-toggle-checkbox");
+      if (checkbox && checkbox !== document.activeElement) checkbox.focus();
+    }
 
     // Re-tokenize the server-rendered description code blocks with hljs so they
     // match the editor's palette and follow light/dark theme. Idempotent: only
@@ -540,16 +556,34 @@ class CreativeTreeRow extends LitElement {
   }
 
   async _handleProgressToggle(event) {
-    event.preventDefault();
-    event.stopPropagation();
     const wrap = event.currentTarget;
+    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
+    // Activating the input itself (Space, or a click landing on the box) flips
+    // `checked` before the click reaches this handler, and preventDefault would
+    // flip it back once dispatch finishes. Leave that activation alone and set
+    // the state explicitly below; cancel the default for every other target.
+    const nativeActivation = checkbox != null && event.target === checkbox;
+    if (!nativeActivation) event.preventDefault();
+    event.stopPropagation();
+    // `pointer-events: none` on the saving row stops the mouse but not a
+    // checkbox that already holds focus, so Space can re-enter here while a
+    // PATCH is in flight. The dataset is already inverted at that point, so a
+    // second request would carry the opposite value and the two could settle
+    // out of order. Drop the activation and put the box back on the dataset.
+    if (wrap.classList.contains("progress-toggle-saving")) {
+      if (checkbox) checkbox.checked = wrap.dataset.currentProgress === "1";
+      return;
+    }
     const creativeId = wrap.dataset.creativeId;
     const newProgress = wrap.dataset.newProgress;
-    if (!creativeId || newProgress == null) return;
+    // The dataset is the source of truth: `checked` may already be flipped.
+    const wasComplete = wrap.dataset.currentProgress === "1";
+    if (!creativeId || newProgress == null) {
+      if (checkbox) checkbox.checked = wasComplete;
+      return;
+    }
 
     // Optimistic UI: toggle the always-visible checkbox immediately.
-    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
-    const wasComplete = checkbox?.checked;
     const previousCurrentProgress = wrap.dataset.currentProgress;
     const previousNewProgress = wrap.dataset.newProgress;
     const previousTitle = wrap.title;

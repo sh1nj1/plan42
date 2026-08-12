@@ -111,6 +111,10 @@ module Collavre
       end
     end
 
+    # Rendered when the completion mark is blank, so the completed state keeps a
+    # stable baseline and a tappable hit area.
+    NBSP = "\u00A0"
+
     def render_progress_toggle(creative, value)
       complete = value == 1
       new_value = complete ? 0 : 1
@@ -121,7 +125,10 @@ module Collavre
         data: {
           progress_toggle: true,
           creative_id: creative.id,
-          current_progress: value,
+          # progress is a decimal, so the raw value serializes as "1.0" and the
+          # CSS/JS state checks against "1" would never match. Both sides of the
+          # toggle only ever mean 0 or 1, so emit it as an integer.
+          current_progress: complete ? 1 : 0,
           new_progress: new_value,
           mark_complete: t("collavre.creatives.index.mark_complete"),
           mark_incomplete: t("collavre.creatives.index.mark_incomplete")
@@ -132,11 +139,21 @@ module Collavre
           type: "checkbox",
           checked: complete || nil,
           class: "progress-toggle-checkbox",
-          tabindex: -1,
           "aria-label": tooltip
         )
-        checkbox
+        # A completed leaf reads as the admin completion mark (blank by default),
+        # the same way parent rows already render 100%. CSS swaps the mark back to
+        # the checked box on hover/focus so a mis-click is undone in place instead
+        # of through the inline editor. The checkbox stays the accessible control;
+        # the mark is decorative.
+        checkbox + tag.span(completion_mark_display, class: "progress-toggle-mark", aria: { hidden: true })
       end
+    end
+
+    # Blank (the default) collapses to a non-breaking space so the completed state
+    # keeps a stable baseline and a tappable hit area inside the toggle.
+    def completion_mark_display
+      completion_mark.to_s.presence || NBSP
     end
 
     def progress_toggleable?(value)
