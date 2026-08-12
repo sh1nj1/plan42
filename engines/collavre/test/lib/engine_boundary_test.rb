@@ -205,6 +205,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{prefix}" + "#{suffix}"))))
   end
 
+  test "detector folds a static string before scanning class references" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+    midpoint = satellite.length / 2
+    prefix = satellite[...midpoint]
+    suffix = satellite[midpoint..]
+
+    assert_equal [ "#{satellite}::Account" ],
+      names(string_references_in(%(belongs_to :account, class_name: "#{prefix}" + "#{suffix}::Account")))
+  end
+
   test "detector flags a satellite class named by a static symbol" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -1340,7 +1350,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     if node.is_a?(Prism::StringNode)
       found << [ node.unescaped, node.location.start_line ]
     else
-      node.compact_child_nodes.each { |child| located_string_literals_in(child, found) }
+      concatenation = static_string_concatenation(node)
+      if concatenation && string_literals_in(node).none? { |value| value.match?(SATELLITE_IN_STRING) }
+        found << [ concatenation, node.location.start_line ]
+      else
+        node.compact_child_nodes.each { |child| located_string_literals_in(child, found) }
+      end
     end
 
     found
@@ -1353,9 +1368,6 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       node.arguments&.arguments.to_a&.each do |argument|
         if argument.is_a?(Prism::SymbolNode)
           found << [ argument.unescaped, argument.location.start_line ]
-        elsif argument.is_a?(Prism::CallNode) && argument.name == :+
-          value = static_string_concatenation(argument)
-          found << [ value, argument.location.start_line ] if value
         end
       end
     end
