@@ -69,6 +69,22 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal archived.id, archived_topic.comments.maximum(:id)
   end
 
+  test "All Messages treats an explicitly empty rendered topic snapshot as authoritative" do
+    active_topic = @creative.topics.create!(name: "Active", user: @user)
+    unseen = Comment.create!(creative: @creative, topic: active_topic, user: users(:two), content: "arrived after empty list")
+
+    post "/comment_read_pointers/update", params: {
+      creative_id: @creative.id,
+      topic_ids: [],
+      topic_watermarks: {}
+    }, as: :json
+
+    assert_response :success
+    assert_nil CommentReadPointer.find_by(user: @user, creative: @creative.effective_origin, topic: active_topic)
+    assert_equal({ active_topic.id => 1 }, Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative))
+    assert_equal unseen.id, active_topic.comments.maximum(:id)
+  end
+
   test "All Messages does not mark a topic unarchived after the list rendered as read" do
     active_topic = @creative.topics.create!(name: "Active", user: @user)
     newly_unarchived_topic = @creative.topics.create!(name: "Later", user: @user, archived_at: Time.current)

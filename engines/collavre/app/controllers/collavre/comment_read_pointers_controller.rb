@@ -9,7 +9,12 @@ module Collavre
       if topic
         update_topic_pointer(creative, topic)
       else
-        update_all_topic_pointers(creative, params[:topic_ids], params[:topic_watermarks])
+        update_all_topic_pointers(
+          creative,
+          params[:topic_ids],
+          params[:topic_watermarks],
+          rendered_topic_ids_supplied: params.key?(:topic_ids)
+        )
       end
 
       Comment.broadcast_badge(creative, Current.user)
@@ -28,7 +33,7 @@ module Collavre
     # advance the retained legacy pointer here: an archived topic without its
     # own pointer falls back to it, so moving that watermark would silently mark
     # its hidden comments as read.
-    def update_all_topic_pointers(creative, rendered_topic_ids, rendered_topic_watermarks)
+    def update_all_topic_pointers(creative, rendered_topic_ids, rendered_topic_watermarks, rendered_topic_ids_supplied: false)
       visible_comments = creative.comments.visible_to(Current.user)
       raw_topic_watermarks = rendered_topic_watermarks.respond_to?(:to_unsafe_h) ? rendered_topic_watermarks.to_unsafe_h : rendered_topic_watermarks.to_h
       legacy_watermark = raw_topic_watermarks[LEGACY_TOPIC_WATERMARK_KEY].to_i
@@ -46,10 +51,10 @@ module Collavre
       update_legacy_pointer(creative, visible_comments, legacy_watermark) if legacy_watermark.positive?
       return if topic_watermarks.any? || legacy_watermark.positive?
 
-      # Current clients send the active-topic snapshot that produced the open
-      # All Messages list. Keep the active-topic fallback for clients deployed
-      # before the snapshot header/API pair.
-      topics = if rendered_topic_ids.present?
+      # Current clients send the rendered-topic snapshot that produced the open
+      # All Messages list. An explicitly empty snapshot is authoritative; keep
+      # the active-topic fallback only for clients deployed before this API.
+      topics = if rendered_topic_ids_supplied
         creative.topics.where(id: Array(rendered_topic_ids))
       else
         creative.topics.active
