@@ -195,6 +195,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
 
+  test "detector flags a satellite class named by a static symbol" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ satellite ], names(string_references_in("Object.const_get(:#{satellite})"))
+  end
+
   test "string detector resolves Ruby escapes before checking satellite constants" do
     satellite = SATELLITE_CONSTANTS.keys.first
     escaped = satellite.sub(/[A-Z]/) { |letter| "\\u%04X" % letter.ord }
@@ -1157,7 +1163,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def located_string_literals_in(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    if node.is_a?(Prism::StringNode)
+    if node.is_a?(Prism::StringNode) || node.is_a?(Prism::SymbolNode)
       found << [ node.unescaped, node.location.start_line ]
     else
       node.compact_child_nodes.each { |child| located_string_literals_in(child, found) }

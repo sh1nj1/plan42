@@ -113,12 +113,13 @@ module ComplexityRatchet
     # loud crash is the cheaper failure. (Prism reports syntax errors in the
     # result rather than raising, so a malformed file still parses to a tree.)
     def self.for(source)
-      map = new
+      map = new(source)
       Prism.parse(source).value.accept(map)
       map
     end
 
-    def initialize
+    def initialize(source)
+      @source = source
       @paths = {}
       @ranges = {}
       @enclosures = []
@@ -224,7 +225,7 @@ module ComplexityRatchet
     # `[lambda]` rather than a name because a lambda literal has none; siblings
     # separate through the usual ordinal.
     def visit_lambda_node(node)
-      nest("[lambda]", node.location) { super }
+      nest("[lambda]", node.location, anchor: lambda_anchor(node)) { super }
     end
 
     # Keep every sibling population so verification catches ordinal transfers
@@ -235,9 +236,10 @@ module ComplexityRatchet
     end
 
     # Anchors distinguish replacements that keep the same ordinalised key.
-    # Unique blocks keep theirs too, because a changed call can otherwise
-    # replace the block while retaining its unsuffixed identity.
-    def sibling_anchors = @sibling_anchors.select { |path, _| path.include?("[block:") || @occurrences[path] > 1 }
+    # Unique blocks and lambdas keep theirs too, because a changed call or
+    # assignment can otherwise replace the scope while retaining its
+    # unsuffixed identity.
+    def sibling_anchors = @sibling_anchors.select { |path, _| path.match?(/\[(?:block:|lambda\])/) || @occurrences[path] > 1 }
 
     private
 
@@ -273,6 +275,15 @@ module ComplexityRatchet
     def block_anchor(node)
       node.location.slice[0...(node.block.location.start_offset - node.location.start_offset)]
         .gsub(/\s+/, " ").strip
+    end
+
+    # The literal is anonymous, but its statement prefix is stable when it is
+    # assigned or passed to a call. This distinguishes a replacement from a
+    # smaller version of the same unique lambda without making its body part of
+    # the identity.
+    def lambda_anchor(node)
+      prefix = @source.byteslice(0, node.location.start_offset).split("\n").last.to_s.strip
+      prefix.empty? ? "[lambda]" : prefix
     end
 
     # Two indexes, because a start line alone is not an identity. In a chained
@@ -788,8 +799,8 @@ module ComplexityRatchet
         "a same-named sibling was removed, so this entry may have inherited that sibling's " \
           "allowance — #{value} is above the #{floor} the family was recorded at"
       elsif unique_anchor_changed
-        "the block changed its call anchor, so a new block may have inherited " \
-          "the old block's allowance"
+        "a uniquely named scope changed its source anchor, so a new scope may have inherited " \
+          "the old scope's allowance"
       elsif anchors_reordered && baseline_incomplete
         "same-named siblings changed order while at least one sibling was not baselined, so an " \
           "allowance may have moved to a previously unrecorded entity"
