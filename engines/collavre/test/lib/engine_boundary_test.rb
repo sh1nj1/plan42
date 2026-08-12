@@ -155,15 +155,41 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   test "gemspec detector rejects conditional satellite dependencies" do
     source = <<~RUBY
-      Gem::Specification.new do |spec|
-        spec.add_dependency "collavre_windows", ">= 1.0" if Gem.win_platform?
-        spec.add_runtime_dependency("collavre_macos", "~> 2.0") unless Gem.win_platform?
+      Gem::Specification.new do |gemspec|
+        gemspec.add_dependency "collavre_windows", ">= 1.0" if Gem.win_platform?
+        gemspec.add_runtime_dependency("collavre_macos", "~> 2.0") unless Gem.win_platform?
         add_dependency "collavre_linux" if Gem.win_platform?
         dependency_source.add_dependency "collavre_unrelated"
       end
     RUBY
 
     assert_equal %w[collavre_linux collavre_macos collavre_windows],
+      satellite_gem_dependencies(gemspec_dependency_names_in(source)).sort
+  end
+
+  test "gemspec detector scopes its block parameter to the specification block" do
+    source = <<~RUBY
+      Gem::Specification.new do |gemspec|
+        sources.each do |gemspec = nil|
+          gemspec.add_dependency "collavre_slack"
+        end
+      end
+    RUBY
+
+    assert_empty satellite_gem_dependencies(gemspec_dependency_names_in(source))
+  end
+
+  test "gemspec detector recognizes top-level and optional specification parameters" do
+    source = <<~RUBY
+      ::Gem::Specification.new do |gemspec|
+        gemspec.add_dependency "collavre_windows" if Gem.win_platform?
+      end
+      Gem::Specification.new do |manifest = nil|
+        manifest.add_dependency "collavre_macos" if Gem.mac?
+      end
+    RUBY
+
+    assert_equal %w[collavre_macos collavre_windows],
       satellite_gem_dependencies(gemspec_dependency_names_in(source)).sort
   end
 
@@ -807,6 +833,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = require["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require?.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require?.["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require.resolve.call(require, "#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require.resolve.apply(require, ["#{satellite}/thing"]);) => "#{satellite}/thing",
+      %(const t = require.resolve.bind(require)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = module["require"]["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta["resolve"]("#{satellite}/thing");) => "#{satellite}/thing",
@@ -1894,10 +1923,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     resolve = js_function_property_at(tokens, index, "resolve")
     return js_require_bound_specifier(tokens, index) unless resolve
 
-    open = js_call_open_at(tokens, resolve)
-    return unless open
-
-    js_static_string_at(tokens, open + 1)
+    js_call_specifier(tokens, resolve) ||
+      js_function_call_specifier(tokens, resolve) ||
+      js_function_apply_specifier(tokens, resolve) ||
+      js_require_bound_specifier(tokens, resolve)
   end
 
   def js_import_meta_resolve?(tokens, index)
@@ -2685,23 +2714,45 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     static_string_concatenation(call.arguments&.arguments&.first)
   end
 
-  def gemspec_dependency_calls(node, found = [])
+  def gemspec_dependency_calls(node, found = [], gemspec_receivers: [], specification_block: false)
     return found unless node.is_a?(Prism::Node)
 
-    found << node if gemspec_dependency_call?(node)
-    node.compact_child_nodes.each { |child| gemspec_dependency_calls(child, found) }
+    gemspec_receivers -= block_parameter_names(node) if node.is_a?(Prism::BlockNode) && !specification_block
+    found << node if gemspec_dependency_call?(node, gemspec_receivers)
+    node.compact_child_nodes.each do |child|
+      nested_specification_block = gemspec_specification_block?(node, child)
+      receivers = nested_specification_block ? gemspec_block_receivers(child) : gemspec_receivers
+      gemspec_dependency_calls(child, found, gemspec_receivers: receivers, specification_block: nested_specification_block)
+    end
     found
   end
 
-  def gemspec_dependency_call?(node)
+  def gemspec_dependency_call?(node, gemspec_receivers)
     return false unless node.is_a?(Prism::CallNode)
     return false unless %i[add_dependency add_runtime_dependency].include?(node.name)
 
-    node.receiver.nil? || gemspec_spec_receiver?(node.receiver)
+    node.receiver.nil? || gemspec_spec_receiver?(node.receiver, gemspec_receivers)
   end
 
-  def gemspec_spec_receiver?(receiver)
-    return receiver.name == :spec if receiver.is_a?(Prism::LocalVariableReadNode)
+  def gemspec_specification_block?(node, child)
+    node.is_a?(Prism::CallNode) && node.name == :new && node.block.equal?(child) &&
+      node.receiver&.slice&.delete_prefix("::") == "Gem::Specification"
+  end
+
+  # Gem::Specification yields the specification as its first block argument.
+  # Track its declared name so static checks are independent of local spelling.
+  def gemspec_block_receivers(block)
+    parameters = block.parameters&.parameters
+    parameter = parameters&.requireds&.first || parameters&.optionals&.first
+    parameter ? [ parameter.name ] : []
+  end
+
+  def block_parameter_names(block)
+    block.locals
+  end
+
+  def gemspec_spec_receiver?(receiver, gemspec_receivers)
+    return gemspec_receivers.include?(receiver.name) if receiver.is_a?(Prism::LocalVariableReadNode)
 
     receiver.is_a?(Prism::CallNode) && receiver.receiver.nil? && receiver.name == :spec &&
       receiver.arguments.nil?
