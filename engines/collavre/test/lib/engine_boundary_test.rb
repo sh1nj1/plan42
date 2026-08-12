@@ -927,6 +927,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.require?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module["require"]?.("#{satellite}/template")))
     assert_equal [ "#{satellite}/template" ], js_imports_in(%(module?.["require"]("#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.call(null, "#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.["call"](null, "#{satellite}/template")))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.apply(null, ["#{satellite}/template"])))
+    assert_equal [ "#{satellite}/template" ], js_imports_in(%(require?.["apply"](null, ["#{satellite}/template"])))
     assert_equal [ "//tmp/#{satellite}/template" ], js_imports_in(%(require("//tmp/#{satellite}/template")))
     assert_equal [ "file:///tmp/#{satellite}/template" ], js_imports_in(%(import("file:///tmp/#{satellite}/template")))
     assert_empty js_imports_in(%(registry.module.require("#{satellite}/template")))
@@ -1790,6 +1794,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def js_function_property_at(tokens, index, name)
+    if tokens[index + 1] == [ :punctuation, "?" ] && tokens[index + 2] == [ :punctuation, "." ]
+      return index + 3 if tokens[index + 3] == [ :word, name ]
+      return index + 5 if tokens[index + 3] == [ :punctuation, "[" ] && tokens[index + 4] == [ :string, name ] && tokens[index + 5] == [ :punctuation, "]" ]
+    end
+
     return index + 2 if tokens[index + 1] == [ :punctuation, "." ] && tokens[index + 2] == [ :word, name ]
     index + 3 if tokens[index + 1] == [ :punctuation, "[" ] && tokens[index + 2] == [ :string, name ] && tokens[index + 3] == [ :punctuation, "]" ]
   end
