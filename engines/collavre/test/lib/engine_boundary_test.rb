@@ -342,6 +342,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(::Object::Kernel.require "#{feature}"))
   end
 
+  test "detector flags a reflectively invoked Kernel loader" do
+    satellite = SATELLITES.first
+    feature = "#{satellite}/some_service"
+
+    assert_equal [ feature ], requires_in(%(Kernel.send(:require, "#{feature}")))
+    assert_equal [ "#{feature}.rb" ], requires_in(%(::Kernel.public_send(:load, "#{feature}.rb")))
+    assert_empty requires_in(%(registry.send(:require, "#{feature}")))
+    assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
+  end
+
   # The counterpart. A nested `Wrapper::Kernel` is somebody else's constant and
   # raises NameError in Ruby, so the walk has to reach the root rather than
   # accept any path whose last segment reads "Kernel".
@@ -1775,9 +1785,27 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def loader_calls(node, found = [])
     return found unless node.is_a?(Prism::Node)
 
-    found << node if node.is_a?(Prism::CallNode) && LOADER_METHODS.include?(node.name.to_s)
+    found << node if node.is_a?(Prism::CallNode) && loader_method(node)
     node.compact_child_nodes.each { |child| loader_calls(child, found) }
     found
+  end
+
+  # `Kernel.send(:require, path)` and `Kernel.public_send(:load, path)` invoke
+  # the same loaders as direct calls. Limit this to static symbols so a dynamic
+  # dispatch is not mistaken for a dependency that cannot be known statically.
+  def loader_method(call)
+    direct_loader_method(call) || reflected_loader_method(call)
+  end
+
+  def direct_loader_method(call)
+    call.name.to_s if LOADER_METHODS.include?(call.name.to_s)
+  end
+
+  def reflected_loader_method(call)
+    return unless %w[send public_send].include?(call.name.to_s)
+
+    method_name = call.arguments&.arguments&.first
+    method_name.unescaped if method_name.is_a?(Prism::SymbolNode) && LOADER_METHODS.include?(method_name.unescaped)
   end
 
   # Literals nested in a loader argument still contribute to the path the
@@ -1788,10 +1816,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # The static parts of an interpolated string count: the engine name in
   # "#{root}/collavre_slack/foo" is still a literal reference to it.
   def string_arguments(call)
-    call.arguments&.arguments.to_a.flat_map do |argument|
+    loader_arguments(call).flat_map do |argument|
       static_concatenation = static_string_concatenation(argument)
       static_concatenation.nil? ? string_literals_in(argument) : [ static_concatenation ]
     end
+  end
+
+  def loader_arguments(call)
+    arguments = call.arguments&.arguments.to_a
+    reflected_loader_method(call) ? arguments.drop(1) : arguments
   end
 
   def static_string_concatenation(node)
