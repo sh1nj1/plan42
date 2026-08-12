@@ -57,7 +57,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     asset_path asset_url path_to_asset
     stylesheet_link_tag stylesheet_path stylesheet_url path_to_stylesheet
     javascript_include_tag javascript_path javascript_url path_to_javascript
-    image_tag image_path image_url path_to_image
+    image_tag image_path image_url path_to_image picture_tag
     video_tag video_path video_url path_to_video
     audio_tag audio_path audio_url path_to_audio
     font_path font_url path_to_font favicon_link_tag
@@ -568,7 +568,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITES.first
     path = "#{satellite}/slack_integration"
 
-    %w[stylesheet_link_tag javascript_include_tag image_tag asset_path].each do |helper|
+    %w[stylesheet_link_tag javascript_include_tag image_tag picture_tag asset_path].each do |helper|
       assert_equal [ path ], asset_paths_in(%(#{helper} "#{path}")), helper
     end
     assert_equal [ path ], asset_paths_in(%(stylesheet_link_tag "collavre_" + "#{satellite.delete_prefix('collavre_')}/slack_integration"))
@@ -598,6 +598,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITES.first
 
     assert_empty asset_paths_in(%(registry.image_tag("#{satellite}/slack_integration")))
+    assert_empty asset_paths_in(%(registry.picture_tag("#{satellite}/slack_integration")))
   end
 
   test "detector flags satellite asset paths in packaged CSS" do
