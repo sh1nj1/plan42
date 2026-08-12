@@ -30,13 +30,18 @@ export default class extends Controller {
   }
 
   async advance() {
-    await csrfFetch(this.advanceUrlValue, { method: 'POST' })
+    await csrfFetch(this.advanceUrlValue, this.sessionRequestOptions())
     this.refreshGeneration += 1
     this.refresh()
   }
 
   async complete() {
-    const response = await csrfFetch(this.completeUrlValue, { method: 'POST' })
+    const response = await csrfFetch(this.completeUrlValue, this.sessionRequestOptions())
+    if (!response.ok) {
+      this.refreshGeneration += 1
+      this.refresh()
+      return
+    }
     const data = await response.json()
     if (data.redirect_url) this.navigate(data.redirect_url)
   }
@@ -142,5 +147,13 @@ export default class extends Controller {
 
   workspaceTreeDismissedKey() {
     return `${WORKSPACE_TREE_DISMISSED_KEY_PREFIX}:${this.sessionIdValue}`
+  }
+
+  sessionRequestOptions() {
+    return {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: this.sessionIdValue }),
+    }
   }
 }

@@ -52,19 +52,40 @@ module Collavre
       sign_in_as(user, password: "password")
       session = Onboarding::Seeder.new(user: user).call
 
-      post advance_onboarding_path, as: :json
+      post advance_onboarding_path, params: { session_id: session.session_id }, as: :json
 
       assert_response :success
       assert_equal "progress", response.parsed_body.fetch("current_step")
       assert_equal session.practice_creative_ids.first, response.parsed_body.fetch("anchor_key")
       assert_equal creatives_path(id: session.root), response.parsed_body.fetch("navigation_path")
 
-      post complete_onboarding_path, as: :json
+      post complete_onboarding_path, params: { session_id: session.session_id }, as: :json
 
       assert_response :success
       assert user.reload.onboarding_completed_at?
       assert_nil Onboarding::Session.for_user(user)
       assert_nil Creative.find_by(id: session.root.id)
+    end
+
+    test "rejects stale card mutations after onboarding is reset in another tab" do
+      user = User.create!(name: "Stale learner", email: "stale-onboarding-actions@example.com", password: "password")
+      sign_in_as(user, password: "password")
+      stale_session = Onboarding::Seeder.new(user: user).call
+
+      post reset_onboarding_path
+      replacement_session = Onboarding::Session.for_user(user.reload)
+
+      post advance_onboarding_path, params: { session_id: stale_session.session_id }, as: :json
+
+      assert_response :conflict
+      assert_equal :tree_node, Onboarding::Session.for_user(user.reload).current_step.key
+      assert_equal replacement_session.session_id, Onboarding::Session.for_user(user).session_id
+
+      post complete_onboarding_path, params: { session_id: stale_session.session_id }, as: :json
+
+      assert_response :conflict
+      assert Creative.exists?(replacement_session.root.id)
+      assert_nil user.reload.onboarding_completed_at
     end
 
     test "reset seeds onboarding even when the user already has a workspace" do
@@ -181,7 +202,7 @@ module Collavre
       session = Onboarding::Seeder.new(user: user).call
       first, second = session.practice_creatives.order(:id)
 
-      post advance_onboarding_path, as: :json
+      post advance_onboarding_path, params: { session_id: session.session_id }, as: :json
       patch creative_path(first), params: { creative: { progress: 1.0 } }, as: :json
 
       assert_response :success

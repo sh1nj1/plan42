@@ -260,7 +260,11 @@ describe('OnboardingCardController', () => {
     expect(fetchMock).toHaveBeenCalledWith('/onboarding/advance', expect.objectContaining({
       method: 'POST',
       credentials: 'same-origin',
+      headers: expect.any(Headers),
     }))
+    const request = fetchMock.mock.calls.find(([url]) => url === '/onboarding/advance')[1]
+    expect(request.headers.get('Content-Type')).toBe('application/json')
+    expect(request.body).toBe(JSON.stringify({ session_id: 'initial-session' }))
     expect(fetchMock.mock.calls.at(-1)[0]).toBe('/onboarding')
   })
 
@@ -271,7 +275,10 @@ describe('OnboardingCardController', () => {
 
     await controller.complete()
 
-    expect(fetchMock).toHaveBeenLastCalledWith('/onboarding/complete', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenLastCalledWith('/onboarding/complete', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ session_id: 'initial-session' }),
+    }))
     expect(visit).toHaveBeenCalledWith('/features')
     expect(visit).toHaveBeenCalledTimes(1)
   })

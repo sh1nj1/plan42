@@ -2,6 +2,8 @@
 
 module Collavre
   class OnboardingsController < ApplicationController
+    before_action :ensure_current_session!, only: %i[advance complete]
+
     def show
       render json: state
     end
@@ -30,6 +32,15 @@ module Collavre
     end
 
     private
+
+    # A card can outlive its session when onboarding is reset in another tab.
+    # Do not let that stale card advance or delete the replacement session.
+    def ensure_current_session!
+      session = Onboarding::Session.for_user(Current.user)
+      return if session && session.session_id == params[:session_id]
+
+      render json: { error: "onboarding session is no longer current" }, status: :conflict
+    end
 
     # A pending agent turn keeps its old tree until it settles, but that tree
     # cannot remain the active session or reseeding would resume it instead.
