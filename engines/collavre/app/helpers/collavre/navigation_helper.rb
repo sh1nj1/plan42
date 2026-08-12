@@ -61,13 +61,25 @@ module Collavre
       value.is_a?(Proc) ? instance_exec(&value) : value
     end
 
-    # True when a URL leaves this application — an absolute URL whose host is not
-    # ours. Relative paths and same-host absolute URLs are ours, so they stay in
-    # the current window. A malformed setting is treated as internal: the anchor
-    # then behaves like any other in-app link rather than silently opening a tab.
+    # True when a URL leaves this application — an absolute URL whose origin is
+    # not ours. The whole origin has to match, not just the host: a different
+    # scheme or port on the same host is a different service (the desktop shell
+    # runs on 127.0.0.1, where a docs server on another port shares our host but
+    # none of our pages), and navigating in place would replace the app with
+    # something that cannot offer a way back. A scheme-relative or port-less URL
+    # inherits ours, so it still counts as internal. Relative paths and
+    # same-origin absolute URLs are ours and stay in the current window. A
+    # malformed setting is treated as internal: the anchor then behaves like any
+    # other in-app link rather than silently opening a tab.
     def external_link?(url)
-      host = URI.parse(url.to_s).host
-      host.present? && host != request.host
+      uri = URI.parse(url.to_s)
+      return false if uri.host.blank?
+
+      scheme = uri.scheme.presence&.downcase || request.scheme
+      port = uri.port || request.port
+
+      [ scheme, uri.host.downcase, port ] !=
+        [ request.scheme, request.host.downcase, request.port ]
     rescue URI::InvalidURIError
       false
     end

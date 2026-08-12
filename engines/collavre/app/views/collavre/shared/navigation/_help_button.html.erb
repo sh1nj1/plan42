@@ -3,9 +3,10 @@
 <%# The built-in guide navigates in the current window: it is one of our own
     pages, so the browser's back button — plus the guide's own return link — is
     the way back, and a new tab left users with no way to return at all.
-    An admin-configured URL on another host keeps its own tab: we cannot add a
+    An admin-configured URL on another origin keeps its own tab: we cannot add a
     way back to a page we do not control, so replacing the app with it would
-    strand the user. %>
+    strand the user. A different port or scheme on our own host is another
+    origin too — a separate service that carries none of our navigation. %>
 <% help_is_external = external_link?(help_url) %>
 <%= link_to t('app.help'), help_url,
       id: "creative-guide-link",

@@ -172,6 +172,30 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target]", count: 0
   end
 
+  test "help partial opens a configured same-host link on another port in a new tab" do
+    SystemSetting.stub(:help_menu_link, "http://#{request.host}:4000/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured same-host link on another scheme in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https://#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured scheme-relative same-origin link in the current window" do
+    SystemSetting.stub(:help_menu_link, "//#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
   test "help partial opens a configured relative link in the current window" do
     SystemSetting.stub(:help_menu_link, "/docs/help") do
       render partial: "collavre/shared/navigation/help_button"
