@@ -22,7 +22,7 @@ class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
     assert_equal first_comment.id, legacy_pointer.reload.last_read_comment_id
   end
 
-  test "rollback creates a legacy pointer when only topic pointers exist" do
+  test "rollback treats a missing legacy lane as unread" do
     user = users(:one)
     creative = Creative.create!(user: user, description: "Topic-only rollback pointers", sequence: 921)
     main_topic = creative.main_topic
@@ -30,6 +30,7 @@ class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
     second_topic = creative.topics.create!(name: "Second", user: user)
     first_comment = Comment.create!(creative: creative, topic: first_topic, user: users(:two), content: "first")
     latest_comment = Comment.create!(creative: creative, topic: second_topic, user: users(:two), content: "latest")
+    Comment.create!(creative: creative, user: users(:two), content: "unread legacy comment")
     CommentReadPointer.create!(user: user, creative: creative, topic: main_topic, last_read_comment_id: first_comment.id)
     CommentReadPointer.create!(user: user, creative: creative, topic: first_topic, last_read_comment_id: first_comment.id)
     CommentReadPointer.create!(user: user, creative: creative, topic: second_topic, last_read_comment_id: latest_comment.id)
@@ -37,7 +38,7 @@ class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
     AddTopicToCommentReadPointers.new.send(:consolidate_topic_watermarks)
 
     legacy_pointer = CommentReadPointer.find_by!(user: user, creative: creative, topic: nil)
-    assert_equal first_comment.id, legacy_pointer.last_read_comment_id
+    assert_equal 0, legacy_pointer.last_read_comment_id
   end
 
   test "rollback treats topics without pointers as unread" do
