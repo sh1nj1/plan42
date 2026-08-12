@@ -1479,6 +1479,41 @@ class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
     assert_includes problem.message, "source anchor"
   end
 
+  test "rejects a collection callable block replaced below an enclosing call" do
+    before_source = <<~RUBY
+      class Sample
+        HANDLERS = [
+          decorate(
+            Enumerator.new do
+              first
+            end
+          )
+        ]
+      end
+    RUBY
+    after_source = <<~RUBY
+      class Sample
+        OTHER = [
+          decorate(
+            Enumerator.new do
+              second
+            end
+          )
+        ]
+      end
+    RUBY
+    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
+
+    problem = ComplexityRatchet.verify_monotonic(
+      { key => 90 }, { key => 80 },
+      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
+      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
+    ).sole
+
+    assert_equal :baseline_sibling_shift, problem.kind
+    assert_includes problem.message, "source anchor"
+  end
+
   test "rejects a nested collection lambda replaced with a different assignment" do
     before_source = <<~RUBY
       class Sample

@@ -310,7 +310,7 @@ module ComplexityRatchet
         .gsub(/\s+/, " ").strip
       return anchor unless node.is_a?(Prism::CallNode)
 
-      callable_context_anchor(node) || enclosing_collection_anchor || anchor
+      combined_context_anchor(callable_context_anchor(node), enclosing_collection_anchor) || anchor
     end
 
     # A call-shaped anonymous block begins after an enclosing assignment or
@@ -352,11 +352,8 @@ module ComplexityRatchet
     # smaller version of the same unique lambda without making its body part of
     # the identity.
     def lambda_anchor(node)
-      enclosing_anchor = enclosing_call_anchor(node)
-      return enclosing_anchor if enclosing_anchor
-
-      collection_anchor = enclosing_collection_anchor
-      return collection_anchor if collection_anchor
+      context_anchor = combined_context_anchor(enclosing_call_anchor(node), enclosing_collection_anchor)
+      return context_anchor if context_anchor
 
       before_lambda = @source.byteslice(0, node.location.start_offset)
       prefix = before_lambda.split("\n").last.to_s.strip
@@ -364,6 +361,14 @@ module ComplexityRatchet
 
       preceding_line = before_lambda.rstrip.split("\n").last.to_s.strip
       preceding_line.end_with?("=", "(") ? preceding_line : "[lambda]"
+    end
+
+    # A callable can have both an enclosing call and an owning collection. The
+    # call distinguishes its immediate construction, while the collection
+    # distinguishes the constant or variable that owns it.
+    def combined_context_anchor(*anchors)
+      anchor = anchors.compact.join(" ")
+      anchor unless anchor.empty?
     end
 
     # A lambda in an assigned collection begins after `[` or `{`, so its own
