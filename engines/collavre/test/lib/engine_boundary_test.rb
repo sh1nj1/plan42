@@ -381,6 +381,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(::Object::Kernel.require "#{feature}"))
   end
 
+  test "detector flags a direct Kernel loader invoked through self" do
+    satellite = SATELLITES.first
+    feature = "#{satellite}/some_service"
+
+    assert_equal [ feature ], requires_in(%(self.require "#{feature}"))
+    assert_equal [ "#{feature}.rb" ], requires_in(%(self.load "#{feature}.rb"))
+  end
+
   test "detector flags a reflectively invoked Kernel loader" do
     satellite = SATELLITES.first
     feature = "#{satellite}/some_service"
@@ -2086,6 +2094,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # method name that matching any receiver would make this test cry wolf.
   def loader_receiver?(call)
     return true if call.receiver.nil?
+    return true if self_receiver?(call.receiver)
     return true if loader_method(call) == "autoload"
     return true if method_object_loader_method(call)
     return true if object_reflective_kernel_loader?(call)
@@ -2095,6 +2104,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def object_reflective_kernel_loader?(call)
     top_level_object_receiver?(call.receiver) && %i[send __send__].include?(call.name) && reflected_loader_method(call)
+  end
+
+  def self_receiver?(node)
+    node.is_a?(Prism::SelfNode)
   end
 
   # Every spelling that reaches the real Kernel, not just the bare constant.
