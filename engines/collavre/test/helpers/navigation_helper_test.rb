@@ -373,6 +373,63 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
   end
 
+  # "about:blank" replaces the page with an empty document. Navigating there in
+  # place leaves nothing to click, which is the one outcome the current-window
+  # switch has to avoid.
+  test "help partial opens a configured about link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "about:blank") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured blob link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "blob:https://docs.example.com/1234") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # URI.parse raises on this one, so it arrives through the rescue.
+  test "help partial opens a configured data link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "data:text/html,<h1>help</h1>") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # "file:///x" already reads as an authority; a single slash does not.
+  test "help partial opens a configured single slash file link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "file:/Users/me/docs.html") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # A handler scheme hands the URL to something else and leaves the page alone,
+  # so there is nothing to escape from and no tab to open.
+  test "help partial keeps a configured mailto link in the current window" do
+    SystemSetting.stub(:help_menu_link, "mailto:support@example.com") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # The scheme match is anchored to a colon, so a path that merely starts with
+  # one of those words is still a path.
+  test "help partial keeps a configured relative link starting with a scheme word in the current window" do
+    SystemSetting.stub(:help_menu_link, "/about-us/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
   test "navigation partial renders mobile guest help and sign in buttons" do
     Navigation::Registry.instance.register(
       key: :help,

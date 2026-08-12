@@ -118,13 +118,25 @@ module Collavre
     # single "\" is just a path separator. So does an http(s) scheme that is not
     # the one we are served over; with a matching scheme the browser reads the
     # rest as a path on our origin instead, which is why the scheme is compared
-    # rather than merely detected. Everything else — a relative path, "mailto:"
-    # — is ours.
+    # rather than merely detected. So does a scheme that replaces the document
+    # with one of its own — see DOCUMENT_SCHEME. Everything else — a relative
+    # path, "mailto:", "tel:", an OS handler — is ours: those hand the URL to
+    # something else and leave the page where it is.
     AUTHORITY_PREFIX = %r{\A(?:[a-z][a-z0-9+.\-]*:)?[/\\]{2}}i
     SPECIAL_SCHEME_PREFIX = /\A(https?):/i
 
+    # Schemes that build a document instead of handing the URL off. None of them
+    # can carry our navigation, and "about:blank" is the plain case: it replaces
+    # the page with an empty one that has nothing to click. A browser refuses the
+    # top-level click for several of the others ("data:", "file:" from an http
+    # page), which costs nothing here — a new tab and a refused navigation are
+    # equally harmless, so the list is drawn around what the scheme *would*
+    # render rather than around which shell happens to block it.
+    DOCUMENT_SCHEME = /\A(?:about|blob|data|file|filesystem|view-source):/i
+
     def leaves_origin_by_spelling?(value)
       return true if value.match?(AUTHORITY_PREFIX)
+      return true if value.match?(DOCUMENT_SCHEME)
 
       scheme = value[SPECIAL_SCHEME_PREFIX, 1]
       scheme.present? && scheme.downcase != request.scheme
