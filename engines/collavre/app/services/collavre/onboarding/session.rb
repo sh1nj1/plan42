@@ -18,6 +18,13 @@ module Collavre
         root && new(root)
       end
 
+      def self.canonical_mention_resolves_to?(agent)
+        return false if agent.blank? || agent.name.blank?
+
+        User.where("LOWER(name) = ?", agent.name.downcase).limit(2).count == 1 &&
+          MentionParser.resolve_user("@#{agent.name}:")&.id == agent.id
+      end
+
       def self.onboarding_root(creatives, session_id: nil)
         return Array(creatives).find { |creative| onboarding_root?(creative, session_id) } unless creatives.respond_to?(:where)
 
@@ -128,7 +135,8 @@ module Collavre
         return false unless data["agent_mention_enabled"] == true
 
         agent = mention_agent
-        agent&.ai_user? && root.has_permission?(agent, :feedback)
+        agent&.ai_user? && root.has_permission?(agent, :feedback) &&
+          self.class.canonical_mention_resolves_to?(agent)
       end
 
       def complete_removed_mention_step!

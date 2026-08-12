@@ -59,11 +59,8 @@ module Collavre
       end
 
       def share_available_agent!(root)
-        unambiguous_names = User.group("LOWER(name)").having("COUNT(*) = 1").select("LOWER(name)")
         agent = User.accessible_ai_agents_for(user)
-                    .where.not("name LIKE ?", "%:%")
-                    .where("LOWER(name) IN (?)", unambiguous_names)
-                    .find { |candidate| canonical_mention_resolves_to?(candidate) }
+                    .find { |candidate| Session.canonical_mention_resolves_to?(candidate) }
         return unless agent
 
         share = CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
@@ -77,10 +74,6 @@ module Collavre
         agent
       end
 
-      def canonical_mention_resolves_to?(agent)
-        MentionParser.resolve_user("@#{agent.name}:")&.id == agent.id
-      end
-
       def t(key)
         I18n.t("collavre.onboarding.seed.#{key}", locale: user.locale.presence || I18n.default_locale)
       end
@@ -91,7 +84,7 @@ module Collavre
       end
 
       def clean_up_session!
-        CompletionService.new(user: user).call
+        CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
         mark_existing_workspace_complete!
       end
     end

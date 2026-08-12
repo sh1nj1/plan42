@@ -90,6 +90,56 @@ module Collavre
         assert_equal "complete", session.data["current_step"]
       end
 
+      test "defers cleanup for a damaged session while its agent turn is active" do
+        previous_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
+        user = User.create!(name: "Damaged session learner", email: "damaged-session-learner@example.com", password: "password")
+        agent = User.create!(name: "Damaged session helper", email: "damaged-session-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        comment = Comment.create!(creative: session.practice_creatives.second, user: user, content: "@Damaged session helper: Please help")
+        Task.create!(name: "Response", status: "running", trigger_event_name: "comment_created",
+                     trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent,
+                     creative: session.practice_creatives.second)
+        session.practice_creatives.first.archive!
+
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+          assert_nil Seeder.new(user: user).call
+        end
+
+        assert Creative.exists?(session.root.id)
+        assert Comment.exists?(comment.id)
+        assert user.reload.onboarding_completed_at?
+      ensure
+        ActiveJob::Base.queue_adapter = previous_adapter
+      end
+
+      test "removes the mention step when the seeded helper can no longer be mentioned" do
+        user = User.create!(name: "Renamed helper learner", email: "renamed-helper-learner@example.com", password: "password")
+        agent = User.create!(name: "Temporary helper", email: "temporary-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        agent.update!(name: "Temporary: helper")
+        session.update!(current_step: "mention")
+
+        refute_includes session.scenario.steps.map(&:key), :mention
+        assert_nil session.current_step
+        assert_equal "complete", session.data["current_step"]
+      end
+
+      test "removes the mention step when the seeded helper name becomes non-unique" do
+        user = User.create!(name: "Duplicate helper learner", email: "duplicate-helper-learner@example.com", password: "password")
+        agent = User.create!(name: "Shared helper", email: "shared-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        User.create!(name: agent.name, email: "second-shared-helper@example.com", password: "password")
+        session.update!(current_step: "mention")
+
+        refute_includes session.scenario.steps.map(&:key), :mention
+        assert_nil session.current_step
+        assert_equal "complete", session.data["current_step"]
+      end
+
       test "resolves a practice creative to its scenario root" do
         user = User.create!(name: "Practice learner", email: "practice-learner@example.com", password: "password")
         seeded_session = Seeder.new(user: user).call
