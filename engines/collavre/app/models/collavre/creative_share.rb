@@ -46,6 +46,7 @@ module Collavre
     after_destroy :touch_creative_subtree
 
     after_commit :dispatch_share_cache_invalidation, on: [ :create, :update ]
+    after_commit :reconcile_stranded_topic_read_pointers, on: [ :create, :update ], if: :access_granted?
     after_commit :broadcast_share_change, on: [ :create, :update ]
     after_destroy_commit :remove_cache
     after_destroy_commit :broadcast_share_destroy
@@ -208,6 +209,29 @@ module Collavre
         has_access_changed: permission_allows_access?(previous_permission),
         can_comment_changed: permission_allows_comment?(previous_permission)
       )
+    end
+
+    # A topic can be moved before one of its source readers is shared on the
+    # destination. The move deliberately leaves that reader's pointer on the
+    # source to avoid exposing it there. Once access is granted, restore the
+    # pointer to the topic's current creative so its read history follows it.
+    def reconcile_stranded_topic_read_pointers
+      destination = creative.effective_origin
+      return unless destination.all_shared_users(:read).any? { |share| share.user_id == user_id }
+
+      CommentReadPointer.joins(:topic)
+        .where(user_id: user_id, topics: { creative_id: destination.id })
+        .where.not(creative_id: destination.id)
+        .find_each do |pointer|
+          pointer.update_column(:creative_id, destination.id)
+        end
+    end
+
+    def access_granted?
+      return false unless user_id && permission_allows_access?(permission)
+
+      previously_new_record? || saved_change_to_user_id? ||
+        (saved_change_to_permission? && !permission_allows_access?(permission_before_last_save))
     end
 
     def permission_allows_access?(value)

@@ -17,6 +17,28 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert Contact.exists?(user: @owner, contact_user: @target_user)
   end
 
+  test "granting destination access restores a pointer stranded by a topic move" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source", sequence: 811)
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_equal source.id, pointer.reload.creative_id
+
+    post collavre.creative_creative_shares_path(@creative),
+      params: { user_email: @target_user.email, permission: :read }, as: :json
+
+    assert_response :created
+    assert_equal @creative.id, pointer.reload.creative_id
+  end
+
   test "non-owner cannot share non-searchable AI agent" do
     # Create a non-searchable AI agent owned by @owner
     ai_agent = User.create!(
