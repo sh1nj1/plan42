@@ -79,6 +79,7 @@ describe('CommentsListController archived streams in All Messages', () => {
 
   test('extends the rendered All Messages watermark for a visible live append', () => {
     const controller = buildController()
+    controller.renderedAllTopicIds = ['2']
     controller.renderedAllTopicWatermarks = { 2: 8 }
 
     controller.handleStreamRender(streamEvent({ html: comment(2, 9) }))
@@ -87,8 +88,20 @@ describe('CommentsListController archived streams in All Messages', () => {
     expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
   })
 
+  test('starts a watermark for an initially active topic omitted from the list window', () => {
+    const controller = buildController()
+    controller.renderedAllTopicIds = ['2', '3']
+    controller.renderedAllTopicWatermarks = { 2: 8 }
+
+    controller.handleStreamRender(streamEvent({ html: comment(3, 9) }))
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 2: 8, 3: 9 })
+    expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
+  })
+
   test('does not add a topic absent from the rendered All Messages snapshot', () => {
     const controller = buildController()
+    controller.renderedAllTopicIds = ['2']
     controller.renderedAllTopicWatermarks = { 2: 8 }
 
     controller.handleStreamRender(streamEvent({ html: comment(3, 9) }))
