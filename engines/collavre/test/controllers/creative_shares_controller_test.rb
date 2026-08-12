@@ -122,7 +122,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert_equal destination.id, pointer.reload.creative_id
   end
 
-  test "revoking destination access removes its topic read pointer" do
+  test "revoking destination access retains its topic read pointer" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
     destination = Collavre::Creative.create!(user: @owner, description: "Pointer destination")
     topic = source.topics.create!(name: "Moved topic", user: @owner)
@@ -146,10 +146,10 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
 
     destination_share.update!(permission: :no_access)
 
-    assert_nil Collavre::CommentReadPointer.find_by(id: pointer.id)
+    assert_equal destination.id, pointer.reload.creative_id
   end
 
-  test "removing destination access removes its topic read pointer" do
+  test "removing and restoring destination access preserves its topic read pointer" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
     destination = Collavre::Creative.create!(user: @owner, description: "Pointer destination")
     topic = source.topics.create!(name: "Moved topic", user: @owner)
@@ -173,7 +173,36 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
 
     destination_share.destroy!
 
-    assert_nil Collavre::CommentReadPointer.find_by(id: pointer.id)
+    assert_equal destination.id, pointer.reload.creative_id
+
+    Collavre::CreativeShare.create!(
+      creative: destination, user: @target_user, shared_by: @owner, permission: :read
+    )
+
+    assert_equal destination.id, pointer.reload.creative_id
+  end
+
+  test "relocating a share hides its retained source pointer receipt" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination = Collavre::Creative.create!(user: @owner, description: "Pointer destination")
+    topic = source.topics.create!(name: "Source topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    share = Collavre::CreativeShare.create!(
+      creative: source, user: @target_user, shared_by: @owner, permission: :read
+    )
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    share.update!(creative: destination)
+
+    assert_equal source.id, pointer.reload.creative_id
+    assert_empty Collavre::Comments::ReadReceiptIndex.new(creative: source, comments: [ comment ]).receipts
+
+    share.update!(creative: source)
+
+    assert_equal({ comment.id => [ @target_user ] },
+      Collavre::Comments::ReadReceiptIndex.new(creative: source, comments: [ comment ]).receipts)
   end
 
   test "non-owner cannot share non-searchable AI agent" do

@@ -216,13 +216,14 @@ module Collavre
     # A topic can move before one of its readers has access to the destination.
     # Its pointer remains at the source to avoid exposing a read receipt there.
     # Reconcile every topic in the changed creative's subtree after a share
-    # mutation: a direct, inherited, or public grant restores stranded pointers;
-    # revoking access removes destination pointers so their receipts cannot leak.
+    # mutation: a direct, inherited, or public grant restores stranded pointers.
+    # Pointers remain durable across revocations; read-receipt rendering filters
+    # them by current access, so a later grant can restore the exact cursor.
     #
     # Permission caches are refreshed asynchronously, so this resolves the
     # persisted share hierarchy directly rather than consulting has_permission?.
     def reconcile_topic_read_pointers_for_permission_change
-      destination_ids = creative.effective_origin.self_and_descendants.pluck(:id)
+      destination_ids = reconciliation_creative_ids
       access_by_destination_and_user = {}
 
       CommentReadPointer.joins(:topic)
@@ -232,18 +233,29 @@ module Collavre
           destination = pointer.topic.creative
           access_key = [ destination.id, pointer.user_id ]
           has_access = access_by_destination_and_user.fetch(access_key) do
-            access_by_destination_and_user[access_key] = read_access_from_shares?(destination, pointer.user)
+            access_by_destination_and_user[access_key] = self.class.read_access_from_shares?(destination, pointer.user)
           end
 
           if has_access
             pointer.update_column(:creative_id, destination.id) unless pointer.creative_id == destination.id
-          elsif pointer.creative_id == destination.id
-            pointer.delete
           end
         end
     end
 
-    def read_access_from_shares?(destination, reader)
+    # A relocated share changes access in both its new subtree and the subtree it
+    # vacated. Keep both in the reconciliation set so the permission transition
+    # is evaluated symmetrically.
+    def reconciliation_creative_ids
+      ids = creative.effective_origin.self_and_descendants.pluck(:id)
+      return ids unless saved_change_to_creative_id?
+
+      previous_creative = Creative.find_by(id: creative_id_before_last_save)
+      return ids unless previous_creative
+
+      ids | previous_creative.effective_origin.self_and_descendants.pluck(:id)
+    end
+
+    def self.read_access_from_shares?(destination, reader)
       return false unless reader
       return true if destination.user_id == reader.id
 

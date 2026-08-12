@@ -13,6 +13,7 @@ module Collavre
         @owner = users(:one)
         @reader = users(:two)
         @creative = Creative.create!(user: @owner, description: "Receipts", sequence: 950)
+        CreativeShare.create!(creative: @creative, user: @reader, shared_by: @owner, permission: :read)
       end
 
       test "a receipt lands on the comment the pointer names" do
@@ -165,6 +166,21 @@ module Collavre
         CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: nil)
 
         assert_empty receipts_for([ first ])
+      end
+
+      test "a retained pointer does not render a receipt after access is revoked" do
+        comment = comment("read")
+        point_at(comment)
+        share = CreativeShare.find_by!(creative: @creative, user: @reader)
+
+        share.update!(permission: :no_access)
+
+        assert_empty receipts_for([ comment ])
+        assert CommentReadPointer.exists?(user: @reader, creative: @creative)
+
+        share.update!(permission: :read)
+
+        assert_equal({ comment.id => [ @reader ] }, receipts_for([ comment ]))
       end
 
       private
