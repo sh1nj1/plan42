@@ -349,6 +349,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ feature ], requires_in(%(Kernel.send(:require, "#{feature}")))
     assert_equal [ "#{feature}.rb" ], requires_in(%(::Kernel.public_send(:load, "#{feature}.rb")))
     assert_equal [ feature ], requires_in(%(Kernel.__send__(:require, "#{feature}")))
+    assert_equal [ feature ], requires_in(%(Kernel.send("require", "#{feature}")))
     assert_empty requires_in(%(registry.send(:require, "#{feature}")))
     assert_empty requires_in(%(Kernel.send(loader_name, "#{feature}")))
   end
@@ -1794,8 +1795,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   # `Kernel.send(:require, path)`, `Kernel.public_send(:load, path)`, and
   # `Kernel.__send__(:require, path)` invoke the same loaders as direct calls.
-  # Limit this to static symbols so a dynamic dispatch is not mistaken for a
-  # dependency that cannot be known statically.
+  # Limit this to static symbols or strings so a dynamic dispatch is not
+  # mistaken for a dependency that cannot be known statically.
   def loader_method(call)
     direct_loader_method(call) || reflected_loader_method(call)
   end
@@ -1808,7 +1809,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return unless %w[send public_send __send__].include?(call.name.to_s)
 
     method_name = call.arguments&.arguments&.first
-    method_name.unescaped if method_name.is_a?(Prism::SymbolNode) && LOADER_METHODS.include?(method_name.unescaped)
+    return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
+
+    method_name.unescaped if LOADER_METHODS.include?(method_name.unescaped)
   end
 
   # Literals nested in a loader argument still contribute to the path the
