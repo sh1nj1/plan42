@@ -101,7 +101,7 @@ export default class extends Controller {
   }
 
   disconnect() {
-    this.flushPendingRead()
+    this.flushPendingRead({ keepalive: true })
     this.listTarget.removeEventListener('scroll', this.handleScroll)
     PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
       this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
@@ -510,17 +510,23 @@ export default class extends Controller {
     }, 2000);
   }
 
-  flushPendingRead() {
+  flushPendingRead({ keepalive = false } = {}) {
     const pendingRead = this.pendingRead
     if (!pendingRead) return
 
     if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     this.markReadTimeout = null
     this.pendingRead = null
-    this.updateReadPointer(pendingRead.creativeId, pendingRead.topicId, pendingRead.topicIds, pendingRead.topicWatermarks)
+    this.updateReadPointer(
+      pendingRead.creativeId,
+      pendingRead.topicId,
+      pendingRead.topicIds,
+      pendingRead.topicWatermarks,
+      { keepalive }
+    )
   }
 
-  updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null) {
+  updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null, { keepalive = false } = {}) {
     if (!creativeId) return
 
     fetch('/comment_read_pointers/update', {
@@ -529,6 +535,7 @@ export default class extends Controller {
         'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
         'Content-Type': 'application/json',
       },
+      keepalive,
       body: JSON.stringify({
         creative_id: creativeId,
         topic_id: topicId,

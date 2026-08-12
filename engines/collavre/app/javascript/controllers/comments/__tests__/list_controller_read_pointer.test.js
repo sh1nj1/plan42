@@ -141,6 +141,19 @@ describe('CommentsListController read pointer updates', () => {
     expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ creative_id: '42', topic_id: null })
   })
 
+  test('uses an unload-safe request when disconnecting with a pending read', () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    controller.listTarget = document.createElement('div')
+    document.body.appendChild(controller.listTarget)
+    controller.markCommentsRead()
+
+    controller.disconnect()
+
+    expect(global.fetch).toHaveBeenCalledWith('/comment_read_pointers/update', expect.objectContaining({
+      method: 'POST', keepalive: true,
+    }))
+  })
+
   test('flushes a pending read pointer update before switching topics', () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true })
     controller.resetToLatest = jest.fn()
