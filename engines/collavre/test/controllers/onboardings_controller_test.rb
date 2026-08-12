@@ -96,6 +96,41 @@ module Collavre
       assert Onboarding::Session.for_user(user.reload)
     end
 
+    test "reset defers old session cleanup while its agent reply is pending" do
+      previous_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+      clear_enqueued_jobs
+
+      user = User.create!(name: "Reset awaiting reply", email: "reset-awaiting-reply@example.com", password: "password")
+      agent = User.create!(name: "Reset reply helper", email: "reset-reply-helper@example.com", password: "password",
+                           llm_vendor: "openai", searchable: true)
+      sign_in_as(user, password: "password")
+      previous_session = Onboarding::Seeder.new(user: user).call
+      creative = previous_session.practice_creatives.second
+      comment = Comment.create!(creative: creative, user: user, content: "@Reset reply helper: Please help")
+      task = Task.create!(name: "Pending reply", status: "running", trigger_event_name: "comment_created",
+                          trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent, creative: creative)
+
+      assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, previous_session.session_id ]) do
+        post reset_onboarding_path
+      end
+
+      assert_redirected_to creatives_path
+      assert Creative.exists?(creative.id)
+      assert Comment.exists?(comment.id)
+      new_session = Onboarding::Session.for_user(user.reload)
+      assert new_session
+      assert_not_equal previous_session.session_id, new_session.session_id
+
+      task.update!(status: "done")
+      OnboardingCleanupJob.perform_now(user.id, previous_session.session_id)
+
+      refute Creative.exists?(creative.id)
+      assert Creative.exists?(new_session.root.id)
+    ensure
+      ActiveJob::Base.queue_adapter = previous_adapter
+    end
+
     test "reset enables workspace mode so the runner can be displayed" do
       user = User.create!(
         name: "Workspace disabled learner", email: "workspace-disabled-onboarding@example.com", password: "password",

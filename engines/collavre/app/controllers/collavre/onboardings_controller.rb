@@ -17,7 +17,9 @@ module Collavre
     end
 
     def reset
-      Onboarding::CompletionService.new(user: Current.user).call
+      previous_session = Onboarding::Session.for_user(Current.user)
+      Onboarding::CompletionService.new(user: Current.user).call(defer_pending_agent_cleanup: true)
+      retire_pending_session!(previous_session)
       Current.user.update!(
         creative_workspace_enabled: true,
         onboarding_seeded_at: nil,
@@ -28,6 +30,23 @@ module Collavre
     end
 
     private
+
+    # A pending agent turn keeps its old tree until it settles, but that tree
+    # cannot remain the active session or reseeding would resume it instead.
+    # Keep the session id for the deferred cleanup job and retire only its
+    # scenario marker, which is what Session.for_user uses to find the guide.
+    def retire_pending_session!(session)
+      root = Creative.find_by(id: session&.root&.id)
+      return unless root
+
+      root.with_lock do
+        onboarding = root.reload.data.fetch("onboarding", {}).deep_dup
+        return if onboarding["scenario_key"].blank?
+
+        onboarding.delete("scenario_key")
+        root.update!(data: root.data.merge("onboarding" => onboarding))
+      end
+    end
 
     def state
       session = Onboarding::Session.for_user(Current.user)
