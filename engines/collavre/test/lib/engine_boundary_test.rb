@@ -824,6 +824,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       js_imports_in(%(const receiver = { extends: 8 }; const value = receiver.extends / import("#{satellite}/thing") / 2))
   end
 
+  test "detector scans imports after a property keyword" do
+    satellite = SATELLITES.first
+
+    assert_equal [ "#{satellite}/thing" ],
+      js_imports_in(%(const value = receiver.return / import("#{satellite}/thing") / 2))
+  end
+
   test "detector ignores regex literals after a spread operator" do
     satellite = SATELLITES.first
 
@@ -1425,7 +1432,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return true if js_export_default?(tokens)
 
     return true if js_class_extends_clause?(tokens)
-    return true if previous.first == :word && js_expression_starting_keyword?(previous.last)
+    return true if previous.first == :word && tokens[-2] != [ :punctuation, "." ] &&
+      js_expression_starting_keyword?(previous.last)
 
     js_for_of_header?(tokens)
   end
