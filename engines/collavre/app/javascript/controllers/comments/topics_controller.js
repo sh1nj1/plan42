@@ -152,12 +152,13 @@ export default class extends Controller {
 
         const version = ++this._loadTopicsVersion
         const selectionEpoch = this.selectionEpoch
+        const creativeId = this.creativeId
         // Clear stale topics from previous creative to prevent name-based
         // dedupe in handleTopicMessage from blocking valid broadcasts
         this.topics = []
 
         try {
-            const response = await fetch(`/creatives/${this.creativeId}/topics`)
+            const response = await fetch(`/creatives/${creativeId}/topics`)
             // Discard stale response if a newer loadTopics() call was made
             if (version !== this._loadTopicsVersion) return
 
@@ -190,16 +191,14 @@ export default class extends Controller {
                 // _loadTopicsVersion does not cover this: it only discards a
                 // response outrun by another loadTopics(), not by a selection.
                 //
-                // Only a pick the response can account for, though. Switching
-                // creatives leaves the previous creative's chips on screen until
-                // this fetch lands, and a click on one of those names a topic
-                // this creative has never heard of — not intent about it. Its id
-                // would survive as the preference, fail the lookup in
-                // restoreSelection(), drop the user on Main and then persist Main
-                // as the new creative's saved topic. An empty pick (All Messages)
-                // is not a persisted selection either — saveLastTopic stores null
-                // for it — so it cannot outrank the answer.
-                if (!this.pickOutranks(selectionEpoch, topics, this.archivedTopics)) {
+                // Only a pick about this creative, though. Switching creatives
+                // leaves the previous creative's chips on screen until this
+                // fetch lands, and a click on one of those is intent about the
+                // creative being left. Its id would survive as the preference,
+                // fail the lookup in restoreSelection(), drop the user on Main
+                // and then persist Main as the new creative's saved topic.
+                const pickWon = this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
+                if (!pickWon) {
                     this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 }
                 // The archive guard only has to outlive the sources that still
@@ -225,7 +224,7 @@ export default class extends Controller {
                 this.migrateLocalStorage()
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
-                this.restoreSelection()
+                this.restoreSelection({ keepEmptyPick: pickWon })
             }
         } catch (e) {
             console.error("Failed to load topics", e)
@@ -233,7 +232,12 @@ export default class extends Controller {
         }
     }
 
-    restoreSelection() {
+    // keepEmptyPick: the caller established that the user picked All Messages
+    // after this render was set in motion. That pick names no topic, so it
+    // cannot be restored — it can only be left alone. Without this the Main
+    // fallback below would treat it as "nothing selected", navigate away from
+    // it and persist Main, which is the same revert a chip click suffers.
+    restoreSelection({ keepEmptyPick = false } = {}) {
         const lastTopicId = this.currentTopicId
         // archiveTopic() switched away from this topic on purpose. The server
         // preference still names it until the debounced save lands, so accept
@@ -256,6 +260,8 @@ export default class extends Controller {
                 return
             }
         }
+
+        if (keepEmptyPick && !lastTopicId) return
 
         this.selectTopic(this.mainTopicId || "")
     }
@@ -350,6 +356,9 @@ export default class extends Controller {
         }
 
         this.listTarget.innerHTML = html
+        // Which creative the chips now on screen belong to. A click can only
+        // ever be about this one, whatever this.creativeId has since become.
+        this._renderedCreativeId = this.creativeId
 
         // The create button lives outside the scrolling strip so it stays reachable
         // without horizontal scrolling, no matter how many topics there are.
@@ -1053,6 +1062,7 @@ export default class extends Controller {
         // last_topic_id for the rest of the popup session.
         this.releaseSelectionSourcesOtherThan(this.serverLastTopicId)
         this.selectionEpoch += 1
+        this._pickCreativeId = this._renderedCreativeId
         this.debounceSaveLastTopic(id)
     }
 
@@ -1066,13 +1076,25 @@ export default class extends Controller {
         this._selectionEpoch = value
     }
 
-    // Did a pick land after the load at `epoch` started, and does the topic set
-    // the load returned actually contain it? Both halves are needed: the first
-    // says the pick is newer than the answer, the second that it is a pick about
-    // the creative the answer describes.
-    pickOutranks(epoch, topics, archivedTopics) {
+    // Did a pick land after the load at `epoch` started, and is it a pick about
+    // the creative that load describes? The first half says the pick is newer
+    // than the answer; the second is decided by the strip the click landed on,
+    // not by this.creativeId — onPopupOpened assigns that synchronously before
+    // the fetch, so a click on the outgoing creative's chips already carries the
+    // incoming id. The rendered strip is what the user was actually looking at.
+    //
+    // An empty pick (All Messages) names no topic to match against the response,
+    // and its provenance is the only thing that distinguishes it from a click on
+    // a stale strip — so it rests on that test alone. A named pick is checked
+    // against the topics too: one whose topic the response does not list was
+    // made against a strip that predates a delete, and keeping it would fail the
+    // lookup in restoreSelection() and persist Main in its place.
+    pickOutranks(epoch, creativeId, topics, archivedTopics) {
         if (this.selectionEpoch === epoch) return false
-        if (!this.serverLastTopicId) return false
+        // creativeId is always truthy here — loadTopics() returns without it —
+        // so a pick made before any strip was rendered fails this too.
+        if (String(this._pickCreativeId) !== String(creativeId)) return false
+        if (!this.serverLastTopicId) return true
 
         return [ ...(topics || []), ...(archivedTopics || []) ]
             .some(t => String(t.id) === String(this.serverLastTopicId))

@@ -48,6 +48,10 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       controller.canManageTopics = true
       controller.showingArchived = false
       controller.serverLastTopicId = '2'
+      // The strip is on screen before any of these races start — that is what
+      // makes a chip clickable, and it is what marks the pick as being about
+      // creative 42.
+      controller.renderTopics(TOPICS, true)
     })
   })
 
@@ -117,10 +121,102 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     expect(controller.serverLastTopicId).toBe('3')
   })
 
-  // A pick can only outrank the response if it names a topic the response
-  // knows. Switching creatives leaves the previous creative's chips on screen
-  // until the new strip lands, so a click in that window picks a topic that
-  // does not belong to the creative being loaded — not intent about it.
+  // The strip can also be stale about its own creative: another member deletes
+  // a topic while the chip for it is still on screen. The pick is about this
+  // creative, but it names a topic that no longer exists, so keeping it would
+  // fail the lookup in restoreSelection() and persist Main over the preference
+  // the server actually holds.
+  test('a pick naming a topic the response no longer lists yields to the answer', async () => {
+    let resolveFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+    const loading = controller.loadTopics()
+    controller.selectTopic('3')
+
+    resolveFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [{ id: 1, name: 'Main' }, { id: 2, name: 'Alpha' }],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 2,
+      }),
+    })
+    await loading
+
+    expect(controller.currentTopicId).toBe('2')
+  })
+
+  // All Messages carries no topic id, so nothing about it can be read off the
+  // saved preference — but it is still a pick, and a landing load must not undo
+  // it any more than it may undo a chip click.
+  describe('an All Messages pick while the strip is loading', () => {
+    const respond = (resolveFetch) => resolveFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 2,
+      }),
+    })
+
+    test('survives the response', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('')
+
+      respond(resolveFetch)
+      await loading
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller.listTarget.querySelector('.topic-all-messages').classList)
+        .toContain('active')
+    })
+
+    // The revert this PR is about is the message list snapping back, so the
+    // change event matters as much as the strip: nothing may re-announce the
+    // topic the user just left.
+    test('does not re-announce the topic the user left', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('')
+
+      respond(resolveFetch)
+      await loading
+
+      expect(changeEvents.at(-1).topicId).toBe('')
+    })
+
+    // ...and the debounced save must still record the pick, not the stale
+    // answer that overtook it.
+    test('persists All Messages, not the stale answer', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('')
+
+      respond(resolveFetch)
+      await loading
+      await controller.flushSaveLastTopic(controller.currentTopicId)
+
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null)
+    })
+  })
+
+  // A pick can only outrank the response if it was made against the strip of
+  // the creative the response describes. Switching creatives leaves the
+  // previous creative's chips on screen until the new strip lands, so a click
+  // in that window is not intent about the creative being loaded.
   describe('a pick against the previous creative\'s strip', () => {
     const OTHER_TOPICS = [{ id: 10, name: 'Main' }, { id: 11, name: 'Gamma' }]
 
@@ -170,9 +266,9 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       expect(saveLastTopic).toHaveBeenLastCalledWith('99', '11')
     })
 
-    // All Messages is not a persisted selection — saveLastTopic stores null for
-    // it and restoreSelection falls back to Main — so an empty pick cannot
-    // outrank the answer, and the creative being opened resolves normally.
+    // An empty pick is authoritative for the creative whose strip it was made
+    // against, and this one was made against the previous creative's — so the
+    // creative being opened still resolves to its own saved topic.
     test('an empty pick does not suppress the response either', async () => {
       let resolveFetch
       global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
