@@ -63,9 +63,9 @@ describe('saveLastTopic', () => {
 
   test('reports a stale ordered save as definitively rejected', async () => {
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ last_topic_save_fence: 1 }) })
-    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ success: false }) })
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ success: false, stale_last_topic_save: true }) })
 
-    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBe(false)
+    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toEqual({ success: false, staleLastTopicSave: true })
   })
 
   test('does not PATCH when issuing the save fence is ambiguous', async () => {

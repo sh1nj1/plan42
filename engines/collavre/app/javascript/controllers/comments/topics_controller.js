@@ -1433,6 +1433,8 @@ export default class extends Controller {
 				savedRevision
 			)
 			const topicId = id ? String(id) : ""
+			const saveRejected = saveResult === false || saveResult?.success === false
+			const staleLastTopicSave = saveResult?.staleLastTopicSave === true
 			if (claimed && saved) {
 				// The Action Cable echo can arrive before this response. In that
 				// case it has already consumed the claim and removed its metadata;
@@ -1493,10 +1495,14 @@ export default class extends Controller {
 					this.acknowledgePendingSelfEcho(clientId)
 				}
             }
-			if (claimed && saveResult === false) this.releasePendingSelfEcho(clientId)
+			if (claimed && saveRejected) this.releasePendingSelfEcho(clientId)
 			if (claimed && saveResult === null) {
 				this.scheduleAmbiguousPendingSelfEchoRetirement(clientId)
 			}
+			const rejectedPendingPick = staleLastTopicSave && this._pendingPick &&
+				String(this._pendingPick.creativeId) === String(creativeId) &&
+				this._pendingPick.topicId === topicId
+			if (rejectedPendingPick) this._pendingPick = null
 			if (saveResult !== null) this.retryDeferredLastTopicReconciliation(effectiveCreativeId)
 			if (saveResult !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&

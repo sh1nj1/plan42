@@ -65,7 +65,9 @@ export async function saveLastTopic(creativeId, topicId, clientId, signal) {
 				// Older servers returned an empty success response. Keep accepting it
 				// while newer servers provide the revision that orders delayed echoes.
 			}
-			if (data.success === false) return false
+			if (data.success === false) {
+				return data.stale_last_topic_save === true ? { success: false, staleLastTopicSave: true } : false
+			}
 			return { success: true, lastTopicRevision: data.last_topic_revision }
 		}
 		return response.status >= 500 ? null : false

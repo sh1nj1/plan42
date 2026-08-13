@@ -8,19 +8,21 @@ module Collavre
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])
 
       record = preference_for(creative_id)
-      state = record.expanded_status || {}
+      record.with_lock do
+        state = record.expanded_status || {}
 
-      if expanded
-        state[node_id] = true
-      else
-        state.delete(node_id)
-      end
+        if expanded
+          state[node_id] = true
+        else
+          state.delete(node_id)
+        end
 
-      record.expanded_status = state
-      if state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero?
-        record.destroy if record.persisted?
-      else
-        record.save!
+        record.expanded_status = state
+        if state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero?
+          record.destroy!
+        else
+          record.save!
+        end
       end
 
       render json: { success: true }
@@ -37,7 +39,11 @@ module Collavre
       record, saved = persist_last_topic(creative)
       broadcast_last_topic(creative, record) if saved
 
-      render json: { success: saved, last_topic_revision: [ record.id, record.last_topic_revision ] }
+      render json: {
+        success: saved,
+        stale_last_topic_save: !saved,
+        last_topic_revision: [ record.id, record.last_topic_revision ]
+      }
     end
 
     # Issue this before sending the PATCH so an older request that is still

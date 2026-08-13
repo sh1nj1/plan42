@@ -669,6 +669,20 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('2')
   })
 
+  test('a stale rejection clears its pending pick before reconciliation', async () => {
+    saveLastTopic.mockResolvedValueOnce({ success: false, staleLastTopicSave: true })
+    controller.deferredLastTopicReconciliations.add('42')
+    controller.loadTopics = jest.fn(() => {
+      expect(controller._pendingPick).toBeNull()
+    })
+
+    controller.selectTopic('2')
+    await controller.flushSaveLastTopic('2')
+
+    expect(controller._pendingPick).toBeNull()
+    expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+  })
+
   // The stream is per creative, so leaving it for another means the echoes it
   // owed us are not coming. Nothing can settle those claims; they go with it.
   test('leaving the stream drops outstanding claims', async () => {

@@ -142,6 +142,7 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal false, response.parsed_body["success"]
+    assert_equal true, response.parsed_body["stale_last_topic_save"]
     preference.reload
     assert_equal beta.id, preference.last_topic_id
     assert_equal 1, preference.last_topic_revision
