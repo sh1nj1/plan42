@@ -246,6 +246,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
   end
 
+  test "gemspec detector scans aliases and dependencies sequentially within nested blocks" do
+    source = [
+      "Gem::Specification.new do |gemspec|",
+      "[ 1 ].each do",
+      "target = gemspec",
+      'target.add_dependency "collavre_windows" if Gem.win_platform?',
+      "end",
+      "end"
+    ].join("\n")
+
+    assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
+  end
+
   test "gemspec detector scans aliases and dependencies sequentially within case branches" do
     source = <<~RUBY
       Gem::Specification.new do |gemspec|
@@ -3402,6 +3415,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def gemspec_calls(node, found, gemspec_receivers:, specification_block:, &matches)
     return found unless node.is_a?(Prism::Node)
     return gemspec_calls_in_specification_block(node, found, gemspec_receivers, &matches) if specification_block
+    return gemspec_calls_in_block(node, found, gemspec_receivers, &matches) if node.is_a?(Prism::BlockNode)
     return gemspec_calls_in_conditional(node, found, gemspec_receivers, &matches) if node.is_a?(Prism::IfNode)
     return gemspec_calls_in_case(node, found, gemspec_receivers, &matches) if node.is_a?(Prism::CaseNode)
     return gemspec_calls_in_begin(node, found, gemspec_receivers, &matches) if node.is_a?(Prism::BeginNode)
@@ -3418,6 +3432,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def gemspec_calls_in_specification_block(block, found, gemspec_receivers, &matches)
     gemspec_calls_in_statements(block.body, found, gemspec_receivers, &matches)
+  end
+
+  def gemspec_calls_in_block(block, found, gemspec_receivers, &matches)
+    receivers = gemspec_receivers - block_parameter_names(block)
+    gemspec_calls_in_statements(block.body, found, receivers, &matches)
   end
 
   def gemspec_calls_in_conditional(node, found, gemspec_receivers, &matches)
