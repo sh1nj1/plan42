@@ -196,7 +196,8 @@ module Collavre
           )
 
           if comment.save
-            task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment) if claimed_task
+            return head(:conflict) if claimed_task && !task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment)
+
             dispatch_a2a(agent, comment, task: claimed_task)
             render json: { comment_id: comment.id }, status: :created
           else

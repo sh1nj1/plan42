@@ -1466,6 +1466,42 @@ module Collavre
           assert_equal @user, dispatcher_args[:workspace_user]
         end
 
+        test "reply does not dispatch downstream work when finalization loses a cancellation race" do
+          reg = register_agent("cancelled-finalization-dispatch-test")
+          agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+          task = Collavre::Task.create!(
+            name: "Cancelled reply",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: agent,
+            topic_id: topic.id,
+            creative: creative
+          )
+          dispatched = false
+          original_finalize = Collavre::AiAgent::TaskClaimService.instance_method(:finalize)
+          Collavre::AiAgent::TaskClaimService.define_method(:finalize) do |agent:, task:, comment:|
+            Collavre::Task.where(id: task.id).update_all(status: "cancelled")
+            original_finalize.bind_call(self, agent: agent, task: task, comment: comment)
+          end
+
+          begin
+            Collavre::AiAgent::A2aDispatcher.stub(:new, ->(**_kwargs) { dispatched = true }) do
+              post "/api/v1/agent/reply",
+                params: { topic_id: topic.id, text: "@#{users(:ai_bot).name}: continue", task_id: task.id },
+                headers: auth_headers,
+                as: :json
+            end
+          ensure
+            Collavre::AiAgent::TaskClaimService.define_method(:finalize, original_finalize)
+          end
+
+          assert_response :conflict
+          refute dispatched, "a cancelled reply must not launch downstream A2A work"
+          assert_equal "cancelled", task.reload.status
+        end
+
         test "reply recovers the claimed task original human for A2A dispatch" do
           reg = register_agent("a2a-principal-test")
           channel_agent = User.find(reg["agent_id"])

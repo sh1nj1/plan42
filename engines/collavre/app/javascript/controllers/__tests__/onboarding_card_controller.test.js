@@ -268,6 +268,24 @@ describe('OnboardingCardController', () => {
     expect(fetchMock.mock.calls.at(-1)[0]).toBe('/onboarding')
   })
 
+  test('rebinds actions to a replacement session returned by polling', async () => {
+    state = {
+      session_id: 'replacement-session',
+      current_step: 'welcome',
+      instruction: 'Select the replacement Creative.',
+      completion: 'ui',
+      completed_steps: [],
+      anchor: 'tree.node',
+    }
+
+    await controller.refresh()
+    await controller.advance()
+
+    expect(controller.sessionIdValue).toBe('replacement-session')
+    const request = fetchMock.mock.calls.find(([url]) => url === '/onboarding/advance')[1]
+    expect(request.body).toBe(JSON.stringify({ session_id: 'replacement-session' }))
+  })
+
   test('completes through Turbo when a redirect is returned', async () => {
     const visit = jest.fn()
     window.Turbo = { visit }

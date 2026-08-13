@@ -74,6 +74,7 @@ export default class extends Controller {
   }
 
   render(state) {
+    this.rebindSession(state.session_id)
     if (state.complete) {
       this.instructionTarget.textContent = state.instruction
       this.nextTarget.hidden = true
@@ -94,6 +95,13 @@ export default class extends Controller {
     this.finishTarget.hidden = true
     this.renderSteps(state.current_step, state.completed_steps)
     this.highlight(state.anchor, state.anchor_key)
+  }
+
+  rebindSession(sessionId) {
+    if (!sessionId || sessionId === this.sessionIdValue) return
+
+    this.sessionIdValue = sessionId
+    this.workspaceTreeDismissed = this.workspaceTreeWasDismissed()
   }
 
   renderSteps(currentStep, completedSteps) {

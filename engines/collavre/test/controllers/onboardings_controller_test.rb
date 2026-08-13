@@ -18,6 +18,7 @@ module Collavre
 
       get onboarding_path, as: :json
       assert_response :success
+      assert_equal session.session_id, response.parsed_body.fetch("session_id")
       assert_equal "tree_node", response.parsed_body.fetch("current_step")
       assert_equal session.root.id, response.parsed_body.fetch("anchor_key")
 

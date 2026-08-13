@@ -82,6 +82,7 @@ module Collavre
 
       {
         success: true,
+        session_id: session.session_id,
         current_step: step&.key,
         anchor: step&.anchor,
         anchor_key: session.anchor_key(step),
