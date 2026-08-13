@@ -89,7 +89,11 @@ describe('saveLastTopic', () => {
     await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toEqual({ success: true, lastTopicRevision: undefined })
 
     expect(global.fetch).toHaveBeenCalledTimes(2)
-    expect(bodyOfLastCall()).toEqual({ last_topic_id: '3', client_id: 'save-abc' })
+    expect(bodyOfLastCall()).toEqual({
+      last_topic_id: '3',
+      client_id: 'save-abc',
+      legacy_last_topic_save_fence_fallback: true,
+    })
   })
 
   test('reports an ambiguous network failure separately from an HTTP rejection', async () => {

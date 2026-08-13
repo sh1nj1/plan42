@@ -304,6 +304,28 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_equal latest_fence, preference.last_topic_save_fence_applied
   end
 
+  test "legacy fallback retires issued fences before a delayed fenced save" do
+    alpha = Collavre::Topic.create!(creative: @creative, user: @user, name: "Alpha")
+    beta = Collavre::Topic.create!(creative: @creative, user: @user, name: "Beta")
+    path = "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic"
+
+    post path, as: :json
+    issued_fence = response.parsed_body.fetch("last_topic_save_fence")
+
+    patch path,
+          params: { last_topic_id: beta.id, legacy_last_topic_save_fence_fallback: true },
+          as: :json
+
+    assert_no_broadcasts(Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")) do
+      patch path, params: { last_topic_id: alpha.id, last_topic_save_fence: issued_fence }, as: :json
+    end
+
+    assert_equal false, response.parsed_body["success"]
+    preference = Collavre::UserCreativePreference.find_by!(creative: @creative, user: @user)
+    assert_equal beta.id, preference.last_topic_id
+    assert_equal issued_fence, preference.last_topic_save_fence_applied
+  end
+
   test "update_last_topic rejects a fence that was not issued" do
     topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Topic")
     path = "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic"

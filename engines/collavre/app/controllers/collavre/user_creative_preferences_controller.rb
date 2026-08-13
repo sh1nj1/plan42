@@ -127,6 +127,13 @@ module Collavre
         return
       end
 
+      # A new client can reach an older instance for its POST and a newer one
+      # for its fallback PATCH. That PATCH supersedes every fence issued before
+      # it, so retire them before a delayed fenced save can overwrite it.
+      if legacy_last_topic_save_fence_fallback?
+        record.last_topic_save_fence_applied = record.last_topic_save_fence_issued.to_i
+      end
+
       session_id, sequence = last_topic_save_order
       return unless session_id.present?
 
@@ -184,6 +191,10 @@ module Collavre
       return unless value.match?(/\A[1-9]\d*\z/)
 
       value.to_i
+    end
+
+    def legacy_last_topic_save_fence_fallback?
+      ActiveModel::Type::Boolean.new.cast(params[:legacy_last_topic_save_fence_fallback])
     end
 
     def broadcast_last_topic(creative, record)
