@@ -1020,6 +1020,15 @@ export default class extends Controller {
         return this.serverLastTopicId || ""
     }
 
+    // Is one of the two sources above the preference still set? Not the same
+    // question as "is the getter's answer nonempty" — an override of "" outranks
+    // the preference just as a named one does.
+    get hasDeepLinkSelection() {
+        if (this.overrideTopicId !== undefined && this.overrideTopicId !== null) return true
+
+        return Boolean(new URLSearchParams(window.location.search).get('topic_id'))
+    }
+
     // A topic leaving the strip — archived or deleted — has to leave both
     // sources that outrank serverLastTopicId in the currentTopicId getter.
     // Assigning "" only touches the preference, so on its own the getter goes
@@ -1183,7 +1192,15 @@ export default class extends Controller {
             const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
             if (newTopicId !== this.serverLastTopicId) {
                 this.serverLastTopicId = newTopicId
-                this.selectTopic(newTopicId)
+                // Another session moved the preference; nobody clicked in this
+                // popup. A deep link outranks the preference in the getter, so
+                // following the broadcast would light a chip the getter does not
+                // name — and selectTopic() writes through the setter, which
+                // releases that link on the way. It is a one-shot pointer with
+                // nowhere to be recovered from: ?topic_id= is dropped from the
+                // URL, so not even a reload gets the linked conversation back.
+                // Record the preference, leave the view where the link put it.
+                if (!this.hasDeepLinkSelection) this.selectTopic(newTopicId)
             }
             return
         }

@@ -503,3 +503,118 @@ describe('TopicsController selection vs. higher-priority selection sources', () 
     expect(controller.currentTopicId).toBe('')
   })
 })
+
+// last_topic_changed is another session of the same user moving the saved
+// preference. It is not a click in this popup, so it must not consume the
+// deep-link sources this popup was opened on — they outrank the preference by
+// design, and they are gone for good once released.
+describe('TopicsController deep-link sources vs. a preference broadcast', () => {
+  let application
+  let controller
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <div id="topics" data-controller="comments--topics" data-topic-main-text="All Messages">
+        <div data-comments--topics-target="list"></div>
+      </div>
+    `
+    Element.prototype.scrollIntoView = jest.fn()
+
+    application = Application.start()
+    application.register('comments--topics', TopicsController)
+
+    return new Promise((resolve) => setTimeout(resolve, 0)).then(() => {
+      controller = application.getControllerForElementAndIdentifier(
+        document.getElementById('topics'), 'comments--topics'
+      )
+      controller.creativeIdValue = '42'
+      controller.topics = TOPICS
+      controller.archivedTopics = []
+      controller.mainTopicId = '1'
+      controller.canManageTopics = true
+      controller.showingArchived = false
+      controller.serverLastTopicId = ''
+      controller.renderTopics(TOPICS, true)
+    })
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+    application.stop()
+    jest.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+  })
+
+  test('a broadcast does not consume a deep-link override', () => {
+    controller.setOverrideTopicId('3')
+
+    controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+    expect(controller.overrideTopicId).toBe('3')
+    expect(controller.currentTopicId).toBe('3')
+  })
+
+  test('a broadcast does not strip ?topic_id=', () => {
+    window.history.replaceState({}, '', '/creatives/42?topic_id=3')
+
+    controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+    expect(new URLSearchParams(window.location.search).get('topic_id')).toBe('3')
+    expect(controller.currentTopicId).toBe('3')
+  })
+
+  test('a broadcast leaves the linked topic selected in the strip', () => {
+    controller.setOverrideTopicId('3')
+
+    controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+    controller.restoreSelection()
+
+    expect(controller.listTarget.querySelector('.topic-tag[data-id="3"]').classList)
+      .toContain('active')
+    expect(controller.listTarget.querySelector('.topic-tag[data-id="2"]').classList)
+      .not.toContain('active')
+  })
+
+  test('the broadcast preference is still recorded behind the deep link', () => {
+    controller.setOverrideTopicId('3')
+
+    controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+    expect(controller.serverLastTopicId).toBe('2')
+    // Releasing the link hands the popup back to the preference the other
+    // session set, rather than to a value this popup never heard about.
+    controller.clearOverrideTopicId()
+    expect(controller.currentTopicId).toBe('2')
+  })
+
+  // comments_controller sends X-Topic-Id as effective_topic_id.to_s, so a
+  // comment that belongs to no topic resolves the deep link to All Messages and
+  // list_controller sets the override to "". It outranks the preference exactly
+  // like a named one — truthiness is the wrong test for "is a link set".
+  test('a broadcast does not consume a deep link that resolved to All Messages', () => {
+    controller.setOverrideTopicId('')
+
+    controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+    expect(controller.overrideTopicId).toBe('')
+    expect(controller.currentTopicId).toBe('')
+  })
+
+  test('a broadcast still moves the selection when no deep link outranks it', () => {
+    controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+    expect(controller.serverLastTopicId).toBe('2')
+    expect(controller.currentTopicId).toBe('2')
+    expect(controller.listTarget.querySelector('.topic-tag[data-id="2"]').classList)
+      .toContain('active')
+  })
+
+  test('a pick after a broadcast still supersedes the deep link', () => {
+    controller.setOverrideTopicId('3')
+    controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+    controller.selectTopic('1')
+
+    expect(controller.currentTopicId).toBe('1')
+  })
+})
