@@ -1256,7 +1256,18 @@ export default class extends Controller {
         this.cancelPendingSaveLastTopic()
         const creativeId = this.creativeId
         if (creativeId) {
+            // update_last_topic broadcasts to every session of this user, this
+            // one included, and the echo names no sender. Claim it here, before
+            // the request goes out — the broadcast is sent server-side before
+            // the response is rendered, so it can beat the save returning.
+            const sent = id ? String(id) : ""
+            this.pendingSelfEchoes.push(sent)
             const saved = await saveLastTopic(creativeId, id || null)
+            // A save that did not land broadcast nothing — the controller
+            // returns before the broadcast on a denied read or a topic that
+            // does not belong to the creative — so the echo is not coming and
+            // the claim has to go, or it would swallow a real one later.
+            if (!saved) this.releasePendingSelfEcho(sent)
             const topicId = id ? String(id) : ""
             if (saved !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&
@@ -1264,6 +1275,30 @@ export default class extends Controller {
                 this._pendingPick = null
             }
         }
+    }
+
+    // Saves are echoed in the order they were made, so only the head can be
+    // ours. A match further down belongs to another session that happens to
+    // name the same topic as one of our outstanding saves — and applying it
+    // would land on that topic either way, so nothing is lost by letting the
+    // head decide.
+    consumeSelfEcho(topicId) {
+        if (this.pendingSelfEchoes[0] !== topicId) return false
+        this.pendingSelfEchoes.shift()
+        return true
+    }
+
+    releasePendingSelfEcho(topicId) {
+        const index = this.pendingSelfEchoes.lastIndexOf(topicId)
+        if (index !== -1) this.pendingSelfEchoes.splice(index, 1)
+    }
+
+    // Topic ids this client has saved and not yet seen come back. The echo of
+    // our own save is not news: it names what we already asked for, and by the
+    // time it arrives the user may have picked something else — applying it
+    // then reverts the newer pick and persists the older topic over it.
+    get pendingSelfEchoes() {
+        return this._pendingSelfEchoes || (this._pendingSelfEchoes = [])
     }
 
     // The legacy key is adopted only as a stand-in for a preference the server
@@ -1308,6 +1343,10 @@ export default class extends Controller {
             this.topicsSubscription = null
         }
         this.subscribedCreativeId = null
+        // Echoes still owed to us on the stream we are leaving will never
+        // arrive, and the stream is per-creative, so holding them would only
+        // let them swallow an unrelated broadcast later.
+        this.pendingSelfEchoes.length = 0
     }
 
     handleTopicMessage(data) {
@@ -1318,6 +1357,7 @@ export default class extends Controller {
         if (action === "last_topic_changed") {
             // Broadcast is already scoped to the current user via user-specific channel
             const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+            if (this.consumeSelfEcho(newTopicId)) return
             if (newTopicId !== this.serverLastTopicId) {
                 this.serverLastTopicId = newTopicId
                 // Another session moved the preference; nobody clicked in this
