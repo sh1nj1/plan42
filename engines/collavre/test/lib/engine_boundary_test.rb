@@ -515,6 +515,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "detector folds a static interpolated reflected constant API symbol" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ satellite ], names(string_references_in(%(Object.send(:"const_\#{"get"}", :#{satellite}))))
+  end
+
   test "detector flags inherited satellite constant lookup symbols" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -1339,6 +1345,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(import * as Module from "node:module"; registry.Module.createRequire(import.meta.url)("#{satellite}/thing")))
     assert_empty js_imports_in(%(import * as Module from "node:module"; function load(Module) { return Module.createRequire(import.meta.url)("#{satellite}/thing") }))
     assert_empty js_imports_in(%(import { createRequire } from "node:module"; function load(createRequire) { return createRequire(import.meta.url)("#{satellite}/thing") }))
+    assert_empty js_imports_in(%(import { createRequire } from "node:module"; function load() { const createRequire = () => () => null; return createRequire(import.meta.url)("#{satellite}/thing") }))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -2132,9 +2139,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     imported_namespaces = js_imported_node_module_names(tokens)
 
     tokens.each_with_index.filter_map do |(kind, value), index|
-      native_import = imported_names.include?(value) &&
-                      js_bare_js_identifier?(tokens, index) &&
-                      !js_function_parameter_shadows_identifier?(tokens, index)
+      native_import = js_native_create_require_import?(tokens, index, imported_names)
       native_namespace = js_node_module_namespace_create_require?(tokens, index, imported_namespaces)
       native_require = value == "createRequire" && js_required_node_create_require?(tokens, index)
       next unless kind == :word && (native_import || native_namespace || native_require)
@@ -2214,7 +2219,54 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     receiver = index - 2
     namespaces.include?(tokens[receiver]&.last) &&
       js_bare_js_identifier?(tokens, receiver) &&
-      !js_function_parameter_shadows_identifier?(tokens, receiver)
+      !js_imported_identifier_shadowed?(tokens, receiver)
+  end
+
+  def js_imported_identifier_shadowed?(tokens, index)
+    js_function_parameter_shadows_identifier?(tokens, index) ||
+      js_lexical_declaration_shadows_identifier?(tokens, index)
+  end
+
+  def js_native_create_require_import?(tokens, index, imported_names)
+    return false unless imported_names.include?(tokens[index]&.last)
+
+    js_bare_js_identifier?(tokens, index) && !js_imported_identifier_shadowed?(tokens, index)
+  end
+
+  def js_lexical_declaration_shadows_identifier?(tokens, index)
+    identifier = tokens[index]&.last
+    scopes = [ nil ]
+    braces = []
+
+    tokens.first(index).each_with_index do |token, cursor|
+      braces << cursor if token == [ :punctuation, "{" ]
+      braces.pop if token == [ :punctuation, "}" ]
+    end
+    scopes.concat(braces)
+
+    scopes.any? { |opening| js_scope_declares_identifier?(tokens, opening, identifier) }
+  end
+
+  def js_scope_declares_identifier?(tokens, opening, identifier)
+    start = opening ? opening + 1 : 0
+    finish = opening ? js_matching_close_brace(tokens, opening) : tokens.length
+    return false unless finish
+
+    depth = 0
+    start.upto(finish - 1) do |cursor|
+      token = tokens[cursor]
+      return true if js_scope_declaration?(tokens, cursor, identifier, depth)
+
+      depth += 1 if token == [ :punctuation, "{" ]
+      depth -= 1 if token == [ :punctuation, "}" ]
+    end
+
+    false
+  end
+
+  def js_scope_declaration?(tokens, cursor, identifier, depth)
+    depth.zero? && %w[const let class].include?(tokens[cursor]&.last) &&
+      tokens[cursor + 1] == [ :word, identifier ]
   end
 
   def js_function_parameter_shadows_identifier?(tokens, index)
@@ -2973,10 +3025,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return call.name.to_s if CONSTANT_SYMBOL_METHODS.include?(call.name.to_s)
     return unless %w[send public_send __send__].include?(call.name.to_s)
 
-    method_name = call.arguments&.arguments&.first
-    return unless method_name.is_a?(Prism::SymbolNode) || method_name.is_a?(Prism::StringNode)
+    method_name = static_symbol_part(call.arguments&.arguments&.first)
+    return unless method_name
 
-    method_name.unescaped if CONSTANT_SYMBOL_METHODS.include?(method_name.unescaped)
+    method_name if CONSTANT_SYMBOL_METHODS.include?(method_name)
   end
 
   def constant_symbol_arguments(call)
