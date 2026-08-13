@@ -27,6 +27,8 @@ module Collavre
     end
 
     def update_last_topic
+      return issue_last_topic_save_fence if request.post?
+
       creative = Creative.find(params[:creative_id]).effective_origin
 
       return render_forbidden unless readable?(creative)
@@ -36,6 +38,28 @@ module Collavre
       broadcast_last_topic(creative, record) if saved
 
       render json: { success: saved, last_topic_revision: [ record.id, record.last_topic_revision ] }
+    end
+
+    # Issue this before sending the PATCH so an older request that is still
+    # running can never commit after a newer selection. The two counters are
+    # deliberately global to this user/creative preference, rather than one
+    # per controller session, so their storage stays bounded.
+    def issue_last_topic_save_fence
+      creative = Creative.find(params[:creative_id]).effective_origin
+
+      return render_forbidden unless readable?(creative)
+
+      record = preference_for(creative.id)
+      fence = record.with_lock do
+        record.last_topic_save_fence_issued = [
+          record.last_topic_save_fence_issued.to_i,
+          record.last_topic_save_fence_applied.to_i
+        ].max + 1
+        record.save!
+        record.last_topic_save_fence_issued
+      end
+
+      render json: { last_topic_save_fence: fence }
     end
 
     private
@@ -73,6 +97,9 @@ module Collavre
     # sequence, and an echo nonce. Older clients still send arbitrary ids, so
     # only recognized ordering ids take this fencing path.
     def stale_last_topic_save?(record)
+      fence = last_topic_save_fence
+      return record.last_topic_save_fence_applied.to_i >= fence if fence
+
       session_id, sequence = last_topic_save_order
       return false unless session_id.present?
 
@@ -80,6 +107,12 @@ module Collavre
     end
 
     def assign_last_topic_save_order(record)
+      fence = last_topic_save_fence
+      if fence
+        record.last_topic_save_fence_applied = fence
+        return
+      end
+
       session_id, sequence = last_topic_save_order
       return unless session_id.present?
 
@@ -120,6 +153,13 @@ module Collavre
       return [ nil, nil ] unless match
 
       [ match[1], match[2].to_i ]
+    end
+
+    def last_topic_save_fence
+      value = params[:last_topic_save_fence].to_s
+      return unless value.match?(/\A[1-9]\d*\z/)
+
+      value.to_i
     end
 
     def broadcast_last_topic(creative, record)

@@ -14,7 +14,12 @@ describe('saveLastTopic', () => {
 
   beforeEach(() => {
     document.head.innerHTML = '<meta name="csrf-token" content="test-csrf">'
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+    global.fetch = jest.fn().mockImplementation((url, options) => {
+      if (options?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ last_topic_save_fence: 1 }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) })
+    })
   })
 
   afterEach(() => {
@@ -30,7 +35,7 @@ describe('saveLastTopic', () => {
       '/creatives/42/user_creative_preferences/update_last_topic',
       expect.objectContaining({ method: 'PATCH' }),
     )
-    expect(bodyOfLastCall()).toEqual({ last_topic_id: '3', client_id: 'save-abc' })
+    expect(bodyOfLastCall()).toEqual({ last_topic_id: '3', client_id: 'save-abc', last_topic_save_fence: 1 })
   })
 
   test('forwards an abort signal to the request', async () => {
@@ -47,7 +52,7 @@ describe('saveLastTopic', () => {
   test('sends null for both when clearing the selection anonymously', async () => {
     await saveLastTopic('42', null)
 
-    expect(bodyOfLastCall()).toEqual({ last_topic_id: null, client_id: null })
+    expect(bodyOfLastCall()).toEqual({ last_topic_id: null, client_id: null, last_topic_save_fence: 1 })
   })
 
   test('reports a rejected save rather than throwing', async () => {
@@ -57,9 +62,17 @@ describe('saveLastTopic', () => {
   })
 
   test('reports a stale ordered save as definitively rejected', async () => {
-    global.fetch.mockResolvedValue({ ok: true, json: async () => ({ success: false }) })
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ last_topic_save_fence: 1 }) })
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ success: false }) })
 
     await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBe(false)
+  })
+
+  test('does not PATCH when issuing the save fence is ambiguous', async () => {
+    global.fetch.mockResolvedValue({ ok: false, status: 502 })
+
+    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBeNull()
+    expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 
   test('reports an ambiguous network failure separately from an HTTP rejection', async () => {

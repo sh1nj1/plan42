@@ -184,6 +184,29 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, preference.last_topic_save_sequences.fetch("browser-32")
   end
 
+  test "update_last_topic rejects a delayed fenced save after many later fences" do
+    alpha = Collavre::Topic.create!(creative: @creative, user: @user, name: "Alpha")
+    beta = Collavre::Topic.create!(creative: @creative, user: @user, name: "Beta")
+    path = "/creatives/#{@creative.id}/user_creative_preferences"
+
+    post "#{path}/update_last_topic", as: :json
+    first_fence = response.parsed_body.fetch("last_topic_save_fence")
+
+    33.times { post "#{path}/update_last_topic", as: :json }
+    latest_fence = response.parsed_body.fetch("last_topic_save_fence")
+
+    patch "#{path}/update_last_topic", params: { last_topic_id: beta.id, last_topic_save_fence: latest_fence }, as: :json
+
+    assert_no_broadcasts(Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")) do
+      patch "#{path}/update_last_topic", params: { last_topic_id: alpha.id, last_topic_save_fence: first_fence }, as: :json
+    end
+
+    assert_equal false, response.parsed_body["success"]
+    preference = Collavre::UserCreativePreference.find_by!(creative_id: @creative.id, user_id: @user.id)
+    assert_equal beta.id, preference.last_topic_id
+    assert_equal latest_fence, preference.last_topic_save_fence_applied
+  end
+
   test "update_last_topic rejects topic from another creative" do
     other_creative = Collavre::Creative.create!(user: @user, description: "Other")
     other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Foreign Topic")
