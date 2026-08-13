@@ -291,6 +291,56 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.currentTopicId).toBe('1')
 	})
 
+	test('waits for a closed pending save before reconciling a revisioned ABA snapshot', async () => {
+		let resolveSave
+		controller.lastKnownRemoteTopicId = '1'
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+		global.fetch = jest.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					topics: TOPICS,
+					archived_topics: [],
+					can_manage: true,
+					last_topic_id: '1',
+					last_topic_revision: [5, 2],
+					main_topic_id: '1',
+					effective_creative_id: '42',
+				}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					topics: TOPICS,
+					archived_topics: [],
+					can_manage: true,
+					last_topic_id: '1',
+					last_topic_revision: [5, 2],
+					main_topic_id: '1',
+					effective_creative_id: '42',
+				}),
+			})
+
+		controller.selectTopic('2')
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		controller.onPopupClosed()
+		await controller.onPopupOpened({ creativeId: '42' })
+
+		// Alpha's response and echo are both late, so the Main snapshot could
+		// either predate Alpha or be a sibling's later ABA write. Do not replay
+		// Alpha through that ambiguity.
+		expect(controller.currentTopicId).toBe('2')
+		expect(saveLastTopic).toHaveBeenCalledTimes(1)
+
+		resolveSave({ success: true, lastTopicRevision: [5, 1] })
+		await save
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(global.fetch).toHaveBeenCalledTimes(2)
+		expect(controller.currentTopicId).toBe('1')
+	})
+
 	test('a committed revision outranks a snapshot with a different predecessor topic', async () => {
 		let resolveSave
 		let resolveSnapshot

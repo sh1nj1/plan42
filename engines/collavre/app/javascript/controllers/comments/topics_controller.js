@@ -231,8 +231,15 @@ export default class extends Controller {
 				this.knownEffectiveCreativeIds.set(String(creativeId), effectiveCreativeId)
 				const snapshotTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
 				const snapshotTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
-                this.element.dataset.effectiveCreativeId = effectiveCreativeId
+				this.element.dataset.effectiveCreativeId = effectiveCreativeId
 				this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
+				const deferLastTopicReconciliation = this.hasUnacknowledgedRevisionedSaveFor(
+					effectiveCreativeId,
+					snapshotTopicRevision
+				)
+				if (deferLastTopicReconciliation) {
+					this.deferredLastTopicReconciliations.add(effectiveCreativeId)
+				}
 				// Claims are keyed by their effective creative stream. Keep claims
 				// for a stream we have temporarily left: a save can still be in
 				// flight while the popup visits another creative, and returning before
@@ -252,12 +259,17 @@ export default class extends Controller {
                 // creative being left. Its id would survive as the preference,
                 // fail the lookup in restoreSelection(), drop the user on Main
                 // and then persist Main as the new creative's saved topic.
-				const pickWon = !this.pendingPickWasSupersededWhileClosed(
+				const pickWon = !deferLastTopicReconciliation && !this.pendingPickWasSupersededWhileClosed(
 					effectiveCreativeId,
 					snapshotTopicId,
 					snapshotTopicRevision
 				) && this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
-                if (pickWon) {
+				if (deferLastTopicReconciliation) {
+					// The GET has a server ordering token, but this save has neither
+					// its response revision nor its echo yet. Its predecessor topic is
+					// not an ordering token (an ABA write can repeat it), so preserve
+					// the current selection until the request settles and retry below.
+				} else if (pickWon) {
                     // An interim restore can run while this fetch has the strip
                     // empty and replace serverLastTopicId with Main. The epoch
                     // belongs to the actual pick, so restore that picked value
@@ -303,11 +315,17 @@ export default class extends Controller {
                 // Expose effective origin id so chat-context autofill (slash commands)
                 // and any other consumer can target the same creative the server uses
                 // (linked creatives resolve params[:creative_id] through effective_origin).
-                // Migrate localStorage to server if server has no value
-                this.migrateLocalStorage({ keepEmptyPick: pickWon })
+				// Migrate localStorage to server if server has no value. An
+				// unresolved revisioned save must not turn its retained local
+				// selection into another PATCH while reconciliation is deferred.
+				if (!deferLastTopicReconciliation) {
+					this.migrateLocalStorage({ keepEmptyPick: pickWon })
+				}
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
-                this.restoreSelection({ keepEmptyPick: pickWon })
+				if (!deferLastTopicReconciliation) {
+					this.restoreSelection({ keepEmptyPick: pickWon })
+				}
             }
         } catch (e) {
             console.error("Failed to load topics", e)
@@ -1435,6 +1453,7 @@ export default class extends Controller {
 				}
             }
 			if (claimed && saveResult === false) this.releasePendingSelfEcho(clientId)
+			if (saveResult !== null) this.retryDeferredLastTopicReconciliation(effectiveCreativeId)
 			if (saveResult !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&
                 this._pendingPick.topicId === topicId) {
@@ -1694,6 +1713,33 @@ export default class extends Controller {
 				? this.pendingSelfEchoPreviousTopicIds.get(clientId) !== snapshotTopicId
 				: revisionComparison > 0
 		})
+	}
+
+	// A revisioned snapshot can only be compared safely once every local save
+	// involved in that comparison has supplied its revision. Until then an ABA
+	// snapshot can look like the predecessor of an in-flight save by topic id.
+	hasUnacknowledgedRevisionedSaveFor(creativeId, snapshotTopicRevision) {
+		if (!snapshotTopicRevision) return false
+
+		const streamCreativeId = String(creativeId)
+		return this.pendingSelfEchoes.some(clientId =>
+			this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
+			!this.acknowledgedPendingSelfEchoes.has(clientId) &&
+			!this.pendingSelfEchoRemoteRevisions.has(clientId)
+		)
+	}
+
+	get deferredLastTopicReconciliations() {
+		return this._deferredLastTopicReconciliations || (this._deferredLastTopicReconciliations = new Set())
+	}
+
+	retryDeferredLastTopicReconciliation(creativeId) {
+		const streamCreativeId = String(creativeId)
+		if (!this.deferredLastTopicReconciliations.has(streamCreativeId) ||
+			String(this.effectiveCreativeId) !== streamCreativeId) return
+
+		this.deferredLastTopicReconciliations.delete(streamCreativeId)
+		this.loadTopics()
 	}
 
 	// Bumped for an individual stream when that stream is permanently gone. A
