@@ -39,8 +39,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   let application
   let controller
   let changeEvents
+  let originalFetch
 
   beforeEach(() => {
+    originalFetch = global.fetch
     document.body.innerHTML = `
       <div id="topics" data-controller="comments--topics" data-topic-main-text="All Messages">
         <div data-comments--topics-target="list"></div>
@@ -70,6 +72,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   })
 
   afterEach(() => {
+    global.fetch = originalFetch
     document.body.innerHTML = ''
     application.stop()
     jest.clearAllMocks()
@@ -185,6 +188,57 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     controller.onPopupClosed()
     controller.loadTopics = jest.fn()
     controller.onPopupOpened({ creativeId: '42' })
+    controller.selectTopic('3')
+    selfEcho('2')
+
+    expect(controller.currentTopicId).toBe('3')
+  })
+
+  test('a reopen does not restore a stale preference over its pending save', async () => {
+    controller.selectTopic('2')
+    await controller.flushSaveLastTopic('2')
+
+    controller.onPopupClosed()
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        last_topic_id: '1',
+        main_topic_id: '1',
+        effective_creative_id: '42',
+      }),
+    })
+    await controller.onPopupOpened({ creativeId: '42' })
+
+    expect(controller.currentTopicId).toBe('2')
+    await controller.flushSaveLastTopic(controller.currentTopicId)
+    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String))
+
+    selfEcho('2')
+    expect(controller.currentTopicId).toBe('2')
+  })
+
+  test('reopening an origin after its linked shell keeps the shared stream claim', async () => {
+    controller.creativeIdValue = '77'
+    controller.element.dataset.effectiveCreativeId = '42'
+    controller.selectTopic('2')
+    await controller.flushSaveLastTopic('2')
+
+    controller.onPopupClosed()
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        last_topic_id: '2',
+        main_topic_id: '1',
+        effective_creative_id: '42',
+      }),
+    })
+    await controller.onPopupOpened({ creativeId: '42' })
     controller.selectTopic('3')
     selfEcho('2')
 

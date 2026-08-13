@@ -72,6 +72,9 @@ export default class extends Controller {
             // creative must not veto this one's restored selection.
             this.archivedAwayTopicId = null
         }
+        // A retained claim is keyed by the effective stream id. This preserves
+        // a linked shell reopening at its origin while still releasing claims
+        // as soon as the requested creative is certainly different.
         this.dropPendingSelfEchoesForOtherCreatives(creativeId)
         this.subscribe()
         return this.loadTopics()
@@ -164,6 +167,13 @@ export default class extends Controller {
         return match ? match[1] : null
     }
 
+    // TopicsChannel and update_last_topic both resolve linked shells through
+    // effective_origin. Before a response provides that id, the requested id
+    // is the best available stream key.
+    get effectiveCreativeId() {
+        return this.element.dataset.effectiveCreativeId || this.creativeId
+    }
+
     async loadTopics() {
         if (!this.creativeId) return
 
@@ -199,6 +209,11 @@ export default class extends Controller {
                 this.canSetPrimaryAgent = canSetPrimaryAgent
                 this.archivedTopics = data.archived_topics || []
                 this.pruneArchivedBadges()
+                const effectiveCreativeId = data.effective_creative_id
+                    ? String(data.effective_creative_id)
+                    : String(this.creativeId)
+                this.element.dataset.effectiveCreativeId = effectiveCreativeId
+                this.dropPendingSelfEchoesForOtherCreatives(effectiveCreativeId)
                 // A topic picked while this fetch was in flight is newer intent
                 // than the answer coming back: last_topic_id still names the
                 // topic the user left, because the save for the pick is
@@ -222,7 +237,10 @@ export default class extends Controller {
                     // rather than treating the derived fallback as its value.
                     this.serverLastTopicId = this._pickTopicId
                 } else {
-                    this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                    const pendingTopicId = this.latestPendingSelfEchoTopicIdFor(effectiveCreativeId)
+                    this.serverLastTopicId = pendingTopicId === undefined
+                        ? (data.last_topic_id ? String(data.last_topic_id) : "")
+                        : pendingTopicId
                 }
                 // The archive guard only has to outlive the sources that still
                 // name the topic. Test the effective selection, not just the
@@ -239,10 +257,6 @@ export default class extends Controller {
                 // Expose effective origin id so chat-context autofill (slash commands)
                 // and any other consumer can target the same creative the server uses
                 // (linked creatives resolve params[:creative_id] through effective_origin).
-                if (data.effective_creative_id) {
-                    this.element.dataset.effectiveCreativeId = String(data.effective_creative_id)
-                }
-
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage({ keepEmptyPick: pickWon })
 
@@ -1271,6 +1285,7 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         const creativeId = this.creativeId
+        const effectiveCreativeId = this.effectiveCreativeId
         const clientId = newClientId()
         // The subscription the echo of this save would arrive on. The claim is
         // taken inside the callback below, which runs whenever the save ahead
@@ -1291,7 +1306,8 @@ export default class extends Controller {
             const claimed = generation === this.subscriptionGeneration
             if (claimed) {
                 this.pendingSelfEchoes.push(clientId)
-                this.pendingSelfEchoCreativeIds.set(clientId, String(creativeId))
+                this.pendingSelfEchoCreativeIds.set(clientId, String(effectiveCreativeId))
+                this.pendingSelfEchoTopicIds.set(clientId, id ? String(id) : "")
             }
             // A thrown fetch has an unknown outcome: the server may have saved
             // and broadcast before the connection failed, so keep its claim for
@@ -1325,6 +1341,7 @@ export default class extends Controller {
 
         this.pendingSelfEchoes.splice(index, 1)
         this.pendingSelfEchoCreativeIds.delete(clientId)
+        this.pendingSelfEchoTopicIds.delete(clientId)
         return true
     }
 
@@ -1338,6 +1355,21 @@ export default class extends Controller {
 
     get pendingSelfEchoCreativeIds() {
         return this._pendingSelfEchoCreativeIds || (this._pendingSelfEchoCreativeIds = new Map())
+    }
+
+    get pendingSelfEchoTopicIds() {
+        return this._pendingSelfEchoTopicIds || (this._pendingSelfEchoTopicIds = new Map())
+    }
+
+    latestPendingSelfEchoTopicIdFor(creativeId) {
+        const streamCreativeId = String(creativeId)
+        for (const clientId of [...this.pendingSelfEchoes].reverse()) {
+            if (this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId) {
+                return this.pendingSelfEchoTopicIds.get(clientId)
+            }
+        }
+
+        return undefined
     }
 
     // Bumped whenever the stream claims are settled on changes, so a save
@@ -1398,6 +1430,7 @@ export default class extends Controller {
     dropPendingSelfEchoes() {
         this.pendingSelfEchoes.length = 0
         this.pendingSelfEchoCreativeIds.clear()
+        this.pendingSelfEchoTopicIds.clear()
         // Emptying the array cannot reach a claim that has not been taken yet.
         // A save waiting its turn on the chain takes one when it runs, and by
         // then this stream is gone; the generation is how that queued save
