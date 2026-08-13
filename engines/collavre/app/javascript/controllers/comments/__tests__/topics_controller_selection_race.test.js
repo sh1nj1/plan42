@@ -374,6 +374,23 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
 
       expect(controller.currentTopicId).toBe('11')
     })
+
+    test('toggling stale archived topics does not make their strip look current', async () => {
+      controller.archivedTopics = [{ id: 4, name: 'Archived Alpha' }]
+      controller.renderTopics(TOPICS, true)
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const switching = switchTo('99')
+      controller.toggleArchivedTopics({ stopPropagation: jest.fn() })
+      controller.selectTopic('')
+
+      resolveFetch(otherCreativeResponse)
+      await switching
+
+      expect(controller.serverLastTopicId).toBe('11')
+      expect(controller.currentTopicId).toBe('11')
+    })
   })
 
   // Not every write to the selection is a pick. loadTopics() empties the strip
@@ -858,6 +875,18 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
       jest.advanceTimersByTime(500)
 
       expect(saveLastTopic).toHaveBeenCalledWith('42', '2')
+    })
+
+    test('a later restore leaves the broadcast preference behind the deep link', () => {
+      controller.setOverrideTopicId('3')
+      controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+      controller.handleTopicMessage({ action: 'updated', topic: { id: 1, name: 'Renamed Main' } })
+      jest.advanceTimersByTime(500)
+
+      expect(controller.currentTopicId).toBe('3')
+      expect(controller.serverLastTopicId).toBe('2')
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3')
     })
   })
 })

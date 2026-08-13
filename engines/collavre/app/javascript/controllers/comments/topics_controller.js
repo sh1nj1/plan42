@@ -229,7 +229,7 @@ export default class extends Controller {
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage({ keepEmptyPick: pickWon })
 
-                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
                 this.restoreSelection({ keepEmptyPick: pickWon })
             }
         } catch (e) {
@@ -248,6 +248,11 @@ export default class extends Controller {
     // controllers again.
     restoreSelection({ keepEmptyPick = false } = {}) {
         const lastTopicId = this.currentTopicId
+        // A deep link controls this popup's view, but it is not a replacement
+        // for the saved preference. Replaying the linked selection after a
+        // preference broadcast must therefore update the UI without writing the
+        // link back over that newer server value.
+        const preservePreference = this.hasDeepLinkSelection && !keepEmptyPick
         // archiveTopic() switched away from this topic on purpose. The server
         // preference still names it until the debounced save lands, so accept
         // the local intent over the stale server answer for that window.
@@ -265,7 +270,7 @@ export default class extends Controller {
                 // restoreSelection is suppressed; every other selectTopic caller
                 // is the user going somewhere, and reveals normally.
                 const reveal = this.archivedCollapsedTopicId !== String(lastTopicId)
-                this.selectTopic(lastTopicId, { reveal, pick: false })
+                this.selectTopic(lastTopicId, { reveal, pick: false, persist: !preservePreference })
                 return
             }
         }
@@ -275,12 +280,17 @@ export default class extends Controller {
             return
         }
 
+        if (preservePreference && !lastTopicId) {
+            this.selectTopic("", { pick: false, persist: false })
+            return
+        }
+
         // Not a pick: this fallback is what the current state resolves to, and
         // loadTopics() empties the strip for the length of its fetch, so any
         // re-render landing in that window resolves to Main whatever the user
         // has selected. Counting it as intent would let it outrank the answer
         // it was derived from — and drop the deep link on the way.
-        this.selectTopic(this.mainTopicId || "", { pick: false })
+        this.selectTopic(this.mainTopicId || "", { pick: false, persist: !preservePreference })
     }
 
     // An archived topic can be opened from the topic strip, the topic-list popup,
@@ -297,7 +307,7 @@ export default class extends Controller {
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
     }
 
-    renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage) {
+    renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage, sourceCreativeId = this._topicsCreativeId || this.creativeId) {
         const dragActions = canManage
             ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
             : ''
@@ -375,7 +385,8 @@ export default class extends Controller {
         this.listTarget.innerHTML = html
         // Which creative the chips now on screen belong to. A click can only
         // ever be about this one, whatever this.creativeId has since become.
-        this._renderedCreativeId = this.creativeId
+        this._renderedCreativeId = sourceCreativeId
+        this._topicsCreativeId = sourceCreativeId
 
         // The create button lives outside the scrolling strip so it stays reachable
         // without horizontal scrolling, no matter how many topics there are.
@@ -820,7 +831,7 @@ export default class extends Controller {
         this.selectTopic(id)
     }
 
-    selectTopic(id, { reveal = true, pick = true } = {}) {
+    selectTopic(id, { reveal = true, pick = true, persist = true } = {}) {
         // Only restoreSelection() is guarded, so reaching selectTopic with this
         // id means the user deliberately went back into the archived topic.
         // The transition is over.
@@ -828,7 +839,7 @@ export default class extends Controller {
             this.archivedAwayTopicId = null
         }
         if (reveal) this.revealArchivedTopic(id)
-        this.updateSelectionUI(id, { pick })
+        this.updateSelectionUI(id, { pick, persist })
         if (id) {
             this.clearNewMessageBadge(id)
         }
@@ -918,8 +929,8 @@ export default class extends Controller {
         }
     }
 
-    updateSelectionUI(id, { pick = true } = {}) {
-        this.applySelection(id, { pick })
+    updateSelectionUI(id, { pick = true, persist = true } = {}) {
+        this.applySelection(id, { pick, persist })
         // Update UI
         let activeEl = null
         this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
@@ -1086,8 +1097,8 @@ export default class extends Controller {
     // must leave the sources that outrank the preference alone. Recording the
     // preference and saving it happen either way; only the two consequences of
     // *intent* are gated.
-    applySelection(id, { pick = true } = {}) {
-        this.serverLastTopicId = id ? String(id) : ""
+    applySelection(id, { pick = true, persist = true } = {}) {
+        if (persist) this.serverLastTopicId = id ? String(id) : ""
         if (pick) {
             // Writing only the preference leaves the two sources that outrank it
             // in the getter still naming the topic being left, so the getter
@@ -1102,7 +1113,7 @@ export default class extends Controller {
             this._pickCreativeId = this._renderedCreativeId
             this._pickTopicId = this.serverLastTopicId
         }
-        this.debounceSaveLastTopic(id)
+        if (persist) this.debounceSaveLastTopic(id)
     }
 
     // Bumped on every selection so an in-flight loadTopics() can tell whether
