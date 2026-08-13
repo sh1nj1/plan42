@@ -282,6 +282,38 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.pendingSelfEchoes).toEqual([])
   })
 
+	test('a closed later save keeps the previous locally committed preference', async () => {
+		controller.lastKnownRemoteTopicId = '1'
+		controller.selectTopic('2')
+		await controller.flushSaveLastTopic('2')
+		expect(controller.lastKnownRemoteTopicId).toBe('2')
+		selfEcho('2')
+
+		let resolveSave
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+		controller.selectTopic('3')
+		const save = controller.flushSaveLastTopic('3')
+		await Promise.resolve()
+
+		controller.onPopupClosed()
+		global.fetch = jest.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '2',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await controller.onPopupOpened({ creativeId: '42' })
+
+		expect(controller.currentTopicId).toBe('3')
+		resolveSave(true)
+		await save
+	})
+
   test('reopening an origin after its linked shell keeps the shared stream claim', async () => {
     controller.creativeIdValue = '77'
     controller.element.dataset.effectiveCreativeId = '42'

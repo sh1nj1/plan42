@@ -1333,12 +1333,27 @@ export default class extends Controller {
             // that delayed echo. An HTTP failure is definitive, however, and
             // update_last_topic returns before broadcasting in that case.
             const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
+			const topicId = id ? String(id) : ""
             if (claimed && saved === true) {
-				if (this.possiblyMissedPendingSelfEchoes.has(clientId)) this.releasePendingSelfEcho(clientId)
-                else this.acknowledgePendingSelfEcho(clientId)
+				if (this.possiblyMissedPendingSelfEchoes.has(clientId)) {
+					this.releasePendingSelfEcho(clientId)
+				} else {
+					// A completed save establishes the server value that the
+					// next claim was made from. Without moving this baseline,
+					// a later closed save compares its reopen snapshot to a
+					// value from before an earlier local save and mistakes the
+					// legitimate previous value for another session's update.
+					// Do not overwrite a newer Action Cable update after this
+					// save's echo has already been consumed: that echo records
+					// the baseline at broadcast time, and another message may
+					// have advanced it before the HTTP response arrived.
+					if (this.pendingSelfEchoes.includes(clientId)) {
+						this.lastKnownRemoteTopicId = topicId
+					}
+					this.acknowledgePendingSelfEcho(clientId)
+				}
             }
             if (claimed && saved === false) this.releasePendingSelfEcho(clientId)
-            const topicId = id ? String(id) : ""
             if (saved !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&
                 this._pendingPick.topicId === topicId) {
@@ -1577,7 +1592,11 @@ export default class extends Controller {
         if (action === "last_topic_changed") {
             // Broadcast is already scoped to the current user via user-specific channel
             const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
-            if (this.consumeSelfEcho(data.client_id)) return
+			if (this.consumeSelfEcho(data.client_id)) {
+				this.lastKnownRemoteTopicId = newTopicId
+				return
+			}
+			this.lastKnownRemoteTopicId = newTopicId
             if (newTopicId !== this.serverLastTopicId) {
                 this.serverLastTopicId = newTopicId
                 // Another session moved the preference; nobody clicked in this
