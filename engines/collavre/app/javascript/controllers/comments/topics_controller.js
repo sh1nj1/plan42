@@ -6,6 +6,7 @@ import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
+const SAVE_REQUEST_TIMEOUT = 5_000
 
 // Names one save, so its broadcast can be told from a sibling session's. It
 // has to be unique across the user's tabs, not just within this one: two tabs
@@ -1399,7 +1400,7 @@ export default class extends Controller {
             // and broadcast before the connection failed, so keep its claim for
             // that delayed echo. An HTTP failure is definitive, however, and
             // update_last_topic returns before broadcasting in that case.
-			const saveResult = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
+			const saveResult = await this.saveLastTopicWithTimeout(creativeId, id || null, clientId)
 			const saved = saveResult === true || saveResult?.success === true
 			const savedRevision = this.normalizeLastTopicRevision(saveResult?.lastTopicRevision)
 			const topicId = id ? String(id) : ""
@@ -1467,6 +1468,19 @@ export default class extends Controller {
         return this._saveChain
     }
 
+	// A request that never settles must not hold every later pick behind it.
+	// Its server outcome remains ambiguous, so the caller still retains a short
+	// lived echo claim just as it does for a rejected fetch.
+	saveLastTopicWithTimeout(creativeId, topicId, clientId) {
+		let timeoutId
+		const request = Promise.resolve(saveLastTopic(creativeId, topicId, clientId)).catch(() => null)
+		const timeout = new Promise(resolve => {
+			timeoutId = setTimeout(() => resolve(null), SAVE_REQUEST_TIMEOUT)
+		})
+
+		return Promise.race([request, timeout]).finally(() => clearTimeout(timeoutId))
+	}
+
     // The echo names the save it came from, so this is identity, not a guess.
     // Matching on the topic id instead would let a sibling session that picked
     // the same topic settle one of our claims, leaving our own echo to arrive
@@ -1501,13 +1515,22 @@ export default class extends Controller {
 		return true
     }
 
-    releasePendingSelfEcho(clientId) {
+	releasePendingSelfEcho(clientId) {
         const index = this.pendingSelfEchoes.indexOf(clientId)
         if (index === -1) return false
 
         this.pendingSelfEchoes.splice(index, 1)
 		this.discardSelfEchoMetadata(clientId)
 		return true
+	}
+
+	// A retired ambiguous request can still have committed after its connection
+	// failed. Keep only its client id so that a very late echo cannot look like
+	// another session's update and overwrite a newer local selection.
+	retirePendingSelfEcho(clientId) {
+		const released = this.releasePendingSelfEcho(clientId)
+		if (released) this.retiredSelfEchoIds.add(clientId)
+		return released
 	}
 
 	discardSelfEchoMetadata(clientId) {
@@ -1537,7 +1560,7 @@ export default class extends Controller {
 				this.acknowledgedPendingSelfEchoes.has(clientId) ||
 				this.pendingSelfEchoRemoteRevisions.has(clientId)) return
 
-			this.releasePendingSelfEcho(clientId)
+			this.retirePendingSelfEcho(clientId)
 			this.retryDeferredLastTopicReconciliation(creativeId)
 		}, AMBIGUOUS_SAVE_CLAIM_TIMEOUT)
 		this.ambiguousPendingSelfEchoRetirements.set(clientId, timeout)
@@ -1552,6 +1575,10 @@ export default class extends Controller {
 	get ambiguousPendingSelfEchoRetirements() {
 		return this._ambiguousPendingSelfEchoRetirements ||
 			(this._ambiguousPendingSelfEchoRetirements = new Map())
+	}
+
+	get retiredSelfEchoIds() {
+		return this._retiredSelfEchoIds || (this._retiredSelfEchoIds = new Set())
 	}
 
 	// An early echo can be the only proof that an in-flight GET predates a
@@ -1870,6 +1897,7 @@ export default class extends Controller {
 		this.possiblyMissedPendingSelfEchoes.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
 		this.settledSelfEchoes.clear()
+		this.retiredSelfEchoIds.clear()
 		// Emptying the array cannot reach a claim that has not been taken yet.
 		// A save waiting its turn on the chain takes one when it runs, and by
 		// then every stream has gone; its stream generation tells it so.
@@ -1930,6 +1958,7 @@ export default class extends Controller {
         const action = data.action || "created"
 
 		if (action === "last_topic_changed") {
+			if (this.retiredSelfEchoIds.has(data.client_id)) return
 			// Broadcast is already scoped to the current user via user-specific channel
 			const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
 			const lastTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)

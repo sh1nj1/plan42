@@ -900,7 +900,8 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
     })
 
     afterEach(() => {
-      jest.runOnlyPendingTimers()
+      controller.cancelPendingSaveLastTopic()
+      jest.clearAllTimers()
       jest.useRealTimers()
     })
 

@@ -442,6 +442,46 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		}
 	})
 
+	test('advances the serialized save queue when a request never settles', async () => {
+		jest.useFakeTimers()
+		try {
+			saveLastTopic.mockImplementationOnce(() => new Promise(() => {}))
+			const first = controller.flushSaveLastTopic('2')
+			const second = controller.flushSaveLastTopic('3')
+			await Promise.resolve()
+
+			expect(saveLastTopic).toHaveBeenCalledTimes(1)
+			await jest.advanceTimersByTimeAsync(5_000)
+			await Promise.all([first, second])
+
+			expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
+		} finally {
+			jest.useRealTimers()
+		}
+	})
+
+	test('ignores a late echo from a retired ambiguous save', async () => {
+		let rejectSave
+		jest.useFakeTimers()
+		try {
+			saveLastTopic.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+			const save = controller.flushSaveLastTopic('2')
+			await Promise.resolve()
+			const clientId = clientIdFor('2')
+			rejectSave(new Error('network'))
+			await save
+
+			await jest.advanceTimersByTimeAsync(5_000)
+			controller.selectTopic('3')
+			echo('2', clientId)
+
+			expect(controller.currentTopicId).toBe('3')
+			expect(controller.serverLastTopicId).not.toBe('2')
+		} finally {
+			jest.useRealTimers()
+		}
+	})
+
 	test('a committed revision outranks a snapshot with a different predecessor topic', async () => {
 		let resolveSave
 		let resolveSnapshot
