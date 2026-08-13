@@ -839,7 +839,7 @@ export default class extends Controller {
             this.archivedAwayTopicId = null
         }
         if (reveal) this.revealArchivedTopic(id)
-        this.updateSelectionUI(id, { pick, persist })
+        this.updateSelectionUI(id, { pick, persist, pending: pick })
         if (id) {
             this.clearNewMessageBadge(id)
         }
@@ -929,8 +929,8 @@ export default class extends Controller {
         }
     }
 
-    updateSelectionUI(id, { pick = true, persist = true } = {}) {
-        this.applySelection(id, { pick, persist })
+    updateSelectionUI(id, { pick = true, persist = true, pending = false } = {}) {
+        this.applySelection(id, { pick, persist, pending })
         // Update UI
         let activeEl = null
         this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
@@ -1097,7 +1097,7 @@ export default class extends Controller {
     // must leave the sources that outrank the preference alone. Recording the
     // preference and saving it happen either way; only the two consequences of
     // *intent* are gated.
-    applySelection(id, { pick = true, persist = true } = {}) {
+    applySelection(id, { pick = true, persist = true, pending = false } = {}) {
         if (persist) this.serverLastTopicId = id ? String(id) : ""
         if (pick) {
             // Writing only the preference leaves the two sources that outrank it
@@ -1112,6 +1112,12 @@ export default class extends Controller {
             this.selectionEpoch += 1
             this._pickCreativeId = this._renderedCreativeId
             this._pickTopicId = this.serverLastTopicId
+            if (pending) {
+                this._pendingPick = {
+                    creativeId: this._pickCreativeId,
+                    topicId: this._pickTopicId,
+                }
+            }
         }
         if (persist) this.debounceSaveLastTopic(id)
     }
@@ -1126,9 +1132,10 @@ export default class extends Controller {
         this._selectionEpoch = value
     }
 
-    // Did a pick land after the load at `epoch` started, and is it a pick about
-    // the creative that load describes? The first half says the pick is newer
-    // than the answer; the second is decided by the strip the click landed on,
+    // Did a pick land after the load at `epoch` started, or is there still an
+    // unsaved pick about the creative that load describes? A later load can
+    // begin before the pick's debounce lands, so request age alone cannot tell
+    // whether its answer predates the pick. The strip the click landed on,
     // not by this.creativeId — onPopupOpened assigns that synchronously before
     // the fetch, so a click on the outgoing creative's chips already carries the
     // incoming id. The rendered strip is what the user was actually looking at.
@@ -1140,7 +1147,10 @@ export default class extends Controller {
     // made against a strip that predates a delete, and keeping it would fail the
     // lookup in restoreSelection() and persist Main in its place.
     pickOutranks(epoch, creativeId, topics, archivedTopics) {
-        if (this.selectionEpoch === epoch) return false
+        const hasNewerPick = this.selectionEpoch !== epoch
+        const hasUnsavedPick = this._pendingPick &&
+            String(this._pendingPick.creativeId) === String(creativeId)
+        if (!hasNewerPick && !hasUnsavedPick) return false
         // creativeId is always truthy here — loadTopics() returns without it —
         // so a pick made before any strip was rendered fails this too.
         if (String(this._pickCreativeId) !== String(creativeId)) return false
@@ -1181,8 +1191,15 @@ export default class extends Controller {
 
     async flushSaveLastTopic(id) {
         this.cancelPendingSaveLastTopic()
-        if (this.creativeId) {
-            await saveLastTopic(this.creativeId, id || null)
+        const creativeId = this.creativeId
+        if (creativeId) {
+            const saved = await saveLastTopic(creativeId, id || null)
+            const topicId = id ? String(id) : ""
+            if (saved !== false && this._pendingPick &&
+                String(this._pendingPick.creativeId) === String(creativeId) &&
+                this._pendingPick.topicId === topicId) {
+                this._pendingPick = null
+            }
         }
     }
 

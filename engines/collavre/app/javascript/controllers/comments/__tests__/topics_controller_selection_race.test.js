@@ -573,9 +573,10 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     })
   })
 
-  // A load that starts *after* the pick is not racing it, so its answer wins
-  // normally — otherwise a creative switch could never move the selection.
-  test('a load started after the pick still restores the server selection', async () => {
+  // A subsequent reload can begin before the debounce lands — archive state
+  // broadcasts do exactly that. Its answer still predates the unsaved pick,
+  // even though the pick happened before this particular request began.
+  test('an unsaved pick survives a load started after the pick', async () => {
     controller.selectTopic('3')
 
     global.fetch = jest.fn().mockResolvedValue({
@@ -592,7 +593,55 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
 
     await controller.loadTopics()
 
+    expect(controller.currentTopicId).toBe('3')
+    await controller.flushSaveLastTopic(controller.currentTopicId)
+    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+  })
+
+  // Once that pick reaches the server, a later load is free to take the
+  // server's value again. The pending marker must not become a permanent
+  // preference override.
+  test('a saved pick yields to a later load', async () => {
+    controller.selectTopic('3')
+    await controller.flushSaveLastTopic('3')
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 2,
+      }),
+    })
+
+    await controller.loadTopics()
+
     expect(controller.currentTopicId).toBe('2')
+  })
+
+  test('a failed save keeps the pick authoritative for a later load', async () => {
+    controller.selectTopic('3')
+    saveLastTopic.mockResolvedValueOnce(false)
+    await controller.flushSaveLastTopic('3')
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 2,
+      }),
+    })
+
+    await controller.loadTopics()
+
+    expect(controller.currentTopicId).toBe('3')
   })
 })
 
