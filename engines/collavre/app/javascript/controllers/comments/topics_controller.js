@@ -240,9 +240,12 @@ export default class extends Controller {
 
     // keepEmptyPick: the caller established that the user picked All Messages
     // after this render was set in motion. That pick names no topic, so it
-    // cannot be restored — it can only be left alone. Without this the Main
-    // fallback below would treat it as "nothing selected", navigate away from
-    // it and persist Main, which is the same revert a chip click suffers.
+    // cannot be restored from a topic list — it must be reapplied. Without
+    // this the Main fallback below would treat it as "nothing selected",
+    // navigate away from it and persist Main, which is the same revert a chip
+    // click suffers. A prior interim restore may also have dispatched Main, so
+    // reapplying sends the authoritative empty selection to downstream
+    // controllers again.
     restoreSelection({ keepEmptyPick = false } = {}) {
         const lastTopicId = this.currentTopicId
         // archiveTopic() switched away from this topic on purpose. The server
@@ -267,7 +270,10 @@ export default class extends Controller {
             }
         }
 
-        if (keepEmptyPick && !lastTopicId) return
+        if (keepEmptyPick && !lastTopicId) {
+            this.selectTopic("", { pick: false })
+            return
+        }
 
         // Not a pick: this fallback is what the current state resolves to, and
         // loadTopics() empties the strip for the length of its fetch, so any

@@ -455,6 +455,24 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
     })
 
+    test('re-dispatches a picked All Messages after an interim restore', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('')
+      broadcastCreate()
+      expect(changeEvents.at(-1).topicId).toBe('1')
+
+      respond(resolveFetch)
+      await loading
+
+      expect(controller.currentTopicId).toBe('')
+      expect(changeEvents.at(-1).topicId).toBe('')
+      expect(controller.listTarget.querySelector('.topic-tag[data-id=""]').classList)
+        .toContain('active')
+    })
+
     // The fallback is not the user moving off the link either, so it must not
     // consume the sources that outrank the preference. They are one-shot: once
     // released, not even a reload gets the linked conversation back.
