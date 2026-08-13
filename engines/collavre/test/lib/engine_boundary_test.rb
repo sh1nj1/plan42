@@ -98,6 +98,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   CSS_ASSET_REFERENCE = /(?:@import\s+(?:url\(\s*)?|url\(\s*)(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)?/i
   CSS_IMAGE_SET = /(?:-webkit-)?image-set\(\s*((?:[^()"']+|"[^"]*"|'[^']*'|\([^()]*\))*)\)/i
   CSS_IMAGE_SET_STRING = /(?:\A|,)\s*(?:"([^"]+)"|'([^']+)')/
+  STATIC_HTML_ASSET_TAG = /<(link|script|img|source|video|audio)\b[^>]*>/i
+  STATIC_HTML_ASSET_ATTRIBUTE = /\b(?:src|poster|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -856,6 +858,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     erb_path = ENGINES_ROOT.join(CORE, "app/views/collavre/example.html.erb")
     assert_includes ruby_violations_in(erb_path.to_s, erb_template_ruby_source(%(<%= stylesheet_link_tag "#{path}" %>))),
       "  engines/#{CORE}/app/views/collavre/example.html.erb references asset \"#{path}\" (engines/#{satellite})"
+
+    static_erb_asset = "/assets/#{path}.svg"
+    static_erb = <<~ERB
+      <img src="#{static_erb_asset}">
+      <script src="/assets/#{path}.js"></script>
+      <link href="/assets/#{path}.css" rel="stylesheet">
+      <%# <img src="/assets/#{satellite}/ignored.svg"> %>
+      <!-- <img src="/assets/#{satellite}/ignored.svg"> -->
+    ERB
+
+    assert_equal [ "/assets/#{path}.css", "/assets/#{path}.js", static_erb_asset ].sort,
+      erb_static_asset_paths_in(static_erb).sort
   end
 
   test "asset path detector ignores similarly named methods on arbitrary objects" do
@@ -1456,7 +1470,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     # Ruby generator templates are Ruby with ERB placeholders, so retain their
     # static source and replace output tags with a syntactically valid value.
     ruby = ruby_source_for(path, source)
-    ruby_violations_in(path, ruby)
+    violations = ruby_violations_in(path, ruby)
+    return violations unless path.delete_suffix(".tt").end_with?(".erb")
+
+    violations + erb_static_asset_paths_in(source).map do |asset|
+      "  #{relative(path)} references asset \"#{asset}\" (engines/#{satellite_for(asset)})"
+    end
   end
 
   def ruby_violations_in(path, source)
@@ -1510,6 +1529,27 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def erb_template_ruby_source(source)
     source.scan(/<%=?-?(.*?)-?%>/m).flatten.join("\n")
+  end
+
+  # Static URLs in ERB markup are sent to the browser just as surely as paths
+  # passed through an asset helper. Mask ERB directives and comments first so
+  # only literal URLs in shipped HTML are checked.
+  def erb_static_asset_paths_in(source)
+    markup = javascript_erb_template_source(source).gsub(/<!--.*?-->/m, "")
+    markup.to_enum(:scan, STATIC_HTML_ASSET_TAG).flat_map { html_asset_paths_in_tag(Regexp.last_match) }
+      .reject { |path| remote_asset_url?(path) }.select { |path| satellite_for(path) }.uniq
+  end
+
+  def html_asset_paths_in_tag(tag)
+    tag[0].to_enum(:scan, STATIC_HTML_ASSET_ATTRIBUTE).filter_map do
+      attribute = Regexp.last_match
+      path = attribute.captures.compact.first
+      path if html_asset_attribute?(tag[1], attribute[0])
+    end
+  end
+
+  def html_asset_attribute?(tag, attribute)
+    tag.casecmp?("link") ? attribute.match?(/\Ahref\b/i) : attribute.match?(/\A(?:src|poster)\b/i)
   end
 
   # JavaScript outside ERB tags ships as executable source; the tags themselves
