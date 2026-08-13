@@ -235,7 +235,7 @@ module Creatives
       end
     end
 
-    test "fanout scans public comment history without joining it to recipients" do
+    test "fanout counts public comment history in the database without joining recipients" do
       creative = Creative.create!(user: @user, description: "Non-fanout public history", sequence: 925)
       viewers = 3.times.map do |index|
         User.create!(email: "public-badge-viewer-#{index}@example.com", password: TEST_PASSWORD, name: "Public Badge Viewer #{index}")
@@ -251,8 +251,9 @@ module Creatives
         Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: viewers)
       end
 
-      assert_equal 1, comment_queries.length
-      assert_no_match(/JOIN/i, comment_queries.first)
+      assert comment_queries.any? { |sql| sql.match?(/COUNT\(\*\)/i) }
+      assert comment_queries.none? { |sql| sql.match?(/SELECT "comments"\."id"/i) }
+      assert comment_queries.none? { |sql| sql.match?(/JOIN/i) }
     end
 
     test "fanout keeps archived-topic counts while a recipient views All Messages" do

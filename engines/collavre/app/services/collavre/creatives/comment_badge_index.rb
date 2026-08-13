@@ -15,10 +15,10 @@ module Creatives
 
     Badge = Struct.new(:unread_count, :visible_comments, keyword_init: true)
 
-    # The comment-created fanout has one origin and many recipients. Read the
-    # comment history once, then apply each recipient's topic watermark in Ruby.
-    # Joining every recipient to public history made one broadcast materialise
-    # recipients × comments rows before grouping.
+    # The comment-created fanout has one origin and many recipients. Resolve
+    # each topic watermark with database COUNTs instead of materialising the
+    # comment history in Ruby. Joining every recipient to public history made
+    # one broadcast materialise recipients × comments rows before grouping.
     def self.for_users(origin:, users:)
       recipients = users.compact.uniq(&:id)
       return {} if recipients.empty?
@@ -184,38 +184,117 @@ module Creatives
     class << self
       private
 
-      # A comment broadcast can fan out to many people. Keep the comment scan
-      # independent of recipient count, then count the suffix after each
-      # watermark with a binary search. The arrays are ordered by primary key
-      # because find_each advances by that key.
+      # A comment broadcast can fan out to many people. Count only the suffix
+      # after each effective watermark in the database; loading all historical
+      # comment IDs for every broadcast made the cost grow with the full thread.
       def counts_for_users(origin, user_ids)
-        recipient_ids = user_ids.to_h { |user_id| [ user_id, true ] }
         watermarks_by_user_id = read_watermarks_for_users(origin, user_ids)
-        public_comment_ids_by_topic = Hash.new { |hash, topic_id| hash[topic_id] = [] }
-        private_comment_ids_by_user_id = Hash.new { |hash, user_id| hash[user_id] = Hash.new { |topics, topic_id| topics[topic_id] = [] } }
-
-        Comment.where(creative_id: origin.id).select(:id, :topic_id, :private, :user_id, :approver_id).find_each(batch_size: QUERY_BATCH_SIZE) do |comment|
-          if comment.private?
-            [ comment.user_id, comment.approver_id ].compact.uniq.each do |user_id|
-              private_comment_ids_by_user_id[user_id][comment.topic_id] << comment.id if recipient_ids.include?(user_id)
-            end
-          else
-            public_comment_ids_by_topic[comment.topic_id] << comment.id
-          end
+        public_topic_ids = Comment.where(creative_id: origin.id, private: false).distinct.pluck(:topic_id)
+        private_topic_ids_by_user_id = private_topic_ids_for_users(origin, user_ids)
+        requests_by_user_id = user_ids.to_h do |user_id|
+          topic_ids = public_topic_ids | private_topic_ids_by_user_id.fetch(user_id, [])
+          [ user_id, topic_ids.to_h { |topic_id| [ topic_id, watermark_for(watermarks_by_user_id[user_id], topic_id) ] } ]
         end
+        public_unread_counts = public_unread_counts_for(origin, requests_by_user_id.values)
+        public_comments_exist = public_topic_ids.any?
+        private_counts = private_counts_for(origin, requests_by_user_id)
 
         user_ids.each_with_object({}) do |user_id, counts_by_user_id|
-          topic_ids = public_comment_ids_by_topic.keys | private_comment_ids_by_user_id[user_id].keys
-          counts_by_user_id[user_id] = topic_ids.each_with_object({}) do |topic_id, counts_by_topic|
-            watermark = watermark_for(watermarks_by_user_id[user_id], topic_id)
-            public_ids = public_comment_ids_by_topic[topic_id]
-            private_ids = private_comment_ids_by_user_id[user_id][topic_id]
+          counts_by_user_id[user_id] = requests_by_user_id.fetch(user_id).each_with_object({}) do |(topic_id, watermark), counts_by_topic|
+            private_count = private_counts.fetch([ user_id, topic_id, watermark ], { unread: 0, visible: 0 })
             counts_by_topic[topic_id] = {
-              unread: count_after(public_ids, watermark) + count_after(private_ids, watermark),
-              visible: public_ids.length + private_ids.length
+              unread: public_unread_counts.fetch([ topic_id, watermark ], 0) + private_count.fetch(:unread),
+              visible: (public_comments_exist || private_count.fetch(:visible).positive?) ? 1 : 0
             }
           end
         end
+      end
+
+      def private_topic_ids_for_users(origin, user_ids)
+        topic_ids_by_user_id = Hash.new { |hash, user_id| hash[user_id] = [] }
+        [ :user_id, :approver_id ].each do |recipient_column|
+          Comment.where(creative_id: origin.id, private: true, recipient_column => user_ids).distinct.pluck(recipient_column, :topic_id).each do |user_id, topic_id|
+            topic_ids_by_user_id[user_id] << topic_id
+          end
+        end
+        topic_ids_by_user_id.transform_values!(&:uniq)
+      end
+
+      def public_unread_counts_for(origin, requests_by_user_id)
+        requests = requests_by_user_id.flat_map(&:to_a).uniq
+        return {} if requests.empty?
+
+        zero_watermark_topic_ids = requests.select { |_, watermark| watermark.zero? }.map(&:first)
+        counts = public_counts_after(origin, zero_watermark_topic_ids.uniq, 0)
+        positive_requests = requests.reject { |_, watermark| watermark.zero? }
+        positive_requests.each_slice(QUERY_BATCH_SIZE) do |request_batch|
+          counts.merge!(counts_from_rows(public_count_rows(origin, request_batch)) do |row|
+            [ row.fetch("topic_id")&.to_i, row.fetch("watermark").to_i ]
+          end)
+        end
+        counts
+      end
+
+      def public_counts_after(origin, topic_ids, watermark)
+        return {} if topic_ids.empty?
+
+        Comment.where(creative_id: origin.id, private: false, topic_id: topic_ids)
+          .where(Comment.arel_table[:id].gt(watermark))
+          .group(:topic_id)
+          .count
+          .transform_keys { |topic_id| [ topic_id, watermark ] }
+      end
+
+      def private_counts_for(origin, requests_by_user_id)
+        requests = requests_by_user_id.flat_map do |user_id, requests_by_topic|
+          requests_by_topic.map { |topic_id, watermark| [ user_id, topic_id, watermark ] }
+        end
+        requests.each_slice(QUERY_BATCH_SIZE).each_with_object({}) do |request_batch, counts|
+          counts.merge!(private_count_rows(origin, request_batch).to_h do |row|
+            [ [ row.fetch("user_id").to_i, row.fetch("topic_id")&.to_i, row.fetch("watermark").to_i ], {
+              unread: row.fetch("unread_count").to_i,
+              visible: row.fetch("visible_count").to_i
+            } ]
+          end)
+        end
+      end
+
+      def public_count_rows(origin, requests)
+        count_rows(requests) do |topic_id, watermark|
+          [
+            "SELECT ? AS topic_id, ? AS watermark, COUNT(*) AS unread_count FROM comments " \
+            "WHERE creative_id = ? AND private = ? AND #{topic_condition(topic_id)} AND id > ?",
+            topic_id, watermark, origin.id, false, *topic_binds(topic_id), watermark
+          ]
+        end
+      end
+
+      def private_count_rows(origin, requests)
+        count_rows(requests) do |user_id, topic_id, watermark|
+          [
+            "SELECT ? AS user_id, ? AS topic_id, ? AS watermark, " \
+            "SUM(CASE WHEN id > ? THEN 1 ELSE 0 END) AS unread_count, COUNT(*) AS visible_count FROM comments " \
+            "WHERE creative_id = ? AND private = ? AND #{topic_condition(topic_id)} AND (user_id = ? OR approver_id = ?)",
+            user_id, topic_id, watermark, watermark, origin.id, true, *topic_binds(topic_id), user_id, user_id
+          ]
+        end
+      end
+
+      def count_rows(requests)
+        sql = requests.map { |request| Comment.sanitize_sql_array(yield(*request)) }.join(" UNION ALL ")
+        Comment.connection.select_all(sql).to_a
+      end
+
+      def counts_from_rows(rows)
+        rows.to_h { |row| [ yield(row), row.fetch("unread_count").to_i ] }
+      end
+
+      def topic_condition(topic_id)
+        topic_id.nil? ? "topic_id IS NULL" : "topic_id = ?"
+      end
+
+      def topic_binds(topic_id)
+        topic_id.nil? ? [] : [ topic_id ]
       end
 
       def read_watermarks_for_users(origin, user_ids)
@@ -229,11 +308,6 @@ module Creatives
 
       def watermark_for(watermarks, topic_id)
         watermarks.fetch(topic_id, watermarks.fetch(nil, 0))
-      end
-
-      def count_after(comment_ids, watermark)
-        first_unread_index = comment_ids.bsearch_index { |comment_id| comment_id > watermark }
-        first_unread_index ? comment_ids.length - first_unread_index : 0
       end
 
       def topic_is_viewed?(topic_id, viewing_topics)

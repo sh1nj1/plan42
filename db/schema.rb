@@ -237,6 +237,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000004) do
     t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
     t.index ["creative_id", "id"], name: "index_comments_on_creative_id_and_id"
     t.index ["creative_id", "private", "id"], name: "index_comments_on_creative_id_and_private_and_id"
+    t.index ["creative_id", "private", "topic_id", "id"], name: "index_comments_on_creative_topic_private_and_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["notification_key"], name: "index_comments_on_notification_key", unique: true, where: "notification_key IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
