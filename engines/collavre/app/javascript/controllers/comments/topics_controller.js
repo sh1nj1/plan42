@@ -256,14 +256,19 @@ export default class extends Controller {
                 // restoreSelection is suppressed; every other selectTopic caller
                 // is the user going somewhere, and reveals normally.
                 const reveal = this.archivedCollapsedTopicId !== String(lastTopicId)
-                this.selectTopic(lastTopicId, { reveal })
+                this.selectTopic(lastTopicId, { reveal, pick: false })
                 return
             }
         }
 
         if (keepEmptyPick && !lastTopicId) return
 
-        this.selectTopic(this.mainTopicId || "")
+        // Not a pick: this fallback is what the current state resolves to, and
+        // loadTopics() empties the strip for the length of its fetch, so any
+        // re-render landing in that window resolves to Main whatever the user
+        // has selected. Counting it as intent would let it outrank the answer
+        // it was derived from — and drop the deep link on the way.
+        this.selectTopic(this.mainTopicId || "", { pick: false })
     }
 
     // An archived topic can be opened from the topic strip, the topic-list popup,
@@ -803,7 +808,7 @@ export default class extends Controller {
         this.selectTopic(id)
     }
 
-    selectTopic(id, { reveal = true } = {}) {
+    selectTopic(id, { reveal = true, pick = true } = {}) {
         // Only restoreSelection() is guarded, so reaching selectTopic with this
         // id means the user deliberately went back into the archived topic.
         // The transition is over.
@@ -811,7 +816,7 @@ export default class extends Controller {
             this.archivedAwayTopicId = null
         }
         if (reveal) this.revealArchivedTopic(id)
-        this.updateSelectionUI(id)
+        this.updateSelectionUI(id, { pick })
         if (id) {
             this.clearNewMessageBadge(id)
         }
@@ -901,8 +906,8 @@ export default class extends Controller {
         }
     }
 
-    updateSelectionUI(id) {
-        this.currentTopicId = id
+    updateSelectionUI(id, { pick = true } = {}) {
+        this.applySelection(id, { pick })
         // Update UI
         let activeEl = null
         this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
@@ -1060,18 +1065,30 @@ export default class extends Controller {
     }
 
     set currentTopicId(id) {
+        this.applySelection(id)
+    }
+
+    // pick: this selection is new intent — the user picked it, or the server
+    // told us their preference moved. A restore is not: it re-derives the
+    // selection from state already held, so it is never newer than anything and
+    // must leave the sources that outrank the preference alone. Recording the
+    // preference and saving it happen either way; only the two consequences of
+    // *intent* are gated.
+    applySelection(id, { pick = true } = {}) {
         this.serverLastTopicId = id ? String(id) : ""
-        // Writing only the preference leaves the two sources that outrank it in
-        // the getter still naming the topic being left, so the getter keeps
-        // answering with it: the next renderTopics() lights the old chip and the
-        // next restoreSelection() navigates back to it. Both are one-shot
-        // pointers at a topic to open, and this selection has moved off it.
-        // Dropped only when they disagree — a deep link that resolved to the
-        // topic now being selected must keep outranking the stale server
-        // last_topic_id for the rest of the popup session.
-        this.releaseSelectionSourcesOtherThan(this.serverLastTopicId)
-        this.selectionEpoch += 1
-        this._pickCreativeId = this._renderedCreativeId
+        if (pick) {
+            // Writing only the preference leaves the two sources that outrank it
+            // in the getter still naming the topic being left, so the getter
+            // keeps answering with it: the next renderTopics() lights the old
+            // chip and the next restoreSelection() navigates back to it. Both
+            // are one-shot pointers at a topic to open, and this selection has
+            // moved off it. Dropped only when they disagree — a deep link that
+            // resolved to the topic now being selected must keep outranking the
+            // stale server last_topic_id for the rest of the popup session.
+            this.releaseSelectionSourcesOtherThan(this.serverLastTopicId)
+            this.selectionEpoch += 1
+            this._pickCreativeId = this._renderedCreativeId
+        }
         this.debounceSaveLastTopic(id)
     }
 

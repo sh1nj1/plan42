@@ -376,6 +376,148 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     })
   })
 
+  // Not every write to the selection is a pick. loadTopics() empties the strip
+  // for the duration of its fetch, so any re-render landing in that window
+  // restores against an empty topic list and falls back to Main. That fallback
+  // is derived from state the load is about to replace — treating it as intent
+  // newer than the answer suppresses the very value it was derived from.
+  describe('a programmatic restore while the strip is loading', () => {
+    const NEW_TOPIC = { id: 4, name: 'Delta' }
+
+    const respond = (resolveFetch, topics = TOPICS) => resolveFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 2,
+      }),
+    })
+
+    // Another member creates a topic mid-load. handleTopicMessage() renders it
+    // on its own — this.topics was emptied — and restoreSelection() cannot find
+    // the saved topic among the one topic on screen.
+    const broadcastCreate = (userId = '99') => controller.handleTopicMessage({
+      action: 'created', topic: NEW_TOPIC, user_id: userId,
+    })
+
+    afterEach(() => { delete document.body.dataset.currentUserId })
+
+    test('does not suppress the response it was derived from', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      broadcastCreate()
+      expect(controller.currentTopicId).toBe('1') // fell back to Main
+
+      respond(resolveFetch)
+      await loading
+
+      expect(controller.currentTopicId).toBe('2')
+      expect(controller.listTarget.querySelector('.topic-tag[data-id="2"]').classList)
+        .toContain('active')
+    })
+
+    test('does not persist Main over the saved preference', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      broadcastCreate()
+
+      respond(resolveFetch)
+      await loading
+      await controller.flushSaveLastTopic(controller.currentTopicId)
+
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2')
+    })
+
+    // The fallback is not the user moving off the link either, so it must not
+    // consume the sources that outrank the preference. They are one-shot: once
+    // released, not even a reload gets the linked conversation back.
+    test('does not consume a deep-link override', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+      controller.setOverrideTopicId('3')
+
+      const loading = controller.loadTopics()
+      broadcastCreate()
+
+      respond(resolveFetch)
+      await loading
+
+      expect(controller.overrideTopicId).toBe('3')
+      expect(controller.currentTopicId).toBe('3')
+    })
+
+    test('does not strip ?topic_id=', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+      window.history.replaceState({}, '', '/creatives/42?topic_id=3')
+
+      const loading = controller.loadTopics()
+      broadcastCreate()
+
+      respond(resolveFetch)
+      await loading
+
+      expect(new URLSearchParams(window.location.search).get('topic_id')).toBe('3')
+      expect(controller.currentTopicId).toBe('3')
+    })
+
+    // The fallback is not the only restore that can land mid-load. archivedTopics
+    // outlives the emptied strip, so a preference naming an archived topic is
+    // still found — and re-selecting it is no more a pick than falling back to
+    // Main is. Left as one, it discards a preference another session moved and
+    // writes the local value back over it.
+    test('re-selecting the topic already held does not suppress the response', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+      controller.archivedTopics = [{ id: 5, name: 'Archived' }]
+      controller.serverLastTopicId = '5'
+
+      const loading = controller.loadTopics()
+      broadcastCreate()
+      expect(controller.currentTopicId).toBe('5') // found among the archived
+
+      resolveFetch({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          topics: TOPICS,
+          archived_topics: [{ id: 5, name: 'Archived' }],
+          can_manage: true,
+          main_topic_id: 1,
+          last_topic_id: 2,
+        }),
+      })
+      await loading
+      await controller.flushSaveLastTopic(controller.currentTopicId)
+
+      expect(controller.currentTopicId).toBe('2')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2')
+    })
+
+    // The same broadcast for a topic this user created elsewhere auto-selects
+    // it, and that is intent — it still has to outrank the landing answer.
+    test('the auto-select of the user\'s own new topic still outranks the response', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+      document.body.dataset.currentUserId = '7'
+
+      const loading = controller.loadTopics()
+      broadcastCreate('7')
+
+      respond(resolveFetch, [...TOPICS, NEW_TOPIC])
+      await loading
+
+      expect(controller.currentTopicId).toBe('4')
+    })
+  })
+
   // A load that starts *after* the pick is not racing it, so its answer wins
   // normally — otherwise a creative switch could never move the selection.
   test('a load started after the pick still restores the server selection', async () => {
