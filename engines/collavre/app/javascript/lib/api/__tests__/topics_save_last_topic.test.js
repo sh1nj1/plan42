@@ -51,4 +51,10 @@ describe('saveLastTopic', () => {
 
     await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBeNull()
   })
+
+  test.each([ 502, 504 ])('treats gateway status %i as an ambiguous delivery', async (status) => {
+    global.fetch.mockResolvedValue({ ok: false, status })
+
+    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBeNull()
+  })
 })
