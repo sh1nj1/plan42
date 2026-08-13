@@ -102,6 +102,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   STATIC_HTML_ASSET_ATTRIBUTE = /\b(?:src|srcset|poster|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
   STATIC_HTML_STYLE_ATTRIBUTE = /(?:\A|[\s<])style\s*=\s*(?:"([^"]*)"|'([^']*)')/i
   STATIC_HTML_STYLE_ELEMENT = /<style\b[^>]*>(.*?)<\/style\s*>/im
+  STATIC_HTML_SCRIPT_ELEMENT = /(<script\b[^>]*>).*?(<\/script\s*>)/im
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -874,6 +875,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       <style>.icon { background-image: image-set("/assets/#{path}.bmp" 1x, "/assets/#{path}@2x.bmp" 2x) }</style>
       <style>/* url("/assets/#{satellite}/ignored.png") */</style>
       <style><%= "url('/assets/#{satellite}/ignored.png')" %></style>
+      <script>const template = '<style>.icon { background: url("/assets/#{satellite}/ignored.png") }</style>'</script>
       <div data-style="background-image: url('/assets/#{satellite}/ignored.png')"></div>
       <%# <img src="/assets/#{satellite}/ignored.svg"> %>
       <!-- <img src="/assets/#{satellite}/ignored.svg"> -->
@@ -1552,11 +1554,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # only literal URLs in shipped HTML are checked.
   def erb_static_asset_paths_in(source)
     markup = javascript_erb_template_source(source).gsub(/<!--.*?-->/m, "")
-    paths = markup.to_enum(:scan, STATIC_HTML_ASSET_TAG).flat_map { html_asset_paths_in_tag(Regexp.last_match) }
-    inline_styles = markup.to_enum(:scan, STATIC_HTML_STYLE_ATTRIBUTE).flat_map do
+    static_markup = markup.gsub(STATIC_HTML_SCRIPT_ELEMENT) { "#{Regexp.last_match[1]}#{Regexp.last_match[2]}" }
+    paths = static_markup.to_enum(:scan, STATIC_HTML_ASSET_TAG).flat_map { html_asset_paths_in_tag(Regexp.last_match) }
+    inline_styles = static_markup.to_enum(:scan, STATIC_HTML_STYLE_ATTRIBUTE).flat_map do
       css_asset_paths_in(Regexp.last_match.captures.compact.first)
     end
-    style_elements = markup.to_enum(:scan, STATIC_HTML_STYLE_ELEMENT).flat_map do
+    style_elements = static_markup.to_enum(:scan, STATIC_HTML_STYLE_ELEMENT).flat_map do
       css_asset_paths_in(Regexp.last_match[1])
     end
     (paths + inline_styles + style_elements)
