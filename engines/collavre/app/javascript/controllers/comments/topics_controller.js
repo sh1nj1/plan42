@@ -1337,10 +1337,12 @@ export default class extends Controller {
 		// A linked shell can close before this debounce fires. Closing clears
 		// the cached effective origin, and reopening another shell before the
 		// callback runs would otherwise claim that shell's raw id even though
-		// the save belongs to the stream selected here.
+		// the save belongs to the stream selected here. Capture the requested
+		// creative too: it is the PATCH endpoint, not the effective stream.
 		const effectiveCreativeId = this.effectiveCreativeId
+		const creativeId = this.creativeId
         this._saveLastTopicTimer = setTimeout(() => {
-			this.flushSaveLastTopic(id, effectiveCreativeId)
+			this.flushSaveLastTopic(id, effectiveCreativeId, creativeId)
         }, 500)
     }
 
@@ -1354,11 +1356,15 @@ export default class extends Controller {
         }
     }
 
-    async flushSaveLastTopic(id, claimedEffectiveCreativeId = this.effectiveCreativeId) {
+	async flushSaveLastTopic(
+		id,
+		claimedEffectiveCreativeId = this.effectiveCreativeId,
+		requestedCreativeId = this.creativeId
+	) {
         this.cancelPendingSaveLastTopic()
-        if (!this.creativeId) return
+		if (!requestedCreativeId) return
 
-        const creativeId = this.creativeId
+		const creativeId = requestedCreativeId
 		const effectiveCreativeId = claimedEffectiveCreativeId
         const clientId = newClientId()
         // The subscription the echo of this save would arrive on. The claim is

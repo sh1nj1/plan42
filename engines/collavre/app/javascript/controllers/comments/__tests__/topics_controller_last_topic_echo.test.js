@@ -1270,6 +1270,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       await jest.advanceTimersByTimeAsync(500)
 
       const oldSaveClientId = clientIdFor('2')
+      expect(saveLastTopic).toHaveBeenCalledWith('77', '2', oldSaveClientId)
       expect(controller.pendingSelfEchoCreativeIds.get(oldSaveClientId)).toBe('42')
 
       controller.selectTopic('3')
