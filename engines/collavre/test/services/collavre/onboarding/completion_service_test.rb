@@ -86,6 +86,32 @@ module Collavre
         assert_equal "running", task.reload.status
       end
 
+      test "defers each orphaned session independently when multiple session roots are deleted" do
+        user = User.create!(name: "Multiple deleted roots", email: "multiple-deleted-roots@example.com", password: "password")
+        agent = User.create!(name: "Multiple deleted roots helper", email: "multiple-deleted-roots-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        retired_session = Seeder.new(user: user).call
+        retired_creative = retired_session.practice_creatives.second
+        comment = Comment.create!(creative: retired_creative, user: user, content: "@Multiple deleted roots helper: Please help")
+        task = Task.create!(name: "Response", status: "running", trigger_event_name: "comment_created",
+                            trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent, creative: retired_creative)
+
+        CompletionService.new(user: user).call(session_id: retired_session.session_id, defer_pending_agent_cleanup: true)
+        retired_session.root.reload.update!(data: retired_session.root.data.merge("onboarding" => retired_session.data.except("scenario_key")))
+        user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+        active_session = Seeder.new(user: user, force: true).call
+        active_practice_ids = active_session.practice_creatives.ids
+        Creatives::DestroyService.new(creative: active_session.root, user: user).call
+
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, retired_session.session_id ]) do
+          Seeder.new(user: user).call
+        end
+
+        assert Creative.exists?(retired_creative.id)
+        assert_equal "running", task.reload.status
+        assert_empty user.creatives.where(id: active_practice_ids)
+      end
+
       test "defers cleanup while the onboarding agent job is queued before its task exists" do
         user = User.create!(name: "Queued finisher", email: "queued-finisher@example.com", password: "password")
         agent = User.create!(name: "Queued helper", email: "queued-helper@example.com", password: "password",

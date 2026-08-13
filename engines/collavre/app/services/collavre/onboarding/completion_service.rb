@@ -16,13 +16,13 @@ module Collavre
         # the root was deleted, every remaining tagged item is orphaned and
         # must be removed before onboarding can be reset or completed.
         resolved_session_id = session_id || session&.session_id
-        owned = session_items(resolved_session_id)
-        resolved_session_id ||= session_id_from(owned)
-        if defer_pending_agent_cleanup && resolved_session_id.present? && pending_agent_turn?(owned)
-          mark_deferred_cleanup!(owned)
-          OnboardingCleanupJob.perform_later(user.id, resolved_session_id)
-        else
-          destroy_items!(owned)
+        session_item_groups(resolved_session_id).each do |owned_session_id, owned|
+          if defer_pending_agent_cleanup && pending_agent_turn?(owned)
+            mark_deferred_cleanup!(owned)
+            OnboardingCleanupJob.perform_later(user.id, owned_session_id)
+          else
+            destroy_items!(owned)
+          end
         end
         user.update!(onboarding_completed_at: Time.current)
         true
@@ -49,9 +49,10 @@ module Collavre
         end
       end
 
-      def session_id_from(owned)
-        session_ids = owned.filter_map { |creative| creative.data&.dig("onboarding", "session_id") }.uniq
-        session_ids.first if session_ids.one?
+      def session_item_groups(session_id)
+        session_items(session_id).group_by do |creative|
+          creative.data.dig("onboarding", "session_id")
+        end
       end
 
       def pending_agent_turn?(owned)
