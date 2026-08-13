@@ -12,8 +12,6 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       password: SecureRandom.hex(32),
       llm_vendor: "anthropic",
       llm_model: "claude-code",
-      # offline state — routing_expression nil, expected_token captured
-      routing_expression: nil,
       routing_subscription_token: nil,
       created_by_id: @owner.id,
       searchable: false
@@ -40,7 +38,7 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     assert_equal "cancelled", delegated_task.reload.status
   end
 
-  test "no-op when agent came back online (routing_expression restored)" do
+  test "no-op when agent came back online (presence restored)" do
     topic = Topic.create!(creative: @creative, name: "cc-online-topic", user: @owner)
     delegated_task = Task.create!(
       name: "Delegated task",
@@ -55,8 +53,8 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     )
 
     # Reconnect-grace path: the same MCP session resubscribed during the grace
-    # window and restored routing_expression.
-    @claude_agent.update_column(:routing_expression, "true")
+    # window and restored presence.
+    Collavre::AgentSubscription.create!(agent_id: @claude_agent.id, token: "expected-token-value")
     @claude_agent.update_column(:routing_subscription_token, "expected-token-value")
 
     Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
@@ -147,7 +145,6 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     # rechecks would no-op — but the dropped session's own session topic is
     # private to it and no sibling will /reply. The session-scoped invocation
     # targets only that topic's delegated work.
-    @claude_agent.update_column(:routing_expression, "true")
     Collavre::AgentSubscription.create!(
       agent_id: @claude_agent.id, token: "sibling", session_id: "sess-other"
     )

@@ -26,16 +26,16 @@ module Collavre
         # Guard: same offline-session check as the agent_id branch below.
         # Queued Claude Channel tasks resumed via Orchestration::AgentOrchestrator
         # .dequeue_next_for_topic enter this branch as AiAgentJob.perform_later(task).
-        # If AgentChannel#unsubscribed cleared routing_expression while the
+        # If AgentChannel#unsubscribed removed the last presence row while the
         # task was queued (WS drop without DELETE /agent/:id, e.g. SIGKILL or
         # network blip past the reconnect grace), and another completion later
         # drains the queue, this task would otherwise be promoted to running →
         # delegated and broadcast to a clientless agent:user:<id> stream —
         # held until stuck recovery.
-        if agent.claude_channel_agent? && agent.routing_expression.blank?
+        if agent.claude_channel_agent? && !agent.claude_channel_online?
           Rails.logger.info(
             "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
-            "session offline (routing_expression blank)"
+            "session offline (no live presence)"
           )
           task.update!(status: "cancelled")
           if task.trigger_event_payload&.key?("topic")
@@ -93,17 +93,17 @@ module Collavre
 
         # Guard: skip if the Claude Channel session has unregistered (or its WS
         # dropped) during the window between Scheduler enqueue and this job
-        # firing. AgentsController#destroy / AgentChannel#unsubscribed clear
-        # routing_expression on the per-session ai_user, so a blank value here
-        # means there is no live MCP client to receive the dispatch. Without
+        # firing. AgentsController#destroy / AgentChannel#unsubscribed remove
+        # the last presence row, so no live presence here means there is no MCP
+        # client to receive the dispatch. Without
         # this guard, a :delayed (busy / rate-limited) enqueue from
         # Scheduler#evaluate would materialize a fresh Task, flip it to
         # "delegated", and broadcast to a clientless agent:user:<id> stream
         # — holding the topic/agent slot until stuck recovery.
-        if agent.claude_channel_agent? && agent.routing_expression.blank?
+        if agent.claude_channel_agent? && !agent.claude_channel_online?
           Rails.logger.info(
             "[AiAgentJob] Skipping Claude Channel job for agent #{agent.id}: " \
-            "session offline (routing_expression blank, event=#{event_name})"
+            "session offline (no live presence, event=#{event_name})"
           )
           return
         end

@@ -680,13 +680,10 @@ class AiAgentJobTest < ActiveJob::TestCase
       password: SecureRandom.hex(32),
       llm_vendor: "anthropic",
       llm_model: "claude-code",
-      # Online session — without this, the resumed-task offline guard
-      # (commit fixing P2 "Guard queued Claude jobs when session offline")
-      # would short-circuit before the adapter's UndeliverableError fires.
-      routing_expression: "true",
       created_by_id: @owner.id,
       searchable: false
     )
+    Collavre::AgentSubscription.create!(agent_id: claude_agent.id, token: SecureRandom.hex(8))
 
     # A Claude Channel agent has nowhere to broadcast a dispatch that carries no
     # topic, so ClaudeChannelAdapter raises and the job's rescue must mark the
@@ -718,10 +715,10 @@ class AiAgentJobTest < ActiveJob::TestCase
       password: SecureRandom.hex(32),
       llm_vendor: "anthropic",
       llm_model: "claude-code",
-      routing_expression: "true",
       created_by_id: @owner.id,
       searchable: false
     )
+    Collavre::AgentSubscription.create!(agent_id: claude_agent.id, token: SecureRandom.hex(8))
 
     topic = Topic.create!(creative: @creative, name: "cc-race", user: @owner)
     context = {
@@ -741,8 +738,10 @@ class AiAgentJobTest < ActiveJob::TestCase
       end
     end
 
-    Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
-      AiAgentJob.perform_now(claude_agent.id, "comment_created", context)
+    Collavre::ClaudeChannelPresenceJob.stub :perform_later, nil do
+      Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+        AiAgentJob.perform_now(claude_agent.id, "comment_created", context)
+      end
     end
 
     assert delivered, "Expected ClaudeChannelAdapter#deliver to be invoked"
