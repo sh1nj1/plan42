@@ -451,6 +451,7 @@ export default class extends Controller {
   }
 
   applySearchQuery(query) {
+    this.flushPendingRead()
     this.resetState()
     this.manualSearchQuery = query
     this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'

@@ -254,4 +254,22 @@ describe('CommentsListController read pointer updates', () => {
     expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ creative_id: '42', topic_id: null })
     expect(controller.creativeId).toBe('43')
   })
+
+  test('flushes a pending All Messages snapshot before applying a search', () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    controller.renderedAllTopicIds = ['1', '2']
+    controller.renderedAllTopicWatermarks = { 1: 20, 2: 21 }
+    controller.resetState = jest.fn()
+    controller.loadInitialComments = jest.fn()
+    controller.listTarget = document.createElement('div')
+    controller.markCommentsRead()
+
+    controller.applySearchQuery('only topic one')
+
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
+      creative_id: '42', topic_id: null, topic_ids: ['1', '2'], topic_watermarks: { 1: 20, 2: 21 }
+    })
+    expect(controller.manualSearchQuery).toBe('only topic one')
+    expect(controller.loadInitialComments).toHaveBeenCalledTimes(1)
+  })
 })
