@@ -142,6 +142,28 @@ describe('CommentsListController read pointer updates', () => {
     })
   })
 
+  test('extends the All Messages read bound when a local append introduces a topic', async () => {
+    controller.currentTopicId = null
+    controller.renderedAllTopicIds = ['1']
+    controller.renderedAllTopicWatermarks = { 1: 20 }
+    controller.listTarget = document.createElement('div')
+    controller.listTarget.innerHTML = '<div class="comment-item" data-comment-id="21" data-topic-id="2"></div>'
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+
+    const addedTopic = controller.recordRenderedAllTopicWatermarks(
+      controller.listTarget.firstElementChild,
+      { includeNewTopics: true },
+    )
+    controller.markCommentsRead()
+    await jest.advanceTimersByTimeAsync(2000)
+
+    expect(addedTopic).toBe(true)
+    expect(controller.renderedAllTopicIds).toEqual(['1', '2'])
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
+      creative_id: '42', topic_id: null, topic_ids: ['1', '2'], topic_watermarks: { 1: 20, 2: 21 }
+    })
+  })
+
   test('discards an older pagination response after switching conversations', async () => {
     controller.currentTopicId = null
     controller.renderedAllTopicIds = ['1']

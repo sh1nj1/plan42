@@ -22,6 +22,7 @@ const buildController = ({ manualSearchQuery = null } = {}) => {
     resetToLatest: jest.fn(),
     markCommentsRead: jest.fn(),
     recordRenderedAllTopicWatermarks: jest.fn(),
+    reportRenderedAllTopics: jest.fn(),
   }
 
   const controller = Object.create(CommentsFormController.prototype)
@@ -65,9 +66,25 @@ describe('CommentsFormController local submit during search', () => {
     expect(listCtrl.resetToLatest).not.toHaveBeenCalled()
     expect(listCtrl.recordRenderedAllTopicWatermarks).toHaveBeenCalledWith(
       document.getElementById('comment_9'),
+      { includeNewTopics: true },
     )
     // The placeholder is stale once a real comment lands.
     expect(document.getElementById('no-search-results')).toBeNull()
+  })
+
+  test('extends and reports the All Messages snapshot for a locally appended topic', () => {
+    const { controller, listCtrl } = buildController({ manualSearchQuery: null })
+    listCtrl.recordRenderedAllTopicWatermarks.mockReturnValue(true)
+
+    controller.renderCommentHtml(
+      '<div id="comment_10" class="comment-item" data-comment-id="10" data-topic-id="2">new topic</div>',
+    )
+
+    expect(listCtrl.recordRenderedAllTopicWatermarks).toHaveBeenCalledWith(
+      document.getElementById('comment_10'),
+      { includeNewTopics: true },
+    )
+    expect(listCtrl.reportRenderedAllTopics).toHaveBeenCalledTimes(1)
   })
 
   test('still replaces an edited comment in place during a search', () => {
