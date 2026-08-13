@@ -40,7 +40,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
   LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
-  ASSOCIATION_DECLARATION_METHODS = %w[belongs_to has_many has_one has_and_belongs_to_many].freeze
+  ASSOCIATION_DECLARATION_METHODS = %w[
+    belongs_to has_many has_one has_and_belongs_to_many delegated_type
+  ].freeze
   CONSTANT_SYMBOL_METHODS = %w[
     autoload? const_defined? const_get const_source_location
     const_set remove_const private_constant public_constant deprecate_constant
@@ -408,6 +410,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
 
+  test "detector flags delegated type classes" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(delegated_type :messageable, types: %w[#{satellite}::Message])))
+  end
+
   test "detector only resolves association options on association declarations" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -415,6 +424,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       names(string_references_in(%(has_many :messages, through: :links, source_type: "#{satellite}::Message")))
     assert_empty names(string_references_in(%(render json: { type: "#{satellite}::Message" })))
     assert_empty names(string_references_in(%q{Rails.logger.info(class_name: "#{satellite}::Message")}))
+    assert_empty names(string_references_in(%(has_many :messages, types: ["#{satellite}::Message"])))
   end
 
   test "detector folds a static string passed to constant resolution" do
@@ -2391,9 +2401,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       string = static_string_concatenation(node.receiver)
       found << [ string, node.location.start_line ] if string
     elsif rails_association_call?(node)
-      association_class_option_literals(node).each do |option|
-        string = static_string_concatenation(option.value)
-        found << [ string, option.location.start_line ] if string
+      association_class_option_values(node).each do |value|
+        string = static_string_concatenation(value)
+        found << [ string, value.location.start_line ] if string
       end
     end
     node.compact_child_nodes.each { |child| constant_resolving_string_literals_in(child, found) }
@@ -2412,14 +2422,27 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     node.is_a?(Prism::CallNode) && node.receiver.nil? && ASSOCIATION_DECLARATION_METHODS.include?(node.name.to_s)
   end
 
-  def association_class_option_literals(call)
+  def association_class_option_values(call)
     call.arguments&.arguments.to_a.select do |argument|
       argument.is_a?(Prism::HashNode) || argument.is_a?(Prism::KeywordHashNode)
     end.flat_map do |options|
-      options.elements.grep(Prism::AssocNode).select do |option|
-        %w[class_name source_type type].include?(association_key_name(option))
+      options.elements.grep(Prism::AssocNode).flat_map do |option|
+        case association_key_name(option)
+        when "class_name", "source_type", "type"
+          option.value
+        when "types"
+          delegated_type_values(call, option)
+        else
+          []
+        end
       end
     end
+  end
+
+  def delegated_type_values(call, option)
+    return [] unless call.name == :delegated_type && option.value.is_a?(Prism::ArrayNode)
+
+    option.value.elements
   end
 
   def active_support_inflector_constantize?(node)
