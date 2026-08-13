@@ -75,6 +75,16 @@ describe('saveLastTopic', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 
+  test('falls back to the legacy PATCH when an older server lacks the fence endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 404 })
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+
+    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toEqual({ success: true, lastTopicRevision: undefined })
+
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+    expect(bodyOfLastCall()).toEqual({ last_topic_id: '3', client_id: 'save-abc' })
+  })
+
   test('reports an ambiguous network failure separately from an HTTP rejection', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch.mockRejectedValue(new Error('offline'))
