@@ -85,7 +85,47 @@ module Collavre
 
     def update_legacy_pointer(creative, visible_comments, watermark)
       last_id = visible_comments.where(topic_id: nil).where("comments.id <= ?", watermark).maximum(:id)
-      update_pointer(creative, nil, last_id)
+      return unless last_id
+
+      pointer = CommentReadPointer.find_or_create_by!(user: Current.user, creative: creative, topic: nil)
+      previous_last_read_id = nil
+      updated_last_read_id = nil
+
+      pointer.with_lock do
+        previous_last_read_id = pointer.last_read_comment_id
+        updated_last_read_id = [ previous_last_read_id, last_id ].compact.max
+
+        if previous_last_read_id != updated_last_read_id
+          preserve_named_topic_fallbacks(creative, previous_last_read_id)
+          pointer.update!(last_read_comment_id: updated_last_read_id)
+        end
+      end
+
+      broadcast_read_receipts(creative, previous_last_read_id, topic: nil) if previous_last_read_id && previous_last_read_id != updated_last_read_id
+      broadcast_read_receipts(creative, updated_last_read_id, topic: nil)
+    end
+
+    # A legacy pointer is also the fallback watermark for named topics that do
+    # not yet have their own pointer. Before moving it forward for a rendered
+    # topic-less comment, make that prior fallback explicit for every named
+    # topic. A nil named pointer deliberately represents the initial (zero)
+    # watermark and prevents an unseen older topic from inheriting the new
+    # legacy value.
+    def preserve_named_topic_fallbacks(creative, previous_last_read_id)
+      existing_topic_ids = CommentReadPointer.where(user: Current.user, creative: creative).where.not(topic_id: nil).select(:topic_id)
+      now = Time.current
+      rows = creative.topics.where.not(id: existing_topic_ids).pluck(:id).map do |topic_id|
+        {
+          user_id: Current.user.id,
+          creative_id: creative.id,
+          topic_id: topic_id,
+          last_read_comment_id: previous_last_read_id,
+          created_at: now,
+          updated_at: now
+        }
+      end
+
+      CommentReadPointer.insert_all(rows, unique_by: :index_comment_read_pointers_on_user_creative_and_topic) if rows.any?
     end
 
     def broadcast_read_receipts(creative, comment_id, topic:)

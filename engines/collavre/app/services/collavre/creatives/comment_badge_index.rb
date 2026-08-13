@@ -127,10 +127,9 @@ module Creatives
       origin_ids.each_slice(QUERY_BATCH_SIZE).each_with_object({}) do |origin_id_batch, watermarks|
         watermarks.merge!(CommentReadPointer
           .where(user_id: user&.id, creative_id: origin_id_batch)
-          .where.not(last_read_comment_id: nil)
           .pluck(:creative_id, :topic_id, :last_read_comment_id)
           .each_with_object({}) do |(creative_id, topic_id, last_read_id), rows|
-            (rows[creative_id] ||= {})[topic_id] = last_read_id
+            (rows[creative_id] ||= {})[topic_id] = last_read_id || 0
           end)
       end
     end
@@ -304,10 +303,9 @@ module Creatives
 
       def read_watermarks_for_users(origin, user_ids)
         CommentReadPointer.where(user_id: user_ids, creative_id: origin.id)
-          .where.not(last_read_comment_id: nil)
           .pluck(:user_id, :topic_id, :last_read_comment_id)
           .each_with_object(Hash.new { |hash, user_id| hash[user_id] = {} }) do |(user_id, topic_id, last_read_id), watermarks|
-            watermarks[user_id][topic_id] = last_read_id
+            watermarks[user_id][topic_id] = last_read_id || 0
           end
       end
 

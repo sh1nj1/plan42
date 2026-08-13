@@ -60,6 +60,24 @@ module Collavre
       assert_operator Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative)[destination.id], :>=, 1
     end
 
+    test "moving an unread comment honors an explicit zero source watermark" do
+      source = @creative.topics.create!(name: "Source", user: @user)
+      destination = @creative.topics.create!(name: "Destination", user: @user)
+      moved = Comment.create!(creative: @creative, topic: source, user: users(:two), content: "unread source")
+      legacy = Comment.create!(creative: @creative, user: users(:two), content: "legacy read")
+      legacy.update_column(:topic_id, nil)
+      read_destination = Comment.create!(creative: @creative, topic: destination, user: users(:two), content: "read destination")
+      CommentReadPointer.create!(user: @user, creative: @creative, topic: source)
+      CommentReadPointer.create!(user: @user, creative: @creative, last_read_comment_id: legacy.id)
+      CommentReadPointer.create!(user: @user, creative: @creative, topic: destination, last_read_comment_id: read_destination.id)
+
+      CommentMoveService.new(creative: @creative, user: @user).call(comment_ids: [ moved.id ], target_topic_id: destination.id)
+
+      pointer = CommentReadPointer.find_by!(user: @user, creative: @creative, topic: destination)
+      assert_equal moved.id - 1, pointer.last_read_comment_id
+      assert_operator Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative)[destination.id], :>=, 1
+    end
+
     test "moving a private comment does not rewind a pointer for a user who cannot view it" do
       source = @creative.topics.create!(name: "Source", user: @user)
       destination = @creative.topics.create!(name: "Destination", user: @user)

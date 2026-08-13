@@ -235,6 +235,21 @@ module Creatives
       end
     end
 
+    test "a nil named pointer overrides the legacy watermark in batch badges" do
+      creative = Creative.create!(user: @user, description: "Explicit zero topic watermark", sequence: 927)
+      unseen_topic = creative.topics.create!(name: "Unseen", user: @user)
+      Comment.create!(creative: creative, topic: unseen_topic, user: @author, content: "unseen")
+      legacy_comment = Comment.create!(creative: creative, user: @author, content: "legacy read")
+      legacy_comment.update_column(:topic_id, nil)
+      CommentReadPointer.create!(user: @user, creative: creative, topic: unseen_topic)
+      CommentReadPointer.create!(user: @user, creative: creative, last_read_comment_id: legacy_comment.id)
+
+      badge = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user ]).fetch(@user.id)
+
+      assert_equal 1, badge.unread_count
+      assert badge.visible_comments
+    end
+
     test "fanout counts public comment history in the database without joining recipients" do
       creative = Creative.create!(user: @user, description: "Non-fanout public history", sequence: 925)
       viewers = 3.times.map do |index|

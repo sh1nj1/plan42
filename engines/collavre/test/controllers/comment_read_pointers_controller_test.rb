@@ -153,6 +153,24 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal legacy.id, pointer.last_read_comment_id
   end
 
+  test "advancing the legacy lane preserves unread named topics omitted from All Messages" do
+    archived_topic = @creative.topics.create!(name: "Archived", user: @user, archived_at: Time.current)
+    unseen = Comment.create!(creative: @creative, topic: archived_topic, user: users(:two), content: "unseen")
+    legacy = Comment.create!(creative: @creative, user: users(:two), content: "rendered legacy")
+    legacy.update_column(:topic_id, nil)
+
+    post "/comment_read_pointers/update", params: {
+      creative_id: @creative.id,
+      topic_watermarks: { "_legacy" => legacy.id }
+    }, as: :json
+
+    assert_response :success
+    named_pointer = CommentReadPointer.find_by!(user: @user, creative: @creative.effective_origin, topic: archived_topic)
+    assert_nil named_pointer.last_read_comment_id
+    assert_equal({ archived_topic.id => 1 }, Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative))
+    assert_equal unseen.id, archived_topic.comments.maximum(:id)
+  end
+
   test "topic read receipt broadcasts exclude readers whose access was revoked" do
     topic = @creative.main_topic
     comment = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "public")

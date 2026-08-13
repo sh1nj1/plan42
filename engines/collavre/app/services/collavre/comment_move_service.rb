@@ -104,8 +104,8 @@ module Collavre
         else
           CommentReadPointer.where(user_id: user_id, creative: destination_creative).index_by(&:topic_id)
         end
-        source_watermark = source_pointers[source_topic_id]&.last_read_comment_id || source_pointers[nil]&.last_read_comment_id || 0
-        destination_watermark = destination_pointers[destination_topic_id]&.last_read_comment_id || destination_pointers[nil]&.last_read_comment_id || 0
+        source_watermark = watermark_for(source_pointers, source_topic_id)
+        destination_watermark = watermark_for(destination_pointers, destination_topic_id)
         next unless source_watermark < comment.id && destination_watermark >= comment.id
 
         destination_pointer = destination_pointers[destination_topic_id] || CommentReadPointer.find_or_create_by!(
@@ -113,6 +113,15 @@ module Collavre
         )
         destination_pointer.update!(last_read_comment_id: comment.id - 1)
       end
+    end
+
+    # A named pointer with a nil cursor is an explicit initial watermark. It
+    # must win over the retained legacy fallback, otherwise a topic preserved
+    # when the legacy lane advanced is incorrectly treated as already read.
+    def watermark_for(pointers, topic_id)
+      return pointers.fetch(topic_id).last_read_comment_id.to_i if pointers.key?(topic_id)
+
+      pointers[nil]&.last_read_comment_id.to_i || 0
     end
 
     # Private comments are visible only to their author and approver. Rewinding
