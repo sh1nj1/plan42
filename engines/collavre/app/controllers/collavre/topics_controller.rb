@@ -381,6 +381,33 @@ module Collavre
           pointer.update_column(:creative_id, target_creative.id)
         end
       end
+
+      initialize_destination_topic_pointers(topic, target_creative)
+    end
+
+    # A target reader can have a legacy cursor that is newer than every comment
+    # being moved into this topic. Without a per-topic row, that unrelated
+    # cursor becomes this topic's fallback watermark and marks the moved history
+    # read. Existing destination cursors are the only users affected: readers
+    # without one already start at the zero watermark.
+    def initialize_destination_topic_pointers(topic, target_creative)
+      candidate_user_ids = CommentReadPointer.where(creative: target_creative).distinct.pluck(:user_id)
+      readable_user_ids = CreativeShare.readable_user_ids_from_shares(target_creative, candidate_user_ids)
+      existing_user_ids = CommentReadPointer.where(creative: target_creative, topic: topic).pluck(:user_id)
+      now = Time.current
+
+      rows = (readable_user_ids - existing_user_ids).map do |user_id|
+        {
+          user_id: user_id,
+          creative_id: target_creative.id,
+          topic_id: topic.id,
+          last_read_comment_id: nil,
+          created_at: now,
+          updated_at: now
+        }
+      end
+
+      CommentReadPointer.insert_all(rows, unique_by: :index_comment_read_pointers_on_user_creative_and_topic) if rows.any?
     end
 
     def topic_params

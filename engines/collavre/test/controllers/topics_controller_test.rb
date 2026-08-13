@@ -296,6 +296,28 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, pointer.reload.creative_id
   end
 
+  test "moving a topic preserves unread history for destination readers with a newer legacy cursor" do
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 950)
+    target_reader = users(:two)
+    moved_comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "moved unread")
+    newer_target_comment = Collavre::Comment.create!(creative: target_creative, user: @user, content: "newer target comment")
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: target_reader, shared_by: @user, permission: :read
+    )
+    Collavre::CommentReadPointer.create!(
+      user: target_reader, creative: target_creative, last_read_comment: newer_target_comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    pointer = Collavre::CommentReadPointer.find_by(user: target_reader, creative: target_creative, topic: @topic)
+    assert_not_nil pointer
+    assert_nil pointer.last_read_comment_id
+    assert_equal 1, Collavre::Creatives::CommentBadgeIndex.new(user: target_reader)
+      .unread_counts_by_topic(target_creative).fetch(@topic.id)
+  end
+
   test "moving a topic retains source-only readers' pointers with the topic" do
     target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 951)
     source_only_reader = users(:two)
