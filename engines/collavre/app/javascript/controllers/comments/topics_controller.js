@@ -1644,8 +1644,9 @@ export default class extends Controller {
 				)
 				return this.pendingSelfEchoCreativeIds.get(id) === streamCreativeId &&
 					(!this.acknowledgedPendingSelfEchoes.has(id) || acknowledgedAfterLoadStarted) &&
-					(revisionComparison === null || revisionComparison > 0) &&
-					this.pendingSelfEchoPreviousTopicIds.get(id) === topicId
+					(revisionComparison === null
+						? this.pendingSelfEchoPreviousTopicIds.get(id) === topicId
+						: revisionComparison > 0)
 			})
 			if (!clientId) return found ? topicId : undefined
 

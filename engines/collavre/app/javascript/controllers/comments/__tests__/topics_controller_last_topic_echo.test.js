@@ -291,6 +291,43 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.currentTopicId).toBe('1')
 	})
 
+	test('a committed revision outranks a snapshot with a different predecessor topic', async () => {
+		let resolveSave
+		let resolveSnapshot
+		controller.lastKnownRemoteTopicId = '1'
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+
+		controller.selectTopic('3')
+		const save = controller.flushSaveLastTopic('3')
+		await Promise.resolve()
+		const load = controller.loadTopics()
+		await Promise.resolve()
+
+		// Another session chose Alpha after this client observed Main, but before
+		// the local Beta save committed. The acknowledgement proves Beta's [5, 2]
+		// revision is newer than the GET's Alpha [5, 1] snapshot, even though
+		// Alpha is not Beta's predecessor topic.
+		resolveSave({ success: true, lastTopicRevision: [5, 2] })
+		await save
+		resolveSnapshot({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '2',
+				last_topic_revision: [5, 1],
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await load
+
+		expect(controller.currentTopicId).toBe('3')
+		expect(controller.serverLastTopicId).toBe('3')
+	})
+
 	test('an early linked-shell echo advances the resolved stream baseline', async () => {
 		let resolveSave
 		let resolveSnapshot
