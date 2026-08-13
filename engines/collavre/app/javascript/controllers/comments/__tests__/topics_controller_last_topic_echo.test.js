@@ -577,7 +577,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.pendingSelfEchoPreviousTopicIds.get(clientIdFor('2'))).toBe('1')
 	})
 
-	test('a queued save keeps its stream baseline after another creative loads', async () => {
+	test('a queued save uses its preceding save as the stream baseline after another creative loads', async () => {
 		let resolveFirstSave
 		let resolveSecondSave
 		controller.lastKnownRemoteTopicId = '1'
@@ -605,9 +605,53 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		await firstSave
 		await Promise.resolve()
 
-		expect(controller.pendingSelfEchoPreviousTopicIds.get(clientIdFor('3'))).toBe('1')
+		expect(controller.pendingSelfEchoPreviousTopicIds.get(clientIdFor('3'))).toBe('2')
 		resolveSecondSave(true)
 		await queuedSave
+	})
+
+	test('a temporary creative switch keeps an in-flight save claim for its returning stream', async () => {
+		let resolveSave
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		const clientId = clientIdFor('2')
+
+		global.fetch = jest.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					topics: TOPICS,
+					archived_topics: [],
+					can_manage: true,
+					last_topic_id: '1',
+					main_topic_id: '1',
+					effective_creative_id: '99',
+				}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					topics: TOPICS,
+					archived_topics: [],
+					can_manage: true,
+					last_topic_id: '1',
+					main_topic_id: '1',
+					effective_creative_id: '42',
+				}),
+			})
+
+		await controller.onPopupOpened({ creativeId: '99' })
+		await controller.onPopupOpened({ creativeId: '42' })
+		controller.selectTopic('3')
+
+		selfEcho('2')
+
+		expect(controller.pendingSelfEchoes).not.toContain(clientId)
+		expect(controller.currentTopicId).toBe('3')
+		resolveSave(true)
+		await save
 	})
 
   test('a reopen keeps a newer server preference after a closed save completed', async () => {
@@ -901,7 +945,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('3')
   })
 
-  test('reopening a different creative drops claims from the one left', async () => {
+  test('reopening a different creative retains claims from the one left', async () => {
     controller.selectTopic('2')
     await controller.flushSaveLastTopic('2')
 
@@ -919,7 +963,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 	})
     await controller.onPopupOpened({ creativeId: '99' })
 
-    expect(controller.pendingSelfEchoes).toEqual([])
+    expect(controller.pendingSelfEchoes).toHaveLength(1)
   })
 
   // unsubscribe() is the deliberate exit, and a refused subscription cannot

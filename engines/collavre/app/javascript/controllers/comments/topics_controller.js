@@ -228,7 +228,10 @@ export default class extends Controller {
 				const snapshotTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
                 this.element.dataset.effectiveCreativeId = effectiveCreativeId
 				this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
-                this.dropPendingSelfEchoesForOtherCreatives(effectiveCreativeId)
+				// Claims are keyed by their effective creative stream. Keep claims
+				// for a stream we have temporarily left: a save can still be in
+				// flight while the popup visits another creative, and returning before
+				// its echo arrives must still recognise that echo as our own.
                 // A topic picked while this fetch was in flight is newer intent
                 // than the answer coming back: last_topic_id still names the
                 // topic the user left, because the save for the pick is
@@ -1741,17 +1744,6 @@ export default class extends Controller {
         // then this stream is gone; the generation is how that queued save
         // finds out.
         this._subscriptionGeneration = this.subscriptionGeneration + 1
-    }
-
-    dropPendingSelfEchoesForOtherCreatives(creativeId) {
-        const currentCreativeId = String(creativeId)
-		for (const clientId of [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ]) {
-            if (this.pendingSelfEchoCreativeIds.get(clientId) !== currentCreativeId) {
-				const index = this.pendingSelfEchoes.indexOf(clientId)
-				if (index !== -1) this.pendingSelfEchoes.splice(index, 1)
-				this.discardSelfEchoMetadata(clientId)
-            }
-        }
     }
 
     // A save can begin before a linked shell's topics response reveals that it
