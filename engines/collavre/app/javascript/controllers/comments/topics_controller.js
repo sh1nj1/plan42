@@ -47,7 +47,6 @@ export default class extends Controller {
     }
 
     onPopupOpened({ creativeId }) {
-		this._preservingSelfEchoesForReopen = false
         const previousCreativeId = this.creativeIdValue
         this.creativeIdValue = creativeId
         // Clear stale cached state from the previous creative — otherwise
@@ -85,7 +84,7 @@ export default class extends Controller {
     }
 
     onPopupClosed() {
-		this._preservingSelfEchoesForReopen = true
+		this.markPendingSelfEchoesAsPossiblyMissed()
         this._loadTopicsVersion += 1
         // The same creative can reopen before an in-flight save broadcasts.
         // Keep that save's claim so its delayed echo remains recognisable on
@@ -217,8 +216,10 @@ export default class extends Controller {
                 const effectiveCreativeId = data.effective_creative_id
                     ? String(data.effective_creative_id)
                     : String(this.creativeId)
+				const snapshotTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 this.element.dataset.effectiveCreativeId = effectiveCreativeId
                 this.dropPendingSelfEchoesForOtherCreatives(effectiveCreativeId)
+				this.lastKnownRemoteTopicId = snapshotTopicId
                 // A topic picked while this fetch was in flight is newer intent
                 // than the answer coming back: last_topic_id still names the
                 // topic the user left, because the save for the pick is
@@ -234,7 +235,10 @@ export default class extends Controller {
                 // creative being left. Its id would survive as the preference,
                 // fail the lookup in restoreSelection(), drop the user on Main
                 // and then persist Main as the new creative's saved topic.
-                const pickWon = this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
+				const pickWon = !this.pendingPickWasSupersededWhileClosed(
+					effectiveCreativeId,
+					snapshotTopicId
+				) && this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
                 if (pickWon) {
                     // An interim restore can run while this fetch has the strip
                     // empty and replace serverLastTopicId with Main. The epoch
@@ -242,9 +246,12 @@ export default class extends Controller {
                     // rather than treating the derived fallback as its value.
                     this.serverLastTopicId = this._pickTopicId
                 } else {
-                    const pendingTopicId = this.latestPendingSelfEchoTopicIdFor(effectiveCreativeId)
+					const pendingTopicId = this.latestPendingSelfEchoTopicIdFor(
+						effectiveCreativeId,
+						snapshotTopicId
+					)
                     this.serverLastTopicId = pendingTopicId === undefined
-                        ? (data.last_topic_id ? String(data.last_topic_id) : "")
+						? snapshotTopicId
                         : pendingTopicId
                 }
                 // The archive guard only has to outlive the sources that still
@@ -1313,6 +1320,12 @@ export default class extends Controller {
                 this.pendingSelfEchoes.push(clientId)
                 this.pendingSelfEchoCreativeIds.set(clientId, String(effectiveCreativeId))
                 this.pendingSelfEchoTopicIds.set(clientId, id ? String(id) : "")
+				this.pendingSelfEchoPreviousTopicIds.set(
+					clientId,
+					this.lastKnownRemoteTopicId === undefined
+						? (this.serverLastTopicId ? String(this.serverLastTopicId) : "")
+						: this.lastKnownRemoteTopicId
+				)
             }
             // A thrown fetch has an unknown outcome: the server may have saved
             // and broadcast before the connection failed, so keep its claim for
@@ -1320,7 +1333,7 @@ export default class extends Controller {
             // update_last_topic returns before broadcasting in that case.
             const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
             if (claimed && saved === true) {
-                if (this._preservingSelfEchoesForReopen) this.releasePendingSelfEcho(clientId)
+				if (this.possiblyMissedPendingSelfEchoes.has(clientId)) this.releasePendingSelfEcho(clientId)
                 else this.acknowledgePendingSelfEcho(clientId)
             }
             if (claimed && saved === false) this.releasePendingSelfEcho(clientId)
@@ -1351,6 +1364,8 @@ export default class extends Controller {
         this.pendingSelfEchoes.splice(index, 1)
         this.pendingSelfEchoCreativeIds.delete(clientId)
         this.pendingSelfEchoTopicIds.delete(clientId)
+		this.pendingSelfEchoPreviousTopicIds.delete(clientId)
+		this.possiblyMissedPendingSelfEchoes.delete(clientId)
 		this.acknowledgedPendingSelfEchoes.delete(clientId)
         return true
     }
@@ -1371,6 +1386,36 @@ export default class extends Controller {
         return this._pendingSelfEchoTopicIds || (this._pendingSelfEchoTopicIds = new Map())
     }
 
+	// The last preference observed from the server is the baseline for a save.
+	// A reopening GET that differs from it has seen another session's newer
+	// write, not a stale pre-save snapshot, and must win over the retained claim.
+	get lastKnownRemoteTopicId() {
+		return this._lastKnownRemoteTopicId
+	}
+
+	set lastKnownRemoteTopicId(value) {
+		this._lastKnownRemoteTopicId = value ? String(value) : ""
+	}
+
+	get pendingSelfEchoPreviousTopicIds() {
+		return this._pendingSelfEchoPreviousTopicIds || (this._pendingSelfEchoPreviousTopicIds = new Map())
+	}
+
+	// These claims were already in flight when the popup unsubscribed. A success
+	// response for one proves its broadcast happened during that gap, so it can
+	// no longer arrive on the replacement subscription.
+    get possiblyMissedPendingSelfEchoes() {
+		return this._possiblyMissedPendingSelfEchoes || (this._possiblyMissedPendingSelfEchoes = new Set())
+	}
+
+	markPendingSelfEchoesAsPossiblyMissed() {
+		for (const clientId of this.pendingSelfEchoes) {
+			if (!this.acknowledgedPendingSelfEchoes.has(clientId)) {
+				this.possiblyMissedPendingSelfEchoes.add(clientId)
+			}
+		}
+	}
+
 	// A successful response proves the request committed. A close before the
 	// response means the matching broadcast was missed and can be retired; an
 	// open popup keeps its id long enough to consume an echo still in flight,
@@ -1385,17 +1430,35 @@ export default class extends Controller {
 		}
     }
 
-    latestPendingSelfEchoTopicIdFor(creativeId) {
+    latestPendingSelfEchoTopicIdFor(creativeId, snapshotTopicId) {
         const streamCreativeId = String(creativeId)
         for (const clientId of [...this.pendingSelfEchoes].reverse()) {
 			if (this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
-				!this.acknowledgedPendingSelfEchoes.has(clientId)) {
+				!this.acknowledgedPendingSelfEchoes.has(clientId) &&
+				this.pendingSelfEchoPreviousTopicIds.get(clientId) === snapshotTopicId) {
                 return this.pendingSelfEchoTopicIds.get(clientId)
             }
         }
 
         return undefined
     }
+
+	// A pick made before this replacement load normally outranks its answer: the
+	// answer may simply predate the save. A claim that was in flight across a
+	// close is the exception. When the snapshot has advanced from that save's
+	// known baseline, the closed stream missed a newer cross-session write, so
+	// replaying the local pick would immediately write the old topic back.
+	pendingPickWasSupersededWhileClosed(creativeId, snapshotTopicId) {
+		if (!this._pendingPick) return false
+
+		const streamCreativeId = String(creativeId)
+		return this.pendingSelfEchoes.some(clientId =>
+			this.possiblyMissedPendingSelfEchoes.has(clientId) &&
+			this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
+			this.pendingSelfEchoTopicIds.get(clientId) === this._pendingPick.topicId &&
+			this.pendingSelfEchoPreviousTopicIds.get(clientId) !== snapshotTopicId
+		)
+	}
 
     // Bumped whenever the stream claims are settled on changes, so a save
     // already queued can tell that the subscription it was made under is gone.
@@ -1456,6 +1519,8 @@ export default class extends Controller {
         this.pendingSelfEchoes.length = 0
         this.pendingSelfEchoCreativeIds.clear()
         this.pendingSelfEchoTopicIds.clear()
+		this.pendingSelfEchoPreviousTopicIds.clear()
+		this.possiblyMissedPendingSelfEchoes.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
         // Emptying the array cannot reach a claim that has not been taken yet.
         // A save waiting its turn on the chain takes one when it runs, and by

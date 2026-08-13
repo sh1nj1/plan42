@@ -196,6 +196,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 
   test('a reopen does not restore a stale preference over its pending save', async () => {
     let resolveSave
+    controller.lastKnownRemoteTopicId = '1'
     saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
     controller.selectTopic('2')
     const save = controller.flushSaveLastTopic('2')
@@ -251,6 +252,34 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     await controller.onPopupOpened({ creativeId: '42' })
 
     expect(controller.currentTopicId).toBe('3')
+  })
+
+  test('a reopened snapshot newer than a closed in-flight save is not overwritten', async () => {
+    let resolveSave
+    controller.lastKnownRemoteTopicId = '1'
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+    controller.selectTopic('2')
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
+
+    controller.onPopupClosed()
+    global.fetch = jest.fn().mockResolvedValue({
+		ok: true,
+		json: async () => ({
+			topics: TOPICS,
+			archived_topics: [],
+			can_manage: true,
+			last_topic_id: '3',
+			main_topic_id: '1',
+			effective_creative_id: '42',
+		}),
+    })
+    await controller.onPopupOpened({ creativeId: '42' })
+
+    expect(controller.currentTopicId).toBe('3')
+    resolveSave(true)
+    await save
+    expect(controller.pendingSelfEchoes).toEqual([])
   })
 
   test('reopening an origin after its linked shell keeps the shared stream claim', async () => {
