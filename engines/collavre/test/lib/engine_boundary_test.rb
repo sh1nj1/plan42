@@ -101,6 +101,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   STATIC_HTML_ASSET_TAG = /<(link|script|img|source|video|audio)\b[^>]*>/i
   STATIC_HTML_ASSET_ATTRIBUTE = /\b(?:src|srcset|poster|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
   STATIC_HTML_STYLE_ATTRIBUTE = /(?:\A|[\s<])style\s*=\s*(?:"([^"]*)"|'([^']*)')/i
+  STATIC_HTML_STYLE_ELEMENT = /<style\b[^>]*>(.*?)<\/style\s*>/im
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -869,15 +870,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       <link href="/assets/#{path}.css" rel="stylesheet">
       <div style="background-image: url('/assets/#{path}.png')"></div>
       <div style='background-image: image-set("/assets/#{path}.jpeg" 1x, "/assets/#{path}@2x.jpeg" 2x)'></div>
+      <style>.icon { background-image: url("/assets/#{path}.gif") }</style>
+      <style>.icon { background-image: image-set("/assets/#{path}.bmp" 1x, "/assets/#{path}@2x.bmp" 2x) }</style>
+      <style>/* url("/assets/#{satellite}/ignored.png") */</style>
+      <style><%= "url('/assets/#{satellite}/ignored.png')" %></style>
       <div data-style="background-image: url('/assets/#{satellite}/ignored.png')"></div>
       <%# <img src="/assets/#{satellite}/ignored.svg"> %>
       <!-- <img src="/assets/#{satellite}/ignored.svg"> -->
     ERB
 
     assert_equal [
-      "/assets/#{path}.avif", "/assets/#{path}.css", "/assets/#{path}.jpeg",
-      "/assets/#{path}.js", "/assets/#{path}.png", "/assets/#{path}.webp",
-      "/assets/#{path}@2x.jpeg", "/assets/#{path}@2x.webp", static_erb_asset
+      "/assets/#{path}.avif", "/assets/#{path}.css", "/assets/#{path}.gif",
+      "/assets/#{path}.jpeg", "/assets/#{path}.js", "/assets/#{path}.png",
+      "/assets/#{path}.webp", "/assets/#{path}@2x.bmp", "/assets/#{path}@2x.jpeg",
+      "/assets/#{path}@2x.webp", "/assets/#{path}.bmp", static_erb_asset
     ].sort,
       erb_static_asset_paths_in(static_erb).sort
   end
@@ -1547,9 +1553,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def erb_static_asset_paths_in(source)
     markup = javascript_erb_template_source(source).gsub(/<!--.*?-->/m, "")
     paths = markup.to_enum(:scan, STATIC_HTML_ASSET_TAG).flat_map { html_asset_paths_in_tag(Regexp.last_match) }
-    (paths + markup.to_enum(:scan, STATIC_HTML_STYLE_ATTRIBUTE).flat_map do
+    inline_styles = markup.to_enum(:scan, STATIC_HTML_STYLE_ATTRIBUTE).flat_map do
       css_asset_paths_in(Regexp.last_match.captures.compact.first)
-    end)
+    end
+    style_elements = markup.to_enum(:scan, STATIC_HTML_STYLE_ELEMENT).flat_map do
+      css_asset_paths_in(Regexp.last_match[1])
+    end
+    (paths + inline_styles + style_elements)
       .reject { |path| remote_asset_url?(path) }.select { |path| satellite_for(path) }.uniq
   end
 
