@@ -29,8 +29,6 @@ module Collavre
       unread_counts_by_topic = Creatives::CommentBadgeIndex.new(user: Current.user)
         .unread_counts_by_topic(@creative)
 
-      last_topic_preference = UserCreativePreference.find_by(user_id: Current.user.id, creative_id: @creative.id) if Current.user
-
       system_topic_id = system_topic&.id
       main_topic_id = main_topic.id
 
@@ -40,8 +38,7 @@ module Collavre
         can_manage: can_manage,
         can_create_topic: can_write,
         can_set_primary_agent: can_write,
-        last_topic_id: last_topic_preference&.last_topic_id,
-        last_topic_revision: last_topic_preference && [ last_topic_preference.id, last_topic_preference.last_topic_revision ],
+        **Topics::LastTopicPreferencePayload.new(creative: @creative, user: Current.user).call,
         is_inbox: @creative.inbox?,
         system_topic_id: system_topic_id,
         main_topic_id: main_topic_id,
