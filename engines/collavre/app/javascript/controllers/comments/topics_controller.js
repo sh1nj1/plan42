@@ -5,6 +5,7 @@ import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
+const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 
 // Names one save, so its broadcast can be told from a sibling session's. It
 // has to be unique across the user's tabs, not just within this one: two tabs
@@ -1453,6 +1454,9 @@ export default class extends Controller {
 				}
             }
 			if (claimed && saveResult === false) this.releasePendingSelfEcho(clientId)
+			if (claimed && saveResult === null) {
+				this.scheduleAmbiguousPendingSelfEchoRetirement(clientId)
+			}
 			if (saveResult !== null) this.retryDeferredLastTopicReconciliation(effectiveCreativeId)
 			if (saveResult !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&
@@ -1507,6 +1511,7 @@ export default class extends Controller {
 	}
 
 	discardSelfEchoMetadata(clientId) {
+		this.cancelAmbiguousPendingSelfEchoRetirement(clientId)
         this.pendingSelfEchoCreativeIds.delete(clientId)
         this.pendingSelfEchoTopicIds.delete(clientId)
 		this.pendingSelfEchoPreviousTopicIds.delete(clientId)
@@ -1515,6 +1520,38 @@ export default class extends Controller {
 		this.possiblyMissedPendingSelfEchoes.delete(clientId)
 		this.acknowledgedPendingSelfEchoes.delete(clientId)
 		this.settledSelfEchoes.delete(clientId)
+	}
+
+	// A rejected fetch has an ambiguous server outcome, so retain its claim long
+	// enough for a delayed self-echo. It cannot remain forever, though: a request
+	// that never reached Rails has no echo or revision to resolve it, and would
+	// otherwise defer every later revisioned snapshot on this stream.
+	scheduleAmbiguousPendingSelfEchoRetirement(clientId) {
+		if (!this.pendingSelfEchoes.includes(clientId)) return
+
+		this.cancelAmbiguousPendingSelfEchoRetirement(clientId)
+		const timeout = setTimeout(() => {
+			this.ambiguousPendingSelfEchoRetirements.delete(clientId)
+			const creativeId = this.pendingSelfEchoCreativeIds.get(clientId)
+			if (creativeId === undefined ||
+				this.acknowledgedPendingSelfEchoes.has(clientId) ||
+				this.pendingSelfEchoRemoteRevisions.has(clientId)) return
+
+			this.releasePendingSelfEcho(clientId)
+			this.retryDeferredLastTopicReconciliation(creativeId)
+		}, AMBIGUOUS_SAVE_CLAIM_TIMEOUT)
+		this.ambiguousPendingSelfEchoRetirements.set(clientId, timeout)
+	}
+
+	cancelAmbiguousPendingSelfEchoRetirement(clientId) {
+		const timeout = this.ambiguousPendingSelfEchoRetirements.get(clientId)
+		if (timeout !== undefined) clearTimeout(timeout)
+		this.ambiguousPendingSelfEchoRetirements.delete(clientId)
+	}
+
+	get ambiguousPendingSelfEchoRetirements() {
+		return this._ambiguousPendingSelfEchoRetirements ||
+			(this._ambiguousPendingSelfEchoRetirements = new Map())
 	}
 
 	// An early echo can be the only proof that an in-flight GET predates a

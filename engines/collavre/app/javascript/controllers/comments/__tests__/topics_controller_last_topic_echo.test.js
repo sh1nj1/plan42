@@ -390,6 +390,58 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.currentTopicId).toBe('1')
 	})
 
+	test('retires an ambiguous save with no echo and retries deferred reconciliation', async () => {
+		let rejectSave
+		jest.useFakeTimers()
+		try {
+			controller.lastKnownRemoteTopicId = '1'
+			saveLastTopic.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+			global.fetch = jest.fn()
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => ({
+						topics: TOPICS,
+						archived_topics: [],
+						can_manage: true,
+						last_topic_id: '1',
+						last_topic_revision: [5, 2],
+						main_topic_id: '1',
+						effective_creative_id: '42',
+					}),
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: async () => ({
+						topics: TOPICS,
+						archived_topics: [],
+						can_manage: true,
+						last_topic_id: '1',
+						last_topic_revision: [5, 2],
+						main_topic_id: '1',
+						effective_creative_id: '42',
+					}),
+				})
+
+			controller.selectTopic('2')
+			const save = controller.flushSaveLastTopic('2')
+			await Promise.resolve()
+			controller.onPopupClosed()
+			await controller.onPopupOpened({ creativeId: '42' })
+
+			rejectSave(new Error('network'))
+			await save
+			expect(controller.pendingSelfEchoes).toContain(clientIdFor('2'))
+
+			await jest.advanceTimersByTimeAsync(5_000)
+
+			expect(controller.pendingSelfEchoes).toEqual([])
+			expect(global.fetch).toHaveBeenCalledTimes(2)
+			expect(controller.currentTopicId).toBe('1')
+		} finally {
+			jest.useRealTimers()
+		}
+	})
+
 	test('a committed revision outranks a snapshot with a different predecessor topic', async () => {
 		let resolveSave
 		let resolveSnapshot
