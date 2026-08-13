@@ -47,6 +47,19 @@ class TopicListPopupTest < ApplicationSystemTestCase
     end
   end
 
+  test "list button toggles an open popup closed" do
+    open_comments_popup
+
+    button = find("#comments-popup .topic-list-btn")
+    button.click
+    assert_selector "#topic-list-modal", visible: :visible, wait: 5
+    assert_equal "true", button["aria-expanded"]
+
+    button.click
+    assert_no_selector "#topic-list-modal", visible: :visible
+    assert_equal "false", button["aria-expanded"]
+  end
+
   test "search filters the list" do
     open_comments_popup
     find("#comments-popup .topic-list-btn").click

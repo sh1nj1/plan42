@@ -1781,6 +1781,10 @@ body.chat-fullscreen {
     background: var(--color-section-bg);
     color: var(--color-text);
 }
+.topic-list-btn[aria-expanded="true"] {
+    background: var(--color-section-bg);
+    color: var(--color-text);
+}
 
 /* Archived entries inside the topic list popup */
 .topic-list-item {

@@ -7,7 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
 export default class extends Controller {
-    static targets = ["list", "creationContainer"]
+    static targets = ["list", "creationContainer", "topicListButton"]
 
     connect() {
         this.topics = []
@@ -24,13 +24,16 @@ export default class extends Controller {
         }
         this.handleNewMessage = this.handleNewMessage.bind(this)
         this.handleTopicMoved = this.handleTopicMoved.bind(this)
+		this.handleTopicListClose = this.handleTopicListClose.bind(this)
         window.addEventListener('comments--topics:new-message', this.handleNewMessage)
         window.addEventListener('collavre:topic-moved', this.handleTopicMoved)
+		this.element.addEventListener('topic-list:close', this.handleTopicListClose)
     }
 
     disconnect() {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
+		this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
         this.unsubscribe()
     }
 
@@ -677,12 +680,18 @@ export default class extends Controller {
                 (item) => this.selectTopic(item.id),
                 this.element
             )
+			this.setTopicListButtonExpanded(true)
         }
 
-        let modal = document.getElementById('topic-list-modal')
-        if (modal) {
-            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
-            if (popup) openWith(popup)
+		let modal = document.getElementById('topic-list-modal')
+		if (modal) {
+			const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+			if (popup?.popup?.isOpen()) {
+				popup?.close()
+				this.setTopicListButtonExpanded(false)
+			} else if (popup) {
+				openWith(popup)
+			}
             return
         }
 
@@ -707,6 +716,20 @@ export default class extends Controller {
             if (popup) openWith(popup)
             else console.error('topic-list controller not found after creation')
         })
+    }
+
+	stopTopicListTogglePropagation(event) {
+		event.stopPropagation()
+	}
+
+    handleTopicListClose() {
+		this.setTopicListButtonExpanded(false)
+    }
+
+    setTopicListButtonExpanded(expanded) {
+		if (this.hasTopicListButtonTarget) {
+			this.topicListButtonTarget.setAttribute('aria-expanded', String(expanded))
+		}
     }
 
     showInput(event) {
