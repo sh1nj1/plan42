@@ -1650,12 +1650,37 @@ export default class extends Controller {
 	}
 
 	// A retired ambiguous request can still have committed after its connection
-	// failed. Keep only its client id so that a very late echo cannot look like
-	// another session's update and overwrite a newer local selection.
+	// failed. Its sequence is monotonic within a tab session, so one high-water
+	// mark per session keeps all older late echoes non-actionable without retaining
+	// one tombstone per failed save.
 	retirePendingSelfEcho(clientId) {
 		const released = this.releasePendingSelfEcho(clientId)
-		if (released) this.retiredSelfEchoIds.add(clientId)
+		if (released) this.observeRetiredSelfEcho(clientId)
 		return released
+	}
+
+	lastTopicSaveClientIdParts(clientId) {
+		const match = String(clientId || "").match(/^([A-Za-z0-9-]+)\.([1-9]\d*)\.[A-Za-z0-9-]+$/)
+		if (!match) return null
+
+		return { sessionId: match[1], sequence: Number(match[2]) }
+	}
+
+	observeRetiredSelfEcho(clientId) {
+		const parts = this.lastTopicSaveClientIdParts(clientId)
+		if (!parts) return
+
+		const previous = this.retiredSelfEchoSequenceHighWaters.get(parts.sessionId) || 0
+		if (parts.sequence > previous) {
+			this.retiredSelfEchoSequenceHighWaters.set(parts.sessionId, parts.sequence)
+		}
+	}
+
+	isRetiredSelfEcho(clientId) {
+		const parts = this.lastTopicSaveClientIdParts(clientId)
+		if (!parts) return false
+
+		return parts.sequence <= (this.retiredSelfEchoSequenceHighWaters.get(parts.sessionId) || 0)
 	}
 
 	discardSelfEchoMetadata(clientId) {
@@ -1703,8 +1728,9 @@ export default class extends Controller {
 			(this._ambiguousPendingSelfEchoRetirements = new Map())
 	}
 
-	get retiredSelfEchoIds() {
-		return this._retiredSelfEchoIds || (this._retiredSelfEchoIds = new Set())
+	get retiredSelfEchoSequenceHighWaters() {
+		return this._retiredSelfEchoSequenceHighWaters ||
+			(this._retiredSelfEchoSequenceHighWaters = new Map())
 	}
 
 	// An early echo can be the only proof that an in-flight GET predates a
@@ -2090,7 +2116,7 @@ export default class extends Controller {
 		this.possiblyMissedPendingSelfEchoesDuringDisconnect.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
 		this.settledSelfEchoes.clear()
-		this.retiredSelfEchoIds.clear()
+		this.retiredSelfEchoSequenceHighWaters.clear()
 		// Emptying the array cannot reach a claim that has not been taken yet.
 		// A save waiting its turn on the chain takes one when it runs, and by
 		// then every stream has gone; its stream generation tells it so.
@@ -2163,7 +2189,7 @@ export default class extends Controller {
 			// committed after the request failed. Its revision must advance this
 			// stream's high-water mark so an older in-flight GET cannot restore the
 			// preference from before that save.
-			if (this.retiredSelfEchoIds.has(data.client_id)) {
+			if (!this.pendingSelfEchoes.includes(data.client_id) && this.isRetiredSelfEcho(data.client_id)) {
 				this.observeLastTopicRevision(this.effectiveCreativeId, lastTopicRevision)
 				return
 			}

@@ -611,6 +611,24 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		}
 	})
 
+	test('compacts retired ambiguous save tombstones by tab-session sequence', () => {
+		const clientIds = Array.from({ length: 100 }, () => controller.newLastTopicSaveClientId())
+		for (const clientId of clientIds) {
+			controller.pendingSelfEchoes.push(clientId)
+			controller.pendingSelfEchoCreativeIds.set(clientId, '42')
+			controller.retirePendingSelfEcho(clientId)
+		}
+
+		const [sessionId, highestSequence] = clientIds.at(-1).split('.')
+		expect(controller.retiredSelfEchoSequenceHighWaters).toEqual(
+			new Map([[sessionId, Number(highestSequence)]])
+		)
+
+		controller.selectTopic('3')
+		echo('2', clientIds[0])
+		expect(controller.currentTopicId).toBe('3')
+	})
+
 	test('records the revision of a late echo from a retired ambiguous save', async () => {
 		let rejectSave
 		let resolveSnapshot
@@ -1682,7 +1700,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 
       expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
       expect(controller.pendingSelfEchoCreativeIds.has(alphaClientId)).toBe(false)
-      expect(controller.retiredSelfEchoIds).toContain(alphaClientId)
+		expect(controller.isRetiredSelfEcho(alphaClientId)).toBe(true)
       controller.selectTopic('3')
       deliver('2', alphaClientId)
       expect(controller.currentTopicId).toBe('3')
@@ -1696,7 +1714,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 
       expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
       expect(controller.pendingSelfEchoCreativeIds.has(alphaClientId)).toBe(false)
-      expect(controller.retiredSelfEchoIds).toContain(alphaClientId)
+		expect(controller.isRetiredSelfEcho(alphaClientId)).toBe(true)
     })
 
     test('a real update still applies after a reconnectable disconnect', async () => {
