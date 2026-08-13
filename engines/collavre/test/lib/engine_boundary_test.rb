@@ -39,7 +39,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # and leave behind neither a constant nor a gemspec entry. See
   # #loader_receiver? for why `autoload` is matched on any receiver and the rest
   # only on Kernel.
-  LOADER_METHODS = %w[require require_relative require_dependency load autoload].freeze
+  LOADER_METHODS = %w[require require_relative require_dependency load autoload gem].freeze
   ASSOCIATION_DECLARATION_METHODS = %w[
     belongs_to has_many has_one has_and_belongs_to_many delegated_type
   ].freeze
@@ -669,6 +669,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}/some_service.rb" ], requires_in(%(load "#{satellite}/some_service.rb"))
     assert_equal [ "#{satellite}/some_service.rb" ], requires_in(%(Kernel.load("#{satellite}/some_service.rb")))
     assert_equal [ "#{satellite}/foo" ], requires_in(%(autoload :Foo, "#{satellite}/foo"))
+  end
+
+  test "detector flags a satellite gem activation" do
+    satellite = SATELLITES.first
+
+    assert_equal [ satellite ], requires_in(%(gem "#{satellite}"))
+    assert_empty requires_in(%(registry.gem "#{satellite}"))
+    assert_empty requires_in(%(self.gem "#{satellite}"))
   end
 
   # `load` is an ordinary method name. Flagging it on any receiver would fail
@@ -3298,6 +3306,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # file read, not a dependency on the engine, and `load` is common enough as a
   # method name that matching any receiver would make this test cry wolf.
   def loader_receiver?(call)
+    # `gem` is Kernel's private activation method, so only its bare spelling
+    # is a direct call. Explicit receivers such as `self.gem` and `Kernel.gem`
+    # fail before they can activate a dependency.
+    return call.receiver.nil? if loader_method(call) == "gem"
     return true if call.receiver.nil?
     return true if self_receiver?(call.receiver)
     return true if loader_method(call) == "autoload"
