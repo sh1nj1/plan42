@@ -84,6 +84,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   JS_FILE = /\.(js|jsx|ts|tsx|mjs|cjs|mts|cts)(?:\.(?:erb|tt))*\z/
   CSS_FILE = /\.css(?:\.(?:erb|tt))*\z/
   CSS_ASSET_REFERENCE = /(?:@import\s+(?:url\(\s*)?|url\(\s*)(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)?/i
+  CSS_IMAGE_SET = /(?:-webkit-)?image-set\(\s*((?:[^()"']+|"[^"]*"|'[^']*'|\([^()]*\))*)\)/i
+  CSS_IMAGE_SET_STRING = /(?:\A|,)\s*(?:"([^"]+)"|'([^']+)')/
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -833,6 +835,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], css_asset_paths_in(%(@import "#{path}";))
     assert_equal [ path ], css_asset_paths_in(%(@import url("#{path}");))
     assert_equal [ path ], css_asset_paths_in(%(.integration { background: url("#{path}") }))
+    assert_equal [ path ], css_asset_paths_in(%(.integration { background-image: image-set("#{path}" 1x) }))
+    assert_equal [ path ], css_asset_paths_in(%(.integration { background-image: image-set("core.png" 1x, "#{path}" 2x) }))
     assert_empty css_asset_paths_in(%(/* url("#{path}") */))
     assert_empty css_asset_paths_in(%(.notice { content: "url(#{path})" }))
     assert_empty css_asset_paths_in(%(.integration { background: url("https://cdn.example/#{path}") }))
@@ -2677,13 +2681,23 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # core-only host cannot. Strip comments first, then inspect only static CSS
   # path positions rather than arbitrary prose or declaration values.
   def css_asset_paths_in(source)
-    source.to_enum(:scan, CSS_ASSET_REFERENCE).filter_map do
+    direct_paths = source.to_enum(:scan, CSS_ASSET_REFERENCE).filter_map do
       match = Regexp.last_match
       match.captures.compact.first if css_code_position?(source, match.begin(0))
     end
+    (direct_paths + css_image_set_string_paths_in(source))
       .reject { |path| remote_asset_url?(path) }
       .select { |path| satellite_for(path) }
       .uniq
+  end
+
+  def css_image_set_string_paths_in(source)
+    source.to_enum(:scan, CSS_IMAGE_SET).flat_map do
+      match = Regexp.last_match
+      next [] unless css_code_position?(source, match.begin(0))
+
+      match[1].to_enum(:scan, CSS_IMAGE_SET_STRING).filter_map { Regexp.last_match.captures.compact.first }
+    end
   end
 
   def css_code_position?(source, position)
