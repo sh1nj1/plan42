@@ -1341,7 +1341,7 @@ export default class extends Controller {
         // of it finishes — by then the stream may already be a different one,
         // and a claim taken against a stream we have left is owed a message
         // that cannot arrive.
-        const generation = this.subscriptionGeneration
+		const generation = this.subscriptionGenerationFor(effectiveCreativeId)
         // One save at a time. Two PATCHes in flight together are persisted in
         // whatever order the server finishes them, so the preference that
         // sticks need not be the last one picked. Waiting for the one in
@@ -1352,7 +1352,7 @@ export default class extends Controller {
             // one included. Claim the echo here, before the request goes out —
             // the broadcast is sent server-side before the response is
             // rendered, so it can beat the save returning.
-            const claimed = generation === this.subscriptionGeneration
+			const claimed = generation === this.subscriptionGenerationFor(effectiveCreativeId)
             if (claimed) {
                 this.pendingSelfEchoes.push(clientId)
                 this.pendingSelfEchoCreativeIds.set(clientId, String(effectiveCreativeId))
@@ -1679,11 +1679,29 @@ export default class extends Controller {
 		})
 	}
 
-    // Bumped whenever the stream claims are settled on changes, so a save
-    // already queued can tell that the subscription it was made under is gone.
-    get subscriptionGeneration() {
-        return this._subscriptionGeneration || 0
-    }
+	// Bumped for an individual stream when that stream is permanently gone. A
+	// popup can temporarily subscribe to another creative, so invalidating that
+	// subscription must not prevent a queued save for the original stream from
+	// claiming its own echo when the user returns to it.
+	subscriptionGenerationFor(creativeId) {
+		const streamCreativeId = String(creativeId)
+		if (!this.subscriptionGenerations.has(streamCreativeId)) {
+			this.subscriptionGenerations.set(streamCreativeId, 0)
+		}
+		return this.subscriptionGenerations.get(streamCreativeId)
+	}
+
+	bumpSubscriptionGenerationFor(creativeId) {
+		const streamCreativeId = String(creativeId)
+		this.subscriptionGenerations.set(
+			streamCreativeId,
+			this.subscriptionGenerationFor(streamCreativeId) + 1
+		)
+	}
+
+	get subscriptionGenerations() {
+		return this._subscriptionGenerations || (this._subscriptionGenerations = new Map())
+	}
 
     // The legacy key is adopted only as a stand-in for a preference the server
     // does not hold yet. A winning empty pick is a preference — it just names no
@@ -1730,14 +1748,19 @@ export default class extends Controller {
                 // send. Dropping claims here would buy nothing and would let
                 // this client's own echo revert a newer pick.
                 //
-                // A refused subscription is different: it is not retried, so
-                // nothing outstanding or queued can ever be settled on it.
-                rejected: () => this.dropPendingSelfEchoes(),
+				// A refused subscription is different: it is not retried, so
+				// nothing outstanding or queued on this stream can ever settle.
+				// Claims for another creative may still settle if the popup returns.
+				rejected: () => this.dropPendingSelfEchoesForCreative(creativeId),
             }
         )
     }
 
     dropPendingSelfEchoes() {
+		const streamCreativeIds = new Set([
+			...this.pendingSelfEchoCreativeIds.values(),
+			...this.subscriptionGenerations.keys(),
+		])
         this.pendingSelfEchoes.length = 0
         this.pendingSelfEchoCreativeIds.clear()
         this.pendingSelfEchoTopicIds.clear()
@@ -1747,12 +1770,25 @@ export default class extends Controller {
 		this.possiblyMissedPendingSelfEchoes.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
 		this.settledSelfEchoes.clear()
-        // Emptying the array cannot reach a claim that has not been taken yet.
-        // A save waiting its turn on the chain takes one when it runs, and by
-        // then this stream is gone; the generation is how that queued save
-        // finds out.
-        this._subscriptionGeneration = this.subscriptionGeneration + 1
+		// Emptying the array cannot reach a claim that has not been taken yet.
+		// A save waiting its turn on the chain takes one when it runs, and by
+		// then every stream has gone; its stream generation tells it so.
+		for (const creativeId of streamCreativeIds) {
+			this.bumpSubscriptionGenerationFor(creativeId)
+		}
     }
+
+	dropPendingSelfEchoesForCreative(creativeId) {
+		const streamCreativeId = String(creativeId)
+		const clientIds = new Set([
+			...this.pendingSelfEchoes,
+			...this.settledSelfEchoes,
+		].filter(clientId => this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId))
+
+		this._pendingSelfEchoes = this.pendingSelfEchoes.filter(clientId => !clientIds.has(clientId))
+		for (const clientId of clientIds) this.discardSelfEchoMetadata(clientId)
+		this.bumpSubscriptionGenerationFor(streamCreativeId)
+	}
 
     // A save can begin before a linked shell's topics response reveals that it
     // shares its origin's preference stream. Re-key that claim before pruning

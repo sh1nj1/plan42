@@ -1123,6 +1123,24 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       expect(controller.currentTopicId).toBe('2')
     })
 
+    test('a refused different-creative subscription retains the original stream claim', async () => {
+      controller.selectTopic('2')
+      await controller.flushSaveLastTopic('2')
+      const alphaClientId = clientIdFor('2')
+
+      controller.creativeIdValue = '99'
+      controller.subscribe({ preservePendingSelfEchoes: true })
+      subscriptionCallbacks.rejected()
+
+      expect(controller.pendingSelfEchoes).toContain(alphaClientId)
+      controller.creativeIdValue = '42'
+      controller.subscribe({ preservePendingSelfEchoes: true })
+      controller.selectTopic('3')
+      deliver('2', alphaClientId)
+
+      expect(controller.currentTopicId).toBe('3')
+    })
+
     // The claim is only dropped by those two — an ordinary echo on a healthy
     // subscription still settles the save that is waiting for it.
     test('an echo on a live subscription is still consumed', async () => {
