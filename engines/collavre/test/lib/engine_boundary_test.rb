@@ -438,6 +438,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(has_many :messages, through: :links, source_type: "#{satellite}::Message")))
+    assert_equal [ satellite ],
+      names(string_references_in(%(has_many :messages, class_name: "#{satellite}::\#{message_type}")))
     assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(self.has_many :messages, class_name: "#{satellite}::Message")))
     assert_empty names(string_references_in(%(render json: { type: "#{satellite}::Message" })))
@@ -2572,8 +2574,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       strings.each { |string| found << [ string, node.location.start_line ] if string }
     elsif rails_association_call?(node)
       association_class_option_values(node).each do |value|
-        string = static_string_concatenation(value)
-        found << [ string, value.location.start_line ] if string
+        strings = static_string_concatenation(value) || string_literals_in(value)
+        strings = [ strings ] unless strings.is_a?(Array)
+        strings.each { |string| found << [ string, value.location.start_line ] if string }
       end
     end
     node.compact_child_nodes.each { |child| constant_resolving_string_literals_in(child, found) }
