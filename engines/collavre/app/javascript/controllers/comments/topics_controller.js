@@ -88,6 +88,7 @@ export default class extends Controller {
 
     onPopupClosed() {
 		this._popupClosed = true
+		this.releaseAcknowledgedPendingSelfEchoes()
 		this.markPendingSelfEchoesAsPossiblyMissed()
         this._loadTopicsVersion += 1
         // The same creative can reopen before an in-flight save broadcasts.
@@ -1714,6 +1715,17 @@ export default class extends Controller {
 		for (const clientId of this.pendingSelfEchoes) {
 			if (!this.acknowledgedPendingSelfEchoes.has(clientId)) {
 				this.possiblyMissedPendingSelfEchoes.add(clientId)
+			}
+		}
+	}
+
+	// A successful response means the broadcast was already sent. Once this
+	// popup unsubscribes, that echo cannot be replayed to settle its claim, so
+	// retaining the acknowledgement metadata would leak it indefinitely.
+	releaseAcknowledgedPendingSelfEchoes() {
+		for (const clientId of [...this.pendingSelfEchoes]) {
+			if (this.acknowledgedPendingSelfEchoes.has(clientId)) {
+				this.releasePendingSelfEcho(clientId)
 			}
 		}
 	}

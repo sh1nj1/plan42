@@ -649,8 +649,11 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   })
 
   test('closing and reopening the same creative keeps an in-flight claim', async () => {
+    let resolveSave
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
     controller.selectTopic('2')
-    await controller.flushSaveLastTopic('2')
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
 
     controller.onPopupClosed()
     controller.loadTopics = jest.fn()
@@ -659,6 +662,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     selfEcho('2')
 
     expect(controller.currentTopicId).toBe('3')
+    resolveSave(true)
+    await save
   })
 
   test('a reopen does not restore a stale preference over its pending save', async () => {
@@ -1111,10 +1116,13 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 	})
 
   test('reopening an origin after its linked shell keeps the shared stream claim', async () => {
+    let resolveSave
     controller.creativeIdValue = '77'
     controller.element.dataset.effectiveCreativeId = '42'
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
     controller.selectTopic('2')
-    await controller.flushSaveLastTopic('2')
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
 
     controller.onPopupClosed()
     global.fetch = jest.fn().mockResolvedValue({
@@ -1133,6 +1141,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     selfEcho('2')
 
     expect(controller.currentTopicId).toBe('3')
+    resolveSave(true)
+    await save
   })
 
 	test('direct navigation from a linked shell to its origin keeps the shared stream claim', async () => {
@@ -1160,13 +1170,23 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.currentTopicId).toBe('3')
 	})
 
-  test('reopening the same linked shell keeps its origin stream claim', async () => {
+  test('closing releases an acknowledged linked-shell claim before reopening', async () => {
     controller.creativeIdValue = '77'
     controller.element.dataset.effectiveCreativeId = '42'
     controller.selectTopic('2')
     await controller.flushSaveLastTopic('2')
+    const alphaClientId = clientIdFor('2')
+
+    expect(controller.pendingSelfEchoes).toContain(alphaClientId)
+    expect(controller.acknowledgedPendingSelfEchoes).toContain(alphaClientId)
 
     controller.onPopupClosed()
+
+		expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
+		expect(controller.pendingSelfEchoCreativeIds.has(alphaClientId)).toBe(false)
+		expect(controller.pendingSelfEchoAcknowledgementVersions.has(alphaClientId)).toBe(false)
+		expect(controller.pendingSelfEchoRemoteRevisions.has(alphaClientId)).toBe(false)
+
 	global.fetch = jest.fn().mockResolvedValue({
 		ok: true,
 		json: async () => ({
@@ -1179,10 +1199,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		}),
 	})
     await controller.onPopupOpened({ creativeId: '77' })
-    controller.selectTopic('3')
-    selfEcho('2')
 
-    expect(controller.currentTopicId).toBe('3')
+		expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
   })
 
 	test('a reopened linked shell keeps an in-flight claim before its replacement load resolves', async () => {
@@ -1306,9 +1324,12 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('3')
   })
 
-  test('reopening a different creative retains claims from the one left', async () => {
+  test('reopening a different creative retains unresolved claims from the one left', async () => {
+    let resolveSave
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
     controller.selectTopic('2')
-    await controller.flushSaveLastTopic('2')
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
 
     controller.onPopupClosed()
     global.fetch = jest.fn().mockResolvedValue({
@@ -1325,6 +1346,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     await controller.onPopupOpened({ creativeId: '99' })
 
     expect(controller.pendingSelfEchoes).toHaveLength(1)
+    resolveSave(true)
+    await save
   })
 
   test('a completed save releases its claim after navigation subscribes to another stream', async () => {
