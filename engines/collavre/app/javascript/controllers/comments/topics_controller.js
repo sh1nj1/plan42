@@ -1902,6 +1902,7 @@ export default class extends Controller {
 			const claimedEffectiveCreativeId = this.pendingSelfEchoCreativeIds.get(data.client_id) || this.effectiveCreativeId
 			if (this.consumeSelfEcho(data.client_id, lastTopicRevision)) {
 				this.setLastKnownRemoteTopicId(claimedEffectiveCreativeId, newTopicId)
+				this.retryDeferredLastTopicReconciliation(claimedEffectiveCreativeId)
 				return
 			}
 			this.setLastKnownRemoteTopicId(this.effectiveCreativeId, newTopicId)
