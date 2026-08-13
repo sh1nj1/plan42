@@ -129,6 +129,34 @@ module Collavre
       end
     end
 
+    # Tree badges need the selected-topic snapshots for one user across many
+    # creatives. Fetch the subscription and topic entries in two cache batches
+    # rather than reading each creative independently.
+    def self.viewing_topics_for_creatives(user_id, creative_ids)
+      ids = Array(creative_ids).uniq
+      return {} if ids.empty?
+
+      subscription_keys_by_creative_id = ids.to_h { |creative_id| [ creative_id, subscriptions_key(creative_id, user_id) ] }
+      cached_subscriptions = Rails.cache.read_multi(*subscription_keys_by_creative_id.values)
+      lease_keys_by_pair = ids.flat_map do |creative_id|
+        Array(cached_subscriptions[subscription_keys_by_creative_id.fetch(creative_id)]).map do |subscription_id|
+          [ [ creative_id, subscription_id ], subscription_lease_key(creative_id, user_id, subscription_id) ]
+        end
+      end.to_h
+      leases = Rails.cache.read_multi(*lease_keys_by_pair.values)
+      topic_keys_by_creative_id = ids.to_h do |creative_id|
+        subscription_ids = Array(cached_subscriptions[subscription_keys_by_creative_id.fetch(creative_id)]).select do |subscription_id|
+          leases[lease_keys_by_pair.fetch([ creative_id, subscription_id ])]
+        end
+        [ creative_id, subscription_ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) } ]
+      end
+      cached_topics = Rails.cache.read_multi(*topic_keys_by_creative_id.values.flatten)
+
+      topic_keys_by_creative_id.transform_values do |topic_keys|
+        topic_keys.flat_map { |topic_key| Array(cached_topics[topic_key]) }.compact.uniq
+      end
+    end
+
     def self.list(creative_id)
       list_many([ creative_id ]).fetch(creative_id)
     end

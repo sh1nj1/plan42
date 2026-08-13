@@ -90,21 +90,23 @@ module Creatives
     def suppress_for_present_user(origin_ids)
       return unless user
 
-      CommentPresenceStore.list_many(origin_ids).each do |origin_id, present_user_ids|
-        next unless present_user_ids.include?(user.id)
+      present_origin_ids = CommentPresenceStore.list_many(origin_ids).filter_map do |origin_id, present_user_ids|
+        origin_id if present_user_ids.include?(user.id)
+      end
+      viewing_topics_by_origin_id = CommentPresenceStore.viewing_topics_for_creatives(user.id, present_origin_ids)
 
+      present_origin_ids.each do |origin_id|
         origin = Creative.find_by(id: origin_id)
         next unless origin
 
         all_counts = unread_counts_by_topic_without_presence(origin)
         remaining_counts = all_counts.dup
-        suppress_viewing_topics!(remaining_counts, origin)
+        suppress_viewing_topics!(remaining_counts, origin, viewing_topics: viewing_topics_by_origin_id.fetch(origin_id, []))
         @unread_by_origin_id[origin_id] -= all_counts.values.sum - remaining_counts.values.sum
       end
     end
 
-    def suppress_viewing_topics!(counts, origin)
-      viewing_topics = CommentPresenceStore.viewing_topics(origin.id, user.id)
+    def suppress_viewing_topics!(counts, origin, viewing_topics: CommentPresenceStore.viewing_topics(origin.id, user.id))
       if viewing_topics.include?(CommentPresenceStore::ALL_TOPICS)
         # All Messages renders Main and the active-topic snapshot returned with
         # its list. A topic restored after that response stays unread until the

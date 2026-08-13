@@ -322,6 +322,38 @@ module Creatives
       Rails.cache.delete(Collavre::CommentPresenceStore.topic_key(creative.id, @user.id))
     end
 
+    test "batches presence topic snapshots across indexed creatives" do
+      first_creative = Creative.create!(user: @user, description: "First presence batch", sequence: 923)
+      second_creative = Creative.create!(user: @user, description: "Second presence batch", sequence: 924)
+      comment_on(first_creative, "first")
+      comment_on(second_creative, "second")
+      CommentPresenceStore.add(first_creative.id, @user.id)
+      CommentPresenceStore.add(second_creative.id, @user.id)
+      CommentPresenceStore.set_topic(first_creative.id, @user.id, first_creative.main_topic.id)
+      CommentPresenceStore.set_topic(second_creative.id, @user.id, second_creative.main_topic.id)
+
+      requested_origin_ids = nil
+      CommentPresenceStore.stub(:viewing_topics_for_creatives, ->(user_id, origin_ids) {
+        requested_origin_ids = origin_ids
+        assert_equal @user.id, user_id
+        {
+          first_creative.id => [ first_creative.main_topic.id ],
+          second_creative.id => [ second_creative.main_topic.id ]
+        }
+      }) do
+        CommentPresenceStore.stub(:viewing_topics, ->(*) { flunk("indexed creatives must use the batch presence lookup") }) do
+          @index.index([ first_creative, second_creative ])
+        end
+      end
+
+      assert_equal [ first_creative.id, second_creative.id ], requested_origin_ids
+      assert_equal 0, @index.unread_count_for(first_creative)
+      assert_equal 0, @index.unread_count_for(second_creative)
+    ensure
+      CommentPresenceStore.remove(first_creative.id, @user.id) if first_creative
+      CommentPresenceStore.remove(second_creative.id, @user.id) if second_creative
+    end
+
     test "presence of another user does not suppress our badge" do
       creative = Creative.create!(user: @user, description: "Someone else watching", sequence: 908)
       comment_on(creative, "one")

@@ -121,6 +121,18 @@ module Collavre
       assert_equal({ 4 => [ CommentPresenceStore::ALL_TOPICS, 12 ] }, CommentPresenceStore.viewing_topics_for(9_901, [ 4 ]))
     end
 
+    test "fetches a present user's topics across creatives in cache batches" do
+      CommentPresenceStore.add(9_901, 4, subscription_id: "all")
+      CommentPresenceStore.add(9_902, 4, subscription_id: "topic")
+      CommentPresenceStore.set_topic(9_901, 4, nil, subscription_id: "all", rendered_topic_ids: [ 12 ])
+      CommentPresenceStore.set_topic(9_902, 4, 13, subscription_id: "topic")
+
+      assert_equal(
+        { 9_901 => [ CommentPresenceStore::ALL_TOPICS, 12 ], 9_902 => [ 13 ] },
+        CommentPresenceStore.viewing_topics_for_creatives(4, [ 9_901, 9_902 ])
+      )
+    end
+
     test "serializes concurrent subscription membership updates" do
       entered = Queue.new
       release = Queue.new
