@@ -9,6 +9,7 @@ const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
 const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
 const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
+const LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX = "collavre:last-topic-save-session:"
 let fallbackClientIdSequence = 0
 
 // Names one save, so its broadcast can be told from a sibling session's. It
@@ -245,6 +246,7 @@ export default class extends Controller {
 				const snapshotTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
 				this.element.dataset.effectiveCreativeId = effectiveCreativeId
 				this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
+				this.releaseAcknowledgedPendingSelfEchoesOutside(effectiveCreativeId)
 				const staleLastTopicSnapshot = !this.observeLastTopicRevision(
 					effectiveCreativeId,
 					snapshotTopicRevision
@@ -1449,7 +1451,10 @@ export default class extends Controller {
 						this.pendingSelfEchoRemoteRevisions.set(clientId, savedRevision)
 					}
 				}
-				const subscribedToAnotherStream = this.topicsSubscription &&
+				const currentCreativeId = String(this.creativeId)
+				const currentStreamIsResolved = this.element.dataset.effectiveCreativeId ||
+					this.knownEffectiveCreativeIds.has(currentCreativeId)
+				const subscribedToAnotherStream = this.topicsSubscription && currentStreamIsResolved &&
 					String(this.effectiveCreativeId) !== String(effectiveCreativeId)
 				const possiblyMissedDuringDisconnect =
 					this.possiblyMissedPendingSelfEchoesDuringDisconnect.has(clientId)
@@ -1518,15 +1523,28 @@ export default class extends Controller {
 	// controller has saved a later selection.
 	lastTopicSaveSessionId() {
 		try {
-			const stored = sessionStorage.getItem(LAST_TOPIC_SAVE_SESSION_STORAGE_KEY)
-			if (stored && /^[A-Za-z0-9-]+$/.test(stored)) return stored
-
-			const sessionId = newClientId()
+			const sessionId = this.lastTopicSaveWindowSessionId()
 			sessionStorage.setItem(LAST_TOPIC_SAVE_SESSION_STORAGE_KEY, sessionId)
 			return sessionId
 		} catch (_) {
 			return newClientId()
 		}
+	}
+
+	// sessionStorage survives a reload, but browsers copy it into a duplicated
+	// tab. window.name belongs to one top-level browsing context and also
+	// survives reloads, so it keeps Turbo replacements on one fence while a
+	// copied tab starts a separate ordering stream.
+	lastTopicSaveWindowSessionId() {
+		const currentName = window.name || ""
+		if (currentName.startsWith(LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX)) {
+			const sessionId = currentName.slice(LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX.length)
+			if (/^[A-Za-z0-9-]+$/.test(sessionId)) return sessionId
+		}
+
+		const sessionId = newClientId()
+		window.name = `${LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX}${sessionId}`
+		return sessionId
 	}
 
 	nextLastTopicSaveSequence() {
@@ -1841,6 +1859,21 @@ export default class extends Controller {
 	releaseAcknowledgedPendingSelfEchoes() {
 		for (const clientId of [...this.pendingSelfEchoes]) {
 			if (this.acknowledgedPendingSelfEchoes.has(clientId)) {
+				this.releasePendingSelfEcho(clientId)
+			}
+		}
+	}
+
+	// A new requested creative initially has no client-side effective stream
+	// entry. Its subscription may still resolve server-side to the stream of a
+	// pending save, so do not release that claim until this GET supplies the
+	// effective id. Once it does, an acknowledged claim on another stream can
+	// no longer receive an echo on this subscription and must not be retained.
+	releaseAcknowledgedPendingSelfEchoesOutside(effectiveCreativeId) {
+		const streamCreativeId = String(effectiveCreativeId)
+		for (const clientId of [...this.pendingSelfEchoes]) {
+			if (this.pendingSelfEchoCreativeIds.get(clientId) !== streamCreativeId &&
+				this.acknowledgedPendingSelfEchoes.has(clientId)) {
 				this.releasePendingSelfEcho(clientId)
 			}
 		}

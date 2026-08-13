@@ -44,6 +44,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   beforeEach(() => {
     originalFetch = global.fetch
 	window.sessionStorage.clear()
+	window.name = ''
     document.body.innerHTML = `
       <div id="topics" data-controller="comments--topics" data-topic-main-text="All Messages">
         <div data-comments--topics-target="list"></div>
@@ -75,6 +76,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   afterEach(() => {
     controller.cancelPendingSaveLastTopic()
 	window.sessionStorage.clear()
+	window.name = ''
     global.fetch = originalFetch
     document.body.innerHTML = ''
     application.stop()
@@ -109,6 +111,17 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		const [secondSessionId, secondSequence] = secondClientId.split('.')
 		expect(secondSessionId).toBe(firstSessionId)
 		expect(Number(secondSequence)).toBe(Number(firstSequence) + 1)
+	})
+
+	test('gives a duplicated tab a new save fence identity', () => {
+		const firstClientId = controller.newLastTopicSaveClientId()
+		// A duplicated tab receives copied sessionStorage but starts with its own
+		// top-level browsing context, so it has no window.name from the source tab.
+		window.name = ''
+		const duplicate = Object.create(TopicsController.prototype)
+		const duplicateClientId = duplicate.newLastTopicSaveClientId()
+
+		expect(duplicateClientId.split('.')[0]).not.toBe(firstClientId.split('.')[0])
 	})
 
 	test('ignores a sibling broadcast older than the observed revision', () => {
@@ -1274,6 +1287,66 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		selfEcho('2')
 
 		expect(controller.currentTopicId).toBe('3')
+	})
+
+	test('keeps a claim while a first linked shell resolves its effective stream', async () => {
+		let resolveSave
+		let resolveOpen
+		controller.creativeIdValue = '42'
+		controller.element.dataset.effectiveCreativeId = '42'
+		controller.subscribe()
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		const alphaClientId = clientIdFor('2')
+
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveOpen = resolve }))
+		const open = controller.onPopupOpened({ creativeId: '77' })
+		await Promise.resolve()
+		resolveSave(true)
+		await save
+
+		expect(controller.pendingSelfEchoes).toContain(alphaClientId)
+
+		resolveOpen({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '2',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await open
+		controller.selectTopic('3')
+		echo('2', alphaClientId)
+
+		expect(controller.currentTopicId).toBe('3')
+	})
+
+	test('releases an acknowledged claim after a first shell resolves to another stream', async () => {
+		controller.creativeIdValue = '42'
+		controller.element.dataset.effectiveCreativeId = '42'
+		controller.subscribe()
+		await controller.flushSaveLastTopic('2')
+		const alphaClientId = clientIdFor('2')
+
+		global.fetch = jest.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				main_topic_id: '1',
+				effective_creative_id: '88',
+			}),
+		})
+		await controller.onPopupOpened({ creativeId: '77' })
+
+		expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
 	})
 
   test('a pre-resolution linked-shell save keeps its claim after resolving its origin', async () => {
