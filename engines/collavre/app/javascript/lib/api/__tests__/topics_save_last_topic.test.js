@@ -14,7 +14,7 @@ describe('saveLastTopic', () => {
 
   beforeEach(() => {
     document.head.innerHTML = '<meta name="csrf-token" content="test-csrf">'
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
   })
 
   afterEach(() => {
@@ -24,7 +24,7 @@ describe('saveLastTopic', () => {
   })
 
   test('sends the client id alongside the topic', async () => {
-    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBe(true)
+    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toEqual({ success: true, lastTopicRevision: undefined })
 
     expect(global.fetch).toHaveBeenCalledWith(
       '/creatives/42/user_creative_preferences/update_last_topic',

@@ -254,6 +254,43 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		await save
 	})
 
+	test('a PATCH acknowledgement orders a delayed ABA snapshot before its self-echo', async () => {
+		let resolveSave
+		let resolveSnapshot
+		controller.lastKnownRemoteTopicId = '1'
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+		controller.selectTopic('2')
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+		const load = controller.loadTopics()
+		await Promise.resolve()
+
+		// This client's Alpha commit is revision [5, 1]. Before its self-echo
+		// arrives, another session selects Main again at [5, 2]. The request
+		// response must preserve [5, 1] so the GET is not mistaken for the
+		// stale Main snapshot from before the local save.
+		resolveSave({ success: true, lastTopicRevision: [5, 1] })
+		await save
+		resolveSnapshot({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				last_topic_revision: [5, 2],
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await load
+
+		expect(controller.currentTopicId).toBe('1')
+	})
+
 	test('an early linked-shell echo advances the resolved stream baseline', async () => {
 		let resolveSave
 		let resolveSnapshot

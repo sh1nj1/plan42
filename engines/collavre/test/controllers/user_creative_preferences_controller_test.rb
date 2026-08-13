@@ -46,6 +46,7 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     record = Collavre::UserCreativePreference.find_by(creative_id: @creative.id, user_id: @user.id)
     assert_equal topic.id, record.last_topic_id
+    assert_equal [ record.id, 1 ], response.parsed_body["last_topic_revision"]
   end
 
   test "update_last_topic clears topic selection" do

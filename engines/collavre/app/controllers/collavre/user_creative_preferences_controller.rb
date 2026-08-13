@@ -33,7 +33,7 @@ module Collavre
       record = persist_last_topic(creative)
       broadcast_last_topic(creative, record)
 
-      render json: { success: true }
+      render json: { success: true, last_topic_revision: [ record.id, record.last_topic_revision ] }
     end
 
     private

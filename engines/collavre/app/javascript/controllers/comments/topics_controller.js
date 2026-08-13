@@ -1375,9 +1375,11 @@ export default class extends Controller {
             // and broadcast before the connection failed, so keep its claim for
             // that delayed echo. An HTTP failure is definitive, however, and
             // update_last_topic returns before broadcasting in that case.
-            const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
+			const saveResult = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
+			const saved = saveResult === true || saveResult?.success === true
+			const savedRevision = this.normalizeLastTopicRevision(saveResult?.lastTopicRevision)
 			const topicId = id ? String(id) : ""
-            if (claimed && saved === true) {
+			if (claimed && saved) {
 				// The Action Cable echo can arrive before this response. In that
 				// case it has already consumed the claim and removed its metadata;
 				// do not recreate an acknowledgement entry for a completed save.
@@ -1388,6 +1390,12 @@ export default class extends Controller {
 						clientId,
 						this.saveAcknowledgementVersion
 					)
+					// The response can beat its Action Cable echo. Preserve the
+					// server-issued revision now so a delayed GET can order this
+					// acknowledged claim against a newer ABA snapshot.
+					if (savedRevision) {
+						this.pendingSelfEchoRemoteRevisions.set(clientId, savedRevision)
+					}
 				}
 				if (this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) {
 					// update_last_topic broadcasts before it returns. With the popup
@@ -1417,8 +1425,8 @@ export default class extends Controller {
 					this.acknowledgePendingSelfEcho(clientId)
 				}
             }
-            if (claimed && saved === false) this.releasePendingSelfEcho(clientId)
-            if (saved !== false && this._pendingPick &&
+			if (claimed && saveResult === false) this.releasePendingSelfEcho(clientId)
+			if (saveResult !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&
                 this._pendingPick.topicId === topicId) {
                 this._pendingPick = null
