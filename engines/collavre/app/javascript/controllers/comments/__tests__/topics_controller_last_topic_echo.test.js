@@ -987,6 +987,57 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('3')
   })
 
+	test('a reopened linked shell keeps an in-flight claim before its replacement load resolves', async () => {
+		controller.creativeIdValue = '77'
+		global.fetch = jest.fn().mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await controller.loadTopics()
+
+		let resolveSave
+		let resolveReopen
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+		controller.selectTopic('2')
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		const alphaClientId = clientIdFor('2')
+
+		controller.onPopupClosed()
+		global.fetch.mockImplementationOnce(() => new Promise((resolve) => { resolveReopen = resolve }))
+		const reopen = controller.onPopupOpened({ creativeId: '77' })
+		await Promise.resolve()
+
+		resolveSave(true)
+		await save
+		expect(controller.pendingSelfEchoes).toContain(alphaClientId)
+
+		resolveReopen({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '2',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await reopen
+
+		controller.selectTopic('3')
+		selfEcho('2')
+
+		expect(controller.currentTopicId).toBe('3')
+	})
+
   test('a pre-resolution linked-shell save keeps its claim after resolving its origin', async () => {
     controller.creativeIdValue = '77'
     delete controller.element.dataset.effectiveCreativeId

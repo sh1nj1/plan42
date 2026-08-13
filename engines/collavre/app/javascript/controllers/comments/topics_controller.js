@@ -175,9 +175,13 @@ export default class extends Controller {
 
     // TopicsChannel and update_last_topic both resolve linked shells through
     // effective_origin. Before a response provides that id, the requested id
-    // is the best available stream key.
+    // is the best available stream key. A shell that has already loaded keeps
+    // its resolved stream across a close/reopen, so an acknowledgement arriving
+    // before the replacement load can still tell that its echo is receivable.
     get effectiveCreativeId() {
-        return this.element.dataset.effectiveCreativeId || this.creativeId
+		return this.element.dataset.effectiveCreativeId ||
+			this.knownEffectiveCreativeIds.get(String(this.creativeId)) ||
+			this.creativeId
     }
 
     async loadTopics() {
@@ -224,6 +228,7 @@ export default class extends Controller {
                 const effectiveCreativeId = data.effective_creative_id
                     ? String(data.effective_creative_id)
                     : String(this.creativeId)
+				this.knownEffectiveCreativeIds.set(String(creativeId), effectiveCreativeId)
 				const snapshotTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
 				const snapshotTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
                 this.element.dataset.effectiveCreativeId = effectiveCreativeId
@@ -1546,6 +1551,13 @@ export default class extends Controller {
 
 	get lastKnownRemoteTopicIds() {
 		return this._lastKnownRemoteTopicIds || (this._lastKnownRemoteTopicIds = new Map())
+	}
+
+	// The server resolves TopicsChannel subscriptions for linked shells to their
+	// origin stream. Keep that result separately from the popup-scoped dataset:
+	// the latter is deliberately cleared while a replacement load is pending.
+	get knownEffectiveCreativeIds() {
+		return this._knownEffectiveCreativeIds || (this._knownEffectiveCreativeIds = new Map())
 	}
 
 	get pendingSelfEchoPreviousTopicIds() {
