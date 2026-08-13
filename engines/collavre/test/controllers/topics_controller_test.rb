@@ -32,6 +32,22 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ preference.id, 7 ], json["last_topic_revision"]
   end
 
+  test "index returns the revision of a cleared last topic" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic_revision: 2
+    )
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_nil json["last_topic_id"]
+    assert_equal [ preference.id, 2 ], json["last_topic_revision"]
+  end
+
   test "index includes unread counts for active and archived topics" do
     archived_topic = @creative.topics.create!(name: "Archived", user: @user)
     archived_topic.archive!

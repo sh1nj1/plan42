@@ -15,7 +15,7 @@ module Collavre
       end
 
       record.expanded_status = state
-      if state.empty? && record.last_topic_id.nil?
+      if state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero?
         record.destroy if record.persisted?
       else
         record.save!
@@ -52,7 +52,14 @@ module Collavre
         record.expanded_status ||= {}
         record.last_topic_id = params[:last_topic_id].presence
         record.last_topic_revision = record.last_topic_revision.to_i + 1
-        record.expanded_status.empty? && record.last_topic_id.nil? ? record.destroy! : record.save!
+        # Retain a cleared preference after it has participated in last-topic
+        # ordering. Its revision lets a reopened client distinguish a newer
+        # Main selection from the empty snapshot that preceded an in-flight save.
+        if record.expanded_status.empty? && record.last_topic_id.nil? && record.last_topic_revision.zero?
+          record.destroy!
+        else
+          record.save!
+        end
       end
       record
     end

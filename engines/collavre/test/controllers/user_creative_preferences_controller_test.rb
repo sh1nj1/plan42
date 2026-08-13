@@ -62,6 +62,27 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_nil record.last_topic_id
   end
 
+  test "clearing a last topic preserves its ordering tombstone" do
+    topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Test Topic")
+
+    patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+          params: { last_topic_id: topic.id },
+          as: :json
+    preference = Collavre::UserCreativePreference.find_by!(creative_id: @creative.id, user_id: @user.id)
+
+    patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+          params: { last_topic_id: nil },
+          as: :json
+
+    preference.reload
+    assert_nil preference.last_topic_id
+    assert_equal 2, preference.last_topic_revision
+
+    post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id, expanded: false }
+
+    assert_equal preference.id, Collavre::UserCreativePreference.find_by!(creative_id: @creative.id, user_id: @user.id).id
+  end
+
   # The broadcast goes to every session of this user, the one that saved
   # included. Echoing the sender's client_id is what lets that session tell its
   # own change coming back from a sibling session's — last_topic_id cannot,

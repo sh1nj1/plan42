@@ -254,6 +254,43 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		await save
 	})
 
+	test('an early linked-shell echo advances the resolved stream baseline', async () => {
+		let resolveSave
+		let resolveSnapshot
+		controller.creativeIdValue = '77'
+		controller.element.dataset.effectiveCreativeId = '42'
+		controller.setLastKnownRemoteTopicId('42', '1')
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+		controller.selectTopic('2')
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		controller.onPopupClosed()
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+		const reopen = controller.onPopupOpened({ creativeId: '77' })
+		await Promise.resolve()
+
+		selfEcho('2', [5, 1])
+		expect(controller.lastKnownRemoteTopicIdFor('42')).toBe('2')
+		expect(controller.lastKnownRemoteTopicIdFor('77')).toBeUndefined()
+
+		resolveSnapshot({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '2',
+				last_topic_revision: [5, 1],
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await reopen
+		resolveSave(true)
+		await save
+	})
+
   // Pick Alpha, let its debounced save go out, then pick Beta before the echo
   // for Alpha gets back. The echo names the topic the user has just left.
   test('a pick made before the echo lands is not reverted by it', async () => {

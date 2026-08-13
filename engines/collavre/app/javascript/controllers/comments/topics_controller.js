@@ -1789,8 +1789,12 @@ export default class extends Controller {
 			// Broadcast is already scoped to the current user via user-specific channel
 			const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
 			const lastTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
+			// A linked shell can receive an echo before its load resolves the origin.
+			// The claim already knows that effective stream, while effectiveCreativeId
+			// still names the shell; advance the baseline on the claimed stream.
+			const claimedEffectiveCreativeId = this.pendingSelfEchoCreativeIds.get(data.client_id) || this.effectiveCreativeId
 			if (this.consumeSelfEcho(data.client_id, lastTopicRevision)) {
-				this.setLastKnownRemoteTopicId(this.effectiveCreativeId, newTopicId)
+				this.setLastKnownRemoteTopicId(claimedEffectiveCreativeId, newTopicId)
 				return
 			}
 			this.setLastKnownRemoteTopicId(this.effectiveCreativeId, newTopicId)
