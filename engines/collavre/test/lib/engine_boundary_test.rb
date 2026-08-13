@@ -98,11 +98,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   CSS_ASSET_REFERENCE = /(?:@import\s+(?:url\(\s*)?|url\(\s*)(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)?/i
   CSS_IMAGE_SET = /(?:-webkit-)?image-set\(\s*((?:[^()"']+|"[^"]*"|'[^']*'|\([^()]*\))*)\)/i
   CSS_IMAGE_SET_STRING = /(?:\A|,)\s*(?:"([^"]+)"|'([^']+)')/
-  STATIC_HTML_ASSET_TAG = /<(link|script|img|source|video|audio|input)\b[^>]*>/i
+  STATIC_HTML_TAG_ATTRIBUTES = /(?:"[^"]*"|'[^']*'|[^'">])*/
+  STATIC_HTML_ASSET_TAG = /<(link|script|img|source|video|audio|input)\b#{STATIC_HTML_TAG_ATTRIBUTES}>/i
   STATIC_HTML_ASSET_ATTRIBUTE = /\b(?:src|srcset|poster|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
   STATIC_HTML_STYLE_ATTRIBUTE = /(?:\A|[\s<])style\s*=\s*(?:"([^"]*)"|'([^']*)')/i
   STATIC_HTML_STYLE_ELEMENT = /<style\b[^>]*>(.*?)<\/style\s*>/im
-  STATIC_HTML_SCRIPT_ELEMENT = /(<script\b[^>]*>).*?(<\/script\s*>)/im
+  STATIC_HTML_SCRIPT_ELEMENT = /(<script\b#{STATIC_HTML_TAG_ATTRIBUTES}>).*?(<\/script\s*>)/im
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -872,6 +873,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       <img srcset="/assets/#{path}.webp 1x, /assets/#{path}@2x.webp 2x">
       <source srcset="/assets/#{path}.avif 1x">
       <script src="/assets/#{path}.js"></script>
+      <script data-note=">" src="/assets/#{path}.quoted.js"></script>
       <link href="/assets/#{path}.css" rel="stylesheet">
       <input type="image" src="/assets/#{path}.button.png">
       <input src="/assets/#{satellite}/ignored.png">
@@ -889,7 +891,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [
       "/assets/#{path}.avif", "/assets/#{path}.button.png", "/assets/#{path}.css", "/assets/#{path}.gif",
-      "/assets/#{path}.jpeg", "/assets/#{path}.js", "/assets/#{path}.png",
+      "/assets/#{path}.jpeg", "/assets/#{path}.js", "/assets/#{path}.png", "/assets/#{path}.quoted.js",
       "/assets/#{path}.webp", "/assets/#{path}@2x.bmp", "/assets/#{path}@2x.jpeg",
       "/assets/#{path}@2x.webp", "/assets/#{path}.bmp", static_erb_asset
     ].sort,
