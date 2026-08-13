@@ -28,14 +28,14 @@ module Collavre
 
     # When the MCP process crashes or the WebSocket drops before the plugin
     # can call DELETE /api/v1/agent/:id, a Claude Channel session would
-    # otherwise stay matchable (routing_expression: "true") and any future
+    # otherwise stay matchable and any future
     # comment on a creative still shared with the agent would dispatch into an
     # empty stream — delegated work that only clears via stuck recovery.
     #
     # One shared agent can have MANY concurrent sessions, so routing is gated
     # on PRESENCE: this session drops its own AgentSubscription row, and
-    # routing is cleared only when NO rows remain. A still-live sibling session
-    # keeps its row, so routing stays active and its in-flight work is never
+    # routing is enabled only while a row is live. A still-live sibling session
+    # keeps its row, so dispatch remains active and its in-flight work is never
     # cancelled. Done under the agent's row lock so a concurrent subscribe on
     # the same agent serializes (no clear-vs-activate race).
     #
@@ -47,7 +47,7 @@ module Collavre
     def unsubscribed
       return unless @session_agent && @subscription_token
 
-      cleared = false
+      last_session_disconnected = false
       dropped_session_id = nil
       @session_agent.with_lock do
         scope = AgentSubscription.where(agent_id: @session_agent.id, token: @subscription_token)
@@ -67,25 +67,21 @@ module Collavre
         # row cannot masquerade as a live sibling and pin routing on forever.
         AgentSubscription.reap_stale!(@session_agent.id)
 
-        # Another session is still LIVE on this shared agent. Keep routing
-        # active; whichever session unsubscribes last clears it.
+        # Another session is still LIVE on this shared agent. Its presence keeps
+        # dispatch active, so only the final disconnect owns agent-wide cleanup.
         next if AgentSubscription.live.where(agent_id: @session_agent.id).exists?
 
-        @session_agent.update_columns(
-          routing_expression: nil,
-          routing_subscription_token: nil
-        )
-        cleared = true
+        @session_agent.update_columns(routing_subscription_token: nil)
+        last_session_disconnected = true
       end
 
-      if cleared
+      if last_session_disconnected
         # Reconnect-grace cancellation (last session): clearing routing only
         # makes the agent unroutable. Any task already "delegated" still holds
         # its ResourceTracker slot — the dispatch was broadcast to a now-dead
         # stream so no client remains to call /reply, and the slot would stay
         # held until StuckDetectorJob times out. The job cancels those tasks
-        # after a grace window, but only if the agent is still offline (it
-        # rechecks routing_expression AND that no session has resubscribed).
+        # after a grace window, but only if the agent is still offline.
         CancelOfflineDelegatedTasksJob
           .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
           .perform_later(@session_agent.id, @subscription_token)
@@ -153,8 +149,8 @@ module Collavre
       return reject unless agent&.ai_user?
       return reject unless agent.created_by_id == current_user.id
 
-      # Attach the stream BEFORE activating routing. Orchestration::Matcher
-      # can pick this agent as soon as routing_expression becomes "true";
+      # Attach the stream BEFORE recording presence. Orchestration::Matcher
+      # can pick this agent as soon as its presence row is committed;
       # broadcasts to agent:user:<id> in the window between the UPDATE
       # committing and stream_from registering the subscription would land
       # in a stream with no subscriber, leaving the new delegated task
@@ -165,7 +161,7 @@ module Collavre
       @subscription_token = SecureRandom.hex(8) if agent.claude_channel_agent?
       stream_from "agent:user:#{agent.id}"
 
-      # Record this session's presence row and (re)activate routing under the
+      # Record this session's presence row under the
       # agent's row lock, so a concurrent unsubscribe on the same shared agent
       # serializes against this and cannot clear routing out from under a live
       # session. routing_subscription_token is kept as the most-recent-session
@@ -185,10 +181,7 @@ module Collavre
             token: @subscription_token,
             session_id: params[:session_id].presence
           )
-          agent.update_columns(
-            routing_subscription_token: @subscription_token,
-            routing_expression: "true"
-          )
+          agent.update_columns(routing_subscription_token: @subscription_token)
         end
       end
     end

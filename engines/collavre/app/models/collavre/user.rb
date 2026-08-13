@@ -218,6 +218,10 @@ module Collavre
       llm_model == "claude-code"
     end
 
+    def claude_channel_online?
+      claude_channel_agent? && AgentSubscription.live.where(agent_id: id).exists?
+    end
+
     scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }
 
     def self.accessible_ai_agents_for(user)

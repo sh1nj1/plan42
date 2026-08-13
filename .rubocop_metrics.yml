@@ -1,0 +1,83 @@
+# Complexity budget for the ratchet (bin/complexity_check).
+#
+# This config is NOT used by `bin/rubocop` — the omakase house style
+# deliberately leaves every Metrics cop off so style linting stays fast and
+# opinion-free. Enabling them there would fail the lint job on ~1,800
+# pre-existing offenses. Instead this file is passed explicitly to
+# `bin/complexity_check`, which turns the raw offenses into a ratchet:
+#
+#   * an entity ALREADY over budget at the merge base may shrink but not grow
+#   * an entity NOT over budget at the merge base must fit the Max values below
+#
+# So these numbers are the budget for NEW code, not a description of the
+# current codebase.
+#
+# Why these numbers instead of RuboCop's defaults: the defaults (MethodLength
+# 10, ClassLength 100, AbcSize 17) put ~1,846 app-code entities in violation,
+# i.e. new code would have to be stricter than 90% of what is already here.
+# A budget nobody can hit gets waived away, and a waived gate controls nothing.
+# Each Max below sits near the 75th percentile of today's violators — tight
+# enough that crossing it is a genuine smell, loose enough that ordinary Rails
+# code passes without ceremony. Tighten them over time as the debt drains.
+
+inherit_gem: { rubocop-rails-omakase: rubocop.yml }
+
+AllCops:
+  NewCops: disable
+  Exclude:
+    # Generated or vendored.
+    - 'db/**/*'
+    - 'engines/*/db/**/*'
+    - 'node_modules/**/*'
+    - 'vendor/**/*'
+    - 'tmp/**/*'
+    - 'storage/**/*'
+    - 'lexical-playground/**/*'
+    - 'bin/**/*'
+    # Illustrative snippets, not shipped code.
+    - 'docs/**/*'
+    # Tests are excluded on purpose. A 900-line test class is a list, not a god
+    # object: it has no callers, holds no shared mutable state, and splitting it
+    # buys nothing. Test bloat is a real problem but it is a coverage-quality
+    # problem, not a coupling one, and mixing it in here would bury the app-code
+    # signal under thousands of block-length offenses.
+    - 'test/**/*'
+    - 'engines/*/test/**/*'
+
+Metrics/AbcSize:
+  Enabled: true
+  Max: 35
+
+Metrics/BlockLength:
+  Enabled: true
+  Max: 70
+
+# No offenses at RuboCop's default today, so the default holds: three levels of
+# nesting is already past the point where extracting a method is cheaper.
+Metrics/BlockNesting:
+  Enabled: true
+  Max: 3
+
+Metrics/ClassLength:
+  Enabled: true
+  Max: 250
+
+Metrics/CyclomaticComplexity:
+  Enabled: true
+  Max: 13
+
+Metrics/MethodLength:
+  Enabled: true
+  Max: 25
+
+Metrics/ModuleLength:
+  Enabled: true
+  Max: 250
+
+Metrics/ParameterLists:
+  Enabled: true
+  Max: 8
+
+Metrics/PerceivedComplexity:
+  Enabled: true
+  Max: 15
