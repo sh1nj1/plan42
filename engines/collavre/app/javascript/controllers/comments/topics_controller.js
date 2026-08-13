@@ -1285,17 +1285,12 @@ export default class extends Controller {
             // rendered, so it can beat the save returning.
             const claimed = generation === this.subscriptionGeneration
             if (claimed) this.pendingSelfEchoes.push(clientId)
-            // A throw here would be left on the chain, and the chain is shared:
-            // every pick made after it would be stranded behind a link that
-            // never settles, and none of them would reach the server. The
-            // helper resolves false rather than throwing today; this keeps that
-            // a property of this queue rather than of its callee.
-            const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => false)
-            // A save that did not land broadcast nothing — the controller
-            // returns before the broadcast on a denied read or a topic that
-            // does not belong to the creative — so the echo is not coming and
-            // the claim has to go.
-            if (claimed && !saved) this.releasePendingSelfEcho(clientId)
+            // A thrown fetch has an unknown outcome: the server may have saved
+            // and broadcast before the connection failed, so keep its claim for
+            // that delayed echo. An HTTP failure is definitive, however, and
+            // update_last_topic returns before broadcasting in that case.
+            const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
+            if (claimed && saved === false) this.releasePendingSelfEcho(clientId)
             const topicId = id ? String(id) : ""
             if (saved !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&

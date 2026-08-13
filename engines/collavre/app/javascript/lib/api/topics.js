@@ -32,7 +32,8 @@ export async function fetchNextTopicName(creativeId) {
  * @param {string|number|null} topicId
  * @param {string} [clientId] - echoed back on the broadcast, so the session
  *   that made this save can recognise it and not treat it as someone else's
- * @returns {Promise<boolean>}
+ * @returns {Promise<boolean|null>} `null` means the request outcome is unknown
+ *   (for example, a network failure after the server received the request).
  */
 export async function saveLastTopic(creativeId, topicId, clientId) {
     try {
@@ -47,7 +48,7 @@ export async function saveLastTopic(creativeId, topicId, clientId) {
         return response.ok
     } catch (e) {
         console.error('Error saving last topic', e)
-        return false
+		return null
     }
 }
 

@@ -45,10 +45,10 @@ describe('saveLastTopic', () => {
     await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBe(false)
   })
 
-  test('reports a network failure rather than throwing', async () => {
+  test('reports an ambiguous network failure separately from an HTTP rejection', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch.mockRejectedValue(new Error('offline'))
 
-    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBe(false)
+    await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toBeNull()
   })
 })

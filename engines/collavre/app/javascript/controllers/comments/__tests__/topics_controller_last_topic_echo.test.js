@@ -327,9 +327,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       expect(controller.currentTopicId).toBe('3')
     })
 
-    // A save that fails still has to hand the queue on, or every later pick is
-    // stranded behind it and never reaches the server at all.
-    test('a rejected save does not strand the one behind it', async () => {
+    // An ambiguous delivery still has to hand the queue on, or every later
+    // pick is stranded behind it. It keeps its claim, though: the server can
+    // have accepted the PATCH and broadcast after fetch reports a failure.
+    test('an ambiguous save does not strand the one behind it', async () => {
       let rejectFirst
       saveLastTopic.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject }))
       controller.selectTopic('2')
@@ -342,10 +343,9 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       await Promise.all([first, second])
 
       expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
-      // Nothing was broadcast for it either, so its claim goes with it.
       controller.selectTopic('')
-      echo('2')
-      expect(controller.currentTopicId).toBe('2')
+      selfEcho('2')
+      expect(controller.currentTopicId).toBe('')
     })
   })
 
