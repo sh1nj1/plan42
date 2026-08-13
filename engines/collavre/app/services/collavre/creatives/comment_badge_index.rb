@@ -15,10 +15,10 @@ module Creatives
 
     Badge = Struct.new(:unread_count, :visible_comments, keyword_init: true)
 
-    # The comment-created fanout has one origin and many recipients. Join every
-    # recipient to the comments it can see and both of its possible pointers in
-    # one grouped query. This preserves the topic-watermark semantics without
-    # rebuilding a one-origin index (and its cache and SQL work) per recipient.
+    # The comment-created fanout has one origin and many recipients. Read the
+    # comment history once, then apply each recipient's topic watermark in Ruby.
+    # Joining every recipient to public history made one broadcast materialise
+    # recipients × comments rows before grouping.
     def self.for_users(origin:, users:)
       recipients = users.compact.uniq(&:id)
       return {} if recipients.empty?
@@ -184,51 +184,56 @@ module Creatives
     class << self
       private
 
-      # The topic pointer is joined first; the retained creative-wide pointer
-      # supplies the fallback. Starting with recipients rather than comments
-      # lets the grouped result retain which user each public comment belongs
-      # to, without materialising comment history in Ruby.
+      # A comment broadcast can fan out to many people. Keep the comment scan
+      # independent of recipient count, then count the suffix after each
+      # watermark with a binary search. The arrays are ordered by primary key
+      # because find_each advances by that key.
       def counts_for_users(origin, user_ids)
-        user_table = Collavre.configuration.user_class_name.constantize.arel_table
-        comment_table = Comment.arel_table
-        topic_pointer_table = CommentReadPointer.arel_table.alias("topic_read_pointers")
-        legacy_pointer_table = CommentReadPointer.arel_table.alias("legacy_read_pointers")
+        recipient_ids = user_ids.to_h { |user_id| [ user_id, true ] }
+        watermarks_by_user_id = read_watermarks_for_users(origin, user_ids)
+        public_comment_ids_by_topic = Hash.new { |hash, topic_id| hash[topic_id] = [] }
+        private_comment_ids_by_user_id = Hash.new { |hash, user_id| hash[user_id] = Hash.new { |topics, topic_id| topics[topic_id] = [] } }
 
-        visible_to_user = comment_table[:private].eq(false)
-          .or(comment_table[:user_id].eq(user_table[:id]))
-          .or(comment_table[:approver_id].eq(user_table[:id]))
-        joins = user_table.join(comment_table, Arel::Nodes::InnerJoin)
-          .on(comment_table[:creative_id].eq(origin.id).and(visible_to_user))
-          .join(topic_pointer_table, Arel::Nodes::OuterJoin)
-          .on(
-            topic_pointer_table[:user_id].eq(user_table[:id])
-              .and(topic_pointer_table[:creative_id].eq(origin.id))
-              .and(topic_pointer_table[:topic_id].eq(comment_table[:topic_id]))
-          )
-          .join(legacy_pointer_table, Arel::Nodes::OuterJoin)
-          .on(
-            legacy_pointer_table[:user_id].eq(user_table[:id])
-              .and(legacy_pointer_table[:creative_id].eq(origin.id))
-              .and(legacy_pointer_table[:topic_id].eq(nil))
-          )
-        watermark = Arel::Nodes::NamedFunction.new(
-          "COALESCE",
-          [ topic_pointer_table[:last_read_comment_id], legacy_pointer_table[:last_read_comment_id], 0 ]
-        )
-        unread_count = Arel::Nodes::NamedFunction.new(
-          "SUM",
-          [ Arel::Nodes::Case.new.when(comment_table[:id].gt(watermark)).then(1).else(0) ]
-        ).as("unread_count")
-        visible_count = Arel::Nodes::NamedFunction.new("COUNT", [ comment_table[:id] ]).as("visible_count")
-
-        relation = Collavre.configuration.user_class_name.constantize.where(user_table[:id].in(user_ids))
-          .joins(joins.join_sources)
-          .group(user_table[:id], comment_table[:topic_id])
-          .select(user_table[:id], comment_table[:topic_id], unread_count, visible_count)
-
-        relation.each_with_object(Hash.new { |hash, user_id| hash[user_id] = {} }) do |row, counts|
-          counts[row.id][row.topic_id] = { unread: row.unread_count.to_i, visible: row.visible_count.to_i }
+        Comment.where(creative_id: origin.id).select(:id, :topic_id, :private, :user_id, :approver_id).find_each(batch_size: QUERY_BATCH_SIZE) do |comment|
+          if comment.private?
+            [ comment.user_id, comment.approver_id ].compact.uniq.each do |user_id|
+              private_comment_ids_by_user_id[user_id][comment.topic_id] << comment.id if recipient_ids.include?(user_id)
+            end
+          else
+            public_comment_ids_by_topic[comment.topic_id] << comment.id
+          end
         end
+
+        user_ids.each_with_object({}) do |user_id, counts_by_user_id|
+          topic_ids = public_comment_ids_by_topic.keys | private_comment_ids_by_user_id[user_id].keys
+          counts_by_user_id[user_id] = topic_ids.each_with_object({}) do |topic_id, counts_by_topic|
+            watermark = watermark_for(watermarks_by_user_id[user_id], topic_id)
+            public_ids = public_comment_ids_by_topic[topic_id]
+            private_ids = private_comment_ids_by_user_id[user_id][topic_id]
+            counts_by_topic[topic_id] = {
+              unread: count_after(public_ids, watermark) + count_after(private_ids, watermark),
+              visible: public_ids.length + private_ids.length
+            }
+          end
+        end
+      end
+
+      def read_watermarks_for_users(origin, user_ids)
+        CommentReadPointer.where(user_id: user_ids, creative_id: origin.id)
+          .where.not(last_read_comment_id: nil)
+          .pluck(:user_id, :topic_id, :last_read_comment_id)
+          .each_with_object(Hash.new { |hash, user_id| hash[user_id] = {} }) do |(user_id, topic_id, last_read_id), watermarks|
+            watermarks[user_id][topic_id] = last_read_id
+          end
+      end
+
+      def watermark_for(watermarks, topic_id)
+        watermarks.fetch(topic_id, watermarks.fetch(nil, 0))
+      end
+
+      def count_after(comment_ids, watermark)
+        first_unread_index = comment_ids.bsearch_index { |comment_id| comment_id > watermark }
+        first_unread_index ? comment_ids.length - first_unread_index : 0
       end
 
       def topic_is_viewed?(topic_id, viewing_topics)
