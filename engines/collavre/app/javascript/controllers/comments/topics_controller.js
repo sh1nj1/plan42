@@ -1370,27 +1370,30 @@ export default class extends Controller {
             { channel: 'TopicsChannel', creative_id: this.creativeId },
             {
                 received: (data) => this.handleTopicMessage(data),
-				// A dropped connection can reconnect before the server finishes
-				// a request already in flight. Keep its claim for the delayed
-				// echo, but invalidate queued work for the stream that ended.
-				disconnected: () => this.invalidateQueuedSelfEchoes(),
-				// A refused subscription cannot reconnect, so neither current
-				// nor queued work can receive an echo on that stream.
+                // No disconnected handler on purpose. The consumer reconnects
+                // on its own and the subscription comes back, so a claim held
+                // across the gap may still be settled: a save in flight can be
+                // broadcast after the reconnect, and one queued behind it is
+                // not even sent until then. Since an echo is matched by the id
+                // of the save it came from, a claim that is never settled is
+                // inert — it can only be consumed by a message no one else can
+                // send. Dropping claims here would buy nothing and would let
+                // this client's own echo revert a newer pick.
+                //
+                // A refused subscription is different: it is not retried, so
+                // nothing outstanding or queued can ever be settled on it.
                 rejected: () => this.dropPendingSelfEchoes(),
             }
         )
     }
 
-    invalidateQueuedSelfEchoes() {
-		// A queued save has not yet claimed an echo. When it gets its turn the
-		// stream it was queued on may be gone, and this generation tells it
-		// not to manufacture a claim that can never settle.
-		this._subscriptionGeneration = this.subscriptionGeneration + 1
-    }
-
     dropPendingSelfEchoes() {
         this.pendingSelfEchoes.length = 0
-		this.invalidateQueuedSelfEchoes()
+        // Emptying the array cannot reach a claim that has not been taken yet.
+        // A save waiting its turn on the chain takes one when it runs, and by
+        // then this stream is gone; the generation is how that queued save
+        // finds out.
+        this._subscriptionGeneration = this.subscriptionGeneration + 1
     }
 
     unsubscribe() {
@@ -1399,9 +1402,9 @@ export default class extends Controller {
             this.topicsSubscription = null
         }
         this.subscribedCreativeId = null
-        // Echoes still owed to us on the stream we are leaving will never
-        // arrive, and the stream is per-creative, so holding them would only
-        // let them swallow an unrelated broadcast later.
+        // The stream is per creative, so echoes still owed to us on the one we
+        // are leaving are not coming and nothing can settle their claims.
+        // Unlike a dropped connection, there is no reconnect to wait for.
         this.dropPendingSelfEchoes()
     }
 

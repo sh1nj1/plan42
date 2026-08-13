@@ -31,10 +31,10 @@ const TopicsController = (await import('../topics_controller')).default
 const TOPICS = [{ id: 1, name: 'Main' }, { id: 2, name: 'Alpha' }, { id: 3, name: 'Beta' }]
 
 // update_last_topic broadcasts to every session of the current user, including
-// the one that just saved. The echo carries no sender, so a client cannot tell
-// its own save coming back from another tab's change — and the echo lands after
-// the save that produced it, which is exactly the window a fast second pick
-// falls into.
+// the one that just saved, and the echo lands after the save that produced it —
+// exactly the window a fast second pick falls into. Telling the echo apart from
+// a sibling session's change is what the client_id on the broadcast is for; the
+// topic id cannot do it, two sessions can pick the same topic at once.
 describe('TopicsController vs. the echo of its own last_topic save', () => {
   let application
   let controller
@@ -164,9 +164,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('2')
   })
 
-  // Messages missed while disconnected are gone, and the stream is per
-  // creative, so claims must not outlive the subscription that would settle
-  // them — a stale one would swallow the next unrelated broadcast.
+  // The stream is per creative, so leaving it for another means the echoes it
+  // owed us are not coming. Nothing can settle those claims; they go with it.
   test('leaving the stream drops outstanding claims', async () => {
     controller.selectTopic('2')
     await controller.flushSaveLastTopic('2')
@@ -195,11 +194,19 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       controller.subscribe()
     })
 
+    // The consumer reconnects by itself and the subscription comes back, so
+    // the controller registers nothing for the gap — claims stay exactly where
+    // they were. Asserting the absence is the point: a handler here would be
+    // discarding claims that can still be settled.
+    const dropAndReconnect = () => {
+      expect(subscriptionCallbacks.disconnected).toBeUndefined()
+    }
+
     test('a reconnectable disconnect keeps an in-flight claim for its delayed echo', async () => {
       controller.selectTopic('2')
       await controller.flushSaveLastTopic('2')
 
-      subscriptionCallbacks.disconnected()
+      dropAndReconnect()
 
       expect(controller.pendingSelfEchoes).toEqual([clientIdFor('2')])
       // Reconnected, and the user has since picked Beta. The delayed echo of
@@ -213,12 +220,33 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       controller.selectTopic('2')
       await controller.flushSaveLastTopic('2')
 
-      subscriptionCallbacks.disconnected()
+      dropAndReconnect()
 
       // Reconnected, and another session moves the preference to Alpha.
       controller.selectTopic('3')
       deliver('2')
       expect(controller.currentTopicId).toBe('2')
+    })
+
+    // The same reasoning one step along the queue. A save waiting its turn is
+    // sent after the consumer has reconnected, so its echo is not lost at all
+    // — refusing it a claim on the strength of the disconnect would let its
+    // own echo revert whatever the user picked while it was queued.
+    test('a save queued across a reconnect still claims its echo', async () => {
+      let resolveFirst
+      saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      const first = controller.flushSaveLastTopic('2')
+      const second = controller.flushSaveLastTopic('3')
+      await Promise.resolve()
+
+      dropAndReconnect()
+      resolveFirst(true)
+      await Promise.all([first, second])
+
+      controller.selectTopic('')
+      deliver('3', clientIdFor('3'))
+
+      expect(controller.currentTopicId).toBe('')
     })
 
     test('a refused subscription drops outstanding claims', async () => {
