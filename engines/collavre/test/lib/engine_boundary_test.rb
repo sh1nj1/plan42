@@ -1014,6 +1014,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = import.meta.resolve.bind(null)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = import.meta.resolve.bind(null, "#{satellite}/thing")();) => "#{satellite}/thing",
       %(const t = import.meta.resolve.bind(import.meta, "#{satellite}/thing")();) => "#{satellite}/thing",
+      %(import { createRequire } from "node:module"; const t = createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
+      %(import { createRequire as nativeRequire } from "node:module"; const t = nativeRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
+      %(const t = require("node:module").createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
       %(const t = await import("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -1262,6 +1265,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(registry.require.apply(null, ["#{satellite}/template"])))
     assert_empty js_imports_in(%(registry.require.bind(null)("#{satellite}/template")))
     assert_empty js_imports_in(%(require.bind(null, "local/path")("#{satellite}/template")))
+  end
+
+  test "detector ignores application createRequire functions" do
+    satellite = SATELLITES.first
+
+    assert_empty js_imports_in(%(const createRequire = () => () => {}; createRequire(import.meta.url)("#{satellite}/thing")))
+    assert_empty js_imports_in(%(import { createRequire } from "node:module"; registry.createRequire(import.meta.url)("#{satellite}/thing")))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -2039,7 +2049,64 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       when "export"
         js_from_specifier(tokens, index + 1)
       end
+    end + js_create_require_specifiers(tokens)
+  end
+
+  # `createRequire` turns an ESM module URL into the native CommonJS loader.
+  # Its bare name is only safe to scan when this source imports it from
+  # `node:module`; the chained `require("node:module")` form selects the same
+  # native factory without a binding declaration.
+  def js_create_require_specifiers(tokens)
+    imported_names = js_imported_node_create_require_names(tokens)
+
+    tokens.each_with_index.filter_map do |(kind, value), index|
+      native_import = imported_names.include?(value) && js_bare_js_identifier?(tokens, index)
+      native_require = value == "createRequire" && js_required_node_create_require?(tokens, index)
+      next unless kind == :word && (native_import || native_require)
+
+      opening = js_call_open_at(tokens, index)
+      closing = opening && js_matching_close_parenthesis(tokens, opening)
+      js_call_specifier(tokens, closing) if closing
     end
+  end
+
+  def js_imported_node_create_require_names(tokens)
+    tokens.each_with_index.flat_map do |token, imported|
+      next [] unless token == [ :word, "import" ] && tokens[imported + 1] == [ :punctuation, "{" ]
+
+      closing_offset = tokens[(imported + 2)..].index([ :punctuation, "}" ])
+      closing = closing_offset && imported + 2 + closing_offset
+      next [] unless closing && tokens[closing + 1] == [ :word, "from" ] && js_node_module?(tokens[closing + 2])
+
+      js_imported_create_require_names(tokens, imported + 2, closing)
+    end
+  end
+
+  def js_imported_create_require_names(tokens, start, finish)
+    start.upto(finish - 1).filter_map do |cursor|
+      next false unless tokens[cursor] == [ :word, "createRequire" ]
+
+      tokens[cursor + 1] == [ :word, "as" ] ? tokens[cursor + 2]&.last : "createRequire"
+    end
+  end
+
+  def js_required_node_create_require?(tokens, index)
+    return false unless tokens[index - 1] == [ :punctuation, "." ]
+
+    closing = index - 2
+    opening = js_matching_open_parenthesis(tokens, closing)
+    return false unless opening && tokens[opening - 1] == [ :word, "require" ] && js_commonjs_loader?(tokens, opening - 1)
+
+    specifier, cursor = js_static_string_expression_at(tokens, opening + 1)
+    cursor == closing && js_node_module?([ :string, specifier ])
+  end
+
+  def js_node_module?(token)
+    token&.first == :string && %w[node:module module].include?(token.last)
+  end
+
+  def js_bare_js_identifier?(tokens, index)
+    ![ ".", "#" ].include?(tokens[index - 1]&.last)
   end
 
   # Bare `require()` and Node's `module.require()` load modules. An arbitrary
