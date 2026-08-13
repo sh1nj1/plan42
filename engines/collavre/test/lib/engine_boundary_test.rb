@@ -43,6 +43,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   ASSOCIATION_DECLARATION_METHODS = %w[
     belongs_to has_many has_one has_and_belongs_to_many delegated_type
   ].freeze
+  ACTIVE_RECORD_STI_METHODS = %w[
+    build create create! find_or_create_by find_or_create_by! find_or_initialize_by
+    insert insert_all new upsert upsert_all update update! update_all where
+  ].freeze
   CONSTANT_SYMBOL_METHODS = %w[
     autoload? const_defined? const_get const_source_location
     const_set remove_const private_constant public_constant deprecate_constant
@@ -546,6 +550,17 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}::PrChannel" ], names(string_references_in(source))
   end
 
+  test "detector flags satellite STI types in Active Record calls" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(Collavre::Channel.create!(type: "#{satellite}::Message"))))
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(Collavre::Channel.where(type: "#{satellite}::Message"))))
+    assert_empty names(string_references_in(%(payload.create!(type: "#{satellite}::Message"))))
+    assert_empty names(string_references_in(%(render json: { type: "#{satellite}::Message" })))
+  end
+
   test "string detector ignores comments and the core engine's own constants" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -982,6 +997,14 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
   end
 
+  test "extensionless Ruby executables are scanned by their shebang" do
+    satellite = SATELLITES.first
+    source = "#!/usr/bin/env ruby\nrequire \"#{satellite}/tool\"\n"
+
+    assert ruby_source?("skills/collavre/scripts/tool", source)
+    assert_equal [ "#{satellite}/tool" ], requires_in(source)
+  end
+
   test "Ruby generator templates retain static loader calls around ERB output" do
     satellite = SATELLITES.first
     source = <<~RUBY
@@ -1386,7 +1409,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def core_sources
     root = ENGINES_ROOT.join(CORE)
     packaged = (core_gemspec.files + gemspec_file_names_in(core_gemspec_source, root:)).uniq.select do |path|
-      ruby_source?(path) || javascript_source?(root.join(path).to_s) || css_source?(path) || File.basename(path) == "Rakefile"
+      full_path = root.join(path).to_s
+      ruby_source?(full_path) || javascript_source?(full_path) || css_source?(path) || File.basename(path) == "Rakefile"
     end
 
     # The gemspec does not package itself, and it is Ruby that can require.
@@ -1473,8 +1497,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     source.gsub(/<%=?-?.*?-?%>/m) { |directive| directive.gsub(/[^\n]/, " ") }
   end
 
-  def ruby_source?(path)
-    path.match?(RUBY_FILE)
+  def ruby_source?(path, source = nil)
+    return true if path.match?(RUBY_FILE)
+
+    head = source || File.binread(path, 256)
+    head.b.match?(/\A#![^\n]*\bruby(?:\d+(?:\.\d+)*)?(?:\s|\z)/n)
   end
 
   # Generator `.rb.tt` and `.rake.tt` files are Ruby source with ERB embedded
@@ -2541,8 +2568,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       value.scan(SATELLITE_CONSTANT_IN_STRING).map { |name| [ name, line ] }
     end
     sql_sti_references = sql_sti_type_literals_in(root)
+    active_record_sti_references = active_record_sti_type_literals_in(root)
 
-    resolution_references + resolving_root_references + sql_sti_references
+    resolution_references + resolving_root_references + sql_sti_references + active_record_sti_references
   end
 
   def constant_resolution_literals_in(node, found = [])
@@ -2646,6 +2674,44 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     end
     node.compact_child_nodes.each { |child| sql_sti_type_literals_in(child, found) }
     found
+  end
+
+  # An STI type passed to an Active Record API is resolved just like the SQL
+  # form above. Keep the receiver and API checks strict: a `type` key in a
+  # payload hash is ordinary data, not a class dependency.
+  def active_record_sti_type_literals_in(node, found = [])
+    return found unless node.is_a?(Prism::Node)
+
+    if active_record_sti_call?(node)
+      call_option_values(node, "type").each do |value|
+        strings = static_string_concatenation(value) || string_literals_in(value)
+        strings = [ strings ] unless strings.is_a?(Array)
+        strings.each { |string| found << [ string, value.location.start_line ] if string }
+      end
+    end
+    node.compact_child_nodes.each { |child| active_record_sti_type_literals_in(child, found) }
+    found
+  end
+
+  def active_record_sti_call?(node)
+    node.is_a?(Prism::CallNode) && ACTIVE_RECORD_STI_METHODS.include?(node.name.to_s) &&
+      active_record_model_receiver?(node.receiver)
+  end
+
+  def active_record_model_receiver?(receiver)
+    name = receiver&.slice&.delete_prefix("::")
+    model = name&.safe_constantize
+    model.is_a?(Class) && model < ActiveRecord::Base
+  end
+
+  def call_option_values(call, key)
+    call.arguments&.arguments.to_a.select do |argument|
+      argument.is_a?(Prism::HashNode) || argument.is_a?(Prism::KeywordHashNode)
+    end.flat_map do |options|
+      options.elements.grep(Prism::AssocNode).filter_map do |option|
+        option.value if association_key_name(option) == key
+      end
+    end
   end
 
   def static_sql_call_argument(node)
