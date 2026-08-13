@@ -27,41 +27,44 @@ module Collavre
     def update_last_topic
       creative = Creative.find(params[:creative_id]).effective_origin
 
-      unless creative.has_permission?(Current.user, :read) || creative.user == Current.user
-        render json: { error: I18n.t("collavre.user_creative_preferences.no_permission") }, status: :forbidden and return
-      end
+      return render_forbidden unless readable?(creative)
+      return render_invalid_topic unless valid_last_topic?(creative)
 
-      # Validate that the topic belongs to this creative
-      if params[:last_topic_id].present?
-        unless creative.topics.exists?(id: params[:last_topic_id])
-          render json: { error: I18n.t("collavre.user_creative_preferences.invalid_topic") }, status: :unprocessable_entity and return
-        end
-      end
+      record = persist_last_topic(creative)
+      broadcast_last_topic(creative, record)
 
+      render json: { success: true }
+    end
+
+    private
+
+    def readable?(creative)
+      creative.has_permission?(Current.user, :read) || creative.user == Current.user
+    end
+
+    def valid_last_topic?(creative)
+      params[:last_topic_id].blank? || creative.topics.exists?(id: params[:last_topic_id])
+    end
+
+    def persist_last_topic(creative)
       record = UserCreativePreference.find_or_initialize_by(creative_id: creative.id, user_id: Current.user.id)
       record.expanded_status ||= {}
       record.last_topic_id = params[:last_topic_id].presence
+      record.expanded_status.empty? && record.last_topic_id.nil? ? record.destroy! : record.save!
+      record
+    end
 
-      if record.expanded_status.empty? && record.last_topic_id.nil?
-        record.destroy if record.persisted?
-      else
-        record.save!
-      end
+    def broadcast_last_topic(creative, record)
+      payload = { action: "last_topic_changed", last_topic_id: record.last_topic_id, client_id: params[:client_id].presence }
+      TopicsChannel.broadcast_to("user_#{Current.user.id}_creative_#{creative.id}", payload)
+    end
 
-      # Broadcast only to the current user's sessions (not all creative subscribers).
-      # client_id names the save this message is the echo of, so the session that
-      # made it can tell its own change coming back from a sibling session's —
-      # last_topic_id cannot, two sessions can pick the same topic at once.
-      TopicsChannel.broadcast_to(
-        "user_#{Current.user.id}_creative_#{creative.id}",
-        {
-          action: "last_topic_changed",
-          last_topic_id: record.last_topic_id,
-          client_id: params[:client_id].presence
-        }
-      )
+    def render_forbidden
+      render json: { error: I18n.t("collavre.user_creative_preferences.no_permission") }, status: :forbidden
+    end
 
-      render json: { success: true }
+    def render_invalid_topic
+      render json: { error: I18n.t("collavre.user_creative_preferences.invalid_topic") }, status: :unprocessable_entity
     end
   end
 end

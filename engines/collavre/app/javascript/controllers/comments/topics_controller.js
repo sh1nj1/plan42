@@ -1654,16 +1654,21 @@ export default class extends Controller {
 
         const action = data.action || "created"
 
-        if (action === "last_topic_changed") {
-            // Broadcast is already scoped to the current user via user-specific channel
-            const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+		if (action === "last_topic_changed") {
+			// Broadcast is already scoped to the current user via user-specific channel
+			const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
 			if (this.consumeSelfEcho(data.client_id)) {
 				this.lastKnownRemoteTopicId = newTopicId
 				return
 			}
 			this.lastKnownRemoteTopicId = newTopicId
-            if (newTopicId !== this.serverLastTopicId) {
-                this.serverLastTopicId = newTopicId
+			// A deep-link restore may have queued a write even when this broadcast
+			// repeats the preference already in serverLastTopicId. The sibling
+			// session still established that preference, so the queued one-shot link
+			// must not write itself back over it.
+			if (this.hasDeepLinkSelection) this.cancelPendingSaveLastTopic()
+			if (newTopicId !== this.serverLastTopicId) {
+				this.serverLastTopicId = newTopicId
                 // Another session moved the preference; nobody clicked in this
                 // popup. A deep link outranks the preference in the getter, so
                 // following the broadcast would light a chip the getter does not
@@ -1680,11 +1685,9 @@ export default class extends Controller {
                 // what the other session set. Following the broadcast re-arms
                 // the debounce with the broadcast's own value, so only the path
                 // that does not follow has anything to cancel.
-                if (this.hasDeepLinkSelection) {
-                    this.cancelPendingSaveLastTopic()
-                } else {
-                    this.selectTopic(newTopicId)
-                }
+				if (!this.hasDeepLinkSelection) {
+					this.selectTopic(newTopicId)
+				}
             }
             return
         }
