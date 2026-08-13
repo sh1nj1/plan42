@@ -1647,10 +1647,9 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     })
   })
 
-  // crypto.randomUUID is only defined in a secure context, and the app is
-  // reachable over plain http — so the fallback is a live path, not a
-  // formality, and an id from it has to be just as unguessable by a sibling
-  // tab as a uuid is.
+  // crypto.randomUUID is only defined in a secure context. Keep the fallback
+  // cryptographically random too, because these IDs distinguish a tab's own
+  // Action Cable echoes from those emitted by sibling tabs.
   test('ids are still unique per save without crypto.randomUUID', async () => {
     Object.defineProperty(global.crypto, 'randomUUID', { value: undefined, configurable: true })
 

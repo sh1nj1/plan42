@@ -9,6 +9,7 @@ const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
 const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
 const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
+let fallbackClientIdSequence = 0
 
 // Names one save, so its broadcast can be told from a sibling session's. It
 // has to be unique across the user's tabs, not just within this one: two tabs
@@ -16,7 +17,13 @@ const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
 function newClientId() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
 
-    return `save-${Math.random().toString(36).slice(2)}-${Date.now()}`
+	if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+		const bytes = crypto.getRandomValues(new Uint8Array(16))
+		return `save-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`
+	}
+
+    fallbackClientIdSequence += 1
+    return `save-${Date.now().toString(36)}-${fallbackClientIdSequence.toString(36)}`
 }
 
 export default class extends Controller {

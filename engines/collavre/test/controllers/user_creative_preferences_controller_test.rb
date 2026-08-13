@@ -168,6 +168,22 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "browser-a" => 2, "browser-b" => 1 }, preference.last_topic_save_sequences)
   end
 
+  test "update_last_topic bounds retained session high-water marks" do
+    topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Topic")
+    path = "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic"
+
+    33.times do |index|
+      parameters = { last_topic_id: topic.id, client_id: "browser-#{index}.1.save-1" }
+      patch path, params: parameters, as: :json
+      assert_response :success
+    end
+
+    preference = Collavre::UserCreativePreference.find_by!(creative_id: @creative.id, user_id: @user.id)
+    assert_equal 32, preference.last_topic_save_sequences.size
+    assert_not preference.last_topic_save_sequences.key?("browser-0")
+    assert_equal 1, preference.last_topic_save_sequences.fetch("browser-32")
+  end
+
   test "update_last_topic rejects topic from another creative" do
     other_creative = Collavre::Creative.create!(user: @user, description: "Other")
     other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Foreign Topic")

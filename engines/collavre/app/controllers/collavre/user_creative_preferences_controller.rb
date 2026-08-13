@@ -1,5 +1,7 @@
 module Collavre
   class UserCreativePreferencesController < ApplicationController
+    MAX_LAST_TOPIC_SAVE_SESSIONS = 32
+
     def toggle
       creative_id = params[:creative_id]
       node_id = params[:node_id].to_s
@@ -81,7 +83,14 @@ module Collavre
       session_id, sequence = last_topic_save_order
       return unless session_id.present?
 
-      record.last_topic_save_sequences = last_topic_save_sequences(record).merge(session_id => sequence)
+      sequences = last_topic_save_sequences(record)
+      # Keep recent sessions in insertion order so a preference cannot retain
+      # an unbounded history of tabs that have already gone away.
+      sequences.delete(session_id)
+      sequences[session_id] = sequence
+      sequences.shift while sequences.size > MAX_LAST_TOPIC_SAVE_SESSIONS
+
+      record.last_topic_save_sequences = sequences
       record.last_topic_save_session_id = session_id
       record.last_topic_save_sequence = sequence
     end
