@@ -99,7 +99,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   CSS_IMAGE_SET = /(?:-webkit-)?image-set\(\s*((?:[^()"']+|"[^"]*"|'[^']*'|\([^()]*\))*)\)/i
   CSS_IMAGE_SET_STRING = /(?:\A|,)\s*(?:"([^"]+)"|'([^']+)')/
   STATIC_HTML_ASSET_TAG = /<(link|script|img|source|video|audio)\b[^>]*>/i
-  STATIC_HTML_ASSET_ATTRIBUTE = /\b(?:src|poster|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+  STATIC_HTML_ASSET_ATTRIBUTE = /\b(?:src|srcset|poster|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
 
   # Every static way a JS module names another. Matched on the specifier of the
   # import itself rather than by grepping for the engine name, so a comment or
@@ -862,13 +862,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     static_erb_asset = "/assets/#{path}.svg"
     static_erb = <<~ERB
       <img src="#{static_erb_asset}">
+      <img srcset="/assets/#{path}.webp 1x, /assets/#{path}@2x.webp 2x">
+      <source srcset="/assets/#{path}.avif 1x">
       <script src="/assets/#{path}.js"></script>
       <link href="/assets/#{path}.css" rel="stylesheet">
       <%# <img src="/assets/#{satellite}/ignored.svg"> %>
       <!-- <img src="/assets/#{satellite}/ignored.svg"> -->
     ERB
 
-    assert_equal [ "/assets/#{path}.css", "/assets/#{path}.js", static_erb_asset ].sort,
+    assert_equal [
+      "/assets/#{path}.avif", "/assets/#{path}.css", "/assets/#{path}.js",
+      "/assets/#{path}.webp", "/assets/#{path}@2x.webp", static_erb_asset
+    ].sort,
       erb_static_asset_paths_in(static_erb).sort
   end
 
@@ -1544,12 +1549,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     tag[0].to_enum(:scan, STATIC_HTML_ASSET_ATTRIBUTE).filter_map do
       attribute = Regexp.last_match
       path = attribute.captures.compact.first
-      path if html_asset_attribute?(tag[1], attribute[0])
+      html_asset_attribute_paths(attribute[0], path) if html_asset_attribute?(tag[1], attribute[0])
     end
+      .flatten
+  end
+
+  def html_asset_attribute_paths(attribute, path)
+    return [ path ] unless attribute.match?(/\Asrcset\b/i)
+
+    path.split(",").filter_map { |candidate| candidate.strip.split(/\s+/, 2).first.presence }
   end
 
   def html_asset_attribute?(tag, attribute)
-    tag.casecmp?("link") ? attribute.match?(/\Ahref\b/i) : attribute.match?(/\A(?:src|poster)\b/i)
+    tag.casecmp?("link") ? attribute.match?(/\Ahref\b/i) : attribute.match?(/\A(?:src|srcset|poster)\b/i)
   end
 
   # JavaScript outside ERB tags ships as executable source; the tags themselves
