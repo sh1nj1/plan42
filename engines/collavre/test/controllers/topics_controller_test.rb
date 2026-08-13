@@ -141,6 +141,23 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
   end
 
+  test "destroying a selected topic advances its preference revision" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic: @topic,
+      last_topic_revision: 4
+    )
+
+    delete collavre.creative_topic_url(@creative, @topic)
+
+    assert_response :no_content
+    preference.reload
+    assert_nil preference.last_topic_id
+    assert_equal 5, preference.last_topic_revision
+  end
+
   # Uses the core PreviewChannel (not the collavre_github GithubPrChannel) so
   # the core engine test suite stays independent of the optional GitHub engine
   # per AGENTS.md. The cascade-on-delete behavior under test lives in the base
