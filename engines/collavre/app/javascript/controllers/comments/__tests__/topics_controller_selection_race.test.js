@@ -391,6 +391,32 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       expect(controller.serverLastTopicId).toBe('11')
       expect(controller.currentTopicId).toBe('11')
     })
+
+    test('attributes a new-creative broadcast to the current creative', async () => {
+      const NEW_OTHER_TOPIC = { id: 12, name: 'Delta' }
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const switching = switchTo('99')
+      controller.handleTopicMessage({ action: 'created', topic: NEW_OTHER_TOPIC, user_id: '88' })
+      controller.selectTopic('12')
+
+      resolveFetch({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          topics: [...OTHER_TOPICS, NEW_OTHER_TOPIC],
+          archived_topics: [],
+          can_manage: true,
+          main_topic_id: 10,
+          last_topic_id: 11,
+        }),
+      })
+      await switching
+
+      expect(controller._pickCreativeId).toBe('99')
+      expect(controller.currentTopicId).toBe('12')
+    })
   })
 
   // Not every write to the selection is a pick. loadTopics() empties the strip

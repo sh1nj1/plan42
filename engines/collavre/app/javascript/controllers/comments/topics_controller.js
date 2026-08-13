@@ -1319,7 +1319,16 @@ export default class extends Controller {
         if (existsByName) return
 
         this.topics = [...topics, data.topic]
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
+        // This arrived on the subscription for the creative currently open.
+        // Unlike a local re-render of cached topics, it is not about the
+        // outgoing creative whose strip may still be on screen during a switch.
+        this.renderTopics(
+            this.topics,
+            this.canManageTopics,
+            this.canCreateTopic,
+            this.canSetPrimaryAgent,
+            this.creativeId
+        )
 
         // Auto-select the new topic if created by the current user
         const currentUserId = document.body.dataset.currentUserId
