@@ -3,9 +3,8 @@
 require "date"
 require "prism"
 require "yaml"
-require_relative "complexity_ratchet/baseline_operations"
 
-# Entity-level monotonic complexity ratchet.
+# Entity-level complexity ratchet, measured against the merge base.
 #
 # The problem it solves: the core engine's app code has been compounding at
 # roughly +65% per quarter with an added:deleted line ratio around 13:1, and not
@@ -20,54 +19,60 @@ require_relative "complexity_ratchet/baseline_operations"
 # permanently invisible to that cop and can grow without limit, which is exactly
 # the amnesty a god object wants.
 #
-# So the baseline here is recorded per ENTITY (a specific class, module, method,
-# or block) rather than per cop or per file:
+# So the comparison here is per ENTITY (a specific class, module, method, or
+# block) rather than per cop or per file:
 #
-#   * every entity already over budget is pinned at its current value and may
-#     only shrink — growth fails CI
-#   * every entity NOT in the baseline must fit the budget in
+#   * an entity already over budget at the merge base may not grow
+#   * an entity NOT over budget at the merge base must fit the budget in
 #     .rubocop_metrics.yml — new code gets no amnesty from old debt
-#   * shrinking an entity requires updating the baseline in the same PR, so the
-#     ratchet only ever turns one way
-#   * the baseline cannot be loosened: `--verify-baseline` rejects any PR whose
-#     baseline raises a value or adds a key
+#   * the budget itself may only tighten (see #verify_budget)
 #   * the single escape hatch is a waiver with an owner, a reason, and an expiry
 #     date; an expired waiver fails CI
 #
+# WHY THE MERGE BASE, AND NOT A COMMITTED BASELINE FILE
+#
+# The first cut of this gate committed a `.complexity_baseline.yml` snapshot and
+# compared the working tree against it. That design fails on contact with a
+# moving `main`, and it failed on its own PR: eleven entities the branch never
+# touched were reported, four of them because `main` had legitimately improved
+# them. `Collavre::User` shrinking from 323 to 295 lines on main turned every
+# open PR red.
+#
+# Worse, the only way out was `--regenerate`, which rewrote the snapshot from the
+# working tree — and in a drifted state that silently absorbs main's regressions
+# into the baseline. The documented rule "never regenerate to make CI green" was
+# therefore a rule the tool made unavoidable.
+#
+# Measuring the merge base directly removes the class of bug rather than guarding
+# it. Both sides are measured in the same run, with the same RuboCop and the same
+# budget, so:
+#
+#   * main's drift is invisible — the merge base moves with main
+#   * an improvement is just an improvement; there is nothing to re-record
+#   * a RuboCop upgrade shifts both sides identically, so it cannot silently
+#     delete debt (the old design needed a whole Gemfile.lock check for this)
+#   * there is no snapshot to loosen, so `--verify-baseline`, `--regenerate` and
+#     their tamper-detection machinery have nothing left to defend
+#
+# The cost is that the ratchet is relative, not absolute: a branch cut before an
+# improvement lands could regrow that entity back to its older value without
+# tripping. Requiring branches to be current with main before merge closes it,
+# and the squash-merge workflow already rebases. That is a smaller hole than a
+# gate the team turns off in week two because it reddens unrelated PRs.
+#
 # Entities are keyed by their fully-qualified name, not by line number, so
-# inserting code above a method does not invalidate its baseline entry.
+# inserting code above a method does not move it between the two measurements.
 module ComplexityRatchet
   Error = Class.new(StandardError)
 
   CONFIG_PATH   = ".rubocop_metrics.yml"
-  BASELINE_PATH = ".complexity_baseline.yml"
   WAIVERS_PATH  = ".complexity_waivers.yml"
-  # The rest of the budget: CONFIG_PATH sets Enabled and Max and inherits every
-  # other Metrics setting from the RuboCop gems pinned here. See #verify_toolchain.
-  LOCK_PATH     = "Gemfile.lock"
   # The measured value inside a RuboCop Metrics message:
   #   "Method has too many lines. [38/25]"                    -> 38
   #   "Assignment Branch Condition size ... [<7, 42, 8> 43.55/35]" -> 43.55
   # Metrics/BlockNesting carries no number; those offenses are counted instead.
   VALUE_PATTERN = /\[(?:<[^>]*>\s*)?([\d.]+)\/[\d.]+\]/
   SEPARATOR = " | "
-
-  BASELINE_HEADER = <<~YAML
-    # Complexity ratchet baseline — DO NOT hand-edit to make CI pass.
-    #
-    # Each entry pins one entity (class / module / method / block) that is
-    # already over the budget in .rubocop_metrics.yml at the size it had when it
-    # was recorded. The value may only go DOWN. `bin/complexity_check
-    # --verify-baseline <ref>` fails any PR that raises a value or adds a key,
-    # so regenerating this file cannot be used to turn CI green.
-    #
-    # Regenerate after a refactor that shrinks or removes an entity:
-    #
-    #     bin/complexity_check --regenerate
-    #
-    # Structure: <path>: <cop>: <entity>: <value>. Tool output and waiver keys
-    # use the flattened form "<path> | <cop> | <entity>".
-  YAML
 
   WAIVERS_TEMPLATE = <<~YAML
     # Time-boxed exceptions to the complexity budget.
@@ -116,7 +121,6 @@ module ComplexityRatchet
       @stack = []
       @fallback_statements = Hash.new { |hash, key| hash[key] = [] }
       @occurrences = Hash.new(0)
-      @sibling_anchors = Hash.new { |hash, key| hash[key] = [] }
       @call_stack = []
       @collection_stack = []
       super()
@@ -231,56 +235,7 @@ module ComplexityRatchet
       with_collection(node) { super }
     end
 
-    # Keep every sibling population so verification catches ordinal transfers
-    # from scopes that were below budget and absent from the baseline.
-    def sibling_populations
-      @occurrences.select { |_path, count| count > 1 }
-        .merge(fallback_sibling_populations) { |_path, scopes, statements| scopes + statements }
-        .merge(ancestor_sibling_populations) { |_path, direct, ancestor| [ direct, ancestor ].max }
-    end
-
-    # Anchors distinguish replacements that keep the same ordinalised key.
-    # Unique blocks and lambdas keep theirs too, because a changed call or
-    # assignment can otherwise replace the scope while retaining its
-    # unsuffixed identity.
-    def sibling_anchors = @sibling_anchors.select { |path, _| path.match?(/\[(?:block:|lambda\])/) || @occurrences[path] > 1 }
-      .merge(ancestor_sibling_anchors) { |_path, direct, ancestor| direct + ancestor }
-
     private
-
-    # Fallback identities have the same ordinal problem as named scopes. Their
-    # population must reach the verification profile too, or deleting an
-    # under-budget twin lets its survivor inherit the unsuffixed baseline key.
-    def fallback_sibling_populations = @fallback_statements.filter_map do |(scope, text), statements|
-        [ "#{scope}~#{abbreviate(text)}", statements.size ] if statements.size > 1
-      end.to_h
-
-    # An ordinal on an outer scope is also an ordinal on everything nested in
-    # it. `A(2)#run` has no direct `#run` sibling, but swapping A's reopenings
-    # can still transfer a run allowance. Project that outer population and its
-    # anchors onto descendants so verification sees the shared family.
-    def ancestor_sibling_populations = ancestor_sibling_profiles { |_path, count, _anchors| count }
-
-    def ancestor_sibling_anchors = ancestor_sibling_profiles { |_path, _count, anchors| anchors }
-
-    def ancestor_sibling_profiles
-      @occurrences.filter_map { |path, count| [ path, count, @sibling_anchors[path] ] if count > 1 }
-        .each_with_object({}) do |(ancestor, count, anchors), profiles|
-          normalized_ancestor = normalize_scope_ordinals(ancestor)
-          @occurrences.each_key do |descendant|
-            normalized_descendant = normalize_scope_ordinals(descendant)
-            next unless descendant_of?(normalized_descendant, normalized_ancestor)
-
-            profile = yield(descendant, count, anchors)
-            existing = profiles[normalized_descendant]
-            profiles[normalized_descendant] = existing ? existing.is_a?(Array) ? existing + profile : [ existing, profile ].max : profile
-          end
-        end
-    end
-
-    def descendant_of?(path, ancestor) = path.start_with?("#{ancestor}#", "#{ancestor}.", "#{ancestor}::", "#{ancestor}[")
-
-    def normalize_scope_ordinals(path) = path.gsub(/\(\d+\)(?=(?::|#|\.|\[)|\z)/, "")
 
     def abbreviate(text) = text.length > 100 ? "#{text[0, 97]}..." : text
 
@@ -420,7 +375,6 @@ module ComplexityRatchet
     # case of a uniquely-named scope keeps a clean key.
     def disambiguate(segment, anchor)
       sibling_path = join(path, segment)
-      @sibling_anchors[sibling_path] << anchor
       occurrence = (@occurrences[sibling_path] += 1)
       occurrence == 1 ? segment : "#{segment}(#{occurrence})"
     end
@@ -444,11 +398,9 @@ module ComplexityRatchet
   end
 
   Waiver = Struct.new(:key, :owner, :reason, :expires, keyword_init: true) do
-    # What makes a waiver count lives here rather than inside Check because two
-    # commands have to agree on it. If --regenerate honoured a waiver that
-    # --check rejects, `--regenerate` would exit 0 on debt that fails CI; if it
-    # ignored one --check honours, the documented refactor workflow would exit 1
-    # demanding a waiver that is already there. Two copies of this rule drift.
+    # `owner: ""` is not an owner and `reason: ""` is not a reason: a blank
+    # waiver silently skips the entity in Check#measurement_problems, which is
+    # the strongest thing this tool can do for you, handed out for free.
     def invalid_reason(today)
       return "waiver is missing owner/reason/expires" if incomplete?
       return nil unless expires > today + MAX_WAIVER_DAYS
@@ -472,17 +424,17 @@ module ComplexityRatchet
     end
   end
 
-  # Compares a measurement against the baseline and the waiver list.
+  # Compares the head measurement against the merge base's and the waiver list.
   class Check
-    def initialize(actual:, baseline:, waivers: [], today: Date.today)
+    def initialize(actual:, base:, waivers: [], today: Date.today)
       @actual = actual
-      @baseline = baseline
+      @base = base
       @waivers = waivers
       @today = today
     end
 
     def problems
-      @problems ||= waiver_problems + measurement_problems + resolved_problems
+      @problems ||= waiver_problems + measurement_problems
     end
 
     def blocking_problems
@@ -495,7 +447,7 @@ module ComplexityRatchet
 
     private
 
-    attr_reader :actual, :baseline, :waivers, :today
+    attr_reader :actual, :base, :waivers, :today
 
     def waived
       @waived ||= waivers.to_h { |waiver| [ waiver.key, waiver ] }
@@ -515,24 +467,21 @@ module ComplexityRatchet
       end
     end
 
+    # An entity that shrank, or dropped under budget entirely, produces nothing
+    # at all. Under the old committed-baseline design an improvement was a
+    # blocking `stale` problem — the baseline had to be re-recorded in the same
+    # PR or CI stayed red. Measuring the merge base leaves no record to keep in
+    # sync, so improving code is simply allowed.
     def measurement_problems
       actual.filter_map do |key, value|
         next if waived.key?(key)
 
-        recorded = baseline[key]
+        recorded = base[key]
         if recorded.nil?
-          problem(:new_offense, key, "#{value} exceeds the budget and has no baseline entry", blocking: true)
+          problem(:new_offense, key, "#{value} exceeds the budget and is not over budget at the merge base", blocking: true)
         elsif value > recorded
           problem(:regression, key, "grew from #{recorded} to #{value}", blocking: true)
-        elsif value < recorded
-          problem(:stale, key, "improved from #{recorded} to #{value} — run bin/complexity_check --regenerate", blocking: true)
         end
-      end
-    end
-
-    def resolved_problems
-      (baseline.keys - actual.keys).map do |key|
-        problem(:stale, key, "is now within budget — run bin/complexity_check --regenerate", blocking: true)
       end
     end
 
@@ -541,9 +490,15 @@ module ComplexityRatchet
     end
   end
 
-  extend BaselineOperations
 
   class << self
+    # RuboCop prints AbcSize as a float; keep whole numbers as integers so a
+    # reported value reads 38 rather than 38.0.
+    def normalize(value)
+      rounded = value.round(2)
+      rounded == rounded.to_i ? rounded.to_i : rounded
+    end
+
     def load_waivers(path)
       return [] unless File.exist?(path)
 
@@ -565,72 +520,16 @@ module ComplexityRatchet
       end
     end
 
-    # A regenerated baseline must be a subset-or-tightening of the previous one.
-    # Without this, "just regenerate the baseline" would be a one-command way to
-    # legalise any regression — the same hole that makes .rubocop_todo.yml
-    # useless as a gate.
+    # The one thing the merge-base comparison cannot see for itself. Both sides
+    # are measured with THIS branch's budget, deliberately — otherwise a PR that
+    # tightens a Max would report every pre-existing entity as new debt. The
+    # cost of that choice is that raising a Max is invisible to the comparison:
+    # RuboCop simply stops emitting the offenses that cop held, on both sides at
+    # once, and the gate goes green while every future entity inherits the
+    # weaker limit.
     #
-    # `before` is nil when the base ref predates the baseline file, which is the
-    # bootstrap commit and has nothing to compare against. That is not a hole
-    # worth plugging: skipping the gate afterwards means deleting a 438-entry
-    # file, which is a reviewable event, whereas the path this actually closes —
-    # `--regenerate` to make CI green — is a single command.
-    def verify_monotonic(before, after, before_siblings: {}, after_siblings: {}, before_sibling_anchors: {}, after_sibling_anchors: {})
-      return [] if before.nil?
-
-      after.filter_map { |key, value|
-        recorded = before[key]
-        if recorded.nil?
-          Problem.new(kind: :baseline_addition, key: key, blocking: true,
-            message: "added to the baseline (#{value}) — new debt needs a fix or a waiver, not a baseline entry")
-        elsif value > recorded
-          Problem.new(kind: :baseline_loosened, key: key, blocking: true,
-            message: "baseline raised from #{recorded} to #{value} — the ratchet only turns one way")
-        end
-      } + sibling_problems(before, after, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
-    end
-
-    # Both sibling views of a source, from one parse.
-    #
-    # Population catches a deleted sibling that was below budget and therefore
-    # absent from the baseline: the baseline cannot describe an under-budget
-    # sibling, so deleting a 90-line one next to an unrecorded 60-line one lets
-    # the latter grow to 80 under the former's key, and every baseline-only
-    # comparison calls that an improvement.
-    #
-    # Anchors catch the other positional transfer: two named calls can swap
-    # order while keeping the same population, making every ordinal key look
-    # individually tighter even though the smaller sibling grew under the larger
-    # sibling's allowance.
-    #
-    # Answered together because every caller wants both for the same files, and
-    # asking separately parsed each of the 129 baselined files twice.
-    def sibling_profile(sources)
-      sources.each_with_object({ populations: {}, anchors: {} }) do |(path, source), profile|
-        next if source.nil?
-
-        entities = EntityMap.for(source)
-        entities.sibling_populations.each { |entity, count| profile[:populations][sibling_key(path, entity)] = count }
-        entities.sibling_anchors.each { |entity, values| profile[:anchors][sibling_key(path, entity)] = values }
-      end
-    end
-
-    def sibling_populations(sources) = sibling_profile(sources).fetch(:populations)
-
-    def sibling_anchors(sources) = sibling_profile(sources).fetch(:anchors)
-
-    # Raising a Max in .rubocop_metrics.yml is the quiet way to unwind the
-    # ratchet, and verify_monotonic cannot see it: RuboCop stops emitting the
-    # offenses that cop held, `--regenerate` drops their baseline entries, and
-    # verify_monotonic only inspects the keys that remain. Both gates go green
-    # while every future entity inherits the weaker limit — no reset label, no
-    # diff to the baseline except deletions that look like a refactor.
-    #
-    # Measured on this repo: MethodLength 25 -> 200 deletes 160 of 438 entries,
-    # reports zero new debt, and passes.
-    #
-    # Deletions themselves cannot be rejected — a real refactor deletes entries
-    # too, and that is the ratchet working. So the budget is pinned instead.
+    # Measured on this repo: MethodLength 25 -> 200 silences 160 of 438
+    # entities and reports nothing.
     #
     # The rule is an allowlist, not a list of known tricks: `Max` may fall, and
     # everything else in this file must stay put. Enumerating the ways to widen
@@ -646,191 +545,7 @@ module ComplexityRatchet
       cop_problems(before, after) + exclude_problems(before, after) + global_problems(before, after)
     end
 
-    # The budget is not only what .rubocop_metrics.yml says. That file sets
-    # `Enabled` and `Max` and inherits everything else from the RuboCop gems, so
-    # a version bump moves the effective budget while the file it is compared
-    # against is byte-identical:
-    #
-    #   Metrics/MethodLength in .rubocop_metrics.yml : Enabled, Max
-    #   Metrics/MethodLength in effect               : Enabled, Max,
-    #     AllowedMethods, AllowedPatterns, CountAsOne, CountComments
-    #
-    # Four of six keys live in the gem. Measured on this repo by widening one of
-    # them the way an upgrade would, changing nothing in the repository:
-    # measurement drops 438 entities to 277, `--regenerate` deletes all 161
-    # MethodLength entries, and both `--verify-baseline` and `--check` exit 0.
-    # MethodLength is then off repository-wide with no reset label.
-    #
-    # Comparing *resolved* configs does not close this. Resolution uses the gems
-    # that are installed, and CI installs only this branch's — so the base
-    # config would be resolved with the new RuboCop and come out identical. The
-    # version is the only evidence of the base's behaviour that survives into
-    # the PR build, so that is what is compared.
-    #
-    # A toolchain change is not blocked, only made explicit: it goes through
-    # `complexity-baseline-reset` like any other budget change, which is the
-    # case that label was written for.
-    def verify_toolchain(before_lock, after_lock)
-      return [] if before_lock.nil?
-
-      before, after = [ before_lock, after_lock ].map { |lock| toolchain_versions(lock) }
-
-      (before.keys | after.keys).sort.filter_map do |gem_name|
-        next if before[gem_name] == after[gem_name]
-
-        problem(:toolchain_changed, gem_name,
-          "#{gem_name} #{before[gem_name] || '(absent)'} -> #{after[gem_name] || '(absent)'} — " \
-          "the Metrics budget inherits AllowedMethods, AllowedPatterns, CountAsOne and CountComments " \
-          "from these gems, so an upgrade can silence offenses and delete baseline entries " \
-          "while #{CONFIG_PATH} stays identical")
-      end
-    end
-
-    # Keys present in the measurement but absent from the baseline are NOT
-    # added: adding them is what --verify-baseline exists to reject. They are
-    # returned so the CLI can point at the real fix.
-    # Returns the tightened baseline plus the keys that are new debt.
-    #
-    # A live waiver is not new debt — it is debt that has already been argued
-    # for, named an owner, and given an expiry. Counting it here made the
-    # documented refactor workflow unrunnable: --check passed on the waiver
-    # while --regenerate wrote the improved baseline and then exited 1, telling
-    # you to waive an entity that was waived on the line above. Verified on this
-    # repo before the fix — `--check` green, `--regenerate` exit 1 on the same
-    # two keys.
-    #
-    # Only *live* waivers are subtracted. An expired or malformed one is a
-    # blocking problem in Check, so honouring it here would let --regenerate
-    # exit 0 on something CI rejects.
-    #
-    # Values may only fall. Writing the measurement unconditionally let a
-    # waived entity's growth be copied into the baseline by the next unrelated
-    # refactor: Check skips waived keys, so nothing objected, and the value the
-    # waiver was meant to be temporary about became the permanent record.
-    # Measured on this repo — an entity baselined at 31, grown to 41 under a
-    # live waiver, came back 41 after --regenerate, --verify-baseline then
-    # blocked the branch, and deleting the expired waiver left zero blocking
-    # problems at 41. Taking the minimum makes this command structurally
-    # incapable of raising a value, so a waiver decays back to the recorded
-    # limit instead of laundering past it.
-    def regenerate(baseline, actual, waivers: [], today: Date.today)
-      updated = baseline.filter_map do |key, recorded|
-        [ key, [ recorded, actual[key] ].min ] if actual.key?(key)
-      end.to_h
-      live = waivers.select { |waiver| waiver.live?(today) }.map(&:key)
-      [ updated, actual.keys - baseline.keys - live ]
-    end
-
     private
-
-    # Same-named siblings are told apart by a positional ordinal, and position
-    # is not identity. Delete the first of two `[block:each]` siblings and the
-    # second is renamed onto the first's key — inheriting the first's allowance
-    # along with it. Measured: siblings recorded at 88 and 78, first deleted,
-    # survivor grown 78 -> 83; `--check` called that "improved from 88 to 83",
-    # `--regenerate` wrote 83, and every gate went green on five lines of real
-    # growth.
-    #
-    # Per-key comparison cannot see it, because the two keys are separately
-    # monotonic. So a family that *shrank* is compared as a whole: nobody knows
-    # which sibling survived, so every survivor is held to the smallest limit
-    # the family had. That is conservative on purpose — it also fires when the
-    # smaller sibling is the one deleted and nothing grew at all. There is no
-    # information in the baseline that distinguishes those two cases, so the
-    # choice is which way to be wrong, and a false positive here costs a
-    # reviewer applying `complexity-baseline-reset` while a false negative
-    # unwinds the ratchet silently.
-    def sibling_problems(before, after, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
-      recorded = before.group_by { |key, _| family(key) }
-      after.group_by { |key, _| family(key) }.flat_map do |name, entries|
-        sibling_family_problems(
-          entries, recorded[name], before,
-          before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:
-        )
-      end
-    end
-
-    def sibling_family_problems(entries, siblings, before, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
-      return [] if siblings.nil?
-
-      changes = sibling_family_changes(
-        entries, siblings,
-        before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:
-      )
-      return [] unless changes.values.any?
-
-      entries.filter_map { |key, value| sibling_entry_problem(key, value, before, siblings.map(&:last).min, changes, before_siblings.fetch(sibling_population_key(key), 0) > siblings.size) }
-    end
-
-    def sibling_family_changes(entries, siblings, before_siblings:, after_siblings:, before_sibling_anchors:, after_sibling_anchors:)
-      keys = entries.map(&:first)
-      {
-        baseline_shrank: entries.size < siblings.size,
-        population_changed: keys.any? { |key| before_siblings.fetch(sibling_population_key(key), 0) != after_siblings.fetch(sibling_population_key(key), 0) },
-        anchors_reordered: keys.any? { |key| sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) },
-        anchors_ambiguous: keys.any? { |key| sibling_anchors_ambiguous?(key, entries, siblings, before_sibling_anchors, after_sibling_anchors) },
-        unique_anchor_changed: entries.one? && siblings.one? && keys.any? { |key| [ before_sibling_anchors[sibling_population_key(key)], after_sibling_anchors[sibling_population_key(key)] ].all? { _1&.one? } && sibling_anchors_reordered?(key, before_sibling_anchors, after_sibling_anchors) }
-      }
-    end
-
-    def sibling_entry_problem(key, value, before, floor, changes, baseline_incomplete)
-      return unless before.key?(key) && (value > floor || changes[:unique_anchor_changed] || !changes.values_at(:baseline_shrank, :anchors_reordered, :anchors_ambiguous).any? || changes.values_at(:anchors_reordered, :anchors_ambiguous).any? && baseline_incomplete)
-
-      Problem.new(kind: :baseline_sibling_shift, key: key, blocking: true,
-        message: sibling_problem_message(value, floor, changes[:baseline_shrank], changes[:anchors_reordered], changes[:anchors_ambiguous], changes[:unique_anchor_changed], baseline_incomplete))
-    end
-
-    def sibling_problem_message(value, floor, baseline_shrank, anchors_reordered, anchors_ambiguous, unique_anchor_changed, baseline_incomplete)
-      if baseline_shrank
-        "a same-named sibling was removed, so this entry may have inherited that sibling's " \
-          "allowance — #{value} is above the #{floor} the family was recorded at"
-      elsif unique_anchor_changed
-        "a uniquely named scope changed its source anchor, so a new scope may have inherited " \
-          "the old scope's allowance"
-      elsif anchors_reordered && baseline_incomplete
-        "same-named siblings changed order while at least one sibling was not baselined, so an " \
-          "allowance may have moved to a previously unrecorded entity"
-      elsif anchors_ambiguous && baseline_incomplete
-        "same-named siblings are indistinguishable and one is not baselined, so an allowance may have moved"
-      elsif anchors_reordered
-        "same-named siblings changed order, so this entry may have inherited that sibling's " \
-          "allowance — #{value} is above the #{floor} the family was recorded at"
-      elsif anchors_ambiguous
-        "same-named siblings have indistinguishable anchors, so a changed baseline cannot safely " \
-          "transfer their allowances — #{value} is above the #{floor} the family was recorded at"
-      else
-        "the number of same-named siblings changed, so this entry's ordinal may have " \
-          "transferred from another sibling — reset the baseline only after reviewing the change"
-      end
-    end
-
-    # #disambiguate appends scope ordinals; fallback source text keeps literal numeric parentheses.
-    def family(key) = key.sub(/\A[^~]*/) { _1.gsub(/\(\d+\)(?=(?::|#|\.|\[)|\z)/, "") }.sub(/\[fallback:\d+\]\z/, "")
-
-    # Sibling views are keyed by file and family, without the cop: a population
-    # or an anchor is a property of the source, not of the cop that measured it.
-    def sibling_key(path, entity) = [ path, family(entity) ].join(SEPARATOR)
-
-    def sibling_population_key(key) = key.split(SEPARATOR, 3).then { |file, _cop, entity| sibling_key(file, entity) }
-
-    def sibling_anchors_reordered?(key, before, after)
-      previous, current = [ before, after ].map { |anchors| anchors[sibling_population_key(key)] }
-      previous && current && previous.size == current.size && previous != current
-    end
-
-    # Two `items.each` blocks have the same call prefix. If their measured
-    # values change, no source-only identity can say which one supplied the
-    # old limit; holding both to the family floor is the conservative choice.
-    # Do not flag an unchanged baseline, or every PR would fail merely because
-    # an existing ambiguous family exists.
-    def sibling_anchors_ambiguous?(key, entries, siblings, before, after)
-      return false if entries.sort == siblings.sort
-
-      sibling_key = sibling_population_key(key)
-      previous = before[sibling_key]
-      current = after[sibling_key]
-      previous && current && previous.size == current.size && previous.uniq.size < previous.size
-    end
 
     # A cop that was gating has to keep gating, at a limit no higher, over a
     # scope no smaller, with no new escape valve bolted on. A cop that only
@@ -841,7 +556,7 @@ module ComplexityRatchet
 
         if !enabled?(current)
           problem(:budget_disabled, cop,
-            "was enabled in #{CONFIG_PATH} and is now off or gone — switching a cop off deletes every baseline entry it holds")
+            "was enabled in #{CONFIG_PATH} and is now off or gone — switching a cop off silences every entity it holds")
         elsif body["Max"] && current["Max"].nil?
           problem(:budget_implicit, cop,
             "lost its explicit Max in #{CONFIG_PATH} — an inherited limit moves on a gem upgrade and cannot be compared next PR")
@@ -919,17 +634,6 @@ module ComplexityRatchet
       changed = (mine.keys | theirs.keys).reject { |key| mine[key] == theirs[key] }.sort
       [ problem(:budget_scope_narrowed, "AllCops",
         "#{changed.join(', ')} changed in #{CONFIG_PATH} — narrowing what RuboCop reads hides entities from the ratchet") ]
-    end
-
-    # Every resolved Metrics or identity parser gem in Gemfile.lock, as name => version.
-    #
-    # Gemfile.lock indents a resolved spec by four spaces and its dependencies
-    # by six, so the anchored four-space match takes each gem once and ignores
-    # the dependency lines that repeat it with a constraint instead of a
-    # version. RuboCop config controls the Metrics budget, while parser and
-    # Prism determine the offenses and stable entity identities respectively.
-    def toolchain_versions(lock)
-      lock.to_s.scan(/^ {4}(rubocop[\w-]*|parser|prism) \(([^)]+)\)$/).to_h
     end
 
     def problem(kind, key, message)

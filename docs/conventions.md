@@ -135,11 +135,11 @@ conventions.
 
 ### Complexity Ratchet
 
-No class, module, method, or block may grow past the size recorded in
-`.complexity_baseline.yml`, and anything new must fit the budget in
-`.rubocop_metrics.yml`. If a refactor shrank something, run
-`bin/complexity_check --regenerate` in the same PR. The baseline can only ever
-tighten — CI rejects a PR that raises a value or adds a key. See
+No class, module, method, or block may grow past the size it has at the merge
+base, and anything new must fit the budget in `.rubocop_metrics.yml`. CI measures
+both sides in one run, so there is no file to keep in sync and a refactor that
+shrinks something needs no bookkeeping. The budget itself may only tighten. Run
+`bin/complexity_check` locally to see what a PR would report. See
 [complexity_budget.md](complexity_budget.md).
 
 ## PR Merge Principles (CTO Perspective)

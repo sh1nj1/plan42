@@ -6,11 +6,12 @@ require "tmpdir"
 # Not autoloaded: config/application.rb keeps this CI-only tool out of the app's
 # object graph, so the test has to require it by path.
 require Rails.root.join("lib/complexity_ratchet").to_s
+require Rails.root.join("lib/complexity_ratchet/base_tree").to_s
 
 # The ratchet is a CI gate, so a silent failure here does not break a feature —
 # it quietly stops blocking anything, which is worse. These tests pin the two
-# properties the gate depends on: entity keys survive editing, and the baseline
-# can only ever tighten.
+# properties the gate depends on: an entity key means the same thing in both
+# measurements, and the budget can only ever tighten.
 class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
   def path_for(source, line, last_line = nil)
     ComplexityRatchet::EntityMap.for(source)[line, last_line]
@@ -124,271 +125,6 @@ class ComplexityRatchetEntityMapTest < ActiveSupport::TestCase
     assert_equal "Sample.run", path_for(source, 2)
     assert_equal "Sample::Foo.run", path_for(source, 5)
     assert_equal "Sample::Bar.run", path_for(source, 8)
-  end
-
-  test "keeps the population of siblings that are below the budget" do
-    source = <<~RUBY
-      class Sample
-        def run
-          items.each { |item| item }
-          others.each { |item| item }
-        end
-      end
-    RUBY
-
-    assert_equal({ "Sample#run[block:each]" => 2 }, ComplexityRatchet::EntityMap.for(source).sibling_populations)
-  end
-
-  test "keeps the population of fallback statement twins below the budget" do
-    source = <<~RUBY
-      class Sample
-        def run
-          if ready
-          end
-          if ready
-          end
-        end
-      end
-    RUBY
-
-    assert_equal({ "Sample#run~if ready" => 2 }, ComplexityRatchet::EntityMap.for(source).sibling_populations)
-  end
-
-  test "keeps block call prefixes as sibling anchors" do
-    source = <<~RUBY
-      class Sample
-        def run
-          first.each { |item| item }
-          second.each { |item| item }
-        end
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample#run[block:each]" => [ "first.each", "second.each" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps lambda anchors for sibling verification" do
-    source = <<~RUBY
-      class Sample
-        HANDLERS = [
-          -> do
-            first
-          end,
-          -> do
-            second
-          end
-        ]
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[lambda]" => [ "HANDLERS = [", "HANDLERS = [" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps the assignment anchor of a unique lambda" do
-    source = <<~RUBY
-      class Sample
-        HANDLER = -> do
-          first
-        end
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[lambda]" => [ "HANDLER =" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps the preceding assignment anchor of a multiline unique lambda" do
-    source = <<~RUBY
-      class Sample
-        HANDLER =
-          -> do
-            first
-          end
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[lambda]" => [ "HANDLER =" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps the enclosing call anchor of a multiline unique lambda" do
-    source = <<~RUBY
-      class Sample
-        register(
-          -> do
-            first
-          end
-        )
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[lambda]" => [ "register(" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps enclosing call anchor after an earlier multiline lambda argument" do
-    source = <<~RUBY
-      class Sample
-        register(
-          :handler,
-          -> do
-            first
-          end
-        )
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[lambda]" => [ "register( :handler," ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps the anchor of a uniquely named block" do
-    source = <<~RUBY
-      class Sample
-        def run
-          users.each { |user| user }
-        end
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample#run[block:each]" => [ "users.each" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps assignment context in callable block anchors" do
-    source = <<~RUBY
-      class Sample
-        HANDLER = proc do
-          first
-        end
-        DISPATCHER = lambda do
-          second
-        end
-      end
-    RUBY
-
-    assert_equal(
-      {
-        "Sample[block:proc]" => [ "HANDLER =" ],
-        "Sample[block:lambda]" => [ "DISPATCHER =" ]
-      },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps assignment context in other anonymous block anchors" do
-    source = <<~RUBY
-      class Sample
-        HANDLER = Enumerator.new do
-          first
-        end
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[block:new]" => [ "HANDLER =" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps enclosing call context after earlier callable arguments" do
-    source = <<~RUBY
-      class Sample
-        register(:handler, Enumerator.new do
-          first
-        end)
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[block:new]" => [ "register(:handler," ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps enclosing call context for keyword callable arguments" do
-    source = <<~RUBY
-      class Sample
-        register(handler: Enumerator.new do
-          first
-        end)
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[block:new]" => [ "register(handler:" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  test "keeps collection context in callable block anchors" do
-    source = <<~RUBY
-      class Sample
-        HANDLERS = [Enumerator.new do
-          first
-        end]
-      end
-    RUBY
-
-    assert_equal(
-      { "Sample[block:new]" => [ "HANDLERS = [" ] },
-      ComplexityRatchet::EntityMap.for(source).sibling_anchors
-    )
-  end
-
-  # Both views come from one parse now. They have to stay keyed identically, or
-  # verify_monotonic would look up an anchor under a key the population never
-  # produced and silently compare nothing.
-  test "sibling profile answers both views from one pass over the sources" do
-    source = <<~RUBY
-      class Sample
-        def run
-          first.each { |item| item }
-          second.each { |item| item }
-        end
-      end
-    RUBY
-    sources = { "a.rb" => source, "gone.rb" => nil }
-
-    profile = ComplexityRatchet.sibling_profile(sources)
-
-    assert_equal({ "a.rb | Sample#run[block:each]" => 2 }, profile.fetch(:populations))
-    assert_equal({ "a.rb | Sample#run[block:each]" => [ "first.each", "second.each" ] }, profile.fetch(:anchors))
-    assert_equal profile.fetch(:populations), ComplexityRatchet.sibling_populations(sources)
-    assert_equal profile.fetch(:anchors), ComplexityRatchet.sibling_anchors(sources)
-  end
-
-  test "sibling scopes are counted per parent, not per file" do
-    source = <<~RUBY
-      class Sample
-        def first
-          items.each { |i| i }
-        end
-
-        def second
-          items.each { |i| i }
-        end
-      end
-    RUBY
-
-    assert_equal "Sample#first[block:each]", path_for(source, 3)
-    assert_equal "Sample#second[block:each]", path_for(source, 7)
   end
 
   test "a class reopened in the same file does not collapse into one key" do
@@ -714,7 +450,7 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     }, result)
 
     baselined_sibling_only = result.reject { |key, _| key.end_with?("(2)") }.transform_values { 90 }
-    check = ComplexityRatchet::Check.new(actual: result, baseline: baselined_sibling_only)
+    check = ComplexityRatchet::Check.new(actual: result, base: baselined_sibling_only)
 
     refute_predicate check, :pass?
     assert_equal :new_offense, check.blocking_problems.sole.kind
@@ -748,7 +484,7 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     }, result)
 
     inner_only = result.slice("sample.rb | Metrics/BlockLength | Sample#run[block:each]")
-    check = ComplexityRatchet::Check.new(actual: result, baseline: inner_only)
+    check = ComplexityRatchet::Check.new(actual: result, base: inner_only)
 
     refute_predicate check, :pass?
     assert_equal :new_offense, check.blocking_problems.sole.kind
@@ -785,7 +521,7 @@ class ComplexityRatchetMeasurementTest < ActiveSupport::TestCase
     }, result)
 
     first_only = result.slice("sample.rb | Metrics/BlockLength | Sample[lambda]")
-    check = ComplexityRatchet::Check.new(actual: result, baseline: first_only)
+    check = ComplexityRatchet::Check.new(actual: result, base: first_only)
 
     refute_predicate check, :pass?
     assert_equal :new_offense, check.blocking_problems.sole.kind
@@ -796,29 +532,29 @@ class ComplexityRatchetCheckTest < ActiveSupport::TestCase
   TODAY = Date.new(2026, 8, 11)
   KEY = "a.rb | Metrics/MethodLength | A#b"
 
-  def check(actual:, baseline: {}, waivers: [])
-    ComplexityRatchet::Check.new(actual: actual, baseline: baseline, waivers: waivers, today: TODAY)
+  def check(actual:, base: {}, waivers: [])
+    ComplexityRatchet::Check.new(actual: actual, base: base, waivers: waivers, today: TODAY)
   end
 
   def waiver(expires:, key: KEY, owner: "@sh1nj1", reason: "because")
     ComplexityRatchet::Waiver.new(key: key, owner: owner, reason: reason, expires: expires)
   end
 
-  test "passes when every entity matches its baseline" do
-    result = check(actual: { KEY => 30 }, baseline: { KEY => 30 })
+  test "passes when every entity matches the merge base" do
+    result = check(actual: { KEY => 30 }, base: { KEY => 30 })
 
     assert_predicate result, :pass?
     assert_empty result.problems
   end
 
   test "blocks an entity that grew" do
-    problem = check(actual: { KEY => 31 }, baseline: { KEY => 30 }).problems.sole
+    problem = check(actual: { KEY => 31 }, base: { KEY => 30 }).problems.sole
 
     assert_equal :regression, problem.kind
     assert_predicate problem, :blocking?
   end
 
-  test "blocks a new over-budget entity that has no baseline entry" do
+  test "blocks a new over-budget entity that is within budget at the merge base" do
     # This is the case a .rubocop_todo.yml would wave through: auto-gen raises
     # MethodLength's Max to the file's worst value, so brand-new bloat inherits
     # the amnesty. Here it has to be fixed or waived.
@@ -828,17 +564,24 @@ class ComplexityRatchetCheckTest < ActiveSupport::TestCase
     assert_predicate problem, :blocking?
   end
 
-  test "blocks a stale baseline when the entity improved" do
-    problem = check(actual: { KEY => 28 }, baseline: { KEY => 30 }).problems.sole
-
-    assert_equal :stale, problem.kind
-    assert_match(/--regenerate/, problem.message)
+  # The committed-baseline design blocked here, demanding the snapshot be
+  # re-recorded in the same PR. With nothing recorded there is nothing to keep
+  # in sync, so shrinking an entity is silently allowed — which is the whole
+  # reason PR #1538 could not go green against a moving main.
+  test "an entity that improved reports nothing" do
+    assert_empty check(actual: { KEY => 28 }, base: { KEY => 30 }).problems
   end
 
-  test "blocks a stale baseline when the entity dropped under budget entirely" do
-    problem = check(actual: {}, baseline: { KEY => 30 }).problems.sole
+  test "an entity that dropped under budget entirely reports nothing" do
+    assert_empty check(actual: {}, base: { KEY => 30 }).problems
+  end
 
-    assert_equal :stale, problem.kind
+  # Growth on an entity that is already over budget on both sides is the case
+  # the gate exists for; growth that stays under the budget is not measured at
+  # all, on either side, so it never reaches Check.
+  test "an entity over budget on both sides may shrink but not grow" do
+    assert_empty check(actual: { KEY => 30 }, base: { KEY => 31 }).problems
+    assert_equal :regression, check(actual: { KEY => 32 }, base: { KEY => 31 }).problems.sole.kind
   end
 
   test "a live waiver suppresses a new over-budget entity" do
@@ -889,769 +632,9 @@ class ComplexityRatchetCheckTest < ActiveSupport::TestCase
   end
 end
 
-class ComplexityRatchetBaselineTest < ActiveSupport::TestCase
-  KEY = "engines/collavre/app/services/collavre/agent_orchestrator.rb | Metrics/ClassLength | Collavre::AgentOrchestrator"
-
-  setup { @dir = Dir.mktmpdir }
-  teardown { FileUtils.remove_entry(@dir) }
-
-  def path
-    File.join(@dir, ComplexityRatchet::BASELINE_PATH)
-  end
-
-  test "round-trips through the nested on-disk format" do
-    entries = { KEY => 391, "a.rb | Metrics/AbcSize | A#b" => 43.55 }
-    ComplexityRatchet.dump_baseline(path, entries)
-
-    assert_equal entries, ComplexityRatchet.load_baseline(path)
-  end
-
-  test "writes one line per entity even for keys past YAML's implicit-key limit" do
-    ComplexityRatchet.dump_baseline(path, { KEY => 391 })
-
-    # A flat key this long makes Psych emit the `? key` / `: value` explicit
-    # form, which turns a one-line diff into three.
-    refute_includes File.read(path), "? "
-  end
-
-  test "an absent baseline reads as empty rather than raising" do
-    assert_empty ComplexityRatchet.load_baseline(path)
-  end
-
-  test "rejects nonfinite baseline limits" do
-    File.write(path, <<~YAML)
-      a.rb:
-        Metrics/MethodLength:
-          A#run: .nan
-    YAML
-
-    error = assert_raises(ComplexityRatchet::Error) { ComplexityRatchet.load_baseline(path) }
-
-    assert_includes error.message, "finite nonnegative"
-  end
-
-  test "a fallback entity name containing the separator survives the round trip" do
-    entries = { "a.rb | Metrics/BlockNesting | ~x = a | b" => 1 }
-    ComplexityRatchet.dump_baseline(path, entries)
-
-    assert_equal entries, ComplexityRatchet.load_baseline(path)
-  end
-
-  test "normalize keeps whole numbers integral" do
-    assert_equal 38, ComplexityRatchet.normalize(38.0)
-    assert_equal 43.55, ComplexityRatchet.normalize(43.5512)
-  end
-end
-
-class ComplexityRatchetMonotonicityTest < ActiveSupport::TestCase
-  KEY = "a.rb | Metrics/MethodLength | A#b"
-
-  test "accepts a baseline that only tightens" do
-    assert_empty ComplexityRatchet.verify_monotonic({ KEY => 30 }, { KEY => 28 })
-  end
-
-  test "accepts a baseline entry that disappeared" do
-    assert_empty ComplexityRatchet.verify_monotonic({ KEY => 30 }, {})
-  end
-
-  test "rejects a raised value" do
-    # Without this the ratchet is decorative: anyone could regenerate the
-    # baseline and land any regression.
-    problem = ComplexityRatchet.verify_monotonic({ KEY => 30 }, { KEY => 240 }).sole
-
-    assert_equal :baseline_loosened, problem.kind
-  end
-
-  test "rejects a newly added entry" do
-    problem = ComplexityRatchet.verify_monotonic({}, { KEY => 30 }).sole
-
-    assert_equal :baseline_addition, problem.kind
-  end
-
-  SIB  = "a.rb | Metrics/BlockLength | A#run[block:each]"
-  SIB2 = "a.rb | Metrics/BlockLength | A#run[block:each](2)"
-  SIBLING_POPULATION = "a.rb | A#run[block:each]"
-  FALLBACK = "a.rb | Metrics/BlockNesting | A#run~if ready"
-
-  # Deleting the first of two same-named siblings renames the second onto the
-  # first's key. Both keys are separately monotonic — 88 -> 83 is a tightening
-  # and the (2) entry is a deletion — so per-key comparison waves through an
-  # entity that grew from 78 to 83.
-  test "rejects a survivor that inherited a removed sibling's allowance" do
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 88, SIB2 => 78 }, { SIB => 83 }
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_equal SIB, problem.key
-    assert_includes problem.message, "78"
-  end
-
-  test "accepts a survivor that stayed within the family's smallest limit" do
-    assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, SIB2 => 78 }, { SIB => 78 })
-  end
-
-  test "keeps numeric parentheses in fallback source identities out of sibling families" do
-    plain = "a.rb | Metrics/BlockNesting | A#run~process"
-    numeric = "a.rb | Metrics/BlockNesting | A#run~process(2)"
-
-    # `process(2)` is source text, not the `(2)` ordinal that #disambiguate
-    # appends to a sibling. Removing the numeric sibling must not hold the
-    # independent `process` entry to its lower allowance.
-    assert_empty ComplexityRatchet.verify_monotonic(
-      { plain => 90, numeric => 80 }, { plain => 85 }
-    )
-  end
-
-  test "groups descendants of ordinalized scopes into the same sibling family" do
-    first = "a.rb | Metrics/MethodLength | A#run"
-    second = "a.rb | Metrics/MethodLength | A(2)#run"
-
-    # Reopening A twice gives the second `run` an ordinal on its enclosing
-    # scope. Deleting the first reopening transfers its allowance onto the
-    # survivor, just as deleting same-named leaf scopes does.
-    problem = ComplexityRatchet.verify_monotonic(
-      { first => 90, second => 80 }, { first => 85 }
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "80"
-  end
-
-  test "rejects a descendant allowance transferred by reordered outer siblings" do
-    before_source = <<~RUBY
-      class A
-        def run
-        end
-      end
-      class A
-        def run
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-        end
-      end
-      class A
-        def run
-        end
-      end
-    RUBY
-    first = "a.rb | Metrics/MethodLength | A#run"
-    second = "a.rb | Metrics/MethodLength | A(2)#run"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { first => 90, second => 80 }, { first => 85, second => 80 },
-      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
-      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source),
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_equal first, problem.key
-  end
-
-  test "rejects a shifted survivor when only its deleted sibling was baselined" do
-    # The second sibling was below budget at 60, so it has no baseline key.
-    # Its presence still has to survive long enough to stop it inheriting the
-    # deleted 90-line sibling's unsuffixed key after growing to 80.
-    before_source = <<~RUBY
-      class A
-        def run
-          high.each { |item| item }
-          low.each { |item| item }
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-          low.each { |item| item }
-        end
-      end
-    RUBY
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 90 }, { SIB => 80 },
-      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
-      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_equal SIB, problem.key
-  end
-
-  test "rejects a newcomer that took over a baselined sibling's key" do
-    # The mirror image of a deletion. Inserting a new sibling *ahead* of the
-    # baselined one hands the unsuffixed key to the newcomer while the original
-    # retreats behind `(2)` and drops below budget. Per-key comparison then sees
-    # 90 -> 80 and calls it an improvement, so the population has to be watched
-    # for any change, not only for shrinkage.
-    before_source = <<~RUBY
-      class A
-        def run
-          high.each { |item| item }
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-          low.each { |item| item }
-          high.each { |item| item }
-        end
-      end
-    RUBY
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 90 }, { SIB => 80 },
-      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
-      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_equal SIB, problem.key
-  end
-
-  test "accepts an unchanged population when only one sibling is baselined" do
-    assert_empty ComplexityRatchet.verify_monotonic(
-      { SIB => 90 }, { SIB => 80 },
-      before_siblings: { SIBLING_POPULATION => 2 },
-      after_siblings: { SIBLING_POPULATION => 2 }
-    )
-  end
-
-  test "rejects an allowance change for ambiguous siblings with an incomplete baseline" do
-    before_source = <<~RUBY
-      class A
-        def run
-          items.each { |item| high(item) }
-          items.each { |item| low(item) }
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-          items.each { |item| low(item) }
-          items.each { |item| high(item) }
-        end
-      end
-    RUBY
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 90 }, { SIB => 80 },
-      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
-      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source),
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "not baselined"
-  end
-
-  test "rejects a fallback twin that inherits its deleted sibling's baseline key" do
-    before_source = <<~RUBY
-      class A
-        def run
-          if ready
-          end
-          if ready
-          end
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-          if ready
-            if nested
-            end
-          end
-        end
-      end
-    RUBY
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { FALLBACK => 1 }, { FALLBACK => 1 },
-      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
-      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_equal FALLBACK, problem.key
-  end
-
-  test "rejects reordered families with an unbaselined sibling even below the recorded floor" do
-    before_source = <<~RUBY
-      class A
-        def run
-          high.each { |item| item }
-          low.each { |item| item }
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-          low.each { |item| item }
-          high.each { |item| item }
-        end
-      end
-    RUBY
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 90 }, { SIB => 80 },
-      before_siblings: ComplexityRatchet.sibling_populations("a.rb" => before_source),
-      after_siblings: ComplexityRatchet.sibling_populations("a.rb" => after_source),
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "not baselined"
-  end
-
-  test "rejects same-count siblings that exchange allowances by changing order" do
-    before_source = <<~RUBY
-      class A
-        def run
-          first.each { |item| item }
-          second.each { |item| item }
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-          second.each { |item| item }
-          first.each { |item| item }
-        end
-      end
-    RUBY
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 90, SIB2 => 80 }, { SIB => 85, SIB2 => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_equal SIB, problem.key
-    assert_includes problem.message, "changed order"
-  end
-
-  test "rejects a unique block replaced with a different anchor" do
-    before_source = <<~RUBY
-      class A
-        def run
-          users.each { |user| user }
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class A
-        def run
-          orders.each { |order| order }
-        end
-      end
-    RUBY
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 90 }, { SIB => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a unique lambda replaced with a different assignment" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLER = -> do
-          first
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        DISPATCHER = -> do
-          second
-        end
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[lambda]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a callable block replaced with a different assignment" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLER = proc do
-          first
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        DISPATCHER = proc do
-          second
-        end
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[block:proc]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects another anonymous block replaced with a different assignment" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLER = Enumerator.new do
-          first
-        end
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        OTHER = Enumerator.new do
-          second
-        end
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a callable block replaced after an earlier call argument" do
-    before_source = <<~RUBY
-      class Sample
-        register(:handler, Enumerator.new do
-          first
-        end)
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        subscribe(:handler, Enumerator.new do
-          second
-        end)
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a callable block replaced in a keyword call argument" do
-    before_source = <<~RUBY
-      class Sample
-        register(handler: Enumerator.new do
-          first
-        end)
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        subscribe(handler: Enumerator.new do
-          second
-        end)
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a multiline lambda replaced with a different enclosing call" do
-    before_source = <<~RUBY
-      class Sample
-        register(
-          -> do
-            first
-          end
-        )
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        subscribe(
-          -> do
-            second
-          end
-        )
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[lambda]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a multiline collection lambda replaced with a different assignment" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLERS = [
-          -> do
-            first
-          end
-        ]
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        OTHER = [
-          -> do
-            second
-          end
-        ]
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[lambda]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a collection callable block replaced with a different assignment" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLERS = [Enumerator.new do
-          first
-        end]
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        OTHER = [Enumerator.new do
-          second
-        end]
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a collection callable block replaced below an enclosing call" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLERS = [
-          decorate(
-            Enumerator.new do
-              first
-            end
-          )
-        ]
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        OTHER = [
-          decorate(
-            Enumerator.new do
-              second
-            end
-          )
-        ]
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[block:new]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "rejects a nested collection lambda replaced with a different assignment" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLERS = { foo: [
-          -> do
-            first
-          end
-        ] }
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        OTHER = { foo: [
-          -> do
-            second
-          end
-        ] }
-      end
-    RUBY
-    key = "a.rb | Metrics/BlockLength | Sample[lambda]"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { key => 90 }, { key => 80 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "source anchor"
-  end
-
-  test "accepts same-count siblings when their anchors keep the same order" do
-    anchors = { SIBLING_POPULATION => [ "first.each", "second.each" ] }
-
-    assert_empty ComplexityRatchet.verify_monotonic(
-      { SIB => 90, SIB2 => 80 }, { SIB => 85, SIB2 => 80 },
-      before_sibling_anchors: anchors,
-      after_sibling_anchors: anchors
-    )
-  end
-
-  test "rejects changed allowances for same-count siblings with identical anchors" do
-    anchors = { SIBLING_POPULATION => [ "items.each", "items.each" ] }
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { SIB => 90, SIB2 => 80 }, { SIB => 85, SIB2 => 80 },
-      before_sibling_anchors: anchors,
-      after_sibling_anchors: anchors
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_equal SIB, problem.key
-    assert_includes problem.message, "indistinguishable anchors"
-  end
-
-  test "rejects changed allowances for same-count lambda siblings" do
-    before_source = <<~RUBY
-      class Sample
-        HANDLERS = [
-          -> do
-            first
-          end,
-          -> do
-            second
-          end
-        ]
-      end
-    RUBY
-    after_source = <<~RUBY
-      class Sample
-        HANDLERS = [
-          -> do
-            second
-          end,
-          -> do
-            first
-          end
-        ]
-      end
-    RUBY
-    first = "a.rb | Metrics/BlockLength | Sample[lambda]"
-    second = "a.rb | Metrics/BlockLength | Sample[lambda](2)"
-
-    problem = ComplexityRatchet.verify_monotonic(
-      { first => 90, second => 80 }, { first => 85, second => 75 },
-      before_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => before_source),
-      after_sibling_anchors: ComplexityRatchet.sibling_anchors("a.rb" => after_source)
-    ).sole
-
-    assert_equal :baseline_sibling_shift, problem.kind
-    assert_includes problem.message, "indistinguishable anchors"
-  end
-
-  # Nothing was removed, so neither sibling can have inherited anything.
-  test "accepts an intact sibling family where each entry tightened" do
-    assert_empty ComplexityRatchet.verify_monotonic(
-      { SIB => 88, SIB2 => 78 }, { SIB => 80, SIB2 => 70 }
-    )
-  end
-
-  # A shrinking family is normal; only a survivor above the family floor is not.
-  test "accepts a sibling family that shrank with no survivor over the floor" do
-    assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, SIB2 => 78 }, {})
-  end
-
-  # Ordinals are per parent scope, so an unrelated entity that merely shares a
-  # cop and a file is not a sibling.
-  test "does not treat unrelated entries as siblings" do
-    other = "a.rb | Metrics/BlockLength | A#other[block:each]"
-
-    assert_empty ComplexityRatchet.verify_monotonic({ SIB => 88, other => 78 }, { SIB => 88 })
-  end
-
-  test "a base ref that predates the baseline file has nothing to verify" do
-    # The bootstrap commit adds hundreds of entries at once; there is no prior
-    # baseline for them to be a regression against.
-    assert_empty ComplexityRatchet.verify_monotonic(nil, { KEY => 30 })
-  end
-end
-
-# verify_monotonic reads the baseline; these read the budget the baseline is
-# measured against. Both are needed, because raising a Max makes the offenses
-# vanish, `--regenerate` deletes their entries, and a deletion is indistinguish-
-# able from a refactor to a check that only looks at the baseline.
+# Both sides of the comparison are measured with THIS branch's budget, so
+# raising a Max silences the same entities twice and cancels out. That is what
+# makes the budget the one input the comparison cannot police for itself.
 class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
   BEFORE = {
     "inherit_gem" => { "rubocop-rails-omakase" => "rubocop.yml" },
@@ -1677,8 +660,8 @@ class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
     assert_empty ComplexityRatchet.verify_budget(BEFORE, after)
   end
 
-  # The measured bypass: MethodLength 25 -> 200 drops 160 of this repo's 438
-  # baseline entries, reports zero new debt, and passes every other check.
+  # The measured bypass: MethodLength 25 -> 200 silences 160 of this repo's 430
+  # over-budget entities on both sides at once, and reports nothing.
   test "rejects a raised limit" do
     after = with("Metrics/MethodLength" => { "Enabled" => true, "Max" => 200 })
     problem = ComplexityRatchet.verify_budget(BEFORE, after).sole
@@ -1732,9 +715,9 @@ class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
 
   # Max is the loudest way to loosen a cop, not the only one. A per-cop
   # `Exclude: ['**/*']` turns MethodLength off repository-wide while the line
-  # above it still reads `Max: 25`; --regenerate then deletes every entry that
-  # cop held and both gates go green. Same for the keys that exempt code by name
-  # rather than by path.
+  # above it still reads `Max: 25` — and it silences both sides of the
+  # comparison equally, so nothing else notices. Same for the keys that exempt
+  # code by name rather than by path.
   test "rejects a per-cop Exclude that silences the cop while Max stays put" do
     after = with("Metrics/MethodLength" => { "Enabled" => true, "Max" => 25, "Exclude" => [ "**/*" ] })
     problem = ComplexityRatchet.verify_budget(BEFORE, after).sole
@@ -1791,207 +774,7 @@ class ComplexityRatchetBudgetTest < ActiveSupport::TestCase
   end
 end
 
-# .rubocop_metrics.yml carries `Enabled` and `Max` and inherits the rest, so the
-# budget only half lives in this repository. Verified on the real tree by
-# widening one inherited default the way an upgrade would, with nothing in the
-# repository changed: 438 entities measured down to 277, `--regenerate` deleted
-# all 161 MethodLength entries, and both gates exited 0.
-class ComplexityRatchetToolchainTest < ActiveSupport::TestCase
-  LOCK = <<~LOCK
-    GEM
-      remote: https://rubygems.org/
-      specs:
-        rails (8.1.0)
-        rubocop (1.86.0)
-          rubocop-ast (>= 1.49.0, < 2.0)
-        rubocop-ast (1.49.1)
-        parser (3.3.10.2)
-        prism (1.9.0)
-        rubocop-rails-omakase (1.1.0)
-          rubocop (>= 1.72)
 
-    DEPENDENCIES
-      rubocop-rails-omakase
-  LOCK
-
-  def with(replacements)
-    replacements.reduce(LOCK) { |lock, (from, to)| lock.sub(from, to) }
-  end
-
-  test "rejects a RuboCop upgrade, which moves the inherited half of the budget" do
-    problem = ComplexityRatchet.verify_toolchain(LOCK, with("rubocop (1.86.0)" => "rubocop (1.87.0)")).sole
-
-    assert_equal :toolchain_changed, problem.kind
-    assert_equal "rubocop", problem.key
-    assert_includes problem.message, "1.86.0 -> 1.87.0"
-  end
-
-  # The config named in `inherit_gem` ships in this gem, so its version moves
-  # AllCops/Exclude and the cop defaults just as directly as RuboCop's own.
-  test "rejects an upgrade of any gem in the rubocop family" do
-    %w[rubocop-ast rubocop-rails-omakase].each do |gem_name|
-      after = with("#{gem_name} (1." => "#{gem_name} (9.")
-      problem = ComplexityRatchet.verify_toolchain(LOCK, after).sole
-
-      assert_equal gem_name, problem.key, "#{gem_name} was accepted"
-    end
-  end
-
-  test "rejects parser changes that alter offenses or entity identities" do
-    { "parser" => "3.3.10.2", "prism" => "1.9.0" }.each do |gem_name, version|
-      problem = ComplexityRatchet.verify_toolchain(LOCK, with("#{gem_name} (#{version})" => "#{gem_name} (9.0.0)")).sole
-
-      assert_equal gem_name, problem.key, "#{gem_name} was accepted"
-    end
-  end
-
-  test "rejects a downgrade and a removal as readily as an upgrade" do
-    downgraded = ComplexityRatchet.verify_toolchain(with("rubocop (1.86.0)" => "rubocop (1.70.0)"), LOCK).sole
-    assert_equal "1.70.0 -> 1.86.0", downgraded.message[/[\d.]+ -> [\d.]+/]
-
-    removed = ComplexityRatchet.verify_toolchain(LOCK, LOCK.sub(/^    rubocop-ast \(1\.49\.1\)\n/, "")).sole
-    assert_equal "rubocop-ast", removed.key
-    assert_includes removed.message, "(absent)"
-  end
-
-  # A dependency line repeats the gem with a constraint rather than a version.
-  # Reading those would compare "rubocop (>= 1.72)" against itself forever and
-  # miss the resolved version entirely.
-  test "reads resolved versions and not the dependency constraints under them" do
-    assert_empty ComplexityRatchet.verify_toolchain(LOCK, LOCK.sub("rubocop (>= 1.72)", "rubocop (>= 1.86)"))
-  end
-
-  test "ignores gems outside the rubocop family and an unchanged lock" do
-    assert_empty ComplexityRatchet.verify_toolchain(LOCK, with("rails (8.1.0)" => "rails (8.2.0)"))
-    assert_empty ComplexityRatchet.verify_toolchain(LOCK, LOCK.dup)
-  end
-
-  test "a base ref that predates the lockfile has nothing to verify" do
-    assert_empty ComplexityRatchet.verify_toolchain(nil, LOCK)
-  end
-end
-
-class ComplexityRatchetRegenerateTest < ActiveSupport::TestCase
-  KEY = "a.rb | Metrics/MethodLength | A#b"
-  OTHER = "b.rb | Metrics/AbcSize | B#c"
-
-  test "lowers entries that shrank and drops entries that were resolved" do
-    updated, unrecorded = ComplexityRatchet.regenerate({ KEY => 30, OTHER => 40 }, { KEY => 26 })
-
-    assert_equal({ KEY => 26 }, updated)
-    assert_empty unrecorded
-  end
-
-  test "refuses to absorb new debt and names it instead" do
-    updated, unrecorded = ComplexityRatchet.regenerate({}, { KEY => 30 })
-
-    assert_empty updated
-    assert_equal [ KEY ], unrecorded
-  end
-
-  TODAY = Date.new(2026, 8, 11)
-
-  def waiver(key: KEY, owner: "@sh1nj1", reason: "because", expires: TODAY + 30)
-    ComplexityRatchet::Waiver.new(key: key, owner: owner, reason: reason, expires: expires)
-  end
-
-  # --check honours a live waiver, so --regenerate has to as well. It did not:
-  # the command wrote the tightened baseline and then exited 1, telling you to
-  # waive an entity that was already waived. That made the documented refactor
-  # workflow unrunnable for as long as any waiver existed.
-  test "a live waiver is not new debt, so an unrelated refactor can regenerate" do
-    baseline = { OTHER => 40 }
-    actual = { OTHER => 32, KEY => 30 }
-
-    updated, unrecorded = ComplexityRatchet.regenerate(
-      baseline, actual, waivers: [ waiver ], today: TODAY
-    )
-
-    assert_equal({ OTHER => 32 }, updated)
-    assert_empty unrecorded
-
-    # And the two commands agree about it.
-    assert_predicate ComplexityRatchet::Check.new(
-      actual: actual, baseline: updated, waivers: [ waiver ], today: TODAY
-    ), :pass?
-  end
-
-  # Honouring a dead waiver would be the mirror-image bug: --regenerate exits 0
-  # on debt that Check blocks, so CI fails with the workflow reporting success.
-  test "an expired waiver does not suppress the debt it used to cover" do
-    _updated, unrecorded = ComplexityRatchet.regenerate(
-      {}, { KEY => 30 }, waivers: [ waiver(expires: TODAY - 1) ], today: TODAY
-    )
-
-    assert_equal [ KEY ], unrecorded
-  end
-
-  test "a blank-owner waiver does not suppress the debt it names" do
-    _updated, unrecorded = ComplexityRatchet.regenerate(
-      {}, { KEY => 30 }, waivers: [ waiver(owner: "  ") ], today: TODAY
-    )
-
-    assert_equal [ KEY ], unrecorded
-  end
-
-  test "a waiver past the expiry cap does not suppress the debt it names" do
-    _updated, unrecorded = ComplexityRatchet.regenerate(
-      {}, { KEY => 30 }, waivers: [ waiver(expires: TODAY + 365) ], today: TODAY
-    )
-
-    assert_equal [ KEY ], unrecorded
-  end
-
-  test "a waiver for some other entity leaves new debt visible" do
-    _updated, unrecorded = ComplexityRatchet.regenerate(
-      {}, { KEY => 30 }, waivers: [ waiver(key: OTHER) ], today: TODAY
-    )
-
-    assert_equal [ KEY ], unrecorded
-  end
-
-  # The other half of honouring a waiver here. Check skips waived keys, so
-  # growth in an already-baselined entity raises no problem — and --regenerate
-  # used to copy that growth into the baseline on the next unrelated refactor.
-  # The temporary waiver became a permanent higher limit, and --verify-baseline
-  # blocked the branch that did it.
-  test "growth under a live waiver is not written into the baseline" do
-    baseline = { KEY => 31, OTHER => 40 }
-    actual = { KEY => 41, OTHER => 32 }
-
-    updated, unrecorded = ComplexityRatchet.regenerate(
-      baseline, actual, waivers: [ waiver ], today: TODAY
-    )
-
-    assert_equal({ KEY => 31, OTHER => 32 }, updated)
-    assert_empty unrecorded
-    assert_empty ComplexityRatchet.verify_monotonic(baseline, updated)
-  end
-
-  # What the waiver's expiry is for: the recorded limit is still 31, so once
-  # the waiver lapses the entity owes the same 10 lines it always did.
-  test "the recorded limit is what the entity owes once the waiver lapses" do
-    updated, = ComplexityRatchet.regenerate(
-      { KEY => 31 }, { KEY => 41 }, waivers: [ waiver ], today: TODAY
-    )
-    problem = ComplexityRatchet::Check.new(
-      actual: { KEY => 41 }, baseline: updated, waivers: [], today: TODAY
-    ).problems.sole
-
-    assert_equal :regression, problem.kind
-    assert_equal "grew from 31 to 41", problem.message
-  end
-
-  # Growth with no waiver at all is Check's business, not this command's. It
-  # must not be laundered either — regenerate can lower a value or drop a key,
-  # and that is all it can do.
-  test "growth with no waiver is not written into the baseline either" do
-    updated, = ComplexityRatchet.regenerate({ KEY => 31 }, { KEY => 41 })
-
-    assert_equal({ KEY => 31 }, updated)
-    assert_empty ComplexityRatchet.verify_monotonic({ KEY => 31 }, updated)
-  end
-end
 
 class ComplexityRatchetWaiverLoadingTest < ActiveSupport::TestCase
   setup { @dir = Dir.mktmpdir }
@@ -2045,4 +828,92 @@ class ComplexityRatchetWaiverLoadingTest < ActiveSupport::TestCase
   test "an absent waiver file reads as empty" do
     assert_empty ComplexityRatchet.load_waivers(File.join(@dir, "missing.yml"))
   end
+end
+
+# The merge base is what the whole gate compares against, so getting this wrong
+# fails open — a base tree that silently came out as HEAD would report every
+# entity as unchanged and block nothing.
+class ComplexityRatchetBaseTreeTest < ActiveSupport::TestCase
+  setup do
+    @dir = Dir.mktmpdir
+    git "init", "--quiet", "--initial-branch=main"
+    git "config", "user.email", "ratchet@example.com"
+    git "config", "user.name", "Ratchet"
+    write(ComplexityRatchet::CONFIG_PATH, "Metrics/MethodLength:\n  Max: 25\n")
+    write("app.rb", "BASE\n")
+    commit "base"
+    @base = rev_parse("HEAD")
+  end
+
+  teardown { FileUtils.remove_entry(@dir) }
+
+  test "yields a checkout of the merge base, not of HEAD" do
+    git "checkout", "--quiet", "-b", "feature"
+    write("app.rb", "HEAD\n")
+    commit "feature work"
+
+    yielded = nil
+    sha = ComplexityRatchet::BaseTree.at_merge_base(root: @dir, ref: "main") do |tree, base_sha|
+      yielded = File.read(File.join(tree, "app.rb"))
+      base_sha
+    end
+
+    assert_equal "BASE\n", yielded
+    assert_equal @base, sha
+  end
+
+  # Both sides have to be measured with the same budget, or a PR that tightens a
+  # Max reports every entity the tightening newly caught as brand-new debt.
+  test "the base tree carries this branch's budget, not its own" do
+    git "checkout", "--quiet", "-b", "feature"
+    write(ComplexityRatchet::CONFIG_PATH, "Metrics/MethodLength:\n  Max: 10\n")
+    commit "tighten the budget"
+
+    budget = ComplexityRatchet::BaseTree.at_merge_base(root: @dir, ref: "main") do |tree, _sha|
+      File.read(File.join(tree, ComplexityRatchet::CONFIG_PATH))
+    end
+
+    assert_equal "Metrics/MethodLength:\n  Max: 10\n", budget
+  end
+
+  test "returns nil without yielding when HEAD is already the merge base" do
+    refute ComplexityRatchet::BaseTree.at_merge_base(root: @dir, ref: "main") { flunk "should not yield" }
+  end
+
+  test "removes the scratch worktree even when the block raises" do
+    git "checkout", "--quiet", "-b", "feature"
+    write("app.rb", "HEAD\n")
+    commit "feature work"
+
+    assert_raises(RuntimeError) do
+      ComplexityRatchet::BaseTree.at_merge_base(root: @dir, ref: "main") { raise "boom" }
+    end
+
+    assert_equal "", git("worktree", "list", "--porcelain").scan(/^worktree (.+)$/).flatten
+      .reject { |path| File.identical?(path, @dir) }.join
+  end
+
+  test "an unknown ref has no merge base" do
+    assert_nil ComplexityRatchet::BaseTree.merge_base(@dir, "no/such/ref")
+  end
+
+  private
+
+  def git(*args)
+    out, err, status = Open3.capture3("git", *args, chdir: @dir)
+    raise "git #{args.join(' ')}: #{err}" unless status.success?
+
+    out
+  end
+
+  def write(path, contents)
+    File.write(File.join(@dir, path), contents)
+  end
+
+  def commit(message)
+    git "add", "--all"
+    git "commit", "--quiet", "--no-verify", "-m", message
+  end
+
+  def rev_parse(ref) = git("rev-parse", ref).strip
 end

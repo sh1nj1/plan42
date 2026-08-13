@@ -77,18 +77,19 @@ jobs:
       - name: Test shell script helpers
         run: bash script/test/lightsail_launch_test.sh
 
-  # Entity-level complexity ratchet. Adds ~2s: RuboCop's Metrics department over
-  # app code only, compared against .complexity_baseline.yml. See
-  # docs/complexity_budget.md.
+  # Entity-level complexity ratchet: RuboCop's Metrics department over app code,
+  # run twice — once on this branch, once on a detached checkout of the merge
+  # base — and compared entity by entity. Adds ~5s. See docs/complexity_budget.md.
   complexity:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          # --verify-baseline diffs this branch's baseline against the base
-          # branch, so the base commit has to be in the local history.
+          # The merge base has to be a real commit in the local history, and
+          # `git worktree add` has to be able to check it out.
           fetch-depth: 0
 
       - name: Set up Ruby
@@ -97,23 +98,15 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
 
-      # Runs first: if the baseline was loosened, the check below would happily
-      # pass and the loosening is the actual finding.
-      #
-      # The `complexity-baseline-reset` label is the only way past this, and it
-      # exists for one case: a RuboCop upgrade that changes how a metric is
-      # computed, which shifts every value at once. Applying a label does not
-      # re-trigger CI, so re-run this job afterwards.
-      - name: Verify the complexity baseline was not loosened
-        if: >-
-          github.event_name == 'pull_request' &&
-          !contains(github.event.pull_request.labels.*.name, 'complexity-baseline-reset')
+      # The budget in .rubocop_metrics.yml may only tighten. The
+      # `complexity-baseline-reset` label is the way past that, for the case it
+      # was written for: a deliberate, reviewed budget change. Applying a label
+      # does not re-trigger CI, so re-run this job afterwards.
+      - name: Check the complexity ratchet
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bin/complexity_check --verify-baseline "$BASE_SHA"
-
-      - name: Check the complexity ratchet
-        run: bin/complexity_check
+          ALLOW_BUDGET_CHANGE: ${{ contains(github.event.pull_request.labels.*.name, 'complexity-baseline-reset') && '--allow-budget-change' || '' }}
+        run: bin/complexity_check --base "$BASE_SHA" $ALLOW_BUDGET_CHANGE
 
   # Production runs PostgreSQL while dev/test run SQLite, so db/schema.rb is
   # dumped from SQLite and can silently pick up SQLite-only constructs (e.g.

@@ -1,12 +1,12 @@
 # Complexity budget
 
 Three CI gates keep the codebase from diverging as it grows. They are cheap on
-purpose — together they add roughly two seconds of CI time — because a gate that
+purpose — together they add roughly six seconds of CI time — because a gate that
 slows everyone down gets removed.
 
 | Gate | What it stops | Where |
 |------|---------------|-------|
-| Complexity ratchet | Any class, module, method or block growing past its recorded size | `complexity` job, `bin/complexity_check` |
+| Complexity ratchet | Any class, module, method or block growing past the size it has at the merge base | `complexity` job, `bin/complexity_check` |
 | Engine boundary | The core engine taking a dependency on a satellite engine | `EngineBoundaryTest`, runs with `rake test` |
 | Coverage patch gate | Ruby diffs landing under 80% covered | Codecov, `codecov.yml` |
 
@@ -31,131 +31,106 @@ test is cheap insurance.
 ## The ratchet
 
 ```
-bin/complexity_check                          # the gate
-bin/complexity_check --regenerate             # after a refactor that shrank something
-bin/complexity_check --verify-baseline REF    # what CI runs on a PR
+bin/complexity_check              # the gate: compare against merge-base(HEAD, origin/main)
+bin/complexity_check --base REF   # compare against something else
+bin/complexity_check --report     # just list what is over budget right now
 ```
 
-Two files drive it:
-
-- **`.rubocop_metrics.yml`** — the budget for *new* entities. Not used by
-  `bin/rubocop`; the omakase house style stays as it is.
-- **`.complexity_baseline.yml`** — every entity that is *already* over budget,
-  pinned at its current value.
+There is nothing to commit and nothing to keep in sync. `bin/complexity_check`
+checks out the merge base into a throwaway `git worktree`, runs RuboCop's
+`Metrics` department over both trees, and compares them entity by entity. One
+file drives it: **`.rubocop_metrics.yml`**, the budget that decides which
+entities are worth measuring. It is not used by `bin/rubocop`; the omakase house
+style stays as it is.
 
 The rules:
 
-1. An entity in the baseline may only shrink. Growth fails.
-2. An entity not in the baseline must fit `.rubocop_metrics.yml`. New code gets
-   no amnesty from old debt.
-3. Shrinking an entity requires regenerating the baseline in the same PR, so the
-   recorded value always tracks reality and the ratchet only turns one way.
-4. The baseline cannot be loosened. `--verify-baseline` fails any PR that raises
-   a value or adds a key.
-5. The budget cannot be loosened either. The same command allows exactly two
-   edits to `.rubocop_metrics.yml` — lowering a `Max`, and shrinking
-   `AllCops/Exclude` — and reports every other change to it.
-6. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs a
+1. An entity over budget at the merge base may shrink but not grow.
+2. An entity not over budget at the merge base must fit `.rubocop_metrics.yml`.
+   New code gets no amnesty from old debt.
+3. The budget cannot be loosened. Exactly two edits to `.rubocop_metrics.yml`
+   pass — lowering a `Max`, and shrinking `AllCops/Exclude` — and every other
+   change to it is reported.
+4. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs a
    non-blank owner, a non-blank reason, and an expiry no more than 90 days out.
    An expired or blank-field waiver fails CI.
 
-A waived entity stays out of the baseline — the waiver governs it, and it is
-meant to expire rather than settle in. `--regenerate` therefore leaves waived
-keys alone instead of reporting them as new debt, so rule 3 stays runnable while
-a waiver is open. Only a *live* waiver counts: an expired or malformed one is
-reported by `--regenerate` exactly as `--check` blocks it, so the two commands
-cannot disagree about whether a PR is green.
+An improvement produces no output at all. That is worth stating explicitly
+because the first version of this gate blocked on it.
 
-A waiver over an entity that is *already* in the baseline is the same rule read
-the other way. `--check` skips waived keys, so the entity may grow while the
-waiver is live — but `--regenerate` writes `min(recorded, measured)`, never the
-measurement on its own, so the growth never reaches the file. The command can
-lower a value or drop a key and nothing else, which is what keeps a waiver
-temporary: once it lapses, the entity owes exactly what it owed before, and
-`--check` reports the growth as a regression against the recorded limit. Without
-that, the next unrelated refactor would copy the grown value into the baseline —
-measured on this repo, an entity recorded at 31 and grown to 41 under a live
-waiver came back as 41, `--verify-baseline` blocked the branch that did it, and
-deleting the lapsed waiver left the higher limit permanent.
+### Why the merge base and not a committed baseline
 
-Rule 5 exists because rule 4 alone is not enough, and the gap is not obvious:
-raising a `Max` makes RuboCop stop emitting the offenses that cop held,
-`--regenerate` then deletes their baseline entries, and a deletion is what a
-real refactor looks like — so the baseline check waves it through. Measured on
-this repo, `Metrics/MethodLength: 25 -> 200` deletes 160 of 438 entries, reports
-zero new debt, and turns every gate green while new code inherits the weaker
-limit. Deletions cannot simply be rejected (refactors produce them), so the
-budget itself is pinned instead.
+The first design committed a `.complexity_baseline.yml` snapshot of every
+over-budget entity and compared the working tree against it. It is the obvious
+design, and it does not survive a moving `main`.
 
-Rule 5 is an allowlist rather than a list of known tricks, because `Max` is only
+It failed on its own PR. Eleven entities the branch had never touched were
+reported, and four of them were *improvements that had landed on main* —
+`Collavre::User` shrinking from 323 lines to 295 turned the PR red. Every open
+PR in the repo would have gone red the same way, on someone else's refactor,
+within a day of merging.
+
+The only way out was `--regenerate`, which rewrote the snapshot from the working
+tree. In a drifted state that also copies main's *regressions* into the
+baseline, laundering them into the permanent record. So the documented rule
+"never regenerate just to make CI green" described the one action the tool made
+unavoidable.
+
+Measuring the merge base deletes the failure mode rather than guarding it:
+
+- **Main's drift is invisible.** The merge base moves with main, so only what
+  this branch changed can fail.
+- **An improvement is just an improvement.** There is no record to re-sync, so
+  rule 3 of the old design ("regenerate in the same PR") no longer exists.
+- **A RuboCop upgrade shifts both sides identically.** The old design needed a
+  whole `Gemfile.lock` comparison to catch an upgrade silently deleting debt;
+  here it cancels out by construction.
+- **There is no snapshot to loosen**, so `--verify-baseline`, `--regenerate`,
+  and the sibling-anchor tamper detection that guarded them all went away with
+  it — about 1,600 lines of code, tests and documentation.
+
+The cost is that the ratchet is **relative, not absolute**. A branch cut before
+an improvement lands has an older merge base, so it could regrow that entity
+back to its earlier size without tripping. Requiring branches to be current with
+`main` before merge closes it, and the squash-merge workflow already rebases.
+That is a much smaller hole than a gate the team switches off in week two
+because it reddens unrelated PRs.
+
+### Rule 3: why the budget still needs its own check
+
+Both trees are measured with **this branch's** `.rubocop_metrics.yml`, on
+purpose: measuring the base with its own budget would make a PR that *tightens*
+a `Max` report every pre-existing entity the tightening newly caught as brand-new
+debt.
+
+The price of that choice is that raising a `Max` is invisible to the comparison —
+RuboCop simply stops emitting those offenses on both sides at once and the
+difference is zero. Measured on this repo, `Metrics/MethodLength: 25 -> 200`
+silences 160 of 430 entities and reports nothing. So the budget file is compared
+against the merge base's copy directly.
+
+Rule 3 is an allowlist rather than a list of known tricks, because `Max` is only
 the loudest way to loosen a cop. A per-cop `Exclude: ['**/*']` under
-`Metrics/MethodLength` silences it repository-wide — 159 baseline entries on this
-repo — while the line above still reads `Max: 25`; `Include`, `AllowedMethods`,
-`AllowedPatterns` and `CountAsOne` do the same thing more quietly, and
-`inherit_mode` changes whether `AllCops/Exclude` merges with the inherited list
-or replaces it. Every one of those is a real bypass, and the next RuboCop release
-may add another. So anything that is not "lower a `Max`" or "shrink
-`AllCops/Exclude`" is reported. A genuine tightening trips this too: it is not
-blocked, it goes through `complexity-baseline-reset` like any other budget
-change, which is the point — the budget moves where a reviewer can see it.
+`Metrics/MethodLength` silences it repository-wide while the line above still
+reads `Max: 25`; `Include`, `AllowedMethods`, `AllowedPatterns` and `CountAsOne`
+do the same more quietly, and `inherit_mode` changes whether `AllCops/Exclude`
+merges with the inherited list or replaces it. Every one is a real bypass, and
+the next RuboCop release may add another. So anything that is not "lower a `Max`"
+or "shrink `AllCops/Exclude`" is reported.
 
-Two caveats on rule 4. `--verify-baseline` passes when the base ref predates the
-baseline file, which is what lets the bootstrap commit land; the residual way
-around the gate is therefore to delete `.complexity_baseline.yml` and regenerate
-it, which is a several-hundred-line deletion in the diff. And a RuboCop upgrade
-that changes how a metric is computed shifts every value at once — that is what
-the `complexity-baseline-reset` PR label is for. Applying a label does not
-re-trigger CI, so re-run the `complexity` job after adding it.
-
-### Rule 5: the RuboCop version is part of the budget
-
-`.rubocop_metrics.yml` sets `Enabled` and `Max` and inherits everything else, so
-only half the budget lives in this repository:
-
-| `Metrics/MethodLength` | keys |
-|---|---|
-| in `.rubocop_metrics.yml` | `Enabled`, `Max` |
-| in effect | `Enabled`, `Max`, `AllowedMethods`, `AllowedPatterns`, `CountAsOne`, `CountComments` |
-
-Four of six come from the gems. Widening one of them the way an upgrade would,
-with nothing in this repository changed, takes the measurement from 438 entities
-to 277; `--regenerate` then deletes all 161 `Metrics/MethodLength` entries and
-both gates exit 0, with the cop effectively off repository-wide.
-
-So `--verify-baseline` compares the resolved `rubocop*` versions in
-`Gemfile.lock` against the base ref's, and any change is reported. Comparing the
-*resolved* configuration instead would not work: resolution uses the gems that
-are installed, and CI installs only the PR branch's, so the base config would be
-resolved with the new RuboCop and come out identical.
-
-A RuboCop bump is therefore a `complexity-baseline-reset` PR: apply the label,
-re-run the `complexity` job, and regenerate the baseline in that same PR so the
-new values are recorded once, deliberately, in a diff whose subject is the
-upgrade.
+A genuine tightening trips this too. It is not blocked — apply the
+`complexity-baseline-reset` label and the budget comparison is skipped, which is
+the point: the budget moves where a reviewer can see it. Applying a label does
+not re-trigger CI, so re-run the `complexity` job afterwards.
 
 ### Why not `.rubocop_todo.yml`
 
-Because it does the opposite of what it looks like it does.
-
 `rubocop --auto-gen-config` raises each cop's `Max` to the worst value it
-observes. In this repo that is:
-
-| Cop | Default | What auto-gen would write |
-|---|---:|---:|
-| `Metrics/MethodLength` | 10 | **240** |
-| `Metrics/ClassLength` | 100 | **1,731** |
-| `Metrics/AbcSize` | 17 | **267.4** |
-
-A brand-new 200-line method would pass. That is not enabling the cop, it is
-disabling it with extra steps.
-
-The other auto-gen mode, `--auto-gen-only-exclude`, is worse: an excluded file
-becomes permanently invisible to that cop and can grow without limit — precisely
-the amnesty a god object wants.
-
-Recording the baseline per *entity* avoids both. `agent_orchestrator.rb` is
-pinned at ClassLength 391 and its individual methods at their own sizes; a new
-method in that same file still has to fit the budget.
+observes. In this repo that means `MethodLength: 240`, `ClassLength: 1731`,
+`AbcSize: 267.4`. That does not enable the cop, it disables it with extra steps:
+a brand-new 200-line method would pass. The other auto-gen mode, per-file
+`Exclude`, is worse — an excluded file becomes permanently invisible to that cop
+and can grow without limit, which is exactly the amnesty a god object wants.
 
 ### Why the budget is not RuboCop's defaults
 
@@ -163,22 +138,17 @@ RuboCop's defaults put 1,846 app-code entities in violation, meaning new code
 would have to be stricter than 90% of what is already here. Every `Max` in
 `.rubocop_metrics.yml` instead sits near the 75th percentile of today's
 violators — tight enough that crossing it is a real smell, loose enough that
-ordinary Rails code passes without ceremony.
-
-Tighten them as the baseline drains. That is the intended direction of travel,
-and the baseline gives you the arithmetic to argue about it.
+ordinary Rails code passes without ceremony. Tighten them as the debt drains.
 
 ### Entity keys
 
-A baseline entry is keyed by the entity's fully-qualified name, not its line
-number, so inserting code above a method does not invalidate its entry:
+An entity is identified by its fully-qualified name, not its line number, so
+inserting code above a method does not make it look like a different entity in
+the two measurements:
 
-```yaml
-engines/collavre/app/services/collavre/agent_orchestrator.rb:
-  Metrics/ClassLength:
-    Collavre::AgentOrchestrator: 391
-  Metrics/MethodLength:
-    Collavre::AgentOrchestrator#dispatch: 38
+```
+engines/collavre/app/services/collavre/agent_orchestrator.rb | Metrics/ClassLength | Collavre::AgentOrchestrator
+engines/collavre/app/services/collavre/agent_orchestrator.rb | Metrics/MethodLength | Collavre::AgentOrchestrator#dispatch
 ```
 
 Names come from a Prism parse of the source. `Metrics/BlockNesting` offenses do
@@ -187,55 +157,27 @@ with a leading `~`.
 
 Sibling scopes that share a name — `items.each do` twice in one method, or a
 class reopened in the same file — are numbered from the second one on
-(`…#run[block:each](2)`). Without that they share a key, and only the larger of
-the two is recorded, so a second block over the budget would hide behind a
-sibling already in the baseline. The ordinal counts within the parent scope, so
-edits elsewhere in the file leave it alone; adding same-named siblings does
-shift it and shows up as a new entity to fix or waive.
+(`…#run[block:each](2)`). Without that they share a key, and only the larger is
+recorded, so a second block over the budget would hide behind its sibling. The
+ordinal counts within the parent scope, so edits elsewhere in the file leave it
+alone.
 
-An ordinal is a position, though, and a position is not an identity. Delete the
-first of two same-named siblings and the second is renamed onto the first's key
-— inheriting the first's allowance with it. Both keys stay individually
-monotonic (one value fell, one entry vanished), so per-key comparison sees a
-refactor. Measured: siblings recorded at 88 and 78, the first deleted and the
-survivor grown 78 → 83, and `--check`, `--regenerate` and `--verify-baseline`
-were all green on five lines of real growth. So `--verify-baseline` compares a
-*shrunken* sibling family as a whole and holds every survivor to the smallest
-limit the family had. Nothing in the baseline says which sibling survived, so
-this is conservative on purpose: it also fires when the smaller sibling was the
-one deleted and nothing grew. That case goes through `complexity-baseline-reset`
-like any other deliberate change — a false positive costs a reviewer's
-signature, a false negative unwinds the ratchet silently. No family in this
-repo currently has two baselined siblings, so today it fires on neither.
+An ordinal is a position, and a position is not an identity: delete the first of
+two same-named siblings and the second inherits the first's key, and with it the
+first's measured size. Under the committed-baseline design this was a silent
+bypass worth several hundred lines of anchor-tracking to detect. Here it is only
+a mislabel — the surviving block is compared against the deleted one's number,
+so the gate is wrong in either direction by the difference between two siblings
+in the same scope, and a real regression in that scope still has to get past
+whichever of the two numbers it is compared to. Not free, but not worth the
+machinery it cost.
 
-A family can also keep the same count while its named block calls swap order.
-That transfers their ordinals just as surely as deletion does: a sibling pinned
-at 80 can grow to 85 beneath a former 90 limit while both ordinal keys appear to
-tighten. For literal blocks verification keeps the call prefix through `do` or
-`{` (not the measured body) as an anchor. If those anchors change order, each
-entry is held to the family's smallest recorded limit and a deliberate change
-uses `complexity-baseline-reset`.
-
-When the prefixes themselves are identical (two `items.each` blocks), source
-has no stable identity to distinguish the entries. If their baseline values
-change, verification conservatively applies the same floor; an unchanged family
-still passes. That tradeoff makes a deliberate refactor reviewable instead of
-silently granting the smaller block the larger block's allowance.
-
-The same comparison also reads the sibling population from the base and current
-source, not only from baseline entries. This catches the inverse case: a
-90-line sibling is recorded, its 60-line twin is below budget and therefore
-absent from the baseline, then the first is deleted and the survivor grows to
-80 under the inherited unsuffixed key. The population changed even though the
-baseline still has one entry, so verification requires the reset label rather
-than accepting the apparent improvement.
-
-Chained blocks — `items.each do … end.map do … end` — need more than an ordinal,
-because they share a start line *and* a start column: a block offense covers the
-whole `send + block` range, and the outer send begins at the receiver. So an
-entity is looked up by its full line range, not its first line. Prism's node
-ranges match RuboCop's offense ranges exactly for classes, defs and blocks; the
-first-line map is kept as the fallback for offenses that do not sit on a scope.
+Chained blocks — `items.each do … end.map do … end` — share a start line *and* a
+start column, because a block offense covers the whole `send + block` range and
+the outer send begins at the receiver. So an entity is looked up by its full
+line range, not its first line. Prism's node ranges match RuboCop's offense
+ranges exactly for classes, defs and blocks; the first-line map is kept as the
+fallback for offenses that do not sit on a scope.
 
 Tests are excluded. A 900-line test class is a list, not a god object: it has no
 callers, holds no shared mutable state, and splitting it buys nothing. Test bloat
@@ -244,95 +186,77 @@ in would bury the app-code signal under thousands of block-length offenses.
 
 ## The engine boundary
 
-`EngineBoundaryTest` fails when a core engine file names a satellite constant or
-loads one of its files. It asserts only that half of the rule — see *Rejected
-alternatives* for why the `IntegrationRegistry` half is not enforced here.
+`EngineBoundaryTest` fails when a core engine Ruby file names a satellite
+constant or loads one of its files by literal path. Both halves are deliberately
+small — the whole test is under 300 lines — and it is worth being explicit about
+what it is *not*.
+
+**It is not an adversarial gate.** It checks two static, literal things, and it
+can be defeated by writing the reference dynamically: `"Collavre" + "Github"`,
+`const_get(computed)`, an interpolated require path. Chasing those is an
+unbounded surface — every reflection API, every way to build a string — and the
+payoff is zero, because defeating the check takes deliberate obfuscation and
+deliberate obfuscation is what code review is for. The value is in catching the
+*accidental* reference, someone reaching for `CollavreGithub::Account` in core
+because it was convenient, and that reference is always written plainly.
+
+This scope is a correction. An earlier revision of this test chased edge cases
+through ERB, CSS `image-set()`, JSX generics and `createRequire` shadowing until
+it reached 3,668 lines — the largest file in the repository, produced by a PR
+whose purpose was to stop files from getting large.
+
+**It is not the `IntegrationRegistry` rule.** `docs/conventions.md` and
+`docs/host_architecture.md` both explicitly bless satellites injecting
+associations into core models from an initializer, so "all extension goes through
+IntegrationRegistry" is not something this test can assert without contradicting
+the documented architecture.
 
 **Naming by constant** records the class actually reached, so
 `CollavreGithub::Account` rather than `CollavreGithub` — a waiver has to name one
-reference, not one engine. A qualifier is ignored when it belongs to somebody
-else (`Wrapper::CollavreSlack` is Wrapper's own constant), with `Object::` as the
-single exception: top-level constants are constants of `Object`, so
-`Object::CollavreGithub::Account` reaches the engine. It is recorded without the
-qualifier, since it resolves to the same class and a waiver should not depend on
-spelling. `Object::` really is the whole exception — `Wrapper::`, `String::` and
-`Kernel::` all raise `NameError`.
+reference, not one engine. The source is lexed rather than grepped, so a comment
+or a doc string mentioning an engine is not a violation; both existing mentions
+in the core engine are comments. A satellite token preceded by `::` is ignored,
+because `Wrapper::CollavreSlack` is Wrapper's own nested constant.
 
-**Loading** covers every entry point that resolves through `$LOAD_PATH`:
-`require`, `require_relative`, `require_dependency`, `load`, and `autoload`.
-Each reaches a satellite file while leaving behind no constant and no gemspec
-entry, so all five are invisible to the other two checks. Targets are read by
-walking the argument list after the call and normalized with
-`Pathname#cleanpath`, so traversal (`require_relative "../../collavre_slack/..."`)
-is caught and prose that merely mentions an engine is not.
+**Loading** covers `require`, `require_relative`, `require_dependency`, `load`
+and `autoload` on a bare or `self.` receiver, with a literal string argument.
+Paths are normalised with `Pathname#cleanpath`, so traversal
+(`require_relative "../../collavre_slack/…"`) is caught.
 
-The receiver rule differs by method. `require` and `load` count only on `Kernel`
-— a bare call or an explicit `Kernel.` receiver — because
-`YAML.load "config/collavre_slack/x.yml"` is a file read, not a dependency, and a
-gate that cries wolf gets deleted. `autoload` counts on any receiver, because it
-is `Module#autoload` and a module receiver is its ordinary form:
-`Collavre.autoload :Notion, "collavre_notion/foo"` registers the constant and
-loads that file on first reference.
-
-**Naming** covers a satellite class written into a string literal:
-`class_name: "CollavreNotion::NotionAccount"`, `"CollavreGithub::Account".constantize`,
-`const_get`, or an STI `type` value inside a SQL heredoc. Rails resolves all of
-them to the real class at run time, and the core engine breaks when the satellite
-renames it — but none produce a `CONSTANT` token, a gemspec entry, or a require.
-The check is deliberately not keyed on the API that consumes the string:
-enumerating `class_name` / `constantize` / `const_get` / `serialize` is the same
-losing game that produced four rounds of misses on the loader check. A satellite
-class name in a string literal in core code is the violation, whatever reads it
-afterwards. Comments lex as `COMMENT` rather than `STRING_CONTENT`, so prose
-about an engine is still fine.
-
-**Importing** covers the engine's JavaScript, which is the larger half of what
-it ships — 247 packaged `.js`/`.jsx` files against 405 Ruby ones. `import`,
-`export … from`, `require()` and dynamic `import()` specifiers are matched,
-including no-substitution template literals, and
-resolved through the same `Pathname#cleanpath` walk as a Ruby require path, so
-both `collavre_slack/thing` and `../../../collavre_slack/app/javascript/thing`
-count while an interpolated template, comment, or log message mentioning an
-engine does not. This is a real path rather than a theoretical one: `script/build.cjs` bundles every
-engine's `app/javascript/*` entry points together, so a core module importing a
-satellite resolves fine in this monorepo and breaks a host that installs the
-core gem on its own.
+Both detectors match against the **discovered** engine set rather than a
+`collavre_` prefix, so a vendored `collavre_githubish/` directory is not reported
+as a dependency on an engine that does not exist. The gemspec dependency check is
+the one place the prefix is the right test: a satellite published to RubyGems but
+absent from this checkout is still a dependency the core gem cannot declare.
 
 **What gets scanned** is read from `collavre.gemspec`'s own file list, plus the
-gemspec itself, filtered to `.rb` / `.rake` / `.erb` / `Rakefile` and
-`.js` / `.jsx` / `.mjs` / `.cjs`. It is not a hand-written glob: the first
-version globbed `{app,lib,config}/**/*.{rb,erb}` and review found shipped code
-outside it three times — the engine's `.rake` tasks, then `db/` (154 files) and
-the `Rakefile`, then all 247 JavaScript files. A glob and a packaging manifest
-maintained separately will drift. Reading the manifest means whatever the engine
-ships is scanned by construction, including directories added later.
+gemspec itself, filtered to `.rb` / `.rake` / `Rakefile`. It is not a
+hand-written glob: the first version globbed `{app,lib,config}/**/*.rb` and
+review found shipped code outside it twice — the engine's `.rake` tasks, then
+`db/` (154 files). A glob and a packaging manifest maintained separately will
+drift.
 
-**`KNOWN_VIOLATIONS`** records the two pre-existing references, both migrations.
-The 2026-01 OAuth token encryption reaches `CollavreGithub::Account` and
-`CollavreNotion::NotionAccount` by constant, guarded by `defined?` so it runs on
-installs without those engines; the 2026-05 dismissed-at backfill matches an STI
-`type = 'CollavreGithub::GithubPrChannel'` inside its SQL. A migration that has
-run in production cannot be edited, so both are recorded rather than fixed — but
-recording is not amnesty: a separate
-test asserts each entry is *still* a real violation, so when the migration is
-squashed away the stale entry fails instead of rotting into a blind spot.
+**`KNOWN_VIOLATIONS`** records the four pre-existing constant references, all in
+one 2026-01 migration that encrypts OAuth tokens and reaches
+`CollavreGithub::Account` and `CollavreNotion::NotionAccount` behind `defined?`
+guards so it runs on installs without those engines. A migration that has run in
+production cannot be edited, so they are recorded rather than fixed — but
+recording is not amnesty: a separate test asserts each entry is *still* a real
+violation, so when the migration is squashed away the stale entry fails instead
+of rotting into a blind spot.
 
-Entries name the **exact class reached, once per occurrence** — three separate
-`CollavreGithub::Account` lines mean three entries. A waiver written as the
-engine namespace (`CollavreGithub`) would cover every present and future
+Entries name the **exact class reached, once per occurrence**. A waiver written
+as the engine namespace (`CollavreGithub`) would cover every present and future
 reference to anything under that engine, turning a one-line exception into
-permanent amnesty for the whole engine; the multiset form cancels one occurrence
-each. A fourth occurrence of a waived class, or a different class under the same
-engine, is a new violation and fails both the boundary test and the staleness
-test.
+permanent amnesty; the multiset form cancels one occurrence each.
 
 Adding an entry is not the normal response to a failure. Invert the dependency
 instead: expose a hook from `collavre` and let the satellite register itself.
 
 ## What this does not do
 
-The ratchet stops *growth*. It does not shrink the 438 entities already in the
-baseline, and it can be routed around by adding a hundred small files instead of
+The ratchet stops *growth*. It does not shrink the 430 entities already over
+budget, and it can be routed around by adding a hundred small files instead of
 one big one. Neither is a gap a PR gate can close.
 
 For that, use the churn×complexity data — files that are both large and
@@ -342,14 +266,15 @@ blocking gate cannot make anyone delete code.
 
 ## Rejected alternatives
 
+- **A committed baseline snapshot.** Tried first, and it is what the "Why the
+  merge base" section above is about. It goes stale the moment `main` moves and
+  its only escape hatch launders regressions.
 - **A test-to-app LOC ratio floor.** The core already has a healthy 1.51 ratio
   *and* the god objects. Test LOC is trivially gamed with fixture style, mocks,
   and duplicated setup — it is a lagging indicator dressed as a leading one.
 - **A core public-API coupling gate.** Real signal, but multiple days of work
   plus ongoing threshold tuning, against a coverage config change that costs
   nothing and lands today.
-- **Enforcing "all extension goes through `IntegrationRegistry`".**
-  `docs/conventions.md` and `docs/host_architecture.md` both explicitly bless
-  satellites injecting associations into core models from an initializer. A test
-  contradicting the documented architecture gets deleted, not obeyed. The
-  boundary test asserts only the genuinely one-directional half of the rule.
+- **Enforcing "all extension goes through `IntegrationRegistry`".** See above:
+  it contradicts the documented architecture, and a test that contradicts the
+  docs gets deleted, not obeyed.

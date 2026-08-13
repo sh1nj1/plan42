@@ -4,11 +4,12 @@
 # Entity-level complexity ratchet. See lib/complexity_ratchet.rb for why this
 # exists and docs/complexity_budget.md for how to work with it.
 #
-#   bin/complexity_check                     # gate: fail on growth, new debt, or a stale baseline
-#   bin/complexity_check --regenerate        # record shrunk/removed entities after a refactor
-#   bin/complexity_check --verify-baseline origin/main
-#                                            # fail if the baseline was loosened in this branch
-#   bin/complexity_check --seed              # bootstrap the baseline (one time only)
+#   bin/complexity_check                  # gate: fail on growth or new debt vs the merge base
+#   bin/complexity_check --base <ref>     # compare against something other than origin/main
+#   bin/complexity_check --report         # list what is over budget in the working tree
+#
+# There is no --regenerate and nothing to commit: the comparison is against a
+# checkout of the merge base, measured in the same run.
 
 require "rubygems"
 require "bundler/setup"
@@ -16,26 +17,24 @@ require "optparse"
 
 ROOT = File.expand_path("..", __dir__)
 require File.join(ROOT, "lib", "complexity_ratchet")
+require File.join(ROOT, "lib", "complexity_ratchet", "base_tree")
 
-options = { mode: :check }
+options = { mode: :check, base: ENV.fetch("COMPLEXITY_BASE_REF", "origin/main") }
 OptionParser.new do |parser|
   parser.banner = "Usage: bin/complexity_check [options]"
-  parser.on("--regenerate", "Update the baseline for entities that shrank or disappeared") { options[:mode] = :regenerate }
-  parser.on("--seed", "Write a fresh baseline from the current codebase (bootstrap only)") { options[:mode] = :seed }
-  parser.on("--verify-baseline REF", "Fail if the baseline was loosened relative to REF") do |ref|
-    options[:mode] = :verify
-    options[:ref] = ref
-  end
+  parser.on("--base REF", "Compare against merge-base(HEAD, REF) (default: origin/main)") { |ref| options[:base] = ref }
+  parser.on("--report", "Print the working tree's over-budget entities and exit 0") { options[:mode] = :report }
+  # CI passes this only when a reviewer has applied `complexity-baseline-reset`,
+  # which is how a deliberate budget change gets through.
+  parser.on("--allow-budget-change", "Skip the budget comparison") { options[:allow_budget_change] = true }
   parser.on("-h", "--help") do
     puts parser
     exit 0
   end
 end.parse!
 
-BASELINE = File.join(ROOT, ComplexityRatchet::BASELINE_PATH)
-WAIVERS  = File.join(ROOT, ComplexityRatchet::WAIVERS_PATH)
-CONFIG   = File.join(ROOT, ComplexityRatchet::CONFIG_PATH)
-LOCK     = File.join(ROOT, ComplexityRatchet::LOCK_PATH)
+WAIVERS = File.join(ROOT, ComplexityRatchet::WAIVERS_PATH)
+CONFIG  = File.join(ROOT, ComplexityRatchet::CONFIG_PATH)
 
 def abort_with(message)
   warn message
@@ -49,114 +48,64 @@ def report(problems)
   end
 end
 
-# --verify-baseline reads the base ref's own copy of a file, so it only ever
-# judges what this branch changed. nil means the ref predates that file.
 def file_at(ref, path)
   out, _err, status = Open3.capture3("git", "show", "#{ref}:#{path}", chdir: ROOT)
   status.success? ? out : nil
 end
 
-# The sibling checks need the population and the anchors of every baselined
-# file, on both sides of the comparison. Reading each side once and profiling it
-# once is not just tidier: asking for the two views separately ran `git show`
-# twice per file and parsed all 129 of them four times over.
-def sources_at(ref, paths)
-  paths.to_h { |path| [ path, file_at(ref, path) ] }
-end
+def budget_problems(base_sha, options)
+  return [] if options[:allow_budget_change]
 
-def current_sources(paths)
-  paths.to_h do |path|
-    full_path = File.join(ROOT, path)
-    [ path, File.file?(full_path) ? File.read(full_path) : nil ]
-  end
-end
-
-case options[:mode]
-when :verify
-  base_baseline = file_at(options[:ref], ComplexityRatchet::BASELINE_PATH)
-  if base_baseline.nil?
-    puts "#{options[:ref]} predates #{ComplexityRatchet::BASELINE_PATH} — nothing to verify."
-    exit 0
-  end
-
-  base_config = file_at(options[:ref], ComplexityRatchet::CONFIG_PATH)
-  before_entries = ComplexityRatchet.flatten(YAML.safe_load(base_baseline) || {})
-  ComplexityRatchet.validate_baseline_values!(before_entries)
-  after_entries = ComplexityRatchet.load_baseline(BASELINE)
-  baseline_paths = (before_entries.keys | after_entries.keys).map { |key| key.split(ComplexityRatchet::SEPARATOR, 2).first }
-
-  # Three ways to unwind the ratchet, and only one of them touches the baseline.
-  # Raising a Max deletes baseline entries wholesale, which reads as a refactor
-  # to verify_monotonic; upgrading RuboCop does the same without editing a file
-  # in this repository at all. So the budget and the toolchain that supplies its
-  # inherited half are both checked alongside the baseline.
-  before_profile = ComplexityRatchet.sibling_profile(sources_at(options[:ref], baseline_paths))
-  after_profile = ComplexityRatchet.sibling_profile(current_sources(baseline_paths))
-
-  problems =
-    ComplexityRatchet.verify_monotonic(
-      before_entries,
-      after_entries,
-      before_siblings: before_profile.fetch(:populations),
-      after_siblings: after_profile.fetch(:populations),
-      before_sibling_anchors: before_profile.fetch(:anchors),
-      after_sibling_anchors: after_profile.fetch(:anchors)
-    ) +
-    ComplexityRatchet.verify_budget(
-      base_config && (YAML.safe_load(base_config) || {}),
-      YAML.safe_load_file(CONFIG) || {}
-    ) +
-    ComplexityRatchet.verify_toolchain(
-      file_at(options[:ref], ComplexityRatchet::LOCK_PATH),
-      File.read(LOCK)
-    )
-
-  if problems.empty?
-    puts "Complexity baseline and budget are unchanged or tightened relative to #{options[:ref]}."
-    exit 0
-  end
-
-  report(problems)
-  abort_with("\nThe complexity baseline and the budget in #{ComplexityRatchet::CONFIG_PATH} may only tighten. " \
-             "Fix the entity, or add a time-boxed waiver to #{ComplexityRatchet::WAIVERS_PATH} " \
-             "with an owner, a reason, and an expiry.\n" \
-             "A deliberate budget or RuboCop change goes through the `complexity-baseline-reset` label instead.")
+  ComplexityRatchet.verify_budget(
+    file_at(base_sha, ComplexityRatchet::CONFIG_PATH)&.then { |yaml| YAML.safe_load(yaml) || {} },
+    YAML.safe_load_file(CONFIG) || {}
+  )
 end
 
 actual = ComplexityRatchet::Measurement.call(root: ROOT)
 
-case options[:mode]
-when :seed
-  ComplexityRatchet.dump_baseline(BASELINE, actual)
-  puts "Seeded #{ComplexityRatchet::BASELINE_PATH} with #{actual.size} entities."
-when :regenerate
-  baseline = ComplexityRatchet.load_baseline(BASELINE)
-  updated, unrecorded = ComplexityRatchet.regenerate(
-    baseline, actual, waivers: ComplexityRatchet.load_waivers(WAIVERS)
-  )
-  ComplexityRatchet.dump_baseline(BASELINE, updated)
-  puts "Baseline: #{baseline.size} -> #{updated.size} entities."
-  unless unrecorded.empty?
-    puts "\nNOT added to the baseline (#{unrecorded.size}) — new debt has to be fixed or waived:"
-    unrecorded.sort.each { |key| puts "  #{key}" }
-    exit 1
-  end
-when :check
-  check = ComplexityRatchet::Check.new(
-    actual: actual,
-    baseline: ComplexityRatchet.load_baseline(BASELINE),
-    waivers: ComplexityRatchet.load_waivers(WAIVERS)
-  )
-
-  if check.pass?
-    advisory = check.problems
-    report(advisory) unless advisory.empty?
-    puts "\nComplexity ratchet OK — #{actual.size} entities over budget, none grew."
-    exit 0
-  end
-
-  report(check.problems)
-  abort_with("\n#{check.blocking_problems.size} blocking complexity problem(s). " \
-             "Shrink the entity, run `bin/complexity_check --regenerate` if you improved it, " \
-             "or add a time-boxed waiver to #{ComplexityRatchet::WAIVERS_PATH}.")
+if options[:mode] == :report
+  puts "#{actual.size} entities over the budget in #{ComplexityRatchet::CONFIG_PATH}:"
+  actual.sort.each { |key, value| puts "  #{value}\t#{key}" }
+  exit 0
 end
+
+base_measurement = nil
+base_sha = nil
+ComplexityRatchet::BaseTree.at_merge_base(root: ROOT, ref: options[:base]) do |tree, sha|
+  base_sha = sha
+  base_measurement = ComplexityRatchet::Measurement.call(
+    root: tree, env: { "BUNDLE_GEMFILE" => File.join(ROOT, "Gemfile") }
+  )
+end
+
+if base_measurement.nil?
+  puts "HEAD is the merge base with #{options[:base]} — nothing to compare against."
+  exit 0
+end
+
+problems =
+  ComplexityRatchet::Check.new(
+    actual: actual,
+    base: base_measurement,
+    waivers: ComplexityRatchet.load_waivers(WAIVERS)
+  ).problems +
+  # The budget is the one input the merge-base comparison cannot check itself:
+  # both sides are measured with this branch's copy, on purpose, so a raised Max
+  # silences the same entities twice and cancels out.
+  budget_problems(base_sha, options)
+
+blocking = problems.select(&:blocking?)
+
+if blocking.empty?
+  report(problems) unless problems.empty?
+  puts "\nComplexity ratchet OK — #{actual.size} entities over budget " \
+       "(#{base_measurement.size} at #{base_sha[0, 12]}), none grew."
+  exit 0
+end
+
+report(problems)
+abort_with("\n#{blocking.size} blocking complexity problem(s) against #{base_sha[0, 12]}. " \
+           "Shrink the entity, or add a time-boxed waiver to #{ComplexityRatchet::WAIVERS_PATH} " \
+           "with an owner, a reason, and an expiry.\n" \
+           "A deliberate budget change goes through the `complexity-baseline-reset` label instead.")

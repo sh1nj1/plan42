@@ -6,9 +6,8 @@
 # pre-existing offenses. Instead this file is passed explicitly to
 # `bin/complexity_check`, which turns the raw offenses into a ratchet:
 #
-#   * an entity ALREADY over budget is pinned at its recorded size and may only
-#     shrink (.complexity_baseline.yml)
-#   * an entity NOT in the baseline must fit the Max values below
+#   * an entity ALREADY over budget at the merge base may shrink but not grow
+#   * an entity NOT over budget at the merge base must fit the Max values below
 #
 # So these numbers are the budget for NEW code, not a description of the
 # current codebase.
@@ -19,7 +18,7 @@
 # A budget nobody can hit gets waived away, and a waived gate controls nothing.
 # Each Max below sits near the 75th percentile of today's violators — tight
 # enough that crossing it is a genuine smell, loose enough that ordinary Rails
-# code passes without ceremony. Tighten them over time as the baseline drains.
+# code passes without ceremony. Tighten them over time as the debt drains.
 
 inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 

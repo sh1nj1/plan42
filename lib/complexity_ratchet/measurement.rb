@@ -7,13 +7,14 @@ module ComplexityRatchet
   # Runs RuboCop's Metrics department and folds the offenses into
   # {entity key => measured value}.
   class Measurement
-    def self.call(root:, config: CONFIG_PATH)
-      new(root: root, config: config).call
+    def self.call(root:, config: CONFIG_PATH, env: {})
+      new(root: root, config: config, env: env).call
     end
 
-    def initialize(root:, config: CONFIG_PATH)
+    def initialize(root:, config: CONFIG_PATH, env: {})
       @root = root
       @config = config
+      @env = env
     end
 
     def call
@@ -34,12 +35,15 @@ module ComplexityRatchet
 
     private
 
-    attr_reader :root, :config
+    attr_reader :root, :config, :env
 
+    # `env` carries BUNDLE_GEMFILE when the root is a detached checkout of the
+    # merge base: the gems are installed against this branch's Gemfile, and the
+    # base commit's own may resolve to something that is not on disk.
     def run_rubocop
       command = [ "bundle", "exec", "rubocop", "-c", config, "--ignore-disable-comments",
                   "--only", "Metrics", "--format", "json", "--no-color" ]
-      stdout, stderr, status = Open3.capture3(*command, chdir: root)
+      stdout, stderr, status = Open3.capture3(env, *command, chdir: root)
       # RuboCop exits 1 whenever offenses exist, which is the normal case here.
       # Only a missing JSON document means the run itself failed.
       raise Error, "rubocop failed (#{status.exitstatus}): #{stderr}" if stdout.strip.empty?
@@ -47,8 +51,11 @@ module ComplexityRatchet
       JSON.parse(stdout)
     end
 
+    # Read as UTF-8 explicitly rather than trusting Encoding.default_external:
+    # a shell without LANG set leaves it US-ASCII, and the first source file
+    # containing an em dash then crashes the anchor scanner mid-run.
     def absorb(acc, path, offenses)
-      source = File.read(File.join(root, path))
+      source = File.read(File.join(root, path), encoding: Encoding::UTF_8)
       entities = EntityMap.for(source)
       lines = source.lines
       offenses.sort_by { |offense| [ offense.dig("location", "start_line") || offense.dig("location", "line"), offense.dig("location", "last_line") || 0 ] }.each do |offense|
