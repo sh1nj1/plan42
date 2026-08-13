@@ -13,6 +13,18 @@ jest.unstable_mockModule('../../../lib/api/topics', () => ({
   saveLastTopic,
 }))
 
+// Captures the lifecycle callbacks the controller registers, so a test can fire
+// the ones ActionCable fires on a dropped or refused connection.
+let subscriptionCallbacks
+const createSubscription = jest.fn((_identifier, callbacks) => {
+  subscriptionCallbacks = callbacks
+  return { unsubscribe: jest.fn() }
+})
+
+jest.unstable_mockModule('../../../services/cable', () => ({
+  createSubscription,
+}))
+
 const { Application } = await import('@hotwired/stimulus')
 const TopicsController = (await import('../topics_controller')).default
 
@@ -152,5 +164,132 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     echo('2')
 
     expect(controller.currentTopicId).toBe('2')
+  })
+
+  // unsubscribe() is only the deliberate exit. A connection that drops or a
+  // subscription the server refuses loses the same echoes without any of that
+  // running, and ActionCable replays nothing on reconnect — so a claim left
+  // behind waits for a message that will never come.
+  describe('claims against a subscription that goes away on its own', () => {
+    // Delivered the way the real ones are, through the subscription itself.
+    const deliver = (lastTopicId) => subscriptionCallbacks.received({
+      action: 'last_topic_changed',
+      last_topic_id: lastTopicId,
+    })
+
+    beforeEach(() => {
+      subscriptionCallbacks = undefined
+      controller.subscribe()
+    })
+
+    test('a dropped connection drops outstanding claims', async () => {
+      controller.selectTopic('2')
+      await controller.flushSaveLastTopic('2')
+
+      subscriptionCallbacks.disconnected()
+      // Reconnected, and another session moves the preference to Alpha.
+      controller.selectTopic('3')
+      deliver('2')
+
+      expect(controller.currentTopicId).toBe('2')
+    })
+
+    test('a refused subscription drops outstanding claims', async () => {
+      controller.selectTopic('2')
+      await controller.flushSaveLastTopic('2')
+
+      subscriptionCallbacks.rejected()
+      controller.selectTopic('3')
+      deliver('2')
+
+      expect(controller.currentTopicId).toBe('2')
+    })
+
+    // The claim is only dropped by those two — an ordinary echo on a healthy
+    // subscription still settles the save that is waiting for it.
+    test('an echo on a live subscription is still consumed', async () => {
+      controller.selectTopic('2')
+      await controller.flushSaveLastTopic('2')
+
+      controller.selectTopic('3')
+      deliver('2')
+
+      expect(controller.currentTopicId).toBe('3')
+    })
+  })
+
+  // Two PATCHes in flight at once are answered — and broadcast — in whatever
+  // order the server finishes them, which the head-of-queue check reads as
+  // "not ours". The claim it skips is then owed a message that has already
+  // been and gone, and it swallows the next real update naming that topic.
+  // Sending one save at a time is what makes the queue order true.
+  describe('a save made while another is still in flight', () => {
+    let resolveFirst
+
+    // Both picks are made back to back, as a fast second click does. The await
+    // only lets the head of the queue issue its request — resolveFirst is the
+    // handle on it, and is only assigned once it has.
+    const startTwoSaves = async () => {
+      resolveFirst = null
+      saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      controller.selectTopic('2')
+      const first = controller.flushSaveLastTopic('2')
+      controller.selectTopic('3')
+      const second = controller.flushSaveLastTopic('3')
+      await Promise.resolve()
+      expect(resolveFirst).toEqual(expect.any(Function))
+      return [first, second]
+    }
+
+    test('waits for the one in flight instead of racing it', async () => {
+      const pending = await startTwoSaves()
+
+      expect(saveLastTopic).toHaveBeenCalledTimes(1)
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2')
+
+      resolveFirst(true)
+      await Promise.all(pending)
+
+      expect(saveLastTopic).toHaveBeenCalledTimes(2)
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+    })
+
+    // With the sends ordered, the echoes are too: the first save's broadcast is
+    // emitted before the second save is even sent. Both are then claimed and
+    // consumed in turn, and nothing is left to swallow a later update.
+    test('leaves no claim behind once both echoes land', async () => {
+      const pending = await startTwoSaves()
+      echo('2')
+      resolveFirst(true)
+      await Promise.all(pending)
+      echo('3')
+
+      // The user moves on, and another session picks Beta for real.
+      controller.selectTopic('')
+      echo('3')
+
+      expect(controller.currentTopicId).toBe('3')
+    })
+
+    // A save that fails still has to hand the queue on, or every later pick is
+    // stranded behind it and never reaches the server at all.
+    test('a rejected save does not strand the one behind it', async () => {
+      let rejectFirst
+      saveLastTopic.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject }))
+      controller.selectTopic('2')
+      const first = controller.flushSaveLastTopic('2')
+      controller.selectTopic('3')
+      const second = controller.flushSaveLastTopic('3')
+      await Promise.resolve()
+
+      rejectFirst(new Error('network'))
+      await Promise.all([first, second])
+
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+      // Nothing was broadcast for it either, so its claim goes with it.
+      controller.selectTopic('')
+      echo('2')
+      expect(controller.currentTopicId).toBe('2')
+    })
   })
 })

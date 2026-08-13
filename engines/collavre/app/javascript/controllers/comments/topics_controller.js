@@ -1254,15 +1254,28 @@ export default class extends Controller {
 
     async flushSaveLastTopic(id) {
         this.cancelPendingSaveLastTopic()
+        if (!this.creativeId) return
+
         const creativeId = this.creativeId
-        if (creativeId) {
+        const sent = id ? String(id) : ""
+        // One save at a time. Two PATCHes in flight together are persisted in
+        // whatever order the server finishes them — so the preference that
+        // sticks need not be the last one picked — and their broadcasts come
+        // back in that same unknowable order, which the queue below reads as
+        // "not ours". Waiting for the one in flight is what makes the order the
+        // queue assumes the order that actually happens.
+        this._saveChain = (this._saveChain || Promise.resolve()).then(async () => {
             // update_last_topic broadcasts to every session of this user, this
             // one included, and the echo names no sender. Claim it here, before
             // the request goes out — the broadcast is sent server-side before
             // the response is rendered, so it can beat the save returning.
-            const sent = id ? String(id) : ""
             this.pendingSelfEchoes.push(sent)
-            const saved = await saveLastTopic(creativeId, id || null)
+            // A throw here would be left on the chain, and the chain is shared:
+            // every pick made after it would be stranded behind a link that
+            // never settles, and none of them would reach the server. The
+            // helper resolves false rather than throwing today; this keeps that
+            // a property of this queue rather than of its callee.
+            const saved = await saveLastTopic(creativeId, id || null).catch(() => false)
             // A save that did not land broadcast nothing — the controller
             // returns before the broadcast on a denied read or a topic that
             // does not belong to the creative — so the echo is not coming and
@@ -1274,7 +1287,8 @@ export default class extends Controller {
                 this._pendingPick.topicId === topicId) {
                 this._pendingPick = null
             }
-        }
+        })
+        return this._saveChain
     }
 
     // Saves are echoed in the order they were made, so only the head can be
@@ -1332,9 +1346,21 @@ export default class extends Controller {
         this.topicsSubscription = createSubscription(
             { channel: 'TopicsChannel', creative_id: this.creativeId },
             {
-                received: (data) => this.handleTopicMessage(data)
+                received: (data) => this.handleTopicMessage(data),
+                // unsubscribe() is only the deliberate exit. A connection that
+                // drops and a subscription the server refuses lose the echoes
+                // owed to us just the same, without any of it running, and
+                // ActionCable replays nothing on reconnect. A claim kept across
+                // either waits for a message that has no way to arrive, and
+                // swallows the next real update naming that topic instead.
+                disconnected: () => this.dropPendingSelfEchoes(),
+                rejected: () => this.dropPendingSelfEchoes(),
             }
         )
+    }
+
+    dropPendingSelfEchoes() {
+        this.pendingSelfEchoes.length = 0
     }
 
     unsubscribe() {
@@ -1346,7 +1372,7 @@ export default class extends Controller {
         // Echoes still owed to us on the stream we are leaving will never
         // arrive, and the stream is per-creative, so holding them would only
         // let them swallow an unrelated broadcast later.
-        this.pendingSelfEchoes.length = 0
+        this.dropPendingSelfEchoes()
     }
 
     handleTopicMessage(data) {
