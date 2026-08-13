@@ -45,7 +45,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   ].freeze
   ACTIVE_RECORD_STI_METHODS = %w[
     build create create! create_or_find_by create_or_find_by! find_or_create_by
-    find_or_create_by! find_or_initialize_by
+    find_or_create_by! find_or_initialize_by find_by find_by!
     insert insert_all new upsert upsert_all update update! update_all where
   ].freeze
   ACTIVE_RECORD_RELATION_METHODS = %w[
@@ -98,7 +98,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   CSS_ASSET_REFERENCE = /(?:@import\s+(?:url\(\s*)?|url\(\s*)(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)?/i
   CSS_IMAGE_SET = /(?:-webkit-)?image-set\(\s*((?:[^()"']+|"[^"]*"|'[^']*'|\([^()]*\))*)\)/i
   CSS_IMAGE_SET_STRING = /(?:\A|,)\s*(?:"([^"]+)"|'([^']+)')/
-  STATIC_HTML_ASSET_TAG = /<(link|script|img|source|video|audio)\b[^>]*>/i
+  STATIC_HTML_ASSET_TAG = /<(link|script|img|source|video|audio|input)\b[^>]*>/i
   STATIC_HTML_ASSET_ATTRIBUTE = /\b(?:src|srcset|poster|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
   STATIC_HTML_STYLE_ATTRIBUTE = /(?:\A|[\s<])style\s*=\s*(?:"([^"]*)"|'([^']*)')/i
   STATIC_HTML_STYLE_ELEMENT = /<style\b[^>]*>(.*?)<\/style\s*>/im
@@ -579,6 +579,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(Collavre::Channel.create_or_find_by!(type: "#{satellite}::Message"))))
     assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(Collavre::Channel.find_by(type: "#{satellite}::Message"))))
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(Collavre::Channel.find_by!(type: "#{satellite}::Message"))))
+    assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(Collavre::Channel.where(type: "#{satellite}::Message"))))
     assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(Collavre::Channel.unscoped.create!(type: "#{satellite}::Message"))))
@@ -869,6 +873,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       <source srcset="/assets/#{path}.avif 1x">
       <script src="/assets/#{path}.js"></script>
       <link href="/assets/#{path}.css" rel="stylesheet">
+      <input type="image" src="/assets/#{path}.button.png">
+      <input src="/assets/#{satellite}/ignored.png">
       <div style="background-image: url('/assets/#{path}.png')"></div>
       <div style='background-image: image-set("/assets/#{path}.jpeg" 1x, "/assets/#{path}@2x.jpeg" 2x)'></div>
       <style>.icon { background-image: url("/assets/#{path}.gif") }</style>
@@ -882,7 +888,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     ERB
 
     assert_equal [
-      "/assets/#{path}.avif", "/assets/#{path}.css", "/assets/#{path}.gif",
+      "/assets/#{path}.avif", "/assets/#{path}.button.png", "/assets/#{path}.css", "/assets/#{path}.gif",
       "/assets/#{path}.jpeg", "/assets/#{path}.js", "/assets/#{path}.png",
       "/assets/#{path}.webp", "/assets/#{path}@2x.bmp", "/assets/#{path}@2x.jpeg",
       "/assets/#{path}@2x.webp", "/assets/#{path}.bmp", static_erb_asset
@@ -900,6 +906,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   test "detector flags satellite asset paths in packaged CSS" do
     satellite = SATELLITES.first
     path = "#{satellite}/slack_integration.css"
+    escaped_path = path.sub("_") { "\\5f " }
     css_path = ENGINES_ROOT.join(CORE, "app/assets/stylesheets/collavre/application.css")
 
     assert_equal [ path ], css_asset_paths_in(%(@import "#{path}";))
@@ -907,6 +914,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], css_asset_paths_in(%(.integration { background: url("#{path}") }))
     assert_equal [ path ], css_asset_paths_in(%(.integration { background-image: image-set("#{path}" 1x) }))
     assert_equal [ path ], css_asset_paths_in(%(.integration { background-image: image-set("core.png" 1x, "#{path}" 2x) }))
+    assert_equal [ path ], css_asset_paths_in(%(.integration { background: url("#{escaped_path}") }))
+    assert_equal [ path ], css_asset_paths_in(%(.integration { background-image: image-set("#{escaped_path}" 1x) }))
     assert_empty css_asset_paths_in(%(/* url("#{path}") */))
     assert_empty css_asset_paths_in(%(.notice { content: "url(#{path})" }))
     assert_empty css_asset_paths_in(%(.integration { background: url("https://cdn.example/#{path}") }))
@@ -1570,7 +1579,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     tag[0].to_enum(:scan, STATIC_HTML_ASSET_ATTRIBUTE).filter_map do
       attribute = Regexp.last_match
       path = attribute.captures.compact.first
-      html_asset_attribute_paths(attribute[0], path) if html_asset_attribute?(tag[1], attribute[0])
+      html_asset_attribute_paths(attribute[0], path) if html_asset_attribute?(tag, attribute[0])
     end
       .flatten
   end
@@ -1582,7 +1591,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def html_asset_attribute?(tag, attribute)
-    tag.casecmp?("link") ? attribute.match?(/\Ahref\b/i) : attribute.match?(/\A(?:src|srcset|poster)\b/i)
+    return attribute.match?(/\Ahref\b/i) if tag[1].casecmp?("link")
+    return attribute.match?(/\Asrc\b/i) && tag[0].match?(/\btype\s*=\s*(?:["']image["']|image)(?:\s|>|\/)/i) if tag[1].casecmp?("input")
+
+    attribute.match?(/\A(?:src|srcset|poster)\b/i)
   end
 
   # JavaScript outside ERB tags ships as executable source; the tags themselves
@@ -2923,6 +2935,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       match.captures.compact.first if css_code_position?(source, match.begin(0))
     end
     (direct_paths + css_image_set_string_paths_in(source))
+      .map { |path| css_unescape(path) }
       .reject { |path| remote_asset_url?(path) }
       .select { |path| satellite_for(path) }
       .uniq
@@ -2934,6 +2947,19 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       next [] unless css_code_position?(source, match.begin(0))
 
       match[1].to_enum(:scan, CSS_IMAGE_SET_STRING).filter_map { Regexp.last_match.captures.compact.first }
+    end
+  end
+
+  # CSS escapes are resolved before URL loading. Decode only the static URL
+  # fragments captured above so an escaped satellite directory is classified
+  # the same way as its literal spelling.
+  def css_unescape(path)
+    path.gsub(/\\([\da-f]{1,6})\s?|\\(.)/i) do
+      hex = Regexp.last_match(1)
+      next Regexp.last_match(2) unless hex
+
+      codepoint = hex.to_i(16)
+      codepoint.between?(1, 0x10ffff) ? codepoint.chr(Encoding::UTF_8) : "\uFFFD"
     end
   end
 
