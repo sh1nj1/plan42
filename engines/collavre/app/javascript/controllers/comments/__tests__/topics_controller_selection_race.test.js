@@ -301,7 +301,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await controller.loadTopics()
 
       expect(controller.currentTopicId).toBe('2')
-      expect(saveLastTopic).toHaveBeenCalledWith('42', '2')
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '2', expect.any(String))
       expect(localStorage.getItem(LEGACY_KEY)).toBeNull()
     })
   })

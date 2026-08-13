@@ -357,6 +357,48 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('3')
   })
 
+  test('a pre-resolution linked-shell save keeps its claim after resolving its origin', async () => {
+    controller.creativeIdValue = '77'
+    delete controller.element.dataset.effectiveCreativeId
+    controller.selectTopic('2')
+    await controller.flushSaveLastTopic('2')
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+	topics: TOPICS,
+	archived_topics: [],
+	can_manage: true,
+	last_topic_id: '2',
+	main_topic_id: '1',
+	effective_creative_id: '42',
+      }),
+    })
+    await controller.loadTopics()
+
+    expect(controller.pendingSelfEchoCreativeIds.get(clientIdFor('2'))).toBe('42')
+    controller.selectTopic('3')
+    selfEcho('2')
+
+    expect(controller.currentTopicId).toBe('3')
+  })
+
+  test('a legacy migration echo is correlated with a later pick', async () => {
+    localStorage.setItem('collavre_creative_42_last_topic', '2')
+    controller.serverLastTopicId = ''
+
+    controller.migrateLocalStorage()
+    await Promise.resolve()
+    await Promise.resolve()
+    const migrationClientId = clientIdFor('2')
+    expect(migrationClientId).toEqual(expect.any(String))
+
+    controller.selectTopic('3')
+    echo('2', migrationClientId)
+
+    expect(controller.currentTopicId).toBe('3')
+  })
+
   test('reopening a different creative drops claims from the one left', async () => {
     controller.selectTopic('2')
     await controller.flushSaveLastTopic('2')

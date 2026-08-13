@@ -218,6 +218,7 @@ export default class extends Controller {
                     : String(this.creativeId)
 				const snapshotTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 this.element.dataset.effectiveCreativeId = effectiveCreativeId
+				this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
                 this.dropPendingSelfEchoesForOtherCreatives(effectiveCreativeId)
 				this.lastKnownRemoteTopicId = snapshotTopicId
                 // A topic picked while this fetch was in flight is newer intent
@@ -1480,7 +1481,10 @@ export default class extends Controller {
         const localValue = localStorage.getItem(key)
         if (localValue && !this.serverLastTopicId && !keepEmptyPick) {
             this.serverLastTopicId = localValue
-            saveLastTopic(this.creativeId, localValue)
+			// The migration is a save like any other. Giving it a client id
+			// prevents its broadcast from being mistaken for another session's
+			// update if the user chooses a topic before that echo arrives.
+			this.flushSaveLastTopic(localValue)
         }
         localStorage.removeItem(key)
     }
@@ -1536,6 +1540,21 @@ export default class extends Controller {
                 this.releasePendingSelfEcho(clientId)
             }
         }
+    }
+
+    // A save can begin before a linked shell's topics response reveals that it
+    // shares its origin's preference stream. Re-key that claim before pruning
+    // so its identified echo remains recognisable on the resolved stream.
+    remapPendingSelfEchoesForCreative(requestedCreativeId, effectiveCreativeId) {
+		const requestedId = String(requestedCreativeId)
+		const resolvedId = String(effectiveCreativeId)
+		if (requestedId === resolvedId) return
+
+		for (const clientId of this.pendingSelfEchoes) {
+			if (this.pendingSelfEchoCreativeIds.get(clientId) === requestedId) {
+				this.pendingSelfEchoCreativeIds.set(clientId, resolvedId)
+			}
+		}
     }
 
     unsubscribe({ preservePendingSelfEchoes = false } = {}) {
