@@ -677,8 +677,17 @@ export default class extends Controller {
     renderedComments.forEach((comment) => {
       const topicId = comment.dataset.topicId
       const commentId = Number.parseInt(comment.dataset.commentId, 10)
-      if (!topicId || !Number.isSafeInteger(commentId) || commentId <= 0) return
-      if (!this.renderedAllTopicIds.some((id) => String(id) === String(topicId))) {
+      if (!Number.isSafeInteger(commentId) || commentId <= 0) return
+
+      const watermarkKey = topicId || '_legacy'
+      if (!topicId && !this.renderedAllIncludesLegacy) {
+        if (!includeNewTopics) return
+
+        this.renderedAllIncludesLegacy = true
+        addedTopic = true
+      }
+
+      if (topicId && !this.renderedAllTopicIds.some((id) => String(id) === String(topicId))) {
         if (!includeNewTopics) return
 
         this.renderedAllTopicIds.push(String(topicId))
@@ -686,9 +695,9 @@ export default class extends Controller {
       }
 
       this.renderedAllTopicWatermarks ||= {}
-      const previousId = Number.parseInt(this.renderedAllTopicWatermarks[topicId], 10)
+      const previousId = Number.parseInt(this.renderedAllTopicWatermarks[watermarkKey], 10)
       if (!Number.isSafeInteger(previousId) || commentId > previousId) {
-        this.renderedAllTopicWatermarks[topicId] = commentId
+        this.renderedAllTopicWatermarks[watermarkKey] = commentId
       }
     })
 

@@ -72,6 +72,11 @@ module Collavre
             preserve_unread_state_for_topic_move(comment, new_topic_id)
             comment.update!(topic_id: new_topic_id)
           else
+            preserve_unread_state_for_topic_move(
+              comment,
+              new_topic_id || target_origin.main_topic.id,
+              destination_creative: target_origin
+            )
             comment.update!(creative: target_origin, topic_id: new_topic_id)
             broadcast_move_removal(comment, comment.creative)
           end
@@ -86,17 +91,25 @@ module Collavre
     # the recipient seeing it. Lower only affected recipients' destination
     # cursor to just before the moved comment; this is deliberately
     # conservative and may re-show later destination comments as unread.
-    def preserve_unread_state_for_topic_move(comment, destination_topic_id)
+    def preserve_unread_state_for_topic_move(comment, destination_topic_id, destination_creative: creative)
       source_topic_id = comment.topic_id
-      readers_affected_by(comment).each do |user_id|
-        pointers = CommentReadPointer.where(user_id: user_id, creative: creative)
-                                    .index_by(&:topic_id)
-        source_watermark = pointers[source_topic_id]&.last_read_comment_id || pointers[nil]&.last_read_comment_id || 0
-        destination_watermark = pointers[destination_topic_id]&.last_read_comment_id || pointers[nil]&.last_read_comment_id || 0
+      readable_user_ids = CreativeShare.readable_user_ids_from_shares(
+        destination_creative,
+        readers_affected_by(comment, destination_creative)
+      )
+      readable_user_ids.each do |user_id|
+        source_pointers = CommentReadPointer.where(user_id: user_id, creative: creative).index_by(&:topic_id)
+        destination_pointers = if destination_creative == creative
+          source_pointers
+        else
+          CommentReadPointer.where(user_id: user_id, creative: destination_creative).index_by(&:topic_id)
+        end
+        source_watermark = source_pointers[source_topic_id]&.last_read_comment_id || source_pointers[nil]&.last_read_comment_id || 0
+        destination_watermark = destination_pointers[destination_topic_id]&.last_read_comment_id || destination_pointers[nil]&.last_read_comment_id || 0
         next unless source_watermark < comment.id && destination_watermark >= comment.id
 
-        destination_pointer = pointers[destination_topic_id] || CommentReadPointer.find_or_create_by!(
-          user_id: user_id, creative: creative, topic_id: destination_topic_id
+        destination_pointer = destination_pointers[destination_topic_id] || CommentReadPointer.find_or_create_by!(
+          user_id: user_id, creative: destination_creative, topic_id: destination_topic_id
         )
         destination_pointer.update!(last_read_comment_id: comment.id - 1)
       end
@@ -104,10 +117,11 @@ module Collavre
 
     # Private comments are visible only to their author and approver. Rewinding
     # another user's cursor would make unrelated destination comments unread.
-    def readers_affected_by(comment)
-      return CommentReadPointer.where(creative: creative).distinct.pluck(:user_id) unless comment.private?
+    def readers_affected_by(comment, destination_creative)
+      reader_ids = CommentReadPointer.where(creative: [ creative, destination_creative ]).distinct.pluck(:user_id)
+      return reader_ids unless comment.private?
 
-      [ comment.user_id, comment.approver_id ].compact.uniq
+      reader_ids & [ comment.user_id, comment.approver_id ].compact
     end
 
     def broadcast_move_removal(comment, original_creative)

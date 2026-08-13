@@ -74,5 +74,23 @@ module Collavre
 
       assert_equal read_destination.id, destination_pointer.reload.last_read_comment_id
     end
+
+    test "moving an unread comment to another creative does not let its Main pointer hide it" do
+      destination_creative = Creative.create!(user: @user, description: "Destination")
+      source_topic = @creative.topics.create!(name: "Source", user: @user)
+      read_source = Comment.create!(creative: @creative, topic: source_topic, user: users(:two), content: "read source")
+      moved = Comment.create!(creative: @creative, topic: source_topic, user: users(:two), content: "unread source")
+      read_destination = Comment.create!(creative: destination_creative, user: users(:two), content: "read destination")
+      CommentReadPointer.create!(user: @user, creative: @creative, topic: source_topic, last_read_comment_id: read_source.id)
+      CommentReadPointer.create!(user: @user, creative: destination_creative, topic: destination_creative.main_topic, last_read_comment_id: read_destination.id)
+
+      CommentMoveService.new(creative: @creative, user: @user).call(
+        comment_ids: [ moved.id ], target_creative_id: destination_creative.id
+      )
+
+      pointer = CommentReadPointer.find_by!(user: @user, creative: destination_creative, topic: destination_creative.main_topic)
+      assert_equal moved.id - 1, pointer.last_read_comment_id
+      assert_operator Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(destination_creative)[destination_creative.main_topic.id], :>=, 1
+    end
   end
 end

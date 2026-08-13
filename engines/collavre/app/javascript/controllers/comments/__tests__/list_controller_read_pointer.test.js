@@ -93,6 +93,38 @@ describe('CommentsListController read pointer updates', () => {
     })
   })
 
+  test('extends the All Messages read bound when pagination renders a legacy comment', async () => {
+    controller.currentTopicId = null
+    controller.renderedAllTopicIds = ['1']
+    controller.renderedAllTopicWatermarks = { 1: 20 }
+    controller.renderedAllIncludesLegacy = false
+    controller.loadingOlder = false
+    controller.allOlderLoaded = false
+    controller.listTarget = document.createElement('div')
+    controller.listTarget.innerHTML = '<div class="comment-item" data-comment-id="20" data-topic-id="1"></div>'
+    Object.defineProperty(controller.listTarget, 'scrollHeight', { value: 100 })
+    controller.listTarget.scrollTop = 0
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => null },
+      text: async () => '<div class="comment-item" data-comment-id="10" data-topic-id=""></div>',
+    })
+
+    const renderedSnapshots = []
+    controller.element.addEventListener('comments--list:rendered-all-topics', (event) => renderedSnapshots.push(event.detail))
+
+    controller.loadOlderComments()
+    await Promise.resolve()
+    await Promise.resolve()
+    await jest.advanceTimersByTimeAsync(2000)
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 1: 20, _legacy: 10 })
+    expect(renderedSnapshots).toEqual([{ creativeId: '42', topicIds: ['1'], includesLegacy: true }])
+    expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toEqual({
+      creative_id: '42', topic_id: null, topic_ids: ['1'], topic_watermarks: { 1: 20, _legacy: 10 }
+    })
+  })
+
   test('extends the All Messages read bound for a locally appended comment', async () => {
     controller.currentTopicId = null
     controller.renderedAllTopicIds = ['1']
