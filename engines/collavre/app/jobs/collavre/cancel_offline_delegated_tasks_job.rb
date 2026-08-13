@@ -12,8 +12,8 @@ module Collavre
   #
   # The grace delay lets transient WS blips self-heal: if the client
   # reconnects before the job fires, AgentChannel#subscribe_to_agent_stream
-  # restores routing_expression to "true" and writes a fresh subscription
-  # token. The job's online-state recheck then no-ops.
+  # creates a fresh live presence row and writes a fresh subscription token.
+  # The job's online-state recheck then no-ops.
   class CancelOfflineDelegatedTasksJob < ApplicationJob
     queue_as :default
 
@@ -30,10 +30,6 @@ module Collavre
       # only that topic's delegated work. Enqueued by AgentChannel#unsubscribed
       # when a sibling remains; mirrors the destroy path's cancel_tasks_for_topic.
       return cancel_dropped_session_tasks(agent, session_id) if session_id.present?
-
-      # Agent came back online during the grace window — the same MCP
-      # session (or a new one) is subscribed and can answer /reply.
-      return if agent.routing_expression.present?
 
       # A session (reconnect or a still-live sibling sharing this agent) holds
       # a LIVE presence row — the agent is online, its delegated work is still

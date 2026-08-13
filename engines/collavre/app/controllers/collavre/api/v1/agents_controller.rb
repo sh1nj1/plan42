@@ -95,7 +95,7 @@ module Collavre
           # row yet. Drop it up front — keyed by the ending session's id (sent by
           # the plugin, or derived from the required topic) — so this session's
           # own still-live row cannot masquerade as a live sibling and skip the
-          # last-session teardown (which would pin routing_expression on and, if
+          # last-session teardown (which would leave the agent apparently live and, if
           # the WS close is never processed, leave nothing to clear it). Done
           # under the agent row lock to serialize against a concurrent subscribe/
           # unsubscribe on the shared agent — the same lock AgentChannel uses.
@@ -110,14 +110,8 @@ module Collavre
 
             unless sibling_sessions_live?(ai_user)
               last_session = true
-              # Last (or only) session for this agent. Clear routing_expression
-              # FIRST so Orchestration::Matcher#match_by_expression stops
-              # dispatching new comments to this now-clientless agent while we
-              # drain its task graph below; otherwise a comment arriving mid-drain
-              # could enqueue a new task right after we cancelled the last one.
-              # (Routing is reactivated on the next AgentChannel subscribe, not on
-              # re-register.)
-              ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
+              # Last (or only) session for this agent. Its presence row was just
+              # removed, so Matcher stops dispatching to it before task cleanup.
             end
           end
 
@@ -139,7 +133,7 @@ module Collavre
           elsif topic
             # One shared agent fans out to many concurrent sessions (the default
             # AGENT_NAME case). Another session is still LIVE, so agent-wide
-            # cleanup would clear the shared routing_expression and cancel the
+            # cleanup would cancel the
             # sibling's in-flight work — exactly the hazard AgentChannel#unsubscribed
             # guards against via presence. Tear down ONLY this ending session:
             # cancel work on its own topic (whose client is gone, so it would
@@ -389,7 +383,7 @@ module Collavre
         # Mirrors resolve_reply_agent's task_id-first resolution but never
         # touches the task graph (notify only authorizes, it does not complete).
         # A native permission prompt can be raised during a dispatch that
-        # selected this session via routing_expression on a *work* topic whose
+        # selected this live session on a *work* topic whose
         # primary_agent is unset or a different agent (the case documented on
         # resolve_reply_agent). The echoed active-dispatch task_id authorizes
         # the dispatched session agent directly; without it the topic-
@@ -419,7 +413,7 @@ module Collavre
         # Identify which Claude Channel agent this reply is for.
         #
         # Prefer the echoed task_id from the dispatch payload: the matcher can
-        # route to a Claude Channel agent via routing_expression on a topic
+        # route to a live Claude Channel agent on a topic
         # whose primary_agent is unset or a different agent (e.g. multiple AI
         # agents share a topic, or this agent only has feedback permission on
         # the creative without being the topic's primary). In those cases the

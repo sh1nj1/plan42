@@ -211,25 +211,31 @@ module Collavre
       end
 
       def match_by_expression
-        # Find all AI agents with routing expressions
-        # Order by id for consistent ordering (important for round_robin strategy)
-        agents = User.where.not(llm_vendor: nil).where.not(routing_expression: [ nil, "" ]).order(:id)
+        # A Claude Channel agent is ambiently routable only while its cable
+        # subscription has a live presence row. Its routing_expression remains
+        # available for an explicitly configured Liquid rule, but is never used
+        # as a session-liveness flag.
+        live_claude_agent_ids = AgentSubscription.live.pluck(:agent_id)
+        expression_agents = User.where.not(llm_vendor: nil)
+                                .where.not(routing_expression: [ nil, "" ])
+        agents = expression_agents.or(User.where(id: live_claude_agent_ids)).order(:id)
 
         agents.select do |agent|
           next false unless has_creative_permission?(agent)
           next false unless eligible_in_inbox?(agent)
+          next false if agent.claude_channel_agent? && !live_claude_agent_ids.include?(agent.id)
 
-          evaluate_routing_expression(agent)
+          agent.routing_expression.blank? || evaluate_routing_expression(agent)
         end
       end
 
       # A Claude Channel session agent holds inbox-wide :feedback +
-      # routing_expression="true", so within the user's Inbox it would otherwise
+      # a live presence row, so within the user's Inbox it would otherwise
       # match EVERY topic. Confine it to its own registered session topic (the
       # topic it is primary_agent on, carrying a session_id) so ordinary inbox
       # topics — Main, Content, user threads — stay identical to a normal topic
       # and are never absorbed by a live session. Only the inbox is affected: on
-      # work/project creatives the agent still matches via routing_expression.
+      # work/project creatives the agent still matches while it is live.
       def eligible_in_inbox?(agent)
         return true unless matched_creative&.inbox?
         return true unless agent.claude_channel_agent?
