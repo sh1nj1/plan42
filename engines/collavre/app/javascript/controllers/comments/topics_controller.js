@@ -198,7 +198,13 @@ export default class extends Controller {
                 // fail the lookup in restoreSelection(), drop the user on Main
                 // and then persist Main as the new creative's saved topic.
                 const pickWon = this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
-                if (!pickWon) {
+                if (pickWon) {
+                    // An interim restore can run while this fetch has the strip
+                    // empty and replace serverLastTopicId with Main. The epoch
+                    // belongs to the actual pick, so restore that picked value
+                    // rather than treating the derived fallback as its value.
+                    this.serverLastTopicId = this._pickTopicId
+                } else {
                     this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 }
                 // The archive guard only has to outlive the sources that still
@@ -1088,6 +1094,7 @@ export default class extends Controller {
             this.releaseSelectionSourcesOtherThan(this.serverLastTopicId)
             this.selectionEpoch += 1
             this._pickCreativeId = this._renderedCreativeId
+            this._pickTopicId = this.serverLastTopicId
         }
         this.debounceSaveLastTopic(id)
     }
@@ -1120,10 +1127,10 @@ export default class extends Controller {
         // creativeId is always truthy here — loadTopics() returns without it —
         // so a pick made before any strip was rendered fails this too.
         if (String(this._pickCreativeId) !== String(creativeId)) return false
-        if (!this.serverLastTopicId) return true
+        if (!this._pickTopicId) return true
 
         return [ ...(topics || []), ...(archivedTopics || []) ]
-            .some(t => String(t.id) === String(this.serverLastTopicId))
+            .some(t => String(t.id) === String(this._pickTopicId))
     }
 
     releaseSelectionSourcesOtherThan(id) {

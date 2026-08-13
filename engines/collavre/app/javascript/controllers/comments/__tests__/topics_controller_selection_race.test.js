@@ -435,6 +435,26 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2')
     })
 
+    // A real pick has already won this load. A later restore is derived from
+    // the interim one-topic strip, so it may fall back to Main, but it must not
+    // replace the id associated with that authoritative pick.
+    test('retains a picked topic across an interim restore', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('3')
+      broadcastCreate()
+      expect(controller.currentTopicId).toBe('1')
+
+      respond(resolveFetch)
+      await loading
+
+      expect(controller.currentTopicId).toBe('3')
+      await controller.flushSaveLastTopic(controller.currentTopicId)
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+    })
+
     // The fallback is not the user moving off the link either, so it must not
     // consume the sources that outrank the preference. They are one-shot: once
     // released, not even a reload gets the linked conversation back.
