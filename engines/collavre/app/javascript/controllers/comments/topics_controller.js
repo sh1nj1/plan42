@@ -151,6 +151,7 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         const version = ++this._loadTopicsVersion
+        const selectionEpoch = this.selectionEpoch
         // Clear stale topics from previous creative to prevent name-based
         // dedupe in handleTopicMessage from blocking valid broadcasts
         this.topics = []
@@ -180,7 +181,17 @@ export default class extends Controller {
                 this.canSetPrimaryAgent = canSetPrimaryAgent
                 this.archivedTopics = data.archived_topics || []
                 this.pruneArchivedBadges()
-                this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                // A topic picked while this fetch was in flight is newer intent
+                // than the answer coming back: last_topic_id still names the
+                // topic the user left, because the save for the pick is
+                // debounced and has not landed. Overwriting it here — and then
+                // restoring from it below — throws the click away, snapping the
+                // strip and the message list back to the previous topic.
+                // _loadTopicsVersion does not cover this: it only discards a
+                // response outrun by another loadTopics(), not by a selection.
+                if (this.selectionEpoch === selectionEpoch) {
+                    this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                }
                 // The archive guard only has to outlive the sources that still
                 // name the topic. Test the effective selection, not just the
                 // preference: an unchanged ?topic_id= outranks it in the getter,
@@ -1022,7 +1033,39 @@ export default class extends Controller {
 
     set currentTopicId(id) {
         this.serverLastTopicId = id ? String(id) : ""
+        // Writing only the preference leaves the two sources that outrank it in
+        // the getter still naming the topic being left, so the getter keeps
+        // answering with it: the next renderTopics() lights the old chip and the
+        // next restoreSelection() navigates back to it. Both are one-shot
+        // pointers at a topic to open, and this selection has moved off it.
+        // Dropped only when they disagree — a deep link that resolved to the
+        // topic now being selected must keep outranking the stale server
+        // last_topic_id for the rest of the popup session.
+        this.releaseSelectionSourcesOtherThan(this.serverLastTopicId)
+        this.selectionEpoch += 1
         this.debounceSaveLastTopic(id)
+    }
+
+    // Bumped on every selection so an in-flight loadTopics() can tell whether
+    // its answer predates a pick the user has since made.
+    get selectionEpoch() {
+        return this._selectionEpoch || 0
+    }
+
+    set selectionEpoch(value) {
+        this._selectionEpoch = value
+    }
+
+    releaseSelectionSourcesOtherThan(id) {
+        if (this.overrideTopicId !== undefined && this.overrideTopicId !== null &&
+            String(this.overrideTopicId) !== String(id)) {
+            this.clearOverrideTopicId()
+        }
+
+        const urlTopicId = new URLSearchParams(window.location.search).get('topic_id')
+        if (urlTopicId && urlTopicId !== String(id)) {
+            this.clearUrlTopicId(urlTopicId)
+        }
     }
 
     debounceSaveLastTopic(id) {
