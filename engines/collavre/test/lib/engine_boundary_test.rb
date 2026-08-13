@@ -422,9 +422,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(has_many :messages, through: :links, source_type: "#{satellite}::Message")))
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(self.has_many :messages, class_name: "#{satellite}::Message")))
     assert_empty names(string_references_in(%(render json: { type: "#{satellite}::Message" })))
     assert_empty names(string_references_in(%q{Rails.logger.info(class_name: "#{satellite}::Message")}))
     assert_empty names(string_references_in(%(has_many :messages, types: ["#{satellite}::Message"])))
+    assert_empty names(string_references_in(%(registry.has_many :messages, class_name: "#{satellite}::Message")))
   end
 
   test "detector folds a static string passed to constant resolution" do
@@ -1016,6 +1019,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(const t = import.meta.resolve.bind(import.meta, "#{satellite}/thing")();) => "#{satellite}/thing",
       %(import { createRequire } from "node:module"; const t = createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(import { createRequire as nativeRequire } from "node:module"; const t = nativeRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
+      %(import * as Module from "node:module"; const t = Module.createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("node:module").createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -1272,6 +1276,8 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_empty js_imports_in(%(const createRequire = () => () => {}; createRequire(import.meta.url)("#{satellite}/thing")))
     assert_empty js_imports_in(%(import { createRequire } from "node:module"; registry.createRequire(import.meta.url)("#{satellite}/thing")))
+    assert_empty js_imports_in(%(import * as Module from "node:module"; registry.Module.createRequire(import.meta.url)("#{satellite}/thing")))
+    assert_empty js_imports_in(%(import * as Module from "node:module"; function load(Module) { return Module.createRequire(import.meta.url)("#{satellite}/thing") }))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -2058,11 +2064,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # native factory without a binding declaration.
   def js_create_require_specifiers(tokens)
     imported_names = js_imported_node_create_require_names(tokens)
+    imported_namespaces = js_imported_node_module_names(tokens)
 
     tokens.each_with_index.filter_map do |(kind, value), index|
       native_import = imported_names.include?(value) && js_bare_js_identifier?(tokens, index)
+      native_namespace = js_node_module_namespace_create_require?(tokens, index, imported_namespaces)
       native_require = value == "createRequire" && js_required_node_create_require?(tokens, index)
-      next unless kind == :word && (native_import || native_require)
+      next unless kind == :word && (native_import || native_namespace || native_require)
 
       opening = js_call_open_at(tokens, index)
       closing = opening && js_matching_close_parenthesis(tokens, opening)
@@ -2079,6 +2087,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       next [] unless closing && tokens[closing + 1] == [ :word, "from" ] && js_node_module?(tokens[closing + 2])
 
       js_imported_create_require_names(tokens, imported + 2, closing)
+    end
+  end
+
+  def js_imported_node_module_names(tokens)
+    tokens.each_with_index.filter_map do |token, imported|
+      next unless token == [ :word, "import" ] && tokens[imported + 1] == [ :punctuation, "*" ]
+      next unless tokens[imported + 2] == [ :word, "as" ] && tokens[imported + 3]&.first == :word
+      next unless tokens[imported + 4] == [ :word, "from" ] && js_node_module?(tokens[imported + 5])
+
+      tokens[imported + 3].last
     end
   end
 
@@ -2099,6 +2117,46 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     specifier, cursor = js_static_string_expression_at(tokens, opening + 1)
     cursor == closing && js_node_module?([ :string, specifier ])
+  end
+
+  def js_node_module_namespace_create_require?(tokens, index, namespaces)
+    return false unless tokens[index - 1] == [ :punctuation, "." ]
+
+    receiver = index - 2
+    namespaces.include?(tokens[receiver]&.last) &&
+      js_bare_js_identifier?(tokens, receiver) &&
+      !js_function_parameter_shadows_identifier?(tokens, receiver)
+  end
+
+  def js_function_parameter_shadows_identifier?(tokens, index)
+    identifier = tokens[index]&.last
+
+    tokens.each_index.any? do |function|
+      next false unless tokens[function] == [ :word, "function" ]
+
+      opening = ((function + 1)...tokens.length).find { |cursor| tokens[cursor] == [ :punctuation, "(" ] }
+      closing = opening && js_matching_close_parenthesis(tokens, opening)
+      body = closing && (closing + 1...tokens.length).find { |cursor| tokens[cursor] == [ :punctuation, "{" ] }
+      finish = body && js_matching_close_brace(tokens, body)
+      next false unless body && finish && index > body && index < finish
+
+      tokens[(opening + 1)...closing].include?([ :word, identifier ])
+    end
+  end
+
+  def js_matching_close_brace(tokens, opening)
+    depth = 0
+
+    opening.upto(tokens.length - 1) do |index|
+      token = tokens[index]
+      depth += 1 if token == [ :punctuation, "{" ]
+      next unless token == [ :punctuation, "}" ]
+
+      depth -= 1
+      return index if depth.zero?
+    end
+
+    nil
   end
 
   def js_node_module?(token)
@@ -2486,7 +2544,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   # as `render json: { type: "CollavreSlack::Message" }` remains data instead
   # of being treated as a dependency.
   def rails_association_call?(node)
-    node.is_a?(Prism::CallNode) && node.receiver.nil? && ASSOCIATION_DECLARATION_METHODS.include?(node.name.to_s)
+    node.is_a?(Prism::CallNode) &&
+      (node.receiver.nil? || node.receiver.is_a?(Prism::SelfNode)) &&
+      ASSOCIATION_DECLARATION_METHODS.include?(node.name.to_s)
   end
 
   def association_class_option_values(call)
