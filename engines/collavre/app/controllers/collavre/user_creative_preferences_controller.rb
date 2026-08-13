@@ -19,7 +19,7 @@ module Collavre
           end
 
           record.expanded_status = state
-          if state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero?
+          if empty_preference?(record, state)
             record.destroy!
           else
             record.save!
@@ -81,6 +81,11 @@ module Collavre
       creative.has_permission?(Current.user, :read) || creative.user == Current.user
     end
 
+    def empty_preference?(record, state)
+      state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero? &&
+        record.last_topic_save_fence_issued.to_i.zero? && record.last_topic_save_fence_applied.to_i.zero?
+    end
+
     def valid_last_topic?(creative)
       params[:last_topic_id].blank? || creative.topics.exists?(id: params[:last_topic_id])
     end
@@ -97,7 +102,7 @@ module Collavre
         # Retain a cleared preference after it has participated in last-topic
         # ordering. Its revision lets a reopened client distinguish a newer
         # Main selection from the empty snapshot that preceded an in-flight save.
-        if record.expanded_status.empty? && record.last_topic_id.nil? && record.last_topic_revision.zero?
+        if empty_preference?(record, record.expanded_status)
           record.destroy!
         else
           record.save!

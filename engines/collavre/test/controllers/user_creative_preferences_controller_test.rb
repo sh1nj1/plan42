@@ -25,6 +25,30 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_nil Collavre::UserCreativePreference.find_by(creative_id: @creative.id, user_id: @user.id)
   end
 
+  test "toggle preserves an issued last topic save fence" do
+    alpha = Collavre::Topic.create!(creative: @creative, user: @user, name: "Alpha")
+    beta = Collavre::Topic.create!(creative: @creative, user: @user, name: "Beta")
+    path = "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic"
+
+    post path, as: :json
+    first_fence = response.parsed_body.fetch("last_topic_save_fence")
+
+    post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id, expanded: false }
+    assert_response :success
+
+    post path, as: :json
+    second_fence = response.parsed_body.fetch("last_topic_save_fence")
+    assert_equal first_fence + 1, second_fence
+
+    patch path, params: { last_topic_id: alpha.id, last_topic_save_fence: first_fence }, as: :json
+    patch path, params: { last_topic_id: beta.id, last_topic_save_fence: second_fence }, as: :json
+
+    assert_equal true, response.parsed_body["success"]
+    preference = Collavre::UserCreativePreference.find_by!(creative_id: @creative.id, user_id: @user.id)
+    assert_equal beta.id, preference.last_topic_id
+    assert_equal second_fence, preference.last_topic_save_fence_applied
+  end
+
   test "toggle retries when a concurrent collapse removes the preference before locking" do
     preference = Collavre::UserCreativePreference.create!(
       creative_id: @creative.id,
