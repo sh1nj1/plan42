@@ -236,8 +236,7 @@ module Collavre
       end
 
       def append_trigger_message(messages)
-        payload_text = @context.dig("comment", "content") ||
-          @context.except(SystemEvents::Envelope::KEY).to_json
+        payload_text = trigger_payload_text
 
         if review_eligible?
           quoted_body = @original_comment.quoted_comment&.content
@@ -271,6 +270,10 @@ module Collavre
         end
 
         messages << { role: "user", kind: :trigger, parts: trigger_parts }
+      end
+
+      def trigger_payload_text
+        @context.dig("comment", "content") || @context.except(SystemEvents::Envelope::KEY).to_json
       end
 
       def merged_trigger
