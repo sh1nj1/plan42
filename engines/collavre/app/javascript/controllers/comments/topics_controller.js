@@ -667,7 +667,7 @@ export default class extends Controller {
 
     openTopicListPopup(event) {
 		if (this.topicListTogglePointerDown) {
-			this.topicListTogglePointerDown = false
+			this.cancelTopicListToggle()
 			return
 		}
 
@@ -723,13 +723,43 @@ export default class extends Controller {
         })
     }
 
-	prepareTopicListToggle() {
+	prepareTopicListToggle(event) {
+		if (event.isPrimary === false || event.button !== 0) return
+
 		const modal = document.getElementById('topic-list-modal')
 		const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
 		// Let every open popup receive this pointer event and perform its normal
 		// outside-click cleanup. If this popup was one of them, consume the
 		// following click so it does not immediately reopen.
-		this.topicListTogglePointerDown ||= Boolean(popup?.popup?.isOpen())
+		if (popup?.popup?.isOpen()) {
+			this.topicListTogglePointerDown = true
+			this.topicListTogglePointerId = event.pointerId
+			event.currentTarget.setPointerCapture(event.pointerId)
+		}
+	}
+
+	finishTopicListToggle(event) {
+		if (event.pointerId !== this.topicListTogglePointerId) return
+
+		const rect = event.currentTarget.getBoundingClientRect()
+		const releasedOutsideButton = event.clientX < rect.left || event.clientX > rect.right ||
+			event.clientY < rect.top || event.clientY > rect.bottom
+		if (releasedOutsideButton) {
+			this.cancelTopicListToggle(event)
+		} else {
+			// A completed activation dispatches click before the next task. Clear a
+			// canceled in-button gesture afterwards so it cannot consume a later click.
+			this.topicListToggleClearTimeout = setTimeout(() => this.cancelTopicListToggle(event), 0)
+		}
+	}
+
+	cancelTopicListToggle(event = {}) {
+		if (event.pointerId != null && event.pointerId !== this.topicListTogglePointerId) return
+
+		clearTimeout(this.topicListToggleClearTimeout)
+		this.topicListToggleClearTimeout = undefined
+		this.topicListTogglePointerDown = false
+		this.topicListTogglePointerId = undefined
 	}
 
     handleTopicListClose() {

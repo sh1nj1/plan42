@@ -100,7 +100,7 @@ describe('TopicsController#openTopicListPopup', () => {
 		const popup = { popup: { isOpen: jest.fn(() => true) }, close: jest.fn(), openForTopics: jest.fn() }
 		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
 
-		controller.prepareTopicListToggle()
+		controller.prepareTopicListToggle({ isPrimary: true, button: 0, pointerId: 1, currentTarget: { setPointerCapture: jest.fn() } })
 		controller.openTopicListPopup({ currentTarget: btn })
 
 		expect(popup.close).not.toHaveBeenCalled()
@@ -115,12 +115,55 @@ describe('TopicsController#openTopicListPopup', () => {
 		const popup = { popup: { isOpen: jest.fn().mockReturnValueOnce(true).mockReturnValue(false) }, close: jest.fn(), openForTopics: jest.fn() }
 		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
 
-		controller.prepareTopicListToggle() // touchstart while the popup is open
-		controller.prepareTopicListToggle() // generated mousedown after it closes
+		controller.prepareTopicListToggle({ isPrimary: true, button: 0, pointerId: 1, currentTarget: { setPointerCapture: jest.fn() } }) // pointerdown while the popup is open
 		controller.openTopicListPopup({ currentTarget: btn })
 
 		expect(popup.openForTopics).not.toHaveBeenCalled()
     })
+
+    test('clears the pending toggle when a primary pointer is canceled or released outside the button', () => {
+		const btn = controller.topicListButtonTarget
+		const modal = document.createElement('div')
+		modal.id = 'topic-list-modal'
+		controller.element.appendChild(modal)
+		const popup = { popup: { isOpen: jest.fn(() => true) } }
+		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+		jest.spyOn(btn, 'getBoundingClientRect').mockReturnValue({ left: 10, right: 20, top: 10, bottom: 20 })
+
+		controller.prepareTopicListToggle({ isPrimary: true, button: 0, pointerId: 1, currentTarget: { setPointerCapture: jest.fn() } })
+		controller.cancelTopicListToggle({ pointerId: 1 })
+		expect(controller.topicListTogglePointerDown).toBe(false)
+
+		controller.prepareTopicListToggle({ isPrimary: true, button: 0, pointerId: 2, currentTarget: { setPointerCapture: jest.fn() } })
+		controller.finishTopicListToggle({ currentTarget: btn, clientX: 25, clientY: 15, pointerId: 2 })
+		expect(controller.topicListTogglePointerDown).toBe(false)
+	})
+
+	test('clears a completed pointer gesture that does not dispatch click', () => {
+		jest.useFakeTimers()
+		const modal = document.createElement('div')
+		modal.id = 'topic-list-modal'
+		controller.element.appendChild(modal)
+		const popup = { popup: { isOpen: jest.fn(() => true) } }
+		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+		const btn = controller.topicListButtonTarget
+		jest.spyOn(btn, 'getBoundingClientRect').mockReturnValue({ left: 10, right: 20, top: 10, bottom: 20 })
+
+		controller.prepareTopicListToggle({ isPrimary: true, button: 0, pointerId: 1, currentTarget: { setPointerCapture: jest.fn() } })
+		controller.finishTopicListToggle({ currentTarget: btn, clientX: 15, clientY: 15, pointerId: 1 })
+		jest.runOnlyPendingTimers()
+
+		expect(controller.topicListTogglePointerDown).toBe(false)
+		jest.useRealTimers()
+	})
+
+	test('ignores non-primary pointer events and stale pointer cleanup', () => {
+		controller.prepareTopicListToggle({ isPrimary: false, button: 0, pointerId: 1 })
+		controller.prepareTopicListToggle({ isPrimary: true, button: 2, pointerId: 2 })
+		controller.cancelTopicListToggle({ pointerId: 3 })
+
+		expect(controller.topicListTogglePointerDown).toBeUndefined()
+	})
 
     test('removes the topic-list close listener when disconnecting', () => {
 		const removeEventListener = jest.spyOn(controller.element, 'removeEventListener')
