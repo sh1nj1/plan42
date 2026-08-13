@@ -53,16 +53,27 @@ module Collavre
 
       # Current clients send the rendered-topic snapshot that produced the open
       # All Messages list. An explicitly empty snapshot is authoritative; keep
-      # the active-topic fallback only for clients deployed before this API.
-      topics = if rendered_topic_ids_supplied
-        creative.topics.where(id: Array(rendered_topic_ids))
-      else
-        creative.topics.active
-      end
+      # the creative-wide fallback only for clients deployed before this API.
+      return update_legacy_client_pointers(creative, visible_comments) unless rendered_topic_ids_supplied
+
+      topics = creative.topics.where(id: Array(rendered_topic_ids))
 
       topics.find_each do |topic|
         update_pointer(creative, topic, visible_comments.where(topic: topic).maximum(:id))
       end
+    end
+
+    # Clients deployed before topic-scoped watermarks only send creative_id.
+    # Preserve the previous creative-wide endpoint semantics for them: every
+    # named topic, including archived topics, and the retained legacy lane
+    # advance through the visible history.
+    def update_legacy_client_pointers(creative, visible_comments)
+      creative.topics.find_each do |topic|
+        update_pointer(creative, topic, visible_comments.where(topic: topic).maximum(:id))
+      end
+
+      legacy_last_id = visible_comments.where(topic_id: nil).maximum(:id)
+      update_legacy_pointer(creative, visible_comments, legacy_last_id) if legacy_last_id
     end
 
     def update_pointer(creative, topic, last_id)

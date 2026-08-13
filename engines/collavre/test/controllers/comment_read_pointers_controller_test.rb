@@ -60,13 +60,30 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     archived = Comment.create!(creative: @creative, topic: archived_topic, user: users(:two), content: "archived")
     Comment.create!(creative: @creative, topic: active_topic, user: users(:two), content: "active")
 
-    post "/comment_read_pointers/update", params: { creative_id: @creative.id }, as: :json
+    post "/comment_read_pointers/update", params: {
+      creative_id: @creative.id,
+      topic_ids: [ @creative.main_topic.id, active_topic.id ]
+    }, as: :json
 
     assert_response :success
     assert_nil CommentReadPointer.find_by(user: @user, creative: @creative.effective_origin, topic: archived_topic)
     counts = Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative)
     assert_equal({ archived_topic.id => 1 }, counts)
     assert_equal archived.id, archived_topic.comments.maximum(:id)
+  end
+
+  test "legacy creative-wide requests mark archived and topic-less comments as read" do
+    archived_topic = @creative.topics.create!(name: "Archived", user: @user, archived_at: Time.current)
+    archived = Comment.create!(creative: @creative, topic: archived_topic, user: users(:two), content: "archived")
+    legacy = Comment.create!(creative: @creative, user: users(:two), content: "legacy")
+    legacy.update_column(:topic_id, nil)
+
+    post "/comment_read_pointers/update", params: { creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_equal archived.id, CommentReadPointer.find_by!(user: @user, creative: @creative.effective_origin, topic: archived_topic).last_read_comment_id
+    assert_equal legacy.id, CommentReadPointer.find_by!(user: @user, creative: @creative.effective_origin, topic: nil).last_read_comment_id
+    assert_empty Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(@creative)
   end
 
   test "All Messages treats an explicitly empty rendered topic snapshot as authoritative" do
