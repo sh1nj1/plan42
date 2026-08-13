@@ -1084,7 +1084,7 @@ module Collavre
       )
 
       payload = nil
-      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent) { payload = sent; [] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent, **_options) { payload = sent; [] }) do
         CronActionJob.perform_now(
           creative_id: @creative.id, topic_id: nil,
           agent_id: @user.id, message: "@#{@agent.name}: scheduled check-in"

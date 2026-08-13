@@ -39,7 +39,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       dispatched_events = []
-      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(event, _ctx) { dispatched_events << event; [] }) do
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(event, _ctx, **) { dispatched_events << event; [] }) do
         assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
           post "/github/webhooks",
             params: payload,
@@ -70,7 +70,7 @@ module CollavreGithub
         "X-Hub-Signature-256" => sig
       }
 
-      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(_event, _ctx) { [] }) do
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(_event, _ctx, **) { [] }) do
         # GitHub redelivers a webhook when the receiver 5xx's. The second
         # delivery must short-circuit (row lock + state re-check) instead of
         # injecting another "PR #321 was merged" comment into the topic.

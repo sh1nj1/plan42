@@ -810,7 +810,7 @@ module Collavre
           skip_dispatch: true
         )
 
-        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload)
+        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "trigger_restart")
         Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
       end
 
