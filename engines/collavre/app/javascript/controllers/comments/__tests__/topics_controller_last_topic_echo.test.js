@@ -178,6 +178,30 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('2')
   })
 
+  test('closing and reopening the same creative keeps an in-flight claim', async () => {
+    controller.selectTopic('2')
+    await controller.flushSaveLastTopic('2')
+
+    controller.onPopupClosed()
+    controller.loadTopics = jest.fn()
+    controller.onPopupOpened({ creativeId: '42' })
+    controller.selectTopic('3')
+    selfEcho('2')
+
+    expect(controller.currentTopicId).toBe('3')
+  })
+
+  test('reopening a different creative drops claims from the one left', async () => {
+    controller.selectTopic('2')
+    await controller.flushSaveLastTopic('2')
+
+    controller.onPopupClosed()
+    controller.loadTopics = jest.fn()
+    controller.onPopupOpened({ creativeId: '99' })
+
+    expect(controller.pendingSelfEchoes).toEqual([])
+  })
+
   // unsubscribe() is the deliberate exit, and a refused subscription cannot
   // reconnect, so both discard their claims. A dropped connection is different:
   // its in-flight request can still broadcast after ActionCable reconnects.

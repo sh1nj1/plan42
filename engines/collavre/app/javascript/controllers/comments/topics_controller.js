@@ -72,13 +72,18 @@ export default class extends Controller {
             // creative must not veto this one's restored selection.
             this.archivedAwayTopicId = null
         }
+        this.dropPendingSelfEchoesForOtherCreatives(creativeId)
         this.subscribe()
         return this.loadTopics()
     }
 
     onPopupClosed() {
         this._loadTopicsVersion += 1
-        this.unsubscribe()
+        // The same creative can reopen before an in-flight save broadcasts.
+        // Keep that save's claim so its delayed echo remains recognisable on
+        // the replacement subscription; a different creative clears it when
+        // it opens.
+        this.unsubscribe({ preservePendingSelfEchoes: true })
         this.creativeIdValue = null
         this.topics = []
         this.mainTopicId = null
@@ -1284,7 +1289,10 @@ export default class extends Controller {
             // the broadcast is sent server-side before the response is
             // rendered, so it can beat the save returning.
             const claimed = generation === this.subscriptionGeneration
-            if (claimed) this.pendingSelfEchoes.push(clientId)
+            if (claimed) {
+                this.pendingSelfEchoes.push(clientId)
+                this.pendingSelfEchoCreativeIds.set(clientId, String(creativeId))
+            }
             // A thrown fetch has an unknown outcome: the server may have saved
             // and broadcast before the connection failed, so keep its claim for
             // that delayed echo. An HTTP failure is definitive, however, and
@@ -1316,6 +1324,7 @@ export default class extends Controller {
         if (index === -1) return false
 
         this.pendingSelfEchoes.splice(index, 1)
+        this.pendingSelfEchoCreativeIds.delete(clientId)
         return true
     }
 
@@ -1325,6 +1334,10 @@ export default class extends Controller {
     // then reverts the newer pick and persists the older topic over it.
     get pendingSelfEchoes() {
         return this._pendingSelfEchoes || (this._pendingSelfEchoes = [])
+    }
+
+    get pendingSelfEchoCreativeIds() {
+        return this._pendingSelfEchoCreativeIds || (this._pendingSelfEchoCreativeIds = new Map())
     }
 
     // Bumped whenever the stream claims are settled on changes, so a save
@@ -1358,7 +1371,7 @@ export default class extends Controller {
 
         if (this.topicsSubscription && this.subscribedCreativeId === String(creativeId)) return
 
-        this.unsubscribe()
+        if (this.topicsSubscription) this.unsubscribe()
 
         this.subscribedCreativeId = String(creativeId)
         this.topicsSubscription = createSubscription(
@@ -1384,6 +1397,7 @@ export default class extends Controller {
 
     dropPendingSelfEchoes() {
         this.pendingSelfEchoes.length = 0
+        this.pendingSelfEchoCreativeIds.clear()
         // Emptying the array cannot reach a claim that has not been taken yet.
         // A save waiting its turn on the chain takes one when it runs, and by
         // then this stream is gone; the generation is how that queued save
@@ -1391,7 +1405,16 @@ export default class extends Controller {
         this._subscriptionGeneration = this.subscriptionGeneration + 1
     }
 
-    unsubscribe() {
+    dropPendingSelfEchoesForOtherCreatives(creativeId) {
+        const currentCreativeId = String(creativeId)
+        for (const clientId of [...this.pendingSelfEchoes]) {
+            if (this.pendingSelfEchoCreativeIds.get(clientId) !== currentCreativeId) {
+                this.releasePendingSelfEcho(clientId)
+            }
+        }
+    }
+
+    unsubscribe({ preservePendingSelfEchoes = false } = {}) {
         if (this.topicsSubscription) {
             this.topicsSubscription.unsubscribe()
             this.topicsSubscription = null
@@ -1400,7 +1423,7 @@ export default class extends Controller {
         // The stream is per creative, so echoes still owed to us on the one we
         // are leaving are not coming and nothing can settle their claims.
         // Unlike a dropped connection, there is no reconnect to wait for.
-        this.dropPendingSelfEchoes()
+        if (!preservePendingSelfEchoes) this.dropPendingSelfEchoes()
     }
 
     handleTopicMessage(data) {
