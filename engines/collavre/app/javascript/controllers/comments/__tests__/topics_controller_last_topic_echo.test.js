@@ -43,6 +43,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 
   beforeEach(() => {
     originalFetch = global.fetch
+	window.sessionStorage.clear()
     document.body.innerHTML = `
       <div id="topics" data-controller="comments--topics" data-topic-main-text="All Messages">
         <div data-comments--topics-target="list"></div>
@@ -73,6 +74,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 
   afterEach(() => {
     controller.cancelPendingSaveLastTopic()
+	window.sessionStorage.clear()
     global.fetch = originalFetch
     document.body.innerHTML = ''
     application.stop()
@@ -97,6 +99,26 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   }
 
   const selfEcho = (lastTopicId, lastTopicRevision) => echo(lastTopicId, clientIdFor(lastTopicId), lastTopicRevision)
+
+	test('keeps the save fence identity and sequence across controller replacement', () => {
+		const firstClientId = controller.newLastTopicSaveClientId()
+		const replacement = Object.create(TopicsController.prototype)
+		const secondClientId = replacement.newLastTopicSaveClientId()
+
+		const [firstSessionId, firstSequence] = firstClientId.split('.')
+		const [secondSessionId, secondSequence] = secondClientId.split('.')
+		expect(secondSessionId).toBe(firstSessionId)
+		expect(Number(secondSequence)).toBe(Number(firstSequence) + 1)
+	})
+
+	test('ignores a sibling broadcast older than the observed revision', () => {
+		echo('3', 'sibling-newer', [5, 2])
+		echo('2', 'sibling-older', [5, 1])
+
+		expect(controller.serverLastTopicId).toBe('3')
+		expect(controller.currentTopicId).toBe('3')
+		expect(controller.highestLastTopicRevisions.get('42')).toEqual([5, 2])
+	})
 
   test('does not recreate acknowledgement metadata when the echo arrives before the response', async () => {
     let resolveSave

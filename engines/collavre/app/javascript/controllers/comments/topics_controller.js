@@ -7,6 +7,8 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
+const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
+const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
 
 // Names one save, so its broadcast can be told from a sibling session's. It
 // has to be unique across the user's tabs, not just within this one: two tabs
@@ -236,6 +238,10 @@ export default class extends Controller {
 				const snapshotTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
 				this.element.dataset.effectiveCreativeId = effectiveCreativeId
 				this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
+				const staleLastTopicSnapshot = !this.observeLastTopicRevision(
+					effectiveCreativeId,
+					snapshotTopicRevision
+				)
 				const deferLastTopicReconciliation = this.hasUnacknowledgedRevisionedSaveFor(
 					effectiveCreativeId,
 					snapshotTopicRevision
@@ -262,16 +268,19 @@ export default class extends Controller {
                 // creative being left. Its id would survive as the preference,
                 // fail the lookup in restoreSelection(), drop the user on Main
                 // and then persist Main as the new creative's saved topic.
-				const pickWon = !deferLastTopicReconciliation && !this.pendingPickWasSupersededWhileClosed(
+				const skipLastTopicReconciliation = staleLastTopicSnapshot || deferLastTopicReconciliation
+				const pickWon = !skipLastTopicReconciliation && !this.pendingPickWasSupersededWhileClosed(
 					effectiveCreativeId,
 					snapshotTopicId,
 					snapshotTopicRevision
 				) && this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
-				if (deferLastTopicReconciliation) {
+				if (skipLastTopicReconciliation) {
 					// The GET has a server ordering token, but this save has neither
 					// its response revision nor its echo yet. Its predecessor topic is
 					// not an ordering token (an ABA write can repeat it), so preserve
 					// the current selection until the request settles and retry below.
+					// A snapshot older than an already observed revision is likewise
+					// display data only; it must not restore an older preference.
 				} else if (pickWon) {
                     // An interim restore can run while this fetch has the strip
                     // empty and replace serverLastTopicId with Main. The epoch
@@ -321,12 +330,12 @@ export default class extends Controller {
 				// Migrate localStorage to server if server has no value. An
 				// unresolved revisioned save must not turn its retained local
 				// selection into another PATCH while reconciliation is deferred.
-				if (!deferLastTopicReconciliation) {
+				if (!skipLastTopicReconciliation) {
 					this.migrateLocalStorage({ keepEmptyPick: pickWon })
 				}
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
-				if (!deferLastTopicReconciliation) {
+				if (!skipLastTopicReconciliation) {
 					this.restoreSelection({ keepEmptyPick: pickWon })
 				}
             }
@@ -1410,6 +1419,10 @@ export default class extends Controller {
 			const saveResult = await this.saveLastTopicWithTimeout(creativeId, id || null, clientId)
 			const saved = saveResult === true || saveResult?.success === true
 			const savedRevision = this.normalizeLastTopicRevision(saveResult?.lastTopicRevision)
+			const savedRevisionIsCurrent = this.observeLastTopicRevision(
+				effectiveCreativeId,
+				savedRevision
+			)
 			const topicId = id ? String(id) : ""
 			if (claimed && saved) {
 				// The Action Cable echo can arrive before this response. In that
@@ -1462,7 +1475,7 @@ export default class extends Controller {
 					// save's echo has already been consumed: that echo records
 					// the baseline at broadcast time, and another message may
 					// have advanced it before the HTTP response arrived.
-					if (hasPendingSelfEcho) {
+					if (hasPendingSelfEcho && savedRevisionIsCurrent) {
 						this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
 					}
 					this.acknowledgePendingSelfEcho(clientId)
@@ -1487,9 +1500,38 @@ export default class extends Controller {
 	// can reject an older request if a later one from this controller commits
 	// first. The trailing nonce keeps the Action Cable echo identifier unique.
 	newLastTopicSaveClientId() {
-		this._lastTopicSaveSessionId ||= newClientId()
-		this._lastTopicSaveSequence = (this._lastTopicSaveSequence || 0) + 1
+		this._lastTopicSaveSessionId ||= this.lastTopicSaveSessionId()
+		this._lastTopicSaveSequence = this.nextLastTopicSaveSequence()
 		return `${this._lastTopicSaveSessionId}.${this._lastTopicSaveSequence}.${newClientId()}`
+	}
+
+	// A Turbo replacement creates a new controller while an earlier request can
+	// still be running on Rails. Keep the fence identity and counter for this
+	// browser tab so the server can reject that earlier request after the new
+	// controller has saved a later selection.
+	lastTopicSaveSessionId() {
+		try {
+			const stored = sessionStorage.getItem(LAST_TOPIC_SAVE_SESSION_STORAGE_KEY)
+			if (stored && /^[A-Za-z0-9-]+$/.test(stored)) return stored
+
+			const sessionId = newClientId()
+			sessionStorage.setItem(LAST_TOPIC_SAVE_SESSION_STORAGE_KEY, sessionId)
+			return sessionId
+		} catch (_) {
+			return newClientId()
+		}
+	}
+
+	nextLastTopicSaveSequence() {
+		try {
+			const stored = Number(sessionStorage.getItem(LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY))
+			const previous = Number.isSafeInteger(stored) && stored >= 0 ? stored : 0
+			const sequence = Math.max(this._lastTopicSaveSequence || 0, previous) + 1
+			sessionStorage.setItem(LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY, String(sequence))
+			return sequence
+		} catch (_) {
+			return (this._lastTopicSaveSequence || 0) + 1
+		}
 	}
 
 	// A request that never settles must not hold every later pick behind it.
@@ -1667,6 +1709,26 @@ export default class extends Controller {
 
 	get lastKnownRemoteTopicIds() {
 		return this._lastKnownRemoteTopicIds || (this._lastKnownRemoteTopicIds = new Map())
+	}
+
+	// Action Cable is ordered only within a connection. A delayed older message
+	// can therefore arrive after a newer GET, response, or broadcast. Keep the
+	// server-issued revision per effective stream and never apply it backward.
+	observeLastTopicRevision(creativeId, revision) {
+		if (!revision) return true
+
+		const streamCreativeId = String(creativeId)
+		const previous = this.highestLastTopicRevisions.get(streamCreativeId)
+		const comparison = this.compareLastTopicRevisions(revision, previous)
+		if (comparison !== null && comparison < 0) return false
+		if (comparison === null || comparison > 0) {
+			this.highestLastTopicRevisions.set(streamCreativeId, revision)
+		}
+		return true
+	}
+
+	get highestLastTopicRevisions() {
+		return this._highestLastTopicRevisions || (this._highestLastTopicRevisions = new Map())
 	}
 
 	// The server resolves TopicsChannel subscriptions for linked shells to their
@@ -1997,6 +2059,11 @@ export default class extends Controller {
 			}
 			this.lastKnownRemoteTopicIds.delete(requestedId)
 		}
+		const requestedRevision = this.highestLastTopicRevisions.get(requestedId)
+		if (requestedRevision) {
+			this.observeLastTopicRevision(resolvedId, requestedRevision)
+			this.highestLastTopicRevisions.delete(requestedId)
+		}
 
 		for (const clientId of [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ]) {
 			if (this.pendingSelfEchoCreativeIds.get(clientId) === requestedId) {
@@ -2031,11 +2098,18 @@ export default class extends Controller {
 			// The claim already knows that effective stream, while effectiveCreativeId
 			// still names the shell; advance the baseline on the claimed stream.
 			const claimedEffectiveCreativeId = this.pendingSelfEchoCreativeIds.get(data.client_id) || this.effectiveCreativeId
+			const isCurrentRevision = this.observeLastTopicRevision(
+				claimedEffectiveCreativeId,
+				lastTopicRevision
+			)
 			if (this.consumeSelfEcho(data.client_id, lastTopicRevision)) {
-				this.setLastKnownRemoteTopicId(claimedEffectiveCreativeId, newTopicId)
+				if (isCurrentRevision) {
+					this.setLastKnownRemoteTopicId(claimedEffectiveCreativeId, newTopicId)
+				}
 				this.retryDeferredLastTopicReconciliation(claimedEffectiveCreativeId)
 				return
 			}
+			if (!isCurrentRevision) return
 			this.setLastKnownRemoteTopicId(this.effectiveCreativeId, newTopicId)
 			// A deep-link restore may have queued a write even when this broadcast
 			// repeats the preference already in serverLastTopicId. The sibling
