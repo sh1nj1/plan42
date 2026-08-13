@@ -282,6 +282,45 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.pendingSelfEchoes).toHaveLength(1)
   })
 
+  test('a queued save claimed after closing yields to a newer reopen snapshot', async () => {
+    let resolveFirst
+    let resolveSecond
+    controller.lastKnownRemoteTopicId = '1'
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+
+    controller.selectTopic('2')
+    const first = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
+    controller.selectTopic('3')
+    const second = controller.flushSaveLastTopic('3')
+
+    controller.onPopupClosed()
+    resolveFirst(true)
+    await first
+    await Promise.resolve()
+
+    const queuedClientId = clientIdFor('3')
+    expect(controller.possiblyMissedPendingSelfEchoes).toContain(queuedClientId)
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+		topics: TOPICS,
+		archived_topics: [],
+		can_manage: true,
+		last_topic_id: '1',
+		main_topic_id: '1',
+		effective_creative_id: '42',
+      }),
+    })
+    await controller.onPopupOpened({ creativeId: '42' })
+
+    expect(controller.currentTopicId).toBe('1')
+    resolveSecond(true)
+    await second
+  })
+
   test('a response after reopening keeps its claim until the delayed echo lands', async () => {
     let resolveSave
     saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))

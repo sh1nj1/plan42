@@ -47,6 +47,7 @@ export default class extends Controller {
     }
 
     onPopupOpened({ creativeId }) {
+		this._popupClosed = false
         const previousCreativeId = this.creativeIdValue
         this.creativeIdValue = creativeId
         // Clear stale cached state from the previous creative — otherwise
@@ -84,6 +85,7 @@ export default class extends Controller {
     }
 
     onPopupClosed() {
+		this._popupClosed = true
 		this.markPendingSelfEchoesAsPossiblyMissed()
         this._loadTopicsVersion += 1
         // The same creative can reopen before an in-flight save broadcasts.
@@ -1327,6 +1329,13 @@ export default class extends Controller {
 						? (this.serverLastTopicId ? String(this.serverLastTopicId) : "")
 						: this.lastKnownRemoteTopicId
 				)
+				// A save can wait behind another request while the popup closes. It
+				// takes its claim only when the queue reaches it, after the close
+				// handler has already marked the claims that existed then. Its echo
+				// will also be sent into that closed gap, so mark it at creation.
+				if (this._popupClosed && !this.topicsSubscription) {
+					this.possiblyMissedPendingSelfEchoes.add(clientId)
+				}
             }
             // A thrown fetch has an unknown outcome: the server may have saved
             // and broadcast before the connection failed, so keep its claim for
@@ -1339,6 +1348,9 @@ export default class extends Controller {
 					// update_last_topic broadcasts before it returns. With the popup
 					// still closed, that echo was necessarily sent into the gap and
 					// cannot settle this claim.
+					// This completed save is also the remote baseline for the next
+					// queued save, which may have claimed after the popup closed.
+					this.lastKnownRemoteTopicId = topicId
 					this.releasePendingSelfEcho(clientId)
 				} else {
 					// The replacement subscription may have been active before this
