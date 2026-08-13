@@ -44,8 +44,16 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     belongs_to has_many has_one has_and_belongs_to_many delegated_type
   ].freeze
   ACTIVE_RECORD_STI_METHODS = %w[
-    build create create! find_or_create_by find_or_create_by! find_or_initialize_by
+    build create create! create_or_find_by create_or_find_by! find_or_create_by
+    find_or_create_by! find_or_initialize_by
     insert insert_all new upsert upsert_all update update! update_all where
+  ].freeze
+  ACTIVE_RECORD_RELATION_METHODS = %w[
+    all and annotate create_with distinct eager_load excluding except extending from
+    group having includes in_order_of invert_where joins left_joins limit lock merge
+    none offset only optimizer_hints or order preload readonly references regroup
+    reorder rewhere reverse_order select strict_loading unscoped unscope where with
+    with_recursive
   ].freeze
   CONSTANT_SYMBOL_METHODS = %w[
     autoload? const_defined? const_get const_source_location
@@ -556,8 +564,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(Collavre::Channel.create!(type: "#{satellite}::Message"))))
     assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(Collavre::Channel.create_or_find_by(type: "#{satellite}::Message"))))
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(Collavre::Channel.create_or_find_by!(type: "#{satellite}::Message"))))
+    assert_equal [ "#{satellite}::Message" ],
       names(string_references_in(%(Collavre::Channel.where(type: "#{satellite}::Message"))))
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(Collavre::Channel.unscoped.create!(type: "#{satellite}::Message"))))
     assert_empty names(string_references_in(%(payload.create!(type: "#{satellite}::Message"))))
+    assert_empty names(string_references_in(%(payload.unscoped.create!(type: "#{satellite}::Message"))))
     assert_empty names(string_references_in(%(render json: { type: "#{satellite}::Message" })))
   end
 
@@ -2699,6 +2714,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def active_record_model_receiver?(receiver)
+    if receiver.is_a?(Prism::CallNode)
+      return ACTIVE_RECORD_RELATION_METHODS.include?(receiver.name.to_s) && active_record_model_receiver?(receiver.receiver)
+    end
+
     name = receiver&.slice&.delete_prefix("::")
     model = name&.safe_constantize
     model.is_a?(Class) && model < ActiveRecord::Base
