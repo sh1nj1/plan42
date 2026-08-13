@@ -1378,8 +1378,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   })
 
   // unsubscribe() is the deliberate exit, and a refused subscription cannot
-  // reconnect, so both discard their claims. A dropped connection is different:
-  // its in-flight request can still broadcast after ActionCable reconnects.
+  // reconnect, so both discard their claims. A dropped connection can miss a
+  // broadcast, so acknowledged claims become ignore-only tombstones instead.
   describe('claims against a subscription that goes away on its own', () => {
     // Delivered the way the real ones are, through the subscription itself.
     const deliver = (lastTopicId, clientId) => subscriptionCallbacks.received({
@@ -1393,17 +1393,13 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       controller.subscribe()
     })
 
-    // The consumer reconnects by itself and the subscription comes back, so
-    // the controller registers nothing for the gap — claims stay exactly where
-    // they were. Asserting the absence is the point: a handler here would be
-    // discarding claims that can still be settled.
-    const dropAndReconnect = () => {
-      expect(subscriptionCallbacks.disconnected).toBeUndefined()
-    }
+    const dropAndReconnect = () => subscriptionCallbacks.disconnected()
 
     test('a reconnectable disconnect keeps an in-flight claim for its delayed echo', async () => {
-      controller.selectTopic('2')
-      await controller.flushSaveLastTopic('2')
+      let resolveSave
+      saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+      const save = controller.flushSaveLastTopic('2')
+      await Promise.resolve()
 
       dropAndReconnect()
 
@@ -1412,7 +1408,39 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       // the request made before the reconnect is still ours, not new state.
       controller.selectTopic('3')
       deliver('2', clientIdFor('2'))
+      resolveSave(true)
+      await save
       expect(controller.currentTopicId).toBe('3')
+    })
+
+    test('retires an acknowledged claim when a disconnect can lose its echo', async () => {
+      let resolveSave
+      saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+      const save = controller.flushSaveLastTopic('2')
+      await Promise.resolve()
+      const alphaClientId = clientIdFor('2')
+
+      dropAndReconnect()
+      resolveSave(true)
+      await save
+
+      expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
+      expect(controller.pendingSelfEchoCreativeIds.has(alphaClientId)).toBe(false)
+      expect(controller.retiredSelfEchoIds).toContain(alphaClientId)
+      controller.selectTopic('3')
+      deliver('2', alphaClientId)
+      expect(controller.currentTopicId).toBe('3')
+    })
+
+    test('retires a claim already acknowledged when the connection drops', async () => {
+      await controller.flushSaveLastTopic('2')
+      const alphaClientId = clientIdFor('2')
+
+      dropAndReconnect()
+
+      expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
+      expect(controller.pendingSelfEchoCreativeIds.has(alphaClientId)).toBe(false)
+      expect(controller.retiredSelfEchoIds).toContain(alphaClientId)
     })
 
     test('a real update still applies after a reconnectable disconnect', async () => {

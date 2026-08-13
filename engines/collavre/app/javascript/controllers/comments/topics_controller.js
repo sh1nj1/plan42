@@ -1431,8 +1431,11 @@ export default class extends Controller {
 				}
 				const subscribedToAnotherStream = this.topicsSubscription &&
 					String(this.effectiveCreativeId) !== String(effectiveCreativeId)
+				const possiblyMissedDuringDisconnect =
+					this.possiblyMissedPendingSelfEchoesDuringDisconnect.has(clientId)
 				if ((this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) ||
-					subscribedToAnotherStream) {
+					subscribedToAnotherStream ||
+					possiblyMissedDuringDisconnect) {
 					// update_last_topic broadcasts before it returns. With the popup
 					// closed, or after its stream was replaced, that echo was necessarily
 					// sent somewhere this controller can no longer receive it and cannot
@@ -1440,7 +1443,11 @@ export default class extends Controller {
 					// This completed save is also the remote baseline for the next
 					// queued save, which may have claimed after the popup closed.
 					this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
-					this.releasePendingSelfEcho(clientId)
+					if (possiblyMissedDuringDisconnect) {
+						this.retirePendingSelfEcho(clientId)
+					} else {
+						this.releasePendingSelfEcho(clientId)
+					}
 				} else {
 					// The replacement subscription may have been active before this
 					// response beat the WebSocket message back to the browser. Keep the
@@ -1566,6 +1573,7 @@ export default class extends Controller {
 		this.pendingSelfEchoAcknowledgementVersions.delete(clientId)
 		this.pendingSelfEchoRemoteRevisions.delete(clientId)
 		this.possiblyMissedPendingSelfEchoes.delete(clientId)
+		this.possiblyMissedPendingSelfEchoesDuringDisconnect.delete(clientId)
 		this.acknowledgedPendingSelfEchoes.delete(clientId)
 		this.settledSelfEchoes.delete(clientId)
 	}
@@ -1717,8 +1725,37 @@ export default class extends Controller {
 	// response arrives while the popup remains closed, the broadcast necessarily
 	// went into that gap. A replacement subscription can receive an echo when it
 	// reopens before the response arrives, though.
-    get possiblyMissedPendingSelfEchoes() {
+	get possiblyMissedPendingSelfEchoes() {
 		return this._possiblyMissedPendingSelfEchoes || (this._possiblyMissedPendingSelfEchoes = new Set())
+	}
+
+	// A broadcast sent after Action Cable disconnects is not replayed after the
+	// connection returns. Keep unresolved saves until their HTTP outcome tells us
+	// whether one could have been sent in that gap; acknowledged saves can be
+	// retired immediately because their broadcast has already been sent.
+	get possiblyMissedPendingSelfEchoesDuringDisconnect() {
+		return this._possiblyMissedPendingSelfEchoesDuringDisconnect ||
+			(this._possiblyMissedPendingSelfEchoesDuringDisconnect = new Set())
+	}
+
+	handleTopicsSubscriptionDisconnected() {
+		const deferredCreativeIds = new Set()
+		for (const clientId of [...this.pendingSelfEchoes]) {
+			const creativeId = this.pendingSelfEchoCreativeIds.get(clientId)
+			if (creativeId === undefined) continue
+
+			if (!this.acknowledgedPendingSelfEchoes.has(clientId)) {
+				this.possiblyMissedPendingSelfEchoesDuringDisconnect.add(clientId)
+				continue
+			}
+
+			this.setLastKnownRemoteTopicId(creativeId, this.pendingSelfEchoTopicIds.get(clientId))
+			this.retirePendingSelfEcho(clientId)
+			deferredCreativeIds.add(creativeId)
+		}
+		for (const creativeId of deferredCreativeIds) {
+			this.retryDeferredLastTopicReconciliation(creativeId)
+		}
 	}
 
 	markPendingSelfEchoesAsPossiblyMissed() {
@@ -1901,16 +1938,7 @@ export default class extends Controller {
             { channel: 'TopicsChannel', creative_id: this.creativeId },
             {
                 received: (data) => this.handleTopicMessage(data),
-                // No disconnected handler on purpose. The consumer reconnects
-                // on its own and the subscription comes back, so a claim held
-                // across the gap may still be settled: a save in flight can be
-                // broadcast after the reconnect, and one queued behind it is
-                // not even sent until then. Since an echo is matched by the id
-                // of the save it came from, a claim that is never settled is
-                // inert — it can only be consumed by a message no one else can
-                // send. Dropping claims here would buy nothing and would let
-                // this client's own echo revert a newer pick.
-                //
+				disconnected: () => this.handleTopicsSubscriptionDisconnected(),
 				// A refused subscription is different: it is not retried, so
 				// nothing outstanding or queued on this stream can ever settle.
 				// Claims for another creative may still settle if the popup returns.
@@ -1931,6 +1959,7 @@ export default class extends Controller {
 		this.pendingSelfEchoAcknowledgementVersions.clear()
 		this.pendingSelfEchoRemoteRevisions.clear()
 		this.possiblyMissedPendingSelfEchoes.clear()
+		this.possiblyMissedPendingSelfEchoesDuringDisconnect.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
 		this.settledSelfEchoes.clear()
 		this.retiredSelfEchoIds.clear()
