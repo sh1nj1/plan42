@@ -5,6 +5,10 @@ require_relative "../application_system_test_case"
 # devices have no hover to reveal it, so the box stays visible there. Both
 # branches are CSS-only, so they are verified in a real browser.
 class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
+  # Headless runners report no pointer at all, so the hover branch needs a
+  # browser pinned to a desktop pointer to be observable.
+  driven_by :hovering_pointer_headless_chrome
+
   setup do
     @user = User.create!(
       email: "user@example.com",
