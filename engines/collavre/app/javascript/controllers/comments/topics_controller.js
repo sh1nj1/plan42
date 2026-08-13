@@ -1630,6 +1630,19 @@ export default class extends Controller {
 		return true
 	}
 
+	// A Turbo replacement clears controller-local claims while an earlier PATCH
+	// can still commit. The save-session prefix belongs to this top-level tab,
+	// so its orphaned echo remains ours and must not be applied as a sibling
+	// update over the replacement controller's newer pick.
+	isLastTopicSaveFromThisTab(clientId) {
+		const match = String(clientId || "").match(/^([A-Za-z0-9-]+)\.([1-9]\d*)\.[A-Za-z0-9-]+$/)
+		const currentName = window.name || ""
+		if (!currentName.startsWith(LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX)) return false
+
+		const sessionId = currentName.slice(LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX.length)
+		return Boolean(match) && /^[A-Za-z0-9-]+$/.test(sessionId) && match[1] === sessionId
+	}
+
 	// A retired ambiguous request can still have committed after its connection
 	// failed. Keep only its client id so that a very late echo cannot look like
 	// another session's update and overwrite a newer local selection.
@@ -2149,7 +2162,8 @@ export default class extends Controller {
 				claimedEffectiveCreativeId,
 				lastTopicRevision
 			)
-			if (this.consumeSelfEcho(data.client_id, lastTopicRevision)) {
+			if (this.consumeSelfEcho(data.client_id, lastTopicRevision) ||
+				this.isLastTopicSaveFromThisTab(data.client_id)) {
 				if (isCurrentRevision) {
 					this.setLastKnownRemoteTopicId(claimedEffectiveCreativeId, newTopicId)
 				}

@@ -7,29 +7,21 @@ module Collavre
       node_id = params[:node_id].to_s
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])
 
-      begin
-        record = preference_for(creative_id)
-        record.with_lock do
-          state = record.expanded_status || {}
+      with_preference(creative_id) do |record|
+        state = record.expanded_status || {}
 
-          if expanded
-            state[node_id] = true
-          else
-            state.delete(node_id)
-          end
-
-          record.expanded_status = state
-          if empty_preference?(record, state)
-            record.destroy!
-          else
-            record.save!
-          end
+        if expanded
+          state[node_id] = true
+        else
+          state.delete(node_id)
         end
-      rescue ActiveRecord::RecordNotFound
-        # A concurrent collapse can delete the empty preference after
-        # preference_for returns but before with_lock reloads it. Retry against
-        # the unique preference key so the toggle remains a successful no-op.
-        retry
+
+        record.expanded_status = state
+        if empty_preference?(record, state)
+          record.destroy!
+        else
+          record.save!
+        end
       end
 
       render json: { success: true }
@@ -62,8 +54,7 @@ module Collavre
 
       return render_forbidden unless readable?(creative)
 
-      record = preference_for(creative.id)
-      fence = record.with_lock do
+      fence = with_preference(creative.id) do |record|
         record.last_topic_save_fence_issued = [
           record.last_topic_save_fence_issued.to_i,
           record.last_topic_save_fence_applied.to_i
@@ -91,9 +82,10 @@ module Collavre
     end
 
     def persist_last_topic(creative)
-      record = preference_for(creative.id)
-      record.with_lock do
-        return [ record, false ] if stale_last_topic_save?(record)
+      with_preference(creative.id) do |record|
+        if stale_last_topic_save?(record)
+          next [ record, false ]
+        end
 
         record.expanded_status ||= {}
         record.last_topic_id = params[:last_topic_id].presence
@@ -107,8 +99,8 @@ module Collavre
         else
           record.save!
         end
+        [ record, true ]
       end
-      [ record, true ]
     end
 
     # The client id carries a controller session, a monotonically increasing
@@ -153,6 +145,16 @@ module Collavre
       attributes = { creative_id: creative_id, user_id: Current.user.id, expanded_status: {}, created_at: now, updated_at: now }
       UserCreativePreference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
       UserCreativePreference.find_by!(creative_id: creative_id, user_id: Current.user.id)
+    end
+
+    # A collapse can remove an empty row after it is found but before with_lock
+    # reloads it. Reacquire by the unique preference key so every save path
+    # shares the same first-insert and deletion-race handling.
+    def with_preference(creative_id)
+      record = preference_for(creative_id)
+      record.with_lock { yield record }
+    rescue ActiveRecord::RecordNotFound
+      retry
     end
 
     # Preserve the legacy single-session columns while a rolling deploy may

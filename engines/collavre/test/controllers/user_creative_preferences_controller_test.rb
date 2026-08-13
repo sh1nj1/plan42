@@ -75,6 +75,52 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_nil Collavre::UserCreativePreference.find_by(creative_id: @creative.id, user_id: @user.id)
   end
 
+  test "issuing a save fence retries when collapse removes the preference before locking" do
+    preference = empty_preference
+    original_find_by = Collavre::UserCreativePreference.method(:find_by!)
+    calls = 0
+
+    Collavre::UserCreativePreference.stub(:find_by!, lambda { |**attributes|
+      calls += 1
+      if calls == 1
+        Collavre::UserCreativePreference.where(id: preference.id).delete_all
+        preference
+      else
+        original_find_by.call(**attributes)
+      end
+    }) do
+      post "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic", as: :json
+    end
+
+    assert_response :success
+    assert_equal 2, calls
+    assert_equal 1, response.parsed_body.fetch("last_topic_save_fence")
+  end
+
+  test "saving a last topic retries when collapse removes the preference before locking" do
+    topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Test Topic")
+    preference = empty_preference
+    original_find_by = Collavre::UserCreativePreference.method(:find_by!)
+    calls = 0
+
+    Collavre::UserCreativePreference.stub(:find_by!, lambda { |**attributes|
+      calls += 1
+      if calls == 1
+        Collavre::UserCreativePreference.where(id: preference.id).delete_all
+        preference
+      else
+        original_find_by.call(**attributes)
+      end
+    }) do
+      patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+            params: { last_topic_id: topic.id }, as: :json
+    end
+
+    assert_response :success
+    assert_equal 2, calls
+    assert_equal topic.id, Collavre::UserCreativePreference.find_by!(creative: @creative, user: @user).last_topic_id
+  end
+
   test "toggle preserves record when last_topic_id is set" do
     topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Test Topic")
     Collavre::UserCreativePreference.create!(
@@ -278,5 +324,15 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
           params: { last_topic_id: topic.id },
           as: :json
     assert_response :forbidden
+  end
+
+  private
+
+  def empty_preference
+    now = Time.current
+    Collavre::UserCreativePreference.insert_all([
+      { creative_id: @creative.id, user_id: @user.id, expanded_status: {}, created_at: now, updated_at: now }
+    ])
+    Collavre::UserCreativePreference.find_by!(creative: @creative, user: @user)
   end
 end
