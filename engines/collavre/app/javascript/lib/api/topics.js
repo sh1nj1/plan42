@@ -30,9 +30,11 @@ export async function fetchNextTopicName(creativeId) {
  * Save the last selected topic for a creative (server-side persistence).
  * @param {string|number} creativeId
  * @param {string|number|null} topicId
+ * @param {string} [clientId] - echoed back on the broadcast, so the session
+ *   that made this save can recognise it and not treat it as someone else's
  * @returns {Promise<boolean>}
  */
-export async function saveLastTopic(creativeId, topicId) {
+export async function saveLastTopic(creativeId, topicId, clientId) {
     try {
         const response = await fetch(`/creatives/${creativeId}/user_creative_preferences/update_last_topic`, {
             method: 'PATCH',
@@ -40,7 +42,7 @@ export async function saveLastTopic(creativeId, topicId) {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': csrfToken()
             },
-            body: JSON.stringify({ last_topic_id: topicId || null })
+            body: JSON.stringify({ last_topic_id: topicId || null, client_id: clientId || null })
         })
         return response.ok
     } catch (e) {

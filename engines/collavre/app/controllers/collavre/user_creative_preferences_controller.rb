@@ -48,10 +48,17 @@ module Collavre
         record.save!
       end
 
-      # Broadcast only to the current user's sessions (not all creative subscribers)
+      # Broadcast only to the current user's sessions (not all creative subscribers).
+      # client_id names the save this message is the echo of, so the session that
+      # made it can tell its own change coming back from a sibling session's —
+      # last_topic_id cannot, two sessions can pick the same topic at once.
       TopicsChannel.broadcast_to(
         "user_#{Current.user.id}_creative_#{creative.id}",
-        { action: "last_topic_changed", last_topic_id: record.last_topic_id }
+        {
+          action: "last_topic_changed",
+          last_topic_id: record.last_topic_id,
+          client_id: params[:client_id].presence
+        }
       )
 
       render json: { success: true }

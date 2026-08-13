@@ -6,6 +6,15 @@ import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
+// Names one save, so its broadcast can be told from a sibling session's. It
+// has to be unique across the user's tabs, not just within this one: two tabs
+// counting from zero would answer to each other's echoes.
+function newClientId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+
+    return `save-${Math.random().toString(36).slice(2)}-${Date.now()}`
+}
+
 export default class extends Controller {
     static targets = ["list", "creationContainer", "topicListButton"]
 
@@ -1257,30 +1266,36 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         const creativeId = this.creativeId
-        const sent = id ? String(id) : ""
+        const clientId = newClientId()
+        // The subscription the echo of this save would arrive on. The claim is
+        // taken inside the callback below, which runs whenever the save ahead
+        // of it finishes — by then the stream may already be a different one,
+        // and a claim taken against a stream we have left is owed a message
+        // that cannot arrive.
+        const generation = this.subscriptionGeneration
         // One save at a time. Two PATCHes in flight together are persisted in
-        // whatever order the server finishes them — so the preference that
-        // sticks need not be the last one picked — and their broadcasts come
-        // back in that same unknowable order, which the queue below reads as
-        // "not ours". Waiting for the one in flight is what makes the order the
-        // queue assumes the order that actually happens.
+        // whatever order the server finishes them, so the preference that
+        // sticks need not be the last one picked. Waiting for the one in
+        // flight is what makes the order they were picked in the order they
+        // are written.
         this._saveChain = (this._saveChain || Promise.resolve()).then(async () => {
             // update_last_topic broadcasts to every session of this user, this
-            // one included, and the echo names no sender. Claim it here, before
-            // the request goes out — the broadcast is sent server-side before
-            // the response is rendered, so it can beat the save returning.
-            this.pendingSelfEchoes.push(sent)
+            // one included. Claim the echo here, before the request goes out —
+            // the broadcast is sent server-side before the response is
+            // rendered, so it can beat the save returning.
+            const claimed = generation === this.subscriptionGeneration
+            if (claimed) this.pendingSelfEchoes.push(clientId)
             // A throw here would be left on the chain, and the chain is shared:
             // every pick made after it would be stranded behind a link that
             // never settles, and none of them would reach the server. The
             // helper resolves false rather than throwing today; this keeps that
             // a property of this queue rather than of its callee.
-            const saved = await saveLastTopic(creativeId, id || null).catch(() => false)
+            const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => false)
             // A save that did not land broadcast nothing — the controller
             // returns before the broadcast on a denied read or a topic that
             // does not belong to the creative — so the echo is not coming and
-            // the claim has to go, or it would swallow a real one later.
-            if (!saved) this.releasePendingSelfEcho(sent)
+            // the claim has to go.
+            if (claimed && !saved) this.releasePendingSelfEcho(clientId)
             const topicId = id ? String(id) : ""
             if (saved !== false && this._pendingPick &&
                 String(this._pendingPick.creativeId) === String(creativeId) &&
@@ -1291,28 +1306,36 @@ export default class extends Controller {
         return this._saveChain
     }
 
-    // Saves are echoed in the order they were made, so only the head can be
-    // ours. A match further down belongs to another session that happens to
-    // name the same topic as one of our outstanding saves — and applying it
-    // would land on that topic either way, so nothing is lost by letting the
-    // head decide.
-    consumeSelfEcho(topicId) {
-        if (this.pendingSelfEchoes[0] !== topicId) return false
-        this.pendingSelfEchoes.shift()
+    // The echo names the save it came from, so this is identity, not a guess.
+    // Matching on the topic id instead would let a sibling session that picked
+    // the same topic settle one of our claims, leaving our own echo to arrive
+    // later looking like news and revert whatever the user picked meanwhile.
+    consumeSelfEcho(clientId) {
+        if (!clientId) return false
+
+        return this.releasePendingSelfEcho(clientId)
+    }
+
+    releasePendingSelfEcho(clientId) {
+        const index = this.pendingSelfEchoes.indexOf(clientId)
+        if (index === -1) return false
+
+        this.pendingSelfEchoes.splice(index, 1)
         return true
     }
 
-    releasePendingSelfEcho(topicId) {
-        const index = this.pendingSelfEchoes.lastIndexOf(topicId)
-        if (index !== -1) this.pendingSelfEchoes.splice(index, 1)
-    }
-
-    // Topic ids this client has saved and not yet seen come back. The echo of
+    // Ids of saves this client has made and not yet seen come back. The echo of
     // our own save is not news: it names what we already asked for, and by the
     // time it arrives the user may have picked something else — applying it
     // then reverts the newer pick and persists the older topic over it.
     get pendingSelfEchoes() {
         return this._pendingSelfEchoes || (this._pendingSelfEchoes = [])
+    }
+
+    // Bumped whenever the stream claims are settled on changes, so a save
+    // already queued can tell that the subscription it was made under is gone.
+    get subscriptionGeneration() {
+        return this._subscriptionGeneration || 0
     }
 
     // The legacy key is adopted only as a stand-in for a preference the server
@@ -1361,6 +1384,11 @@ export default class extends Controller {
 
     dropPendingSelfEchoes() {
         this.pendingSelfEchoes.length = 0
+        // Emptying the array cannot reach a claim that has not been taken yet.
+        // A save waiting its turn on the chain takes one when it runs, and by
+        // then this stream is gone; the generation is how that queued save
+        // finds out.
+        this._subscriptionGeneration = this.subscriptionGeneration + 1
     }
 
     unsubscribe() {
@@ -1383,7 +1411,7 @@ export default class extends Controller {
         if (action === "last_topic_changed") {
             // Broadcast is already scoped to the current user via user-specific channel
             const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
-            if (this.consumeSelfEcho(newTopicId)) return
+            if (this.consumeSelfEcho(data.client_id)) return
             if (newTopicId !== this.serverLastTopicId) {
                 this.serverLastTopicId = newTopicId
                 // Another session moved the preference; nobody clicked in this

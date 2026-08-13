@@ -76,10 +76,22 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     window.history.replaceState({}, '', '/')
   })
 
-  const echo = (lastTopicId) => controller.handleTopicMessage({
+  // A broadcast from some other session of this user: it names a topic and
+  // nothing else. Without a client_id it cannot have come from this client.
+  const echo = (lastTopicId, clientId) => controller.handleTopicMessage({
     action: 'last_topic_changed',
     last_topic_id: lastTopicId,
+    ...(clientId === undefined ? {} : { client_id: clientId }),
   })
+
+  // The echo of a save this client made: the server hands back the id that
+  // save was sent with, which is what makes it identifiable as ours.
+  const clientIdFor = (lastTopicId) => {
+    const call = saveLastTopic.mock.calls.find(c => String(c[1] ?? '') === String(lastTopicId ?? ''))
+    return call && call[2]
+  }
+
+  const selfEcho = (lastTopicId) => echo(lastTopicId, clientIdFor(lastTopicId))
 
   // Pick Alpha, let its debounced save go out, then pick Beta before the echo
   // for Alpha gets back. The echo names the topic the user has just left.
@@ -88,7 +100,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     await controller.flushSaveLastTopic('2')
 
     controller.selectTopic('3')
-    echo('2')
+    selfEcho('2')
 
     expect(controller.currentTopicId).toBe('3')
     expect(changeEvents.at(-1).topicId).toBe('3')
@@ -102,10 +114,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     await controller.flushSaveLastTopic('2')
 
     controller.selectTopic('3')
-    echo('2')
+    selfEcho('2')
     await controller.flushSaveLastTopic(controller.currentTopicId)
 
-    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
   })
 
   // Same race for All Messages, which the strip renders as its own chip.
@@ -114,7 +126,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     await controller.flushSaveLastTopic('2')
 
     controller.selectTopic('')
-    echo('2')
+    selfEcho('2')
 
     expect(controller.currentTopicId).toBe('')
   })
@@ -160,9 +172,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     await controller.flushSaveLastTopic('2')
 
     controller.unsubscribe()
+
+    expect(controller.pendingSelfEchoes).toHaveLength(0)
     controller.selectTopic('3')
     echo('2')
-
     expect(controller.currentTopicId).toBe('2')
   })
 
@@ -172,9 +185,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   // behind waits for a message that will never come.
   describe('claims against a subscription that goes away on its own', () => {
     // Delivered the way the real ones are, through the subscription itself.
-    const deliver = (lastTopicId) => subscriptionCallbacks.received({
+    const deliver = (lastTopicId, clientId) => subscriptionCallbacks.received({
       action: 'last_topic_changed',
       last_topic_id: lastTopicId,
+      ...(clientId === undefined ? {} : { client_id: clientId }),
     })
 
     beforeEach(() => {
@@ -187,10 +201,11 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       await controller.flushSaveLastTopic('2')
 
       subscriptionCallbacks.disconnected()
+
+      expect(controller.pendingSelfEchoes).toHaveLength(0)
       // Reconnected, and another session moves the preference to Alpha.
       controller.selectTopic('3')
       deliver('2')
-
       expect(controller.currentTopicId).toBe('2')
     })
 
@@ -199,9 +214,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       await controller.flushSaveLastTopic('2')
 
       subscriptionCallbacks.rejected()
+
+      expect(controller.pendingSelfEchoes).toHaveLength(0)
       controller.selectTopic('3')
       deliver('2')
-
       expect(controller.currentTopicId).toBe('2')
     })
 
@@ -212,7 +228,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       await controller.flushSaveLastTopic('2')
 
       controller.selectTopic('3')
-      deliver('2')
+      deliver('2', clientIdFor('2'))
 
       expect(controller.currentTopicId).toBe('3')
     })
@@ -245,13 +261,13 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       const pending = await startTwoSaves()
 
       expect(saveLastTopic).toHaveBeenCalledTimes(1)
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String))
 
       resolveFirst(true)
       await Promise.all(pending)
 
       expect(saveLastTopic).toHaveBeenCalledTimes(2)
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
     })
 
     // With the sends ordered, the echoes are too: the first save's broadcast is
@@ -259,10 +275,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     // consumed in turn, and nothing is left to swallow a later update.
     test('leaves no claim behind once both echoes land', async () => {
       const pending = await startTwoSaves()
-      echo('2')
+      selfEcho('2')
       resolveFirst(true)
       await Promise.all(pending)
-      echo('3')
+      selfEcho('3')
 
       // The user moves on, and another session picks Beta for real.
       controller.selectTopic('')
@@ -285,11 +301,80 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       rejectFirst(new Error('network'))
       await Promise.all([first, second])
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
       // Nothing was broadcast for it either, so its claim goes with it.
       controller.selectTopic('')
       echo('2')
       expect(controller.currentTopicId).toBe('2')
     })
+  })
+
+  // Topic equality is not sender identity. Two sessions of the same user can
+  // save the same topic at the same time, and their broadcasts are then
+  // indistinguishable by payload — so one claim gets settled by the wrong
+  // message and the client's own echo comes back looking like news.
+  describe('another session that named the same topic', () => {
+    const raceOnAlpha = async () => {
+      controller.selectTopic('2')
+      await controller.flushSaveLastTopic('2')
+
+      // The other session had moved the preference to Alpha too, and its
+      // broadcast is the first of the two to arrive.
+      echo('2')
+      // Ours has still not landed when the user picks Beta.
+      controller.selectTopic('3')
+      selfEcho('2')
+    }
+
+    test('its broadcast does not settle a claim of ours', async () => {
+      await raceOnAlpha()
+
+      expect(controller.currentTopicId).toBe('3')
+      expect(changeEvents.at(-1).topicId).toBe('3')
+    })
+
+    test('our own late echo is not recorded over the newer pick', async () => {
+      await raceOnAlpha()
+
+      expect(controller.serverLastTopicId).toBe('3')
+    })
+  })
+
+  // crypto.randomUUID is only defined in a secure context, and the app is
+  // reachable over plain http — so the fallback is a live path, not a
+  // formality, and an id from it has to be just as unguessable by a sibling
+  // tab as a uuid is.
+  test('ids are still unique per save without crypto.randomUUID', async () => {
+    Object.defineProperty(global.crypto, 'randomUUID', { value: undefined, configurable: true })
+
+    try {
+      await controller.flushSaveLastTopic('2')
+      await controller.flushSaveLastTopic('3')
+    } finally {
+      delete global.crypto.randomUUID
+    }
+
+    const ids = saveLastTopic.mock.calls.map(c => c[2])
+    expect(ids).toHaveLength(2)
+    ids.forEach(id => expect(id).toMatch(/^save-/))
+    expect(new Set(ids).size).toBe(2)
+  })
+
+  // Claims are taken inside the queued callback, which runs whenever the save
+  // ahead of it finishes — by then the subscription that would settle the claim
+  // may already be gone, and clearing the queue at that moment cannot reach a
+  // claim that does not exist yet.
+  test('a save queued behind another leaves no claim once the stream is gone', async () => {
+    let resolveFirst
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+    const first = controller.flushSaveLastTopic('2')
+    const second = controller.flushSaveLastTopic('3')
+    await Promise.resolve()
+
+    controller.unsubscribe()
+    resolveFirst(true)
+    await Promise.all([first, second])
+
+    expect(controller.pendingSelfEchoes).toHaveLength(0)
   })
 })
