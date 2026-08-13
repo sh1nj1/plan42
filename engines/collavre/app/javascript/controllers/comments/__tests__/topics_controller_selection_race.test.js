@@ -56,6 +56,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
   })
 
   afterEach(() => {
+    controller?.cancelPendingSaveLastTopic()
     document.body.innerHTML = ''
     document.head.innerHTML = ''
     application.stop()
