@@ -253,6 +253,14 @@ export default class extends Controller {
                     // belongs to the actual pick, so restore that picked value
                     // rather than treating the derived fallback as its value.
                     this.serverLastTopicId = this._pickTopicId
+					// The picked value has not necessarily reached the server yet.
+					// Keep the snapshot as the first known remote baseline so a
+					// claim created after this load records what its pending save
+					// actually supersedes. Never replace a newer Action Cable or
+					// acknowledged-save baseline with this older response.
+					if (this.lastKnownRemoteTopicId === undefined) {
+						this.lastKnownRemoteTopicId = snapshotTopicId
+					}
                 } else {
 					const pendingTopicId = this.latestPendingSelfEchoTopicIdFor(
 						effectiveCreativeId,

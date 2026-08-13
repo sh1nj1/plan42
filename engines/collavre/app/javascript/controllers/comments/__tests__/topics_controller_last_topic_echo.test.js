@@ -349,7 +349,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.serverLastTopicId).toBe('3')
   })
 
-	test('a stale load does not roll back the baseline for a later closed save', async () => {
+  test('a stale load does not roll back the baseline for a later closed save', async () => {
 		let resolveSnapshot
 		let resolveBetaSave
 		controller.lastKnownRemoteTopicId = '1'
@@ -395,6 +395,51 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.currentTopicId).toBe('3')
 		resolveBetaSave(true)
 		await betaSave
+	})
+
+	test('a picked value keeps its in-flight snapshot as the baseline for a later closed save', async () => {
+		let resolveInitialSnapshot
+		let resolveSave
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveInitialSnapshot = resolve }))
+
+		const initialLoad = controller.loadTopics()
+		controller.selectTopic('2')
+		resolveInitialSnapshot({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await initialLoad
+
+		expect(controller.currentTopicId).toBe('2')
+		expect(controller.lastKnownRemoteTopicId).toBe('1')
+
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		controller.onPopupClosed()
+		global.fetch = jest.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await controller.onPopupOpened({ creativeId: '42' })
+
+		expect(controller.currentTopicId).toBe('2')
+		resolveSave(true)
+		await save
 	})
 
   test('a reopen keeps a newer server preference after a closed save completed', async () => {
