@@ -150,7 +150,11 @@ module Collavre
       # Fully qualified: a top-level ::Comments namespace exists too (see
       # ::Comments::CommandProcessor below), so a bare Comments:: here would be
       # resolved by lexical luck rather than intent.
-      read_receipts = Collavre::Comments::ReadReceiptIndex.new(creative: @creative, comments: @comments).receipts
+      read_receipts = Collavre::Comments::ReadReceiptIndex.new(
+        creative: @creative,
+        comments: @comments,
+        topic_id: effective_topic_id
+      ).receipts
 
       if params[:after_id].present? || params[:before_id].present?
         render partial: "collavre/comments/comment",

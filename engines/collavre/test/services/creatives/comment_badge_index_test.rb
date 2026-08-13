@@ -256,6 +256,26 @@ module Creatives
       assert comment_queries.none? { |sql| sql.match?(/JOIN/i) }
     end
 
+    test "fanout only counts private comments for recipient-topic pairs with private history" do
+      creative = Creative.create!(user: @user, description: "Scoped private badge counts", sequence: 926)
+      public_topic = creative.topics.create!(name: "Public", user: @user)
+      private_topic = creative.topics.create!(name: "Private", user: @user)
+      private_recipient = User.create!(email: "private-badge-viewer@example.com", password: TEST_PASSWORD, name: "Private Badge Viewer")
+      public_recipient = User.create!(email: "public-badge-viewer@example.com", password: TEST_PASSWORD, name: "Public Badge Viewer")
+      Comment.create!(creative: creative, topic: public_topic, user: @author, content: "public")
+      Comment.create!(creative: creative, topic: private_topic, user: @author, approver: private_recipient, content: "private", private: true)
+      private_requests = []
+
+      Collavre::Creatives::CommentBadgeIndex.stub(:private_count_rows, ->(_origin, requests) {
+        private_requests.concat(requests)
+        []
+      }) do
+        Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ private_recipient, public_recipient ])
+      end
+
+      assert_equal [ [ private_recipient.id, private_topic.id, 0 ] ], private_requests
+    end
+
     test "fanout keeps archived-topic counts while a recipient views All Messages" do
       creative = Creative.create!(user: @user, description: "All Messages fanout", sequence: 918)
       active_topic = creative.topics.create!(name: "Active", user: @user)

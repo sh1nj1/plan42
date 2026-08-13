@@ -16,9 +16,10 @@ module Collavre
     # outer query still returns only one row per participant, while the rendered
     # id set decides whether that receipt belongs on this page.
     class ReadReceiptIndex
-      def initialize(creative:, comments:)
+      def initialize(creative:, comments:, topic_id: nil)
         @creative = creative
         @comments = Array(comments)
+        @topic_id = topic_id
       end
 
       # => { comment_id => [User, ...] }, keyed only by comments in `comments`.
@@ -36,7 +37,12 @@ module Collavre
         receipt_users_by_comment_id = Hash.new { |hash, key| hash[key] = Set.new }
 
         receipt_pointers.each_with_object({}) do |pointer, result|
-          next if pointer.last_read_comment_id > rendered_window_max_id
+          # A legacy pointer can be newer because of another topic, yet remain
+          # the fallback watermark for this rendered topic. Its correlated
+          # receipt id decides whether it belongs in this window. Named-topic
+          # pointers still use their own cursor to avoid showing a receipt at
+          # the bottom of an older pagination window.
+          next if pointer.last_read_comment_id > rendered_window_max_id && (topic_id.nil? || pointer.topic_id.present?)
 
           effective_id = pointer[:receipt_comment_id]
           next unless effective_id && rendered.include?(effective_id)
@@ -49,7 +55,7 @@ module Collavre
 
       private
 
-      attr_reader :creative, :comments
+      attr_reader :creative, :comments, :topic_id
 
       def rendered_window_max_id
         @rendered_window_max_id ||= comments.map(&:id).max
@@ -66,14 +72,19 @@ module Collavre
         pointer_table = CommentReadPointer.arel_table
         named_pointer_table = CommentReadPointer.arel_table.alias("named_receipt_pointers")
         public_comments = Comment.arel_table.alias("receipt_comments")
-        effective_comment_id = Comment
+        effective_comment_scope = Comment
           .from(public_comments)
           .select(public_comments[:id].maximum)
           .where(public_comments[:creative_id].eq(pointer_table[:creative_id]))
           .where(public_comments[:private].eq(false))
           .where(matches_pointer_topic(pointer_table, named_pointer_table, public_comments))
           .where(public_comments[:id].lteq(pointer_table[:last_read_comment_id]))
-          .arel
+
+        # On a topic-filtered page, a retained legacy pointer falls back only
+        # within that rendered topic. Without this bound its correlated MAX can
+        # land on a newer, unrendered topic and hide a valid receipt here.
+        effective_comment_scope = effective_comment_scope.where(public_comments[:topic_id].eq(topic_id)) if topic_id
+        effective_comment_id = effective_comment_scope.arel
 
         CommentReadPointer
           .where(creative: creative)

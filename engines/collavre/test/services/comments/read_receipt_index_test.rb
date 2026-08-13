@@ -126,6 +126,17 @@ module Collavre
         assert_equal({ legacy.id => [ @reader ], first.id => [ @reader ] }, receipts_for([ legacy, first, second ]))
       end
 
+      test "a topic-filtered page resolves a legacy fallback within its rendered topic" do
+        first_topic = Topic.create!(creative: @creative, name: "First", user: @owner)
+        second_topic = Topic.create!(creative: @creative, name: "Second", user: @owner)
+        first = comment("first", topic: first_topic)
+        second = comment("second", topic: second_topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: second.id)
+
+        assert_equal({ first.id => [ @reader ] }, receipts_for([ first ], topic_id: first_topic.id))
+      end
+
       test "duplicate legacy and topic receipts render one avatar" do
         topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
         named = comment("named", topic: topic)
@@ -195,8 +206,8 @@ module Collavre
 
       private
 
-      def receipts_for(comments)
-        ReadReceiptIndex.new(creative: @creative, comments: comments).receipts
+      def receipts_for(comments, topic_id: nil)
+        ReadReceiptIndex.new(creative: @creative, comments: comments, topic_id: topic_id).receipts
       end
 
       def comment(content, private: false, topic: nil)

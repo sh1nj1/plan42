@@ -197,7 +197,12 @@ module Creatives
         end
         public_unread_counts = public_unread_counts_for(origin, requests_by_user_id.values)
         public_comments_exist = public_topic_ids.any?
-        private_counts = private_counts_for(origin, requests_by_user_id)
+        private_requests_by_user_id = user_ids.to_h do |user_id|
+          topic_ids = private_topic_ids_by_user_id.fetch(user_id, [])
+          watermarks = watermarks_by_user_id[user_id]
+          [ user_id, topic_ids.to_h { |topic_id| [ topic_id, watermark_for(watermarks, topic_id) ] } ]
+        end
+        private_counts = private_counts_for(origin, private_requests_by_user_id)
 
         user_ids.each_with_object({}) do |user_id, counts_by_user_id|
           counts_by_user_id[user_id] = requests_by_user_id.fetch(user_id).each_with_object({}) do |(topic_id, watermark), counts_by_topic|

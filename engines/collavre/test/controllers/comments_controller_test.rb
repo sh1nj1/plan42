@@ -41,6 +41,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
                         "expected no version navigator for comment WITHOUT versions"
   end
 
+  test "topic-filtered index keeps legacy fallback receipts in the rendered topic" do
+    reader = users(:two)
+    grant_read_access_to_other_user(user: reader)
+    first_topic = @creative.topics.create!(name: "First receipts", user: @user)
+    second_topic = @creative.topics.create!(name: "Second receipts", user: @user)
+    first = @creative.comments.create!(content: "first", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "second", user: @user, topic: second_topic)
+    CommentReadPointer.create!(user: reader, creative: @creative, last_read_comment_id: second.id)
+
+    get creative_comments_path(@creative), params: { topic_id: first_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, "read_receipts_comment_#{first.id}"
+    assert_includes @response.body, "data-user-id=\"#{reader.id}\""
+  end
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do
