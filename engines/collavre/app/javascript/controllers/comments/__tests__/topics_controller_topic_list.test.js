@@ -99,4 +99,12 @@ describe('TopicsController#openTopicListPopup', () => {
 
 		expect(event.stopPropagation).toHaveBeenCalled()
     })
+
+    test('removes the topic-list close listener when disconnecting', () => {
+		const removeEventListener = jest.spyOn(controller.element, 'removeEventListener')
+
+		controller.disconnect()
+
+		expect(removeEventListener).toHaveBeenCalledWith('topic-list:close', controller.handleTopicListClose)
+    })
 })
