@@ -117,6 +117,76 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     expect(controller.serverLastTopicId).toBe('3')
   })
 
+  // A pick can only outrank the response if it names a topic the response
+  // knows. Switching creatives leaves the previous creative's chips on screen
+  // until the new strip lands, so a click in that window picks a topic that
+  // does not belong to the creative being loaded — not intent about it.
+  describe('a pick against the previous creative\'s strip', () => {
+    const OTHER_TOPICS = [{ id: 10, name: 'Main' }, { id: 11, name: 'Gamma' }]
+
+    const switchTo = (creativeId) => {
+      controller.subscribe = jest.fn()
+      return controller.onPopupOpened({ creativeId })
+    }
+
+    const otherCreativeResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: OTHER_TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 10,
+        last_topic_id: 11,
+      }),
+    }
+
+    test('does not discard the new creative\'s last_topic_id', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const switching = switchTo('99')
+      // Beta belongs to creative 42; its chip is still rendered.
+      controller.selectTopic('3')
+
+      resolveFetch(otherCreativeResponse)
+      await switching
+
+      expect(controller.serverLastTopicId).toBe('11')
+      expect(controller.currentTopicId).toBe('11')
+    })
+
+    test('does not persist Main as the new creative\'s preference', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const switching = switchTo('99')
+      controller.selectTopic('3')
+
+      resolveFetch(otherCreativeResponse)
+      await switching
+      await controller.flushSaveLastTopic(controller.currentTopicId)
+
+      expect(saveLastTopic).toHaveBeenLastCalledWith('99', '11')
+    })
+
+    // All Messages is not a persisted selection — saveLastTopic stores null for
+    // it and restoreSelection falls back to Main — so an empty pick cannot
+    // outrank the answer, and the creative being opened resolves normally.
+    test('an empty pick does not suppress the response either', async () => {
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const switching = switchTo('99')
+      controller.selectTopic('')
+
+      resolveFetch(otherCreativeResponse)
+      await switching
+
+      expect(controller.currentTopicId).toBe('11')
+    })
+  })
+
   // A load that starts *after* the pick is not racing it, so its answer wins
   // normally — otherwise a creative switch could never move the selection.
   test('a load started after the pick still restores the server selection', async () => {

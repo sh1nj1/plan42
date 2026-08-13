@@ -189,7 +189,17 @@ export default class extends Controller {
                 // strip and the message list back to the previous topic.
                 // _loadTopicsVersion does not cover this: it only discards a
                 // response outrun by another loadTopics(), not by a selection.
-                if (this.selectionEpoch === selectionEpoch) {
+                //
+                // Only a pick the response can account for, though. Switching
+                // creatives leaves the previous creative's chips on screen until
+                // this fetch lands, and a click on one of those names a topic
+                // this creative has never heard of — not intent about it. Its id
+                // would survive as the preference, fail the lookup in
+                // restoreSelection(), drop the user on Main and then persist Main
+                // as the new creative's saved topic. An empty pick (All Messages)
+                // is not a persisted selection either — saveLastTopic stores null
+                // for it — so it cannot outrank the answer.
+                if (!this.pickOutranks(selectionEpoch, topics, this.archivedTopics)) {
                     this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 }
                 // The archive guard only has to outlive the sources that still
@@ -1054,6 +1064,18 @@ export default class extends Controller {
 
     set selectionEpoch(value) {
         this._selectionEpoch = value
+    }
+
+    // Did a pick land after the load at `epoch` started, and does the topic set
+    // the load returned actually contain it? Both halves are needed: the first
+    // says the pick is newer than the answer, the second that it is a pick about
+    // the creative the answer describes.
+    pickOutranks(epoch, topics, archivedTopics) {
+        if (this.selectionEpoch === epoch) return false
+        if (!this.serverLastTopicId) return false
+
+        return [ ...(topics || []), ...(archivedTopics || []) ]
+            .some(t => String(t.id) === String(this.serverLastTopicId))
     }
 
     releaseSelectionSourcesOtherThan(id) {
