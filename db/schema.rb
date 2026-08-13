@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_13_000002) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -932,6 +932,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000001) do
     t.json "expanded_status", default: {}, null: false
     t.integer "last_topic_id"
     t.integer "last_topic_revision", default: 0, null: false
+    t.integer "last_topic_save_sequence"
+    t.string "last_topic_save_session_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["creative_id", "user_id"], name: "index_user_creative_preferences_on_creative_id_and_user_id", unique: true

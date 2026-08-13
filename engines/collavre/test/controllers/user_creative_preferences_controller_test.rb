@@ -122,6 +122,31 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "update_last_topic ignores a late older save from the same client session" do
+    alpha = Collavre::Topic.create!(creative: @creative, user: @user, name: "Alpha")
+    beta = Collavre::Topic.create!(creative: @creative, user: @user, name: "Beta")
+    stream = Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")
+
+    patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+          params: { last_topic_id: beta.id, client_id: "browser-1.2.save-2" },
+          as: :json
+
+    assert_response :success
+    preference = Collavre::UserCreativePreference.find_by!(creative_id: @creative.id, user_id: @user.id)
+
+    assert_no_broadcasts(stream) do
+      patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+            params: { last_topic_id: alpha.id, client_id: "browser-1.1.save-1" },
+            as: :json
+    end
+
+    assert_response :success
+    assert_equal false, response.parsed_body["success"]
+    preference.reload
+    assert_equal beta.id, preference.last_topic_id
+    assert_equal 1, preference.last_topic_revision
+  end
+
   test "update_last_topic rejects topic from another creative" do
     other_creative = Collavre::Creative.create!(user: @user, description: "Other")
     other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Foreign Topic")

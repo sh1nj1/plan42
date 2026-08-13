@@ -30,10 +30,10 @@ module Collavre
       return render_forbidden unless readable?(creative)
       return render_invalid_topic unless valid_last_topic?(creative)
 
-      record = persist_last_topic(creative)
-      broadcast_last_topic(creative, record)
+      record, saved = persist_last_topic(creative)
+      broadcast_last_topic(creative, record) if saved
 
-      render json: { success: true, last_topic_revision: [ record.id, record.last_topic_revision ] }
+      render json: { success: saved, last_topic_revision: [ record.id, record.last_topic_revision ] }
     end
 
     private
@@ -49,9 +49,12 @@ module Collavre
     def persist_last_topic(creative)
       record = UserCreativePreference.find_or_initialize_by(creative_id: creative.id, user_id: Current.user.id)
       record.with_lock do
+        return [ record, false ] if stale_last_topic_save?(record)
+
         record.expanded_status ||= {}
         record.last_topic_id = params[:last_topic_id].presence
         record.last_topic_revision = record.last_topic_revision.to_i + 1
+        assign_last_topic_save_order(record)
         # Retain a cleared preference after it has participated in last-topic
         # ordering. Its revision lets a reopened client distinguish a newer
         # Main selection from the empty snapshot that preceded an in-flight save.
@@ -61,7 +64,32 @@ module Collavre
           record.save!
         end
       end
-      record
+      [ record, true ]
+    end
+
+    # The client id carries a controller session, a monotonically increasing
+    # sequence, and an echo nonce. Older clients still send arbitrary ids, so
+    # only recognized ordering ids take this fencing path.
+    def stale_last_topic_save?(record)
+      session_id, sequence = last_topic_save_order
+      session_id.present? &&
+        record.last_topic_save_session_id == session_id &&
+        record.last_topic_save_sequence.to_i >= sequence
+    end
+
+    def assign_last_topic_save_order(record)
+      session_id, sequence = last_topic_save_order
+      return unless session_id.present?
+
+      record.last_topic_save_session_id = session_id
+      record.last_topic_save_sequence = sequence
+    end
+
+    def last_topic_save_order
+      match = params[:client_id].to_s.match(/\A([A-Za-z0-9-]+)\.([1-9]\d*)\.[A-Za-z0-9-]+\z/)
+      return [ nil, nil ] unless match
+
+      [ match[1], match[2].to_i ]
     end
 
     def broadcast_last_topic(creative, record)

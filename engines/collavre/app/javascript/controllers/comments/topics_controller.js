@@ -1367,7 +1367,7 @@ export default class extends Controller {
 
 		const creativeId = requestedCreativeId
 		const effectiveCreativeId = claimedEffectiveCreativeId
-        const clientId = newClientId()
+		const clientId = this.newLastTopicSaveClientId()
         // The subscription the echo of this save would arrive on. The claim is
         // taken inside the callback below, which runs whenever the save ahead
         // of it finishes — by then the stream may already be a different one,
@@ -1472,8 +1472,18 @@ export default class extends Controller {
                 this._pendingPick = null
             }
         })
-        return this._saveChain
-    }
+		return this._saveChain
+	}
+
+	// A timed-out fetch can still be running on Rails. Prefix each echo id with
+	// a controller-local session and monotonically increasing sequence so Rails
+	// can reject an older request if a later one from this controller commits
+	// first. The trailing nonce keeps the Action Cable echo identifier unique.
+	newLastTopicSaveClientId() {
+		this._lastTopicSaveSessionId ||= newClientId()
+		this._lastTopicSaveSequence = (this._lastTopicSaveSequence || 0) + 1
+		return `${this._lastTopicSaveSessionId}.${this._lastTopicSaveSequence}.${newClientId()}`
+	}
 
 	// A request that never settles must not hold every later pick behind it.
 	// Its server outcome remains ambiguous, so the caller still retains a short
