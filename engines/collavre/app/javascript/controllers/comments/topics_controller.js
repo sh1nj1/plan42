@@ -1442,7 +1442,10 @@ export default class extends Controller {
 		)
 		this.acknowledgedPendingSelfEchoes.add(clientId)
 		this.pendingSelfEchoes.splice(index, 1)
-		this.possiblyMissedPendingSelfEchoes.delete(clientId)
+		// Keep the closed-gap marker with the tombstone. A reopened GET can be
+		// newer than this committed save even when its response races ahead of
+		// the PATCH response; releasing this marker here would make that newer
+		// sibling-session snapshot look stale and replay our old pick over it.
 		this.settledSelfEchoes.add(clientId)
 		this.discardSettledSelfEchoesNoLongerNeeded()
 		return true
@@ -1618,7 +1621,7 @@ export default class extends Controller {
 		if (!this._pendingPick) return false
 
 		const streamCreativeId = String(creativeId)
-		return this.pendingSelfEchoes.some(clientId =>
+		return [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ].some(clientId =>
 			this.possiblyMissedPendingSelfEchoes.has(clientId) &&
 			this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
 			this.pendingSelfEchoTopicIds.get(clientId) === this._pendingPick.topicId &&
