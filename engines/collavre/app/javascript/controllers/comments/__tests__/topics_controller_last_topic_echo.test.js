@@ -278,6 +278,31 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('3')
   })
 
+	test('direct navigation from a linked shell to its origin keeps the shared stream claim', async () => {
+		controller.creativeIdValue = '77'
+		controller.element.dataset.effectiveCreativeId = '42'
+		controller.subscribe()
+		controller.selectTopic('2')
+		await controller.flushSaveLastTopic('2')
+
+		global.fetch = jest.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '2',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await controller.onPopupOpened({ creativeId: '42' })
+		controller.selectTopic('3')
+		selfEcho('2')
+
+		expect(controller.currentTopicId).toBe('3')
+	})
+
   test('reopening the same linked shell keeps its origin stream claim', async () => {
     controller.creativeIdValue = '77'
     controller.element.dataset.effectiveCreativeId = '42'

@@ -77,7 +77,10 @@ export default class extends Controller {
 		// requested creative to its effective stream id. A linked shell and
 		// its origin use the same TopicsChannel stream, but only the response
 		// tells us that after this cached value has been cleared.
-        this.subscribe()
+		// Direct history navigation replaces the subscription without firing
+		// onPopupClosed(). Keep claims until loadTopics() can resolve whether
+		// this requested creative shares the previous effective stream.
+		this.subscribe({ preservePendingSelfEchoes: true })
         return this.loadTopics()
     }
 
@@ -1419,13 +1422,13 @@ export default class extends Controller {
         localStorage.removeItem(key)
     }
 
-    subscribe() {
+    subscribe({ preservePendingSelfEchoes = false } = {}) {
         const creativeId = this.creativeId
         if (!creativeId) return
 
         if (this.topicsSubscription && this.subscribedCreativeId === String(creativeId)) return
 
-        if (this.topicsSubscription) this.unsubscribe()
+		if (this.topicsSubscription) this.unsubscribe({ preservePendingSelfEchoes })
 
         this.subscribedCreativeId = String(creativeId)
         this.topicsSubscription = createSubscription(
