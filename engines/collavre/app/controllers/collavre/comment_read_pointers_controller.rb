@@ -122,7 +122,10 @@ module Collavre
 
       query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id
 
-      query.includes(user: { avatar_attachment: :blob }).map(&:user)
+      pointers = query.includes(user: { avatar_attachment: :blob }).to_a
+      readable_user_ids = CreativeShare.readable_user_ids_from_shares(creative, pointers.map(&:user_id)).to_set
+
+      pointers.select { |pointer| readable_user_ids.include?(pointer.user_id) }.map(&:user)
     end
   end
 end

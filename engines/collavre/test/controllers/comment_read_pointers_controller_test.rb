@@ -153,6 +153,22 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_equal legacy.id, pointer.last_read_comment_id
   end
 
+  test "topic read receipt broadcasts exclude readers whose access was revoked" do
+    topic = @creative.main_topic
+    comment = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "public")
+    revoked_reader = User.create!(email: "revoked-reader@example.test", password: "password", name: "Revoked reader")
+    CommentReadPointer.create!(user: revoked_reader, creative: @creative, topic: topic, last_read_comment: comment)
+
+    broadcasts = []
+    Turbo::StreamsChannel.stub(:broadcast_update_to, ->(*args, **kwargs) { broadcasts << kwargs }) do
+      post "/comment_read_pointers/update", params: { creative_id: @creative.id, topic_id: topic.id }, as: :json
+    end
+
+    assert_response :success
+    read_by_users = broadcasts.last.fetch(:locals).fetch(:read_by_users)
+    refute_includes read_by_users, revoked_reader
+  end
+
   test "rejects a topic from another creative" do
     foreign_topic = Creative.create!(user: @user, description: "Foreign").main_topic
 

@@ -361,11 +361,12 @@ module Collavre
       end
     end
 
-    # A source-only participant must not acquire a visible read receipt in a
-    # creative they cannot read. Keep that participant's pointer with the source
-    # until they are granted access to the destination.
-    def move_read_pointers_for_topic(topic, source_creative, target_creative)
-      CommentReadPointer.where(creative: source_creative, topic: topic).includes(:user).find_each do |pointer|
+    # A participant can have a pointer stranded on an earlier source creative
+    # when the topic has moved before. Reconcile every pointer for this topic,
+    # rather than just those on the immediately previous creative, so a later
+    # move to a creative they can read restores their existing cursor.
+    def move_read_pointers_for_topic(topic, _source_creative, target_creative)
+      CommentReadPointer.where(topic: topic).includes(:user).find_each do |pointer|
         next unless target_creative.has_permission?(pointer.user, :read)
 
         pointer.update_column(:creative_id, target_creative.id)
