@@ -107,6 +107,21 @@ describe('TopicsController#openTopicListPopup', () => {
 		expect(popup.openForTopics).not.toHaveBeenCalled()
     })
 
+    test('keeps the toggle pending through a touch-generated mouse event', () => {
+		const btn = controller.topicListButtonTarget
+		const modal = document.createElement('div')
+		modal.id = 'topic-list-modal'
+		controller.element.appendChild(modal)
+		const popup = { popup: { isOpen: jest.fn().mockReturnValueOnce(true).mockReturnValue(false) }, close: jest.fn(), openForTopics: jest.fn() }
+		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+		controller.prepareTopicListToggle() // touchstart while the popup is open
+		controller.prepareTopicListToggle() // generated mousedown after it closes
+		controller.openTopicListPopup({ currentTarget: btn })
+
+		expect(popup.openForTopics).not.toHaveBeenCalled()
+    })
+
     test('removes the topic-list close listener when disconnecting', () => {
 		const removeEventListener = jest.spyOn(controller.element, 'removeEventListener')
 

@@ -729,7 +729,7 @@ export default class extends Controller {
 		// Let every open popup receive this pointer event and perform its normal
 		// outside-click cleanup. If this popup was one of them, consume the
 		// following click so it does not immediately reopen.
-		this.topicListTogglePointerDown = Boolean(popup?.popup?.isOpen())
+		this.topicListTogglePointerDown ||= Boolean(popup?.popup?.isOpen())
 	}
 
     handleTopicListClose() {
