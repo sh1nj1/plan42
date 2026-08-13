@@ -417,6 +417,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%("#{satellite}::\#{record_type}".constantize)))
   end
 
+  test "detector flags static fragments in dynamic Inflector constant names" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ "#{satellite}::Message" ],
+      names(string_references_in(%(ActiveSupport::Inflector.safe_constantize("#{satellite}::Message\#{suffix}"))))
+  end
+
   test "detector flags delegated type classes" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -2530,8 +2537,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     return found unless node.is_a?(Prism::Node)
 
     if active_support_inflector_constantize?(node)
-      string = static_string_call_argument(node)
-      found << [ string, node.location.start_line ] if string
+      found.concat(string_call_argument_literals(node).map { |string| [ string, node.location.start_line ] })
     elsif node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name)
       strings = static_string_concatenation(node.receiver) || string_literals_in(node.receiver)
       strings = [ strings ] unless strings.is_a?(Array)
@@ -2588,9 +2594,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       node.receiver&.slice&.match?(/\A(?:::)?ActiveSupport::Inflector\z/)
   end
 
-  def static_string_call_argument(node)
+  def string_call_argument_literals(node)
     arguments = node.arguments&.arguments
-    static_string_concatenation(arguments.first) if arguments&.one?
+    return [] unless arguments&.one?
+
+    argument = arguments.first
+    static_string_concatenation(argument).then { |string| string ? [ string ] : string_literals_in(argument) }
   end
 
   # Raw SQL is the one non-Ruby resolver context we ship: an STI `type` written
