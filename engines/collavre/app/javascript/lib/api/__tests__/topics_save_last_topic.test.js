@@ -33,6 +33,17 @@ describe('saveLastTopic', () => {
     expect(bodyOfLastCall()).toEqual({ last_topic_id: '3', client_id: 'save-abc' })
   })
 
+  test('forwards an abort signal to the request', async () => {
+    const abortController = new AbortController()
+
+    await saveLastTopic('42', '3', 'save-abc', abortController.signal)
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/creatives/42/user_creative_preferences/update_last_topic',
+      expect.objectContaining({ signal: abortController.signal }),
+    )
+  })
+
   test('sends null for both when clearing the selection anonymously', async () => {
     await saveLastTopic('42', null)
 

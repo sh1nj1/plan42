@@ -1478,13 +1478,21 @@ export default class extends Controller {
 	// Its server outcome remains ambiguous, so the caller still retains a short
 	// lived echo claim just as it does for a rejected fetch.
 	saveLastTopicWithTimeout(creativeId, topicId, clientId) {
+		const abortController = new AbortController()
+		const request = Promise.resolve(
+			saveLastTopic(creativeId, topicId, clientId, abortController.signal)
+		).catch(() => null)
 		let timeoutId
-		const request = Promise.resolve(saveLastTopic(creativeId, topicId, clientId)).catch(() => null)
-		const timeout = new Promise(resolve => {
-			timeoutId = setTimeout(() => resolve(null), SAVE_REQUEST_TIMEOUT)
+		const timedOutRequest = new Promise(resolve => {
+			timeoutId = setTimeout(() => {
+				// Do not advance the serialized queue while this request can still
+				// reach Rails. An abort makes fetch settle before the next save starts.
+				abortController.abort()
+				request.then(resolve)
+			}, SAVE_REQUEST_TIMEOUT)
 		})
 
-		return Promise.race([request, timeout]).finally(() => clearTimeout(timeoutId))
+		return Promise.race([request, timedOutRequest]).finally(() => clearTimeout(timeoutId))
 	}
 
     // The echo names the save it came from, so this is identity, not a guess.

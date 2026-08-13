@@ -209,7 +209,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await loading
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null, expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null, expect.any(String), expect.anything())
     })
   })
 
@@ -262,8 +262,8 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await loading
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String))
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null, expect.any(String))
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null, expect.any(String), expect.anything())
     })
 
     // The pick supersedes the legacy value, so the key has served its purpose
@@ -301,7 +301,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await controller.loadTopics()
 
       expect(controller.currentTopicId).toBe('2')
-      expect(saveLastTopic).toHaveBeenCalledWith('42', '2', expect.any(String))
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
       expect(localStorage.getItem(LEGACY_KEY)).toBeNull()
     })
   })
@@ -356,7 +356,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await switching
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('99', '11', expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('99', '11', expect.any(String), expect.anything())
     })
 
     // An empty pick is authoritative for the creative whose strip it was made
@@ -475,7 +475,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await loading
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String), expect.anything())
     })
 
     // A real pick has already won this load. A later restore is derived from
@@ -495,7 +495,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
 
       expect(controller.currentTopicId).toBe('3')
       await controller.flushSaveLastTopic(controller.currentTopicId)
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
     })
 
     test('re-dispatches a picked All Messages after an interim restore', async () => {
@@ -579,7 +579,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
       expect(controller.currentTopicId).toBe('2')
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String), expect.anything())
     })
 
     // The same broadcast for a topic this user created elsewhere auto-selects
@@ -621,7 +621,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
 
     expect(controller.currentTopicId).toBe('3')
     await controller.flushSaveLastTopic(controller.currentTopicId)
-    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
+    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
   })
 
   // Once that pick reaches the server, a later load is free to take the
@@ -924,7 +924,7 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
       controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
       await jest.advanceTimersByTimeAsync(500)
 
-      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3', expect.any(String))
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3', expect.any(String), expect.anything())
     })
 
     // The broadcast is the preference now; nothing this popup had queued
@@ -950,7 +950,7 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
       controller.selectTopic('1')
       await jest.advanceTimersByTimeAsync(500)
 
-      expect(saveLastTopic).toHaveBeenCalledWith('42', '1', expect.any(String))
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '1', expect.any(String), expect.anything())
     })
 
     // With no link to hold the view, the broadcast is followed, and following
@@ -962,7 +962,7 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
       controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
       await jest.advanceTimersByTimeAsync(500)
 
-      expect(saveLastTopic).toHaveBeenCalledWith('42', '2', expect.any(String))
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
     })
 
     test('a later restore leaves the broadcast preference behind the deep link', async () => {
@@ -974,7 +974,7 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
 
       expect(controller.currentTopicId).toBe('3')
       expect(controller.serverLastTopicId).toBe('2')
-      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3', expect.any(String))
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3', expect.any(String), expect.anything())
     })
   })
 })

@@ -445,7 +445,13 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 	test('advances the serialized save queue when a request never settles', async () => {
 		jest.useFakeTimers()
 		try {
-			saveLastTopic.mockImplementationOnce(() => new Promise(() => {}))
+			let firstSignal
+			saveLastTopic.mockImplementationOnce((_creativeId, _topicId, _clientId, signal) => {
+				firstSignal = signal
+				return new Promise((_resolve, reject) => {
+					signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+				})
+			})
 			const first = controller.flushSaveLastTopic('2')
 			const second = controller.flushSaveLastTopic('3')
 			await Promise.resolve()
@@ -454,7 +460,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 			await jest.advanceTimersByTimeAsync(5_000)
 			await Promise.all([first, second])
 
-			expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
+			expect(firstSignal.aborted).toBe(true)
+			expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.any(AbortSignal))
 		} finally {
 			jest.useRealTimers()
 		}
@@ -580,7 +587,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     selfEcho('2')
     await controller.flushSaveLastTopic(controller.currentTopicId)
 
-    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
+    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
   })
 
   // Same race for All Messages, which the strip renders as its own chip.
@@ -680,7 +687,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     resolveSave(true)
     await save
     await controller.flushSaveLastTopic(controller.currentTopicId)
-    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String))
+    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String), expect.anything())
 
     selfEcho('2')
     expect(controller.currentTopicId).toBe('2')
@@ -1270,7 +1277,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       await jest.advanceTimersByTimeAsync(500)
 
       const oldSaveClientId = clientIdFor('2')
-      expect(saveLastTopic).toHaveBeenCalledWith('77', '2', oldSaveClientId)
+      expect(saveLastTopic).toHaveBeenCalledWith('77', '2', oldSaveClientId, expect.anything())
       expect(controller.pendingSelfEchoCreativeIds.get(oldSaveClientId)).toBe('42')
 
       controller.selectTopic('3')
@@ -1488,13 +1495,13 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       const pending = await startTwoSaves()
 
       expect(saveLastTopic).toHaveBeenCalledTimes(1)
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String), expect.anything())
 
       resolveFirst(true)
       await Promise.all(pending)
 
       expect(saveLastTopic).toHaveBeenCalledTimes(2)
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
     })
 
     // With the sends ordered, the echoes are too: the first save's broadcast is
@@ -1529,7 +1536,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       rejectFirst(new Error('network'))
       await Promise.all([first, second])
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String))
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
       controller.selectTopic('')
       selfEcho('2')
       expect(controller.currentTopicId).toBe('')
