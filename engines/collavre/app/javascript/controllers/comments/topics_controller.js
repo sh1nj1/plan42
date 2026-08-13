@@ -2162,8 +2162,11 @@ export default class extends Controller {
 				claimedEffectiveCreativeId,
 				lastTopicRevision
 			)
-			if (this.consumeSelfEcho(data.client_id, lastTopicRevision) ||
-				this.isLastTopicSaveFromThisTab(data.client_id)) {
+			const consumedSelfEcho = this.consumeSelfEcho(data.client_id, lastTopicRevision)
+			const orphanedSelfEcho = !consumedSelfEcho && this.isLastTopicSaveFromThisTab(data.client_id)
+			const hasNewerPendingPick = this._pendingPick &&
+				String(this._pendingPick.creativeId) === String(claimedEffectiveCreativeId)
+			if (consumedSelfEcho || (orphanedSelfEcho && hasNewerPendingPick)) {
 				if (isCurrentRevision) {
 					this.setLastKnownRemoteTopicId(claimedEffectiveCreativeId, newTopicId)
 				}
@@ -2196,7 +2199,13 @@ export default class extends Controller {
                 // the debounce with the broadcast's own value, so only the path
                 // that does not follow has anything to cancel.
 				if (!this.hasDeepLinkSelection) {
-					this.selectTopic(newTopicId)
+					// The save belonged to the controller Turbo replaced, not to a
+					// new pick in this one. Reflect its committed preference without
+					// creating another pending pick or writing it back to the server.
+					this.selectTopic(
+						newTopicId,
+						orphanedSelfEcho ? { pick: false, persist: false } : undefined
+					)
 				}
             }
             return

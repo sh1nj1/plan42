@@ -166,6 +166,47 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		controller = replacement
 	})
 
+	test('a Turbo replacement applies an orphaned self echo without a newer pick', async () => {
+		let resolveSave
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		const alphaClientId = clientIdFor('2')
+
+		document.getElementById('topics').remove()
+		await new Promise(resolve => setTimeout(resolve, 0))
+		document.body.innerHTML = `
+		  <div id="replacement" data-controller="comments--topics" data-topic-main-text="All Messages">
+		    <div data-comments--topics-target="list"></div>
+		  </div>
+		`
+		await new Promise(resolve => setTimeout(resolve, 0))
+		const replacement = application.getControllerForElementAndIdentifier(
+			document.getElementById('replacement'), 'comments--topics'
+		)
+		replacement.creativeIdValue = '42'
+		replacement.topics = TOPICS
+		replacement.archivedTopics = []
+		replacement.mainTopicId = '1'
+		replacement.canManageTopics = true
+		replacement.showingArchived = false
+		replacement.serverLastTopicId = ''
+		replacement.renderTopics(TOPICS, true)
+
+		replacement.handleTopicMessage({
+			action: 'last_topic_changed',
+			last_topic_id: '2',
+			client_id: alphaClientId,
+		})
+
+		expect(replacement.currentTopicId).toBe('2')
+		expect(replacement.serverLastTopicId).toBe('2')
+		expect(replacement._pendingPick).toBeUndefined()
+		resolveSave(true)
+		await save
+		controller = replacement
+	})
+
 	test('ignores a sibling broadcast older than the observed revision', () => {
 		echo('3', 'sibling-newer', [5, 2])
 		echo('2', 'sibling-older', [5, 1])
