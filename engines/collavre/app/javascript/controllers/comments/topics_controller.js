@@ -1370,25 +1370,27 @@ export default class extends Controller {
             { channel: 'TopicsChannel', creative_id: this.creativeId },
             {
                 received: (data) => this.handleTopicMessage(data),
-                // unsubscribe() is only the deliberate exit. A connection that
-                // drops and a subscription the server refuses lose the echoes
-                // owed to us just the same, without any of it running, and
-                // ActionCable replays nothing on reconnect. A claim kept across
-                // either waits for a message that has no way to arrive, and
-                // swallows the next real update naming that topic instead.
-                disconnected: () => this.dropPendingSelfEchoes(),
+				// A dropped connection can reconnect before the server finishes
+				// a request already in flight. Keep its claim for the delayed
+				// echo, but invalidate queued work for the stream that ended.
+				disconnected: () => this.invalidateQueuedSelfEchoes(),
+				// A refused subscription cannot reconnect, so neither current
+				// nor queued work can receive an echo on that stream.
                 rejected: () => this.dropPendingSelfEchoes(),
             }
         )
     }
 
+    invalidateQueuedSelfEchoes() {
+		// A queued save has not yet claimed an echo. When it gets its turn the
+		// stream it was queued on may be gone, and this generation tells it
+		// not to manufacture a claim that can never settle.
+		this._subscriptionGeneration = this.subscriptionGeneration + 1
+    }
+
     dropPendingSelfEchoes() {
         this.pendingSelfEchoes.length = 0
-        // Emptying the array cannot reach a claim that has not been taken yet.
-        // A save waiting its turn on the chain takes one when it runs, and by
-        // then this stream is gone; the generation is how that queued save
-        // finds out.
-        this._subscriptionGeneration = this.subscriptionGeneration + 1
+		this.invalidateQueuedSelfEchoes()
     }
 
     unsubscribe() {

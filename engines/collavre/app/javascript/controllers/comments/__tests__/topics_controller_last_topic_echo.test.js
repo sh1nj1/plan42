@@ -179,10 +179,9 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('2')
   })
 
-  // unsubscribe() is only the deliberate exit. A connection that drops or a
-  // subscription the server refuses loses the same echoes without any of that
-  // running, and ActionCable replays nothing on reconnect — so a claim left
-  // behind waits for a message that will never come.
+  // unsubscribe() is the deliberate exit, and a refused subscription cannot
+  // reconnect, so both discard their claims. A dropped connection is different:
+  // its in-flight request can still broadcast after ActionCable reconnects.
   describe('claims against a subscription that goes away on its own', () => {
     // Delivered the way the real ones are, through the subscription itself.
     const deliver = (lastTopicId, clientId) => subscriptionCallbacks.received({
@@ -196,13 +195,26 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
       controller.subscribe()
     })
 
-    test('a dropped connection drops outstanding claims', async () => {
+    test('a reconnectable disconnect keeps an in-flight claim for its delayed echo', async () => {
       controller.selectTopic('2')
       await controller.flushSaveLastTopic('2')
 
       subscriptionCallbacks.disconnected()
 
-      expect(controller.pendingSelfEchoes).toHaveLength(0)
+      expect(controller.pendingSelfEchoes).toEqual([clientIdFor('2')])
+      // Reconnected, and the user has since picked Beta. The delayed echo of
+      // the request made before the reconnect is still ours, not new state.
+      controller.selectTopic('3')
+      deliver('2', clientIdFor('2'))
+      expect(controller.currentTopicId).toBe('3')
+    })
+
+    test('a real update still applies after a reconnectable disconnect', async () => {
+      controller.selectTopic('2')
+      await controller.flushSaveLastTopic('2')
+
+      subscriptionCallbacks.disconnected()
+
       // Reconnected, and another session moves the preference to Alpha.
       controller.selectTopic('3')
       deliver('2')
