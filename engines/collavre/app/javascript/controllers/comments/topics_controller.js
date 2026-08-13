@@ -1323,7 +1323,7 @@ export default class extends Controller {
     // was scheduled with, so a save that is no longer wanted cannot be talked
     // out of its value — only cancelled.
     cancelPendingSaveLastTopic() {
-\t\tif (this._saveLastTopicTimer !== undefined && this._saveLastTopicTimer !== null) {
+		if (this._saveLastTopicTimer !== undefined && this._saveLastTopicTimer !== null) {
             clearTimeout(this._saveLastTopicTimer)
             this._saveLastTopicTimer = null
         }
@@ -1397,10 +1397,14 @@ export default class extends Controller {
 						this.pendingSelfEchoRemoteRevisions.set(clientId, savedRevision)
 					}
 				}
-				if (this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) {
+				const subscribedToAnotherStream = this.topicsSubscription &&
+					String(this.effectiveCreativeId) !== String(effectiveCreativeId)
+				if ((this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) ||
+					subscribedToAnotherStream) {
 					// update_last_topic broadcasts before it returns. With the popup
-					// still closed, that echo was necessarily sent into the gap and
-					// cannot settle this claim.
+					// closed, or after its stream was replaced, that echo was necessarily
+					// sent somewhere this controller can no longer receive it and cannot
+					// settle this claim.
 					// This completed save is also the remote baseline for the next
 					// queued save, which may have claimed after the popup closed.
 					this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)

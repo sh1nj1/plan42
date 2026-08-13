@@ -1077,6 +1077,33 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.pendingSelfEchoes).toHaveLength(1)
   })
 
+  test('a completed save releases its claim after navigation subscribes to another stream', async () => {
+    let resolveSave
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+    global.fetch = jest.fn().mockResolvedValue({
+		ok: true,
+		json: async () => ({
+			topics: TOPICS,
+			archived_topics: [],
+			can_manage: true,
+			last_topic_id: '',
+			main_topic_id: '1',
+			effective_creative_id: '99',
+		}),
+	})
+
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
+    const alphaClientId = clientIdFor('2')
+
+    const openDifferentCreative = controller.onPopupOpened({ creativeId: '99' })
+    resolveSave(true)
+    await Promise.all([save, openDifferentCreative])
+
+    expect(controller.pendingSelfEchoes).not.toContain(alphaClientId)
+    expect(controller.pendingSelfEchoCreativeIds.has(alphaClientId)).toBe(false)
+  })
+
   // unsubscribe() is the deliberate exit, and a refused subscription cannot
   // reconnect, so both discard their claims. A dropped connection is different:
   // its in-flight request can still broadcast after ActionCable reconnects.
