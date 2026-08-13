@@ -88,6 +88,21 @@ module Collavre
       assert_nil user.reload.onboarding_completed_at
     end
 
+    test "does not complete a replacement session when a conditional completion receives a stale session id" do
+      user = User.create!(name: "Conditional finisher", email: "conditional-onboarding@example.com", password: "password")
+      sign_in_as(user, password: "password")
+      stale_session = Onboarding::Seeder.new(user: user).call
+
+      post reset_onboarding_path
+      replacement_session = Onboarding::Session.for_user(user.reload)
+
+      refute Onboarding::CompletionService.new(user: user).call(session_id: stale_session.session_id)
+
+      assert Creative.exists?(replacement_session.root.id)
+      assert_equal replacement_session.session_id, Onboarding::Session.for_user(user.reload).session_id
+      assert_nil user.onboarding_completed_at
+    end
+
     test "reset seeds onboarding even when the user already has a workspace" do
       user = User.create!(name: "Returning learner", email: "onboarding-reset@example.com", password: "password")
       Creative.create!(user: user, description: "Existing workspace")

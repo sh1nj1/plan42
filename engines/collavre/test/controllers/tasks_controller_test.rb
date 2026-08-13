@@ -34,6 +34,37 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "cancelled", @task.reload.status
   end
 
+  test "cancelled claimed task cannot be finalized as done" do
+    sign_in_as(@user, password: "password")
+    topic = Collavre::Topic.create!(name: "Claim finalization race", creative: @creative, user: @user)
+    @task.update!(status: "delegated", topic_id: topic.id, creative: @creative)
+    claimed_task = Collavre::AiAgent::TaskClaimService.new.claim(
+      agent: @agent, topic: topic, requested_task_id: @task.id
+    )
+    reply = @creative.comments.create!(
+      content: "Reply arrived after Stop", topic: topic, user: @agent, skip_default_user: true, skip_dispatch: true
+    )
+
+    post cancel_task_path(@task)
+
+    assert_response :ok
+    tracker = Minitest::Mock.new
+    tracker.expect(:release!, true, [ @task.id ])
+    dequeued = []
+    Collavre::Orchestration::ResourceTracker.stub(:for, ->(_agent) { tracker }) do
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(topic_id, creative_id) {
+        dequeued << [ topic_id, creative_id ]
+      }) do
+        refute Collavre::AiAgent::TaskClaimService.new.finalize(agent: @agent, task: claimed_task, comment: reply)
+      end
+    end
+
+    assert_equal "cancelled", @task.reload.status
+    assert_equal @task.id, reply.reload.task_id
+    assert_equal [ [ topic.id, @creative.id ] ], dequeued
+    tracker.verify
+  end
+
   test "cancel returns forbidden for user without permission" do
     other_user = User.create!(
       email: "no_perm_cancel@example.com",

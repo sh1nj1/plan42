@@ -7,22 +7,25 @@ module Collavre
         @user = user
       end
 
-      def call(defer_pending_agent_cleanup: false)
+      def call(session_id: nil, defer_pending_agent_cleanup: false)
         session = Session.for_user(user)
+        return false if session_id.present? && session&.session_id != session_id
+
         # The session id, not current tree position, is the ownership boundary.
         # This keeps moved practice items from becoming permanent clutter. If
         # the root was deleted, every remaining tagged item is orphaned and
         # must be removed before onboarding can be reset or completed.
-        session_id = session&.session_id
-        owned = session_items(session_id)
-        session_id ||= session_id_from(owned)
-        if defer_pending_agent_cleanup && session_id.present? && pending_agent_turn?(owned)
+        resolved_session_id = session_id || session&.session_id
+        owned = session_items(resolved_session_id)
+        resolved_session_id ||= session_id_from(owned)
+        if defer_pending_agent_cleanup && resolved_session_id.present? && pending_agent_turn?(owned)
           mark_deferred_cleanup!(owned)
-          OnboardingCleanupJob.perform_later(user.id, session_id)
+          OnboardingCleanupJob.perform_later(user.id, resolved_session_id)
         else
           destroy_items!(owned)
         end
         user.update!(onboarding_completed_at: Time.current)
+        true
       end
 
       # A deferred cleanup is scoped to the session that was completed, so a

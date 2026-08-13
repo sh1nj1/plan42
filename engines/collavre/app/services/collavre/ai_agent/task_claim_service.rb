@@ -55,12 +55,27 @@ module Collavre
       def finalize(agent:, task:, comment:)
         comment.update_column(:task_id, task.id)
 
-        Orchestration::ResourceTracker.for(agent).release!(task.id)
-
         # Complete the task only after the reply is linked. This runs the normal
         # completion callbacks after TriggerLoopCheckJob, stop-button updates,
         # and deferred onboarding cleanup can safely observe the reply.
-        task.update!(status: "done")
+        finalized = false
+        task.with_lock do
+          task.reload
+          next unless task.running?
+
+          task.update!(status: "done")
+          finalized = true
+        end
+        unless finalized
+          # Claimed Claude Channel tasks have no worker left to release their
+          # slot. A concurrent Stop owns the terminal status, but this late
+          # reply still needs to free the handoff's resource reservation.
+          Orchestration::ResourceTracker.for(agent).release!(task.id)
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          return false
+        end
+
+        Orchestration::ResourceTracker.for(agent).release!(task.id)
 
         Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
 
@@ -69,6 +84,7 @@ module Collavre
         # is up to HEARTBEAT_SECONDS away — broadcast idle now so the indicator
         # drops the moment Claude's reply lands.
         broadcast_claude_idle(agent, task, comment)
+        true
       end
 
       private
