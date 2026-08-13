@@ -136,9 +136,11 @@
     <span class="topic-creation-container" data-comments--topics-target="creationContainer" hidden
           data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop"></span>
     <button type="button" class="topic-list-btn"
-            data-action="click->comments--topics#openTopicListPopup"
+			data-comments--topics-target="topicListButton"
+			data-action="pointerdown->comments--topics#prepareTopicListToggle pointerup->comments--topics#finishTopicListToggle pointercancel->comments--topics#cancelTopicListToggle click->comments--topics#openTopicListPopup"
             title="<%= t('collavre.comments.topic_list') %>"
-            aria-label="<%= t('collavre.comments.topic_list') %>">
+			aria-label="<%= t('collavre.comments.topic_list') %>"
+			aria-expanded="false">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
     </button>
   </div>

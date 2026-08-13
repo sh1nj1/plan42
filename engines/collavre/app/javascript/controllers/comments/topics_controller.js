@@ -7,7 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
 export default class extends Controller {
-    static targets = ["list", "creationContainer"]
+    static targets = ["list", "creationContainer", "topicListButton"]
 
     connect() {
         this.topics = []
@@ -24,13 +24,16 @@ export default class extends Controller {
         }
         this.handleNewMessage = this.handleNewMessage.bind(this)
         this.handleTopicMoved = this.handleTopicMoved.bind(this)
+		this.handleTopicListClose = this.handleTopicListClose.bind(this)
         window.addEventListener('comments--topics:new-message', this.handleNewMessage)
         window.addEventListener('collavre:topic-moved', this.handleTopicMoved)
+		this.element.addEventListener('topic-list:close', this.handleTopicListClose)
     }
 
     disconnect() {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
+		this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
         this.unsubscribe()
     }
 
@@ -721,6 +724,11 @@ export default class extends Controller {
     }
 
     openTopicListPopup(event) {
+		if (this.topicListTogglePointerDown) {
+			this.cancelTopicListToggle()
+			return
+		}
+
         const btnRect = event.currentTarget.getBoundingClientRect()
 
         const openWith = (popup) => {
@@ -735,12 +743,18 @@ export default class extends Controller {
                 (item) => this.selectTopic(item.id),
                 this.element
             )
+			this.setTopicListButtonExpanded(true)
         }
 
-        let modal = document.getElementById('topic-list-modal')
-        if (modal) {
-            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
-            if (popup) openWith(popup)
+		let modal = document.getElementById('topic-list-modal')
+		if (modal) {
+			const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+			if (popup?.popup?.isOpen()) {
+				popup?.close()
+				this.setTopicListButtonExpanded(false)
+			} else if (popup) {
+				openWith(popup)
+			}
             return
         }
 
@@ -765,6 +779,55 @@ export default class extends Controller {
             if (popup) openWith(popup)
             else console.error('topic-list controller not found after creation')
         })
+    }
+
+	prepareTopicListToggle(event) {
+		if (event.isPrimary === false || event.button !== 0) return
+
+		const modal = document.getElementById('topic-list-modal')
+		const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+		// Let every open popup receive this pointer event and perform its normal
+		// outside-click cleanup. If this popup was one of them, consume the
+		// following click so it does not immediately reopen.
+		if (popup?.popup?.isOpen()) {
+			this.topicListTogglePointerDown = true
+			this.topicListTogglePointerId = event.pointerId
+			event.currentTarget.setPointerCapture(event.pointerId)
+		}
+	}
+
+	finishTopicListToggle(event) {
+		if (event.pointerId !== this.topicListTogglePointerId) return
+
+		const rect = event.currentTarget.getBoundingClientRect()
+		const releasedOutsideButton = event.clientX < rect.left || event.clientX > rect.right ||
+			event.clientY < rect.top || event.clientY > rect.bottom
+		if (releasedOutsideButton) {
+			this.cancelTopicListToggle(event)
+		} else {
+			// A completed activation dispatches click before the next task. Clear a
+			// canceled in-button gesture afterwards so it cannot consume a later click.
+			this.topicListToggleClearTimeout = setTimeout(() => this.cancelTopicListToggle(event), 0)
+		}
+	}
+
+	cancelTopicListToggle(event = {}) {
+		if (event.pointerId != null && event.pointerId !== this.topicListTogglePointerId) return
+
+		clearTimeout(this.topicListToggleClearTimeout)
+		this.topicListToggleClearTimeout = undefined
+		this.topicListTogglePointerDown = false
+		this.topicListTogglePointerId = undefined
+	}
+
+    handleTopicListClose() {
+		this.setTopicListButtonExpanded(false)
+    }
+
+    setTopicListButtonExpanded(expanded) {
+		if (this.hasTopicListButtonTarget) {
+			this.topicListButtonTarget.setAttribute('aria-expanded', String(expanded))
+		}
     }
 
     showInput(event) {
