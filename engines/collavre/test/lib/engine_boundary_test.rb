@@ -411,6 +411,12 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ satellite ], names(string_references_in(%(Object.const_get("#{satellite}"))))
   end
 
+  test "detector flags a satellite namespace in a dynamic constantize receiver" do
+    satellite = SATELLITE_CONSTANTS.keys.first
+
+    assert_equal [ satellite ], names(string_references_in(%("#{satellite}::\#{record_type}".constantize)))
+  end
+
   test "detector flags delegated type classes" do
     satellite = SATELLITE_CONSTANTS.keys.first
 
@@ -1279,6 +1285,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_empty js_imports_in(%(import { createRequire } from "node:module"; registry.createRequire(import.meta.url)("#{satellite}/thing")))
     assert_empty js_imports_in(%(import * as Module from "node:module"; registry.Module.createRequire(import.meta.url)("#{satellite}/thing")))
     assert_empty js_imports_in(%(import * as Module from "node:module"; function load(Module) { return Module.createRequire(import.meta.url)("#{satellite}/thing") }))
+    assert_empty js_imports_in(%(import { createRequire } from "node:module"; function load(createRequire) { return createRequire(import.meta.url)("#{satellite}/thing") }))
   end
 
   test "JS specifier decoder removes escaped line terminators" do
@@ -2068,7 +2075,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     imported_namespaces = js_imported_node_module_names(tokens)
 
     tokens.each_with_index.filter_map do |(kind, value), index|
-      native_import = imported_names.include?(value) && js_bare_js_identifier?(tokens, index)
+      native_import = imported_names.include?(value) &&
+                      js_bare_js_identifier?(tokens, index) &&
+                      !js_function_parameter_shadows_identifier?(tokens, index)
       native_namespace = js_node_module_namespace_create_require?(tokens, index, imported_namespaces)
       native_require = value == "createRequire" && js_required_node_create_require?(tokens, index)
       next unless kind == :word && (native_import || native_namespace || native_require)
@@ -2524,8 +2533,9 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       string = static_string_call_argument(node)
       found << [ string, node.location.start_line ] if string
     elsif node.is_a?(Prism::CallNode) && %i[constantize safe_constantize].include?(node.name)
-      string = static_string_concatenation(node.receiver)
-      found << [ string, node.location.start_line ] if string
+      strings = static_string_concatenation(node.receiver) || string_literals_in(node.receiver)
+      strings = [ strings ] unless strings.is_a?(Array)
+      strings.each { |string| found << [ string, node.location.start_line ] if string }
     elsif rails_association_call?(node)
       association_class_option_values(node).each do |value|
         string = static_string_concatenation(value)
