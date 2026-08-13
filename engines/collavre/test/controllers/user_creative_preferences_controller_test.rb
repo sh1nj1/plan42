@@ -25,6 +25,32 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_nil Collavre::UserCreativePreference.find_by(creative_id: @creative.id, user_id: @user.id)
   end
 
+  test "toggle retries when a concurrent collapse removes the preference before locking" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative_id: @creative.id,
+      user_id: @user.id,
+      expanded_status: { @creative.id.to_s => true }
+    )
+    original_find_by = Collavre::UserCreativePreference.method(:find_by!)
+    calls = 0
+
+    Collavre::UserCreativePreference.stub(:find_by!, lambda { |**attributes|
+      calls += 1
+      if calls == 1
+        Collavre::UserCreativePreference.where(id: preference.id).delete_all
+        preference
+      else
+        original_find_by.call(**attributes)
+      end
+    }) do
+      post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id, expanded: false }
+    end
+
+    assert_response :success
+    assert_equal 2, calls
+    assert_nil Collavre::UserCreativePreference.find_by(creative_id: @creative.id, user_id: @user.id)
+  end
+
   test "toggle preserves record when last_topic_id is set" do
     topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Test Topic")
     Collavre::UserCreativePreference.create!(

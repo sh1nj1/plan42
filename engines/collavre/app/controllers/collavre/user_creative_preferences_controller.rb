@@ -7,22 +7,29 @@ module Collavre
       node_id = params[:node_id].to_s
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])
 
-      record = preference_for(creative_id)
-      record.with_lock do
-        state = record.expanded_status || {}
+      begin
+        record = preference_for(creative_id)
+        record.with_lock do
+          state = record.expanded_status || {}
 
-        if expanded
-          state[node_id] = true
-        else
-          state.delete(node_id)
-        end
+          if expanded
+            state[node_id] = true
+          else
+            state.delete(node_id)
+          end
 
-        record.expanded_status = state
-        if state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero?
-          record.destroy!
-        else
-          record.save!
+          record.expanded_status = state
+          if state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero?
+            record.destroy!
+          else
+            record.save!
+          end
         end
+      rescue ActiveRecord::RecordNotFound
+        # A concurrent collapse can delete the empty preference after
+        # preference_for returns but before with_lock reloads it. Retry against
+        # the unique preference key so the toggle remains a successful no-op.
+        retry
       end
 
       render json: { success: true }

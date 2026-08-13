@@ -1386,6 +1386,7 @@ export default class extends Controller {
 		const creativeId = requestedCreativeId
 		const effectiveCreativeId = claimedEffectiveCreativeId
 		const clientId = this.newLastTopicSaveClientId()
+		const pendingPick = this._pendingPick
         // The subscription the echo of this save would arrive on. The claim is
         // taken inside the callback below, which runs whenever the save ahead
         // of it finishes — by then the stream may already be a different one,
@@ -1499,14 +1500,14 @@ export default class extends Controller {
 			if (claimed && saveResult === null) {
 				this.scheduleAmbiguousPendingSelfEchoRetirement(clientId)
 			}
-			const rejectedPendingPick = staleLastTopicSave && this._pendingPick &&
-				String(this._pendingPick.creativeId) === String(creativeId) &&
-				this._pendingPick.topicId === topicId
+			const rejectedPendingPick = staleLastTopicSave && this._pendingPick === pendingPick &&
+				String(pendingPick?.creativeId) === String(creativeId) &&
+				pendingPick?.topicId === topicId
 			if (rejectedPendingPick) this._pendingPick = null
 			if (saveResult !== null) this.retryDeferredLastTopicReconciliation(effectiveCreativeId)
-			if (saveResult !== false && this._pendingPick &&
-                String(this._pendingPick.creativeId) === String(creativeId) &&
-                this._pendingPick.topicId === topicId) {
+			if (saveResult !== false && this._pendingPick === pendingPick &&
+				String(pendingPick?.creativeId) === String(creativeId) &&
+				pendingPick?.topicId === topicId) {
                 this._pendingPick = null
             }
         })

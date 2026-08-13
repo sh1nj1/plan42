@@ -683,6 +683,22 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
   })
 
+  test('a stale rejection does not clear a later pick of the same topic', async () => {
+    let resolveSave
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+    controller.selectTopic('2')
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
+    controller.selectTopic('2')
+    const laterPick = controller._pendingPick
+
+    resolveSave({ success: false, staleLastTopicSave: true })
+    await save
+
+    expect(controller._pendingPick).toBe(laterPick)
+  })
+
   // The stream is per creative, so leaving it for another means the echoes it
   // owed us are not coming. Nothing can settle those claims; they go with it.
   test('leaving the stream drops outstanding claims', async () => {
