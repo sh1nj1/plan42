@@ -42,25 +42,10 @@ class TriggerTaskStatusTest < ApplicationSystemTestCase
     # The trigger button should become visible
     trigger_btn = find("[data-comments--drop-trigger-target='triggerButton']", wait: 10)
 
-    # Wait for async _loadTriggerState to complete and update UI
-    # The button should not be hidden (display:none)
-    assert_eventually(timeout: 10) do
-      trigger_btn.evaluate_script("this.style.display") != "none"
-    end
-
-    # Verify tooltip
-    assert_match(/Idle/i, trigger_btn["title"])
-  end
-
-  private
-
-  def assert_eventually(timeout: 5, interval: 0.2)
-    deadline = Time.now + timeout
-    loop do
-      return if yield
-      raise "Assertion did not pass within #{timeout}s" if Time.now > deadline
-
-      sleep interval
-    end
+    # The popup initializes with the preceding creative's state while its
+    # trigger request is in flight. Wait for the task state instead of merely
+    # waiting for the shared button to become visible.
+    assert_selector "[data-comments--drop-trigger-target='triggerButton'][title*='Idle']", wait: 10
+    assert_equal "Idle — click to start", trigger_btn["title"]
   end
 end

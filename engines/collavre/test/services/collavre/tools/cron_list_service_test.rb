@@ -62,7 +62,7 @@ module Collavre
       test "does not list static tasks" do
         SolidQueue::RecurringTask.create!(
           key: "static_test_list",
-          class_name: "InboxSummaryJob",
+          class_name: "Collavre::StuckDetectorJob",
           schedule: "0 9 * * *",
           static: true
         )

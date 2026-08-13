@@ -21,11 +21,23 @@ module Collavre
       end
     end
 
-    def edit; end
+    def edit
+      @has_stored_completion_key = @agent_gateway.completion_key.present?
+    end
 
     def update
       attributes = gateway_params
-      %i[admin_key completion_key identity_secret].each do |key|
+      clear_completion_key = ActiveModel::Type::Boolean.new.cast(attributes.delete(:clear_completion_key))
+      @has_stored_completion_key = @agent_gateway.completion_key.present?
+      @clear_completion_key = clear_completion_key
+
+      if clear_completion_key
+        attributes[:completion_key] = nil
+      elsif attributes[:completion_key].blank?
+        attributes.delete(:completion_key)
+      end
+
+      %i[admin_key identity_secret].each do |key|
         attributes.delete(key) if attributes[key].blank?
       end
 
@@ -66,7 +78,7 @@ module Collavre
     def gateway_params
       params.require(:agent_gateway).permit(
         :name, :base_url, :admin_key, :completion_key, :identity_secret,
-        :tenant_id, :workspace_mode, :active
+        :tenant_id, :workspace_mode, :active, :clear_completion_key
       )
     end
 

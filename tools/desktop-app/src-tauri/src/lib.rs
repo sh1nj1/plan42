@@ -1,25 +1,104 @@
 //! Collavre Desktop shell.
 //!
 //! Responsibilities (and nothing else — the UI is the server-rendered Rails app):
-//!   1. Pick a free loopback port.
+//!   1. Start the sidecar on a stable loopback port.
 //!   2. Spawn the bundled Rails sidecar (`bin/desktop-server`) pointed at a
 //!      writable data dir under the OS app-data location.
 //!   3. Health-gate `GET /up` until the server is ready.
 //!   4. Show the app in a native webview at `http://127.0.0.1:<port>`.
 //!   5. Gracefully stop the sidecar (and its process group) on quit.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use hmac::{Hmac, Mac};
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
+const DEFAULT_PORT: u16 = 4000;
+const DESKTOP_USER_AGENT: &str = concat!("CollavreDesktop/", env!("CARGO_PKG_VERSION"));
+
 /// Holds the sidecar child so we can stop it on exit.
-struct Sidecar(Mutex<Option<Child>>);
+struct Sidecar {
+    child: Mutex<Option<Child>>,
+    port: Mutex<Option<u16>>,
+    secret: String,
+}
+
+/// Holds the optional, user-approved cli-openai-proxy process. It is deliberately
+/// separate from the Rails sidecar: a failed or disabled proxy must never stop
+/// the local Collavre application from opening.
+struct ManagedProxy {
+    child: Child,
+    port: u16,
+    credentials: ProxyCredentials,
+}
+
+struct ProxySidecar(Mutex<Option<ManagedProxy>>);
+
+const PROXY_KEYCHAIN_SERVICE: &str = "net.collavre.desktop.cli-openai-proxy";
+const PROXY_CREDENTIALS_ACCOUNT: &str = "credentials";
+const PROXY_ADMIN_KEY_ACCOUNT: &str = "admin-key";
+const PROXY_COMPLETION_KEY_ACCOUNT: &str = "completion-key";
+const PROXY_IDENTITY_SECRET_ACCOUNT: &str = "identity-secret";
+const ERR_SEC_ITEM_NOT_FOUND: i32 = -25_300;
+
+#[derive(Debug, Deserialize)]
+struct BundledProxyManifest {
+    package: String,
+    version: String,
+    integrity: String,
+    platform: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ProxyConfig {
+    port: u16,
+    version: String,
+    #[serde(default)]
+    registered: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ProxyStatus {
+    installed: bool,
+    running: bool,
+    port: Option<u16>,
+    version: Option<String>,
+    registered: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ProxySetupResult {
+    status: ProxyStatus,
+    adapters: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct GatewayRegistration<'a> {
+    registration_token: &'a str,
+    proxy_port: u16,
+    admin_key: &'a str,
+    completion_key: &'a str,
+    identity_secret: &'a str,
+    adapters: &'a [String],
+}
+
+#[derive(Serialize)]
+struct GatewayRegistrationStatus<'a> {
+    proxy_port: u16,
+    admin_key: &'a str,
+    completion_key: &'a str,
+    identity_secret: &'a str,
+}
 
 /// Bind to port 0 to let the OS hand us a free port, then release it. There is a
 /// tiny TOCTOU window before the sidecar grabs it, acceptable for a loopback
@@ -32,10 +111,32 @@ fn free_port() -> u16 {
         .port()
 }
 
+/// Returns a valid configured port or the stable desktop default.
+fn desktop_port(port: Option<&str>) -> u16 {
+    port.and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port != 0)
+        .unwrap_or(DEFAULT_PORT)
+}
+
+/// Locate the macOS application resource directory from its executable.
+///
+/// `PathResolver::resource_dir` is normally this directory, but can be absent
+/// when the app is launched directly from a copied `.app` during installation.
+/// Resolving relative to the executable keeps an installed build independent of
+/// the development checkout in that case.
+fn packaged_resource_dir() -> Option<PathBuf> {
+    let executable_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let resources = executable_dir.parent()?.join("Resources");
+    resources.join("app").is_dir().then_some(resources)
+}
+
 /// Locate the bundled Rails app root. In a packaged `.app` the launcher and app
 /// tree live under `Contents/Resources/app`; in `tauri dev` they're resolved
 /// relative to the repo so the shell can be exercised without packaging.
 fn app_root(app: &tauri::AppHandle) -> PathBuf {
+    if let Some(resources) = packaged_resource_dir() {
+        return resources.join("app");
+    }
     if let Ok(res) = app.path().resource_dir() {
         let bundled = res.join("app");
         if bundled.join("bin/desktop-server").exists() {
@@ -57,9 +158,297 @@ fn data_dir(app: &tauri::AppHandle) -> PathBuf {
         .join("Collavre")
 }
 
+/// The installed proxy has no mutable content. Only a public port and its
+/// expected package version are persisted here; credentials live exclusively in
+/// Keychain and are never serialized into this directory or a log.
+fn proxy_state_dir(data: &Path) -> PathBuf {
+    data.join("proxy")
+}
+
+fn proxy_config_path(data: &Path) -> PathBuf {
+    proxy_state_dir(data).join("config.json")
+}
+
+fn proxy_pidfile_path(data: &Path) -> PathBuf {
+    proxy_state_dir(data).join("desktop-proxy.pid")
+}
+
+fn proxy_root(app: &tauri::AppHandle) -> PathBuf {
+    if let Some(resources) = packaged_resource_dir() {
+        let bundled = resources.join("app/proxy");
+        if bundled.join("manifest.json").exists() {
+            return bundled;
+        }
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join("app/proxy");
+        if bundled.join("manifest.json").exists() {
+            return bundled;
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/proxy")
+}
+
+fn bundled_proxy_manifest(app: &tauri::AppHandle) -> Result<BundledProxyManifest, String> {
+    let root = proxy_root(app);
+    let manifest = fs::read_to_string(root.join("manifest.json")).map_err(|_| {
+        "The bundled cli-openai-proxy runtime is missing. Reinstall Collavre Desktop.".to_string()
+    })?;
+    parse_bundled_proxy_manifest(&manifest)
+}
+
+fn parse_bundled_proxy_manifest(manifest: &str) -> Result<BundledProxyManifest, String> {
+    let manifest: BundledProxyManifest = serde_json::from_str(manifest).map_err(|_| {
+        "The bundled cli-openai-proxy manifest is invalid. Reinstall Collavre Desktop.".to_string()
+    })?;
+    if manifest.package != "cli-openai-proxy"
+        || manifest.platform != "darwin-arm64"
+        || manifest.version.is_empty()
+        || !manifest.integrity.starts_with("sha512-")
+    {
+        return Err(
+            "The bundled cli-openai-proxy manifest is invalid. Reinstall Collavre Desktop."
+                .to_string(),
+        );
+    }
+    Ok(manifest)
+}
+
+fn read_proxy_config(data: &Path) -> Option<ProxyConfig> {
+    let json = fs::read_to_string(proxy_config_path(data)).ok()?;
+    let config: ProxyConfig = serde_json::from_str(&json).ok()?;
+    (config.port > 0 && !config.version.is_empty()).then_some(config)
+}
+
+fn normalized_proxy_config(
+    existing: Option<ProxyConfig>,
+    version: String,
+    default_port: u16,
+) -> ProxyConfig {
+    match existing {
+        Some(config) => ProxyConfig { version, ..config },
+        None => ProxyConfig {
+            port: default_port,
+            version,
+            registered: false,
+        },
+    }
+}
+
+/// A persisted loopback port can later be claimed by another local process.
+/// Replacing it requires gateway re-registration because its URL has changed.
+fn replace_occupied_proxy_port(config: &mut ProxyConfig, replacement_port: u16) {
+    config.port = replacement_port;
+    config.registered = false;
+}
+
+fn proxy_port_available(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// Update only the proxy version tracked in local state when a new desktop
+/// bundle is installed. The port, registration state, and all Keychain-backed
+/// credentials remain untouched.
+fn migrate_proxy_config(data: &Path, version: String) -> Result<Option<ProxyConfig>, String> {
+    let Some(existing) = read_proxy_config(data) else {
+        return Ok(None);
+    };
+    let config = normalized_proxy_config(Some(existing), version, 0);
+    write_proxy_config(data, &config)?;
+    Ok(Some(config))
+}
+
+fn write_proxy_config(data: &Path, config: &ProxyConfig) -> Result<(), String> {
+    let state_dir = proxy_state_dir(data);
+    fs::create_dir_all(&state_dir)
+        .map_err(|_| "Could not create the desktop proxy state directory.".to_string())?;
+    let temporary = state_dir.join("config.json.tmp");
+    let json = serde_json::to_vec(config)
+        .map_err(|_| "Could not write desktop proxy configuration.".to_string())?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|_| "Could not write desktop proxy configuration.".to_string())?;
+    file.write_all(&json)
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "Could not write desktop proxy configuration.".to_string())?;
+    fs::rename(temporary, proxy_config_path(data))
+        .map_err(|_| "Could not finalize desktop proxy configuration.".to_string())
+}
+
+fn generate_proxy_key(prefix: &str) -> Result<String, String> {
+    let mut bytes = [0u8; 48];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| "Could not generate a desktop proxy key.".to_string())?;
+    Ok(format!("{prefix}_{}", URL_SAFE_NO_PAD.encode(bytes)))
+}
+
+/// Generate the ephemeral secret that binds the native shell to the Rails
+/// child it launches. It is passed only through the child's environment and
+/// is never persisted or exposed to the webview.
+fn generate_sidecar_secret() -> Result<String, String> {
+    let mut bytes = [0u8; 48];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| "Could not generate a desktop sidecar secret.".to_string())?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+
+#[derive(Clone)]
+struct ProxyCredentials {
+    admin_key: String,
+    completion_key: String,
+    identity_secret: String,
+    regenerated: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+struct StoredProxyCredentials {
+    admin_key: String,
+    completion_key: String,
+    identity_secret: String,
+}
+
+fn encode_proxy_credentials(credentials: &ProxyCredentials) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(&StoredProxyCredentials {
+        admin_key: credentials.admin_key.clone(),
+        completion_key: credentials.completion_key.clone(),
+        identity_secret: credentials.identity_secret.clone(),
+    })
+    .map_err(|_| "Could not prepare the desktop proxy keys for Keychain.".to_string())
+}
+
+fn decode_proxy_credentials(bytes: &[u8]) -> Result<ProxyCredentials, String> {
+    let credentials: StoredProxyCredentials = serde_json::from_slice(bytes)
+        .map_err(|_| "The desktop proxy keys in Keychain are invalid.".to_string())?;
+    if credentials.admin_key.is_empty()
+        || credentials.completion_key.is_empty()
+        || credentials.identity_secret.is_empty()
+    {
+        return Err("The desktop proxy keys in Keychain are invalid.".to_string());
+    }
+    Ok(ProxyCredentials {
+        admin_key: credentials.admin_key,
+        completion_key: credentials.completion_key,
+        identity_secret: credentials.identity_secret,
+        regenerated: false,
+    })
+}
+
+fn generate_proxy_credentials() -> Result<ProxyCredentials, String> {
+    Ok(ProxyCredentials {
+        admin_key: generate_proxy_key("cop_admin")?,
+        completion_key: generate_proxy_key("cop_key")?,
+        identity_secret: generate_proxy_key("cop_identity")?,
+        regenerated: true,
+    })
+}
+
+/// Preserve a complete legacy set during migration. A partially written set
+/// cannot authenticate the existing gateway, so replace it as if it were a
+/// fresh installation; the `regenerated` flag subsequently invalidates the
+/// stale gateway registration.
+fn legacy_proxy_credentials_from_entries(
+    admin_key: Option<Vec<u8>>,
+    completion_key: Option<Vec<u8>>,
+    identity_secret: Option<Vec<u8>>,
+) -> Result<Option<ProxyCredentials>, String> {
+    match (admin_key, completion_key, identity_secret) {
+        (None, None, None) => Ok(None),
+        (Some(admin_key), Some(completion_key), Some(identity_secret)) => {
+            Ok(Some(ProxyCredentials {
+                admin_key: String::from_utf8(admin_key)
+                    .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+                completion_key: String::from_utf8(completion_key)
+                    .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+                identity_secret: String::from_utf8(identity_secret)
+                    .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string())?,
+                regenerated: false,
+            }))
+        }
+        _ => generate_proxy_credentials().map(Some),
+    }
+}
+
+fn legacy_or_new_proxy_credentials(
+    legacy: Option<ProxyCredentials>,
+    generate: impl FnOnce() -> Result<ProxyCredentials, String>,
+) -> Result<ProxyCredentials, String> {
+    match legacy {
+        Some(credentials) => Ok(credentials),
+        None => generate(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn legacy_proxy_credentials() -> Result<Option<ProxyCredentials>, String> {
+    use security_framework::passwords::get_generic_password;
+
+    let read_entry = |account| match get_generic_password(PROXY_KEYCHAIN_SERVICE, account) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
+        Err(_) => Err("Collavre needs Keychain access for the desktop proxy key.".to_string()),
+    };
+
+    legacy_proxy_credentials_from_entries(
+        read_entry(PROXY_ADMIN_KEY_ACCOUNT)?,
+        read_entry(PROXY_COMPLETION_KEY_ACCOUNT)?,
+        read_entry(PROXY_IDENTITY_SECRET_ACCOUNT)?,
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_proxy_credentials() -> Result<ProxyCredentials, String> {
+    use security_framework::passwords::{get_generic_password, set_generic_password};
+
+    match get_generic_password(PROXY_KEYCHAIN_SERVICE, PROXY_CREDENTIALS_ACCOUNT) {
+        Ok(bytes) => return decode_proxy_credentials(&bytes),
+        Err(error) if error.code() != ERR_SEC_ITEM_NOT_FOUND => {
+            return Err("Collavre needs Keychain access for the desktop proxy.".to_string());
+        }
+        Err(_) => {}
+    }
+
+    // Older desktop builds stored each secret in its own Keychain entry. Read
+    // those entries only during this one-time migration, then keep all three
+    // values in one entry so a launch makes one Keychain access request.
+    let credentials =
+        legacy_or_new_proxy_credentials(legacy_proxy_credentials()?, generate_proxy_credentials)?;
+    let serialized = encode_proxy_credentials(&credentials)?;
+    set_generic_password(
+        PROXY_KEYCHAIN_SERVICE,
+        PROXY_CREDENTIALS_ACCOUNT,
+        &serialized,
+    )
+    .map_err(|_| "Collavre needs Keychain access to store the desktop proxy keys.".to_string())?;
+    Ok(credentials)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_proxy_credentials() -> Result<ProxyCredentials, String> {
+    Err("Desktop proxy installation is currently supported on macOS only.".to_string())
+}
+
+fn proxy_credentials() -> Result<ProxyCredentials, String> {
+    keychain_proxy_credentials()
+}
+
+fn invalidate_proxy_registration_after_key_regeneration(
+    data: &Path,
+    config: &mut ProxyConfig,
+    credentials_regenerated: bool,
+) -> Result<(), String> {
+    if credentials_regenerated && config.registered {
+        config.registered = false;
+        write_proxy_config(data, config)?;
+    }
+    Ok(())
+}
+
 /// File recording the live sidecar's PID, so a launch that follows a crash can
 /// reap the orphan the graceful exit handler never got to stop.
-fn pidfile_path(data: &PathBuf) -> PathBuf {
+fn pidfile_path(data: &Path) -> PathBuf {
     data.join("desktop-sidecar.pid")
 }
 
@@ -69,7 +458,7 @@ fn pidfile_path(data: &PathBuf) -> PathBuf {
 /// survives and keeps the SQLite write locks held (and a fixed PORT bound in
 /// open mode), which would wedge this launch. Signal that stale group first.
 #[cfg(unix)]
-fn reap_orphan_sidecar(data: &PathBuf) {
+fn reap_orphan_sidecar(data: &Path) {
     let path = pidfile_path(data);
     let Ok(contents) = fs::read_to_string(&path) else {
         return;
@@ -98,11 +487,11 @@ fn reap_orphan_sidecar(data: &PathBuf) {
 }
 
 #[cfg(not(unix))]
-fn reap_orphan_sidecar(data: &PathBuf) {
+fn reap_orphan_sidecar(data: &Path) {
     let _ = fs::remove_file(pidfile_path(data));
 }
 
-fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
+fn spawn_sidecar(root: &Path, data: &Path, port: u16, secret: &str) -> Child {
     let launcher = root.join("bin/desktop-server");
     // Honor a caller-supplied bind host (open mode = 0.0.0.0 for LAN/Tailscale);
     // default to loopback. COLLAVRE_ALLOWED_HOSTS rides along via the inherited
@@ -113,7 +502,8 @@ fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
         .current_dir(root)
         .env("PORT", port.to_string())
         .env("COLLAVRE_DATA_DIR", data)
-        .env("COLLAVRE_BIND_HOST", bind_host);
+        .env("COLLAVRE_BIND_HOST", bind_host)
+        .env("COLLAVRE_DESKTOP_SIDECAR_SECRET", secret);
 
     // Capture the sidecar's stdout/stderr to a boot log. A Finder-launched .app has
     // no terminal, so without this any startup failure (db migrate/seed, Puma) is
@@ -139,11 +529,725 @@ fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
     cmd.spawn().expect("spawn rails sidecar")
 }
 
-/// Poll `GET /up` until it answers 200 or we give up.
-fn wait_until_healthy(port: u16, timeout: Duration) -> bool {
+/// A pidfile contains no unforgeable process identity. Never signal a process
+/// group from it: even a matching command can exit and have its numeric PID
+/// reused before a signal is delivered. Clean shutdown uses the `Child` handle
+/// held in memory; after a crash, discard the stale file and let repair select
+/// a new port if the abandoned proxy still owns the old one.
+fn reap_orphan_proxy(data: &Path) {
+    let _ = fs::remove_file(proxy_pidfile_path(data));
+}
+
+fn configure_desktop_proxy_environment(
+    command: &mut Command,
+    config: &ProxyConfig,
+    credentials: &ProxyCredentials,
+    state: &Path,
+) {
+    command
+        .env("HOST", "127.0.0.1")
+        .env("PORT", config.port.to_string())
+        .env("API_KEYS", &credentials.completion_key)
+        .env("AUTH_ADMIN_KEYS", &credentials.admin_key)
+        .env("PATH", desktop_cli_path())
+        .env("PROVISION_STATE_DIR", state.join("provision-state"))
+        .env_remove("USER_WORKER_MODE")
+        .env_remove("USER_WORKER_PROVISIONER_ENDPOINT")
+        .env_remove("USER_API_KEYS")
+        .env_remove("USER_IDENTITY_HMAC_SECRET");
+}
+
+fn spawn_proxy(
+    app: &tauri::AppHandle,
+    data: &Path,
+    config: &ProxyConfig,
+    credentials: &ProxyCredentials,
+) -> Result<Child, String> {
+    let root = proxy_root(app);
+    let node = root.join("node/bin/node");
+    let entrypoint = root.join("node_modules/cli-openai-proxy/dist/server/standalone.js");
+    if !node.is_file() || !entrypoint.is_file() {
+        return Err(
+            "The bundled cli-openai-proxy runtime is incomplete. Reinstall Collavre Desktop."
+                .to_string(),
+        );
+    }
+
+    let state = proxy_state_dir(data);
+    fs::create_dir_all(state.join("provision-state"))
+        .map_err(|_| "Could not create the desktop proxy state directory.".to_string())?;
+
+    let log_dir = data.join("log");
+    fs::create_dir_all(&log_dir).ok();
+    let mut command = Command::new(node);
+    command.arg(entrypoint).current_dir(&state);
+    configure_desktop_proxy_environment(&mut command, config, credentials, &state);
+
+    // The proxy inherits HOME and receives an expanded executable-only PATH:
+    // the user's already logged-in Claude/Codex CLIs own their authentication.
+    // Desktop runs one macOS user's shared gateway. cli-openai-proxy reserves
+    // signed identity routing for its isolated per-user worker mode, which is
+    // not available on macOS; passing that secret here prevents the standalone
+    // gateway from starting at all.
+    // The proxy-only keys above are captured and removed by cli-openai-proxy
+    // before it starts a CLI child.
+    if let Ok(log) = File::create(log_dir.join("desktop-proxy.log")) {
+        if let Ok(error_log) = log.try_clone() {
+            command
+                .stdout(Stdio::from(log))
+                .stderr(Stdio::from(error_log));
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+        .spawn()
+        .map_err(|_| "Could not start cli-openai-proxy.".to_string())
+}
+
+fn proxy_status(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> ProxyStatus {
+    let config = read_proxy_config(data);
+    let manifest = bundled_proxy_manifest(app).ok();
+    let installed = config.is_some() && manifest.is_some();
+    let running = sidecar
+        .0
+        .lock()
+        .map(|mut child| {
+            let exited = child
+                .as_mut()
+                .and_then(|process| process.child.try_wait().ok().flatten())
+                .is_some();
+            if exited {
+                child.take();
+                let _ = fs::remove_file(proxy_pidfile_path(data));
+            }
+            child.is_some()
+        })
+        .unwrap_or(false);
+    ProxyStatus {
+        installed,
+        running,
+        port: config.as_ref().map(|item| item.port),
+        version: manifest.map(|item| item.version),
+        registered: config.map(|item| item.registered).unwrap_or(false),
+    }
+}
+
+/// A live child is authoritative for the port it was spawned with. During a
+/// retry, that port must not be treated as an unrelated listener and replaced
+/// beneath the running proxy.
+fn managed_proxy_runs_on_port(sidecar: &ProxySidecar, port: u16) -> bool {
+    managed_proxy_port(sidecar) == Some(port)
+}
+
+fn managed_proxy_port(sidecar: &ProxySidecar) -> Option<u16> {
+    sidecar
+        .0
+        .lock()
+        .map(|mut proxy| {
+            let exited = proxy
+                .as_mut()
+                .and_then(|process| process.child.try_wait().ok().flatten())
+                .is_some();
+            if exited {
+                proxy.take();
+            }
+            proxy.as_ref().map(|process| process.port)
+        })
+        .ok()
+        .flatten()
+}
+
+/// Return the credentials held by the live managed process, not a later
+/// Keychain read. A setup retry must register exactly the keys passed to the
+/// proxy's environment.
+fn managed_proxy_credentials(sidecar: &ProxySidecar) -> Result<Option<ProxyCredentials>, String> {
+    let mut proxy = sidecar
+        .0
+        .lock()
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?;
+    let exited = proxy
+        .as_mut()
+        .and_then(|process| process.child.try_wait().ok().flatten())
+        .is_some();
+    if exited {
+        proxy.take();
+    }
+    Ok(proxy.as_ref().map(|process| process.credentials.clone()))
+}
+
+fn stop_managed_proxy(sidecar: &ProxySidecar) -> Result<(), String> {
+    let mut proxy = sidecar
+        .0
+        .lock()
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?
+        .take();
+    if let Some(proxy) = proxy.as_mut() {
+        stop_sidecar(&mut proxy.child);
+    }
+    Ok(())
+}
+
+fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> Result<(), String> {
+    if managed_proxy_credentials(sidecar)?.is_some() {
+        return Ok(());
+    }
+    let credentials = proxy_credentials()?;
+    start_proxy_with_credentials(app, data, sidecar, credentials).map(|_| ())
+}
+
+fn start_proxy_with_credentials(
+    app: &tauri::AppHandle,
+    data: &Path,
+    sidecar: &ProxySidecar,
+    credentials: ProxyCredentials,
+) -> Result<ProxyCredentials, String> {
+    // A newly generated key cannot authenticate a proxy that is already
+    // running with its old environment. Stop it before deciding whether to
+    // reuse a child so the replacement receives all current Keychain values.
+    if credentials.regenerated {
+        stop_managed_proxy(sidecar)?;
+    }
+    if let Some(credentials) = managed_proxy_credentials(sidecar)? {
+        return Ok(credentials);
+    }
+    let mut config = read_proxy_config(data)
+        .ok_or_else(|| "Desktop proxy setup has not been approved.".to_string())?;
+    let manifest = bundled_proxy_manifest(app)?;
+    if config.version != manifest.version {
+        return Err("The desktop proxy version changed. Re-run desktop proxy setup.".to_string());
+    }
+    invalidate_proxy_registration_after_key_regeneration(
+        data,
+        &mut config,
+        credentials.regenerated,
+    )?;
+    reap_orphan_proxy(data);
+    let child = spawn_proxy(app, data, &config, &credentials)?;
+    fs::write(proxy_pidfile_path(data), child.id().to_string())
+        .map_err(|_| "Could not record the desktop proxy process.".to_string())?;
+    sidecar
+        .0
+        .lock()
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?
+        .replace(ManagedProxy {
+            child,
+            port: config.port,
+            credentials: credentials.clone(),
+        });
+    let healthy = sidecar
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut guard| {
+            guard.as_mut().map(|proxy| {
+                wait_until_proxy_healthy(&mut proxy.child, config.port, Duration::from_secs(15))
+            })
+        })
+        .unwrap_or(false);
+    if !healthy {
+        if let Some(mut proxy) = sidecar.0.lock().ok().and_then(|mut guard| guard.take()) {
+            stop_sidecar(&mut proxy.child);
+        }
+        let _ = fs::remove_file(proxy_pidfile_path(data));
+        return Err(
+            "cli-openai-proxy did not pass its health check. See desktop-proxy.log.".to_string(),
+        );
+    }
+    Ok(credentials)
+}
+
+fn install_proxy(
+    app: &tauri::AppHandle,
+    sidecar: &ProxySidecar,
+) -> Result<ProxyCredentials, String> {
+    let data = data_dir(app);
+    fs::create_dir_all(&data)
+        .map_err(|_| "Could not create the Collavre data directory.".to_string())?;
+    let manifest = bundled_proxy_manifest(app)?;
+    // A bundled proxy update keeps the existing loopback port, Keychain keys,
+    // and completed state, but advances the expected runtime version before the
+    // health check. Without this migration an upgrade can never restart or be
+    // repaired because start_proxy rejects the stale version first.
+    let mut config =
+        normalized_proxy_config(read_proxy_config(&data), manifest.version, free_port());
+    // A live managed child owns this port and can continue serving a recovery
+    // retry. Only discard an orphaned pidfile and replace a claimed port when
+    // no managed proxy is already running there.
+    let managed_proxy_owns_port = managed_proxy_runs_on_port(sidecar, config.port);
+    if !managed_proxy_owns_port && managed_proxy_port(sidecar).is_some() {
+        // A live managed process for a different port cannot satisfy this
+        // configuration. Stop it through its retained Child handle before
+        // changing state and spawning a replacement.
+        stop_managed_proxy(sidecar)?;
+    }
+    if !managed_proxy_owns_port {
+        reap_orphan_proxy(&data);
+    }
+    if !managed_proxy_owns_port && !proxy_port_available(config.port) {
+        replace_occupied_proxy_port(&mut config, free_port());
+    }
+    write_proxy_config(&data, &config)?;
+    let credentials = proxy_credentials()?;
+    let credentials = start_proxy_with_credentials(app, &data, sidecar, credentials)?;
+    Ok(credentials)
+}
+
+/// Complete the user-approved setup without exposing Keychain secrets to the
+/// webview. The registration grant is short-lived and Rails accepts it only
+/// over its loopback socket.
+#[tauri::command]
+fn desktop_proxy_complete_setup(
+    app: tauri::AppHandle,
+    sidecar: tauri::State<'_, ProxySidecar>,
+    rails_sidecar: tauri::State<'_, Sidecar>,
+    registration_token: String,
+) -> Result<ProxySetupResult, String> {
+    let server_port = rails_sidecar
+        .port
+        .lock()
+        .map_err(|_| "The local Collavre server port is unavailable.".to_string())?
+        .ok_or_else(|| "Collavre Desktop could not determine the local server port.".to_string())?;
+    authenticate_rails_sidecar(&rails_sidecar, server_port)?;
+    // Validate the Rails-issued, short-lived consent grant before creating
+    // Keychain credentials, writing proxy state, or starting the proxy. The
+    // Tauri command is callable from loopback pages, so an arbitrary string
+    // must not be allowed to trigger those side effects.
+    validate_registration_grant(server_port, &registration_token)?;
+    let credentials = install_proxy(&app, &sidecar)?;
+    let data = data_dir(&app);
+    let config = read_proxy_config(&data)
+        .ok_or_else(|| "Desktop proxy configuration is missing after installation.".to_string())?;
+    let adapters = detected_adapters();
+    let request = GatewayRegistration {
+        registration_token: &registration_token,
+        proxy_port: config.port,
+        admin_key: &credentials.admin_key,
+        completion_key: &credentials.completion_key,
+        identity_secret: &credentials.identity_secret,
+        adapters: &adapters,
+    };
+    register_authenticated_gateway(&rails_sidecar, server_port, &request)?;
+
+    let registered = ProxyConfig {
+        registered: true,
+        ..config
+    };
+    write_proxy_config(&data, &registered)?;
+    Ok(ProxySetupResult {
+        status: proxy_status(&app, &data, &sidecar),
+        adapters,
+    })
+}
+
+#[tauri::command]
+fn desktop_proxy_status(
+    app: tauri::AppHandle,
+    sidecar: tauri::State<'_, ProxySidecar>,
+) -> ProxyStatus {
+    proxy_status(&app, &data_dir(&app), &sidecar)
+}
+
+/// Detect executables only. In particular, do not invoke a CLI or inspect its
+/// configuration, credential files, Keychain items, or login state.
+fn detected_adapters() -> Vec<String> {
+    ["claude", "codex"]
+        .into_iter()
+        .filter(|binary| executable_on_path(binary))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[cfg(unix)]
+fn executable_on_path(binary: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    desktop_cli_search_paths()
+        .into_iter()
+        .map(|directory| directory.join(binary))
+        .any(|candidate| {
+            candidate
+                .metadata()
+                .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        })
+}
+
+#[cfg(not(unix))]
+fn executable_on_path(binary: &str) -> bool {
+    desktop_cli_search_paths()
+        .into_iter()
+        .map(|directory| directory.join(binary))
+        .any(|candidate| candidate.is_file())
+}
+
+// Finder launches do not reliably inherit shell PATH additions. Check the
+// conventional user-install locations as well, then give the proxy that same
+// PATH so a detected CLI is actually executable. This is path discovery only;
+// it does not run a CLI or inspect provider configuration.
+fn desktop_cli_search_paths() -> Vec<PathBuf> {
+    let mut paths = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    append_unique_paths(
+        &mut paths,
+        [
+            PathBuf::from("/opt/homebrew/bin"),
+            PathBuf::from("/usr/local/bin"),
+        ],
+    );
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        append_unique_paths(
+            &mut paths,
+            [
+                home.join(".local/bin"),
+                home.join(".npm-global/bin"),
+                home.join(".volta/bin"),
+            ],
+        );
+        append_unique_paths(&mut paths, nvm_bin_paths(&home));
+    }
+    paths
+}
+
+/// Preserve the inherited PATH order: it selects the CLI and Node version a
+/// user already chose in their shell. Appended fallback directories are only
+/// used when that PATH does not contain the executable.
+fn append_unique_paths(paths: &mut Vec<PathBuf>, candidates: impl IntoIterator<Item = PathBuf>) {
+    for candidate in candidates {
+        if !paths.contains(&candidate) {
+            paths.push(candidate);
+        }
+    }
+}
+
+fn nvm_bin_paths(home: &Path) -> Vec<PathBuf> {
+    let versions = home.join(".nvm/versions/node");
+    let mut paths = fs::read_dir(versions)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join("bin"))
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    paths.sort_by_key(|path| std::cmp::Reverse(nvm_version_sort_key(path)));
+    if let Some(default) = nvm_default_bin_path(home, &paths) {
+        paths.retain(|path| path != &default);
+        paths.insert(0, default);
+    }
+    paths
+}
+
+/// Resolve NVM's configured default before trying other installed versions.
+/// Finder normally has neither NVM_DIR nor NVM_BIN in its environment, but NVM
+/// persists this alias for shells and desktop launches alike.
+fn nvm_default_bin_path(home: &Path, paths: &[PathBuf]) -> Option<PathBuf> {
+    let mut alias = fs::read_to_string(home.join(".nvm/alias/default"))
+        .ok()?
+        .trim()
+        .to_string();
+    for _ in 0..8 {
+        if let Some(path) = nvm_matching_bin_path(paths, &alias) {
+            return Some(path);
+        }
+        let relative_alias = Path::new(&alias);
+        if relative_alias.is_absolute()
+            || relative_alias
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return None;
+        }
+        alias = fs::read_to_string(home.join(".nvm/alias").join(relative_alias))
+            .ok()?
+            .trim()
+            .to_string();
+    }
+    None
+}
+
+fn nvm_matching_bin_path(paths: &[PathBuf], alias: &str) -> Option<PathBuf> {
+    let requested = alias.trim().trim_start_matches('v');
+    if matches!(requested, "node" | "stable" | "*") {
+        return paths.first().cloned();
+    }
+    paths.iter().find_map(|path| {
+        let version = path
+            .parent()?
+            .file_name()?
+            .to_str()?
+            .trim_start_matches('v');
+        (version == requested
+            || (requested
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+                && version
+                    .strip_prefix(requested)
+                    .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('.'))))
+        .then(|| path.clone())
+    })
+}
+
+fn nvm_version_sort_key(path: &Path) -> Vec<u64> {
+    path.parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| part.parse().unwrap_or(0))
+        .collect()
+}
+
+fn desktop_cli_path() -> std::ffi::OsString {
+    std::env::join_paths(desktop_cli_search_paths()).unwrap_or_else(|_| std::ffi::OsString::new())
+}
+
+fn register_gateway(port: u16, registration: &GatewayRegistration<'_>) -> Result<(), String> {
+    if port == 0 {
+        return Err("Collavre Desktop could not determine the local server port.".to_string());
+    }
+    let body = serde_json::to_vec(registration)
+        .map_err(|_| "Could not prepare the local gateway registration.".to_string())?;
+    let address = format!("127.0.0.1:{port}");
+    let mut stream = TcpStream::connect(&address)
+        .map_err(|_| "Could not connect to the local Collavre server.".to_string())?;
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
+    let request = format!(
+        "POST /desktop/setup/register-gateway HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .and_then(|_| stream.write_all(&body))
+        .map_err(|_| "Could not send the local gateway registration.".to_string())?;
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|_| "Could not read the local gateway registration response.".to_string())?;
+    if response.starts_with("HTTP/1.1 201") || response.starts_with("HTTP/1.0 201") {
+        Ok(())
+    } else {
+        Err(
+            "Collavre could not register the local gateway. No setup was marked complete."
+                .to_string(),
+        )
+    }
+}
+
+/// Re-authenticate immediately before the credential-bearing registration
+/// request. Proxy installation can wait for Keychain or health checks, during
+/// which the Rails child could exit and its port could be claimed by another
+/// loopback process.
+fn register_authenticated_gateway(
+    sidecar: &Sidecar,
+    port: u16,
+    registration: &GatewayRegistration<'_>,
+) -> Result<(), String> {
+    authenticate_rails_sidecar(sidecar, port)?;
+    register_gateway(port, registration)
+}
+
+/// Confirm that the Rails record backing the locally healthy proxy still
+/// exists and has the current Keychain credentials. A removed desktop owner
+/// deletes that record, so the persisted flag alone is never enough to skip
+/// recovery setup on a later launch.
+fn registered_gateway_exists(
+    rails_port: u16,
+    config: &ProxyConfig,
+    credentials: &ProxyCredentials,
+) -> bool {
+    if rails_port == 0 {
+        return false;
+    }
+    let body = match serde_json::to_vec(&GatewayRegistrationStatus {
+        proxy_port: config.port,
+        admin_key: &credentials.admin_key,
+        completion_key: &credentials.completion_key,
+        identity_secret: &credentials.identity_secret,
+    }) {
+        Ok(body) => body,
+        Err(_) => return false,
+    };
+    let address = format!("127.0.0.1:{rails_port}");
+    let Ok(mut stream) = TcpStream::connect(&address) else {
+        return false;
+    };
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
+    let request = format!(
+        "POST /desktop/setup/gateway-registered HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    if stream
+        .write_all(request.as_bytes())
+        .and_then(|_| stream.write_all(&body))
+        .is_err()
+    {
+        return false;
+    }
+    let mut response = String::new();
+    stream.read_to_string(&mut response).is_ok()
+        && (response.starts_with("HTTP/1.1 204") || response.starts_with("HTTP/1.0 204"))
+}
+
+/// Re-authenticate immediately before the startup gateway check. Keychain
+/// access can block after the initial startup health check, during which a
+/// different local process could claim the Rails port.
+fn registered_authenticated_gateway_exists(
+    sidecar: &Sidecar,
+    rails_port: u16,
+    config: &ProxyConfig,
+    credentials: &ProxyCredentials,
+) -> bool {
+    authenticate_rails_sidecar(sidecar, rails_port).is_ok()
+        && registered_gateway_exists(rails_port, config, credentials)
+}
+
+fn invalidate_proxy_registration_when_gateway_is_missing(
+    data: &Path,
+    config: &mut ProxyConfig,
+    gateway_exists: bool,
+) -> Result<(), String> {
+    if config.registered && !gateway_exists {
+        config.registered = false;
+        write_proxy_config(data, config)?;
+    }
+    Ok(())
+}
+
+/// Do not treat a Rails connection failure during sidecar startup as evidence
+/// that a persisted gateway was removed. The definitive gateway check runs
+/// only after Rails has answered its health endpoint.
+fn revalidate_registered_gateway_after_rails_health(
+    rails_healthy: bool,
+    sidecar: &Sidecar,
+    rails_port: u16,
+    data: &Path,
+    config: &mut ProxyConfig,
+    credentials: &ProxyCredentials,
+) -> Result<bool, String> {
+    if !rails_healthy || !config.registered {
+        return Ok(false);
+    }
+
+    let gateway_exists =
+        registered_authenticated_gateway_exists(sidecar, rails_port, config, credentials);
+    invalidate_proxy_registration_when_gateway_is_missing(data, config, gateway_exists)?;
+    Ok(gateway_exists)
+}
+
+/// Ask Rails to validate the signed, short-lived setup consent grant before
+/// native installation mutates persistent state. This call deliberately sends
+/// no proxy credentials.
+fn validate_registration_grant(port: u16, registration_token: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "registration_token": registration_token }).to_string();
+    let address = format!("127.0.0.1:{port}");
+    let mut stream = TcpStream::connect(&address)
+        .map_err(|_| "Could not connect to the local Collavre server.".to_string())?;
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
+    let request = format!(
+        "POST /desktop/setup/validate-registration-grant HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|_| "Could not validate the desktop setup consent.".to_string())?;
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|_| "Could not read the desktop setup consent response.".to_string())?;
+    if response.starts_with("HTTP/1.1 204") || response.starts_with("HTTP/1.0 204") {
+        Ok(())
+    } else {
+        Err(
+            "Desktop proxy setup consent is invalid or has expired. Return to setup and try again."
+                .to_string(),
+        )
+    }
+}
+
+type HmacSha256 = Hmac<Sha256>;
+
+fn valid_sidecar_challenge_response(secret: &str, challenge: &str, response: &str) -> bool {
+    let Ok(signature) = URL_SAFE_NO_PAD.decode(response.trim()) else {
+        return false;
+    };
+    let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) else {
+        return false;
+    };
+    mac.update(challenge.as_bytes());
+    mac.verify_slice(&signature).is_ok()
+}
+
+/// Prove the listener knows the ephemeral secret injected into the Rails child.
+/// A listener that merely imitates `/up` cannot manufacture this HMAC response.
+fn sidecar_challenge_accepted(port: u16, secret: &str) -> bool {
+    let Ok(challenge) = generate_sidecar_secret() else {
+        return false;
+    };
+    let address = format!("127.0.0.1:{port}");
+    let Ok(mut stream) = TcpStream::connect(&address) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+    let request = format!(
+        "GET /desktop/setup/sidecar-health?challenge={challenge} HTTP/1.0\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut response = String::new();
+    if stream.read_to_string(&mut response).is_err() {
+        return false;
+    }
+    let Some((headers, body)) = response.split_once("\r\n\r\n") else {
+        return false;
+    };
+    headers.starts_with("HTTP/1.")
+        && headers.contains(" 200")
+        && valid_sidecar_challenge_response(secret, &challenge, body)
+}
+
+fn sidecar_is_running(sidecar: &Sidecar) -> bool {
+    sidecar
+        .child
+        .lock()
+        .ok()
+        .and_then(|mut child| {
+            child
+                .as_mut()
+                .map(|child| child.try_wait().ok().flatten().is_none())
+        })
+        .unwrap_or(false)
+}
+
+fn authenticate_rails_sidecar(sidecar: &Sidecar, port: u16) -> Result<(), String> {
+    if sidecar_is_running(sidecar)
+        && sidecar_challenge_accepted(port, &sidecar.secret)
+        && sidecar_is_running(sidecar)
+    {
+        return Ok(());
+    }
+
+    Err("The local Collavre server could not be authenticated. Restart Collavre Desktop and try again.".to_string())
+}
+
+/// Poll the authenticated sidecar challenge until the spawned Rails process is
+/// ready. Never navigate the capability-enabled webview to an unauthenticated
+/// listener that merely answers a generic health request.
+fn wait_until_authenticated_sidecar(sidecar: &Sidecar, port: u16, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if http_up_ok(port) {
+        if authenticate_rails_sidecar(sidecar, port).is_ok() {
             return true;
         }
         std::thread::sleep(Duration::from_millis(250));
@@ -151,14 +1255,69 @@ fn wait_until_healthy(port: u16, timeout: Duration) -> bool {
     false
 }
 
-/// Minimal dependency-free HTTP GET /up; true only on a `200` status line.
-fn http_up_ok(port: u16) -> bool {
+/// Return whether macOS reports that the spawned proxy process owns the
+/// loopback listener. A successful HTTP response alone is not proof of
+/// ownership: another local process can bind the persisted port before Node
+/// reaches it and mimic the unauthenticated health endpoint.
+#[cfg(target_os = "macos")]
+fn proxy_child_owns_listener(child: &mut Child, port: u16) -> bool {
+    if child.try_wait().ok().flatten().is_some() {
+        return false;
+    }
+
+    let child_pid = child.id().to_string();
+    let listener = format!("-iTCP@127.0.0.1:{port}");
+    Command::new("/usr/sbin/lsof")
+        .args([
+            "-nP",
+            "-a",
+            "-p",
+            &child_pid,
+            &listener,
+            "-sTCP:LISTEN",
+            "-Fp",
+        ])
+        .output()
+        .map(|output| output.status.success() && lsof_reports_process(&output.stdout, &child_pid))
+        .unwrap_or(false)
+}
+
+/// Desktop releases are supported only on macOS. Other targets fail closed so
+/// an accidental cross-platform package cannot trust an unauthenticated port.
+#[cfg(not(target_os = "macos"))]
+fn proxy_child_owns_listener(_child: &mut Child, _port: u16) -> bool {
+    false
+}
+
+fn lsof_reports_process(output: &[u8], expected_pid: &str) -> bool {
+    let process_record = format!("p{expected_pid}");
+    output
+        .split(|byte| *byte == b'\n')
+        .any(|line| line == process_record.as_bytes())
+}
+
+fn wait_until_proxy_healthy(child: &mut Child, port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if child.try_wait().ok().flatten().is_some() {
+            return false;
+        }
+        if http_ok(port, "/health") && proxy_child_owns_listener(child, port) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    false
+}
+
+/// Minimal dependency-free HTTP GET; true only on a `200` status line.
+fn http_ok(port: u16, path: &str) -> bool {
     let addr = format!("127.0.0.1:{port}");
     let Ok(mut stream) = TcpStream::connect(&addr) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-    let req = format!("GET /up HTTP/1.0\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let req = format!("GET {path} HTTP/1.0\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
@@ -284,7 +1443,7 @@ fn config_env_overrides(json: &str) -> Vec<(&'static str, String)> {
 /// file once (alongside the DBs, secrets, and logs the app already keeps here)
 /// lets every later launch pick the settings up. No file is the normal
 /// closed-loopback case and a no-op.
-fn apply_desktop_config(data: &PathBuf) {
+fn apply_desktop_config(data: &Path) {
     let path = data.join("config.json");
     let Ok(json) = fs::read_to_string(&path) else {
         return;
@@ -297,11 +1456,84 @@ fn apply_desktop_config(data: &PathBuf) {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
-    use super::config_env_overrides;
+    use super::{
+        append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
+        decode_proxy_credentials, desktop_port, encode_proxy_credentials, generate_proxy_key,
+        invalidate_proxy_registration_after_key_regeneration,
+        invalidate_proxy_registration_when_gateway_is_missing, legacy_or_new_proxy_credentials,
+        legacy_proxy_credentials_from_entries, lsof_reports_process, managed_proxy_credentials,
+        managed_proxy_runs_on_port, migrate_proxy_config, normalized_proxy_config, nvm_bin_paths,
+        parse_bundled_proxy_manifest, read_proxy_config, reap_orphan_proxy,
+        register_authenticated_gateway, registered_authenticated_gateway_exists,
+        replace_occupied_proxy_port, revalidate_registered_gateway_after_rails_health,
+        valid_sidecar_challenge_response, wait_until_proxy_healthy, write_proxy_config,
+        GatewayRegistration, HmacSha256, ManagedProxy, ProxyConfig, ProxyCredentials, ProxySidecar,
+        Sidecar, DEFAULT_PORT, DESKTOP_USER_AGENT, URL_SAFE_NO_PAD,
+    };
+    use base64::Engine;
+    use hmac::Mac;
+    use std::{
+        env,
+        ffi::{OsStr, OsString},
+        fs,
+        io::Read,
+        path::PathBuf,
+        process,
+        sync::Mutex,
+        time::Duration,
+    };
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
+    }
+
+    #[test]
+    fn desktop_port_defaults_to_the_stable_port() {
+        assert_eq!(desktop_port(None), DEFAULT_PORT);
+        assert_eq!(desktop_port(Some("not-a-port")), DEFAULT_PORT);
+        assert_eq!(desktop_port(Some("0")), DEFAULT_PORT);
+    }
+
+    #[test]
+    fn desktop_port_honors_a_valid_override() {
+        assert_eq!(desktop_port(Some("47821")), 47_821);
+    }
+
+    #[test]
+    fn desktop_user_agent_has_a_stable_prefix() {
+        assert!(DESKTOP_USER_AGENT.starts_with("CollavreDesktop/"));
+    }
+
+    #[cfg(unix)]
+    fn read_request(stream: &mut std::net::TcpStream) -> String {
+        let mut bytes = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        let mut expected_length = None;
+
+        loop {
+            let count = stream.read(&mut buffer).expect("read request");
+            assert!(count > 0, "request ended before its body was complete");
+            bytes.extend_from_slice(&buffer[..count]);
+
+            let Some(headers_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+            else {
+                continue;
+            };
+            let headers_end = headers_end + 4;
+            let body_length = *expected_length.get_or_insert_with(|| {
+                let headers = String::from_utf8_lossy(&bytes[..headers_end]);
+                headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Content-Length: "))
+                    .and_then(|length| length.parse::<usize>().ok())
+                    .unwrap_or(0)
+            });
+            if bytes.len() >= headers_end + body_length {
+                return String::from_utf8(bytes).expect("UTF-8 request");
+            }
+        }
     }
 
     #[test]
@@ -372,12 +1604,640 @@ mod tests {
         assert!(pairs("").is_empty());
         assert!(pairs("[1,2,3]").is_empty());
     }
+
+    #[test]
+    fn bundled_proxy_manifest_accepts_only_the_expected_package_and_platform() {
+        let manifest = parse_bundled_proxy_manifest(
+            r#"{"package":"cli-openai-proxy","version":"0.1.0","integrity":"sha512-test","platform":"darwin-arm64"}"#,
+        )
+        .expect("valid manifest");
+        assert_eq!(manifest.version, "0.1.0");
+
+        assert!(parse_bundled_proxy_manifest(
+            r#"{"package":"other","version":"0.1.0","integrity":"sha512-test","platform":"darwin-arm64"}"#,
+        )
+        .is_err());
+        assert!(parse_bundled_proxy_manifest(
+            r#"{"package":"cli-openai-proxy","version":"0.1.0","integrity":"sha512-test","platform":"darwin-x64"}"#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn generated_proxy_keys_are_prefixed_and_url_safe() {
+        let key = generate_proxy_key("cop_key").expect("random key");
+        assert!(key.starts_with("cop_key_"));
+        assert!(key
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric()
+                || character == '_'
+                || character == '-'));
+    }
+
+    #[test]
+    fn proxy_credentials_are_stored_as_one_keychain_value() {
+        let credentials = ProxyCredentials {
+            admin_key: "admin-key".to_string(),
+            completion_key: "completion-key".to_string(),
+            identity_secret: "identity-secret".to_string(),
+            regenerated: true,
+        };
+
+        let serialized = encode_proxy_credentials(&credentials).expect("serialize credentials");
+        let decoded = decode_proxy_credentials(&serialized).expect("decode credentials");
+
+        assert_eq!("admin-key", decoded.admin_key);
+        assert_eq!("completion-key", decoded.completion_key);
+        assert_eq!("identity-secret", decoded.identity_secret);
+        assert!(!decoded.regenerated);
+    }
+
+    #[test]
+    fn proxy_credentials_reject_invalid_or_incomplete_keychain_values() {
+        assert!(decode_proxy_credentials(b"not-json").is_err());
+        assert!(decode_proxy_credentials(
+            br#"{"admin_key":"admin","completion_key":"","identity_secret":"identity"}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn incomplete_legacy_keychain_credentials_are_regenerated() {
+        let credentials = legacy_proxy_credentials_from_entries(
+            Some(b"legacy-admin-key".to_vec()),
+            None,
+            Some(b"legacy-identity-secret".to_vec()),
+        )
+        .expect("regenerate incomplete credentials")
+        .expect("credentials");
+
+        assert!(credentials.regenerated);
+        assert_ne!("legacy-admin-key", credentials.admin_key);
+        assert_ne!("legacy-identity-secret", credentials.identity_secret);
+        assert!(credentials.admin_key.starts_with("cop_admin_"));
+        assert!(credentials.completion_key.starts_with("cop_key_"));
+        assert!(credentials.identity_secret.starts_with("cop_identity_"));
+    }
+
+    #[test]
+    fn complete_legacy_keychain_credentials_are_preserved() {
+        let credentials = legacy_proxy_credentials_from_entries(
+            Some(b"legacy-admin-key".to_vec()),
+            Some(b"legacy-completion-key".to_vec()),
+            Some(b"legacy-identity-secret".to_vec()),
+        )
+        .expect("read complete credentials")
+        .expect("credentials");
+
+        assert_eq!("legacy-admin-key", credentials.admin_key);
+        assert_eq!("legacy-completion-key", credentials.completion_key);
+        assert_eq!("legacy-identity-secret", credentials.identity_secret);
+        assert!(!credentials.regenerated);
+    }
+
+    #[test]
+    fn complete_legacy_credentials_do_not_generate_a_fallback() {
+        let legacy = ProxyCredentials {
+            admin_key: "legacy-admin-key".to_string(),
+            completion_key: "legacy-completion-key".to_string(),
+            identity_secret: "legacy-identity-secret".to_string(),
+            regenerated: false,
+        };
+
+        let credentials = legacy_or_new_proxy_credentials(Some(legacy), || {
+            Err("fallback must not be generated".to_string())
+        })
+        .expect("preserve legacy credentials without generating a fallback");
+
+        assert_eq!("legacy-admin-key", credentials.admin_key);
+        assert!(!credentials.regenerated);
+    }
+
+    #[test]
+    fn sidecar_health_requires_a_valid_hmac_challenge_response() {
+        let secret = "sidecar-secret";
+        let challenge = "native-challenge";
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("valid HMAC key");
+        mac.update(challenge.as_bytes());
+        let response = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+
+        assert!(valid_sidecar_challenge_response(
+            secret, challenge, &response
+        ));
+        assert!(!valid_sidecar_challenge_response(
+            secret,
+            "different-challenge",
+            &response
+        ));
+        assert!(!valid_sidecar_challenge_response(
+            secret,
+            challenge,
+            "not-a-signature"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn gateway_registration_reauthenticates_sidecar_before_sending_credentials() {
+        use std::io::Write;
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let port = listener.local_addr().expect("listener address").port();
+        let secret = "sidecar-registration-secret".to_string();
+        let expected_secret = secret.clone();
+        let server = thread::spawn(move || {
+            let (mut health, _) = listener.accept().expect("accept sidecar challenge");
+            let health_request = read_request(&mut health);
+            let challenge = health_request
+                .split_whitespace()
+                .nth(1)
+                .and_then(|path| path.split("challenge=").nth(1))
+                .expect("sidecar challenge");
+            let mut mac =
+                HmacSha256::new_from_slice(expected_secret.as_bytes()).expect("valid HMAC key");
+            mac.update(challenge.as_bytes());
+            let proof = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+            health
+                .write_all(
+                    format!(
+                        "HTTP/1.0 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{proof}",
+                        proof.len()
+                    )
+                    .as_bytes(),
+                )
+                .expect("write sidecar proof");
+            drop(health);
+
+            let (mut registration, _) = listener.accept().expect("accept registration");
+            let registration_request = read_request(&mut registration);
+            assert!(
+                registration_request.starts_with("POST /desktop/setup/register-gateway HTTP/1.1")
+            );
+            assert!(registration_request.contains("\"admin_key\":\"admin-key\""));
+            registration
+                .write_all(
+                    b"HTTP/1.0 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write registration response");
+        });
+
+        let child = process::Command::new("sh")
+            .args(["-c", "sleep 5"])
+            .spawn()
+            .expect("spawn sidecar child");
+        let sidecar = Sidecar {
+            child: Mutex::new(Some(child)),
+            port: Mutex::new(Some(port)),
+            secret,
+        };
+        let adapters = vec!["claude".to_string()];
+        let registration = GatewayRegistration {
+            registration_token: "registration-token",
+            proxy_port: 34_567,
+            admin_key: "admin-key",
+            completion_key: "completion-key",
+            identity_secret: "identity-secret",
+            adapters: &adapters,
+        };
+
+        register_authenticated_gateway(&sidecar, port, &registration)
+            .expect("authenticated registration");
+        server.join().expect("test registration server");
+
+        let mut child = sidecar
+            .child
+            .lock()
+            .expect("sidecar lock")
+            .take()
+            .expect("sidecar child");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn startup_gateway_check_reauthenticates_sidecar_before_sending_credentials() {
+        use std::io::Write;
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let port = listener.local_addr().expect("listener address").port();
+        let secret = "sidecar-startup-secret".to_string();
+        let expected_secret = secret.clone();
+        let server = thread::spawn(move || {
+            let (mut health, _) = listener.accept().expect("accept sidecar challenge");
+            let health_request = read_request(&mut health);
+            let challenge = health_request
+                .split_whitespace()
+                .nth(1)
+                .and_then(|path| path.split("challenge=").nth(1))
+                .expect("sidecar challenge");
+            let mut mac =
+                HmacSha256::new_from_slice(expected_secret.as_bytes()).expect("valid HMAC key");
+            mac.update(challenge.as_bytes());
+            let proof = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+            health
+                .write_all(
+                    format!(
+                        "HTTP/1.0 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{proof}",
+                        proof.len()
+                    )
+                    .as_bytes(),
+                )
+                .expect("write sidecar proof");
+            drop(health);
+
+            let (mut status, _) = listener.accept().expect("accept gateway status");
+            let status_request = read_request(&mut status);
+            assert!(status_request.starts_with("POST /desktop/setup/gateway-registered HTTP/1.1"));
+            assert!(status_request.contains("\"admin_key\":\"admin-key\""));
+            status
+                .write_all(
+                    b"HTTP/1.0 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write gateway status response");
+        });
+
+        let child = process::Command::new("sh")
+            .args(["-c", "sleep 5"])
+            .spawn()
+            .expect("spawn sidecar child");
+        let sidecar = Sidecar {
+            child: Mutex::new(Some(child)),
+            port: Mutex::new(Some(port)),
+            secret,
+        };
+        let config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        let credentials = ProxyCredentials {
+            admin_key: "admin-key".to_string(),
+            completion_key: "completion-key".to_string(),
+            identity_secret: "identity-secret".to_string(),
+            regenerated: false,
+        };
+
+        assert!(registered_authenticated_gateway_exists(
+            &sidecar,
+            port,
+            &config,
+            &credentials,
+        ));
+        server.join().expect("test gateway status server");
+
+        let mut child = sidecar
+            .child
+            .lock()
+            .expect("sidecar lock")
+            .take()
+            .expect("sidecar child");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[test]
+    fn desktop_proxy_uses_shared_key_mode_without_worker_identity_environment() {
+        let config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: false,
+        };
+        let credentials = ProxyCredentials {
+            admin_key: "admin-key".to_string(),
+            completion_key: "completion-key".to_string(),
+            identity_secret: "identity-secret".to_string(),
+            regenerated: false,
+        };
+        let mut command = process::Command::new("true");
+        configure_desktop_proxy_environment(
+            &mut command,
+            &config,
+            &credentials,
+            PathBuf::from("/tmp/proxy").as_path(),
+        );
+
+        assert_eq!(
+            Some(OsString::from("completion-key")),
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new("API_KEYS"))
+                .and_then(|(_, value)| value.map(OsStr::to_os_string))
+        );
+        for key in [
+            "USER_WORKER_MODE",
+            "USER_WORKER_PROVISIONER_ENDPOINT",
+            "USER_API_KEYS",
+            "USER_IDENTITY_HMAC_SECRET",
+        ] {
+            assert!(matches!(
+                command
+                    .get_envs()
+                    .find(|(name, _)| *name == OsStr::new(key)),
+                Some((_, None))
+            ));
+        }
+    }
+
+    #[test]
+    fn proxy_upgrade_keeps_the_existing_port_and_completion_state() {
+        let config = normalized_proxy_config(
+            Some(ProxyConfig {
+                port: 34_567,
+                version: "0.1.0".to_string(),
+                registered: true,
+            }),
+            "0.2.0".to_string(),
+            45_678,
+        );
+
+        assert_eq!(34_567, config.port);
+        assert_eq!("0.2.0", config.version);
+        assert!(config.registered);
+    }
+
+    #[test]
+    fn occupied_proxy_port_is_replaced_and_requires_reregistration() {
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+
+        replace_occupied_proxy_port(&mut config, 45_678);
+
+        assert_eq!(45_678, config.port);
+        assert!(!config.registered);
+    }
+
+    #[test]
+    fn nvm_node_bins_are_included_in_desktop_cli_paths() {
+        let home = env::temp_dir().join(format!("collavre-nvm-paths-{}", process::id()));
+        let nvm_bin = home.join(".nvm/versions/node/v22.0.0/bin");
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(&nvm_bin).expect("create NVM node bin");
+
+        let paths = nvm_bin_paths(&home);
+        let _ = fs::remove_dir_all(&home);
+
+        assert_eq!(vec![nvm_bin], paths);
+    }
+
+    #[test]
+    fn nvm_default_alias_precedes_other_installed_versions() {
+        let home = env::temp_dir().join(format!("collavre-nvm-default-{}", process::id()));
+        let default_alias = home.join(".nvm/alias/default");
+        let older = home.join(".nvm/versions/node/v20.10.0/bin");
+        let selected = home.join(".nvm/versions/node/v22.16.0/bin");
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(default_alias.parent().expect("alias directory"))
+            .expect("create alias directory");
+        fs::create_dir_all(&older).expect("create old node bin");
+        fs::create_dir_all(&selected).expect("create default node bin");
+        fs::write(&default_alias, "22\n").expect("write default alias");
+
+        let paths = nvm_bin_paths(&home);
+        let _ = fs::remove_dir_all(&home);
+
+        assert_eq!(vec![selected, older], paths);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_managed_proxy_keeps_its_persisted_port_during_recovery() {
+        use std::process::Command;
+
+        let child = Command::new("sh")
+            .args(["-c", "sleep 2"])
+            .spawn()
+            .expect("spawn managed proxy");
+        let sidecar = ProxySidecar(Mutex::new(Some(ManagedProxy {
+            child,
+            port: 34_567,
+            credentials: ProxyCredentials {
+                admin_key: "admin-key".to_string(),
+                completion_key: "completion-key".to_string(),
+                identity_secret: "identity-secret".to_string(),
+                regenerated: false,
+            },
+        })));
+
+        assert!(managed_proxy_runs_on_port(&sidecar, 34_567));
+        assert!(!managed_proxy_runs_on_port(&sidecar, 45_678));
+        let credentials = managed_proxy_credentials(&sidecar)
+            .expect("read managed proxy credentials")
+            .expect("managed proxy credentials");
+        assert_eq!("admin-key", credentials.admin_key);
+        assert_eq!("completion-key", credentials.completion_key);
+        assert_eq!("identity-secret", credentials.identity_secret);
+
+        let mut proxy = sidecar
+            .0
+            .lock()
+            .expect("proxy lock")
+            .take()
+            .expect("managed proxy");
+        let _ = proxy.child.kill();
+        let _ = proxy.child.wait();
+    }
+
+    #[test]
+    fn fallback_paths_do_not_reorder_the_inherited_path() {
+        let inherited = PathBuf::from("/custom/node/bin");
+        let fallback = PathBuf::from("/opt/homebrew/bin");
+        let mut paths = vec![inherited.clone(), fallback.clone()];
+
+        append_unique_paths(&mut paths, [fallback, PathBuf::from("/usr/local/bin")]);
+
+        assert_eq!(
+            paths,
+            vec![
+                inherited,
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/local/bin"),
+            ]
+        );
+    }
+
+    #[test]
+    fn orphan_proxy_reaping_only_discards_the_untrusted_pidfile() {
+        let data = env::temp_dir().join(format!("collavre-proxy-pidfile-{}", process::id()));
+        let pidfile = super::proxy_pidfile_path(&data);
+        let _ = fs::remove_dir_all(&data);
+        fs::create_dir_all(pidfile.parent().expect("pidfile parent")).expect("create state");
+        fs::write(&pidfile, "12345").expect("write stale pidfile");
+
+        reap_orphan_proxy(&data);
+
+        assert!(!pidfile.exists());
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn lsof_listener_check_requires_the_expected_process() {
+        assert!(lsof_reports_process(b"p1234\n", "1234"));
+        assert!(!lsof_reports_process(b"p5678\n", "1234"));
+        assert!(!lsof_reports_process(b"", "1234"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proxy_health_rejects_an_impostor_while_the_spawned_child_is_alive() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::process::Command;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind impostor health server");
+        let port = listener.local_addr().expect("listener address").port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept health request");
+            let mut request = [0_u8; 256];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                .expect("respond as impostor");
+        });
+        let mut child = Command::new("sh")
+            .args(["-c", "sleep 2"])
+            .spawn()
+            .expect("spawn unrelated child");
+
+        assert!(!wait_until_proxy_healthy(
+            &mut child,
+            port,
+            Duration::from_millis(500)
+        ));
+        server.join().expect("health server joined");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[test]
+    fn startup_proxy_upgrade_persists_the_new_version() {
+        let data = env::temp_dir().join(format!("collavre-proxy-upgrade-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        write_proxy_config(
+            &data,
+            &ProxyConfig {
+                port: 34_567,
+                version: "0.1.0".to_string(),
+                registered: true,
+            },
+        )
+        .expect("write existing proxy configuration");
+
+        let upgraded = migrate_proxy_config(&data, "0.2.0".to_string())
+            .expect("migrate proxy configuration")
+            .expect("existing proxy configuration");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert_eq!(34_567, upgraded.port);
+        assert!(upgraded.registered);
+        assert_eq!("0.2.0", persisted.version);
+    }
+
+    #[test]
+    fn regenerated_keychain_credentials_require_gateway_reregistration() {
+        let data = env::temp_dir().join(format!("collavre-proxy-reregister-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        write_proxy_config(&data, &config).expect("write registered proxy configuration");
+
+        invalidate_proxy_registration_after_key_regeneration(&data, &mut config, true)
+            .expect("invalidate stale gateway registration");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert!(!config.registered);
+        assert!(!persisted.registered);
+        assert_eq!(34_567, persisted.port);
+        assert_eq!("0.1.0", persisted.version);
+    }
+
+    #[test]
+    fn missing_rails_gateway_requires_proxy_reregistration() {
+        let data =
+            env::temp_dir().join(format!("collavre-proxy-gateway-missing-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        write_proxy_config(&data, &config).expect("write registered proxy configuration");
+
+        invalidate_proxy_registration_when_gateway_is_missing(&data, &mut config, false)
+            .expect("invalidate missing gateway registration");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert!(!config.registered);
+        assert!(!persisted.registered);
+    }
+
+    #[test]
+    fn rails_startup_delay_does_not_invalidate_proxy_registration() {
+        let data = env::temp_dir().join(format!("collavre-proxy-rails-delay-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        write_proxy_config(&data, &config).expect("write registered proxy configuration");
+        let credentials = ProxyCredentials {
+            admin_key: "admin".to_string(),
+            completion_key: "completion".to_string(),
+            identity_secret: "identity".to_string(),
+            regenerated: false,
+        };
+
+        let revalidated = revalidate_registered_gateway_after_rails_health(
+            false,
+            &Sidecar {
+                child: Mutex::new(None),
+                port: Mutex::new(None),
+                secret: "unused".to_string(),
+            },
+            45_678,
+            &data,
+            &mut config,
+            &credentials,
+        )
+        .expect("skip gateway revalidation while Rails starts");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert!(!revalidated);
+        assert!(config.registered);
+        assert!(persisted.registered);
+    }
 }
 
 pub fn run() {
+    let sidecar_secret = generate_sidecar_secret().expect("generate Rails sidecar secret");
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(Sidecar(Mutex::new(None)))
+        .manage(Sidecar {
+            child: Mutex::new(None),
+            port: Mutex::new(None),
+            secret: sidecar_secret,
+        })
+        .manage(ProxySidecar(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![
+            desktop_proxy_complete_setup,
+            desktop_proxy_status
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             let root = app_root(&handle);
@@ -392,43 +2252,104 @@ pub fn run() {
             // read below so the values actually take effect this launch.
             apply_desktop_config(&data);
 
-            // Honor a caller-supplied PORT so open mode gets a stable URL/firewall
-            // rule; fall back to an ephemeral loopback port for the default
-            // single-user case. The same `port` feeds the sidecar, health check,
-            // and webview URL, so reading it here keeps all three consistent.
-            let port = std::env::var("PORT")
-                .ok()
-                .and_then(|p| p.parse::<u16>().ok())
-                .unwrap_or_else(free_port);
+            // Keep the default URL stable for loopback OAuth callbacks and local
+            // firewall rules. A valid caller-supplied PORT still wins. The same
+            // value feeds the sidecar, health check, and webview URL.
+            let configured_port = std::env::var("PORT").ok();
+            let port = desktop_port(configured_port.as_deref());
             // Reap any sidecar orphaned by a prior crash before we spawn — it
             // still holds this data dir's SQLite write locks.
             reap_orphan_sidecar(&data);
-            let child = spawn_sidecar(&root, &data, port);
+            let child = spawn_sidecar(&root, &data, port, &app.state::<Sidecar>().secret);
             let _ = fs::write(pidfile_path(&data), child.id().to_string());
-            app.state::<Sidecar>().0.lock().unwrap().replace(child);
+            app.state::<Sidecar>().child.lock().unwrap().replace(child);
+            app.state::<Sidecar>().port.lock().unwrap().replace(port);
 
             // Show the branded loading screen (dist/index.html) immediately so the
-            // user sees custom UI while the sidecar boots, instead of a blank or
-            // absent window. We used to block setup on the health check and only
-            // then create the window pointed at the Rails URL — meaning nothing was
-            // on screen during a cold first-run migration. Now we create the window
-            // first and health-gate on a background thread (below).
+            // user sees custom UI while the Rails sidecar and any previously
+            // configured proxy start. Proxy health checks can take up to 15 seconds
+            // after an update or failure, so they must not block window creation.
             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
                 .title("Collavre Desktop")
                 .inner_size(1280.0, 860.0)
+                // WKWebView only delegates downloads when the shell registers a
+                // handler. Returning true accepts its suggested destination and
+                // filename, including downloads triggered by `<a download>`.
+                .on_download(|_, _| true)
+                // Let browser-level drag and drop reach the Rails application.
+                .disable_drag_drop_handler()
+                // Lets Rails tailor desktop-only fallbacks without depending on
+                // platform-specific browser detection.
+                .user_agent(DESKTOP_USER_AGENT)
                 .build()?;
 
-            // Health-gate the sidecar OFF the UI thread so the splash keeps
-            // animating. On success, swap the splash for the live app; on timeout,
-            // surface a readable error in the splash instead of a frozen bar. 120s
-            // covers a cold first-run migration.
+            // Health-gate startup off the UI thread so the splash keeps animating.
+            // On success, swap it for the live app; on timeout, surface a readable
+            // error in place. 120s covers a cold first-run Rails migration.
             std::thread::spawn(move || {
-                let healthy = wait_until_healthy(port, Duration::from_secs(120));
+                // A configured proxy means the user previously accepted its first
+                // run setup. Migrate its expected bundled version before restarting
+                // it: otherwise an app update leaves the old version on disk and the
+                // restart is rejected forever. If migration or restart fails, open
+                // the setup recovery screen rather than silently navigating to home.
+                let proxy_config = bundled_proxy_manifest(&handle)
+                    .and_then(|manifest| migrate_proxy_config(&data, manifest.version))
+                    .and_then(|config| match config {
+                        Some(_) => {
+                            start_proxy(&handle, &data, &handle.state::<ProxySidecar>())?;
+                            read_proxy_config(&data)
+                                .ok_or_else(|| {
+                                    "Desktop proxy configuration is missing.".to_string()
+                                })
+                                .map(Some)
+                        }
+                        None => Ok(None),
+                    });
+                let healthy = wait_until_authenticated_sidecar(
+                    &handle.state::<Sidecar>(),
+                    port,
+                    Duration::from_secs(120),
+                );
+                let first_run_complete = proxy_config
+                    .and_then(|config| {
+                        if !healthy {
+                            return Ok(false);
+                        }
+                        let mut config = match config {
+                            Some(config) => config,
+                            None => return Ok(false),
+                        };
+                        // `start_proxy` retains the credentials it used in the
+                        // managed child. Reuse them for the registration check
+                        // instead of asking Keychain for the same secrets again.
+                        let credentials = managed_proxy_credentials(
+                            &handle.state::<ProxySidecar>(),
+                        )?
+                        .ok_or_else(|| {
+                            "The desktop proxy stopped before registration could be verified."
+                                .to_string()
+                        })?;
+                        revalidate_registered_gateway_after_rails_health(
+                            true,
+                            &handle.state::<Sidecar>(),
+                            port,
+                            &data,
+                            &mut config,
+                            &credentials,
+                        )
+                    })
+                    .unwrap_or(false);
                 let Some(window) = handle.get_webview_window("main") else {
                     return;
                 };
                 if healthy {
-                    if let Ok(url) = format!("http://127.0.0.1:{port}").parse::<tauri::Url>() {
+                    let path = if first_run_complete {
+                        "/"
+                    } else {
+                        "/desktop/setup"
+                    };
+                    if let Ok(url) = format!("http://127.0.0.1:{port}{path}").parse::<tauri::Url>()
+                    {
                         let _ = window.navigate(url);
                     }
                 } else {
@@ -446,12 +2367,16 @@ pub fn run() {
         .expect("build tauri app")
         .run(|app, event| {
             if let RunEvent::ExitRequested { .. } = event {
-                if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
+                if let Some(mut child) = app.state::<Sidecar>().child.lock().unwrap().take() {
                     stop_sidecar(&mut child);
+                }
+                if let Some(mut proxy) = app.state::<ProxySidecar>().0.lock().unwrap().take() {
+                    stop_sidecar(&mut proxy.child);
                 }
                 // Clear the pidfile so the next launch doesn't try to reap a pid
                 // that is gone (or, worse, reused by an unrelated process).
                 let _ = fs::remove_file(pidfile_path(&data_dir(app)));
+                let _ = fs::remove_file(proxy_pidfile_path(&data_dir(app)));
             }
         });
 }

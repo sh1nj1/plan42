@@ -100,7 +100,7 @@ The server persists the payload in the `devices` table with the following column
 - `app_version`: The application version.
 - `fcm_token`: The token issued by FCM.
 
-Whenever a new `InboxItem` is created, a push notification is sent to every device registered for that user.
+When a notification comment is created in a user's Inbox Creative, a push notification is sent to every device registered for that user.
 
 ## FCM with AWS Workload Identity Federation
 

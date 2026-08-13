@@ -97,7 +97,7 @@ module Creatives
       visible = creatives.reject(&:archived?).select { |creative| can_feedback?(creative) }
       return if visible.empty?
 
-      comment_badge_index.index(visible.map(&:effective_origin))
+      comment_badge_index.index(visible.map(&:effective_origin), include_visible_counts: false)
     end
 
     def build_nodes(creatives, level:)

@@ -29,7 +29,6 @@ module Collavre
     has_many :creative_shares_caches, class_name: "Collavre::CreativeSharesCache", dependent: :delete_all
     has_many :shared_creative_shares, class_name: "Collavre::CreativeShare", foreign_key: :shared_by_id,
                                       dependent: :nullify, inverse_of: :shared_by
-    has_many :inbox_items, class_name: "Collavre::InboxItem", foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
     has_many :invitations, class_name: "Collavre::Invitation", foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
     has_many :activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
     has_many :labels, class_name: "Collavre::Label", foreign_key: :owner_id, dependent: :destroy
@@ -78,15 +77,6 @@ module Collavre
     attribute :system_admin, :boolean, default: false
     attribute :searchable, :boolean, default: false
     attribute :creative_workspace_enabled, :boolean, default: true
-
-    # Typo correction (2D gating: typing-device AND input-location must both be on).
-    attribute :typo_correction_enabled, :boolean, default: true
-    attribute :typo_correction_threshold, :integer, default: 80
-    attribute :typo_correction_on_soft_keyboard, :boolean, default: true
-    attribute :typo_correction_on_voice, :boolean, default: true
-    attribute :typo_correction_on_physical_keyboard, :boolean, default: false
-    attribute :typo_correction_in_chat, :boolean, default: true
-    attribute :typo_correction_in_editor, :boolean, default: false
 
     attribute :google_uid, :string
     attribute :google_access_token, :string
@@ -173,31 +163,6 @@ module Collavre
       end
     end
 
-    TYPO_CORRECTION_DEVICES = %w[voice soft_keyboard physical_keyboard].freeze
-    TYPO_CORRECTION_LOCATIONS = %w[chat editor].freeze
-
-    # 2D gating: typo correction runs only when the master switch is on AND the
-    # originating typing device AND the input location are both enabled. Unknown
-    # device/location values are treated as disabled (fail closed).
-    def typo_correction_active_for?(device:, location:)
-      return false unless typo_correction_enabled
-
-      device_on = case device.to_s
-      when "voice" then typo_correction_on_voice
-      when "soft_keyboard" then typo_correction_on_soft_keyboard
-      when "physical_keyboard" then typo_correction_on_physical_keyboard
-      else false
-      end
-
-      location_on = case location.to_s
-      when "chat" then typo_correction_in_chat
-      when "editor" then typo_correction_in_editor
-      else false
-      end
-
-      device_on && location_on
-    end
-
     # LLM_VENDOR_OPTIONS is resolved dynamically from the AiClient vendor-option
     # registry so core lists only its built-in providers while vendor engines
     # (e.g. OpenClaw) contribute their own. Resolved lazily via const_missing so
@@ -253,6 +218,10 @@ module Collavre
       llm_model == "claude-code"
     end
 
+    def claude_channel_online?
+      claude_channel_agent? && AgentSubscription.live.where(agent_id: id).exists?
+    end
+
     scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }
 
     def self.accessible_ai_agents_for(user)
@@ -288,30 +257,56 @@ module Collavre
               length: { maximum: Collavre::LlmModel::MAX_NAME_LENGTH },
               if: :will_save_change_to_llm_model?
     validate :cli_proxy_gateway_belongs_to_creator
+    around_save :serialize_cli_proxy_gateway_assignment
+    before_save :validate_cli_proxy_gateway_assignment_under_lock
     validate :theme_accessibility
     validate :password_meets_minimum_length
     validates :timezone,
               inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
               allow_nil: true
-    # Column is NOT NULL; clearing the profile field (or a crafted PATCH) casts to
-    # nil and would raise a DB error on save. Validate so the form re-renders.
-    validates :typo_correction_threshold,
-              presence: true,
-              numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
-
     def cli_proxy_gateway_belongs_to_creator
       return unless llm_vendor == "cli_proxy"
 
-      if agent_gateway.nil?
-        errors.add(:agent_gateway, :blank)
-      elsif agent_gateway.owner_id != created_by_id
-        errors.add(:agent_gateway, :invalid)
-      elsif agent_gateway.identity_secret.blank?
-        agent_gateway.with_lock do
-          if agent_gateway.per_user? || agent_gateway.agents.where.not(id: id).exists?
-            errors.add(:agent_gateway, :identity_required)
-          end
+      validate_cli_proxy_gateway(agent_gateway)
+    end
+
+    # See AgentGateway#serialize_completion_key_removal. This repeats the
+    # gateway checks immediately before writing the agent while holding the
+    # same row lock used by a completion-key removal.
+    def serialize_cli_proxy_gateway_assignment
+      return yield unless llm_vendor == "cli_proxy" && agent_gateway_id.present?
+
+      gateway = AgentGateway.find_by(id: agent_gateway_id)
+      return yield unless gateway
+
+      gateway.with_lock do
+        begin
+          @cli_proxy_gateway_assignment_lock = gateway
+          yield
+        ensure
+          @cli_proxy_gateway_assignment_lock = nil
         end
+      end
+    end
+
+    def validate_cli_proxy_gateway_assignment_under_lock
+      gateway = @cli_proxy_gateway_assignment_lock
+      return unless gateway
+
+      error_count = errors.count
+      validate_cli_proxy_gateway(gateway)
+      throw :abort if errors.count > error_count
+    end
+
+    def validate_cli_proxy_gateway(gateway)
+      if gateway.nil?
+        errors.add(:agent_gateway, :blank)
+      elsif gateway.owner_id != created_by_id
+        errors.add(:agent_gateway, :invalid)
+      elsif !gateway.chat_capable?
+        errors.add(:agent_gateway, :completion_key_required)
+      elsif gateway.identity_secret.blank? && (gateway.per_user? || gateway.agents.where.not(id: id).exists?)
+        errors.add(:agent_gateway, :identity_required)
       end
     end
 

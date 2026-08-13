@@ -45,6 +45,7 @@ import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
 import AgentVendorController from "./agent_vendor_controller"
 import OnboardingCardController from "./onboarding_card_controller"
+import DesktopProxySetupController from "./desktop_proxy_setup_controller"
 
 // Export all controllers
 export {
@@ -88,7 +89,8 @@ export {
   GatewayCheckController,
   AgentConnectionController,
   AgentVendorController,
-  OnboardingCardController
+  OnboardingCardController,
+  DesktopProxySetupController
 }
 
 // Registration function for use with a Stimulus application
@@ -138,4 +140,5 @@ export function registerControllers(application) {
   application.register("agent-connection", AgentConnectionController)
   application.register("agent-vendor", AgentVendorController)
   application.register("onboarding-card", OnboardingCardController)
+  application.register("desktop-proxy-setup", DesktopProxySetupController)
 }

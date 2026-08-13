@@ -19,7 +19,7 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
+    before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
 
     def index
@@ -265,15 +265,6 @@ module Collavre
       else
         render json: { errors: result.errors }, status: :unprocessable_entity
       end
-    end
-
-    def parent_suggestions
-      unless @creative.has_permission?(Current.user, :read)
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
-      suggestions = ::GeminiParentRecommender.new.recommend(@creative)
-      render json: suggestions
     end
 
     def edit

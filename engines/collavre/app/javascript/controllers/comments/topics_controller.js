@@ -7,7 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
 export default class extends Controller {
-    static targets = ["list", "creationContainer"]
+    static targets = ["list", "creationContainer", "topicListButton"]
 
     connect() {
         this.topics = []
@@ -24,17 +24,21 @@ export default class extends Controller {
         }
         this.handleNewMessage = this.handleNewMessage.bind(this)
         this.handleTopicMoved = this.handleTopicMoved.bind(this)
+		this.handleTopicListClose = this.handleTopicListClose.bind(this)
         window.addEventListener('comments--topics:new-message', this.handleNewMessage)
         window.addEventListener('collavre:topic-moved', this.handleTopicMoved)
+		this.element.addEventListener('topic-list:close', this.handleTopicListClose)
     }
 
     disconnect() {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
+		this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
         this.unsubscribe()
     }
 
     onPopupOpened({ creativeId }) {
+        const previousCreativeId = this.creativeIdValue
         this.creativeIdValue = creativeId
         // Clear stale cached state from the previous creative — otherwise
         // chat-context autofill (command_menu) reads stale values during the
@@ -45,6 +49,20 @@ export default class extends Controller {
         // effective_creative_id. loadTopics() repopulates both.
         delete this.element.dataset.effectiveCreativeId
         this.mainTopicId = null
+        // Switching creatives reuses this instance without an onPopupClosed
+        // (popup_controller._navigateToEntry calls open()/openForCreative()
+        // again), so unread marks from the previous creative would badge the new
+        // creative's archived toggle — and never clear, since those ids are not
+        // among its topics. Only on an actual switch, though: a docked chat
+        // re-opens the *same* creative when a workspace-sync event carries a
+        // highlightId (popup_controller.handleCreativeClick), and these marks are
+        // transient — loadTopics() cannot rebuild them.
+        if (String(previousCreativeId || '') !== String(creativeId || '')) {
+            this.archivedWithNewMessages.clear()
+            // Scoped to the creative it was archived in; a topic id from another
+            // creative must not veto this one's restored selection.
+            this.archivedAwayTopicId = null
+        }
         this.subscribe()
         return this.loadTopics()
     }
@@ -55,7 +73,65 @@ export default class extends Controller {
         this.creativeIdValue = null
         this.topics = []
         this.mainTopicId = null
+        this.archivedWithNewMessages.clear()
+        this.archivedAwayTopicId = null
         delete this.element.dataset.effectiveCreativeId
+    }
+
+    // Archived topics still accept messages, but their chips only exist in the
+    // DOM while the archived section is expanded. Remember which ones have
+    // unread traffic so the badge can live on the collapsed toggle and survive
+    // re-renders. Created lazily: a docked controller can receive popup
+    // lifecycle callbacks before connect() has run.
+    get archivedWithNewMessages() {
+        if (!this._archivedWithNewMessages) this._archivedWithNewMessages = new Set()
+        return this._archivedWithNewMessages
+    }
+
+    // list_controller asks this before appending a live message to All Messages:
+    // CommentsController#index leaves archived-topic comments out of that view,
+    // so a stream must not put one there either.
+    isArchivedTopic(id) {
+        if (!id) return false
+        return (this.archivedTopics || []).some(t => String(t.id) === String(id))
+    }
+
+    // Move a topic between the live and archived caches without waiting for the
+    // reload. Every caller follows with loadTopics(), which clears this.topics
+    // synchronously and refills both lists when its fetch lands — so this only
+    // has to be right for the window in between, which is exactly the window
+    // isArchivedTopic is consulted in.
+    applyArchiveTransition(action, topic) {
+        const id = topic && topic.id
+        if (!id) return
+
+        const key = String(id)
+        const known = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
+            .find(t => String(t.id) === key)
+        const entry = { ...(known || {}), ...topic }
+
+        this.topics = (this.topics || []).filter(t => String(t.id) !== key)
+        this.archivedTopics = (this.archivedTopics || []).filter(t => String(t.id) !== key)
+
+        if (action === "archived") {
+            this.archivedTopics = [ ...this.archivedTopics, entry ]
+        } else {
+            this.topics = [ ...this.topics, entry ]
+            // Nothing archived is left to clear the badge from, so drop it here
+            // rather than leaving the toggle lit until the reload lands.
+            this.pruneArchivedBadges()
+        }
+    }
+
+    // The toggle badge is derived from set size, so an id that is no longer
+    // archived — unarchived, deleted, or left behind by a creative switch —
+    // would keep it lit with no chip to click and clear it.
+    pruneArchivedBadges() {
+        if (this.archivedWithNewMessages.size === 0) return
+        const archivedIds = new Set((this.archivedTopics || []).map(t => String(t.id)))
+        this.archivedWithNewMessages.forEach(id => {
+            if (!archivedIds.has(id)) this.archivedWithNewMessages.delete(id)
+        })
     }
 
     get creativeId() {
@@ -78,12 +154,14 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         const version = ++this._loadTopicsVersion
+        const selectionEpoch = this.selectionEpoch
+        const creativeId = this.creativeId
         // Clear stale topics from previous creative to prevent name-based
         // dedupe in handleTopicMessage from blocking valid broadcasts
         this.topics = []
 
         try {
-            const response = await fetch(`/creatives/${this.creativeId}/topics`)
+            const response = await fetch(`/creatives/${creativeId}/topics`)
             // Discard stale response if a newer loadTopics() call was made
             if (version !== this._loadTopicsVersion) return
 
@@ -106,7 +184,41 @@ export default class extends Controller {
                 this.canCreateTopic = canCreateTopic
                 this.canSetPrimaryAgent = canSetPrimaryAgent
                 this.archivedTopics = data.archived_topics || []
-                this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                this.pruneArchivedBadges()
+                // A topic picked while this fetch was in flight is newer intent
+                // than the answer coming back: last_topic_id still names the
+                // topic the user left, because the save for the pick is
+                // debounced and has not landed. Overwriting it here — and then
+                // restoring from it below — throws the click away, snapping the
+                // strip and the message list back to the previous topic.
+                // _loadTopicsVersion does not cover this: it only discards a
+                // response outrun by another loadTopics(), not by a selection.
+                //
+                // Only a pick about this creative, though. Switching creatives
+                // leaves the previous creative's chips on screen until this
+                // fetch lands, and a click on one of those is intent about the
+                // creative being left. Its id would survive as the preference,
+                // fail the lookup in restoreSelection(), drop the user on Main
+                // and then persist Main as the new creative's saved topic.
+                const pickWon = this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
+                if (pickWon) {
+                    // An interim restore can run while this fetch has the strip
+                    // empty and replace serverLastTopicId with Main. The epoch
+                    // belongs to the actual pick, so restore that picked value
+                    // rather than treating the derived fallback as its value.
+                    this.serverLastTopicId = this._pickTopicId
+                } else {
+                    this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                }
+                // The archive guard only has to outlive the sources that still
+                // name the topic. Test the effective selection, not just the
+                // preference: an unchanged ?topic_id= outranks it in the getter,
+                // so keying on serverLastTopicId would drop the guard while the
+                // URL was still pointing at the archived topic. Once nothing
+                // names it, a later reselection is honoured normally.
+                if (this.archivedAwayTopicId && String(this.currentTopicId) !== this.archivedAwayTopicId) {
+                    this.archivedAwayTopicId = null
+                }
                 this.isInbox = !!data.is_inbox
                 this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null
                 this.mainTopicId = data.main_topic_id ? String(data.main_topic_id) : null
@@ -118,10 +230,10 @@ export default class extends Controller {
                 }
 
                 // Migrate localStorage to server if server has no value
-                this.migrateLocalStorage()
+                this.migrateLocalStorage({ keepEmptyPick: pickWon })
 
-                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
-                this.restoreSelection()
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
+                this.restoreSelection({ keepEmptyPick: pickWon })
             }
         } catch (e) {
             console.error("Failed to load topics", e)
@@ -129,21 +241,76 @@ export default class extends Controller {
         }
     }
 
-    restoreSelection() {
+    // keepEmptyPick: the caller established that the user picked All Messages
+    // after this render was set in motion. That pick names no topic, so it
+    // cannot be restored from a topic list — it must be reapplied. Without
+    // this the Main fallback below would treat it as "nothing selected",
+    // navigate away from it and persist Main, which is the same revert a chip
+    // click suffers. A prior interim restore may also have dispatched Main, so
+    // reapplying sends the authoritative empty selection to downstream
+    // controllers again.
+    restoreSelection({ keepEmptyPick = false } = {}) {
         const lastTopicId = this.currentTopicId
-        if (lastTopicId) {
-            // Validate it exists in list
-            const exists = this.listTarget.querySelector(`[data-id="${lastTopicId}"]`)
-            if (exists) {
-                this.selectTopic(lastTopicId)
+        // A deep link controls this popup's view, but it is not a replacement
+        // for the saved preference. Replaying the linked selection after a
+        // preference broadcast must therefore update the UI without writing the
+        // link back over that newer server value.
+        const preservePreference = this.hasDeepLinkSelection && !keepEmptyPick
+        // archiveTopic() switched away from this topic on purpose. The server
+        // preference still names it until the debounced save lands, so accept
+        // the local intent over the stale server answer for that window.
+        if (lastTopicId && String(lastTopicId) !== this.archivedAwayTopicId) {
+            // Validate against the topic data, not the rendered DOM. An archived
+            // topic is still readable and writable — archiving hides it from the
+            // strip, it does not close the conversation. A DOM lookup would bounce
+            // the user back to Main every time the archived section is collapsed,
+            // because collapsed chips are never rendered. selectTopic expands the
+            // section when the selection lands inside it.
+            const known = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
+            if (known.some(t => String(t.id) === String(lastTopicId))) {
+                // Restoring is not a navigation, so it must not undo a collapse
+                // the user chose while sitting in this very topic. Only
+                // restoreSelection is suppressed; every other selectTopic caller
+                // is the user going somewhere, and reveals normally.
+                const reveal = this.archivedCollapsedTopicId !== String(lastTopicId)
+                this.selectTopic(lastTopicId, { reveal, pick: false, persist: !preservePreference })
                 return
             }
         }
 
-        this.selectTopic(this.mainTopicId || "")
+        if (keepEmptyPick && !lastTopicId) {
+            this.selectTopic("", { pick: false })
+            return
+        }
+
+        if (preservePreference && !lastTopicId) {
+            this.selectTopic("", { pick: false, persist: false })
+            return
+        }
+
+        // Not a pick: this fallback is what the current state resolves to, and
+        // loadTopics() empties the strip for the length of its fetch, so any
+        // re-render landing in that window resolves to Main whatever the user
+        // has selected. Counting it as intent would let it outrank the answer
+        // it was derived from — and drop the deep link on the way.
+        this.selectTopic(this.mainTopicId || "", { pick: false, persist: !preservePreference })
     }
 
-    renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage) {
+    // An archived topic can be opened from the topic strip, the topic-list popup,
+    // a deep link, or a restored last-topic. Expand the archived section from this
+    // one choke point so the strip always shows which topic is open.
+    revealArchivedTopic(id) {
+        if (!id || this.showingArchived) return
+        if (!this.isArchivedTopic(id)) return
+
+        // Reaching here is a deliberate navigation into the section, so an
+        // earlier collapse no longer describes what the user wants.
+        this.archivedCollapsedTopicId = null
+        this.showingArchived = true
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
+    }
+
+    renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage, sourceCreativeId = this._topicsCreativeId || this.creativeId) {
         const dragActions = canManage
             ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
             : ''
@@ -170,11 +337,14 @@ export default class extends Controller {
                 ? this.renderAgentAvatar(topic.primary_agent, releasableTopicId)
                 : ''
             const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
+            const unreadBadge = topic.unread_count > 0
+                ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
+                : ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
             let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
-                        ${agentAvatar}${branchIcon}#${topic.name}`
+                        ${agentAvatar}${branchIcon}#${topic.name}${unreadBadge}`
             if (canManage && !isMainTopic) {
                 s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
                 s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
@@ -192,13 +362,23 @@ export default class extends Controller {
 
         // Archived topics section
         if (this.archivedTopics && this.archivedTopics.length > 0) {
-            html += `<span class="topic-archived-toggle" data-action="click->comments--topics#toggleArchivedTopics">
+            // Badges are re-applied from state on every render because innerHTML
+            // below wipes the classes set by handleNewMessage.
+            const toggleBadge = this.archivedWithNewMessages.size > 0 ? ' has-new-messages' : ''
+            html += `<span class="topic-archived-toggle${toggleBadge}" data-action="click->comments--topics#toggleArchivedTopics">
                       ${ICON_ARCHIVE} ${this.archivedTopics.length}
                      </span>`
             if (this.showingArchived) {
                 this.archivedTopics.forEach(topic => {
-                    html += `<span class="topic-tag topic-archived" data-id="${topic.id}">
-                              #${topic.name}
+                    const isActive = String(this.currentTopicId) === String(topic.id) ? ' active' : ''
+                    const hasNew = this.archivedWithNewMessages.has(String(topic.id)) ? ' has-new-messages' : ''
+                    const unreadBadge = topic.unread_count > 0
+                        ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
+                        : ''
+                    html += `<span class="topic-tag topic-archived${isActive}${hasNew}"
+                                   data-action="click->comments--topics#select"
+                                   data-id="${topic.id}">
+                              #${topic.name}${unreadBadge}
                               ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
                              </span>`
                 })
@@ -206,6 +386,10 @@ export default class extends Controller {
         }
 
         this.listTarget.innerHTML = html
+        // Which creative the chips now on screen belong to. A click can only
+        // ever be about this one, whatever this.creativeId has since become.
+        this._renderedCreativeId = sourceCreativeId
+        this._topicsCreativeId = sourceCreativeId
 
         // The create button lives outside the scrolling strip so it stays reachable
         // without horizontal scrolling, no matter how many topics there are.
@@ -437,6 +621,10 @@ export default class extends Controller {
 
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
+                    // Same deep-link hazard as the "deleted" broadcast: this
+                    // path reaches restoreSelection through loadTopics instead
+                    // of removeTopic, but the getter is the same one.
+                    this.releaseDeepLinkSelection(topicId)
                     this.currentTopicId = "" // Switch to Main
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
@@ -464,9 +652,27 @@ export default class extends Controller {
 
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
+                    // Archiving the topic in view switches to All Messages, but
+                    // the preference save is debounced 500ms and both this
+                    // reload and the "archived" broadcast's own reload can beat
+                    // it. restoreSelection() accepts archived ids now, so the
+                    // stale last_topic_id would drop the user straight back into
+                    // the topic they just archived out of. Flag it instead of
+                    // flushing the save: the broadcast reload cannot be ordered
+                    // behind the flush, only ignored.
+                    this.archivedAwayTopicId = String(topicId)
+                    // Both sources that outrank serverLastTopicId in the
+                    // currentTopicId getter have to go too, or the archived
+                    // topic stays the effective selection no matter what the
+                    // preference says: overrideTopicId (deep link) and the
+                    // ?topic_id= query parameter.
+                    this.releaseDeepLinkSelection(topicId)
                     this.currentTopicId = ""
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
+                // The actor has the same stale-membership window as everyone
+                // receiving the broadcast, so close it on this side too.
+                this.applyArchiveTransition("archived", { id: topicId })
                 this.loadTopics()
             } else {
                 alertDialog(this._i18n("archive_error"))
@@ -490,6 +696,7 @@ export default class extends Controller {
             })
 
             if (response.ok) {
+                this.applyArchiveTransition("unarchived", { id: topicId })
                 this.loadTopics()
             } else {
                 alertDialog(this._i18n("restore_error"))
@@ -502,11 +709,26 @@ export default class extends Controller {
     toggleArchivedTopics(event) {
         event.stopPropagation()
         this.showingArchived = !this.showingArchived
+        // Collapsing while the open topic lives in this section is a deliberate
+        // choice to hide it, so record it. Every re-render runs restoreSelection
+        // → selectTopic → revealArchivedTopic, which would otherwise reopen the
+        // section on any unrelated rename, reorder, or topic broadcast.
+        this.archivedCollapsedTopicId = !this.showingArchived && this.isArchivedTopic(this.currentTopicId)
+            ? String(this.currentTopicId)
+            : null
+        // No restoreSelection() here: toggling cannot invalidate the selection, and
+        // renderTopics already re-applies the active class. Re-selecting would
+        // re-expand the section the user just collapsed (selectTopic reveals an
+        // archived selection) and pointlessly reload the message list.
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
-        this.restoreSelection()
     }
 
     openTopicListPopup(event) {
+		if (this.topicListTogglePointerDown) {
+			this.cancelTopicListToggle()
+			return
+		}
+
         const btnRect = event.currentTarget.getBoundingClientRect()
 
         const openWith = (popup) => {
@@ -521,12 +743,18 @@ export default class extends Controller {
                 (item) => this.selectTopic(item.id),
                 this.element
             )
+			this.setTopicListButtonExpanded(true)
         }
 
-        let modal = document.getElementById('topic-list-modal')
-        if (modal) {
-            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
-            if (popup) openWith(popup)
+		let modal = document.getElementById('topic-list-modal')
+		if (modal) {
+			const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+			if (popup?.popup?.isOpen()) {
+				popup?.close()
+				this.setTopicListButtonExpanded(false)
+			} else if (popup) {
+				openWith(popup)
+			}
             return
         }
 
@@ -551,6 +779,55 @@ export default class extends Controller {
             if (popup) openWith(popup)
             else console.error('topic-list controller not found after creation')
         })
+    }
+
+	prepareTopicListToggle(event) {
+		if (event.isPrimary === false || event.button !== 0) return
+
+		const modal = document.getElementById('topic-list-modal')
+		const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+		// Let every open popup receive this pointer event and perform its normal
+		// outside-click cleanup. If this popup was one of them, consume the
+		// following click so it does not immediately reopen.
+		if (popup?.popup?.isOpen()) {
+			this.topicListTogglePointerDown = true
+			this.topicListTogglePointerId = event.pointerId
+			event.currentTarget.setPointerCapture(event.pointerId)
+		}
+	}
+
+	finishTopicListToggle(event) {
+		if (event.pointerId !== this.topicListTogglePointerId) return
+
+		const rect = event.currentTarget.getBoundingClientRect()
+		const releasedOutsideButton = event.clientX < rect.left || event.clientX > rect.right ||
+			event.clientY < rect.top || event.clientY > rect.bottom
+		if (releasedOutsideButton) {
+			this.cancelTopicListToggle(event)
+		} else {
+			// A completed activation dispatches click before the next task. Clear a
+			// canceled in-button gesture afterwards so it cannot consume a later click.
+			this.topicListToggleClearTimeout = setTimeout(() => this.cancelTopicListToggle(event), 0)
+		}
+	}
+
+	cancelTopicListToggle(event = {}) {
+		if (event.pointerId != null && event.pointerId !== this.topicListTogglePointerId) return
+
+		clearTimeout(this.topicListToggleClearTimeout)
+		this.topicListToggleClearTimeout = undefined
+		this.topicListTogglePointerDown = false
+		this.topicListTogglePointerId = undefined
+	}
+
+    handleTopicListClose() {
+		this.setTopicListButtonExpanded(false)
+    }
+
+    setTopicListButtonExpanded(expanded) {
+		if (this.hasTopicListButtonTarget) {
+			this.topicListButtonTarget.setAttribute('aria-expanded', String(expanded))
+		}
     }
 
     showInput(event) {
@@ -617,8 +894,15 @@ export default class extends Controller {
         this.selectTopic(id)
     }
 
-    selectTopic(id) {
-        this.updateSelectionUI(id)
+    selectTopic(id, { reveal = true, pick = true, persist = true } = {}) {
+        // Only restoreSelection() is guarded, so reaching selectTopic with this
+        // id means the user deliberately went back into the archived topic.
+        // The transition is over.
+        if (this.archivedAwayTopicId && String(id) === this.archivedAwayTopicId) {
+            this.archivedAwayTopicId = null
+        }
+        if (reveal) this.revealArchivedTopic(id)
+        this.updateSelectionUI(id, { pick, persist, pending: pick })
         if (id) {
             this.clearNewMessageBadge(id)
         }
@@ -708,8 +992,8 @@ export default class extends Controller {
         }
     }
 
-    updateSelectionUI(id) {
-        this.currentTopicId = id
+    updateSelectionUI(id, { pick = true, persist = true, pending = false } = {}) {
+        this.applySelection(id, { pick, persist, pending })
         // Update UI
         let activeEl = null
         this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
@@ -753,9 +1037,16 @@ export default class extends Controller {
         // Don't show badge if we are currently in this topic (shouldn't happen due to list_controller logic, but safety check)
         if (String(this.currentTopicId) === String(topicId)) return
 
+        const isArchived = this.isArchivedTopic(topicId)
+        if (isArchived) this.archivedWithNewMessages.add(String(topicId))
+
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
-        if (topicEl) {
-            topicEl.classList.add('has-new-messages')
+        if (topicEl) topicEl.classList.add('has-new-messages')
+
+        // A collapsed archived section has no chip to badge, so the toggle carries
+        // the notice — otherwise a message in an archived topic is invisible.
+        if (isArchived) {
+            this.listTarget.querySelector('.topic-archived-toggle')?.classList.add('has-new-messages')
         }
     }
 
@@ -763,6 +1054,12 @@ export default class extends Controller {
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
         if (topicEl) {
             topicEl.classList.remove('has-new-messages')
+        }
+
+        // The toggle aggregates every archived topic, so it only clears once none
+        // of them is left unread.
+        if (this.archivedWithNewMessages.delete(String(topicId)) && this.archivedWithNewMessages.size === 0) {
+            this.listTarget.querySelector('.topic-archived-toggle')?.classList.remove('has-new-messages')
         }
     }
 
@@ -814,6 +1111,37 @@ export default class extends Controller {
         return this.serverLastTopicId || ""
     }
 
+    // Is one of the two sources above the preference still set? Not the same
+    // question as "is the getter's answer nonempty" — an override of "" outranks
+    // the preference just as a named one does.
+    get hasDeepLinkSelection() {
+        if (this.overrideTopicId !== undefined && this.overrideTopicId !== null) return true
+
+        return Boolean(new URLSearchParams(window.location.search).get('topic_id'))
+    }
+
+    // A topic leaving the strip — archived or deleted — has to leave both
+    // sources that outrank serverLastTopicId in the currentTopicId getter.
+    // Assigning "" only touches the preference, so on its own the getter goes
+    // on naming the gone topic and every later restoreSelection() finds it
+    // unknown and resets to Main, discarding whatever the user picked instead.
+    releaseDeepLinkSelection(topicId) {
+        this.clearOverrideTopicId()
+        this.clearUrlTopicId(topicId)
+    }
+
+    // Drop ?topic_id= when it names the topic being archived. It is a selection
+    // source in its own right and survives every reload, so leaving it would
+    // re-select the topic the user just archived out of. replaceState, not a
+    // navigation: the chat state around it must stay put.
+    clearUrlTopicId(topicId) {
+        const url = new URL(window.location.href)
+        if (url.searchParams.get('topic_id') !== String(topicId)) return
+
+        url.searchParams.delete('topic_id')
+        window.history.replaceState(window.history.state, '', url.toString())
+    }
+
     setOverrideTopicId(id) {
         this.overrideTopicId = id ? String(id) : ""
     }
@@ -823,31 +1151,134 @@ export default class extends Controller {
     }
 
     set currentTopicId(id) {
-        this.serverLastTopicId = id ? String(id) : ""
-        this.debounceSaveLastTopic(id)
+        this.applySelection(id)
+    }
+
+    // pick: this selection is new intent — the user picked it, or the server
+    // told us their preference moved. A restore is not: it re-derives the
+    // selection from state already held, so it is never newer than anything and
+    // must leave the sources that outrank the preference alone. Recording the
+    // preference and saving it happen either way; only the two consequences of
+    // *intent* are gated.
+    applySelection(id, { pick = true, persist = true, pending = false } = {}) {
+        if (persist) this.serverLastTopicId = id ? String(id) : ""
+        if (pick) {
+            // Writing only the preference leaves the two sources that outrank it
+            // in the getter still naming the topic being left, so the getter
+            // keeps answering with it: the next renderTopics() lights the old
+            // chip and the next restoreSelection() navigates back to it. Both
+            // are one-shot pointers at a topic to open, and this selection has
+            // moved off it. Dropped only when they disagree — a deep link that
+            // resolved to the topic now being selected must keep outranking the
+            // stale server last_topic_id for the rest of the popup session.
+            this.releaseSelectionSourcesOtherThan(this.serverLastTopicId)
+            this.selectionEpoch += 1
+            this._pickCreativeId = this._renderedCreativeId
+            this._pickTopicId = this.serverLastTopicId
+            if (pending) {
+                this._pendingPick = {
+                    creativeId: this._pickCreativeId,
+                    topicId: this._pickTopicId,
+                }
+            }
+        }
+        if (persist) this.debounceSaveLastTopic(id)
+    }
+
+    // Bumped on every selection so an in-flight loadTopics() can tell whether
+    // its answer predates a pick the user has since made.
+    get selectionEpoch() {
+        return this._selectionEpoch || 0
+    }
+
+    set selectionEpoch(value) {
+        this._selectionEpoch = value
+    }
+
+    // Did a pick land after the load at `epoch` started, or is there still an
+    // unsaved pick about the creative that load describes? A later load can
+    // begin before the pick's debounce lands, so request age alone cannot tell
+    // whether its answer predates the pick. The strip the click landed on,
+    // not by this.creativeId — onPopupOpened assigns that synchronously before
+    // the fetch, so a click on the outgoing creative's chips already carries the
+    // incoming id. The rendered strip is what the user was actually looking at.
+    //
+    // An empty pick (All Messages) names no topic to match against the response,
+    // and its provenance is the only thing that distinguishes it from a click on
+    // a stale strip — so it rests on that test alone. A named pick is checked
+    // against the topics too: one whose topic the response does not list was
+    // made against a strip that predates a delete, and keeping it would fail the
+    // lookup in restoreSelection() and persist Main in its place.
+    pickOutranks(epoch, creativeId, topics, archivedTopics) {
+        const hasNewerPick = this.selectionEpoch !== epoch
+        const hasUnsavedPick = this._pendingPick &&
+            String(this._pendingPick.creativeId) === String(creativeId)
+        if (!hasNewerPick && !hasUnsavedPick) return false
+        // creativeId is always truthy here — loadTopics() returns without it —
+        // so a pick made before any strip was rendered fails this too.
+        if (String(this._pickCreativeId) !== String(creativeId)) return false
+        if (!this._pickTopicId) return true
+
+        return [ ...(topics || []), ...(archivedTopics || []) ]
+            .some(t => String(t.id) === String(this._pickTopicId))
+    }
+
+    releaseSelectionSourcesOtherThan(id) {
+        if (this.overrideTopicId !== undefined && this.overrideTopicId !== null &&
+            String(this.overrideTopicId) !== String(id)) {
+            this.clearOverrideTopicId()
+        }
+
+        const urlTopicId = new URLSearchParams(window.location.search).get('topic_id')
+        if (urlTopicId && urlTopicId !== String(id)) {
+            this.clearUrlTopicId(urlTopicId)
+        }
     }
 
     debounceSaveLastTopic(id) {
-        if (this._saveLastTopicTimer) clearTimeout(this._saveLastTopicTimer)
+        this.cancelPendingSaveLastTopic()
         this._saveLastTopicTimer = setTimeout(() => {
             this.flushSaveLastTopic(id)
         }, 500)
     }
 
-    async flushSaveLastTopic(id) {
+    // Drop a queued save without sending it. The timer closes over the id it
+    // was scheduled with, so a save that is no longer wanted cannot be talked
+    // out of its value — only cancelled.
+    cancelPendingSaveLastTopic() {
         if (this._saveLastTopicTimer) {
             clearTimeout(this._saveLastTopicTimer)
             this._saveLastTopicTimer = null
         }
-        if (this.creativeId) {
-            await saveLastTopic(this.creativeId, id || null)
+    }
+
+    async flushSaveLastTopic(id) {
+        this.cancelPendingSaveLastTopic()
+        const creativeId = this.creativeId
+        if (creativeId) {
+            const saved = await saveLastTopic(creativeId, id || null)
+            const topicId = id ? String(id) : ""
+            if (saved !== false && this._pendingPick &&
+                String(this._pendingPick.creativeId) === String(creativeId) &&
+                this._pendingPick.topicId === topicId) {
+                this._pendingPick = null
+            }
         }
     }
 
-    migrateLocalStorage() {
+    // The legacy key is adopted only as a stand-in for a preference the server
+    // does not hold yet. A winning empty pick is a preference — it just names no
+    // topic, so it is indistinguishable here from "server holds nothing", and
+    // adopting the legacy value would hand the user back a topic they did not
+    // ask for and persist it. The caller knows which of the two it is.
+    //
+    // The key still goes, either way: the pick supersedes it, and its own save
+    // is already on the way, so leaving it behind would only re-apply a value
+    // the user has moved off on the next load.
+    migrateLocalStorage({ keepEmptyPick = false } = {}) {
         const key = `collavre_creative_${this.creativeId}_last_topic`
         const localValue = localStorage.getItem(key)
-        if (localValue && !this.serverLastTopicId) {
+        if (localValue && !this.serverLastTopicId && !keepEmptyPick) {
             this.serverLastTopicId = localValue
             saveLastTopic(this.creativeId, localValue)
         }
@@ -889,7 +1320,27 @@ export default class extends Controller {
             const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
             if (newTopicId !== this.serverLastTopicId) {
                 this.serverLastTopicId = newTopicId
-                this.selectTopic(newTopicId)
+                // Another session moved the preference; nobody clicked in this
+                // popup. A deep link outranks the preference in the getter, so
+                // following the broadcast would light a chip the getter does not
+                // name — and selectTopic() writes through the setter, which
+                // releases that link on the way. It is a one-shot pointer with
+                // nowhere to be recovered from: ?topic_id= is dropped from the
+                // URL, so not even a reload gets the linked conversation back.
+                // Record the preference, leave the view where the link put it.
+                //
+                // Every selection queues a save, restores included, so landing
+                // on the link 500ms ago left one holding the linked topic. It
+                // describes a selection this popup has just conceded is not the
+                // preference; letting it land would write the link back over
+                // what the other session set. Following the broadcast re-arms
+                // the debounce with the broadcast's own value, so only the path
+                // that does not follow has anything to cancel.
+                if (this.hasDeepLinkSelection) {
+                    this.cancelPendingSaveLastTopic()
+                } else {
+                    this.selectTopic(newTopicId)
+                }
             }
             return
         }
@@ -905,6 +1356,12 @@ export default class extends Controller {
         }
 
         if (action === "archived" || action === "unarchived") {
+            // loadTopics() only refreshes archivedTopics when its fetch resolves,
+            // and list_controller routes every incoming stream through
+            // isArchivedTopic in the meantime. The broadcast already carries the
+            // membership change, so apply it now rather than letting that window
+            // route on the old answer.
+            this.applyArchiveTransition(action, data.topic || { id: data.topic_id })
             this.loadTopics()
             return
         }
@@ -925,7 +1382,16 @@ export default class extends Controller {
         if (existsByName) return
 
         this.topics = [...topics, data.topic]
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
+        // This arrived on the subscription for the creative currently open.
+        // Unlike a local re-render of cached topics, it is not about the
+        // outgoing creative whose strip may still be on screen during a switch.
+        this.renderTopics(
+            this.topics,
+            this.canManageTopics,
+            this.canCreateTopic,
+            this.canSetPrimaryAgent,
+            this.creativeId
+        )
 
         // Auto-select the new topic if created by the current user
         const currentUserId = document.body.dataset.currentUserId
@@ -971,11 +1437,21 @@ export default class extends Controller {
         if (!topicId) return
 
         const topics = this.topics || []
+        const archivedTopics = this.archivedTopics || []
         const nextTopics = topics.filter((topic) => String(topic.id) !== String(topicId))
-        if (nextTopics.length === topics.length) return
+        // An archived topic is deletable and now selectable, so the "deleted"
+        // broadcast has to reach this cache too — nothing else does. It is the
+        // only removal path that runs without a loadTopics(), so a topic dropped
+        // from here would keep an openable chip and, through pruneArchivedBadges
+        // never running, a lit toggle for a conversation that no longer exists.
+        const nextArchivedTopics = archivedTopics.filter((topic) => String(topic.id) !== String(topicId))
+        if (nextTopics.length === topics.length && nextArchivedTopics.length === archivedTopics.length) return
 
         this.topics = nextTopics
+        this.archivedTopics = nextArchivedTopics
+        this.pruneArchivedBadges()
         if (String(this.currentTopicId) === String(topicId)) {
+            this.releaseDeepLinkSelection(topicId)
             this.currentTopicId = ""
             this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }

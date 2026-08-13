@@ -2,7 +2,7 @@ class BackfillCreativeInCommentInboxItems < ActiveRecord::Migration[8.0]
   disable_ddl_transaction!
 
   def up
-    InboxItem.where(message_key: [ "inbox.comment_added", "inbox.user_mentioned" ]).find_each do |item|
+    inbox_item_class.where(message_key: [ "inbox.comment_added", "inbox.user_mentioned" ]).find_each do |item|
       params = item.message_params || {}
       next if params["creative"].present?
 
@@ -23,5 +23,13 @@ class BackfillCreativeInCommentInboxItems < ActiveRecord::Migration[8.0]
 
   def down
     # no-op
+  end
+
+  private
+
+  def inbox_item_class
+    Class.new(ActiveRecord::Base) do
+      self.table_name = "inbox_items"
+    end
   end
 end

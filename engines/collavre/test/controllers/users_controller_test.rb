@@ -106,12 +106,6 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     )
     email = Email.create!(user: user_to_delete, email: user_to_delete.email, subject: "Test", event: :invitation)
 
-    # Stub push notification to avoid calling Firebase API
-    inbox_item = nil
-    PushNotificationJob.stub :perform_later, nil do
-      inbox_item = InboxItem.create!(owner: user_to_delete, message_key: "test.key", message_params: {})
-    end
-
     invitation = Invitation.create!(inviter: user_to_delete, creative: creative, permission: :read)
     plan_creative = Creative.create!(user: user_to_delete, description: "Sample Plan")
     plan = Plan.create!(owner: user_to_delete, creative: plan_creative, target_date: Date.current)
@@ -146,7 +140,6 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute CalendarEvent.exists?(calendar_event.id)
     refute Device.exists?(device.id)
     refute Email.exists?(email.id)
-    refute InboxItem.exists?(inbox_item.id)
     refute Invitation.exists?(invitation.id)
     refute Plan.exists?(plan.id)
     refute Tag.exists?(tag.id)
@@ -419,9 +412,8 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    # Assert the actual edit-AI link, not the word "Edit" — that text also appears
-    # in unrelated copy (e.g. the typo-correction settings hint), so a bare
-    # substring match would pass even if the link were gone.
+    # Assert the actual edit-AI link rather than a generic substring, so the
+    # assertion still proves the link is present.
     assert_includes response.body, collavre.edit_ai_user_path(ai_user)
   end
 
@@ -452,9 +444,8 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    # Match the actual edit-AI link, not the word "Edit": that text also appears
-    # in unrelated copy (typo-correction settings hint), so a bare substring
-    # match would spuriously fail even though the link is correctly hidden.
+    # Match the actual edit-AI link rather than a generic substring, so the
+    # assertion still proves the link is absent.
     refute_includes response.body, collavre.edit_ai_user_path(ai_user)
   end
   test "search with scope contacts returns contact users" do
@@ -537,33 +528,6 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     get collavre.passkeys_user_path(@regular_user)
     assert_response :success
   end
-  test "non admin user cannot access other user's typo correction page" do
-    sign_in_as(@regular_user, password: "password")
-    other_user = users(:one) # admin user
-
-    get collavre.typo_correction_user_path(other_user)
-
-    assert_redirected_to collavre.user_path(@regular_user)
-    assert_equal I18n.t("collavre.users.destroy.not_authorized"), flash[:alert]
-  end
-
-  test "user can access their own typo correction page" do
-    sign_in_as(@regular_user, password: "password")
-
-    get collavre.typo_correction_user_path(@regular_user)
-    assert_response :success
-    assert_select "input[name=?]", "user[typo_correction_enabled]"
-    assert_select "input[name=?]", "user[typo_correction_threshold]"
-  end
-
-  test "profile page links to the typo correction settings page" do
-    sign_in_as(@regular_user, password: "password")
-
-    get collavre.user_path(@regular_user)
-    assert_response :success
-    assert_select "a[href=?]", collavre.typo_correction_user_path(@regular_user)
-  end
-
   test "onboarding reset action is only shown on the current user's profile" do
     sign_in_as(@regular_user, password: "password")
 
@@ -575,7 +539,6 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "form[action=?]", collavre.reset_onboarding_path, count: 1
   end
-
   test "profile controls the creative workspace preference which defaults on" do
     sign_in_as(@regular_user, password: "password")
 

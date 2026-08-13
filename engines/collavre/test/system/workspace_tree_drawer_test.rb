@@ -53,6 +53,7 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     test "the drawer keeps its expansion state across close and reopen at #{width}px" do
       visit_workspace(width)
       find(".creative-workspace-tree-toggle").click
+      assert_selector ".creative-workspace-tree-region.is-open"
       assert_selector ".creative-workspace-tree-link", text: "Root creative", wait: 10
 
       find(".creative-workspace-tree-branch-toggle").click
@@ -60,6 +61,7 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
 
       find(".creative-workspace-tree-toggle").click
       assert_no_selector ".creative-workspace-tree-region.is-open"
+      assert_selector ".creative-workspace-tree-toggle[aria-expanded='false']"
       find(".creative-workspace-tree-toggle").click
 
       assert_selector ".creative-workspace-tree-region.is-open"

@@ -190,8 +190,6 @@ function setupEditorSession() {
     const unlinkBtn = document.getElementById('inline-unlink');
     const unconvertBtn = document.getElementById('inline-unconvert');
     const closeBtn = document.getElementById('inline-close');
-    const parentSuggestions = document.getElementById('parent-suggestions');
-    const parentSuggestBtn = document.getElementById('inline-recommend-parent');
     const methodInput = document.getElementById('inline-method');
     const parentInput = document.getElementById('inline-parent-id');
     const beforeInput = document.getElementById('inline-before-id');
@@ -1830,10 +1828,6 @@ function setupEditorSession() {
           document.dispatchEvent(new CustomEvent('creative-editing:start', {
             detail: { creativeId: null }
           }));
-          if (parentSuggestions) {
-            parentSuggestions.style.display = 'none';
-            parentSuggestions.innerHTML = '';
-          }
         };
 
         if (rowComponent.updateComplete) {
@@ -1989,54 +1983,6 @@ function setupEditorSession() {
         pendingSave = true;
         saveQueue.cancelTimer();
         saveForm();
-      });
-    }
-
-    if (parentSuggestBtn && parentSuggestions) {
-      parentSuggestBtn.addEventListener('click', function () {
-        const originalLabel = parentSuggestBtn.textContent;
-        parentSuggestBtn.disabled = true;
-        parentSuggestBtn.textContent = `${originalLabel}...`;
-        parentSuggestions.innerHTML = '<option>...</option>';
-        parentSuggestions.style.display = 'block';
-
-        saveForm()
-          .then(function () {
-            const id = form.dataset.creativeId;
-            if (!id) {
-              parentSuggestions.style.display = 'none';
-              return;
-            }
-            return creativesApi.parentSuggestions(id).then(function (data) {
-              parentSuggestions.innerHTML = '';
-              if (data && data.length) {
-                data.forEach(function (s) {
-                  const opt = document.createElement('option');
-                  opt.value = s.id;
-                  opt.textContent = s.path;
-                  parentSuggestions.appendChild(opt);
-                });
-                parentSuggestions.style.display = 'block';
-              } else {
-                parentSuggestions.style.display = 'none';
-              }
-            });
-          })
-          .finally(function () {
-            parentSuggestBtn.textContent = originalLabel;
-            parentSuggestBtn.disabled = false;
-          });
-      });
-    }
-
-    if (parentSuggestions) {
-      parentSuggestions.addEventListener('change', function () {
-        if (!this.value) return;
-        parentInput.value = this.value;
-        const targetId = this.value;
-        saveForm().then(function () {
-          window.location.href = `/creatives/${targetId}`;
-        });
       });
     }
 

@@ -37,16 +37,6 @@ module Collavre
           ]
         },
         {
-          name: "work",
-          label: "/work",
-          description: I18n.t("collavre.comments.command_menu.work_description"),
-          args: I18n.t("collavre.comments.command_menu.work_args"),
-          input_schema: [
-            { name: "agent_name", type: "string", format: "mention", required: true, description: I18n.t("collavre.comments.command_menu.work_agent_hint") },
-            { name: "context", type: "string", required: false, description: I18n.t("collavre.comments.command_menu.work_context_hint") }
-          ]
-        },
-        {
           name: "compress",
           label: "/compress",
           description: I18n.t("collavre.comments.command_menu.compress_description"),

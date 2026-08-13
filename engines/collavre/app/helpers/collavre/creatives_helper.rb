@@ -56,8 +56,9 @@ module Collavre
           # CommentBadgeIndex; re-checking here would be one cache read per node,
           # which is exactly what the batch exists to avoid.
           if unread_count.nil?
-            unread_count = unread_count_for(origin, comments_count)
-            unread_count = 0 if viewing_now?(origin)
+            badge_index = Creatives::CommentBadgeIndex.new(user: Current.user)
+            badge_index.index([ origin ])
+            unread_count = badge_index.unread_count_for(origin)
           end
           classes = [ "comments-btn", "creative-action-btn" ]
           classes << "no-comments" if comments_count.zero?
@@ -85,11 +86,13 @@ module Collavre
         end
         is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
         can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
-        progress_part = if is_leaf && can_write && !select_mode
-          render_progress_toggle(creative, progress_value)
-        else
-          render_progress_value(progress_value)
-        end
+        progress_part = render_progress_control(
+          creative,
+          progress_value,
+          has_children: !is_leaf,
+          can_write: can_write,
+          select_mode: select_mode
+        )
 
         safe_join([
           progress_part,
@@ -100,23 +103,17 @@ module Collavre
       end
     end
 
-    # Unread comments on `origin` for the current user. With no read pointer,
-    # every comment is unread. Batched by CommentBadgeIndex for the browse tree;
-    # this is the single-creative path.
-    def unread_count_for(origin, comments_count)
-      pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
-      last_read_id = pointer&.last_read_comment_id
-      return comments_count unless last_read_id
-
-      origin.comments.where("id > ? and private = ?", last_read_id, false).count
+    def render_progress_control(creative, value, has_children:, can_write:, select_mode: false)
+      if !has_children && can_write && !select_mode && progress_toggleable?(value)
+        render_progress_toggle(creative, value)
+      else
+        render_progress_value(value)
+      end
     end
 
-    # Someone with the chat open has read it, so their badge shows nothing.
-    def viewing_now?(origin)
-      return false unless Current.user
-
-      CommentPresenceStore.list(origin.id).include?(Current.user.id)
-    end
+    # Rendered when the completion mark is blank, so the completed state keeps a
+    # stable baseline and a tappable hit area.
+    NBSP = "\u00A0"
 
     def render_progress_toggle(creative, value)
       complete = value == 1
@@ -128,10 +125,15 @@ module Collavre
         data: {
           progress_toggle: true,
           creative_id: creative.id,
-          current_progress: value,
+          # progress is a decimal, so the raw value serializes as "1.0" and the
+          # CSS/JS state checks against "1" would never match. Both sides of the
+          # toggle only ever mean 0 or 1, so emit it as an integer.
+          current_progress: complete ? 1 : 0,
           new_progress: new_value,
           guide_anchor: "tree.progress",
-          guide_anchor_key: creative.id
+          guide_anchor_key: creative.id,
+          mark_complete: t("collavre.creatives.index.mark_complete"),
+          mark_incomplete: t("collavre.creatives.index.mark_incomplete")
         },
         title: tooltip
       ) do
@@ -139,11 +141,25 @@ module Collavre
           type: "checkbox",
           checked: complete || nil,
           class: "progress-toggle-checkbox",
-          tabindex: -1,
           "aria-label": tooltip
         )
-        safe_join([ render_progress_value(value), checkbox ])
+        # A completed leaf reads as the admin completion mark (blank by default),
+        # the same way parent rows already render 100%. CSS swaps the mark back to
+        # the checked box on hover/focus so a mis-click is undone in place instead
+        # of through the inline editor. The checkbox stays the accessible control;
+        # the mark is decorative.
+        checkbox + tag.span(completion_mark_display, class: "progress-toggle-mark", aria: { hidden: true })
       end
+    end
+
+    # Blank (the default) collapses to a non-breaking space so the completed state
+    # keeps a stable baseline and a tappable hit area inside the toggle.
+    def completion_mark_display
+      completion_mark.to_s.presence || NBSP
+    end
+
+    def progress_toggleable?(value)
+      value == 0 || value == 1
     end
 
     def render_progress_value(value)

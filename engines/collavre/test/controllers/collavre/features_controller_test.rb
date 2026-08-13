@@ -111,18 +111,6 @@ module Collavre
       end
     end
 
-    test "slash command guide describes which creatives work skips in both locales" do
-      {
-        en: [ "each eligible one", "already complete", "have an active task" ],
-        ko: [ "대상 항목", "이미 완료", "활성 task", "건너뜁니다" ]
-      }.each do |locale, phrases|
-        get "/features/slash_command", params: { locale: locale }
-
-        assert_response :success
-        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
-      end
-    end
-
     test "slash command guide describes existing topic routing and its write permission in both locales" do
       {
         en: [ "If that name already exists", "assigns or replaces its primary agent", "releases any existing primary agent", "write permission" ],

@@ -15,6 +15,13 @@ Collavre::Engine.routes.draw do
   resources :agent_gateways, path: "settings/agent-gateways", except: :show do
     post :check, on: :member
   end
+  get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
+  post "desktop/setup/account", to: "desktop_setup#create_account", as: :desktop_setup_account
+  post "desktop/setup/registration-token", to: "desktop_setup#registration_token", as: :desktop_setup_registration_token
+  get "desktop/setup/sidecar-health", to: "desktop_sidecar_health#show", as: :desktop_setup_sidecar_health
+  post "desktop/setup/validate-registration-grant", to: "desktop_gateway_registrations#validate_registration_grant", as: :desktop_setup_validate_registration_grant
+  post "desktop/setup/gateway-registered", to: "desktop_gateway_registrations#registered", as: :desktop_setup_gateway_registered
+  post "desktop/setup/register-gateway", to: "desktop_gateway_registrations#create", as: :desktop_setup_register_gateway
   resources :users, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     collection do
       get :new_ai
@@ -33,7 +40,6 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
-      get :typo_correction
       get :agent_connection, to: "agent_connections#show"
     end
   end
@@ -71,10 +77,6 @@ Collavre::Engine.routes.draw do
   resources :contacts, only: [ :destroy ]
   resources :devices, only: [ :create ]
 
-  resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
-    get :count, on: :collection
-  end
-
   resources :user_themes, only: [ :index, :create, :destroy ] do
     member do
       post :apply
@@ -82,8 +84,6 @@ Collavre::Engine.routes.draw do
   end
 
   resources :llm_models, only: [ :destroy ]
-
-  resources :typo_corrections, only: [ :create ]
 
   resources :creative_imports, only: [ :create ]
   resources :tasks, only: [] do
@@ -161,7 +161,6 @@ Collavre::Engine.routes.draw do
       post :unconvert
       patch :archive
       patch :unarchive
-      get :parent_suggestions
       get :slide_view
       get :contexts
       patch :update_contexts

@@ -80,7 +80,9 @@ module Collavre
       private
 
       def default_http_client
-        policy = EndpointPolicy.new unless @gateway.owner.system_admin?
+        requires_endpoint_policy = !@gateway.owner.system_admin? &&
+          !@gateway.desktop_loopback?
+        policy = EndpointPolicy.new if requires_endpoint_policy
         Collavre::HttpClient.new(open_timeout: 5, read_timeout: 35, endpoint_policy: policy)
       end
 

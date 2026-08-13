@@ -5,15 +5,15 @@ module Collavre
   # session whose WebSocket dropped without DELETE /api/v1/agent/:id.
   #
   # AgentChannel#unsubscribed makes the agent unroutable, but a task already
-  # in "delegated" still holds its ResourceTracker slot and (for workflow
-  # subtasks) blocks the parent workflow. The dispatch was broadcast to a
-  # now-dead stream, so no client remains to call /reply — without this job
+  # in "delegated" still holds its ResourceTracker slot. The dispatch was
+  # broadcast to a now-dead stream, so no client remains to call /reply —
+  # without this job
   # the slot stays held until StuckDetectorJob times out (minutes to hours).
   #
   # The grace delay lets transient WS blips self-heal: if the client
   # reconnects before the job fires, AgentChannel#subscribe_to_agent_stream
-  # restores routing_expression to "true" and writes a fresh subscription
-  # token. The job's online-state recheck then no-ops.
+  # creates a fresh live presence row and writes a fresh subscription token.
+  # The job's online-state recheck then no-ops.
   class CancelOfflineDelegatedTasksJob < ApplicationJob
     queue_as :default
 
@@ -30,10 +30,6 @@ module Collavre
       # only that topic's delegated work. Enqueued by AgentChannel#unsubscribed
       # when a sibling remains; mirrors the destroy path's cancel_tasks_for_topic.
       return cancel_dropped_session_tasks(agent, session_id) if session_id.present?
-
-      # Agent came back online during the grace window — the same MCP
-      # session (or a new one) is subscribed and can answer /reply.
-      return if agent.routing_expression.present?
 
       # A session (reconnect or a still-live sibling sharing this agent) holds
       # a LIVE presence row — the agent is online, its delegated work is still
@@ -90,18 +86,6 @@ module Collavre
         was_running = task.status == "running"
         task.update!(status: "cancelled")
         tracker.release!(task.id) if was_running
-
-        next if task.parent_task_id.blank?
-
-        begin
-          Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-            task, error_message: "Claude Channel session lost connection before dispatch"
-          )
-        rescue StandardError => e
-          Rails.logger.error(
-            "[CancelOfflineDelegatedTasksJob] fail_subtask! failed for queued task #{task.id}: #{e.message}"
-          )
-        end
       end
     end
 
@@ -112,18 +96,6 @@ module Collavre
       tasks.find_each do |task|
         task.update!(status: "cancelled")
         tracker.release!(task.id)
-
-        if task.parent_task_id.present?
-          begin
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task, error_message: "Claude Channel session lost connection before reply"
-            )
-          rescue StandardError => e
-            Rails.logger.error(
-              "[CancelOfflineDelegatedTasksJob] fail_subtask! failed for task #{task.id}: #{e.message}"
-            )
-          end
-        end
 
         if task.topic_id.present?
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)

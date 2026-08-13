@@ -50,17 +50,12 @@ module Collavre
 
       # Post-claim side effects, run only after the reply comment is saved. Links
       # the comment to the claimed task, releases the ResourceTracker slot the
-      # AiAgentJob held under task.id, advances the parent workflow (if any), and
-      # drains the topic queue — mirroring AiAgentJob#perform's success path for
-      # non-delegated runs.
+      # AiAgentJob held under task.id, and drains the topic queue — mirroring
+      # AiAgentJob#perform's success path for non-delegated runs.
       def finalize(agent:, task:, comment:)
         comment.update_column(:task_id, task.id)
 
         Orchestration::ResourceTracker.for(agent).release!(task.id)
-
-        if task.parent_task_id.present?
-          Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
-        end
 
         # Complete the task only after the reply is linked. This runs the normal
         # completion callbacks after TriggerLoopCheckJob, stop-button updates,

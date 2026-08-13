@@ -709,6 +709,44 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal original_adapter, context_config.faraday_adapter
   end
 
+  test "desktop loopback CLI Proxy gateways retain the default HTTP adapter after owner demotion" do
+    owner = users(:two)
+    owner.update!(system_admin: true)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Demoted owner desktop proxy",
+      base_url: "http://127.0.0.1:3456",
+      admin_key: "admin",
+      completion_key: "completion-secret",
+      desktop_managed: true
+    )
+    agent = Collavre::User.create!(
+      name: "Desktop CLI client agent",
+      email: "desktop-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    owner.update!(system_admin: false)
+    client = AiClient.new(vendor: "cli_proxy", model: agent.llm_model, system_prompt: nil, context: { user: agent })
+    fake_chat = FakeConversation.new
+    context_config = RubyLLM.config.dup
+    original_adapter = context_config.faraday_adapter
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_not_predicate gateway.owner.reload, :system_admin?
+    assert_equal "http://127.0.0.1:3456/v1", context_config.openai_api_base
+    assert_equal original_adapter, context_config.faraday_adapter
+  end
+
   private
 
   def build_conversation_with_context(context_hash = {})
@@ -755,9 +793,8 @@ class AiClientTest < ActiveSupport::TestCase
   end
 
   test "does not log raw error message to app log when log_interactions is false" do
-    # Inline typo correction passes log_interactions: false because it runs on the
-    # user's *unsubmitted* draft. An LLM error whose message echoes that draft must
-    # not leak to Rails.logger — only the error class may be logged.
+    # An LLM error message can echo sensitive request content. It must not leak to
+    # Rails.logger when log_interactions is false — only the error class may log.
     draft = "my-secret-unsubmitted-draft-xyzzy"
     conversation = FakeConversation.new
     conversation.define_singleton_method(:complete) do |&_block|

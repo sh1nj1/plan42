@@ -1,5 +1,5 @@
 import { Turbo } from "@hotwired/turbo-rails"
-import { createRow, applyRowProperties } from "../creatives/tree_renderer"
+import { createRow, applyRowProperties, replaceProgressControl, updateProgressHtml } from "../creatives/tree_renderer"
 import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
@@ -331,30 +331,23 @@ function handleDestroyed(creative) {
     restoreTreeEmptyState()
 }
 
-function updateProgressForRow(row, progress, progressText) {
+export function updateProgressForRow(row, progress, progressText, progressHtml = null) {
     if (progress == null) return
     const pct = Math.round(progress * 100)
-    const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
     // progressText from server: completion mark string, empty string (=complete but no mark), or null
     const displayText = progressText != null ? (progressText || '\u00a0\u00a0') : `${pct}%`
 
     row.dataset.progressValue = String(progress)
 
     if (row.progressHtml) {
-        // Try regex replacement on existing progress HTML (preserves chat buttons etc.)
-        const regex = /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/
-        const updated = row.progressHtml.replace(regex, `$1${displayText}$2`)
+        const updated = progressHtml && !row.selectMode
+            ? replaceProgressControl(row.progressHtml, progressHtml)
+            : updateProgressHtml(row.progressHtml, progress, displayText)
+
         if (updated !== row.progressHtml) {
-            // Also update ONLY the first progress class (not chat buttons etc.)
-            const classUpdated = updated.replace(
-                /class="creative-progress-(?:in)?complete"/,
-                `class="${cssClass}"`
-            )
-            row.progressHtml = classUpdated
-            row.dataset.progressHtml = classUpdated
+            row.progressHtml = updated
+            row.dataset.progressHtml = updated
         }
-        // If regex didn't match, do NOT create fresh HTML — preserve existing progressHtml
-        // (it contains chat buttons, comment badges, etc.)
     }
 }
 
@@ -363,7 +356,7 @@ function updateAncestorProgress(ancestors) {
     ancestors.forEach(anc => {
         // findRowsForCreative already handles origin_id fallback for linked creatives
         const rows = findRowsForCreative(anc.id, anc.origin_id)
-        if (rows[0]) updateProgressForRow(rows[0], anc.progress, anc.progress_text)
+        if (rows[0]) updateProgressForRow(rows[0], anc.progress, anc.progress_text, anc.progress_html)
     })
 }
 

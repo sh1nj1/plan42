@@ -29,7 +29,23 @@ export default class extends CommonPopupController {
         this.inputTarget.value = ''
         this.setItems(this._allItems)
         super.open(anchorRect, boundsElement)
+        if (this.isMobile()) {
+            // Autofocusing the search box raises the virtual keyboard, which covers
+            // the very list the user just asked to see. Drop focus instead — tapping
+            // the box still opens the keyboard when the user actually wants to search.
+            this._blurActiveElement()
+            return
+        }
         requestAnimationFrame(() => this.inputTarget.focus())
+    }
+
+    isMobile() {
+        return window.innerWidth <= 600
+    }
+
+    _blurActiveElement() {
+        const active = document.activeElement
+        if (active && active !== document.body && typeof active.blur === 'function') active.blur()
     }
 
     _buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel }) {

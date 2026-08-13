@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -56,14 +56,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
     t.boolean "active", default: true, null: false
     t.text "admin_key", null: false
     t.string "base_url", null: false
-    t.text "completion_key", null: false
+    t.text "completion_key"
     t.datetime "created_at", null: false
+    t.boolean "desktop_managed", default: false, null: false
     t.text "identity_secret"
     t.string "name", null: false
     t.integer "owner_id", null: false
     t.string "tenant_id", default: "collavre", null: false
     t.datetime "updated_at", null: false
     t.integer "workspace_mode", default: 0, null: false
+    t.index ["desktop_managed"], name: "index_agent_gateways_on_desktop_managed", unique: true, where: "desktop_managed"
     t.index ["owner_id", "name"], name: "index_agent_gateways_on_owner_id_and_name", unique: true
     t.index ["owner_id"], name: "index_agent_gateways_on_owner_id"
   end
@@ -373,23 +375,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
     t.datetime "processed_at"
     t.index ["created_at"], name: "index_github_webhook_deliveries_on_created_at"
     t.index ["delivery_guid"], name: "index_github_webhook_deliveries_on_delivery_guid", unique: true
-  end
-
-  create_table "inbox_items", force: :cascade do |t|
-    t.integer "comment_id"
-    t.datetime "created_at", null: false
-    t.integer "creative_id"
-    t.string "link"
-    t.text "message"
-    t.string "message_key"
-    t.json "message_params", default: {}, null: false
-    t.integer "owner_id", null: false
-    t.string "state", default: "new", null: false
-    t.datetime "updated_at", null: false
-    t.index ["comment_id"], name: "index_inbox_items_on_comment_id"
-    t.index ["creative_id"], name: "index_inbox_items_on_creative_id"
-    t.index ["owner_id"], name: "index_inbox_items_on_owner_id"
-    t.index ["state"], name: "index_inbox_items_on_state"
   end
 
   create_table "integration_settings", force: :cascade do |t|
@@ -908,20 +893,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
     t.datetime "created_at", null: false
     t.integer "creative_id"
     t.string "name"
-    t.integer "parent_task_id"
     t.json "pending_tool_call"
-    t.integer "retry_count", default: 0, null: false
     t.string "status", default: "pending"
     t.integer "topic_id"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
     t.string "waiting_notice_scope"
-    t.text "workflow_context"
-    t.json "workflow_state"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
-    t.index ["parent_task_id"], name: "index_tasks_on_parent_task_id"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
   end
 
@@ -976,6 +956,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
     t.datetime "created_at", null: false
     t.integer "created_by_id"
     t.boolean "creative_workspace_enabled", default: true, null: false
+    t.string "desktop_preset_adapter"
     t.json "dismissed_notices"
     t.string "email", null: false
     t.datetime "email_verified_at"
@@ -1018,6 +999,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
+    t.index ["desktop_preset_adapter"], name: "index_users_on_desktop_preset_adapter", unique: true, where: "desktop_preset_adapter IS NOT NULL"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["last_visited_creative_id"], name: "index_users_on_last_visited_creative_id"
     t.index ["searchable"], name: "index_users_on_searchable"
@@ -1077,9 +1059,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
   add_foreign_key "github_accounts", "users"
   add_foreign_key "github_repository_links", "creatives"
   add_foreign_key "github_repository_links", "github_accounts"
-  add_foreign_key "inbox_items", "comments", on_delete: :nullify
-  add_foreign_key "inbox_items", "creatives", on_delete: :nullify
-  add_foreign_key "inbox_items", "users", column: "owner_id"
   add_foreign_key "invitations", "creatives"
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "creatives"
@@ -1124,7 +1103,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_090000) do
   add_foreign_key "tags", "labels"
   add_foreign_key "task_actions", "tasks"
   add_foreign_key "tasks", "creatives", on_delete: :nullify
-  add_foreign_key "tasks", "tasks", column: "parent_task_id", on_delete: :nullify
   add_foreign_key "tasks", "users", column: "agent_id"
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "topics", column: "source_topic_id", on_delete: :nullify

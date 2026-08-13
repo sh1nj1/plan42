@@ -559,12 +559,10 @@ module Collavre
       # (TaskCoalescer::ACQUIRED_ANCHOR_KEY, written by whichever door moved it)
       # rather than from comparing the comment's clock with the task's.
       #
-      # Scoped by topic and creative, which also keeps workflow subtasks out:
-      # Comments::WorkflowExecutor mints its own trigger comment in the child
-      # creative with topic_id nil, so it can never be mistaken for a delivery of
-      # a comment in this topic. Same trigger_event_name for the same reason
-      # TaskCoalescer folds only within one — a different event over the same
-      # comment is a different question.
+      # Scoped by topic and creative so a delivery is only ever matched against
+      # comments in the same conversation. Same trigger_event_name for the same
+      # reason TaskCoalescer folds only within one — a different event over the
+      # same comment is a different question.
       def self.delivered_comment_ids(task, context)
         others = Task.where(
           agent_id: task.agent_id,

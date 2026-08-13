@@ -41,9 +41,11 @@ describe('CommonPopup bounds clamping', () => {
         const popup = build({ popupWidth: 320, popupHeight: 400 })
         popup._boundsElement = boundsElement
         popup.updatePosition({ left: 200, bottom: 200 })
-        // inner box = dimension - 2*pad
+        // inner box = width - 2*pad
         expect(element.style.maxWidth).toBe('384px')
-        expect(element.style.maxHeight).toBe('584px')
+        // Height is capped to the space under the anchor rather than the whole
+        // box (700 - 8 - 204), so content arriving later cannot spill past it.
+        expect(element.style.maxHeight).toBe('488px')
     })
 
     test('falls back to viewport clamping when no bounds element is set', () => {
@@ -52,7 +54,10 @@ describe('CommonPopup bounds clamping', () => {
         // jsdom viewport defaults 1024x768; anchor at 0 → left clamps to padding 8, parent 0
         Object.defineProperty(element, 'offsetParent', { value: null, configurable: true })
         popup.updatePosition({ left: 0, bottom: 0 })
-        expect(element.style.maxHeight).toBe('')
+        // Space below the anchor inside the viewport: 768 - 8 - 4.
+        expect(element.style.maxHeight).toBe('756px')
         expect(element.style.left).toBe('8px')
+        // maxWidth stays a stylesheet concern when unbounded.
+        expect(element.style.maxWidth).toBe('')
     })
 })

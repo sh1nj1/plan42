@@ -11,18 +11,18 @@ module Creatives
       @index = Collavre::Creatives::CommentBadgeIndex.new(user: @user)
     end
 
-    test "counts only public comments newer than the read watermark" do
+    test "counts only visible comments newer than the read watermark" do
       creative = Creative.create!(user: @user, description: "Watermarked", sequence: 900)
       first = comment_on(creative, "one")
       comment_on(creative, "two")
       comment_on(creative, "three")
-      comment_on(creative, "private", private: true)
+      Comment.create!(creative: creative, user: @user, content: "private", private: true)
 
       CommentReadPointer.create!(user: @user, creative: creative, last_read_comment_id: first.id)
 
       @index.index([ creative.reload ])
 
-      assert_equal 2, @index.unread_count_for(creative), "two public comments follow the watermark; the private one never counts"
+      assert_equal 3, @index.unread_count_for(creative), "two public comments and the user's private comment follow the watermark"
     end
 
     test "without a read pointer every comment is unread" do
@@ -35,6 +35,47 @@ module Creatives
       assert_equal 2, @index.unread_count_for(creative)
     end
 
+    test "can index unread counts without querying visible counts" do
+      creative = Creative.create!(user: @user, description: "Tree badge", sequence: 913)
+      comment_on(creative, "one")
+
+      @index.stub(:visible_counts, ->(_) { flunk("visible counts should not be queried for a tree badge") }) do
+        @index.index([ creative.reload ], include_visible_counts: false)
+      end
+
+      assert_equal 1, @index.unread_count_for(creative)
+    end
+
+    test "does not count another user's private comments" do
+      creative = Creative.create!(user: @user, description: "Private visibility", sequence: 910)
+      comment_on(creative, "public")
+      comment_on(creative, "private", private: true)
+
+      @index.index([ creative.reload ])
+
+      assert_equal 1, @index.unread_count_for(creative)
+      assert @index.visible_comments?(creative)
+    end
+
+    test "each user gets their own private visibility" do
+      creative = Creative.create!(user: @user, description: "Batch visibility", sequence: 911)
+      shared_user = User.create!(email: "badge-shared@example.com", password: TEST_PASSWORD, name: "Badge Shared")
+      CreativeShare.create!(creative: creative, user: shared_user, shared_by: @user, permission: :feedback)
+      comment_on(creative, "public")
+      Comment.create!(creative: creative, user: @user, content: "owner private", private: true)
+      Comment.create!(creative: creative, user: shared_user, content: "shared private", private: true)
+
+      owner_index = Collavre::Creatives::CommentBadgeIndex.new(user: @user)
+      shared_index = Collavre::Creatives::CommentBadgeIndex.new(user: shared_user)
+      owner_index.index([ creative ])
+      shared_index.index([ creative ])
+
+      assert_equal 2, owner_index.unread_count_for(creative)
+      assert_equal 2, shared_index.unread_count_for(creative)
+      assert owner_index.visible_comments?(creative)
+      assert shared_index.visible_comments?(creative)
+    end
+
     test "a watermark at the newest comment leaves nothing unread" do
       creative = Creative.create!(user: @user, description: "Fully read", sequence: 902)
       comment_on(creative, "one")
@@ -45,6 +86,30 @@ module Creatives
       @index.index([ creative.reload ])
 
       assert_equal 0, @index.unread_count_for(creative)
+    end
+
+    test "groups visible unread comments by topic using the creative read pointer" do
+      creative = Creative.create!(user: @user, description: "Topic badges", sequence: 914)
+      first_topic = creative.topics.create!(name: "First", user: @user)
+      second_topic = creative.topics.create!(name: "Second", user: @user)
+      read_comment = Comment.create!(creative: creative, topic: first_topic, user: @author, content: "read")
+      Comment.create!(creative: creative, topic: first_topic, user: @author, content: "unread")
+      Comment.create!(creative: creative, topic: second_topic, user: @user, content: "private", private: true)
+      Comment.create!(creative: creative, topic: second_topic, user: @author, content: "hidden", private: true)
+      CommentReadPointer.create!(user: @user, creative: creative, last_read_comment_id: read_comment.id)
+
+      assert_equal({ first_topic.id => 1, second_topic.id => 1 }, @index.unread_counts_by_topic(creative))
+    end
+
+    test "suppresses topic unread counts while the user is present" do
+      creative = Creative.create!(user: @user, description: "Present topic badges", sequence: 915)
+      topic = creative.topics.create!(name: "Updates", user: @user)
+      Comment.create!(creative: creative, topic: topic, user: @author, content: "unread")
+      Collavre::CommentPresenceStore.add(creative.id, @user.id)
+
+      assert_empty @index.unread_counts_by_topic(creative)
+    ensure
+      Rails.cache.delete(Collavre::CommentPresenceStore.key(creative.id))
     end
 
     # The batch is one query for the whole level, so a per-origin watermark must
@@ -69,6 +134,32 @@ module Creatives
       assert_equal 1, @index.unread_count_for(read)
       assert_equal 3, @index.unread_count_for(unread)
       assert_equal 0, @index.unread_count_for(fully_read)
+    end
+
+    test "chunks a large unwatermarked level below SQLite's expression limit" do
+      origins = (1..1000).map { |id| Struct.new(:id).new(id) }
+
+      @index.index(origins)
+
+      assert_not_nil @index.unread_count_for(origins.last)
+    end
+
+    test "batch counts private comments per recipient and watermark without double counting self-approved comments" do
+      creative = Creative.create!(user: @user, description: "Private batch counts", sequence: 912)
+      viewer = User.create!(email: "badge-viewer@example.com", password: TEST_PASSWORD, name: "Badge Viewer")
+      first = Comment.create!(creative: creative, user: @user, content: "owner private", private: true)
+      shared = Comment.create!(creative: creative, user: @user, approver: viewer, content: "shared private", private: true)
+      Comment.create!(creative: creative, user: viewer, approver: viewer, content: "self-approved private", private: true)
+
+      CommentReadPointer.create!(user: @user, creative: creative, last_read_comment_id: first.id)
+      CommentReadPointer.create!(user: viewer, creative: creative, last_read_comment_id: shared.id)
+
+      badges = Collavre::Creatives::CommentBadgeIndex.for_users(origin: creative, users: [ @user, viewer ])
+
+      assert_equal 1, badges.fetch(@user.id).unread_count
+      assert badges.fetch(@user.id).visible_comments
+      assert_equal 1, badges.fetch(viewer.id).unread_count
+      assert badges.fetch(viewer.id).visible_comments
     end
 
     # nil, not 0 — the caller has to be able to tell "not batched" from "nothing

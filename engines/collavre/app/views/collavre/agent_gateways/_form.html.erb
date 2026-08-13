@@ -29,7 +29,15 @@
   </div>
   <div class="form-group">
     <%= form.label :completion_key, t("collavre.agent_gateways.completion_key") %>
-    <%= masked_secret_field form, :completion_key, value: nil, required: agent_gateway.new_record?, class: "stacked-form-control", placeholder: secret_placeholder %>
+    <%= masked_secret_field form, :completion_key, value: nil, class: "stacked-form-control", placeholder: secret_placeholder %>
+    <small class="form-text text-muted"><%= t("collavre.agent_gateways.completion_key_help") %></small>
+    <% if agent_gateway.persisted? && @has_stored_completion_key %>
+      <div class="form-check mt-2">
+        <%= check_box_tag "agent_gateway[clear_completion_key]", "1", @clear_completion_key, id: "agent_gateway_clear_completion_key", class: "form-check-input" %>
+        <%= label_tag "agent_gateway_clear_completion_key", t("collavre.agent_gateways.clear_completion_key_label"), class: "form-check-label" %>
+      </div>
+      <small class="form-text text-muted"><%= t("collavre.agent_gateways.clear_completion_key_help") %></small>
+    <% end %>
   </div>
   <div class="form-group">
     <%= form.label :identity_secret, t("collavre.agent_gateways.identity_secret") %>

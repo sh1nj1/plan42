@@ -1,0 +1,18 @@
+# Time-boxed exceptions to the complexity budget.
+#
+# A waiver is the ONLY way to land a new entity that exceeds
+# .rubocop_metrics.yml. It is deliberately more expensive than fixing the
+# code: it needs a named owner, a reason a reviewer can argue with, and an
+# expiry date. Once `expires` passes, CI fails until the entity is fixed or
+# the waiver is consciously renewed — so a waiver decays into work instead
+# of into permanent amnesty.
+#
+# Cap the expiry at 90 days out. Copy the key verbatim from the
+# bin/complexity_check output.
+#
+# - key: "engines/collavre/app/services/collavre/example.rb | Metrics/MethodLength | Collavre::Example#call"
+#   owner: "@github-handle"
+#   reason: "Vendor protocol handshake is a single linear sequence; splitting it hides the order."
+#   expires: "2026-11-09"
+
+waivers: []

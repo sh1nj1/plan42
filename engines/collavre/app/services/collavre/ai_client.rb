@@ -86,9 +86,7 @@ module Collavre
     end
 
     # log_interactions: persist each call to ActivityLog. Default true. Pass false
-    # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
-    # inline typo correction on debounced typing) so private drafts are never
-    # written to server-side activity logs.
+    # when a caller must not persist sensitive request or response content.
     #
     # before_tool_call: callable run before every tool execution, on every
     # iteration of the request->tools->request loop. This is the only
@@ -189,12 +187,9 @@ module Collavre
       # both as undelivered — so it has to be impossible to record both.
       @last_handoff_failed = !@handed_off
       error_message = "[#{e.class.name}] #{e.message}"
-      # When log_interactions is false (inline typo correction runs on the user's
-      # *unsubmitted* draft), the LLM error message can echo the request text. Log
-      # only the error class to app logs so private drafts never leak — matching the
-      # no-log guarantee already enforced on the parse path (TypoCorrector) and the
-      # ActivityLog gate below. error_message stays intact for the gated ensure log
-      # and the streamed yield (which goes back to the same user).
+      # When log_interactions is false, an LLM error message can echo request text.
+      # Log only the error class so sensitive content never leaks. error_message
+      # stays intact for the gated ensure log and streamed yield to the caller.
       Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
       log_error_response(e) if @log_interactions
       Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
@@ -326,7 +321,7 @@ module Collavre
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
-          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin?
+          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin? && !gateway.desktop_loopback?
             config.faraday_adapter = Collavre::CliProxy::SafeNetHttpAdapter
           end
         end

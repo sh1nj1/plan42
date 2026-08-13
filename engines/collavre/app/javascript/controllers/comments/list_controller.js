@@ -208,13 +208,19 @@ export default class extends Controller {
     const requestTopicId = this.currentTopicId || ""
     const requestCreativeId = this.creativeId
 
-    this.fetchComments(params).then((html) => {
+    this.fetchComments(params, { loadVersion: requestVersion }).then((html) => {
       // Discard stale responses if creative or topic changed while fetching.
       // This prevents a race condition where switching creatives causes
       // the old creative's comments to overwrite the new creative's list.
       if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
-      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
+      // A server-resolved deep link moves currentTopicId off the topic this
+      // request asked for. That is this request's own answer, not a stale one,
+      // so the topic guard has to let it through — otherwise the list sits on
+      // "Loading..." forever for every comment link pointing outside the
+      // restored topic.
+      if (!this.isServerResolvedTopic(requestVersion) &&
+          String(this.currentTopicId || "") !== String(requestTopicId)) return
 
       this.listTarget.innerHTML = html
       this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
@@ -243,9 +249,18 @@ export default class extends Controller {
     }).catch((error) => {
       if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
-      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
+      if (!this.isServerResolvedTopic(requestVersion) &&
+          String(this.currentTopicId || "") !== String(requestTopicId)) return
       this.listTarget.innerHTML = `<div class="comments-list-error">${error.message}</div>`
     })
+  }
+
+  // fetchComments stamps the version of the request whose own response carried
+  // an X-Topic-Id that moved the selection. Only that request may ignore the
+  // stale-topic guard; every other load compares unequal and stays guarded.
+  isServerResolvedTopic(requestVersion) {
+    return this._serverTopicRequestVersion !== undefined &&
+      this._serverTopicRequestVersion === requestVersion
   }
 
   loadOlderComments() {
@@ -305,7 +320,7 @@ export default class extends Controller {
       })
   }
 
-  fetchComments(params = {}) {
+  fetchComments(params = {}, { loadVersion } = {}) {
     const urlParams = new URLSearchParams(params)
     if (this.manualSearchQuery) {
       urlParams.set('search', this.manualSearchQuery)
@@ -330,7 +345,12 @@ export default class extends Controller {
       }
 
       const serverTopicId = response.headers.get("X-Topic-Id")
-      if (serverTopicId !== null && serverTopicId !== undefined) {
+      // A load superseded while in flight must not retopic anything: its own HTML
+      // is dropped, so moving currentTopicId (and the strip, and the form) to its
+      // answer would leave the surviving load rendering into a selection it never
+      // asked for.
+      const superseded = loadVersion !== undefined && loadVersion !== this._loadCommentsVersion
+      if (serverTopicId !== null && serverTopicId !== undefined && !superseded) {
         // Server says we are in this topic. 
         // If it differs from current, update state.
 
@@ -340,6 +360,12 @@ export default class extends Controller {
 
         if (currentStr !== serverStr) {
           this.currentTopicId = serverTopicId
+          // Tell loadInitialComments' stale-topic guard that this switch is the
+          // answer to the load it is still awaiting. Stamp the version of the
+          // request that actually carried the header, not the controller's
+          // latest: reading the latest would hand the exemption to a newer load
+          // that never asked for a topic switch.
+          this._serverTopicRequestVersion = loadVersion
           // Notify topics controller to update UI
           const event = new CustomEvent("comments--topics:update-selection", { detail: { topicId: serverTopicId } })
           window.dispatchEvent(event)
@@ -349,8 +375,15 @@ export default class extends Controller {
             // Deep link / around_comment_id resolution from server must win over
             // saved topic state for the current popup session.
             this.popupController.topicsController.setOverrideTopicId(serverTopicId)
-            // Update UI and local state without dispatching change event (to avoid loop)
-            this.popupController.topicsController.updateSelectionUI(serverTopicId)
+            // Go through selectTopic, not updateSelectionUI: a deep link can resolve
+            // to an archived topic, whose chip exists only while the archived section
+            // is expanded, and form_controller learns the active topic solely from the
+            // change event — without it a reply posts into the previously selected
+            // conversation. The reload this event would normally trigger is already
+            // ruled out: this.currentTopicId was set to serverTopicId just above, so
+            // handleTopicChange's equality guard returns before resetToLatest() can
+            // discard the highlight window.
+            this.popupController.topicsController.selectTopic(serverTopicId)
 
             // Also update data attribute for CSS scoping
             this.listTarget.dataset.currentTopicId = serverTopicId || ""
@@ -419,6 +452,13 @@ export default class extends Controller {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ creative_id: creativeId }),
+      }).then((response) => {
+        if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId) return
+
+        // Read pointers are creative-wide, so a successful update changes every
+        // topic's count. Reload the chips immediately instead of leaving their
+        // initial unread numbers on screen until another topic event occurs.
+        this.popupController?.topicsController?.loadTopics?.()
       }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);
   }
@@ -529,12 +569,53 @@ export default class extends Controller {
     // Actually form_controller handleSubmit calls this list controller? No, distinct.
   }
 
+  // A comment with no topic is never archived, so the empty check also keeps
+  // this off the topics controller for the common case.
+  isArchivedTopicMessage(topicId) {
+    if (!topicId) return false
+    return Boolean(this.popupController?.topicsController?.isArchivedTopic?.(topicId))
+  }
+
   handleStreamRender(event) {
     // Only care about streams targeting our list
     if (event.target.target !== 'comments-list') return
 
     // Deduplication: If manually appended by form_controller, block the stream echo.
     if (event.target.action === 'append') {
+      const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
+      const firstChild = templateContent?.firstElementChild
+
+      // Check for topic context mismatch. Runs ahead of the search block below:
+      // both block the append, but only this one badges, and the badge is the
+      // sole notice that an out-of-view conversation moved. Search suppressing
+      // it would hide an archived topic's traffic completely, since the archived
+      // section carries no other signal.
+      if (firstChild && firstChild.dataset.topicId !== undefined) {
+        const messageTopicId = firstChild.dataset.topicId
+        const currentTopicId = this.currentTopicId || ""
+
+        // If we are in a specific topic (currentTopicId is set)
+        // AND the message is for a different topic.
+        //
+        // All Messages (currentTopicId === "") takes everything except archived
+        // topics: CommentsController#index filters those out of this view, so
+        // letting a live one in would show a message that vanishes on reload.
+        // Both cases badge the topic instead of appending.
+        const isForeignTopic = currentTopicId
+          ? String(currentTopicId) !== String(messageTopicId)
+          : this.isArchivedTopicMessage(messageTopicId)
+
+        if (isForeignTopic) {
+          event.preventDefault()
+          // Dispatch event for topics controller to show badge
+          const customEvent = new CustomEvent("comments--topics:new-message", {
+            detail: { topicId: messageTopicId }
+          })
+          window.dispatchEvent(customEvent)
+          return
+        }
+      }
+
       // A search-filtered list is the result set of a query, and the match runs
       // server-side over the raw content. A live append carries no verdict on
       // whether it matches, so letting it in drops an unrelated message into the
@@ -544,27 +625,6 @@ export default class extends Controller {
       if (this.manualSearchQuery) {
         event.preventDefault()
         return
-      }
-
-      const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
-      const firstChild = templateContent?.firstElementChild
-
-      // Check for topic context mismatch
-      if (firstChild && firstChild.dataset.topicId !== undefined) {
-        const messageTopicId = firstChild.dataset.topicId
-        const currentTopicId = this.currentTopicId || ""
-
-        // If we are in a specific topic (currentTopicId is set)
-        // AND the message is for a different topic
-        if (currentTopicId && String(currentTopicId) !== String(messageTopicId)) {
-          event.preventDefault()
-          // Dispatch event for topics controller to show badge
-          const customEvent = new CustomEvent("comments--topics:new-message", {
-            detail: { topicId: messageTopicId }
-          })
-          window.dispatchEvent(customEvent)
-          return
-        }
       }
 
       if (firstChild && firstChild.id && document.getElementById(firstChild.id)) {

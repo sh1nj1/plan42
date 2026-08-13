@@ -64,6 +64,161 @@ module Collavre
       end
     end
 
+    test "updated action broadcasts the recipient-specific progress control" do
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, parent: @root, description: "Progress control leaf", progress: 0.5)
+      end
+      broadcasts = []
+
+      Turbo::StreamsChannel.stub(:broadcast_action_to, ->(*, **kwargs) { broadcasts << kwargs }) do
+        CreativeBroadcastJob.perform_now(
+          leaf.id,
+          "updated",
+          current_user_id: @owner.id,
+          payload: leaf.broadcast_node_payload
+        )
+      end
+
+      payload = JSON.parse(broadcasts.fetch(0).fetch(:attributes).fetch(:data))
+      assert_includes payload.dig("creative", "progress_control_html"), "50%"
+      refute_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
+
+      leaf.update_column(:progress, 0)
+      broadcasts.clear
+      Turbo::StreamsChannel.stub(:broadcast_action_to, ->(*, **kwargs) { broadcasts << kwargs }) do
+        CreativeBroadcastJob.perform_now(
+          leaf.id,
+          "updated",
+          current_user_id: @owner.id,
+          payload: leaf.broadcast_node_payload
+        )
+      end
+
+      payload = JSON.parse(broadcasts.fetch(0).fetch(:attributes).fetch(:data))
+      assert_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
+    end
+
+    test "broadcasts read-only-source leaf progress as a non-interactive percentage" do
+      Creative.register_read_only_source("test_read_only_source")
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(
+          user: @owner,
+          parent: @root,
+          description: "Read-only progress leaf",
+          progress: 0,
+          data: { "source" => { "type" => "test_read_only_source" } }
+        )
+      end
+      broadcasts = []
+
+      Turbo::StreamsChannel.stub(:broadcast_action_to, ->(*, **kwargs) { broadcasts << kwargs }) do
+        CreativeBroadcastJob.perform_now(
+          leaf.id,
+          "updated",
+          current_user_id: @owner.id,
+          payload: leaf.broadcast_node_payload
+        )
+      end
+
+      payload = JSON.parse(broadcasts.fetch(0).fetch(:attributes).fetch(:data))
+      assert_equal false, payload.dig("creative", "can_write")
+      assert_includes payload.dig("creative", "progress_control_html"), "0%"
+      refute_includes payload.dig("creative", "progress_control_html"), "data-progress-toggle"
+
+      html = CreativeBroadcastJob.new.send(:render_progress_html, leaf, @shared_user, skip_permission_check: true)
+      refute_includes html, "data-progress-toggle"
+    end
+
+    test "ancestor controls use the effective origin children for linked shells" do
+      linked_root = nil
+      perform_enqueued_jobs do
+        linked_root = Creative.create!(
+          user: @shared_user,
+          origin_id: @root.id,
+          description: "Linked root shell"
+        )
+      end
+
+      controls = CreativeBroadcastJob.new.send(
+        :build_ancestor_progress_controls,
+        [ { id: @root.id, progress: @root.progress } ],
+        [ @shared_user ],
+        { @shared_user.id => { @root.id => linked_root.id } }
+      )
+
+      html = controls.dig(@shared_user.id, @root.id, :progress_html)
+      refute_includes html, "data-progress-toggle"
+      assert_includes html, "creative-progress-incomplete"
+    end
+
+    test "ancestor controls ignore archived children for each recipient" do
+      @child.update!(archived_at: Time.current)
+
+      controls = CreativeBroadcastJob.new.send(
+        :build_ancestor_progress_controls,
+        [ { id: @root.id, progress: @root.progress } ],
+        [ @shared_user ],
+        {}
+      )
+
+      html = controls.dig(@shared_user.id, @root.id, :progress_html)
+      assert_includes html, "data-progress-toggle"
+    end
+
+    test "ancestor controls ignore children the recipient cannot read" do
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @child, user: @shared_user, permission: :no_access)
+      end
+
+      controls = CreativeBroadcastJob.new.send(
+        :build_ancestor_progress_controls,
+        [ { id: @root.id, progress: @root.progress } ],
+        [ @shared_user ],
+        {}
+      )
+
+      html = controls.dig(@shared_user.id, @root.id, :progress_html)
+      assert_includes html, "data-progress-toggle"
+    end
+
+    test "ancestor controls batch creative and permission lookups across recipients" do
+      another_user = users(:three)
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: another_user, permission: :write)
+      end
+      queries = []
+      callback = lambda do |_name, _start, _finish, _id, payload|
+        queries << payload[:sql] unless payload[:cached] || payload[:name] == "SCHEMA"
+      end
+
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        CreativeBroadcastJob.new.send(
+          :build_ancestor_progress_controls,
+          [ { id: @root.id, progress: @root.progress }, { id: @child.id, progress: @child.progress } ],
+          [ @shared_user, another_user ],
+          {}
+        )
+      end
+
+      per_ancestor_queries = queries.grep(/(?:FROM "creatives"|FROM "creative_shares_caches").*LIMIT 1/i)
+      assert_empty per_ancestor_queries, "expected batched ancestor-control reads, got:\n#{per_ancestor_queries.join("\n")}"
+    end
+
+    test "batch write permissions recognizes enum write cache values" do
+      permission = CreativeSharesCache.where(creative: @child, user: @shared_user).pick(:permission)
+      assert_equal "write", permission
+
+      permissions = CreativeBroadcastJob.new.send(
+        :batch_write_permissions,
+        { @child.id => @child },
+        [ @shared_user ]
+      )
+
+      assert permissions.dig(@shared_user.id, @child.id)
+    end
+
     # --- destroyed action ---
 
     test "destroyed action does not raise with valid options" do
@@ -142,6 +297,33 @@ module Collavre
       html = job.send(:render_progress_html, leaf, @shared_user, skip_permission_check: true)
 
       assert_includes html, "50%"
+    end
+
+    test "render_progress_html uses the shared checkbox control for writable binary leaves" do
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, parent: @root, description: "Checkbox leaf", progress: 0)
+      end
+
+      job = CreativeBroadcastJob.new
+      html = job.send(:render_progress_html, leaf, @shared_user, skip_permission_check: true)
+
+      assert_includes html, 'data-progress-toggle="true"'
+      assert_includes html, 'type="checkbox"'
+    end
+
+    test "render_progress_html uses the recipient locale for checkbox labels" do
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, parent: @root, description: "Localized checkbox leaf", progress: 0)
+      end
+      @shared_user.update!(locale: "ko")
+
+      html = I18n.with_locale(:en) do
+        CreativeBroadcastJob.new.send(:render_progress_html, leaf, @shared_user, skip_permission_check: true)
+      end
+
+      assert_includes html, "완료로 표시"
     end
 
     test "render_progress_html includes comment button when skip_permission_check" do

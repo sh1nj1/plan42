@@ -9,7 +9,6 @@ module Collavre
       pointer.last_read_comment_id = last_id
       pointer.save!
 
-      mark_inbox_items_read(creative, last_id)
       Comment.broadcast_badge(creative, Current.user)
 
       if previous_last_read_id && previous_last_read_id != last_id
@@ -56,13 +55,6 @@ module Collavre
       query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id
 
       query.includes(user: { avatar_attachment: :blob }).map(&:user)
-    end
-
-    # No-op: inbox notifications are now comments on the user's inbox creative.
-    # Reading comments on a creative updates the CommentReadPointer, which
-    # automatically handles the unread count for the inbox badge.
-    def mark_inbox_items_read(_creative, _last_comment_id)
-      # Intentionally empty — kept for backward compatibility during transition.
     end
   end
 end
