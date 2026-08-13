@@ -185,6 +185,11 @@ export default class extends Controller {
 
         const version = ++this._loadTopicsVersion
         const selectionEpoch = this.selectionEpoch
+		// A response can carry a snapshot produced before a save, while that
+		// save's HTTP response reaches us before the snapshot is processed.
+		// Remember which local saves had been acknowledged when this load
+		// started so their retained claims can still outrank that older view.
+		const acknowledgedSaveVersion = this.saveAcknowledgementVersion
         const creativeId = this.creativeId
         // Clear stale topics from previous creative to prevent name-based
         // dedupe in handleTopicMessage from blocking valid broadcasts
@@ -251,7 +256,8 @@ export default class extends Controller {
                 } else {
 					const pendingTopicId = this.latestPendingSelfEchoTopicIdFor(
 						effectiveCreativeId,
-						snapshotTopicId
+						snapshotTopicId,
+						acknowledgedSaveVersion
 					)
                     this.serverLastTopicId = pendingTopicId === undefined
 						? snapshotTopicId
@@ -1349,6 +1355,11 @@ export default class extends Controller {
             const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
 			const topicId = id ? String(id) : ""
             if (claimed && saved === true) {
+				this.saveAcknowledgementVersion += 1
+				this.pendingSelfEchoAcknowledgementVersions.set(
+					clientId,
+					this.saveAcknowledgementVersion
+				)
 				if (this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) {
 					// update_last_topic broadcasts before it returns. With the popup
 					// still closed, that echo was necessarily sent into the gap and
@@ -1405,6 +1416,7 @@ export default class extends Controller {
         this.pendingSelfEchoCreativeIds.delete(clientId)
         this.pendingSelfEchoTopicIds.delete(clientId)
 		this.pendingSelfEchoPreviousTopicIds.delete(clientId)
+		this.pendingSelfEchoAcknowledgementVersions.delete(clientId)
 		this.possiblyMissedPendingSelfEchoes.delete(clientId)
 		this.acknowledgedPendingSelfEchoes.delete(clientId)
         return true
@@ -1441,6 +1453,18 @@ export default class extends Controller {
 		return this._pendingSelfEchoPreviousTopicIds || (this._pendingSelfEchoPreviousTopicIds = new Map())
 	}
 
+	get pendingSelfEchoAcknowledgementVersions() {
+		return this._pendingSelfEchoAcknowledgementVersions || (this._pendingSelfEchoAcknowledgementVersions = new Map())
+	}
+
+	get saveAcknowledgementVersion() {
+		return this._saveAcknowledgementVersion || 0
+	}
+
+	set saveAcknowledgementVersion(value) {
+		this._saveAcknowledgementVersion = value
+	}
+
 	// These claims were already in flight when the popup unsubscribed. If their
 	// response arrives while the popup remains closed, the broadcast necessarily
 	// went into that gap. A replacement subscription can receive an echo when it
@@ -1472,11 +1496,14 @@ export default class extends Controller {
 		}
     }
 
-    latestPendingSelfEchoTopicIdFor(creativeId, snapshotTopicId) {
+	latestPendingSelfEchoTopicIdFor(creativeId, snapshotTopicId, acknowledgedSaveVersion) {
         const streamCreativeId = String(creativeId)
         for (const clientId of [...this.pendingSelfEchoes].reverse()) {
+			const acknowledgedAfterLoadStarted =
+				this.acknowledgedPendingSelfEchoes.has(clientId) &&
+				this.pendingSelfEchoAcknowledgementVersions.get(clientId) > acknowledgedSaveVersion
 			if (this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
-				!this.acknowledgedPendingSelfEchoes.has(clientId) &&
+				(!this.acknowledgedPendingSelfEchoes.has(clientId) || acknowledgedAfterLoadStarted) &&
 				this.pendingSelfEchoPreviousTopicIds.get(clientId) === snapshotTopicId) {
                 return this.pendingSelfEchoTopicIds.get(clientId)
             }
@@ -1565,6 +1592,7 @@ export default class extends Controller {
         this.pendingSelfEchoCreativeIds.clear()
         this.pendingSelfEchoTopicIds.clear()
 		this.pendingSelfEchoPreviousTopicIds.clear()
+		this.pendingSelfEchoAcknowledgementVersions.clear()
 		this.possiblyMissedPendingSelfEchoes.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
         // Emptying the array cannot reach a claim that has not been taken yet.
