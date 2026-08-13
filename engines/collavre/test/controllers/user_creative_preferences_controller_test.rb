@@ -147,6 +147,27 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, preference.last_topic_revision
   end
 
+  test "update_last_topic retains each session high-water mark across sibling saves" do
+    alpha = Collavre::Topic.create!(creative: @creative, user: @user, name: "Alpha")
+    beta = Collavre::Topic.create!(creative: @creative, user: @user, name: "Beta")
+    gamma = Collavre::Topic.create!(creative: @creative, user: @user, name: "Gamma")
+    stream = Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")
+    path = "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic"
+
+    patch path, params: { last_topic_id: beta.id, client_id: "browser-a.2.save-2" }, as: :json
+    patch path, params: { last_topic_id: gamma.id, client_id: "browser-b.1.save-1" }, as: :json
+
+    assert_no_broadcasts(stream) do
+      patch path, params: { last_topic_id: alpha.id, client_id: "browser-a.1.save-1" }, as: :json
+    end
+
+    assert_equal false, response.parsed_body["success"]
+    preference = Collavre::UserCreativePreference.find_by!(creative_id: @creative.id, user_id: @user.id)
+    assert_equal gamma.id, preference.last_topic_id
+    assert_equal 2, preference.last_topic_revision
+    assert_equal({ "browser-a" => 2, "browser-b" => 1 }, preference.last_topic_save_sequences)
+  end
+
   test "update_last_topic rejects topic from another creative" do
     other_creative = Collavre::Creative.create!(user: @user, description: "Other")
     other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Foreign Topic")

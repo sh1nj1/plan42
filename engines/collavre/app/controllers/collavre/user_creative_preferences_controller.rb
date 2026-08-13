@@ -5,7 +5,7 @@ module Collavre
       node_id = params[:node_id].to_s
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])
 
-      record = UserCreativePreference.find_or_initialize_by(creative_id: creative_id, user_id: Current.user.id)
+      record = preference_for(creative_id)
       state = record.expanded_status || {}
 
       if expanded
@@ -47,7 +47,7 @@ module Collavre
     end
 
     def persist_last_topic(creative)
-      record = UserCreativePreference.find_or_initialize_by(creative_id: creative.id, user_id: Current.user.id)
+      record = preference_for(creative.id)
       record.with_lock do
         return [ record, false ] if stale_last_topic_save?(record)
 
@@ -72,17 +72,38 @@ module Collavre
     # only recognized ordering ids take this fencing path.
     def stale_last_topic_save?(record)
       session_id, sequence = last_topic_save_order
-      session_id.present? &&
-        record.last_topic_save_session_id == session_id &&
-        record.last_topic_save_sequence.to_i >= sequence
+      return false unless session_id.present?
+
+      last_topic_save_sequences(record).fetch(session_id, 0).to_i >= sequence
     end
 
     def assign_last_topic_save_order(record)
       session_id, sequence = last_topic_save_order
       return unless session_id.present?
 
+      record.last_topic_save_sequences = last_topic_save_sequences(record).merge(session_id => sequence)
       record.last_topic_save_session_id = session_id
       record.last_topic_save_sequence = sequence
+    end
+
+    # insert_all uses the unique preference key as the first-insert fence.
+    # A row lock alone cannot serialize two requests that both see no row.
+    def preference_for(creative_id)
+      now = Time.current
+      attributes = { creative_id: creative_id, user_id: Current.user.id, expanded_status: {}, created_at: now, updated_at: now }
+      UserCreativePreference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+      UserCreativePreference.find_by!(creative_id: creative_id, user_id: Current.user.id)
+    end
+
+    # Preserve the legacy single-session columns while a rolling deploy may
+    # still have records written by the preceding application version.
+    def last_topic_save_sequences(record)
+      sequences = record.last_topic_save_sequences || {}
+      legacy_session_id = record.last_topic_save_session_id
+      return sequences unless legacy_session_id.present?
+
+      legacy_sequence = record.last_topic_save_sequence.to_i
+      sequences.merge(legacy_session_id => [ sequences.fetch(legacy_session_id, 0).to_i, legacy_sequence ].max)
     end
 
     def last_topic_save_order
