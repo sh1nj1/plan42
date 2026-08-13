@@ -58,7 +58,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     "video_tag" => { "poster" => :path }
   }.freeze
   ASSET_HELPER_METHODS = %w[
-    asset_path asset_url path_to_asset
+    asset_path asset_url asset_data_uri path_to_asset
     stylesheet_link_tag stylesheet_path stylesheet_url path_to_stylesheet
     javascript_include_tag javascript_path javascript_url path_to_javascript
     preload_link_tag
@@ -794,7 +794,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     satellite = SATELLITES.first
     path = "#{satellite}/slack_integration"
 
-    %w[stylesheet_link_tag javascript_include_tag preload_link_tag image_tag image_submit_tag picture_tag asset_path].each do |helper|
+    %w[stylesheet_link_tag javascript_include_tag preload_link_tag image_tag image_submit_tag picture_tag asset_path asset_data_uri].each do |helper|
       assert_equal [ path ], asset_paths_in(%(#{helper} "#{path}")), helper
     end
     assert_equal [ path ], asset_paths_in(%(stylesheet_link_tag "collavre_" + "#{satellite.delete_prefix('collavre_')}/slack_integration"))
