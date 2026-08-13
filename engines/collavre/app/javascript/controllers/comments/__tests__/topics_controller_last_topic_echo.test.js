@@ -796,7 +796,11 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   })
 
   test('a stale rejection clears its pending pick before reconciliation', async () => {
-    saveLastTopic.mockResolvedValueOnce({ success: false, staleLastTopicSave: true })
+    saveLastTopic.mockResolvedValueOnce({
+      success: false,
+      staleLastTopicSave: true,
+      lastTopicRevision: [5, 2],
+    })
     controller.deferredLastTopicReconciliations.add('42')
     controller.loadTopics = jest.fn(() => {
       expect(controller._pendingPick).toBeNull()
@@ -806,6 +810,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     await controller.flushSaveLastTopic('2')
 
     expect(controller._pendingPick).toBeNull()
+    expect(controller.highestLastTopicRevisions.get('42')).toEqual([5, 2])
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
   })
 
