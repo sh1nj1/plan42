@@ -96,6 +96,23 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 
   const selfEcho = (lastTopicId) => echo(lastTopicId, clientIdFor(lastTopicId))
 
+  test('does not recreate acknowledgement metadata when the echo arrives before the response', async () => {
+    let resolveSave
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
+    const clientId = clientIdFor('2')
+
+    echo('2', clientId)
+    expect(controller.pendingSelfEchoes).not.toContain(clientId)
+
+    resolveSave(true)
+    await save
+
+    expect(controller.pendingSelfEchoAcknowledgementVersions.has(clientId)).toBe(false)
+  })
+
   // Pick Alpha, let its debounced save go out, then pick Beta before the echo
   // for Alpha gets back. The echo names the topic the user has just left.
   test('a pick made before the echo lands is not reverted by it', async () => {

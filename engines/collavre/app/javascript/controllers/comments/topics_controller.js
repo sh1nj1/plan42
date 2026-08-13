@@ -1360,11 +1360,17 @@ export default class extends Controller {
             const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
 			const topicId = id ? String(id) : ""
             if (claimed && saved === true) {
-				this.saveAcknowledgementVersion += 1
-				this.pendingSelfEchoAcknowledgementVersions.set(
-					clientId,
-					this.saveAcknowledgementVersion
-				)
+				// The Action Cable echo can arrive before this response. In that
+				// case it has already consumed the claim and removed its metadata;
+				// do not recreate an acknowledgement entry for a completed save.
+				const hasPendingSelfEcho = this.pendingSelfEchoes.includes(clientId)
+				if (hasPendingSelfEcho) {
+					this.saveAcknowledgementVersion += 1
+					this.pendingSelfEchoAcknowledgementVersions.set(
+						clientId,
+						this.saveAcknowledgementVersion
+					)
+				}
 				if (this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) {
 					// update_last_topic broadcasts before it returns. With the popup
 					// still closed, that echo was necessarily sent into the gap and
@@ -1387,7 +1393,7 @@ export default class extends Controller {
 					// save's echo has already been consumed: that echo records
 					// the baseline at broadcast time, and another message may
 					// have advanced it before the HTTP response arrived.
-					if (this.pendingSelfEchoes.includes(clientId)) {
+					if (hasPendingSelfEcho) {
 						this.lastKnownRemoteTopicId = topicId
 					}
 					this.acknowledgePendingSelfEcho(clientId)
