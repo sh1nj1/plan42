@@ -213,10 +213,9 @@ module Collavre
       )
     end
 
-    # A topic can move before one of its readers has access to the destination.
-    # Its pointer remains at the source to avoid exposing a read receipt there.
-    # Reconcile every topic in the changed creative's subtree after a share
-    # mutation: a direct, inherited, or public grant restores stranded pointers.
+    # Older topic moves could leave a reader's pointer at the former source.
+    # Reconcile those historical rows after a share mutation: a direct,
+    # inherited, or public grant restores the pointer to its topic's Creative.
     # Pointers remain durable across revocations; read-receipt rendering filters
     # them by current access, so a later grant can restore the exact cursor.
     #

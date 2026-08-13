@@ -296,7 +296,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, pointer.reload.creative_id
   end
 
-  test "moving a topic leaves source-only readers' pointers behind" do
+  test "moving a topic retains source-only readers' pointers with the topic" do
     target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 951)
     source_only_reader = users(:two)
     comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
@@ -310,13 +310,20 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
 
     assert_response :success
-    assert_equal @creative.id, pointer.reload.creative_id
-    assert_nil Collavre::CommentReadPointer.find_by(
-      user: source_only_reader, creative: target_creative, topic: @topic
+    assert_equal target_creative.id, pointer.reload.creative_id
+    assert_empty Collavre::Comments::ReadReceiptIndex.new(
+      creative: target_creative, comments: [ comment ]
+    ).receipts, "the retained pointer must not reveal a receipt before target access is granted"
+
+    @creative.destroy!
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: source_only_reader, shared_by: @user, permission: :read
     )
+
+    assert_empty Collavre::Creatives::CommentBadgeIndex.new(user: source_only_reader).unread_counts_by_topic(target_creative)
   end
 
-  test "moving a topic again relocates a pointer stranded at an earlier source" do
+  test "moving a topic again retains its pointer with each destination" do
     middle_creative = Collavre::Creative.create!(user: @user, description: "Pointer middle", sequence: 952)
     target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 953)
     source_only_reader = users(:two)
@@ -330,7 +337,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
     patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: middle_creative.id }, as: :json
     assert_response :success
-    assert_equal @creative.id, pointer.reload.creative_id
+    assert_equal middle_creative.id, pointer.reload.creative_id
 
     Collavre::CreativeShare.create!(
       creative: target_creative, user: source_only_reader, shared_by: @user, permission: :read

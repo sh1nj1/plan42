@@ -17,7 +17,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert Contact.exists?(user: @owner, contact_user: @target_user)
   end
 
-  test "granting destination access restores a pointer stranded by a topic move" do
+  test "granting destination access keeps a moved topic pointer at its destination" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source", sequence: 811)
     topic = source.topics.create!(name: "Moved topic", user: @owner)
     comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
@@ -30,7 +30,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     patch move_creative_topic_url(source, topic), params: { target_creative_id: @creative.id }, as: :json
 
     assert_response :success
-    assert_equal source.id, pointer.reload.creative_id
+    assert_equal @creative.id, pointer.reload.creative_id
 
     post collavre.creative_creative_shares_path(@creative),
       params: { user_email: @target_user.email, permission: :read }, as: :json
@@ -39,7 +39,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, pointer.reload.creative_id
   end
 
-  test "removing a destination no_access share restores a pointer stranded by a topic move" do
+  test "removing a destination no_access share keeps a moved topic pointer at its destination" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
     destination_parent = Collavre::Creative.create!(user: @owner, description: "Pointer destination parent")
     destination = Collavre::Creative.create!(
@@ -68,7 +68,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
 
     assert_response :success
-    assert_equal source.id, pointer.reload.creative_id
+    assert_equal destination.id, pointer.reload.creative_id
 
     perform_enqueued_jobs { blocked_share.destroy! }
 
@@ -76,7 +76,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert_equal destination.id, pointer.reload.creative_id
   end
 
-  test "a public ancestor grant restores pointers stranded on descendant topics" do
+  test "a public ancestor grant keeps moved pointers on descendant topics" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
     destination_parent = Collavre::Creative.create!(user: @owner, description: "Pointer destination parent")
     destination = Collavre::Creative.create!(user: @owner, parent: destination_parent, description: "Pointer destination")
@@ -91,14 +91,14 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
 
     assert_response :success
-    assert_equal source.id, pointer.reload.creative_id
+    assert_equal destination.id, pointer.reload.creative_id
 
     Collavre::CreativeShare.create!(creative: destination_parent, user: nil, permission: :read)
 
     assert_equal destination.id, pointer.reload.creative_id
   end
 
-  test "an inherited named grant restores pointers stranded on descendant topics" do
+  test "an inherited named grant keeps moved pointers on descendant topics" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
     destination_parent = Collavre::Creative.create!(user: @owner, description: "Pointer destination parent")
     destination = Collavre::Creative.create!(user: @owner, parent: destination_parent, description: "Pointer destination")
@@ -113,7 +113,7 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
 
     assert_response :success
-    assert_equal source.id, pointer.reload.creative_id
+    assert_equal destination.id, pointer.reload.creative_id
 
     Collavre::CreativeShare.create!(
       creative: destination_parent, user: @target_user, shared_by: @owner, permission: :read

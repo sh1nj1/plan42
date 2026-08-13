@@ -221,6 +221,24 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     assert_includes read_by_users, legacy_reader
   end
 
+  test "creating a named pointer refreshes the receipt previously shown from the legacy fallback" do
+    topic = @creative.main_topic
+    first = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "first")
+    second = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "second")
+    CommentReadPointer.create!(user: @user, creative: @creative, last_read_comment: first)
+
+    broadcasts = []
+    Turbo::StreamsChannel.stub(:broadcast_update_to, ->(*args, **kwargs) { broadcasts << kwargs }) do
+      post "/comment_read_pointers/update", params: { creative_id: @creative.id, topic_id: topic.id }, as: :json
+    end
+
+    assert_response :success
+    assert broadcasts.any? { |broadcast| broadcast[:target] == "read_receipts_comment_#{first.id}" },
+      "expected the legacy fallback receipt to be replaced"
+    assert_equal [ @user ], broadcasts.last.fetch(:locals).fetch(:read_by_users)
+    assert_equal "read_receipts_comment_#{second.id}", broadcasts.last.fetch(:target)
+  end
+
   test "rejects a topic from another creative" do
     foreign_topic = Creative.create!(user: @user, description: "Foreign").main_topic
 

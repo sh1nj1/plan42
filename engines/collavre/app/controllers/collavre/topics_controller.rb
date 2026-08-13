@@ -361,15 +361,25 @@ module Collavre
       end
     end
 
-    # A participant can have a pointer stranded on an earlier source creative
-    # when the topic has moved before. Reconcile every pointer for this topic,
-    # rather than just those on the immediately previous creative, so a later
-    # move to a creative they can read restores their existing cursor.
+    # A topic pointer belongs to the topic, not to a historical location. Keep
+    # it with the topic even when its reader cannot currently view the target:
+    # receipt rendering filters readers by current access, while retaining the
+    # cursor prevents a deleted former source from losing their read history.
     def move_read_pointers_for_topic(topic, _source_creative, target_creative)
-      CommentReadPointer.where(topic: topic).includes(:user).find_each do |pointer|
-        next unless target_creative.has_permission?(pointer.user, :read)
+      CommentReadPointer.where(topic: topic).where.not(creative: target_creative).find_each do |pointer|
+        destination_pointer = CommentReadPointer.find_by(
+          user: pointer.user,
+          creative: target_creative,
+          topic: topic
+        )
 
-        pointer.update_column(:creative_id, target_creative.id)
+        if destination_pointer
+          last_read_id = [ destination_pointer.last_read_comment_id, pointer.last_read_comment_id ].compact.max
+          destination_pointer.update_column(:last_read_comment_id, last_read_id)
+          pointer.delete
+        else
+          pointer.update_column(:creative_id, target_creative.id)
+        end
       end
     end
 

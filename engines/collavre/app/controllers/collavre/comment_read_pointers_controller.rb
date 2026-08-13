@@ -77,7 +77,12 @@ module Collavre
     end
 
     def update_pointer(creative, topic, last_id)
+      # A named pointer replaces the legacy fallback for this topic. Remember
+      # the fallback before creating the row so its previously rendered receipt
+      # is replaced as well, rather than lingering until the next page load.
+      legacy_last_read_id = CommentReadPointer.find_by(user: Current.user, creative: creative, topic: nil)&.last_read_comment_id
       pointer = CommentReadPointer.find_or_create_by!(user: Current.user, creative: creative, topic: topic)
+      created_pointer = pointer.previously_new_record?
       previous_last_read_id = nil
       updated_last_read_id = nil
 
@@ -90,6 +95,7 @@ module Collavre
         pointer.update!(last_read_comment_id: updated_last_read_id) if previous_last_read_id != updated_last_read_id
       end
 
+      broadcast_read_receipts(creative, legacy_last_read_id, topic: topic) if created_pointer && legacy_last_read_id
       broadcast_read_receipts(creative, previous_last_read_id, topic: topic) if previous_last_read_id && previous_last_read_id != updated_last_read_id
       broadcast_read_receipts(creative, updated_last_read_id, topic: topic)
     end
