@@ -319,8 +319,8 @@ module Collavre
 
       # --- Inbox mention confinement (live Claude Channel session) ---
       #
-      # A live Claude Channel session agent holds inbox-wide :feedback +
-      # routing_expression="true". The expression path confines it to its own
+      # A live Claude Channel session agent holds inbox-wide :feedback + a live
+      # presence row. The expression path confines it to its own
       # registered session topic so ordinary inbox topics stay identical to a
       # normal topic. The mention path must apply the SAME confinement —
       # otherwise @mentioning the session agent in an ordinary inbox topic would
@@ -355,6 +355,37 @@ module Collavre
         }
 
         assert_equal [ agent ], Matcher.new(context).match
+      end
+
+      test "does not match a live Claude Channel agent whose expression is false" do
+        agent = build_claude_inbox_session_agent(@creative)
+        agent.update!(routing_expression: 'event_name == "other_event"')
+        project_topic = @creative.topics.create!(name: "Project work", user: @user)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => project_topic.id },
+          "chat" => {}
+        }
+
+        assert_empty Matcher.new(context).match
+      end
+
+      test "does not match an offline Claude Channel agent whose expression is true" do
+        agent = build_claude_inbox_session_agent(@creative)
+        agent.update!(routing_expression: "true")
+        AgentSubscription.where(agent_id: agent.id).delete_all
+        project_topic = @creative.topics.create!(name: "Project work", user: @user)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => project_topic.id },
+          "chat" => {}
+        }
+
+        assert_empty Matcher.new(context).match
       end
 
       test "mentioned Claude session agent is confined out of an ordinary inbox topic" do

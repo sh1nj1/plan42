@@ -223,8 +223,9 @@ module Collavre
         agents.select do |agent|
           next false unless has_creative_permission?(agent)
           next false unless eligible_in_inbox?(agent)
+          next false if agent.claude_channel_agent? && !live_claude_agent_ids.include?(agent.id)
 
-          live_claude_agent_ids.include?(agent.id) || evaluate_routing_expression(agent)
+          agent.routing_expression.blank? || evaluate_routing_expression(agent)
         end
       end
 
