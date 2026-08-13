@@ -504,6 +504,39 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.pendingSelfEchoPreviousTopicIds.get(clientIdFor('2'))).toBe('1')
 	})
 
+	test('a queued save keeps its stream baseline after another creative loads', async () => {
+		let resolveFirstSave
+		let resolveSecondSave
+		controller.lastKnownRemoteTopicId = '1'
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveFirstSave = resolve }))
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSecondSave = resolve }))
+
+		const firstSave = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		const queuedSave = controller.flushSaveLastTopic('3')
+
+		global.fetch = jest.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '3',
+				main_topic_id: '1',
+				effective_creative_id: '99',
+			}),
+		})
+		await controller.onPopupOpened({ creativeId: '99' })
+
+		resolveFirstSave(true)
+		await firstSave
+		await Promise.resolve()
+
+		expect(controller.pendingSelfEchoPreviousTopicIds.get(clientIdFor('3'))).toBe('1')
+		resolveSecondSave(true)
+		await queuedSave
+	})
+
   test('a reopen keeps a newer server preference after a closed save completed', async () => {
     let resolveSave
     saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))

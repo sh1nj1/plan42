@@ -1511,14 +1511,15 @@ export default class extends Controller {
 	}
 
 	lastKnownRemoteTopicIdFor(creativeId) {
-		if (this._lastKnownRemoteTopicCreativeId !== String(creativeId)) return undefined
-
-		return this._lastKnownRemoteTopicId
+		return this.lastKnownRemoteTopicIds.get(String(creativeId))
 	}
 
 	setLastKnownRemoteTopicId(creativeId, value) {
-		this._lastKnownRemoteTopicCreativeId = String(creativeId)
-		this._lastKnownRemoteTopicId = value ? String(value) : ""
+		this.lastKnownRemoteTopicIds.set(String(creativeId), value ? String(value) : "")
+	}
+
+	get lastKnownRemoteTopicIds() {
+		return this._lastKnownRemoteTopicIds || (this._lastKnownRemoteTopicIds = new Map())
 	}
 
 	get pendingSelfEchoPreviousTopicIds() {
@@ -1713,12 +1714,16 @@ export default class extends Controller {
     // A save can begin before a linked shell's topics response reveals that it
     // shares its origin's preference stream. Re-key that claim before pruning
     // so its identified echo remains recognisable on the resolved stream.
-    remapPendingSelfEchoesForCreative(requestedCreativeId, effectiveCreativeId) {
+	remapPendingSelfEchoesForCreative(requestedCreativeId, effectiveCreativeId) {
 		const requestedId = String(requestedCreativeId)
 		const resolvedId = String(effectiveCreativeId)
 		if (requestedId === resolvedId) return
-		if (this._lastKnownRemoteTopicCreativeId === requestedId) {
-			this._lastKnownRemoteTopicCreativeId = resolvedId
+		const requestedBaseline = this.lastKnownRemoteTopicIds.get(requestedId)
+		if (requestedBaseline !== undefined) {
+			if (!this.lastKnownRemoteTopicIds.has(resolvedId)) {
+				this.lastKnownRemoteTopicIds.set(resolvedId, requestedBaseline)
+			}
+			this.lastKnownRemoteTopicIds.delete(requestedId)
 		}
 
 		for (const clientId of [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ]) {
