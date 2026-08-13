@@ -68,11 +68,14 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
   # because two sessions can pick the same topic at the same moment.
   test "update_last_topic echoes the sender's client_id on the broadcast" do
     topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Test Topic")
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative, user: @user, expanded_status: { "expanded" => true }, last_topic_revision: 0
+    )
     stream = Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")
 
     assert_broadcast_on(
       stream,
-      { action: "last_topic_changed", last_topic_id: topic.id, client_id: "save-abc" }
+      { action: "last_topic_changed", last_topic_id: topic.id, last_topic_revision: [ preference.id, 1 ], client_id: "save-abc" }
     ) do
       patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
             params: { last_topic_id: topic.id, client_id: "save-abc" },
@@ -82,11 +85,14 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
 
   test "update_last_topic broadcasts a nil client_id when the save carries none" do
     topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Test Topic")
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative, user: @user, expanded_status: { "expanded" => true }, last_topic_revision: 0
+    )
     stream = Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")
 
     assert_broadcast_on(
       stream,
-      { action: "last_topic_changed", last_topic_id: topic.id, client_id: nil }
+      { action: "last_topic_changed", last_topic_id: topic.id, last_topic_revision: [ preference.id, 1 ], client_id: nil }
     ) do
       patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
             params: { last_topic_id: topic.id },

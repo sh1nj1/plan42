@@ -81,9 +81,10 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 
   // A broadcast from some other session of this user: it names a topic and
   // nothing else. Without a client_id it cannot have come from this client.
-  const echo = (lastTopicId, clientId) => controller.handleTopicMessage({
+  const echo = (lastTopicId, clientId, lastTopicRevision) => controller.handleTopicMessage({
     action: 'last_topic_changed',
     last_topic_id: lastTopicId,
+    ...(lastTopicRevision === undefined ? {} : { last_topic_revision: lastTopicRevision }),
     ...(clientId === undefined ? {} : { client_id: clientId }),
   })
 
@@ -94,7 +95,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     return call && call[2]
   }
 
-  const selfEcho = (lastTopicId) => echo(lastTopicId, clientIdFor(lastTopicId))
+  const selfEcho = (lastTopicId, lastTopicRevision) => echo(lastTopicId, clientIdFor(lastTopicId), lastTopicRevision)
 
   test('does not recreate acknowledgement metadata when the echo arrives before the response', async () => {
     let resolveSave
@@ -211,6 +212,44 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		await reopen
 
 		expect(controller.currentTopicId).toBe('3')
+		resolveSave(true)
+		await save
+	})
+
+	test('a newer ABA reopen snapshot yields to the server revision, not its repeated topic id', async () => {
+		let resolveSave
+		let resolveSnapshot
+		controller.lastKnownRemoteTopicId = '1'
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+		controller.selectTopic('2')
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+		controller.onPopupClosed()
+
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+		const reopen = controller.onPopupOpened({ creativeId: '42' })
+		await Promise.resolve()
+
+		// The server accepted Alpha, then a sibling session deliberately chose
+		// Main again. The values form an ABA sequence, but revision [5, 2] is
+		// newer than the self-echo's [5, 1].
+		selfEcho('2', [5, 1])
+		resolveSnapshot({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				last_topic_revision: [5, 2],
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await reopen
+
+		expect(controller.currentTopicId).toBe('1')
 		resolveSave(true)
 		await save
 	})

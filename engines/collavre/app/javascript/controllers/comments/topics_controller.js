@@ -225,6 +225,7 @@ export default class extends Controller {
                     ? String(data.effective_creative_id)
                     : String(this.creativeId)
 				const snapshotTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+				const snapshotTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
                 this.element.dataset.effectiveCreativeId = effectiveCreativeId
 				this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
                 this.dropPendingSelfEchoesForOtherCreatives(effectiveCreativeId)
@@ -245,7 +246,8 @@ export default class extends Controller {
                 // and then persist Main as the new creative's saved topic.
 				const pickWon = !this.pendingPickWasSupersededWhileClosed(
 					effectiveCreativeId,
-					snapshotTopicId
+					snapshotTopicId,
+					snapshotTopicRevision
 				) && this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
                 if (pickWon) {
                     // An interim restore can run while this fetch has the strip
@@ -265,7 +267,8 @@ export default class extends Controller {
 					const pendingTopicId = this.latestPendingSelfEchoTopicIdFor(
 						effectiveCreativeId,
 						snapshotTopicId,
-						acknowledgedSaveVersion
+						acknowledgedSaveVersion,
+						snapshotTopicRevision
 					)
 					if (pendingTopicId === undefined) {
 						this.serverLastTopicId = snapshotTopicId
@@ -1425,7 +1428,7 @@ export default class extends Controller {
     // Matching on the topic id instead would let a sibling session that picked
     // the same topic settle one of our claims, leaving our own echo to arrive
     // later looking like news and revert whatever the user picked meanwhile.
-    consumeSelfEcho(clientId) {
+	consumeSelfEcho(clientId, lastTopicRevision) {
         if (!clientId) return false
 
 		const index = this.pendingSelfEchoes.indexOf(clientId)
@@ -1440,6 +1443,10 @@ export default class extends Controller {
 			clientId,
 			this.saveAcknowledgementVersion
 		)
+		const normalizedRevision = this.normalizeLastTopicRevision(lastTopicRevision)
+		if (normalizedRevision) {
+			this.pendingSelfEchoRemoteRevisions.set(clientId, normalizedRevision)
+		}
 		this.acknowledgedPendingSelfEchoes.add(clientId)
 		this.pendingSelfEchoes.splice(index, 1)
 		// Keep the closed-gap marker with the tombstone. A reopened GET can be
@@ -1465,6 +1472,7 @@ export default class extends Controller {
         this.pendingSelfEchoTopicIds.delete(clientId)
 		this.pendingSelfEchoPreviousTopicIds.delete(clientId)
 		this.pendingSelfEchoAcknowledgementVersions.delete(clientId)
+		this.pendingSelfEchoRemoteRevisions.delete(clientId)
 		this.possiblyMissedPendingSelfEchoes.delete(clientId)
 		this.acknowledgedPendingSelfEchoes.delete(clientId)
 		this.settledSelfEchoes.delete(clientId)
@@ -1533,6 +1541,25 @@ export default class extends Controller {
 		return this._pendingSelfEchoAcknowledgementVersions || (this._pendingSelfEchoAcknowledgementVersions = new Map())
 	}
 
+	// The preference row id distinguishes a record recreated after clearing the
+	// selection; the per-row revision orders saves made while it exists. Together
+	// they are a server-issued ordering token, rather than an inference from a
+	// topic id that can repeat in an ABA change (Main -> Alpha -> Main).
+	normalizeLastTopicRevision(value) {
+		if (!Array.isArray(value) || value.length !== 2) return null
+		const revision = value.map(Number)
+		return revision.every(Number.isSafeInteger) ? revision : null
+	}
+
+	compareLastTopicRevisions(left, right) {
+		if (!left || !right) return null
+		return left[0] === right[0] ? left[1] - right[1] : left[0] - right[0]
+	}
+
+	get pendingSelfEchoRemoteRevisions() {
+		return this._pendingSelfEchoRemoteRevisions || (this._pendingSelfEchoRemoteRevisions = new Map())
+	}
+
 	// Echoes normally remove their claims. A short-lived tombstone retains the
 	// save order for GETs already in progress when the echo arrived.
 	get settledSelfEchoes() {
@@ -1582,7 +1609,7 @@ export default class extends Controller {
 		}
     }
 
-	latestPendingSelfEchoTopicIdFor(creativeId, snapshotTopicId, acknowledgedSaveVersion) {
+	latestPendingSelfEchoTopicIdFor(creativeId, snapshotTopicId, acknowledgedSaveVersion, snapshotTopicRevision) {
         const streamCreativeId = String(creativeId)
 		let topicId = snapshotTopicId
 		let found = false
@@ -1600,8 +1627,13 @@ export default class extends Controller {
 				const acknowledgedAfterLoadStarted =
 					this.acknowledgedPendingSelfEchoes.has(id) &&
 					this.pendingSelfEchoAcknowledgementVersions.get(id) > acknowledgedSaveVersion
+				const revisionComparison = this.compareLastTopicRevisions(
+					this.pendingSelfEchoRemoteRevisions.get(id),
+					snapshotTopicRevision
+				)
 				return this.pendingSelfEchoCreativeIds.get(id) === streamCreativeId &&
 					(!this.acknowledgedPendingSelfEchoes.has(id) || acknowledgedAfterLoadStarted) &&
+					(revisionComparison === null || revisionComparison > 0) &&
 					this.pendingSelfEchoPreviousTopicIds.get(id) === topicId
 			})
 			if (!clientId) return found ? topicId : undefined
@@ -1617,16 +1649,23 @@ export default class extends Controller {
 	// close is the exception. When the snapshot has advanced from that save's
 	// known baseline, the closed stream missed a newer cross-session write, so
 	// replaying the local pick would immediately write the old topic back.
-	pendingPickWasSupersededWhileClosed(creativeId, snapshotTopicId) {
+	pendingPickWasSupersededWhileClosed(creativeId, snapshotTopicId, snapshotTopicRevision) {
 		if (!this._pendingPick) return false
 
 		const streamCreativeId = String(creativeId)
-		return [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ].some(clientId =>
-			this.possiblyMissedPendingSelfEchoes.has(clientId) &&
-			this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
-			this.pendingSelfEchoTopicIds.get(clientId) === this._pendingPick.topicId &&
-			this.pendingSelfEchoPreviousTopicIds.get(clientId) !== snapshotTopicId
-		)
+		return [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ].some(clientId => {
+			if (!this.possiblyMissedPendingSelfEchoes.has(clientId) ||
+				this.pendingSelfEchoCreativeIds.get(clientId) !== streamCreativeId ||
+				this.pendingSelfEchoTopicIds.get(clientId) !== this._pendingPick.topicId) return false
+
+			const revisionComparison = this.compareLastTopicRevisions(
+				snapshotTopicRevision,
+				this.pendingSelfEchoRemoteRevisions.get(clientId)
+			)
+			return revisionComparison === null
+				? this.pendingSelfEchoPreviousTopicIds.get(clientId) !== snapshotTopicId
+				: revisionComparison > 0
+		})
 	}
 
     // Bumped whenever the stream claims are settled on changes, so a save
@@ -1693,6 +1732,7 @@ export default class extends Controller {
         this.pendingSelfEchoTopicIds.clear()
 		this.pendingSelfEchoPreviousTopicIds.clear()
 		this.pendingSelfEchoAcknowledgementVersions.clear()
+		this.pendingSelfEchoRemoteRevisions.clear()
 		this.possiblyMissedPendingSelfEchoes.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
 		this.settledSelfEchoes.clear()
@@ -1756,7 +1796,8 @@ export default class extends Controller {
 		if (action === "last_topic_changed") {
 			// Broadcast is already scoped to the current user via user-specific channel
 			const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
-			if (this.consumeSelfEcho(data.client_id)) {
+			const lastTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
+			if (this.consumeSelfEcho(data.client_id, lastTopicRevision)) {
 				this.setLastKnownRemoteTopicId(this.effectiveCreativeId, newTopicId)
 				return
 			}

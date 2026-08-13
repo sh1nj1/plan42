@@ -48,14 +48,22 @@ module Collavre
 
     def persist_last_topic(creative)
       record = UserCreativePreference.find_or_initialize_by(creative_id: creative.id, user_id: Current.user.id)
-      record.expanded_status ||= {}
-      record.last_topic_id = params[:last_topic_id].presence
-      record.expanded_status.empty? && record.last_topic_id.nil? ? record.destroy! : record.save!
+      record.with_lock do
+        record.expanded_status ||= {}
+        record.last_topic_id = params[:last_topic_id].presence
+        record.last_topic_revision = record.last_topic_revision.to_i + 1
+        record.expanded_status.empty? && record.last_topic_id.nil? ? record.destroy! : record.save!
+      end
       record
     end
 
     def broadcast_last_topic(creative, record)
-      payload = { action: "last_topic_changed", last_topic_id: record.last_topic_id, client_id: params[:client_id].presence }
+      payload = {
+        action: "last_topic_changed",
+        last_topic_id: record.last_topic_id,
+        last_topic_revision: [ record.id, record.last_topic_revision ],
+        client_id: params[:client_id].presence
+      }
       TopicsChannel.broadcast_to("user_#{Current.user.id}_creative_#{creative.id}", payload)
     end
 
