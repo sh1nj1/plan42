@@ -2156,10 +2156,17 @@ export default class extends Controller {
         const action = data.action || "created"
 
 		if (action === "last_topic_changed") {
-			if (this.retiredSelfEchoIds.has(data.client_id)) return
 			// Broadcast is already scoped to the current user via user-specific channel
 			const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
 			const lastTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
+			// A retired ambiguous save remains non-actionable, but it can still have
+			// committed after the request failed. Its revision must advance this
+			// stream's high-water mark so an older in-flight GET cannot restore the
+			// preference from before that save.
+			if (this.retiredSelfEchoIds.has(data.client_id)) {
+				this.observeLastTopicRevision(this.effectiveCreativeId, lastTopicRevision)
+				return
+			}
 			// A linked shell can receive an echo before its load resolves the origin.
 			// The claim already knows that effective stream, while effectiveCreativeId
 			// still names the shell; advance the baseline on the claimed stream.

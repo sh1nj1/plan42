@@ -611,6 +611,45 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		}
 	})
 
+	test('records the revision of a late echo from a retired ambiguous save', async () => {
+		let rejectSave
+		let resolveSnapshot
+		jest.useFakeTimers()
+		try {
+			controller.serverLastTopicId = '2'
+			saveLastTopic.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+			const save = controller.flushSaveLastTopic('2')
+			await Promise.resolve()
+			const clientId = clientIdFor('2')
+			rejectSave(new Error('network'))
+			await save
+			await jest.advanceTimersByTimeAsync(5_000)
+
+			global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+			const load = controller.loadTopics()
+			await Promise.resolve()
+			echo('2', clientId, [5, 2])
+			resolveSnapshot({
+				ok: true,
+				json: async () => ({
+					topics: TOPICS,
+					archived_topics: [],
+					can_manage: true,
+					last_topic_id: '1',
+					last_topic_revision: [5, 1],
+					main_topic_id: '1',
+					effective_creative_id: '42',
+				}),
+			})
+			await load
+
+			expect(controller.highestLastTopicRevisions.get('42')).toEqual([5, 2])
+			expect(controller.serverLastTopicId).toBe('2')
+		} finally {
+			jest.useRealTimers()
+		}
+	})
+
 	test('a committed revision outranks a snapshot with a different predecessor topic', async () => {
 		let resolveSave
 		let resolveSnapshot
