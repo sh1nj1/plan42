@@ -223,20 +223,32 @@ module Collavre
     # Permission caches are refreshed asynchronously, so this resolves the
     # persisted share hierarchy directly rather than consulting has_permission?.
     def reconcile_topic_read_pointers_for_permission_change
-      destination_ids = reconciliation_creative_ids
+      self.class.reconcile_topic_read_pointers(
+        reconciliation_creative_ids,
+        user_ids: reconciliation_user_ids
+      )
+    end
+
+    # Reattaches a durable per-topic cursor to its topic's current Creative
+    # whenever a permission change gives a reader access to that destination.
+    # It intentionally leaves revoked readers' cursors in place: receipt
+    # rendering filters access, and a later grant can then restore the cursor.
+    def self.reconcile_topic_read_pointers(destination_ids, user_ids: nil)
+      destination_ids = Array(destination_ids).compact.uniq
+      return if destination_ids.empty?
+
       access_by_destination_and_user = {}
-      affected_user_ids = reconciliation_user_ids
 
       pointers = CommentReadPointer.joins(:topic).where(topics: { creative_id: destination_ids })
-      pointers = pointers.where(user_id: affected_user_ids) if affected_user_ids
+      pointers = pointers.where(user_id: user_ids) if user_ids
 
       pointers
-        .includes(:topic, :user)
+        .includes(:user, topic: :creative)
         .find_each do |pointer|
           destination = pointer.topic.creative
           access_key = [ destination.id, pointer.user_id ]
           has_access = access_by_destination_and_user.fetch(access_key) do
-            access_by_destination_and_user[access_key] = self.class.read_access_from_shares?(destination, pointer.user)
+            access_by_destination_and_user[access_key] = read_access_from_shares?(destination, pointer.user)
           end
 
           if has_access
@@ -259,9 +271,11 @@ module Collavre
     end
 
     # A named share can change access only for its prior or current recipient.
-    # Public shares affect every reader, so they deliberately keep the full scan.
+    # A transition to or from public affects every reader, so it deliberately
+    # keeps the full scan even when the other side is a named recipient.
     def reconciliation_user_ids
-      return nil unless user_id || user_id_before_last_save
+      return user_id ? [ user_id ] : nil if previously_new_record? || destroyed?
+      return nil if user_id.nil? || user_id_before_last_save.nil?
 
       [ user_id, user_id_before_last_save ].compact.uniq
     end

@@ -173,4 +173,22 @@ class CreativeShareTest < ActiveSupport::TestCase
 
     assert_equal [ recipient.id ], checked_user_ids
   end
+
+  test "changing a named share to public reconciles every reader's stranded pointer" do
+    owner = users(:one)
+    former_recipient = users(:two)
+    other_reader = users(:three)
+    source = Creative.create!(user: owner, description: "Pointer source")
+    destination = Creative.create!(user: owner, description: "Pointer destination")
+    topic = destination.topics.create!(name: "Moved topic", user: owner)
+    comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "read comment")
+    share = CreativeShare.create!(creative: destination, user: former_recipient, permission: :read)
+    former_pointer = CommentReadPointer.create!(user: former_recipient, creative: source, topic: topic, last_read_comment: comment)
+    other_pointer = CommentReadPointer.create!(user: other_reader, creative: source, topic: topic, last_read_comment: comment)
+
+    share.update!(user: nil)
+
+    assert_equal destination.id, former_pointer.reload.creative_id
+    assert_equal destination.id, other_pointer.reload.creative_id
+  end
 end
