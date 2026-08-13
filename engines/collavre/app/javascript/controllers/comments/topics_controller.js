@@ -227,7 +227,6 @@ export default class extends Controller {
                 this.element.dataset.effectiveCreativeId = effectiveCreativeId
 				this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
                 this.dropPendingSelfEchoesForOtherCreatives(effectiveCreativeId)
-				this.lastKnownRemoteTopicId = snapshotTopicId
                 // A topic picked while this fetch was in flight is newer intent
                 // than the answer coming back: last_topic_id still names the
                 // topic the user left, because the save for the pick is
@@ -259,9 +258,15 @@ export default class extends Controller {
 						snapshotTopicId,
 						acknowledgedSaveVersion
 					)
-                    this.serverLastTopicId = pendingTopicId === undefined
-						? snapshotTopicId
-                        : pendingTopicId
+					if (pendingTopicId === undefined) {
+						this.serverLastTopicId = snapshotTopicId
+						// A retained claim proves this response was an older view of
+						// the preference. Do not let that stale snapshot roll back
+						// the baseline used by the next save's closed-reopen check.
+						this.lastKnownRemoteTopicId = snapshotTopicId
+					} else {
+						this.serverLastTopicId = pendingTopicId
+					}
                 }
                 // The archive guard only has to outlive the sources that still
                 // name the topic. Test the effective selection, not just the
