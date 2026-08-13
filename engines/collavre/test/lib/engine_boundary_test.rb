@@ -1039,6 +1039,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       %(import { createRequire as nativeRequire } from "node:module"; const t = nativeRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(import * as Module from "node:module"; const t = Module.createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(import Module from "node:module"; const t = Module.createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
+      %(import Module, { createRequire } from "node:module"; const t = Module.createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("node:module").createRequire(import.meta.url)("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = await import("#{satellite}/thing");) => "#{satellite}/thing",
       %(const t = require("collavre_" + "#{satellite.delete_prefix('collavre_')}/thing");) => "#{satellite}/thing",
@@ -2122,9 +2123,18 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def js_imported_node_module_name(tokens, imported)
     return tokens[imported + 3].last if js_node_module_namespace_import?(tokens, imported)
-    return unless tokens[imported + 1]&.first == :word && tokens[imported + 2] == [ :word, "from" ] && js_node_module?(tokens[imported + 3])
+    return unless tokens[imported + 1]&.first == :word
+
+    from = js_import_clause_from_index(tokens, imported + 2)
+    return unless from && js_node_module?(tokens[from + 1])
 
     tokens[imported + 1].last
+  end
+
+  def js_import_clause_from_index(tokens, start)
+    (start...tokens.length).find do |index|
+      tokens[index] == [ :word, "from" ] && tokens[index + 1]&.first == :string
+    end
   end
 
   def js_node_module_namespace_import?(tokens, imported)
