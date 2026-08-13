@@ -192,10 +192,16 @@ export default class extends Controller {
     // its resolved stream across a close/reopen, so an acknowledgement arriving
     // before the replacement load can still tell that its echo is receivable.
     get effectiveCreativeId() {
-		return this.element.dataset.effectiveCreativeId ||
-			this.knownEffectiveCreativeIds.get(String(this.creativeId)) ||
-			this.creativeId
+		return this.element.dataset.effectiveCreativeId || this.effectiveCreativeIdFor(this.creativeId)
     }
+
+	// A pending pick records the shell rendered in the popup, while channel
+	// claims are keyed by the origin stream. Resolve both through the cached
+	// mapping before comparing them so a linked-shell replacement keeps a newer
+	// pick ahead of an orphaned echo from the previous controller.
+	effectiveCreativeIdFor(creativeId) {
+		return this.knownEffectiveCreativeIds.get(String(creativeId)) || creativeId
+	}
 
     async loadTopics() {
         if (!this.creativeId) return
@@ -2165,7 +2171,7 @@ export default class extends Controller {
 			const consumedSelfEcho = this.consumeSelfEcho(data.client_id, lastTopicRevision)
 			const orphanedSelfEcho = !consumedSelfEcho && this.isLastTopicSaveFromThisTab(data.client_id)
 			const hasNewerPendingPick = this._pendingPick &&
-				String(this._pendingPick.creativeId) === String(claimedEffectiveCreativeId)
+				String(this.effectiveCreativeIdFor(this._pendingPick.creativeId)) === String(claimedEffectiveCreativeId)
 			if (consumedSelfEcho || (orphanedSelfEcho && hasNewerPendingPick)) {
 				if (isCurrentRevision) {
 					this.setLastKnownRemoteTopicId(claimedEffectiveCreativeId, newTopicId)

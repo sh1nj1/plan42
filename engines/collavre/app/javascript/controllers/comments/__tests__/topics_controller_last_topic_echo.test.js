@@ -124,7 +124,9 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(duplicateClientId.split('.')[0]).not.toBe(firstClientId.split('.')[0])
 	})
 
-	test('a Turbo replacement ignores an orphaned self echo', async () => {
+	test('a linked-shell Turbo replacement ignores an orphaned self echo after a newer pick', async () => {
+		controller.knownEffectiveCreativeIds.set('42', '7')
+		controller.element.dataset.effectiveCreativeId = '7'
 		let resolveSave
 		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
 		const save = controller.flushSaveLastTopic('2')
@@ -143,6 +145,8 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 			document.getElementById('replacement'), 'comments--topics'
 		)
 		replacement.creativeIdValue = '42'
+		replacement.knownEffectiveCreativeIds.set('42', '7')
+		replacement.element.dataset.effectiveCreativeId = '7'
 		replacement.topics = TOPICS
 		replacement.archivedTopics = []
 		replacement.mainTopicId = '1'
