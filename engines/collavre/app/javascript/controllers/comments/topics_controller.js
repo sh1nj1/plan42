@@ -1323,7 +1323,7 @@ export default class extends Controller {
     // was scheduled with, so a save that is no longer wanted cannot be talked
     // out of its value — only cancelled.
     cancelPendingSaveLastTopic() {
-        if (this._saveLastTopicTimer) {
+\t\tif (this._saveLastTopicTimer !== undefined && this._saveLastTopicTimer !== null) {
             clearTimeout(this._saveLastTopicTimer)
             this._saveLastTopicTimer = null
         }

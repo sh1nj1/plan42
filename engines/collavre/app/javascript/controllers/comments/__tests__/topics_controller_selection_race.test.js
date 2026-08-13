@@ -904,6 +904,18 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
       jest.useRealTimers()
     })
 
+    test('cancels a zero-valued debounce handle after accepting a broadcast', () => {
+      const clearTimer = jest.spyOn(global, 'clearTimeout')
+      controller.setOverrideTopicId('3')
+      controller._saveLastTopicTimer = 0
+
+      controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+      expect(clearTimer).toHaveBeenCalledWith(0)
+      expect(controller._saveLastTopicTimer).toBeNull()
+      clearTimer.mockRestore()
+    })
+
     test('the deep link is not written back over the broadcast preference', async () => {
       window.history.replaceState({}, '', '/creatives/42?topic_id=3')
       controller.restoreSelection()
