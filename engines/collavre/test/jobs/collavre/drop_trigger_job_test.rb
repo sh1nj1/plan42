@@ -41,7 +41,7 @@ module Collavre
 
     test "dispatches exactly once via explicit call, not callback" do
       dispatch_calls = []
-      dispatcher = ->(*args) { dispatch_calls << args; [ @ai_bot ] }
+      dispatcher = ->(*args, **options) { dispatch_calls << [ args, options ]; [ @ai_bot ] }
 
       SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
@@ -51,6 +51,7 @@ module Collavre
       # - after_create_commit callback is suppressed (skip_dispatch: true)
       # - Job dispatches explicitly in Step 3
       assert_equal 1, dispatch_calls.size, "Should dispatch exactly once (job only, not callback)"
+      assert_equal "drop_trigger", dispatch_calls.first.last[:source]
     end
 
     test "reuses existing Drop Trigger topic" do

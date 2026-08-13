@@ -66,7 +66,7 @@ module Collavre
         chat: {
           content: comment.content
         }
-      })
+      }, source: "cron")
 
       Rails.logger.info(
         "[CronActionJob] Posted cron message to creative #{creative_id}, topic #{topic_id || 'main'}"

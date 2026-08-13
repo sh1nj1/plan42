@@ -236,7 +236,8 @@ module Collavre
       end
 
       def append_trigger_message(messages)
-        payload_text = @context.dig("comment", "content") || @context.to_json
+        payload_text = @context.dig("comment", "content") ||
+          @context.except(SystemEvents::Envelope::KEY).to_json
 
         if review_eligible?
           quoted_body = @original_comment.quoted_comment&.content

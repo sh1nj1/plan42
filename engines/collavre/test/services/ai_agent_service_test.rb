@@ -157,13 +157,12 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.handed_off? = true
 
     dispatched = false
-    original_dispatch = Collavre::SystemEvents::Dispatcher.method(:dispatch)
-
-    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(event_name, context) {
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(event_name, context, **options) {
       dispatched = true
       assert_equal "comment_created", event_name
       assert_equal "@AgentB: 이 주제에 대해 어떻게 생각해?", context[:comment][:content]
       assert_equal @user.id, context[:workspace_user_id]
+      assert_equal "a2a", options[:source]
     } do
       AiClient.stub :new, mock_client do
         AiAgentService.new(@task).call
@@ -268,7 +267,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     mock_client.define_singleton_method(:handed_off?) { true }
     dispatched = nil
 
-    SystemEvents::Dispatcher.stub(:dispatch, ->(_event_name, payload) { dispatched = payload }) do
+    SystemEvents::Dispatcher.stub(:dispatch, ->(_event_name, payload, **_options) { dispatched = payload }) do
       AiClient.stub(:new, mock_client) { AiAgentService.new(@task).call }
     end
 

@@ -203,6 +203,21 @@ module Collavre
         assert_instance_of Array, result[:messages]
       end
 
+      test "does not expose event envelope metadata in the JSON trigger fallback" do
+        envelope = SystemEvents::Envelope.root("comment_created", source: "cron")
+        context = {
+          "creative" => { "id" => @creative.id },
+          SystemEvents::Envelope::KEY => envelope.to_h
+        }
+
+        result = MessageBuilder.new(agent: @agent, context: context).build
+        trigger_text = result[:messages].find { |message| message[:kind] == :trigger }
+                       .dig(:parts, 0, :text)
+
+        assert_not_includes trigger_text, envelope.id
+        assert_not_includes trigger_text, "correlation_id"
+      end
+
       test "first_message is true when no chat history exists" do
         context = {
           "comment" => { "id" => @comment.id, "content" => "Hello" },

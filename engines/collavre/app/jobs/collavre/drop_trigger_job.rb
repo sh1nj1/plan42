@@ -190,7 +190,7 @@ module Collavre
       # Use Comment#dispatch_payload — single source of truth shared with
       # the after_create_commit callback, preventing payload drift.
       scheduled_agents = SystemEvents::Dispatcher.dispatch(
-        "comment_created", comment.dispatch_payload
+        "comment_created", comment.dispatch_payload, source: "drop_trigger"
       )
 
       if scheduled_agents.blank?

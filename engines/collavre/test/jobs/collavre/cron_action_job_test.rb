@@ -76,7 +76,11 @@ module Collavre
     # (admission, the topic slot, the promotion refresh) believes the payload.
     test "a Main-topic cron names the topic its comment was filed under" do
       payload = nil
-      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent) { payload = sent; [] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent, **options) {
+        payload = sent
+        @dispatch_options = options
+        []
+      }) do
         CronActionJob.perform_now(
           creative_id: @creative.id,
           topic_id: nil,
@@ -90,13 +94,18 @@ module Collavre
                      "assign_main_topic files a topic-less comment under Main"
       assert_equal comment.topic_id, payload.dig(:topic, :id),
                    "the dispatch payload must name the topic the comment lives in"
+      assert_equal "cron", @dispatch_options[:source]
     end
 
     # Control: an explicit topic still round-trips. "Always resolve Main" would
     # pass the test above on its own while sending every cron to the wrong topic.
     test "an explicit cron topic is dispatched unchanged" do
       payload = nil
-      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent) { payload = sent; [] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent, **options) {
+        payload = sent
+        @dispatch_options = options
+        []
+      }) do
         CronActionJob.perform_now(
           creative_id: @creative.id,
           topic_id: @topic.id,
@@ -106,6 +115,7 @@ module Collavre
       end
 
       assert_equal @topic.id, payload.dig(:topic, :id)
+      assert_equal "cron", @dispatch_options[:source]
     end
   end
 end

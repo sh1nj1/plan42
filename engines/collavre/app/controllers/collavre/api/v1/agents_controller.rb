@@ -544,8 +544,10 @@ module Collavre
             reply_comment: comment,
             context: {
               "creative" => { "id" => comment.creative_id },
-              "topic" => { "id" => comment.topic_id }
-            },
+              "topic" => { "id" => comment.topic_id },
+              SystemEvents::Envelope::KEY =>
+                task&.trigger_event_payload&.dig(SystemEvents::Envelope::KEY)
+            }.compact,
             workspace_user: workspace_user_for(task)
           ).dispatch
         end
