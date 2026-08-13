@@ -92,12 +92,19 @@ describe('TopicsController#openTopicListPopup', () => {
 		expect(btn.getAttribute('aria-expanded')).toBe('false')
     })
 
-    test('stops the opening pointer event from reaching the popup outside-click handler', () => {
-		const event = { stopPropagation: jest.fn() }
+    test('lets other popups process the pointer event and consumes the matching click when open', () => {
+		const btn = controller.topicListButtonTarget
+		const modal = document.createElement('div')
+		modal.id = 'topic-list-modal'
+		controller.element.appendChild(modal)
+		const popup = { popup: { isOpen: jest.fn(() => true) }, close: jest.fn(), openForTopics: jest.fn() }
+		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
 
-		controller.stopTopicListTogglePropagation(event)
+		controller.prepareTopicListToggle()
+		controller.openTopicListPopup({ currentTarget: btn })
 
-		expect(event.stopPropagation).toHaveBeenCalled()
+		expect(popup.close).not.toHaveBeenCalled()
+		expect(popup.openForTopics).not.toHaveBeenCalled()
     })
 
     test('removes the topic-list close listener when disconnecting', () => {

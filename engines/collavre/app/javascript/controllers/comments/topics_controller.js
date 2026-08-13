@@ -666,6 +666,11 @@ export default class extends Controller {
     }
 
     openTopicListPopup(event) {
+		if (this.topicListTogglePointerDown) {
+			this.topicListTogglePointerDown = false
+			return
+		}
+
         const btnRect = event.currentTarget.getBoundingClientRect()
 
         const openWith = (popup) => {
@@ -718,8 +723,13 @@ export default class extends Controller {
         })
     }
 
-	stopTopicListTogglePropagation(event) {
-		event.stopPropagation()
+	prepareTopicListToggle() {
+		const modal = document.getElementById('topic-list-modal')
+		const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+		// Let every open popup receive this pointer event and perform its normal
+		// outside-click cleanup. If this popup was one of them, consume the
+		// following click so it does not immediately reopen.
+		this.topicListTogglePointerDown = Boolean(popup?.popup?.isOpen())
 	}
 
     handleTopicListClose() {

@@ -137,7 +137,7 @@
           data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop"></span>
     <button type="button" class="topic-list-btn"
 			data-comments--topics-target="topicListButton"
-			data-action="mousedown->comments--topics#stopTopicListTogglePropagation touchstart->comments--topics#stopTopicListTogglePropagation click->comments--topics#openTopicListPopup"
+			data-action="mousedown->comments--topics#prepareTopicListToggle touchstart->comments--topics#prepareTopicListToggle click->comments--topics#openTopicListPopup"
             title="<%= t('collavre.comments.topic_list') %>"
 			aria-label="<%= t('collavre.comments.topic_list') %>"
 			aria-expanded="false">
