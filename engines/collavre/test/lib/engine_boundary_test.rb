@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "cgi"
 require "prism"
 
 # Enforces the one engine rule that is genuinely one-directional
@@ -896,6 +897,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       <script src="/assets/#{path}.js"></script>
       <script data-note=">" src="/assets/#{path}.quoted.js"></script>
       <link href="/assets/#{path}.css" rel="stylesheet">
+      <img src="/assets/#{path.sub("_", "&#95;")}.entity.svg">
       <track src="/assets/#{path}.captions.vtt" kind="captions">
       <input type="image" src="/assets/#{path}.button.png">
       <input src="/assets/#{satellite}/ignored.png">
@@ -913,7 +915,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal [
       "/assets/#{path}.avif", "/assets/#{path}.button.png", "/assets/#{path}.captions.vtt", "/assets/#{path}.css", "/assets/#{path}.gif",
-      "/assets/#{path}.jpeg", "/assets/#{path}.js", "/assets/#{path}.png", "/assets/#{path}.quoted.js",
+      "/assets/#{path}.entity.svg", "/assets/#{path}.jpeg", "/assets/#{path}.js", "/assets/#{path}.png", "/assets/#{path}.quoted.js",
       "/assets/#{path}.webp", "/assets/#{path}@2x.bmp", "/assets/#{path}@2x.jpeg",
       "/assets/#{path}@2x.webp", "/assets/#{path}.bmp", static_erb_asset
     ].sort,
@@ -1609,9 +1611,13 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def html_asset_attribute_paths(attribute, path)
-    return [ path ] unless attribute.match?(/\Asrcset\b/i)
+    return [ html_unescape(path) ] unless attribute.match?(/\Asrcset\b/i)
 
-    path.split(",").filter_map { |candidate| candidate.strip.split(/\s+/, 2).first.presence }
+    path.split(",").filter_map { |candidate| html_unescape(candidate.strip.split(/\s+/, 2).first.presence) }
+  end
+
+  def html_unescape(path)
+    CGI.unescapeHTML(path) if path
   end
 
   def html_asset_attribute?(tag, attribute)
