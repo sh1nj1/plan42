@@ -52,6 +52,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   TEMPLATE_RENDER_OPTIONS = %w[template partial file layout].freeze
   ASSET_HELPER_PATH_OPTIONS = {
     "image_tag" => { "srcset" => :srcset },
+    "picture_tag" => { "image" => :image_options },
     "video_tag" => { "poster" => :path }
   }.freeze
   ASSET_HELPER_METHODS = %w[
@@ -254,6 +255,20 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
     assert_equal %w[collavre_linux collavre_macos collavre_windows],
       satellite_gem_dependencies(gemspec_dependency_names_in(source)).sort
+  end
+
+  test "gemspec detector carries conditional aliases into ensure bodies" do
+    source = <<~RUBY
+      Gem::Specification.new do |gemspec|
+        begin
+          target = gemspec if Gem.win_platform?
+        ensure
+          target.add_dependency "collavre_windows" if Gem.win_platform?
+        end
+      end
+    RUBY
+
+    assert_equal [ "collavre_windows" ], satellite_gem_dependencies(gemspec_dependency_names_in(source))
   end
 
   test "gemspec detector finds statically declared conditional package files" do
@@ -760,9 +775,11 @@ class EngineBoundaryTest < ActiveSupport::TestCase
     assert_equal [ path ], asset_paths_in(%(self.helpers.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(self.view_context.asset_path("#{path}")))
     assert_equal [ path ], asset_paths_in(%(image_tag "logo.svg", srcset: { "#{path}" => "2x" }))
+    assert_equal [ path ], asset_paths_in(%(picture_tag "core.webp", image: { srcset: { "#{path}" => "2x" } }))
     assert_equal [ path ], asset_paths_in(%(video_tag "core.mp4", poster: "#{path}"))
     assert_empty asset_paths_in(%(image_tag "logo.svg", class: "#{path}"))
     assert_empty asset_paths_in(%(image_tag "logo.svg", srcset: { "logo@2x.svg" => "#{path}" }))
+    assert_empty asset_paths_in(%(picture_tag "core.webp", image: { alt: "#{path}" }))
     assert_empty asset_paths_in(%(asset_path "logo.svg", srcset: { "#{path}" => "2x" }))
     assert_empty asset_paths_in(%(image_tag "logo.svg", poster: "#{path}"))
     assert_empty asset_paths_in(%(asset_path("https://cdn.example/#{path}")))
@@ -2555,8 +2572,22 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       option_type = path_options[association_key_name(association)]
       next [] unless option_type
 
-      option_type == :srcset ? srcset_path_values(association.value) : template_path_values(association.value)
+      case option_type
+      when :srcset then srcset_path_values(association.value)
+      when :image_options then image_asset_option_values(association.value)
+      else template_path_values(association.value)
+      end
     end
+  end
+
+  # picture_tag passes its `image:` options through to image_tag. Only its
+  # nested srcset values resolve assets; other nested options are ordinary data.
+  def image_asset_option_values(node)
+    return [] unless node.is_a?(Prism::HashNode) || node.is_a?(Prism::KeywordHashNode)
+
+    node.elements.filter_map do |association|
+      srcset_path_values(association.value) if association.is_a?(Prism::AssocNode) && association_key_name(association) == "srcset"
+    end.flatten
   end
 
   def srcset_path_values(node)
@@ -2971,8 +3002,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   def gemspec_calls_in_begin(node, found, gemspec_receivers, &matches)
     gemspec_calls_in_statements(node.statements, found, gemspec_receivers, &matches)
     gemspec_calls_in_rescue(node.rescue_clause, found, gemspec_receivers, &matches)
-    gemspec_calls_in_statements(node.else_clause&.statements, found, gemspec_receivers, &matches)
-    gemspec_calls_in_statements(node.ensure_clause&.statements, found, gemspec_receivers, &matches)
+    receivers = begin_path_receivers(node, gemspec_receivers)
+    gemspec_calls_in_statements(node.else_clause&.statements, found, receivers, &matches)
+    receivers |= gemspec_receivers_after_statements(node.else_clause&.statements, receivers)
+    gemspec_calls_in_statements(node.ensure_clause&.statements, found, receivers, &matches)
     found
   end
 
@@ -3032,11 +3065,15 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   def begin_receiver_states(statement, receivers)
-    states = [ receivers, gemspec_receivers_after_statements(statement.statements, receivers) ]
-    states.concat(rescue_receiver_states(statement.rescue_clause, receivers))
-    states << gemspec_receivers_after_statements(statement.else_clause.statements, receivers) if statement.else_clause
-    states << gemspec_receivers_after_statements(statement.ensure_clause.statements, receivers) if statement.ensure_clause
-    states
+    possible_receivers = begin_path_receivers(statement, receivers)
+    possible_receivers |= gemspec_receivers_after_statements(statement.else_clause.statements, possible_receivers) if statement.else_clause
+    possible_receivers |= gemspec_receivers_after_statements(statement.ensure_clause.statements, possible_receivers) if statement.ensure_clause
+    [ possible_receivers ]
+  end
+
+  def begin_path_receivers(node, receivers)
+    ([ receivers, gemspec_receivers_after_statements(node.statements, receivers) ] +
+      rescue_receiver_states(node.rescue_clause, receivers)).reduce(:|)
   end
 
   def rescue_receiver_states(rescue_clause, receivers)
