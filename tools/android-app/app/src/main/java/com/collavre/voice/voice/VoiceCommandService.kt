@@ -29,7 +29,11 @@ data class VoiceMessage(
     val title: String,
     val text: String,
     val topicId: Long?,
-    val createdAt: String
+    val createdAt: String,
+    // Approvals live in their origin creative, not the inbox, so the server's read
+    // pointer does not apply to them. The read-deferral below has to know which rows
+    // those are — see settleRead.
+    val isApproval: Boolean = false
 )
 
 /**
@@ -53,6 +57,15 @@ class VoiceCommandService @Inject constructor(
     private val repository: AgentEventRepository,
     private val settings: SettingsRepository
 ) {
+    companion object {
+        /**
+         * Sentinel "event id" for the always-present Inbox#Main row. It is not a real
+         * agent_event — selecting it (or replying with it active) routes a cold
+         * utterance to Inbox#Main via sendCommand instead of respond(eventId).
+         */
+        const val INBOX_MAIN_ID = -1L
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _state = MutableStateFlow(VoiceState.IDLE)
@@ -76,11 +89,40 @@ class VoiceCommandService @Inject constructor(
     val partialTranscript: StateFlow<String> = recognizer.partial
 
     private var locale: String = SettingsRepository.DEFAULT_LOCALE
-    private var pendingRespondEventId: Long? = null
 
     // FIFO of unread incoming messages; drained one at a time while IDLE.
     private val queue = ArrayDeque<VoiceMessage>()
     private val seen = mutableSetOf<Long>()
+
+    // The notice whose OWN text is being spoken right now (null while speaking a
+    // reply). This is what an interruption marks read — see interrupt(). It is also
+    // the row the Stop button belongs to: the selection can move to another row
+    // mid-read, so activeEventId would point the toggle at a row that is silent.
+    private val _speakingEventId = MutableStateFlow<Long?>(null)
+    val speakingEventId: StateFlow<Long?> = _speakingEventId
+
+    // Bumped by every interrupt(). A reply request spans a suspension point, so this is
+    // what tells its completion that the loop has already moved on without it.
+    private var currentTurn = 0L
+
+    // A read-mark held back because an OLDER notice has not been heard yet. The server
+    // keeps ONE forward-only pointer (last_read_comment_id = max(...)), so marking a
+    // notice read also claims every unread id behind it — rows can be played out of
+    // order, and doing so would burn the notices still waiting in the queue. Only the
+    // highest held id is kept: sending it later subsumes every smaller one.
+    private var deferredRead: Long? = null
+
+    // Listed rows that have been dealt with — heard, or answered by a reply the server
+    // marked read. Everything else in _messages is still owed something, whether or not
+    // it ever reached the TTS queue: with "Speak agent events" off, ingest() lists a
+    // notice without queuing it, so the queue cannot answer "what is still unread?".
+    // Pruned to the rows _messages keeps, so it stays as bounded as that list.
+    private val settledRows = mutableSetOf<Long>()
+
+    // Whether the row in _speakingEventId is an approval. Kept alongside rather than in
+    // the flow because that one is public UI state; this only exists so markSpokenRead
+    // can keep approvals out of the hold above.
+    private var speakingIsApproval = false
 
     @Volatile private var loopStarted = false
 
@@ -108,9 +150,11 @@ class VoiceCommandService @Inject constructor(
             title = event.title ?: "Collavre",
             text = event.summary,
             topicId = event.topicId,
-            createdAt = event.createdAt
+            createdAt = event.createdAt,
+            isApproval = event.isApproval
         )
         _messages.value = (listOf(msg) + _messages.value).take(20)
+        settledRows.retainAll(_messages.value.mapTo(HashSet()) { it.eventId })
         Notifications.postEvent(context, event)
         if (speakEnabled && event.speak) {
             queue.addLast(msg)
@@ -129,42 +173,183 @@ class VoiceCommandService @Inject constructor(
     private fun readThenListen(msg: VoiceMessage) {
         recognizer.reset() // start the turn with a clean caption (drop prior utterance)
         _activeEventId.value = msg.eventId
-        speak(msg.text) {
-            // Heard it → mark read so the server stops re-emitting it. Done only
-            // after TTS completes, so a crash mid-read leaves it unread to re-read.
-            scope.launch { runCatching { repository.markRead(msg.eventId) } }
-            pendingRespondEventId = msg.eventId
+        speakNotice(msg) {
+            markSpokenRead()
             listen()
         }
     }
 
-    /** Tap a list row: interrupt any in-flight turn and read that thread's last message. */
-    fun selectMessage(eventId: Long) {
-        val msg = _messages.value.firstOrNull { it.eventId == eventId } ?: return
-        if (_state.value != VoiceState.IDLE) {
-            tts.stop()
-            recognizer.stop()
-            _state.value = VoiceState.IDLE
-        }
-        readThenListen(msg)
+    /** Speak a notice's own text, remembering which one so an interruption can still
+     *  settle its read state. */
+    private fun speakNotice(msg: VoiceMessage, onDone: () -> Unit) {
+        _speakingEventId.value = msg.eventId
+        speakingIsApproval = msg.isApproval
+        speak(msg.text, onDone)
     }
 
-    /** Notification tap with an explicit event id: reply to it without re-reading. */
-    fun replyTo(eventId: Long) {
+    /**
+     * Settle the read state of the notice that was being spoken: mark it read so the
+     * server stops re-emitting it. Called when TTS finishes it AND when the user cuts
+     * it off — stopping is a deliberate "that's enough", and leaving it unread would
+     * strand it, since ingest's `seen` set suppresses the re-emitted notice for the
+     * rest of the process (it would only be spoken again after an app restart). The
+     * row keeps its play button, so a replay is one tap. A crash is different: the
+     * callback never runs, nothing is marked read, and the next poll re-reads it —
+     * at-least-once is for the unattended failure, not for an explicit stop.
+     */
+    private fun markSpokenRead() {
+        val eventId = _speakingEventId.value ?: return
+        val wasApproval = speakingIsApproval
+        _speakingEventId.value = null
+        speakingIsApproval = false
+        settleRead(eventId, wasApproval)
+    }
+
+    /**
+     * Record that a notice has been heard, and send the mark only once no OLDER notice
+     * is still owed a reading. The server's read state is a single forward-only pointer,
+     * so marking a notice played out of order reaches back over every older unread one:
+     * if the process dies before the queue drains, those sit behind the pointer and are
+     * never re-emitted. Holding the mark leaves them unread, so a death here costs a
+     * repeated reading (at-least-once) instead of a lost message — the same trade the
+     * rest of this loop takes.
+     *
+     * An APPROVAL is never held. `mark_inbox_read` returns early for a comment outside
+     * the inbox creative, and approvals live in the creative they were raised in, so
+     * their id moves no pointer. Folding one into the hold would let it win the max and
+     * be posted in place of a real notice's mark — the server would ignore it, and the
+     * notice it displaced would stay unread and be re-read on the next launch. The flush
+     * still runs: an approval finishing is progress through the queue, and it may be
+     * what a held mark was waiting on.
+     */
+    private fun settleRead(eventId: Long, isApproval: Boolean) {
+        settledRows.add(eventId)
+        if (!isApproval) deferredRead = maxOf(deferredRead ?: eventId, eventId)
+        flushRead()
+    }
+
+    /**
+     * Record that a row is dealt with WITHOUT holding its id: the server has already
+     * marked it (an in-order reply), so there is nothing left to send for it — but a
+     * mark held behind it can now go out.
+     */
+    private fun markSettled(eventId: Long) {
+        settledRows.add(eventId)
+        flushRead()
+    }
+
+    /** Send the held mark once nothing older than it is still unheard. */
+    private fun flushRead() {
+        val pending = deferredRead ?: return
+        if (pending >= oldestUnheard()) return
+        deferredRead = null
+        markRead(pending)
+    }
+
+    /**
+     * Lowest id the server still owes a reading: waiting in the queue, being spoken right
+     * now, or listed and not yet settled.
+     *
+     * That third term is not redundant. With "Speak agent events" off, ingest() lists a
+     * notice and skips the queue entirely, so nothing local claims it while it stays
+     * unread on the server — and an out-of-order reply, seeing an empty queue, would let
+     * respond() drag the forward-only pointer straight over it. The row is only in
+     * volatile UI state, so after a restart it is neither on screen nor re-emitted.
+     *
+     * Scoped to the rows _messages keeps: once a notice is trimmed off the end it is no
+     * longer visible anywhere, and holding a mark behind it forever would cost a repeated
+     * reading on every launch rather than prevent a loss. Approvals are excluded — their
+     * ids move no pointer (see settleRead) — but a QUEUED approval still counts through
+     * the queue term, the same conservative reading the play path takes.
+     */
+    private fun oldestUnheard(): Long = minOf(
+        queue.minOfOrNull { it.eventId } ?: Long.MAX_VALUE,
+        _speakingEventId.value ?: Long.MAX_VALUE,
+        _messages.value
+            .filter { !it.isApproval && it.eventId !in settledRows }
+            .minOfOrNull { it.eventId } ?: Long.MAX_VALUE
+    )
+
+    private fun markRead(eventId: Long) {
+        scope.launch { runCatching { repository.markRead(eventId) } }
+    }
+
+    /** Stop whatever is in flight so something else can start. */
+    private fun interrupt() {
+        if (_state.value == VoiceState.IDLE) return
+        tts.stop()
+        recognizer.cancel() // discard any in-flight utterance; don't post it as a reply
+        markSpokenRead()
+        // Retire the turn: a reply request may still be in flight, and its completion
+        // must not drive the session that is about to start.
+        currentTurn++
+        _state.value = VoiceState.IDLE
+    }
+
+    /** Tap a list row: mark it the selection (highlight). Reading/replying are the
+     *  explicit per-row play/reply buttons now. The Inbox#Main row is selectable too
+     *  — with it active, the mic/reply routes a cold utterance to Main. The reply
+     *  target is derived from this selection at transcript time, so re-selecting mid
+     *  read/listen redirects the in-flight reply to the highlighted row (never to a
+     *  thread other than the one shown as selected). */
+    fun selectMessage(eventId: Long) {
         _activeEventId.value = eventId
-        pendingRespondEventId = eventId
+    }
+
+    /** Play/stop toggle for a row: read this message aloud, or stop if it's already
+     *  speaking. Inbox#Main has nothing to read, so it's a no-op there. */
+    fun playMessage(eventId: Long) {
+        if (eventId == INBOX_MAIN_ID) return
+        // Already reading this one → stop and let the queue advance. Keyed on what is
+        // actually being spoken, not on the selection: tapping another row moves the
+        // selection while this read continues.
+        if (_speakingEventId.value == eventId) {
+            interrupt()
+            pump()
+            return
+        }
+        val msg = _messages.value.firstOrNull { it.eventId == eventId } ?: return
+        // Reading it here IS its turn in the queue; leaving the entry there would have
+        // the pump() below immediately read it a second time.
+        queue.removeAll { it.eventId == eventId }
+        interrupt() // whatever was mid-read settles its own read state first
+        recognizer.reset()
+        _activeEventId.value = eventId
+        speakNotice(msg) {
+            markSpokenRead()
+            _state.value = VoiceState.IDLE
+            pump()
+        }
+    }
+
+    /** Reply button (and notification tap): listen for a spoken reply to this event.
+     *  With the Inbox#Main sentinel active, the reply is a cold utterance to Main. */
+    fun replyTo(eventId: Long) {
+        interrupt() // drops the prior listen so its tail can't post to the old thread
+        // Answering a queued notice is dealing with it: drop the entry so it is not read
+        // aloud after the reply. Read state is deliberately NOT settled here — nothing has
+        // been spoken and nothing has been delivered yet, and respond() marks the notice
+        // read server-side once a reply actually lands. Marking it here would advance the
+        // inbox pointer even when the user stays silent or the request fails, leaving the
+        // notice dequeued locally AND read remotely: never re-emitted, never spoken again,
+        // surviving only in volatile UI state. Left unread it is one tap away on its row
+        // and comes back on the next launch.
+        queue.removeAll { it.eventId == eventId }
+        _activeEventId.value = eventId
         listen()
     }
 
     /** Mic button: toggle off if busy, else reply to the active message or cold-start to Inbox#Main. */
     fun pushToTalk() {
         when (_state.value) {
-            VoiceState.SPEAKING -> { tts.stop(); _state.value = VoiceState.IDLE; pump() }
-            VoiceState.LISTENING -> { recognizer.stop(); _state.value = VoiceState.IDLE; pump() }
-            else -> {
-                pendingRespondEventId = _activeEventId.value
-                listen()
-            }
+            // THINKING is busy too: a reply request is still open, and only interrupt()
+            // retires its turn. Starting a listen from here would leave that completion
+            // owning the turn, free to speak its answer, clear the selection and pump the
+            // queue on top of the new recording. Its answer still reaches the log.
+            VoiceState.SPEAKING, VoiceState.LISTENING, VoiceState.THINKING -> { interrupt(); pump() }
+            // Reply to the highlighted message, or cold-start to Inbox#Main when the
+            // Main row (or nothing) is selected — resolved from _activeEventId in onTranscript.
+            VoiceState.IDLE -> listen()
         }
     }
 
@@ -180,8 +365,7 @@ class VoiceCommandService @Inject constructor(
             onResult = { text -> onTranscript(text) },
             onError = {
                 // No speech / cancelled: don't send a reply, just advance the queue.
-                // (spec: 사용자가 아무 발화를 하지 않으면 그 메시지는 응답이 안 감)
-                pendingRespondEventId = null
+                // (spec: silence means no reply is sent for that message)
                 _state.value = VoiceState.IDLE
                 pump()
             }
@@ -189,17 +373,72 @@ class VoiceCommandService @Inject constructor(
     }
 
     private fun onTranscript(text: String) {
-        val eventId = pendingRespondEventId
-        pendingRespondEventId = null
+        // Resolve the reply target from the currently highlighted row (single source
+        // of truth): re-selecting mid read/listen redirects the reply to match the
+        // visible selection. Inbox#Main / no selection → cold utterance to Main.
+        val eventId = _activeEventId.value?.takeIf { it != INBOX_MAIN_ID }
         if (text.isBlank()) {
             _state.value = VoiceState.IDLE
             pump()
             return
         }
         _state.value = VoiceState.THINKING
+        // Answering a message is dealing with it, even when it was still waiting its turn:
+        // the selection can move to a queued row mid-listen, so the reply target is not
+        // always the row that was just read. Leaving its entry in place would have the
+        // pump() after this reply read a notice the user has already answered and listen
+        // for a second reply to it. Read state is left to respond(), which settles it
+        // server-side once the reply lands — same split as replyTo.
+        if (eventId != null) queue.removeAll { it.eventId == eventId }
+        // ...except when this reply is OUT OF ORDER. respond() advances the one
+        // forward-only inbox pointer, which reaches back over every older unread notice
+        // exactly like an out-of-order play does: answer a newer row while an older one is
+        // still queued, die before the queue drains, and the older one sits behind the
+        // pointer and is never re-emitted. Per-row reply made that ordering the user's to
+        // choose, so the reply path needs the hold the play path got: ask the server to
+        // skip the mark, then settle it here once nothing older is still unheard.
+        // ...and not for an approval, whose id the server's read pointer ignores either
+        // way: deferring one would only hand settleRead an id it must not hold.
+        //
+        // The target may be a row this process never listed: the FCM path posts a
+        // notification without going through ingest(), so a tap on it reaches replyTo()
+        // with no cached metadata. Unknown is treated as "may be an approval" — the
+        // request still asks the server to hold off (a mark it would skip for an approval
+        // anyway), but nothing is folded into deferredRead on success, because folding an
+        // approval id there is exactly what poisons the hold. The cost is that a real
+        // notice answered this way stays unread and is read out once more; the row is
+        // still on the server, which is the trade the rest of this loop takes.
+        val target = eventId?.let { id -> _messages.value.firstOrNull { it.eventId == id } }
+        val deferRead = eventId != null && target?.isApproval != true && eventId > oldestUnheard()
+        val turn = currentTurn
         scope.launch {
             val result = runCatching {
-                if (eventId != null) repository.respond(eventId, text) else repository.sendCommand(text)
+                if (eventId != null) repository.respond(eventId, text, deferRead) else repository.sendCommand(text)
+            }
+            // The reply landed, so the notice is dealt with: settle its read state through
+            // the same hold/flush path the play side uses, no matter which turn owns the
+            // loop by now — a held mark is a monotone max-fold, so settling off-turn can
+            // only bring it forward. A FAILED reply settles nothing and leaves the notice
+            // unread, which is what replyTo already counts on.
+            //
+            // When the mark was NOT deferred the server has already made it, so the row is
+            // settled too — recording that is what releases a hold that was waiting on
+            // this very notice (with speech off, replying is the only thing that ever
+            // deals with a row).
+            if (eventId != null) result.onSuccess {
+                when {
+                    deferRead && target != null -> settleRead(eventId, isApproval = false)
+                    !deferRead -> markSettled(eventId)
+                }
+            }
+            // An interruption during THINKING hands the loop to a new play/reply session
+            // while this request is still open. Everything below belongs to a turn that no
+            // longer owns the state — speaking here would talk over the new session, and
+            // pump()/clearing the selection would pull the queue and the reply target out
+            // from under it. Keep the answer in the log and stop.
+            if (turn != currentTurn) {
+                result.onSuccess { addExchange(text, it.reply) }
+                return@launch
             }
             result.onSuccess { resp ->
                 addExchange(text, resp.reply)

@@ -3,16 +3,21 @@ package com.collavre.voice.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,12 +31,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.collavre.voice.R
+import com.collavre.voice.voice.VoiceCommandService
 import com.collavre.voice.voice.VoiceMessage
 import com.collavre.voice.voice.VoiceState
 
@@ -45,15 +59,30 @@ fun MainScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val activeEventId by viewModel.activeEventId.collectAsStateWithLifecycle()
+    val speakingEventId by viewModel.speakingEventId.collectAsStateWithLifecycle()
     val partial by viewModel.partialTranscript.collectAsStateWithLifecycle()
+
+    val inboxMainTitle = stringResource(R.string.row_inbox_main)
+    val inboxMainMessage = remember(inboxMainTitle) {
+        VoiceMessage(
+            eventId = VoiceCommandService.INBOX_MAIN_ID,
+            title = inboxMainTitle,
+            text = "",
+            topicId = null,
+            createdAt = ""
+        )
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Collavre Voice") },
+                title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.action_settings)
+                        )
                     }
                 }
             )
@@ -75,13 +104,39 @@ fun MainScreen(
             LiveCaption(state = state, partial = partial)
             Spacer(Modifier.height(16.dp))
 
-            if (messages.isNotEmpty()) {
-                SectionLabel("Messages")
-                messages.forEach { msg ->
+            SectionLabel(stringResource(R.string.section_messages))
+            // Scrollable and keyed by event id: new events are prepended, so
+            // positional identity would hand a row's expand state to its neighbour.
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                // Always-present Inbox#Main row: selecting it (or no selection at all)
+                // routes the mic/reply to Inbox#Main as a cold utterance.
+                item(key = VoiceCommandService.INBOX_MAIN_ID) {
+                    MessageRow(
+                        message = inboxMainMessage,
+                        selected = activeEventId == null ||
+                            activeEventId == VoiceCommandService.INBOX_MAIN_ID,
+                        speaking = false,
+                        isInboxMain = true,
+                        onSelect = { viewModel.selectMessage(VoiceCommandService.INBOX_MAIN_ID) },
+                        onTogglePlay = {},
+                        onReply = { viewModel.replyTo(VoiceCommandService.INBOX_MAIN_ID) }
+                    )
+                }
+                items(messages, key = { it.eventId }) { msg ->
                     MessageRow(
                         message = msg,
                         selected = msg.eventId == activeEventId,
-                        onClick = { viewModel.selectMessage(msg.eventId) }
+                        // Keyed on what is actually being read: the selection can move
+                        // to another row mid-read, and a spoken reply is not a row.
+                        speaking = speakingEventId == msg.eventId,
+                        isInboxMain = false,
+                        onSelect = { viewModel.selectMessage(msg.eventId) },
+                        onTogglePlay = { viewModel.playMessage(msg.eventId) },
+                        onReply = { viewModel.replyTo(msg.eventId) }
                     )
                 }
             }
@@ -91,12 +146,14 @@ fun MainScreen(
 
 @Composable
 private fun StatusChip(state: VoiceState) {
-    val label = when (state) {
-        VoiceState.IDLE -> "Idle"
-        VoiceState.LISTENING -> "Listening…"
-        VoiceState.THINKING -> "Thinking…"
-        VoiceState.SPEAKING -> "Speaking…"
-    }
+    val label = stringResource(
+        when (state) {
+            VoiceState.IDLE -> R.string.state_idle
+            VoiceState.LISTENING -> R.string.state_listening
+            VoiceState.THINKING -> R.string.state_thinking
+            VoiceState.SPEAKING -> R.string.state_speaking
+        }
+    )
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         shape = MaterialTheme.shapes.large
@@ -111,7 +168,7 @@ private fun LiveCaption(state: VoiceState, partial: String) {
     if (state != VoiceState.LISTENING && partial.isBlank()) return
     val text = when {
         partial.isNotBlank() -> partial
-        state == VoiceState.LISTENING -> "말씀하세요…"
+        state == VoiceState.LISTENING -> stringResource(R.string.listening_prompt)
         else -> ""
     }
     Text(
@@ -140,7 +197,9 @@ private fun MicButton(state: VoiceState, onClick: () -> Unit) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 Icons.Default.Mic,
-                contentDescription = if (active) "Stop" else "Talk",
+                contentDescription = stringResource(
+                    if (active) R.string.mic_stop_listening else R.string.mic_talk
+                ),
                 modifier = Modifier.size(72.dp)
             )
         }
@@ -159,36 +218,94 @@ private fun SectionLabel(text: String) {
 }
 
 /**
- * One arrived message. Title is "Creative#Topic". Tapping reads the thread's
- * last message aloud and listens for a reply; the active row is highlighted.
+ * One row in the message list. Title is "Creative#Topic". The leading chevron
+ * expands/collapses the full message body; the trailing buttons play/stop the
+ * read-aloud and start a spoken reply. Tapping the row selects it (highlight).
+ * The Inbox#Main row carries no body, so it shows only the reply button.
  */
 @Composable
-private fun MessageRow(message: VoiceMessage, selected: Boolean, onClick: () -> Unit) {
+private fun MessageRow(
+    message: VoiceMessage,
+    selected: Boolean,
+    speaking: Boolean,
+    isInboxMain: Boolean,
+    onSelect: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onReply: () -> Unit
+) {
+    // rememberSaveable: LazyColumn disposes off-screen items, so a plain remember
+    // would silently collapse a row the user scrolled past.
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val expandable = !isInboxMain && message.text.isNotBlank()
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onSelect),
         colors = if (selected) {
             CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         } else {
             CardDefaults.cardColors()
         }
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Text(
-                message.title,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                message.text,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Leading chevron: expand/collapse the full body. Hidden (kept as spacer
+            // for alignment) when there's nothing to expand.
+            if (expandable) {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_chevron_right),
+                        contentDescription = stringResource(
+                            if (expanded) R.string.action_collapse else R.string.action_expand
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.rotate(if (expanded) 90f else 0f)
+                    )
+                }
+            } else {
+                Spacer(Modifier.size(48.dp))
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 8.dp)
+            ) {
+                Text(
+                    message.title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (message.text.isNotBlank()) {
+                    Text(
+                        message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = if (expanded) Int.MAX_VALUE else 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Trailing actions: play/stop toggle (read-aloud) + reply.
+            if (!isInboxMain) {
+                IconButton(onClick = onTogglePlay) {
+                    Icon(
+                        if (speaking) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = stringResource(
+                            if (speaking) R.string.action_stop_playback else R.string.action_play
+                        )
+                    )
+                }
+            }
+            IconButton(onClick = onReply) {
+                Icon(Icons.Default.Mic, contentDescription = stringResource(R.string.action_reply))
+            }
         }
     }
 }

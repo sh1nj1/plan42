@@ -26,7 +26,10 @@ data class AgentEvent(
 @Serializable
 data class RespondRequest(
     @SerialName("device_id") val deviceId: String,
-    val response: String
+    val response: String,
+    // Hold the server-side read mark back: the caller is answering this notice out of
+    // order and sends the mark itself once nothing older is still unheard.
+    @SerialName("defer_read") val deferRead: Boolean = false
 )
 
 @Serializable
