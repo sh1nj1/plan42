@@ -124,16 +124,15 @@ module Collavre
       fence = last_topic_save_fence
       if fence
         record.last_topic_save_fence_applied = fence
-        return
-      end
-
-      # Any unfenced PATCH can come from a client running the previous bundle.
-      # It supersedes every fence issued before it, so retire them before a
-      # delayed fenced save can overwrite it.
-      if fence.nil?
+      else
+        # Any unfenced PATCH can come from a client running the previous bundle.
+        # It supersedes every fence issued before it, so retire them before a
+        # delayed fenced save can overwrite it.
         record.last_topic_save_fence_applied = record.last_topic_save_fence_issued.to_i
       end
 
+      # Fenced saves must update this too. A same-session fallback PATCH can
+      # outlive an earlier request and must remain ordered behind it.
       session_id, sequence = last_topic_save_order
       return unless session_id.present?
 
