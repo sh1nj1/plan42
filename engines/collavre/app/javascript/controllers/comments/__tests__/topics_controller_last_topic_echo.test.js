@@ -146,6 +146,41 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 	expect(controller.pendingSelfEchoAcknowledgementVersions.has(clientIdFor('2'))).toBe(false)
   })
 
+	test('an early echo keeps its save order for a reopened load with a later request number', async () => {
+		let resolveSave
+		let resolveSnapshot
+		controller.lastKnownRemoteTopicId = '1'
+		saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+		controller.selectTopic('2')
+		const save = controller.flushSaveLastTopic('2')
+		await Promise.resolve()
+
+		controller.onPopupClosed()
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+		const reopen = controller.onPopupOpened({ creativeId: '42' })
+		await Promise.resolve()
+
+		selfEcho('2')
+		resolveSave(true)
+		await save
+		resolveSnapshot({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				main_topic_id: '1',
+				effective_creative_id: '42',
+			}),
+		})
+		await reopen
+
+		expect(controller.currentTopicId).toBe('2')
+		expect(controller.serverLastTopicId).toBe('2')
+	})
+
   // Pick Alpha, let its debounced save go out, then pick Beta before the echo
   // for Alpha gets back. The echo names the topic the user has just left.
   test('a pick made before the echo lands is not reverted by it', async () => {
@@ -440,6 +475,33 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
 		expect(controller.currentTopicId).toBe('2')
 		resolveSave(true)
 		await save
+	})
+
+	test('a new creative records its own snapshot baseline before its first save', async () => {
+		let resolveSnapshot
+		controller.lastKnownRemoteTopicId = '3'
+		controller.creativeIdValue = '99'
+		controller._renderedCreativeId = '99'
+		global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+
+		const load = controller.loadTopics()
+		controller.selectTopic('2')
+		resolveSnapshot({
+			ok: true,
+			json: async () => ({
+				topics: TOPICS,
+				archived_topics: [],
+				can_manage: true,
+				last_topic_id: '1',
+				main_topic_id: '1',
+				effective_creative_id: '99',
+			}),
+		})
+		await load
+
+		expect(controller.lastKnownRemoteTopicId).toBe('1')
+		await controller.flushSaveLastTopic('2')
+		expect(controller.pendingSelfEchoPreviousTopicIds.get(clientIdFor('2'))).toBe('1')
 	})
 
   test('a reopen keeps a newer server preference after a closed save completed', async () => {

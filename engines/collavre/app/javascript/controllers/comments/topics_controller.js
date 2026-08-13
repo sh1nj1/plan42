@@ -190,7 +190,7 @@ export default class extends Controller {
 		// Remember which local saves had been acknowledged when this load
 		// started so their retained claims can still outrank that older view.
 		const acknowledgedSaveVersion = this.saveAcknowledgementVersion
-		this.activeLoadVersions.add(version)
+		this.activeLoadAcknowledgementVersions.set(version, acknowledgedSaveVersion)
         const creativeId = this.creativeId
         // Clear stale topics from previous creative to prevent name-based
         // dedupe in handleTopicMessage from blocking valid broadcasts
@@ -258,8 +258,8 @@ export default class extends Controller {
 					// claim created after this load records what its pending save
 					// actually supersedes. Never replace a newer Action Cable or
 					// acknowledged-save baseline with this older response.
-					if (this.lastKnownRemoteTopicId === undefined) {
-						this.lastKnownRemoteTopicId = snapshotTopicId
+					if (this.lastKnownRemoteTopicIdFor(effectiveCreativeId) === undefined) {
+						this.setLastKnownRemoteTopicId(effectiveCreativeId, snapshotTopicId)
 					}
                 } else {
 					const pendingTopicId = this.latestPendingSelfEchoTopicIdFor(
@@ -272,7 +272,7 @@ export default class extends Controller {
 						// A retained claim proves this response was an older view of
 						// the preference. Do not let that stale snapshot roll back
 						// the baseline used by the next save's closed-reopen check.
-						this.lastKnownRemoteTopicId = snapshotTopicId
+						this.setLastKnownRemoteTopicId(effectiveCreativeId, snapshotTopicId)
 					} else {
 						this.serverLastTopicId = pendingTopicId
 					}
@@ -302,7 +302,7 @@ export default class extends Controller {
             console.error("Failed to load topics", e)
             throw e
 		} finally {
-			this.activeLoadVersions.delete(version)
+			this.activeLoadAcknowledgementVersions.delete(version)
 			this.discardSettledSelfEchoesNoLongerNeeded()
         }
     }
@@ -1353,9 +1353,9 @@ export default class extends Controller {
                 this.pendingSelfEchoTopicIds.set(clientId, id ? String(id) : "")
 				this.pendingSelfEchoPreviousTopicIds.set(
 					clientId,
-					this.lastKnownRemoteTopicId === undefined
+					this.lastKnownRemoteTopicIdFor(effectiveCreativeId) === undefined
 						? (this.serverLastTopicId ? String(this.serverLastTopicId) : "")
-						: this.lastKnownRemoteTopicId
+						: this.lastKnownRemoteTopicIdFor(effectiveCreativeId)
 				)
 				// A save can wait behind another request while the popup closes. It
 				// takes its claim only when the queue reaches it, after the close
@@ -1389,7 +1389,7 @@ export default class extends Controller {
 					// cannot settle this claim.
 					// This completed save is also the remote baseline for the next
 					// queued save, which may have claimed after the popup closed.
-					this.lastKnownRemoteTopicId = topicId
+					this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
 					this.releasePendingSelfEcho(clientId)
 				} else {
 					// The replacement subscription may have been active before this
@@ -1406,7 +1406,7 @@ export default class extends Controller {
 					// the baseline at broadcast time, and another message may
 					// have advanced it before the HTTP response arrived.
 					if (hasPendingSelfEcho) {
-						this.lastKnownRemoteTopicId = topicId
+						this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
 					}
 					this.acknowledgePendingSelfEcho(clientId)
 				}
@@ -1470,12 +1470,13 @@ export default class extends Controller {
 	// An early echo can be the only proof that an in-flight GET predates a
 	// committed save. Once every GET that started before it has finished, the
 	// tombstone has no ordering work left and must not accumulate in a long-lived
-	// popup controller.
+	// popup controller. Compare the save version captured by each active load,
+	// not its unrelated request sequence number.
 	discardSettledSelfEchoesNoLongerNeeded() {
 		for (const clientId of [...this.settledSelfEchoes]) {
 			const acknowledgementVersion = this.pendingSelfEchoAcknowledgementVersions.get(clientId)
-			const hasOlderLoad = [...this.activeLoadVersions].some(
-				loadVersion => loadVersion < acknowledgementVersion
+			const hasOlderLoad = [...this.activeLoadAcknowledgementVersions.values()].some(
+				loadAcknowledgementVersion => loadAcknowledgementVersion < acknowledgementVersion
 			)
 			if (!hasOlderLoad) this.discardSelfEchoMetadata(clientId)
 		}
@@ -1498,13 +1499,25 @@ export default class extends Controller {
     }
 
 	// The last preference observed from the server is the baseline for a save.
-	// A reopening GET that differs from it has seen another session's newer
-	// write, not a stale pre-save snapshot, and must win over the retained claim.
+	// It belongs to an effective creative stream: a controller can move between
+	// creatives before the next fetch resolves, and one stream's preference is
+	// never evidence about another stream.
 	get lastKnownRemoteTopicId() {
-		return this._lastKnownRemoteTopicId
+		return this.lastKnownRemoteTopicIdFor(this.effectiveCreativeId)
 	}
 
 	set lastKnownRemoteTopicId(value) {
+		this.setLastKnownRemoteTopicId(this.effectiveCreativeId, value)
+	}
+
+	lastKnownRemoteTopicIdFor(creativeId) {
+		if (this._lastKnownRemoteTopicCreativeId !== String(creativeId)) return undefined
+
+		return this._lastKnownRemoteTopicId
+	}
+
+	setLastKnownRemoteTopicId(creativeId, value) {
+		this._lastKnownRemoteTopicCreativeId = String(creativeId)
 		this._lastKnownRemoteTopicId = value ? String(value) : ""
 	}
 
@@ -1522,8 +1535,8 @@ export default class extends Controller {
 		return this._settledSelfEchoes || (this._settledSelfEchoes = new Set())
 	}
 
-	get activeLoadVersions() {
-		return this._activeLoadVersions || (this._activeLoadVersions = new Set())
+	get activeLoadAcknowledgementVersions() {
+		return this._activeLoadAcknowledgementVersions || (this._activeLoadAcknowledgementVersions = new Map())
 	}
 
 	get saveAcknowledgementVersion() {
@@ -1704,6 +1717,9 @@ export default class extends Controller {
 		const requestedId = String(requestedCreativeId)
 		const resolvedId = String(effectiveCreativeId)
 		if (requestedId === resolvedId) return
+		if (this._lastKnownRemoteTopicCreativeId === requestedId) {
+			this._lastKnownRemoteTopicCreativeId = resolvedId
+		}
 
 		for (const clientId of [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ]) {
 			if (this.pendingSelfEchoCreativeIds.get(clientId) === requestedId) {
@@ -1733,10 +1749,10 @@ export default class extends Controller {
 			// Broadcast is already scoped to the current user via user-specific channel
 			const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
 			if (this.consumeSelfEcho(data.client_id)) {
-				this.lastKnownRemoteTopicId = newTopicId
+				this.setLastKnownRemoteTopicId(this.effectiveCreativeId, newTopicId)
 				return
 			}
-			this.lastKnownRemoteTopicId = newTopicId
+			this.setLastKnownRemoteTopicId(this.effectiveCreativeId, newTopicId)
 			// A deep-link restore may have queued a write even when this broadcast
 			// repeats the preference already in serverLastTopicId. The sibling
 			// session still established that preference, so the queued one-shot link
