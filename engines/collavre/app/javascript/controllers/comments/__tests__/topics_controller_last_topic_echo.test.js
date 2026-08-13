@@ -72,6 +72,7 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
   })
 
   afterEach(() => {
+    controller.cancelPendingSaveLastTopic()
     global.fetch = originalFetch
     document.body.innerHTML = ''
     application.stop()
