@@ -84,7 +84,10 @@ export default class extends Controller {
       this.highlight(null)
       return
     }
-    if (!state.current_step) return
+    if (!state.current_step) {
+      this.removeCard()
+      return
+    }
     this.currentStepValue = state.current_step
     if (state.navigation_path && this.currentPath() !== state.navigation_path) {
       this.navigate(state.navigation_path)
@@ -102,6 +105,12 @@ export default class extends Controller {
 
     this.sessionIdValue = sessionId
     this.workspaceTreeDismissed = this.workspaceTreeWasDismissed()
+  }
+
+  removeCard() {
+    this.currentStepValue = ''
+    this.highlight(null)
+    this.element.remove()
   }
 
   renderSteps(currentStep, completedSteps) {

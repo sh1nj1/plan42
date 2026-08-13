@@ -286,6 +286,15 @@ describe('OnboardingCardController', () => {
     expect(request.body).toBe(JSON.stringify({ session_id: 'replacement-session' }))
   })
 
+  test('removes the stale card when its onboarding session disappears', async () => {
+    state = { current_step: null }
+
+    await controller.refresh()
+
+    expect(controller.element.isConnected).toBe(false)
+    expect(document.querySelector('[data-guide-anchor="tree.node"]').classList.contains('guide-anchor-highlight')).toBe(false)
+  })
+
   test('completes through Turbo when a redirect is returned', async () => {
     const visit = jest.fn()
     window.Turbo = { visit }
