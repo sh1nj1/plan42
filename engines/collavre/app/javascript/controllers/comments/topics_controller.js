@@ -1280,8 +1280,13 @@ export default class extends Controller {
 
     debounceSaveLastTopic(id) {
         this.cancelPendingSaveLastTopic()
+		// A linked shell can close before this debounce fires. Closing clears
+		// the cached effective origin, and reopening another shell before the
+		// callback runs would otherwise claim that shell's raw id even though
+		// the save belongs to the stream selected here.
+		const effectiveCreativeId = this.effectiveCreativeId
         this._saveLastTopicTimer = setTimeout(() => {
-            this.flushSaveLastTopic(id)
+			this.flushSaveLastTopic(id, effectiveCreativeId)
         }, 500)
     }
 
@@ -1295,12 +1300,12 @@ export default class extends Controller {
         }
     }
 
-    async flushSaveLastTopic(id) {
+    async flushSaveLastTopic(id, claimedEffectiveCreativeId = this.effectiveCreativeId) {
         this.cancelPendingSaveLastTopic()
         if (!this.creativeId) return
 
         const creativeId = this.creativeId
-        const effectiveCreativeId = this.effectiveCreativeId
+		const effectiveCreativeId = claimedEffectiveCreativeId
         const clientId = newClientId()
         // The subscription the echo of this save would arrive on. The claim is
         // taken inside the callback below, which runs whenever the save ahead

@@ -474,6 +474,33 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('3')
   })
 
+  test('a debounced linked-shell save retains its resolved stream after close and sibling reopen', async () => {
+    let resolveSave
+    jest.useFakeTimers()
+    try {
+      controller.creativeIdValue = '77'
+      controller.element.dataset.effectiveCreativeId = '42'
+      saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+
+      controller.selectTopic('2')
+      controller.onPopupClosed()
+      controller.loadTopics = jest.fn()
+      controller.onPopupOpened({ creativeId: '88' })
+      await jest.advanceTimersByTimeAsync(500)
+
+      const oldSaveClientId = clientIdFor('2')
+      expect(controller.pendingSelfEchoCreativeIds.get(oldSaveClientId)).toBe('42')
+
+      controller.selectTopic('3')
+      echo('2', oldSaveClientId)
+
+      expect(controller.currentTopicId).toBe('3')
+      resolveSave(true)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   test('a legacy migration echo is correlated with a later pick', async () => {
     localStorage.setItem('collavre_creative_42_last_topic', '2')
     controller.serverLastTopicId = ''
