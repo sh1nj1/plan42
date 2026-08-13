@@ -117,15 +117,28 @@ module Collavre
       public_comments = creative.comments.public_only.where(topic: topic)
       next_public_id = public_comments.where("id > ?", effective_id).minimum(:id)
 
-      query = CommentReadPointer.where(creative: creative, topic: topic)
+      query = CommentReadPointer.where(creative: creative)
                                 .where("last_read_comment_id >= ?", effective_id)
 
       query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id
 
-      pointers = query.includes(user: { avatar_attachment: :blob }).to_a
+      pointers = receipt_pointers_for_topic(query, creative, topic).includes(user: { avatar_attachment: :blob }).to_a
       readable_user_ids = CreativeShare.readable_user_ids_from_shares(creative, pointers.map(&:user_id)).to_set
 
       pointers.select { |pointer| readable_user_ids.include?(pointer.user_id) }.map(&:user)
+    end
+
+    # The retained legacy pointer is authoritative for a named topic until the
+    # user has a pointer for that topic. Keep the live Turbo update aligned with
+    # ReadReceiptIndex so it does not remove a valid fallback receipt.
+    def receipt_pointers_for_topic(query, creative, topic)
+      return query.where(topic: nil) unless topic
+
+      named_pointers = query.where(topic: topic)
+      named_pointer_user_ids = CommentReadPointer.where(creative: creative, topic: topic).select(:user_id)
+      legacy_pointers = query.where(topic: nil).where.not(user_id: named_pointer_user_ids)
+
+      named_pointers.or(legacy_pointers)
     end
   end
 end

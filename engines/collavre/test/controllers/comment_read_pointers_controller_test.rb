@@ -169,6 +169,23 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     refute_includes read_by_users, revoked_reader
   end
 
+  test "topic read receipt broadcasts include legacy fallback readers" do
+    topic = @creative.main_topic
+    comment = Comment.create!(creative: @creative, topic: topic, user: users(:two), content: "public")
+    legacy_reader = User.create!(email: "legacy-reader@example.test", password: "password", name: "Legacy reader")
+    CreativeShare.create!(creative: @creative, user: legacy_reader, shared_by: @user, permission: :read)
+    CommentReadPointer.create!(user: legacy_reader, creative: @creative, last_read_comment: comment)
+
+    broadcasts = []
+    Turbo::StreamsChannel.stub(:broadcast_update_to, ->(*args, **kwargs) { broadcasts << kwargs }) do
+      post "/comment_read_pointers/update", params: { creative_id: @creative.id, topic_id: topic.id }, as: :json
+    end
+
+    assert_response :success
+    read_by_users = broadcasts.last.fetch(:locals).fetch(:read_by_users)
+    assert_includes read_by_users, legacy_reader
+  end
+
   test "rejects a topic from another creative" do
     foreign_topic = Creative.create!(user: @user, description: "Foreign").main_topic
 
