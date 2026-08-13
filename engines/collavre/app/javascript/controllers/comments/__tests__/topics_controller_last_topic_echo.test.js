@@ -279,7 +279,27 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.currentTopicId).toBe('3')
     resolveSave(true)
     await save
-    expect(controller.pendingSelfEchoes).toEqual([])
+    expect(controller.pendingSelfEchoes).toHaveLength(1)
+  })
+
+  test('a response after reopening keeps its claim until the delayed echo lands', async () => {
+    let resolveSave
+    saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+    controller.selectTopic('2')
+    const save = controller.flushSaveLastTopic('2')
+    await Promise.resolve()
+
+    controller.onPopupClosed()
+    controller.loadTopics = jest.fn()
+    controller.onPopupOpened({ creativeId: '42' })
+    controller.selectTopic('3')
+
+    resolveSave(true)
+    await save
+    expect(controller.pendingSelfEchoes).toHaveLength(1)
+
+    selfEcho('2')
+    expect(controller.currentTopicId).toBe('3')
   })
 
 	test('a closed later save keeps the previous locally committed preference', async () => {

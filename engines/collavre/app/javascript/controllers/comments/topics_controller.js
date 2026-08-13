@@ -1335,9 +1335,16 @@ export default class extends Controller {
             const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
 			const topicId = id ? String(id) : ""
             if (claimed && saved === true) {
-				if (this.possiblyMissedPendingSelfEchoes.has(clientId)) {
+				if (this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) {
+					// update_last_topic broadcasts before it returns. With the popup
+					// still closed, that echo was necessarily sent into the gap and
+					// cannot settle this claim.
 					this.releasePendingSelfEcho(clientId)
 				} else {
+					// The replacement subscription may have been active before this
+					// response beat the WebSocket message back to the browser. Keep the
+					// id to consume that echo, but do not use this acknowledged claim to
+					// override a later reopen snapshot.
 					// A completed save establishes the server value that the
 					// next claim was made from. Without moving this baseline,
 					// a later closed save compares its reopen snapshot to a
@@ -1417,9 +1424,10 @@ export default class extends Controller {
 		return this._pendingSelfEchoPreviousTopicIds || (this._pendingSelfEchoPreviousTopicIds = new Map())
 	}
 
-	// These claims were already in flight when the popup unsubscribed. A success
-	// response for one proves its broadcast happened during that gap, so it can
-	// no longer arrive on the replacement subscription.
+	// These claims were already in flight when the popup unsubscribed. If their
+	// response arrives while the popup remains closed, the broadcast necessarily
+	// went into that gap. A replacement subscription can receive an echo when it
+	// reopens before the response arrives, though.
     get possiblyMissedPendingSelfEchoes() {
 		return this._possiblyMissedPendingSelfEchoes || (this._possiblyMissedPendingSelfEchoes = new Set())
 	}
@@ -1442,6 +1450,7 @@ export default class extends Controller {
 
     acknowledgePendingSelfEcho(clientId) {
 		if (this.pendingSelfEchoes.includes(clientId)) {
+			this.possiblyMissedPendingSelfEchoes.delete(clientId)
 			this.acknowledgedPendingSelfEchoes.add(clientId)
 		}
     }
