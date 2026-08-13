@@ -108,7 +108,11 @@ module Collavre
     # only recognized ordering ids take this fencing path.
     def stale_last_topic_save?(record)
       fence = last_topic_save_fence
-      return record.last_topic_save_fence_applied.to_i >= fence if fence
+      if fence
+        return true if fence > record.last_topic_save_fence_issued.to_i
+
+        return record.last_topic_save_fence_applied.to_i >= fence
+      end
 
       session_id, sequence = last_topic_save_order
       return false unless session_id.present?

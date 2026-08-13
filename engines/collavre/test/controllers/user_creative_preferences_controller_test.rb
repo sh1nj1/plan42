@@ -304,6 +304,29 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_equal latest_fence, preference.last_topic_save_fence_applied
   end
 
+  test "update_last_topic rejects a fence that was not issued" do
+    topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Topic")
+    path = "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic"
+
+    post path, as: :json
+    issued_fence = response.parsed_body.fetch("last_topic_save_fence")
+    stream = Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")
+
+    assert_no_broadcasts(stream) do
+      patch path,
+            params: { last_topic_id: topic.id, last_topic_save_fence: 9_223_372_036_854_775_807 },
+            as: :json
+    end
+
+    assert_response :success
+    assert_equal false, response.parsed_body["success"]
+    assert_equal true, response.parsed_body["stale_last_topic_save"]
+    preference = Collavre::UserCreativePreference.find_by!(creative: @creative, user: @user)
+    assert_nil preference.last_topic_id
+    assert_equal issued_fence, preference.last_topic_save_fence_issued
+    assert_equal 0, preference.last_topic_save_fence_applied
+  end
+
   test "update_last_topic rejects topic from another creative" do
     other_creative = Collavre::Creative.create!(user: @user, description: "Other")
     other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Foreign Topic")
