@@ -47,6 +47,7 @@ export default class extends Controller {
     }
 
     onPopupOpened({ creativeId }) {
+		this._preservingSelfEchoesForReopen = false
         const previousCreativeId = this.creativeIdValue
         this.creativeIdValue = creativeId
         // Clear stale cached state from the previous creative — otherwise
@@ -72,15 +73,16 @@ export default class extends Controller {
             // creative must not veto this one's restored selection.
             this.archivedAwayTopicId = null
         }
-        // A retained claim is keyed by the effective stream id. This preserves
-        // a linked shell reopening at its origin while still releasing claims
-        // as soon as the requested creative is certainly different.
-        this.dropPendingSelfEchoesForOtherCreatives(creativeId)
+		// Do not prune retained claims until loadTopics() has resolved this
+		// requested creative to its effective stream id. A linked shell and
+		// its origin use the same TopicsChannel stream, but only the response
+		// tells us that after this cached value has been cleared.
         this.subscribe()
         return this.loadTopics()
     }
 
     onPopupClosed() {
+		this._preservingSelfEchoesForReopen = true
         this._loadTopicsVersion += 1
         // The same creative can reopen before an in-flight save broadcasts.
         // Keep that save's claim so its delayed echo remains recognisable on
@@ -1314,6 +1316,10 @@ export default class extends Controller {
             // that delayed echo. An HTTP failure is definitive, however, and
             // update_last_topic returns before broadcasting in that case.
             const saved = await saveLastTopic(creativeId, id || null, clientId).catch(() => null)
+            if (claimed && saved === true) {
+                if (this._preservingSelfEchoesForReopen) this.releasePendingSelfEcho(clientId)
+                else this.acknowledgePendingSelfEcho(clientId)
+            }
             if (claimed && saved === false) this.releasePendingSelfEcho(clientId)
             const topicId = id ? String(id) : ""
             if (saved !== false && this._pendingPick &&
@@ -1342,6 +1348,7 @@ export default class extends Controller {
         this.pendingSelfEchoes.splice(index, 1)
         this.pendingSelfEchoCreativeIds.delete(clientId)
         this.pendingSelfEchoTopicIds.delete(clientId)
+		this.acknowledgedPendingSelfEchoes.delete(clientId)
         return true
     }
 
@@ -1361,10 +1368,25 @@ export default class extends Controller {
         return this._pendingSelfEchoTopicIds || (this._pendingSelfEchoTopicIds = new Map())
     }
 
+	// A successful response proves the request committed. A close before the
+	// response means the matching broadcast was missed and can be retired; an
+	// open popup keeps its id long enough to consume an echo still in flight,
+	// without allowing it to override a later reopen snapshot.
+    get acknowledgedPendingSelfEchoes() {
+		return this._acknowledgedPendingSelfEchoes || (this._acknowledgedPendingSelfEchoes = new Set())
+    }
+
+    acknowledgePendingSelfEcho(clientId) {
+		if (this.pendingSelfEchoes.includes(clientId)) {
+			this.acknowledgedPendingSelfEchoes.add(clientId)
+		}
+    }
+
     latestPendingSelfEchoTopicIdFor(creativeId) {
         const streamCreativeId = String(creativeId)
         for (const clientId of [...this.pendingSelfEchoes].reverse()) {
-            if (this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId) {
+			if (this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
+				!this.acknowledgedPendingSelfEchoes.has(clientId)) {
                 return this.pendingSelfEchoTopicIds.get(clientId)
             }
         }
@@ -1431,6 +1453,7 @@ export default class extends Controller {
         this.pendingSelfEchoes.length = 0
         this.pendingSelfEchoCreativeIds.clear()
         this.pendingSelfEchoTopicIds.clear()
+		this.acknowledgedPendingSelfEchoes.clear()
         // Emptying the array cannot reach a claim that has not been taken yet.
         // A save waiting its turn on the chain takes one when it runs, and by
         // then this stream is gone; the generation is how that queued save
