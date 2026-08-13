@@ -1509,19 +1509,32 @@ export default class extends Controller {
 
 	latestPendingSelfEchoTopicIdFor(creativeId, snapshotTopicId, acknowledgedSaveVersion) {
         const streamCreativeId = String(creativeId)
-        for (const clientId of [...this.pendingSelfEchoes].reverse()) {
-			const acknowledgedAfterLoadStarted =
-				this.acknowledgedPendingSelfEchoes.has(clientId) &&
-				this.pendingSelfEchoAcknowledgementVersions.get(clientId) > acknowledgedSaveVersion
-			if (this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId &&
-				(!this.acknowledgedPendingSelfEchoes.has(clientId) || acknowledgedAfterLoadStarted) &&
-				this.pendingSelfEchoPreviousTopicIds.get(clientId) === snapshotTopicId) {
-                return this.pendingSelfEchoTopicIds.get(clientId)
-            }
-        }
+		let topicId = snapshotTopicId
+		let found = false
+		const remainingClaimIds = new Set(this.pendingSelfEchoes)
 
-        return undefined
-    }
+		// Saves are serialized, so each claim records the topic written by the
+		// previous claim. A stale response can predate more than one completed
+		// save; follow that chain instead of restoring only its first successor.
+		// A claim acknowledged before this load began describes an older snapshot
+		// and cannot advance it.
+		for (;;) {
+			const clientId = this.pendingSelfEchoes.find(id => {
+				if (!remainingClaimIds.has(id)) return false
+				const acknowledgedAfterLoadStarted =
+					this.acknowledgedPendingSelfEchoes.has(id) &&
+					this.pendingSelfEchoAcknowledgementVersions.get(id) > acknowledgedSaveVersion
+				return this.pendingSelfEchoCreativeIds.get(id) === streamCreativeId &&
+					(!this.acknowledgedPendingSelfEchoes.has(id) || acknowledgedAfterLoadStarted) &&
+					this.pendingSelfEchoPreviousTopicIds.get(id) === topicId
+			})
+			if (!clientId) return found ? topicId : undefined
+
+			found = true
+			remainingClaimIds.delete(clientId)
+			topicId = this.pendingSelfEchoTopicIds.get(clientId)
+		}
+	}
 
 	// A pick made before this replacement load normally outranks its answer: the
 	// answer may simply predate the save. A claim that was in flight across a
