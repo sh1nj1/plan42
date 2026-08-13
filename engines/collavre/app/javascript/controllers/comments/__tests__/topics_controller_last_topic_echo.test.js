@@ -113,6 +113,39 @@ describe('TopicsController vs. the echo of its own last_topic save', () => {
     expect(controller.pendingSelfEchoAcknowledgementVersions.has(clientId)).toBe(false)
   })
 
+  test('an early echo keeps its save order until an older load is processed', async () => {
+	let resolveSave
+	let resolveSnapshot
+	controller.lastKnownRemoteTopicId = '1'
+	saveLastTopic.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
+	global.fetch = jest.fn(() => new Promise((resolve) => { resolveSnapshot = resolve }))
+
+	const load = controller.loadTopics()
+	controller.selectTopic('2')
+	const save = controller.flushSaveLastTopic('2')
+	await Promise.resolve()
+
+	selfEcho('2')
+	resolveSave(true)
+	await save
+	resolveSnapshot({
+		ok: true,
+		json: async () => ({
+			topics: TOPICS,
+			archived_topics: [],
+			can_manage: true,
+			last_topic_id: '1',
+			main_topic_id: '1',
+			effective_creative_id: '42',
+		}),
+	})
+	await load
+
+	expect(controller.currentTopicId).toBe('2')
+	expect(controller.serverLastTopicId).toBe('2')
+	expect(controller.pendingSelfEchoAcknowledgementVersions.has(clientIdFor('2'))).toBe(false)
+  })
+
   // Pick Alpha, let its debounced save go out, then pick Beta before the echo
   // for Alpha gets back. The echo names the topic the user has just left.
   test('a pick made before the echo lands is not reverted by it', async () => {

@@ -190,6 +190,7 @@ export default class extends Controller {
 		// Remember which local saves had been acknowledged when this load
 		// started so their retained claims can still outrank that older view.
 		const acknowledgedSaveVersion = this.saveAcknowledgementVersion
+		this.activeLoadVersions.add(version)
         const creativeId = this.creativeId
         // Clear stale topics from previous creative to prevent name-based
         // dedupe in handleTopicMessage from blocking valid broadcasts
@@ -292,6 +293,9 @@ export default class extends Controller {
         } catch (e) {
             console.error("Failed to load topics", e)
             throw e
+		} finally {
+			this.activeLoadVersions.delete(version)
+			this.discardSettledSelfEchoesNoLongerNeeded()
         }
     }
 
@@ -1416,7 +1420,24 @@ export default class extends Controller {
     consumeSelfEcho(clientId) {
         if (!clientId) return false
 
-        return this.releasePendingSelfEcho(clientId)
+		const index = this.pendingSelfEchoes.indexOf(clientId)
+		if (index === -1) return false
+
+		// An echo proves the save committed even when it wins the race with its
+		// HTTP response. Keep its ordering data only while an older GET can still
+		// arrive; otherwise that GET could restore the pre-save preference after
+		// the response has cleared _pendingPick.
+		this.saveAcknowledgementVersion += 1
+		this.pendingSelfEchoAcknowledgementVersions.set(
+			clientId,
+			this.saveAcknowledgementVersion
+		)
+		this.acknowledgedPendingSelfEchoes.add(clientId)
+		this.pendingSelfEchoes.splice(index, 1)
+		this.possiblyMissedPendingSelfEchoes.delete(clientId)
+		this.settledSelfEchoes.add(clientId)
+		this.discardSettledSelfEchoesNoLongerNeeded()
+		return true
     }
 
     releasePendingSelfEcho(clientId) {
@@ -1424,13 +1445,32 @@ export default class extends Controller {
         if (index === -1) return false
 
         this.pendingSelfEchoes.splice(index, 1)
+		this.discardSelfEchoMetadata(clientId)
+		return true
+	}
+
+	discardSelfEchoMetadata(clientId) {
         this.pendingSelfEchoCreativeIds.delete(clientId)
         this.pendingSelfEchoTopicIds.delete(clientId)
 		this.pendingSelfEchoPreviousTopicIds.delete(clientId)
 		this.pendingSelfEchoAcknowledgementVersions.delete(clientId)
 		this.possiblyMissedPendingSelfEchoes.delete(clientId)
 		this.acknowledgedPendingSelfEchoes.delete(clientId)
-        return true
+		this.settledSelfEchoes.delete(clientId)
+	}
+
+	// An early echo can be the only proof that an in-flight GET predates a
+	// committed save. Once every GET that started before it has finished, the
+	// tombstone has no ordering work left and must not accumulate in a long-lived
+	// popup controller.
+	discardSettledSelfEchoesNoLongerNeeded() {
+		for (const clientId of [...this.settledSelfEchoes]) {
+			const acknowledgementVersion = this.pendingSelfEchoAcknowledgementVersions.get(clientId)
+			const hasOlderLoad = [...this.activeLoadVersions].some(
+				loadVersion => loadVersion < acknowledgementVersion
+			)
+			if (!hasOlderLoad) this.discardSelfEchoMetadata(clientId)
+		}
     }
 
     // Ids of saves this client has made and not yet seen come back. The echo of
@@ -1466,6 +1506,16 @@ export default class extends Controller {
 
 	get pendingSelfEchoAcknowledgementVersions() {
 		return this._pendingSelfEchoAcknowledgementVersions || (this._pendingSelfEchoAcknowledgementVersions = new Map())
+	}
+
+	// Echoes normally remove their claims. A short-lived tombstone retains the
+	// save order for GETs already in progress when the echo arrived.
+	get settledSelfEchoes() {
+		return this._settledSelfEchoes || (this._settledSelfEchoes = new Set())
+	}
+
+	get activeLoadVersions() {
+		return this._activeLoadVersions || (this._activeLoadVersions = new Set())
 	}
 
 	get saveAcknowledgementVersion() {
@@ -1511,7 +1561,8 @@ export default class extends Controller {
         const streamCreativeId = String(creativeId)
 		let topicId = snapshotTopicId
 		let found = false
-		const remainingClaimIds = new Set(this.pendingSelfEchoes)
+		const orderingClaimIds = [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ]
+		const remainingClaimIds = new Set(orderingClaimIds)
 
 		// Saves are serialized, so each claim records the topic written by the
 		// previous claim. A stale response can predate more than one completed
@@ -1519,7 +1570,7 @@ export default class extends Controller {
 		// A claim acknowledged before this load began describes an older snapshot
 		// and cannot advance it.
 		for (;;) {
-			const clientId = this.pendingSelfEchoes.find(id => {
+			const clientId = orderingClaimIds.find(id => {
 				if (!remainingClaimIds.has(id)) return false
 				const acknowledgedAfterLoadStarted =
 					this.acknowledgedPendingSelfEchoes.has(id) &&
@@ -1619,6 +1670,7 @@ export default class extends Controller {
 		this.pendingSelfEchoAcknowledgementVersions.clear()
 		this.possiblyMissedPendingSelfEchoes.clear()
 		this.acknowledgedPendingSelfEchoes.clear()
+		this.settledSelfEchoes.clear()
         // Emptying the array cannot reach a claim that has not been taken yet.
         // A save waiting its turn on the chain takes one when it runs, and by
         // then this stream is gone; the generation is how that queued save
@@ -1628,9 +1680,11 @@ export default class extends Controller {
 
     dropPendingSelfEchoesForOtherCreatives(creativeId) {
         const currentCreativeId = String(creativeId)
-        for (const clientId of [...this.pendingSelfEchoes]) {
+		for (const clientId of [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ]) {
             if (this.pendingSelfEchoCreativeIds.get(clientId) !== currentCreativeId) {
-                this.releasePendingSelfEcho(clientId)
+				const index = this.pendingSelfEchoes.indexOf(clientId)
+				if (index !== -1) this.pendingSelfEchoes.splice(index, 1)
+				this.discardSelfEchoMetadata(clientId)
             }
         }
     }
@@ -1643,7 +1697,7 @@ export default class extends Controller {
 		const resolvedId = String(effectiveCreativeId)
 		if (requestedId === resolvedId) return
 
-		for (const clientId of this.pendingSelfEchoes) {
+		for (const clientId of [ ...this.pendingSelfEchoes, ...this.settledSelfEchoes ]) {
 			if (this.pendingSelfEchoCreativeIds.get(clientId) === requestedId) {
 				this.pendingSelfEchoCreativeIds.set(clientId, resolvedId)
 			}
