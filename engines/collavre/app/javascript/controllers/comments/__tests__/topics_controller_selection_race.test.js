@@ -759,4 +759,67 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
 
     expect(controller.currentTopicId).toBe('1')
   })
+
+  // Every selection schedules a save, restores included, and the save is
+  // debounced by 500ms. Accepting a broadcast without following it leaves that
+  // timer holding the topic the link put us on, so it lands afterwards and
+  // writes the deep link back over the preference the other session just set.
+  describe('a pending save against an accepted broadcast', () => {
+    beforeEach(() => {
+      jest.useFakeTimers()
+    })
+
+    afterEach(() => {
+      jest.runOnlyPendingTimers()
+      jest.useRealTimers()
+    })
+
+    test('the deep link is not written back over the broadcast preference', () => {
+      window.history.replaceState({}, '', '/creatives/42?topic_id=3')
+      controller.restoreSelection()
+
+      controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+      jest.advanceTimersByTime(500)
+
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3')
+    })
+
+    // The broadcast is the preference now; nothing this popup had queued
+    // beforehand describes it, so nothing queued beforehand may be sent.
+    test('no save at all follows an accepted broadcast', () => {
+      controller.setOverrideTopicId('3')
+      controller.restoreSelection()
+
+      controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+      jest.advanceTimersByTime(500)
+
+      expect(saveLastTopic).not.toHaveBeenCalled()
+      expect(controller.serverLastTopicId).toBe('2')
+    })
+
+    // Cancelling is scoped to the accepted broadcast. A selection the user
+    // makes afterwards is theirs, and still has to reach the server.
+    test('a pick after the broadcast still saves', () => {
+      controller.setOverrideTopicId('3')
+      controller.restoreSelection()
+      controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+      controller.selectTopic('1')
+      jest.advanceTimersByTime(500)
+
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '1')
+    })
+
+    // With no link to hold the view, the broadcast is followed, and following
+    // it re-arms the debounce with the broadcast's own value — so the timer
+    // must not be left cancelled on that path.
+    test('a followed broadcast still persists its own value', () => {
+      controller.restoreSelection()
+
+      controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+      jest.advanceTimersByTime(500)
+
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '2')
+    })
+  })
 })

@@ -1139,17 +1139,24 @@ export default class extends Controller {
     }
 
     debounceSaveLastTopic(id) {
-        if (this._saveLastTopicTimer) clearTimeout(this._saveLastTopicTimer)
+        this.cancelPendingSaveLastTopic()
         this._saveLastTopicTimer = setTimeout(() => {
             this.flushSaveLastTopic(id)
         }, 500)
     }
 
-    async flushSaveLastTopic(id) {
+    // Drop a queued save without sending it. The timer closes over the id it
+    // was scheduled with, so a save that is no longer wanted cannot be talked
+    // out of its value — only cancelled.
+    cancelPendingSaveLastTopic() {
         if (this._saveLastTopicTimer) {
             clearTimeout(this._saveLastTopicTimer)
             this._saveLastTopicTimer = null
         }
+    }
+
+    async flushSaveLastTopic(id) {
+        this.cancelPendingSaveLastTopic()
         if (this.creativeId) {
             await saveLastTopic(this.creativeId, id || null)
         }
@@ -1217,7 +1224,19 @@ export default class extends Controller {
                 // nowhere to be recovered from: ?topic_id= is dropped from the
                 // URL, so not even a reload gets the linked conversation back.
                 // Record the preference, leave the view where the link put it.
-                if (!this.hasDeepLinkSelection) this.selectTopic(newTopicId)
+                //
+                // Every selection queues a save, restores included, so landing
+                // on the link 500ms ago left one holding the linked topic. It
+                // describes a selection this popup has just conceded is not the
+                // preference; letting it land would write the link back over
+                // what the other session set. Following the broadcast re-arms
+                // the debounce with the broadcast's own value, so only the path
+                // that does not follow has anything to cancel.
+                if (this.hasDeepLinkSelection) {
+                    this.cancelPendingSaveLastTopic()
+                } else {
+                    this.selectTopic(newTopicId)
+                }
             }
             return
         }
