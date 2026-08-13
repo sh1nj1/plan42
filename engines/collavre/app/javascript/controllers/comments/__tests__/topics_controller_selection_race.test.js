@@ -213,6 +213,99 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     })
   })
 
+  // The legacy per-browser preference is adopted on the first load that finds
+  // the server holding nothing. A winning empty pick leaves the server value
+  // empty on purpose, which reads exactly the same to the migration — so it
+  // would hand the user back the topic they just left, by another route.
+  describe('a winning empty pick against the localStorage migration', () => {
+    const LEGACY_KEY = 'collavre_creative_42_last_topic'
+
+    const respond = (resolveFetch, lastTopicId) => resolveFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: lastTopicId,
+      }),
+    })
+
+    afterEach(() => localStorage.clear())
+
+    test('the migration does not restore the legacy topic over the pick', async () => {
+      localStorage.setItem(LEGACY_KEY, '2')
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('')
+
+      respond(resolveFetch, 2)
+      await loading
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller.listTarget.querySelector('.topic-all-messages').classList)
+        .toContain('active')
+    })
+
+    test('the legacy topic is not persisted as the preference either', async () => {
+      localStorage.setItem(LEGACY_KEY, '2')
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('')
+
+      respond(resolveFetch, null)
+      await loading
+      await controller.flushSaveLastTopic(controller.currentTopicId)
+
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null)
+    })
+
+    // The pick supersedes the legacy value, so the key has served its purpose
+    // and must not be left behind to re-apply on the next load.
+    test('the legacy key is still cleared', async () => {
+      localStorage.setItem(LEGACY_KEY, '2')
+      let resolveFetch
+      global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+      const loading = controller.loadTopics()
+      controller.selectTopic('')
+
+      respond(resolveFetch, null)
+      await loading
+
+      expect(localStorage.getItem(LEGACY_KEY)).toBeNull()
+    })
+
+    // ...and the migration itself is untouched when no pick is racing it.
+    test('an unraced load still migrates the legacy topic', async () => {
+      localStorage.setItem(LEGACY_KEY, '2')
+      controller.serverLastTopicId = ''
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          topics: TOPICS,
+          archived_topics: [],
+          can_manage: true,
+          main_topic_id: 1,
+          last_topic_id: null,
+        }),
+      })
+
+      await controller.loadTopics()
+
+      expect(controller.currentTopicId).toBe('2')
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '2')
+      expect(localStorage.getItem(LEGACY_KEY)).toBeNull()
+    })
+  })
+
   // A pick can only outrank the response if it was made against the strip of
   // the creative the response describes. Switching creatives leaves the
   // previous creative's chips on screen until the new strip lands, so a click

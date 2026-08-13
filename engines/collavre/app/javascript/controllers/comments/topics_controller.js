@@ -221,7 +221,7 @@ export default class extends Controller {
                 }
 
                 // Migrate localStorage to server if server has no value
-                this.migrateLocalStorage()
+                this.migrateLocalStorage({ keepEmptyPick: pickWon })
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
                 this.restoreSelection({ keepEmptyPick: pickWon })
@@ -1129,10 +1129,19 @@ export default class extends Controller {
         }
     }
 
-    migrateLocalStorage() {
+    // The legacy key is adopted only as a stand-in for a preference the server
+    // does not hold yet. A winning empty pick is a preference — it just names no
+    // topic, so it is indistinguishable here from "server holds nothing", and
+    // adopting the legacy value would hand the user back a topic they did not
+    // ask for and persist it. The caller knows which of the two it is.
+    //
+    // The key still goes, either way: the pick supersedes it, and its own save
+    // is already on the way, so leaving it behind would only re-apply a value
+    // the user has moved off on the next load.
+    migrateLocalStorage({ keepEmptyPick = false } = {}) {
         const key = `collavre_creative_${this.creativeId}_last_topic`
         const localValue = localStorage.getItem(key)
-        if (localValue && !this.serverLastTopicId) {
+        if (localValue && !this.serverLastTopicId && !keepEmptyPick) {
             this.serverLastTopicId = localValue
             saveLastTopic(this.creativeId, localValue)
         }
