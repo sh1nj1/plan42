@@ -57,11 +57,12 @@ module Collavre
 
       def pending_agent_turn?(owned)
         comment_ids = Comment.where(creative_id: owned).pluck(:id)
+        creative_ids = owned.map(&:id)
 
         # Check the queue before Tasks. An AiAgentJob can hand off to a Task
         # between these checks; querying the durable queued job first ensures
         # the subsequent Task query sees that handoff rather than missing both.
-        queued_agent_job_for_comments?(comment_ids) || active_task_for_comments?(comment_ids, owned.map(&:id))
+        queued_agent_job_for_comments?(comment_ids, creative_ids) || active_task_for_comments?(comment_ids, creative_ids)
       end
 
       # This belongs to the retiring session rather than the user. Resetting
@@ -89,21 +90,23 @@ module Collavre
       # A direct dispatch creates its Task only when AiAgentJob starts. Check
       # durable Solid Queue entries as well, otherwise finishing onboarding can
       # delete the triggering comment while that job is merely waiting to run.
-      def queued_agent_job_for_comments?(comment_ids)
+      def queued_agent_job_for_comments?(comment_ids, creative_ids)
         return false unless defined?(SolidQueue::Job)
 
         SolidQueue::Job.where(class_name: AiAgentJob.name, finished_at: nil).find_each.any? do |job|
-          comment_ids.include?(queued_comment_id(job))
+          context = queued_job_context(job)
+          comment_ids.include?(context.dig("comment", "id").to_i) ||
+            creative_ids.include?(context.dig("creative", "id").to_i)
         end
       end
 
-      def queued_comment_id(job)
+      def queued_job_context(job)
         queued_job = ActiveJob::Base.deserialize(job.arguments)
         queued_job.send(:deserialize_arguments_if_needed)
         context = queued_job.arguments.last
-        context.is_a?(Hash) ? context.dig("comment", "id").to_i : 0
+        context.is_a?(Hash) ? context.deep_stringify_keys : {}
       rescue ActiveJob::DeserializationError, KeyError, TypeError
-        0
+        {}
       end
 
       def destroy_items!(owned)

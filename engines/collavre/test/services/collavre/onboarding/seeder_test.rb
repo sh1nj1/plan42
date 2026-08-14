@@ -172,13 +172,13 @@ module Collavre
         session = Seeder.new(user: user).call
         steps = session.scenario.steps.index_by(&:key)
 
-        assert_equal "/collavre/creatives?id=#{session.root.id}",
+        assert_equal "/collavre/creatives?id=#{session.root.id}&open_comments=true",
                      session.navigation_path(steps.fetch(:progress), script_name: "/collavre")
-        assert_equal "/collavre/creatives?id=#{session.root.id}",
+        assert_equal "/collavre/creatives?id=#{session.root.id}&open_comments=true",
                      session.navigation_path(steps.fetch(:editor), script_name: "/collavre")
-        assert_equal "/collavre/creatives?id=#{session.practice_creatives.second.id}",
+        assert_equal "/collavre/creatives?id=#{session.practice_creatives.second.id}&open_comments=true",
                      session.navigation_path(steps.fetch(:comment), script_name: "/collavre")
-        assert_equal "/collavre/creatives?id=#{session.practice_creatives.second.id}",
+        assert_equal "/collavre/creatives?id=#{session.practice_creatives.second.id}&open_comments=true",
                      session.navigation_path(steps.fetch(:mention), script_name: "/collavre")
       end
 

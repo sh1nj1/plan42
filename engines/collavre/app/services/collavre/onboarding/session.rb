@@ -121,7 +121,11 @@ module Collavre
         end
         return unless target
 
-        Collavre::Engine.routes.url_helpers.creatives_path(id: target.id, script_name: script_name)
+        Collavre::Engine.routes.url_helpers.creatives_path(
+          id: target.id,
+          open_comments: true,
+          script_name: script_name
+        )
       end
 
       def update!(attributes = {})

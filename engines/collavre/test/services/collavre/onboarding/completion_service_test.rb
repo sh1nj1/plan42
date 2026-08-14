@@ -148,6 +148,24 @@ module Collavre
         assert Creative.exists?(session.root.id)
       end
 
+      test "defers cleanup while a queued job retains a moved onboarding comment's creative" do
+        user = User.create!(name: "Moved queued finisher", email: "moved-queued-finisher@example.com", password: "password")
+        agent = User.create!(name: "Moved queued helper", email: "moved-queued-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        creative = session.practice_creatives.second
+        comment = Comment.create!(creative: creative, user: user, content: "@Moved queued helper: Please help")
+        ai_job = AiAgentJob.new(agent.id, "comment_created", comment.dispatch_payload)
+        SolidQueue::Job.create!(class_name: AiAgentJob.name, queue_name: "ai_agents", arguments: ai_job.serialize)
+        comment.update!(creative: Creative.create!(user: user, description: "Outside onboarding"))
+
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+          CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
+        end
+
+        assert Creative.exists?(session.root.id)
+      end
+
       test "checks queued agent jobs before active tasks during cleanup" do
         user = User.create!(name: "Cleanup ordering", email: "cleanup-ordering@example.com", password: "password")
         session = Seeder.new(user: user).call
@@ -155,7 +173,7 @@ module Collavre
         service = CompletionService.new(user: user)
         checks = []
 
-        service.stub(:queued_agent_job_for_comments?, ->(_comment_ids) { checks << :queued; false }) do
+        service.stub(:queued_agent_job_for_comments?, ->(_comment_ids, _creative_ids) { checks << :queued; false }) do
           service.stub(:active_task_for_comments?, ->(_comment_ids, _creative_ids) { checks << :active; false }) do
             refute service.send(:pending_agent_turn?, session.practice_creatives)
           end

@@ -63,7 +63,7 @@ module Collavre
       assert_response :success
       assert_equal "progress", response.parsed_body.fetch("current_step")
       assert_equal session.practice_creative_ids.first, response.parsed_body.fetch("anchor_key")
-      assert_equal creatives_path(id: session.root), response.parsed_body.fetch("navigation_path")
+      assert_equal creatives_path(id: session.root, open_comments: true), response.parsed_body.fetch("navigation_path")
 
       post complete_onboarding_path, params: { session_id: session.session_id }, as: :json
 
@@ -253,7 +253,7 @@ module Collavre
       get onboarding_path, as: :json
 
       assert_response :success
-      assert_equal creatives_path(id: second), response.parsed_body.fetch("navigation_path")
+      assert_equal creatives_path(id: second, open_comments: true), response.parsed_body.fetch("navigation_path")
     end
   end
 end
