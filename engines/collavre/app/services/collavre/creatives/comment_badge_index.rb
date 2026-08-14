@@ -190,28 +190,49 @@ module Creatives
         watermarks_by_user_id = read_watermarks_for_users(origin, user_ids)
         public_topic_ids = Comment.where(creative_id: origin.id, private: false).distinct.pluck(:topic_id)
         private_topic_ids_by_user_id = private_topic_ids_for_users(origin, user_ids)
-        requests_by_user_id = user_ids.to_h do |user_id|
-          topic_ids = public_topic_ids | private_topic_ids_by_user_id.fetch(user_id, [])
-          [ user_id, topic_ids.to_h { |topic_id| [ topic_id, watermark_for(watermarks_by_user_id[user_id], topic_id) ] } ]
-        end
+        requests_by_user_id = requests_by_user(user_ids, public_topic_ids, private_topic_ids_by_user_id, watermarks_by_user_id)
         public_unread_counts = public_unread_counts_for(origin, requests_by_user_id.values)
-        public_comments_exist = public_topic_ids.any?
-        private_requests_by_user_id = user_ids.to_h do |user_id|
-          topic_ids = private_topic_ids_by_user_id.fetch(user_id, [])
-          watermarks = watermarks_by_user_id[user_id]
-          [ user_id, topic_ids.to_h { |topic_id| [ topic_id, watermark_for(watermarks, topic_id) ] } ]
-        end
+        private_requests_by_user_id = private_requests_by_user(user_ids, private_topic_ids_by_user_id, watermarks_by_user_id)
         private_counts = private_counts_for(origin, private_requests_by_user_id)
 
-        user_ids.each_with_object({}) do |user_id, counts_by_user_id|
-          counts_by_user_id[user_id] = requests_by_user_id.fetch(user_id).each_with_object({}) do |(topic_id, watermark), counts_by_topic|
-            private_count = private_counts.fetch([ user_id, topic_id, watermark ], { unread: 0, visible: 0 })
-            counts_by_topic[topic_id] = {
-              unread: public_unread_counts.fetch([ topic_id, watermark ], 0) + private_count.fetch(:unread),
-              visible: (public_comments_exist || private_count.fetch(:visible).positive?) ? 1 : 0
-            }
-          end
+        counts_by_user(user_ids, requests_by_user_id, public_unread_counts, private_counts, public_topic_ids.any?)
+      end
+
+      def requests_by_user(user_ids, public_topic_ids, private_topics_by_user, watermarks_by_user)
+        user_ids.to_h do |user_id|
+          topic_ids = public_topic_ids | private_topics_by_user.fetch(user_id, [])
+          [ user_id, requests_for_topics(topic_ids, watermarks_by_user[user_id]) ]
         end
+      end
+
+      def private_requests_by_user(user_ids, private_topics_by_user, watermarks_by_user)
+        user_ids.to_h do |user_id|
+          [ user_id, requests_for_topics(private_topics_by_user.fetch(user_id, []), watermarks_by_user[user_id]) ]
+        end
+      end
+
+      def requests_for_topics(topic_ids, watermarks)
+        topic_ids.to_h { |topic_id| [ topic_id, watermark_for(watermarks, topic_id) ] }
+      end
+
+      def counts_by_user(user_ids, requests_by_user, public_counts, private_counts, public_comments_exist)
+        user_ids.to_h do |user_id|
+          [ user_id, counts_by_topic(user_id, requests_by_user.fetch(user_id), public_counts, private_counts, public_comments_exist) ]
+        end
+      end
+
+      def counts_by_topic(user_id, requests, public_counts, private_counts, public_comments_exist)
+        requests.to_h do |topic_id, watermark|
+          private_count = private_counts.fetch([ user_id, topic_id, watermark ], { unread: 0, visible: 0 })
+          [ topic_id, combined_counts(topic_id, watermark, public_counts, private_count, public_comments_exist) ]
+        end
+      end
+
+      def combined_counts(topic_id, watermark, public_counts, private_count, public_comments_exist)
+        {
+          unread: public_counts.fetch([ topic_id, watermark ], 0) + private_count.fetch(:unread),
+          visible: (public_comments_exist || private_count.fetch(:visible).positive?) ? 1 : 0
+        }
       end
 
       def private_topic_ids_for_users(origin, user_ids)

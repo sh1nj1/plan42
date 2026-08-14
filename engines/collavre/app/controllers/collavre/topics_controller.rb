@@ -162,30 +162,7 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.move.session_topic_locked") }, status: :unprocessable_entity and return
       end
 
-      released_agent = nil
-      released_reason = nil
-
-      Topic.transaction do
-        topic.comments.update_all(creative_id: target_creative.id)
-        move_read_pointers_for_topic(topic, source_creative, target_creative)
-        topic.update!(creative: target_creative)
-
-        # The assignment is exclusive: Matcher#match_by_primary_agent returns []
-        # — silence, not a fallback — when the pinned agent cannot be routed to
-        # at the destination. The pin travels with the topic, so a move into a
-        # creative the agent is not shared on — or, for a Claude Channel session
-        # agent, into an inbox, where Matcher confines it to its own session
-        # topic — would leave the topic unable to route to anyone. Release it
-        # instead, which restores ordinary expression routing at the new
-        # location, and tell the caller so the change is not silent.
-        pinned_agent = topic.primary_agent
-        rejection = pinned_agent && Topic.primary_agent_rejection(target_creative, pinned_agent, topic: topic)
-        if rejection
-          released_agent = pinned_agent
-          released_reason = rejection
-          topic.set_primary_agent!(nil)
-        end
-      end
+      released_agent, released_reason = Topics::TopicMove.new(topic: topic, target_creative: target_creative).call
 
       # update_all above skips counter-cache callbacks, so recompute
       # comments_count on both sides after re-parenting the comments.
@@ -361,54 +338,6 @@ module Collavre
       end
     end
 
-    # A topic pointer belongs to the topic, not to a historical location. Keep
-    # it with the topic even when its reader cannot currently view the target:
-    # receipt rendering filters readers by current access, while retaining the
-    # cursor prevents a deleted former source from losing their read history.
-    def move_read_pointers_for_topic(topic, _source_creative, target_creative)
-      CommentReadPointer.where(topic: topic).where.not(creative: target_creative).find_each do |pointer|
-        destination_pointer = CommentReadPointer.find_by(
-          user: pointer.user,
-          creative: target_creative,
-          topic: topic
-        )
-
-        if destination_pointer
-          last_read_id = [ destination_pointer.last_read_comment_id, pointer.last_read_comment_id ].compact.max
-          destination_pointer.update_column(:last_read_comment_id, last_read_id)
-          pointer.delete
-        else
-          pointer.update_column(:creative_id, target_creative.id)
-        end
-      end
-
-      initialize_destination_topic_pointers(topic, target_creative)
-    end
-
-    # A target reader can have a legacy cursor that is newer than every comment
-    # being moved into this topic. Without a per-topic row, that unrelated
-    # cursor becomes this topic's fallback watermark and marks the moved history
-    # read. Existing destination cursors are the only users affected: readers
-    # without one already start at the zero watermark.
-    def initialize_destination_topic_pointers(topic, target_creative)
-      candidate_user_ids = CommentReadPointer.where(creative: target_creative).distinct.pluck(:user_id)
-      readable_user_ids = CreativeShare.readable_user_ids_from_shares(target_creative, candidate_user_ids)
-      existing_user_ids = CommentReadPointer.where(creative: target_creative, topic: topic).pluck(:user_id)
-      now = Time.current
-
-      rows = (readable_user_ids - existing_user_ids).map do |user_id|
-        {
-          user_id: user_id,
-          creative_id: target_creative.id,
-          topic_id: topic.id,
-          last_read_comment_id: nil,
-          created_at: now,
-          updated_at: now
-        }
-      end
-
-      CommentReadPointer.insert_all(rows, unique_by: :index_comment_read_pointers_on_user_creative_and_topic) if rows.any?
-    end
 
     def topic_params
       params.require(:topic).permit(:name)

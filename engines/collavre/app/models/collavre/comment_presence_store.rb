@@ -3,6 +3,7 @@ require "monitor"
 
 module Collavre
   class CommentPresenceStore
+    extend CacheBatches
     KEY_PREFIX = "comment_presence:"
     TOPIC_KEY_PREFIX = "comment_presence_topic:"
     SUBSCRIPTIONS_KEY_PREFIX = "comment_presence_subscriptions:"
@@ -136,25 +137,10 @@ module Collavre
       ids = Array(creative_ids).uniq
       return {} if ids.empty?
 
-      subscription_keys_by_creative_id = ids.to_h { |creative_id| [ creative_id, subscriptions_key(creative_id, user_id) ] }
-      cached_subscriptions = Rails.cache.read_multi(*subscription_keys_by_creative_id.values)
-      lease_keys_by_pair = ids.flat_map do |creative_id|
-        Array(cached_subscriptions[subscription_keys_by_creative_id.fetch(creative_id)]).map do |subscription_id|
-          [ [ creative_id, subscription_id ], subscription_lease_key(creative_id, user_id, subscription_id) ]
-        end
-      end.to_h
-      leases = Rails.cache.read_multi(*lease_keys_by_pair.values)
-      topic_keys_by_creative_id = ids.to_h do |creative_id|
-        subscription_ids = Array(cached_subscriptions[subscription_keys_by_creative_id.fetch(creative_id)]).select do |subscription_id|
-          leases[lease_keys_by_pair.fetch([ creative_id, subscription_id ])]
-        end
-        [ creative_id, subscription_ids.map { |subscription_id| topic_key(creative_id, user_id, subscription_id) } ]
-      end
-      cached_topics = Rails.cache.read_multi(*topic_keys_by_creative_id.values.flatten)
-
-      topic_keys_by_creative_id.transform_values do |topic_keys|
-        topic_keys.flat_map { |topic_key| Array(cached_topics[topic_key]) }.compact.uniq
-      end
+      subscription_keys = ids.to_h { |creative_id| [ creative_id, subscriptions_key(creative_id, user_id) ] }
+      subscriptions = Rails.cache.read_multi(*subscription_keys.values)
+      active_subscriptions = active_subscriptions_for_creatives(ids, user_id, subscription_keys, subscriptions)
+      viewing_topics_from_subscriptions(active_subscriptions, user_id)
     end
 
     def self.list(creative_id)
@@ -178,26 +164,10 @@ module Collavre
       ids = Array(creative_ids).uniq
       return {} if ids.empty?
 
-      ids_by_cache_key = ids.index_by { |creative_id| key(creative_id) }
-      cached = Rails.cache.read_multi(*ids_by_cache_key.keys)
-
-      user_ids_by_creative_id = ids.to_h { |creative_id| [ creative_id, cached[key(creative_id)] || [] ] }
-      subscription_keys_by_pair = user_ids_by_creative_id.flat_map do |creative_id, user_ids|
-        user_ids.map { |user_id| [ [ creative_id, user_id ], subscriptions_key(creative_id, user_id) ] }
-      end.to_h
-      subscriptions = Rails.cache.read_multi(*subscription_keys_by_pair.values)
-      lease_keys = subscription_keys_by_pair.flat_map do |(creative_id, user_id), subscription_key|
-        Array(subscriptions[subscription_key]).map do |subscription_id|
-          subscription_lease_key(creative_id, user_id, subscription_id)
-        end
-      end
-      leases = Rails.cache.read_multi(*lease_keys)
-
-      user_ids_by_creative_id.each_with_object({}) do |(creative_id, user_ids), result|
-        result[creative_id] = user_ids.select do |user_id|
-          active_subscription_ids_from_cache(creative_id, user_id, subscriptions, leases).any?
-        end
-      end
+      user_ids_by_creative_id = cached_user_ids(ids)
+      subscriptions = cached_subscriptions_for(user_ids_by_creative_id)
+      leases = cached_subscription_leases(user_ids_by_creative_id, subscriptions)
+      present_users_from_cache(user_ids_by_creative_id, subscriptions, leases)
     end
 
     def self.key(creative_id)
@@ -254,6 +224,7 @@ module Collavre
         leases[subscription_lease_key(creative_id, user_id, subscription_id)]
       end
     end
+
 
     # Membership changes update several cache entries, so serialize them across
     # Action Cable processes. PostgreSQL advisory locks are held for the life of

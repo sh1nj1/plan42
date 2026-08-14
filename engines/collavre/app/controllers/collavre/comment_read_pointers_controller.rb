@@ -35,30 +35,34 @@ module Collavre
     # its hidden comments as read.
     def update_all_topic_pointers(creative, rendered_topic_ids, rendered_topic_watermarks, rendered_topic_ids_supplied: false)
       visible_comments = creative.comments.visible_to(Current.user)
-      raw_topic_watermarks = rendered_topic_watermarks.respond_to?(:to_unsafe_h) ? rendered_topic_watermarks.to_unsafe_h : rendered_topic_watermarks.to_h
-      legacy_watermark = raw_topic_watermarks[LEGACY_TOPIC_WATERMARK_KEY].to_i
-      topic_watermarks = raw_topic_watermarks.filter_map do |topic_id, comment_id|
-        [ topic_id.to_i, comment_id.to_i ] if topic_id.to_i.positive? && comment_id.to_i.positive?
-      end.to_h
-
-      if topic_watermarks.any?
-        creative.topics.where(id: topic_watermarks.keys).find_each do |topic|
-          last_id = visible_comments.where(topic: topic).where("comments.id <= ?", topic_watermarks.fetch(topic.id)).maximum(:id)
-          update_pointer(creative, topic, last_id)
-        end
-      end
-
+      topic_watermarks, legacy_watermark = normalized_topic_watermarks(rendered_topic_watermarks)
+      update_watermarked_topic_pointers(creative, visible_comments, topic_watermarks)
       update_legacy_pointer(creative, visible_comments, legacy_watermark) if legacy_watermark.positive?
       return if topic_watermarks.any? || legacy_watermark.positive?
 
-      # Current clients send the rendered-topic snapshot that produced the open
-      # All Messages list. An explicitly empty snapshot is authoritative; keep
-      # the creative-wide fallback only for clients deployed before this API.
+      update_unwatermarked_topic_pointers(creative, visible_comments, rendered_topic_ids, rendered_topic_ids_supplied)
+    end
+
+    def normalized_topic_watermarks(rendered_topic_watermarks)
+      raw_watermarks = rendered_topic_watermarks.respond_to?(:to_unsafe_h) ? rendered_topic_watermarks.to_unsafe_h : rendered_topic_watermarks.to_h
+      topic_watermarks = raw_watermarks.filter_map do |topic_id, comment_id|
+        [ topic_id.to_i, comment_id.to_i ] if topic_id.to_i.positive? && comment_id.to_i.positive?
+      end.to_h
+
+      [ topic_watermarks, raw_watermarks[LEGACY_TOPIC_WATERMARK_KEY].to_i ]
+    end
+
+    def update_watermarked_topic_pointers(creative, visible_comments, topic_watermarks)
+      creative.topics.where(id: topic_watermarks.keys).find_each do |topic|
+        last_id = visible_comments.where(topic: topic).where("comments.id <= ?", topic_watermarks.fetch(topic.id)).maximum(:id)
+        update_pointer(creative, topic, last_id)
+      end
+    end
+
+    def update_unwatermarked_topic_pointers(creative, visible_comments, rendered_topic_ids, rendered_topic_ids_supplied)
       return update_legacy_client_pointers(creative, visible_comments) unless rendered_topic_ids_supplied
 
-      topics = creative.topics.where(id: Array(rendered_topic_ids))
-
-      topics.find_each do |topic|
+      creative.topics.where(id: Array(rendered_topic_ids)).find_each do |topic|
         update_pointer(creative, topic, visible_comments.where(topic: topic).maximum(:id))
       end
     end
