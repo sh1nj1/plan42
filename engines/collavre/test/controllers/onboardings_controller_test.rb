@@ -15,13 +15,17 @@ module Collavre
       assert session
       assert_select "#comments-popup[data-creative-id='#{session.root.id}']", count: 1
       assert_select "#comments-popup[data-auto-open='true']", count: 1
+      assert_select "[data-onboarding-card-target='chatIcon']", count: 0
       refute session.data.key?("chat_autoopen_pending")
 
       get onboarding_path, as: :json
       assert_response :success
       assert_equal session.session_id, response.parsed_body.fetch("session_id")
       assert_equal "progress", response.parsed_body.fetch("current_step")
+      assert_equal "tree.add", response.parsed_body.fetch("anchor")
       assert_equal session.practice_creative_ids.first, response.parsed_body.fetch("anchor_key")
+      assert_equal "progress", response.parsed_body.dig("instruction_control", "type")
+      assert_equal I18n.t("collavre.onboarding.steps.progress.control"), response.parsed_body.dig("instruction_control", "label")
 
       get creatives_path
       assert_response :success
@@ -67,6 +71,17 @@ module Collavre
       assert user.reload.onboarding_completed_at?
       assert_nil Onboarding::Session.for_user(user)
       assert_nil Creative.find_by(id: session.root.id)
+    end
+
+    test "records an item added to the onboarding root before it is completed" do
+      user = User.create!(name: "Item adder", email: "onboarding-item-adder@example.com", password: "password")
+      sign_in_as(user, password: "password")
+      session = Onboarding::Seeder.new(user: user).call
+
+      post creatives_path, params: { creative: { description: "New practice item", parent_id: session.root.id } }, as: :json
+
+      assert_response :success
+      assert_equal response.parsed_body.fetch("id"), Onboarding::Session.for_user(user.reload).added_practice_creative_id
     end
 
     test "rejects stale card mutations after onboarding is reset in another tab" do
@@ -217,10 +232,12 @@ module Collavre
       user = User.create!(name: "Editor", email: "onboarding-editor@example.com", password: "password")
       sign_in_as(user, password: "password")
       session = Onboarding::Seeder.new(user: user).call
-      first, second = session.practice_creatives.order(:id)
+      _first, second = session.practice_creatives.order(:id)
 
       post advance_onboarding_path, params: { session_id: session.session_id }, as: :json
-      patch creative_path(first), params: { creative: { progress: 1.0 } }, as: :json
+      added = Creative.create!(user: user, parent: session.root, description: "Added practice item")
+      Onboarding::ProgressTracker.record(user: user, event: :creative_created, creative: added)
+      patch creative_path(added), params: { creative: { progress: 1.0 } }, as: :json
 
       assert_response :success
       assert_equal "editor", Onboarding::Session.for_user(user).data.fetch("current_step")

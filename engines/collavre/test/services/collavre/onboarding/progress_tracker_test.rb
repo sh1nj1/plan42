@@ -18,11 +18,17 @@ module Collavre
       test "advances only after the matching successful domain events" do
         assert_equal "progress", current_step
 
-        ProgressTracker.record(user: @user, event: :progress_changed, creative: @second, before_progress: 0)
+        ProgressTracker.record(user: @user, event: :progress_changed, creative: @first, before_progress: 0)
         assert_equal "progress", current_step
 
-        @first.update!(progress: 1.0)
-        ProgressTracker.record(user: @user, event: :progress_changed, creative: @first, before_progress: 0)
+        added = Creative.create!(user: @user, parent: @session.root, description: "Added practice item")
+        ProgressTracker.record(user: @user, event: :creative_created, creative: added)
+
+        assert_equal added.id, Session.for_user(@user).added_practice_creative_id
+        assert_equal "progress", current_step
+
+        added.update!(progress: 1.0)
+        ProgressTracker.record(user: @user, event: :progress_changed, creative: added, before_progress: 0)
         assert_equal "editor", current_step
 
         ProgressTracker.record(user: @user, event: :description_changed, creative: @second,
@@ -36,8 +42,7 @@ module Collavre
       end
 
       test "requires a public human comment before an AI mention" do
-        @first.update!(progress: 1.0)
-        ProgressTracker.record(user: @user, event: :progress_changed, creative: @first, before_progress: 0)
+        add_and_complete_practice_item(@user, @session)
         @second.update!(description: "Changed")
         ProgressTracker.record(user: @user, event: :description_changed, creative: @second, before_description: "Before")
 
@@ -91,8 +96,7 @@ module Collavre
           session = Seeder.new(user: user).call
           first, second = session.practice_creatives.order(:id)
 
-          first.update!(progress: 1.0)
-          ProgressTracker.record(user: user, event: :progress_changed, creative: first, before_progress: 0)
+          add_and_complete_practice_item(user, session)
           second.update!(description: "Changed")
           ProgressTracker.record(user: user, event: :description_changed, creative: second, before_description: "Before")
           comment = Comment.create!(creative: second, user: user, content: "Hello")
@@ -109,13 +113,20 @@ module Collavre
       end
 
       def advance_to_mention_step
-        @first.update!(progress: 1.0)
-        ProgressTracker.record(user: @user, event: :progress_changed, creative: @first, before_progress: 0)
+        add_and_complete_practice_item(@user, @session)
         @second.update!(description: "Changed")
         ProgressTracker.record(user: @user, event: :description_changed, creative: @second, before_description: "Before")
         comment = Comment.create!(creative: @second, user: @user, content: "Hello")
         ProgressTracker.record(user: @user, event: :comment_created, comment: comment)
         assert_equal "mention", current_step
+      end
+
+      def add_and_complete_practice_item(user, session)
+        added = Creative.create!(user: user, parent: session.root, description: "Added practice item")
+        ProgressTracker.record(user: user, event: :creative_created, creative: added)
+        added.update!(progress: 1.0)
+        ProgressTracker.record(user: user, event: :progress_changed, creative: added, before_progress: 0)
+        added
       end
     end
   end

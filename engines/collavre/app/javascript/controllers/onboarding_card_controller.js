@@ -6,7 +6,7 @@ const WORKSPACE_TREE_DISMISSED_KEY_PREFIX = 'collavre:onboarding:workspace-tree-
 // A read-only runner: it highlights an anchored UI element but never invokes a
 // write. Domain actions advance only after their server-side controller succeeds.
 export default class extends Controller {
-  static targets = ['instruction', 'step', 'next', 'finish', 'chatIcon']
+  static targets = ['instruction', 'step', 'next', 'finish']
   static values = { stateUrl: String, advanceUrl: String, completeUrl: String, currentStep: String, sessionId: String }
 
   connect() {
@@ -76,12 +76,11 @@ export default class extends Controller {
   render(state) {
     this.rebindSession(state.session_id)
     if (state.complete) {
-      this.instructionTarget.textContent = state.instruction
+      this.renderInstruction(state)
       this.nextTarget.hidden = true
       this.finishTarget.hidden = false
       this.currentStepValue = ''
       this.renderSteps(null, state.completed_steps)
-      this.renderChatIcon(null)
       this.highlight(null)
       return
     }
@@ -94,11 +93,10 @@ export default class extends Controller {
       this.navigate(state.navigation_path)
       return
     }
-    this.instructionTarget.textContent = state.instruction
+    this.renderInstruction(state)
     this.nextTarget.hidden = state.completion !== 'ui'
     this.finishTarget.hidden = true
     this.renderSteps(state.current_step, state.completed_steps)
-    this.renderChatIcon(state.current_step)
     this.highlight(state.anchor, state.anchor_key)
   }
 
@@ -122,8 +120,23 @@ export default class extends Controller {
     })
   }
 
-  renderChatIcon(currentStep) {
-    if (this.hasChatIconTarget) this.chatIconTarget.hidden = currentStep !== 'comment'
+  renderInstruction(state) {
+    const control = state.instruction_control
+    if (!control) {
+      this.instructionTarget.textContent = state.instruction
+      return
+    }
+
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.disabled = true
+    button.tabIndex = -1
+    button.setAttribute('aria-hidden', 'true')
+    button.className = control.type === 'progress'
+      ? 'creative-header-outline-btn onboarding-card-control onboarding-card-control--add'
+      : 'creative-action-btn onboarding-card-control'
+    button.textContent = control.label
+    this.instructionTarget.replaceChildren(state.instruction_before, button, state.instruction_after)
   }
 
   currentPath() {

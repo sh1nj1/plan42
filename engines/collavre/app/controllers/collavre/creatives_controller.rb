@@ -251,6 +251,7 @@ module Collavre
       @creative = result.creative
 
       if result.success?
+        record_onboarding_creation(@creative)
         # Expose the post-rewrite markdown source so the client can sync its
         # textarea after the server replaces inline data: URIs with blob paths,
         # matching the update endpoint contract. Without this, a freshly created
@@ -383,6 +384,12 @@ module Collavre
         before_description: previous_description,
         session: session
       )
+    end
+
+    def record_onboarding_creation(creative)
+      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      Onboarding::ProgressTracker.record(user: Current.user, event: :creative_created, creative: creative)
     end
 
     def contexts

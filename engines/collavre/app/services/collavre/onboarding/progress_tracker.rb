@@ -25,6 +25,7 @@ module Collavre
         return unless session
 
         step = session.current_step
+        return record_added_practice!(session, step) if event == :creative_created
         return unless step && expected_event?(step) && valid_subject?(session)
 
         session.update! do |onboarding|
@@ -45,13 +46,19 @@ module Collavre
         step.completion.to_sym == event
       end
 
+      def record_added_practice!(session, step)
+        return unless step&.key == :progress && creative&.user_id == user.id && creative.parent_id == session.root.id
+
+        session.update!(added_practice_creative_id: creative.id)
+      end
+
       def valid_subject?(session)
         practices = session.practice_creatives.index_by(&:id)
         case event
         when :ui
           true
         when :progress_changed
-          creative&.id == session.practice_creative_ids.first && creative.user_id == user.id &&
+          creative&.id == session.added_practice_creative_id && creative.user_id == user.id &&
             before_progress.to_f < 1 && creative.progress.to_f >= 1
         when :description_changed
           creative&.id == session.practice_creative_ids.second && creative.user_id == user.id &&

@@ -96,6 +96,10 @@ module Collavre
         Creative.where(id: practice_creative_ids)
       end
 
+      def added_practice_creative_id
+        data["added_practice_creative_id"]&.to_i
+      end
+
       def practice_creatives_intact?
         expected_ids = practice_creative_ids.uniq.sort
         expected_ids.size == 2 && !root.archived? &&
@@ -165,7 +169,7 @@ module Collavre
       def target_creative(step)
         case step&.target
         when :root then root
-        when :first_practice then practice_creatives.find_by(id: practice_creative_ids.first)
+        when :first_practice then practice_creatives.find_by(id: added_practice_creative_id || practice_creative_ids.first)
         when :second_practice then practice_creatives.find_by(id: practice_creative_ids.second)
         end
       end

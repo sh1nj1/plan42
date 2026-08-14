@@ -74,23 +74,41 @@ describe('OnboardingCardController', () => {
     expect(document.querySelector('[data-guide-anchor="chat.composer"]').classList.contains('guide-anchor-highlight')).toBe(true)
   })
 
-  test('shows the chat icon only while explaining how to open chat', async () => {
+  test('renders the inline edit control while explaining mobile editing', async () => {
     state = {
-      current_step: 'comment',
-      instruction: 'Tap the chat icon.',
-      completion: 'comment_created',
+      current_step: 'editor',
+      instruction: 'On mobile, swipe to edit.',
+      instruction_before: 'On mobile, swipe to reveal the ',
+      instruction_after: ' button.',
+      instruction_control: { type: 'editor', label: 'Edit' },
+      completion: 'description_changed',
       completed_steps: [],
-      anchor: 'chat.toggle',
+      anchor: 'creative.editor',
     }
 
     await controller.refresh()
 
-    expect(controller.chatIconTarget.hidden).toBe(false)
+    expect(controller.instructionTarget.textContent).toBe('On mobile, swipe to reveal the Edit button.')
+    expect(controller.instructionTarget.querySelector('button').textContent).toBe('Edit')
+    expect(document.querySelector('[data-onboarding-card-target="chatIcon"]')).toBeNull()
+  })
 
-    state = { complete: true, instruction: 'All done.', completed_steps: ['welcome', 'done'] }
+  test('renders the inline add control before an item is added', async () => {
+    state = {
+      current_step: 'progress',
+      instruction: 'Add an item.',
+      instruction_before: 'Use the ',
+      instruction_after: ' button to add an item.',
+      instruction_control: { type: 'progress', label: 'Add' },
+      completion: 'progress_changed',
+      completed_steps: [],
+      anchor: 'tree.add',
+    }
+
     await controller.refresh()
 
-    expect(controller.chatIconTarget.hidden).toBe(true)
+    expect(controller.instructionTarget.textContent).toBe('Use the Add button to add an item.')
+    expect(controller.instructionTarget.querySelector('button').textContent).toBe('Add')
   })
 
   test('highlights the keyed actionable anchor when a scenario step targets one Creative', async () => {
@@ -354,7 +372,6 @@ function cardMarkup() {
       <div data-onboarding-card-target="step" data-step-key="done"></div>
       <button data-onboarding-card-target="next"></button>
       <span data-onboarding-card-target="finish"></span>
-      <span data-onboarding-card-target="chatIcon" hidden></span>
     </div>
     <button data-guide-anchor="tree.node" class="guide-anchor-highlight"></button>
     <textarea data-guide-anchor="chat.composer"></textarea>

@@ -80,18 +80,47 @@ module Collavre
       step = session&.current_step
       return { success: true, current_step: nil } unless session
 
+      instruction = instruction_state(session, step)
+
       {
         success: true,
         session_id: session.session_id,
         current_step: step&.key,
-        anchor: step&.anchor,
+        anchor: current_anchor(session, step),
         anchor_key: session.anchor_key(step),
         navigation_path: session.navigation_path(step, script_name: request.script_name),
         completion: step&.completion,
         complete: session.data["current_step"] == "complete",
         completed_steps: session.data.fetch("steps", {}).select { |_key, value| value["status"] == "completed" }.keys,
-        instruction: step ? t("collavre.onboarding.steps.#{step.key}.body") : t("collavre.onboarding.card.complete")
+        instruction: instruction.fetch(:text),
+        instruction_before: instruction[:before],
+        instruction_after: instruction[:after],
+        instruction_control: instruction[:control]
       }
+    end
+
+    def instruction_state(session, step)
+      return { text: t("collavre.onboarding.card.complete") } unless step
+
+      key = "collavre.onboarding.steps.#{step.key}"
+      return { text: t("#{key}.body") } unless instruction_control?(session, step)
+
+      {
+        text: t("#{key}.body"),
+        before: t("#{key}.body_before"),
+        after: t("#{key}.body_after"),
+        control: { type: step.key, label: t("#{key}.control") }
+      }
+    end
+
+    def instruction_control?(session, step)
+      step.key == :editor || (step.key == :progress && session.added_practice_creative_id.nil?)
+    end
+
+    def current_anchor(session, step)
+      return "tree.add" if step&.key == :progress && session.added_practice_creative_id.nil?
+
+      step&.anchor
     end
   end
 end

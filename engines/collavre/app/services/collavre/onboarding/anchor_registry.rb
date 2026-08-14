@@ -6,7 +6,7 @@ module Collavre
     # Views own selectors; scenarios only ever refer to these names.
     class AnchorRegistry
       ANCHORS = %w[
-        tree.panel tree.toggle tree.node tree.progress creative.editor
+        tree.panel tree.toggle tree.node tree.add tree.progress creative.editor
         chat.toggle chat.composer
       ].freeze
 
