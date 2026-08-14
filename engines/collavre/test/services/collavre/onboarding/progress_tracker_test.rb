@@ -16,7 +16,6 @@ module Collavre
       end
 
       test "advances only after the matching successful domain events" do
-        ProgressTracker.record(user: @user, event: :ui)
         assert_equal "progress", current_step
 
         ProgressTracker.record(user: @user, event: :progress_changed, creative: @second, before_progress: 0)
@@ -37,7 +36,6 @@ module Collavre
       end
 
       test "requires a public human comment before an AI mention" do
-        ProgressTracker.record(user: @user, event: :ui)
         @first.update!(progress: 1.0)
         ProgressTracker.record(user: @user, event: :progress_changed, creative: @first, before_progress: 0)
         @second.update!(description: "Changed")
@@ -93,7 +91,6 @@ module Collavre
           session = Seeder.new(user: user).call
           first, second = session.practice_creatives.order(:id)
 
-          ProgressTracker.record(user: user, event: :ui)
           first.update!(progress: 1.0)
           ProgressTracker.record(user: user, event: :progress_changed, creative: first, before_progress: 0)
           second.update!(description: "Changed")
@@ -112,7 +109,6 @@ module Collavre
       end
 
       def advance_to_mention_step
-        ProgressTracker.record(user: @user, event: :ui)
         @first.update!(progress: 1.0)
         ProgressTracker.record(user: @user, event: :progress_changed, creative: @first, before_progress: 0)
         @second.update!(description: "Changed")

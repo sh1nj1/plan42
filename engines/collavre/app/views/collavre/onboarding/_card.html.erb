@@ -15,7 +15,10 @@
       <span><%= t("collavre.onboarding.steps.#{step.key}.title") %></span>
     </div>
   <% end %>
-  <p class="onboarding-card-instruction" data-onboarding-card-target="instruction"><%= session.current_step ? t("collavre.onboarding.steps.#{session.current_step.key}.body") : t("collavre.onboarding.card.complete") %></p>
+  <p class="onboarding-card-instruction">
+    <span data-onboarding-card-target="instruction"><%= session.current_step ? t("collavre.onboarding.steps.#{session.current_step.key}.body") : t("collavre.onboarding.card.complete") %></span>
+    <span class="onboarding-card-chat-icon" data-onboarding-card-target="chatIcon" <%= 'hidden' unless session.current_step&.key == :comment %> aria-hidden="true"><%= svg_tag "comment.svg", width: 18, height: 18 %></span>
+  </p>
   <div class="onboarding-card-actions">
     <button type="button" class="feature-card-action" data-onboarding-card-target="next" data-action="onboarding-card#advance" <%= 'hidden' unless session.current_step&.completion == :ui %>><%= t("collavre.onboarding.card.next") %></button>
     <span data-onboarding-card-target="finish" <%= 'hidden' unless session.current_step.nil? %>>

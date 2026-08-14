@@ -837,6 +837,12 @@ creative-tree-row.chat-active .creative-row {
     visibility: hidden;
 }
 
+/* The onboarding guide must reveal the otherwise hover-only chat action. */
+.comments-btn.no-comments.guide-anchor-highlight {
+    visibility: visible;
+    opacity: 1;
+}
+
 .creative-row:hover .comments-btn.no-comments {
     visibility: visible;
     opacity: 1.0;

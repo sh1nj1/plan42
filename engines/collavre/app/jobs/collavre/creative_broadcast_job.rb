@@ -209,7 +209,7 @@ module Collavre
           # Comment button — no-comments hides via visibility:hidden (0 comments initially)
           comment_icon = read_svg("comment.svg", class: "comment-icon")
           btn_classes = "comments-btn creative-action-btn no-comments"
-          comment_btn = %(<button name="show-comments-btn" class="#{btn_classes}" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
+          comment_btn = %(<button name="show-comments-btn" class="#{btn_classes}" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}" data-guide-anchor="chat.toggle" data-guide-anchor-key="#{creative.id}">)
           comment_btn += %(#{comment_icon}#{badge}</button>)
 
           comment_part = "#{stream_tag}#{comment_btn}"

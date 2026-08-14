@@ -78,7 +78,13 @@ module Collavre
           stream + button_tag(
             comment_icon + badge,
             name: "show-comments-btn",
-            data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
+            data: {
+              creative_id: creative.id,
+              can_comment: true,
+              creative_snippet: creative.creative_snippet,
+              guide_anchor: "chat.toggle",
+              guide_anchor_key: creative.id
+            },
             class: classes.join(" ")
           )
         else

@@ -74,6 +74,25 @@ describe('OnboardingCardController', () => {
     expect(document.querySelector('[data-guide-anchor="chat.composer"]').classList.contains('guide-anchor-highlight')).toBe(true)
   })
 
+  test('shows the chat icon only while explaining how to open chat', async () => {
+    state = {
+      current_step: 'comment',
+      instruction: 'Tap the chat icon.',
+      completion: 'comment_created',
+      completed_steps: [],
+      anchor: 'chat.toggle',
+    }
+
+    await controller.refresh()
+
+    expect(controller.chatIconTarget.hidden).toBe(false)
+
+    state = { complete: true, instruction: 'All done.', completed_steps: ['welcome', 'done'] }
+    await controller.refresh()
+
+    expect(controller.chatIconTarget.hidden).toBe(true)
+  })
+
   test('highlights the keyed actionable anchor when a scenario step targets one Creative', async () => {
     state = {
       current_step: 'progress',
@@ -335,6 +354,7 @@ function cardMarkup() {
       <div data-onboarding-card-target="step" data-step-key="done"></div>
       <button data-onboarding-card-target="next"></button>
       <span data-onboarding-card-target="finish"></span>
+      <span data-onboarding-card-target="chatIcon" hidden></span>
     </div>
     <button data-guide-anchor="tree.node" class="guide-anchor-highlight"></button>
     <textarea data-guide-anchor="chat.composer"></textarea>
