@@ -27,6 +27,17 @@ module Collavre
         assert user.reload.onboarding_completed_at?
       end
 
+      test "removes the practice item added to complete the progress step" do
+        user = User.create!(name: "Added practice finisher", email: "added-practice-finisher@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        added = Creative.create!(user: user, parent: session.root, description: "Added practice item")
+
+        ProgressTracker.record(user: user, event: :creative_created, creative: added)
+        CompletionService.new(user: user).call
+
+        refute Creative.exists?(added.id)
+      end
+
       test "removes orphaned practice items after their onboarding root is deleted" do
         user = User.create!(name: "Deleted root finisher", email: "deleted-root-finisher@example.com", password: "password")
         session = Seeder.new(user: user).call

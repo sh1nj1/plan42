@@ -49,7 +49,15 @@ module Collavre
       def record_added_practice!(session, step)
         return unless step&.key == :progress && creative&.user_id == user.id && creative.parent_id == session.root.id
 
+        tag_added_practice_with_session!(session)
         session.update!(added_practice_creative_id: creative.id)
+      end
+
+      def tag_added_practice_with_session!(session)
+        data = creative.data.is_a?(Hash) ? creative.data : {}
+        onboarding = data["onboarding"].is_a?(Hash) ? data["onboarding"] : {}
+
+        creative.update!(data: data.merge("onboarding" => onboarding.merge("session_id" => session.session_id)))
       end
 
       def valid_subject?(session)
