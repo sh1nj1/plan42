@@ -65,6 +65,29 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     tracker.verify
   end
 
+  test "cancel releases the slot held by an external reply claim" do
+    sign_in_as(@user, password: "password")
+    topic = Collavre::Topic.create!(name: "Claim cancellation", creative: @creative, user: @user)
+    @task.update!(status: "delegated", topic_id: topic.id, creative: @creative)
+    Collavre::AiAgent::TaskClaimService.new.claim(agent: @agent, topic: topic, requested_task_id: @task.id)
+
+    tracker = Minitest::Mock.new
+    tracker.expect(:release!, true, [ @task.id ])
+    dequeued = []
+    Collavre::Orchestration::ResourceTracker.stub(:for, ->(_agent) { tracker }) do
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(topic_id, creative_id) {
+        dequeued << [ topic_id, creative_id ]
+      }) do
+        post cancel_task_path(@task)
+      end
+    end
+
+    assert_response :ok
+    assert_equal "cancelled", @task.reload.status
+    assert_equal [ [ topic.id, @creative.id ] ], dequeued
+    tracker.verify
+  end
+
   test "cancel returns forbidden for user without permission" do
     other_user = User.create!(
       email: "no_perm_cancel@example.com",

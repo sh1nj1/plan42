@@ -42,7 +42,12 @@ module Collavre
           locked = Task.lock.find_by(id: candidate.id)
           next unless locked && locked.status == "delegated"
 
-          Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
+          Task.where(id: locked.id).update_all(
+            status: "running",
+            pending_tool_call: nil,
+            trigger_event_payload: locked.trigger_event_payload.to_h.merge("external_reply_claimed" => true),
+            updated_at: Time.current
+          )
           claimed = locked.reload
         end
         claimed

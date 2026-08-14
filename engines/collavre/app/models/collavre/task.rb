@@ -69,6 +69,13 @@ module Collavre
       ACTIVE_STATUSES.include?(status)
     end
 
+    # A Claude Channel /reply claim moves a delegated task to running before a
+    # reply comment can be saved. No worker remains after that handoff, so Stop
+    # must release its slot itself just as it does for delegated tasks.
+    def externally_claimed?
+      trigger_event_payload&.fetch("external_reply_claimed", false)
+    end
+
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same

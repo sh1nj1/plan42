@@ -44,7 +44,7 @@ module Collavre
           next
         end
 
-        held_slot_without_worker = Task::HELD_SLOT_WITHOUT_WORKER.include?(task.status)
+        held_slot_without_worker = Task::HELD_SLOT_WITHOUT_WORKER.include?(task.status) || task.externally_claimed?
         task.update!(status: "cancelled")
       end
       return if performed?
