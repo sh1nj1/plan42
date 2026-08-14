@@ -15,6 +15,39 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  test "index returns the last topic revision" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic: @topic,
+      last_topic_revision: 7
+    )
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal @topic.id, json["last_topic_id"]
+    assert_equal [ preference.id, 7 ], json["last_topic_revision"]
+  end
+
+  test "index returns the revision of a cleared last topic" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic_revision: 2
+    )
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_nil json["last_topic_id"]
+    assert_equal [ preference.id, 2 ], json["last_topic_revision"]
+  end
+
   test "index includes unread counts for active and archived topics" do
     archived_topic = @creative.topics.create!(name: "Archived", user: @user)
     archived_topic.archive!
@@ -106,6 +139,23 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :no_content
+  end
+
+  test "destroying a selected topic advances its preference revision" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic: @topic,
+      last_topic_revision: 4
+    )
+
+    delete collavre.creative_topic_url(@creative, @topic)
+
+    assert_response :no_content
+    preference.reload
+    assert_nil preference.last_topic_id
+    assert_equal 5, preference.last_topic_revision
   end
 
   # Uses the core PreviewChannel (not the collavre_github GithubPrChannel) so
