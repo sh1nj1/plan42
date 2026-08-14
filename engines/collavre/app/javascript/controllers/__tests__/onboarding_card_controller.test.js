@@ -332,10 +332,10 @@ describe('OnboardingCardController', () => {
     expect(document.querySelector('[data-guide-anchor="tree.node"]').classList.contains('guide-anchor-highlight')).toBe(false)
   })
 
-  test('completes through Turbo when a redirect is returned', async () => {
+  test('removes the card after completing without leaving the workspace', async () => {
     const visit = jest.fn()
     window.Turbo = { visit }
-    fetchMock.mockImplementationOnce(() => Promise.resolve(jsonResponse({ redirect_url: '/features' })))
+    fetchMock.mockImplementationOnce(() => Promise.resolve(jsonResponse({ success: true })))
 
     await controller.complete()
 
@@ -343,8 +343,8 @@ describe('OnboardingCardController', () => {
       method: 'POST',
       body: JSON.stringify({ session_id: 'initial-session' }),
     }))
-    expect(visit).toHaveBeenCalledWith('/features')
-    expect(visit).toHaveBeenCalledTimes(1)
+    expect(controller.element.isConnected).toBe(false)
+    expect(visit).not.toHaveBeenCalled()
   })
 
   test('cleans up its polling timer and anchor highlight when disconnected', () => {

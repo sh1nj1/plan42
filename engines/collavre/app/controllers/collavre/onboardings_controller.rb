@@ -19,7 +19,7 @@ module Collavre
           session_id: session.session_id,
           defer_pending_agent_cleanup: true
         )
-        render json: { success: true, redirect_url: features_path }
+        render json: { success: true }
       end
     end
 

@@ -43,7 +43,7 @@ export default class extends Controller {
       return
     }
     const data = await response.json()
-    if (data.redirect_url) this.navigate(data.redirect_url)
+    if (data.success) this.removeCard()
   }
 
   async refresh() {

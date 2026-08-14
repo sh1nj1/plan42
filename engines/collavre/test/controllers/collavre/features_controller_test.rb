@@ -39,6 +39,16 @@ module Collavre
       assert_includes I18n.t("collavre.features.index.card_more", locale: :ko), "→"
     end
 
+    test "index renders a localized back button" do
+      %i[en ko].each do |locale|
+        get "/features", params: { locale: locale }
+
+        assert_response :success
+        assert_select "a.landing-btn.landing-btn-ghost[href=?]", "/landing?locale=#{locale}",
+                      text: I18n.t("collavre.features.nav.back", locale: locale), count: 1
+      end
+    end
+
     test "index is readable without signing in" do
       get "/features"
 

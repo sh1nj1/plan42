@@ -68,6 +68,7 @@ module Collavre
       post complete_onboarding_path, params: { session_id: session.session_id }, as: :json
 
       assert_response :success
+      assert_equal({ "success" => true }, response.parsed_body)
       assert user.reload.onboarding_completed_at?
       assert_nil Onboarding::Session.for_user(user)
       assert_nil Creative.find_by(id: session.root.id)

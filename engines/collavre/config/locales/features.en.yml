@@ -4,6 +4,7 @@ en:
     features:
       nav:
         landing: "Home"
+        back: "Back"
         all: "All features"
         all_arrow: "← All features"
         separator: "/"
