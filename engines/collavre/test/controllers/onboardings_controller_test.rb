@@ -14,13 +14,14 @@ module Collavre
       session = Onboarding::Session.for_user(user.reload)
       assert session
       assert_select "#comments-popup[data-creative-id='#{session.root.id}']", count: 1
+      assert_select "#comments-popup[data-auto-open='true']", count: 1
       refute session.data.key?("chat_autoopen_pending")
 
       get onboarding_path, as: :json
       assert_response :success
       assert_equal session.session_id, response.parsed_body.fetch("session_id")
-      assert_equal "tree_node", response.parsed_body.fetch("current_step")
-      assert_equal session.root.id, response.parsed_body.fetch("anchor_key")
+      assert_equal "progress", response.parsed_body.fetch("current_step")
+      assert_equal session.practice_creative_ids.first, response.parsed_body.fetch("anchor_key")
 
       get creatives_path
       assert_response :success
@@ -79,7 +80,7 @@ module Collavre
       post advance_onboarding_path, params: { session_id: stale_session.session_id }, as: :json
 
       assert_response :conflict
-      assert_equal :tree_node, Onboarding::Session.for_user(user.reload).current_step.key
+      assert_equal :progress, Onboarding::Session.for_user(user.reload).current_step.key
       assert_equal replacement_session.session_id, Onboarding::Session.for_user(user).session_id
 
       post complete_onboarding_path, params: { session_id: stale_session.session_id }, as: :json

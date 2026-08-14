@@ -21,10 +21,10 @@ en:
           body: "Check Practice item 1 and watch the parent progress update."
         editor:
           title: "Edit an item"
-          body: "Change the text of Practice item 2."
+          body: "On mobile, swipe the item row horizontally to reveal the edit button, then change the text of Practice item 2."
         comment:
           title: "Send a chat message"
-          body: "Open Practice item 2 and send a public message in chat."
+          body: "Tap the chat icon for Practice item 2, then send a public message."
         mention:
           title: "Mention an AI teammate"
           body: "Mention an available AI teammate with @name: in chat."

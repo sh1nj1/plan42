@@ -6,7 +6,7 @@ const WORKSPACE_TREE_DISMISSED_KEY_PREFIX = 'collavre:onboarding:workspace-tree-
 // A read-only runner: it highlights an anchored UI element but never invokes a
 // write. Domain actions advance only after their server-side controller succeeds.
 export default class extends Controller {
-  static targets = ['instruction', 'step', 'next', 'finish']
+  static targets = ['instruction', 'step', 'next', 'finish', 'chatIcon']
   static values = { stateUrl: String, advanceUrl: String, completeUrl: String, currentStep: String, sessionId: String }
 
   connect() {
@@ -81,6 +81,7 @@ export default class extends Controller {
       this.finishTarget.hidden = false
       this.currentStepValue = ''
       this.renderSteps(null, state.completed_steps)
+      this.renderChatIcon(null)
       this.highlight(null)
       return
     }
@@ -97,6 +98,7 @@ export default class extends Controller {
     this.nextTarget.hidden = state.completion !== 'ui'
     this.finishTarget.hidden = true
     this.renderSteps(state.current_step, state.completed_steps)
+    this.renderChatIcon(state.current_step)
     this.highlight(state.anchor, state.anchor_key)
   }
 
@@ -120,6 +122,10 @@ export default class extends Controller {
     })
   }
 
+  renderChatIcon(currentStep) {
+    if (this.hasChatIconTarget) this.chatIconTarget.hidden = currentStep !== 'comment'
+  }
+
   currentPath() {
     return `${window.location.pathname}${window.location.search}`
   }
@@ -135,7 +141,7 @@ export default class extends Controller {
 
   highlight(anchor, key) {
     document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
-    if (anchor === 'tree.node') this.openWorkspaceTree()
+    if (anchor?.startsWith('tree.')) this.openWorkspaceTree()
     const anchors = anchor ? document.querySelectorAll(`[data-guide-anchor="${anchor}"]`) : []
     const target = key == null
       ? anchors[0]

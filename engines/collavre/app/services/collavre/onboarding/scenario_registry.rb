@@ -14,7 +14,7 @@ module Collavre
           Step.new(:tree_node, "tree.node", :ui, :tree, :root),
           Step.new(:progress, "tree.progress", :progress_changed, :tree, :first_practice),
           Step.new(:editor, "creative.editor", :description_changed, :editor, :second_practice),
-          Step.new(:comment, "chat.composer", :comment_created, :chat, :second_practice),
+          Step.new(:comment, "chat.toggle", :comment_created, :chat, :second_practice),
           Step.new(:mention, "chat.composer", :agent_mentioned, :chat, :second_practice)
         ].freeze
       )

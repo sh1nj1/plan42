@@ -118,6 +118,18 @@ describe('CommentsPopupController', () => {
         expect(popup.dataset.autoFocusOnOpen).toBe('true')
     })
 
+    test('opens an initial onboarding chat outside the desktop dock', async () => {
+        const popup = document.getElementById('comments-popup')
+        const openForCreative = jest.spyOn(controller, 'openForCreative').mockResolvedValue()
+        popup.dataset.autoOpen = 'true'
+
+        expect(controller.openPendingChat()).toBe(true)
+        await new Promise(resolve => requestAnimationFrame(resolve))
+
+        expect(popup.dataset.autoOpen).toBeUndefined()
+        expect(openForCreative).toHaveBeenCalledTimes(1)
+    })
+
     test('docked chat opens by default and close collapses instead of hiding it', async () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'

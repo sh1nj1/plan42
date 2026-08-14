@@ -12,8 +12,21 @@ module Collavre
 
         assert_equal "first_steps", session.data["scenario_key"]
         assert_equal 2, session.root.children.count
+        assert_equal "progress", session.data["current_step"]
+        assert_equal "completed", session.data.dig("steps", "tree_node", "status")
         assert user.reload.onboarding_seeded_at?
         assert_equal session.root, Seeder.new(user: user).call.root
+      end
+
+      test "starts a legacy guide at the first task without requiring a UI action" do
+        user = User.create!(name: "Legacy learner", email: "legacy-learner@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        session.update!(current_step: "tree_node", steps: {})
+
+        resumed_session = Seeder.new(user: user).call
+
+        assert_equal "progress", resumed_session.data["current_step"]
+        assert_equal "completed", resumed_session.data.dig("steps", "tree_node", "status")
       end
 
       test "shares the practice tree with an available AI agent" do

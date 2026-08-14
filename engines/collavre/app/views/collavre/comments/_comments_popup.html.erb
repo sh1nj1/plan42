@@ -1,6 +1,7 @@
 
 <% fullscreen = local_assigns.fetch(:fullscreen, false) %>
 <% auto_fullscreen = local_assigns.fetch(:auto_fullscreen, false) %>
+<% auto_open = local_assigns.fetch(:auto_open, false) %>
 <% docked = local_assigns.fetch(:docked, false) %>
 <% creative = local_assigns[:creative] %>
 <% onboarding_creative = local_assigns[:onboarding_creative] %>
@@ -9,6 +10,7 @@
      data-user-search-url="<%= search_users_path %>"
      data-fullscreen="<%= fullscreen %>"
      data-docked="<%= docked %>"
+     data-auto-open="<%= auto_open %>"
      data-docked-empty-text="<%= t('collavre.creatives.workspace.select_chat') %>"
      data-default-title="<%= t('collavre.comments.comments') %>"
      data-close-label="<%= t('collavre.comments.close') %>"
