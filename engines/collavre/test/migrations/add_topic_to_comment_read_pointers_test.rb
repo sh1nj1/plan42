@@ -1,6 +1,6 @@
 require "test_helper"
 require Rails.root.join(
-  "engines/collavre/db/migrate/20260812000001_add_topic_to_comment_read_pointers"
+  "engines/collavre/db/migrate/20260814000000_add_topic_to_comment_read_pointers"
 )
 
 class AddTopicToCommentReadPointersTest < ActiveSupport::TestCase
