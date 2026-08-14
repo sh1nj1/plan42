@@ -57,12 +57,11 @@ module Collavre
 
       def pending_agent_turn?(owned)
         comment_ids = Comment.where(creative_id: owned).pluck(:id)
-        return false if comment_ids.empty?
 
         # Check the queue before Tasks. An AiAgentJob can hand off to a Task
         # between these checks; querying the durable queued job first ensures
         # the subsequent Task query sees that handoff rather than missing both.
-        queued_agent_job_for_comments?(comment_ids) || active_task_for_comments?(comment_ids)
+        queued_agent_job_for_comments?(comment_ids) || active_task_for_comments?(comment_ids, owned.map(&:id))
       end
 
       # This belongs to the retiring session rather than the user. Resetting
@@ -78,7 +77,10 @@ module Collavre
         end
       end
 
-      def active_task_for_comments?(comment_ids)
+      def active_task_for_comments?(comment_ids, creative_ids)
+        return true if Task.where(status: Task::ACTIVE_STATUSES, creative_id: creative_ids).exists?
+        return false if comment_ids.empty?
+
         Task.where(status: Task::ACTIVE_STATUSES).find_each.any? do |task|
           comment_ids.include?(task.trigger_event_payload&.dig("comment", "id").to_i)
         end

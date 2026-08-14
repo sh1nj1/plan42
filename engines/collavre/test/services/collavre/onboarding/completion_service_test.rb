@@ -67,6 +67,26 @@ module Collavre
         refute Creative.exists?(session.root.id)
       end
 
+      test "defers cleanup while an active task references a moved onboarding comment" do
+        user = User.create!(name: "Moved comment finisher", email: "moved-comment-finisher@example.com", password: "password")
+        agent = User.create!(name: "Moved comment helper", email: "moved-comment-helper@example.com", password: "password",
+                             llm_vendor: "openai", searchable: true)
+        session = Seeder.new(user: user).call
+        creative = session.practice_creatives.second
+        comment = Comment.create!(creative: creative, user: user, content: "@Moved comment helper: Please help")
+        task = Task.create!(name: "Response", status: "running", trigger_event_name: "comment_created",
+                            trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent, creative: creative)
+        destination = Creative.create!(user: user, description: "Outside onboarding")
+        comment.update!(creative: destination)
+
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+          CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
+        end
+
+        assert Creative.exists?(session.root.id)
+        assert_equal "running", task.reload.status
+      end
+
       test "defers cleanup for an active agent turn after its onboarding root is deleted" do
         user = User.create!(name: "Deleted root awaiting finisher", email: "deleted-root-awaiting@example.com", password: "password")
         agent = User.create!(name: "Deleted root helper", email: "deleted-root-helper@example.com", password: "password",
@@ -136,7 +156,7 @@ module Collavre
         checks = []
 
         service.stub(:queued_agent_job_for_comments?, ->(_comment_ids) { checks << :queued; false }) do
-          service.stub(:active_task_for_comments?, ->(_comment_ids) { checks << :active; false }) do
+          service.stub(:active_task_for_comments?, ->(_comment_ids, _creative_ids) { checks << :active; false }) do
             refute service.send(:pending_agent_turn?, session.practice_creatives)
           end
         end
