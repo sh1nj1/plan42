@@ -43,6 +43,10 @@ export default class extends Controller {
       return
     }
     const data = await response.json()
+    if (data.success && data.redirect_path) {
+      this.navigate(data.redirect_path)
+      return
+    }
     if (data.success) this.removeCard()
   }
 
