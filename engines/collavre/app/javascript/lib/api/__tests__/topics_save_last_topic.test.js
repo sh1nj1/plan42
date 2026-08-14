@@ -89,10 +89,11 @@ describe('saveLastTopic', () => {
     await expect(saveLastTopic('42', '3', 'save-abc')).resolves.toEqual({ success: true, lastTopicRevision: undefined })
 
     expect(global.fetch).toHaveBeenCalledTimes(2)
+    // No fence key at all: an older bundle cannot send one either, and the
+    // PATCH handler retires outstanding fences for every unfenced save.
     expect(bodyOfLastCall()).toEqual({
       last_topic_id: '3',
       client_id: 'save-abc',
-      legacy_last_topic_save_fence_fallback: true,
     })
   })
 

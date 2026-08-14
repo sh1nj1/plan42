@@ -43,13 +43,12 @@ export async function saveLastTopic(creativeId, topicId, clientId, signal) {
 		if (saveFence !== undefined && !Number.isSafeInteger(saveFence)) return saveFence
 
 		const body = { last_topic_id: topicId || null, client_id: clientId || null }
-		if (saveFence === undefined) {
-			// Mark this as a modern client falling back through an older instance.
-			// A newer PATCH handler can then retire fences issued before the fallback.
-			body.legacy_last_topic_save_fence_fallback = true
-		} else {
-			body.last_topic_save_fence = saveFence
-		}
+		// An undefined fence means this client fell back through an older
+		// instance. The PATCH handler retires outstanding fences for every
+		// unfenced save, so the fallback needs no marker of its own — an older
+		// bundle cannot send one either, and it is the case that has to be
+		// ordered correctly.
+		if (saveFence !== undefined) body.last_topic_save_fence = saveFence
 
         const response = await fetch(`/creatives/${creativeId}/user_creative_preferences/update_last_topic`, {
             method: 'PATCH',
