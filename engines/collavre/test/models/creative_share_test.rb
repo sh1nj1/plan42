@@ -191,4 +191,23 @@ class CreativeShareTest < ActiveSupport::TestCase
     assert_equal destination.id, former_pointer.reload.creative_id
     assert_equal destination.id, other_pointer.reload.creative_id
   end
+
+  test "reconciling a share merges duplicate topic pointers at the destination" do
+    owner = users(:one)
+    recipient = users(:two)
+    source = Creative.create!(user: owner, description: "Pointer source")
+    destination = Creative.create!(user: owner, description: "Pointer destination")
+    topic = destination.topics.create!(name: "Moved topic", user: owner)
+    older_comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "older read comment")
+    newer_comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "newer read comment")
+    share = CreativeShare.create!(creative: destination, user: recipient, permission: :no_access)
+    CommentReadPointer.create!(user: recipient, creative: source, topic: topic, last_read_comment: older_comment)
+    CommentReadPointer.create!(user: recipient, creative: destination, topic: topic, last_read_comment: newer_comment)
+
+    share.update!(permission: :read)
+
+    pointers = CommentReadPointer.where(user: recipient, topic: topic)
+    assert_equal [ destination.id ], pointers.pluck(:creative_id)
+    assert_equal newer_comment.id, pointers.sole.last_read_comment_id
+  end
 end

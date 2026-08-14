@@ -17,6 +17,18 @@ module Collavre
         initialize_destination_pointers
       end
 
+      def self.relocate(pointer, target_creative)
+        destination = CommentReadPointer.find_by(user: pointer.user, creative: target_creative, topic: pointer.topic)
+        return pointer.update_column(:creative_id, target_creative.id) unless destination
+
+        destination.update_column(:last_read_comment_id, newest_read_id(destination, pointer))
+        pointer.delete
+      end
+
+      def self.newest_read_id(destination, pointer)
+        [ destination.last_read_comment_id, pointer.last_read_comment_id ].compact.max
+      end
+
       private
 
       attr_reader :topic, :target_creative
@@ -28,15 +40,7 @@ module Collavre
       end
 
       def relocate_pointer(pointer)
-        destination = CommentReadPointer.find_by(user: pointer.user, creative: target_creative, topic: topic)
-        return pointer.update_column(:creative_id, target_creative.id) unless destination
-
-        destination.update_column(:last_read_comment_id, newest_read_id(destination, pointer))
-        pointer.delete
-      end
-
-      def newest_read_id(destination, pointer)
-        [ destination.last_read_comment_id, pointer.last_read_comment_id ].compact.max
+        self.class.relocate(pointer, target_creative)
       end
 
       # Existing destination cursors are the only readers that need a topic row:

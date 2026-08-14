@@ -251,7 +251,7 @@ module Collavre
           end
 
           if has_access
-            pointer.update_column(:creative_id, destination.id) unless pointer.creative_id == destination.id
+            Topics::ReadPointerRelocator.relocate(pointer, destination) unless pointer.creative_id == destination.id
           end
         end
     end
