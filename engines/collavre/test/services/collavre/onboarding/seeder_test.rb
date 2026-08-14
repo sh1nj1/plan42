@@ -29,6 +29,31 @@ module Collavre
         assert_equal "completed", resumed_session.data.dig("steps", "tree_node", "status")
       end
 
+      test "does not treat legacy custom onboarding metadata as a seeded session" do
+        user = User.create!(name: "Legacy metadata learner", email: "legacy-metadata-learner@example.com", password: "password")
+        unmarked = Creative.create!(
+          user: user,
+          description: "Existing workspace item",
+          data: { "onboarding" => { "session_id" => SecureRandom.uuid, "scenario_key" => "first_steps" } }
+        )
+        unregistered = Creative.create!(
+          user: user,
+          description: "Other workspace item",
+          data: { "onboarding" => { "seeded" => true, "session_id" => SecureRandom.uuid, "scenario_key" => "custom" } }
+        )
+        marked = Creative.create!(
+          user: user,
+          description: "Marked workspace item",
+          data: { "onboarding" => { "seeded" => true, "session_id" => SecureRandom.uuid, "scenario_key" => "first_steps" } }
+        )
+
+        assert_nil Session.for_user(user)
+        assert_nil Seeder.new(user: user).call
+        assert Creative.exists?(unmarked.id)
+        assert Creative.exists?(unregistered.id)
+        assert Creative.exists?(marked.id)
+      end
+
       test "shares the practice tree with an available AI agent" do
         user = User.create!(name: "Learner with agent", email: "learner-with-agent@example.com", password: "password")
         agent = User.create!(

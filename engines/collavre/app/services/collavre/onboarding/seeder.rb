@@ -29,6 +29,7 @@ module Collavre
           agent = share_available_agent!(root)
           root.update!(data: {
             "onboarding" => {
+              "seeded" => true,
               "session_id" => session_id,
               "scenario_key" => "first_steps",
               # The starting space is shown as soon as onboarding begins, so

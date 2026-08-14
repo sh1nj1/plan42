@@ -30,16 +30,22 @@ module Collavre
 
         scope = creatives.where(onboarding_scenario_key_present_sql)
         scope = scope.where(onboarding_session_id_equals_sql, session_id) if session_id.present?
-        scope.first
+        scope.to_a.find { |creative| onboarding_root?(creative, session_id) }
       end
       private_class_method :onboarding_root
 
       def self.onboarding_root?(creative, session_id)
         onboarding = creative.data.is_a?(Hash) ? creative.data["onboarding"] : nil
-        onboarding.is_a?(Hash) && onboarding["scenario_key"].present? &&
+        creative.user&.onboarding_seeded_at? && onboarding.is_a?(Hash) && onboarding["seeded"] == true &&
+          registered_scenario?(onboarding["scenario_key"]) && onboarding["session_id"].present? &&
           (session_id.blank? || onboarding["session_id"] == session_id)
       end
       private_class_method :onboarding_root?
+
+      def self.registered_scenario?(key)
+        ScenarioRegistry.all.any? { |scenario| scenario.key.to_s == key.to_s }
+      end
+      private_class_method :registered_scenario?
 
       def self.onboarding_scenario_key_present_sql
         if Creative.connection.adapter_name.match?(/sqlite/i)
