@@ -97,7 +97,12 @@ module Collavre
       end
 
       def added_practice_creative_id
-        data["added_practice_creative_id"]&.to_i
+        creative_id = data["added_practice_creative_id"]&.to_i
+        return unless creative_id&.positive?
+        return creative_id if Creative.active.where(id: creative_id, parent_id: root.id).exists?
+
+        clear_missing_added_practice_creative!(creative_id)
+        nil
       end
 
       def practice_creatives_intact?
@@ -182,6 +187,15 @@ module Collavre
 
       def added_practice_creative
         root.children.find_by(id: added_practice_creative_id) if added_practice_creative_id
+      end
+
+      # A learner can move or delete the item selected for the required
+      # add-and-complete action. Keeping its stale id makes the guide point at a
+      # seeded item that cannot satisfy ProgressTracker, so return to Add instead.
+      def clear_missing_added_practice_creative!(creative_id)
+        update! do |onboarding|
+          onboarding.delete("added_practice_creative_id") if onboarding["added_practice_creative_id"].to_i == creative_id
+        end
       end
     end
   end

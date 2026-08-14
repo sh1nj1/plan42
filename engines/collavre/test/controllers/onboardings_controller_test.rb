@@ -90,6 +90,23 @@ module Collavre
       assert_equal added_id, response.parsed_body.fetch("anchor_key")
     end
 
+    test "returns to the add instruction when the added practice item is moved" do
+      user = User.create!(name: "Moved item adder", email: "moved-item-adder@example.com", password: "password")
+      sign_in_as(user, password: "password")
+      session = Onboarding::Seeder.new(user: user).call
+      added = Creative.create!(user: user, parent: session.root, description: "New practice item")
+      Onboarding::ProgressTracker.record(user: user, event: :creative_created, creative: added)
+      destination = Creative.create!(user: user, description: "Moved item destination")
+      added.update!(parent: destination)
+
+      get onboarding_path, as: :json
+
+      assert_response :success
+      assert_equal "tree.add", response.parsed_body.fetch("anchor")
+      assert_equal "progress", response.parsed_body.dig("instruction_control", "type")
+      assert_nil Onboarding::Session.for_user(user.reload).added_practice_creative_id
+    end
+
     test "rejects stale card mutations after onboarding is reset in another tab" do
       user = User.create!(name: "Stale learner", email: "stale-onboarding-actions@example.com", password: "password")
       sign_in_as(user, password: "password")

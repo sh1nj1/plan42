@@ -277,7 +277,7 @@ module Collavre
         # to say is cancelled.
         next if reanchor_coalesced_task(task)
 
-        was_delegated = task.status == "delegated"
+        releases_slot_without_worker = task.status == "delegated" || task.externally_claimed?
         task.update!(status: "cancelled")
 
         # A waiter cancelled here leaves the queue without ever being promoted,
@@ -297,10 +297,11 @@ module Collavre
         # loop, once every task this deletion cancels has left the queue.
         stranded_scopes << [ task.creative_id, task.topic_id ]
 
-        # Delegated tasks live past their job: the AiAgentJob already returned,
-        # holding the agent slot under task.id and counting against the per-topic
-        # serializer. Mirror the cancel path used elsewhere to free both.
-        next unless was_delegated
+        # Delegated tasks and claimed external replies live past their job: no
+        # worker remains to run AiAgentJob's ensure block, while the task still
+        # holds the agent slot under task.id and counts against the topic
+        # serializer. Mirror the explicit Stop path to free both.
+        next unless releases_slot_without_worker
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         end
