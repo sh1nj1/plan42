@@ -172,10 +172,16 @@ module Collavre
 
       def target_creative(step)
         case step&.target
-        when :root then root
-        when :first_practice then practice_creatives.find_by(id: added_practice_creative_id || practice_creative_ids.first)
+        when :root
+          root
+        when :first_practice
+          added_practice_creative || practice_creatives.find_by(id: practice_creative_ids.first)
         when :second_practice then practice_creatives.find_by(id: practice_creative_ids.second)
         end
+      end
+
+      def added_practice_creative
+        root.children.find_by(id: added_practice_creative_id) if added_practice_creative_id
       end
     end
   end

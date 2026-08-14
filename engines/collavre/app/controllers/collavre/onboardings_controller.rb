@@ -50,7 +50,7 @@ module Collavre
       Current.user.with_lock do
         session = Onboarding::Session.for_user(Current.user)
         unless session && session.session_id == params[:session_id]
-          render json: { error: "onboarding session is no longer current" }, status: :conflict
+          render json: { error: t("collavre.onboarding.errors.stale_session") }, status: :conflict
           next
         end
 

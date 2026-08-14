@@ -12,6 +12,8 @@ ko:
         learn_more: "기능 더 알아보기"
         complete: "기본 사용법을 모두 마쳤습니다."
       reset: "온보딩 다시 보기"
+      errors:
+        stale_session: "이 온보딩 세션은 더 이상 현재 세션이 아닙니다."
       steps:
         tree_node:
           title: "시작 공간 찾기"

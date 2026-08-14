@@ -81,7 +81,12 @@ module Collavre
       post creatives_path, params: { creative: { description: "New practice item", parent_id: session.root.id } }, as: :json
 
       assert_response :success
-      assert_equal response.parsed_body.fetch("id"), Onboarding::Session.for_user(user.reload).added_practice_creative_id
+      added_id = response.parsed_body.fetch("id")
+      assert_equal added_id, Onboarding::Session.for_user(user.reload).added_practice_creative_id
+
+      get onboarding_path, as: :json
+
+      assert_equal added_id, response.parsed_body.fetch("anchor_key")
     end
 
     test "rejects stale card mutations after onboarding is reset in another tab" do
@@ -91,10 +96,12 @@ module Collavre
 
       post reset_onboarding_path
       replacement_session = Onboarding::Session.for_user(user.reload)
+      user.update!(locale: "ko")
 
       post advance_onboarding_path, params: { session_id: stale_session.session_id }, as: :json
 
       assert_response :conflict
+      assert_equal I18n.t("collavre.onboarding.errors.stale_session", locale: :ko), response.parsed_body.fetch("error")
       assert_equal :progress, Onboarding::Session.for_user(user.reload).current_step.key
       assert_equal replacement_session.session_id, Onboarding::Session.for_user(user).session_id
 

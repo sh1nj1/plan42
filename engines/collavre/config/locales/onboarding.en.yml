@@ -12,6 +12,8 @@ en:
         learn_more: "Explore features"
         complete: "You have completed the essentials."
       reset: "View onboarding again"
+      errors:
+        stale_session: "This onboarding session is no longer current."
       steps:
         tree_node:
           title: "Find your starting space"
