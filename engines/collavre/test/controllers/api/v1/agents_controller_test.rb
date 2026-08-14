@@ -1502,6 +1502,39 @@ module Collavre
           assert_equal "cancelled", task.reload.status
         end
 
+        test "reply validation failure does not restore a task cancelled after claim" do
+          reg = register_agent("cancelled-rejected-reply-test")
+          agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+          task = Collavre::Task.create!(
+            name: "Cancelled rejected reply",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: agent,
+            topic_id: topic.id,
+            creative: creative
+          )
+          original_save = Collavre::Comment.instance_method(:save)
+          Collavre::Comment.define_method(:save) do |*args, **kwargs, &block|
+            Collavre::Task.where(id: task.id).update_all(status: "cancelled")
+            original_save.bind_call(self, *args, **kwargs, &block)
+          end
+
+          begin
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic.id, text: "", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+          ensure
+            Collavre::Comment.define_method(:save, original_save)
+          end
+
+          assert_response :unprocessable_entity
+          assert_equal "cancelled", task.reload.status,
+            "validation recovery must not resurrect a task cancelled after its reply claim"
+        end
+
         test "reply recovers the claimed task original human for A2A dispatch" do
           reg = register_agent("a2a-principal-test")
           channel_agent = User.find(reg["agent_id"])

@@ -92,6 +92,16 @@ module Collavre
         true
       end
 
+      # A rejected reply should make the delegated task available for retry, but
+      # only while this request still owns the claim. Stop may have changed the
+      # task to a terminal status while the comment was being validated.
+      def restore_claim(task:)
+        task.with_lock do
+          task.reload
+          task.update!(status: "delegated") if task.running?
+        end
+      end
+
       private
 
       # Clear the chat typing indicator via the canonical status broadcaster (the
