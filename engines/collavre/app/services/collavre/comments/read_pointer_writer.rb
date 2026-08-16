@@ -10,11 +10,13 @@ module Collavre
     # trips per rendered topic — on a networked database that count *was* the
     # response time.
     #
-    # Monotonicity no longer depends on a row lock. The UPDATE keeps the larger
-    # of the stored and the incoming watermark in SQL, which is atomic, so a
-    # delayed request carrying an older watermark still cannot walk a pointer
-    # backwards even though the read that produced it is no longer serialised
-    # with the write.
+    # Monotonicity no longer depends on a row lock. Every lane goes through an
+    # upsert that keeps the larger of the stored and the incoming watermark in
+    # SQL, which is atomic, so a delayed request carrying an older watermark can
+    # neither walk a pointer backwards nor collide on a first-time insert, even
+    # though the read that produced it is no longer serialised with the write.
+    # Because of that the request's own view can be stale, so the positions it
+    # reports for broadcasting are read back after the write.
     class ReadPointerWriter
       Change = Struct.new(:topic_id, :previous_id, :updated_id, :created, keyword_init: true) do
         def stored?
@@ -23,12 +25,6 @@ module Collavre
 
         def advanced?
           previous_id != updated_id
-        end
-
-        # Only a pointer that already rendered a receipt leaves a stale one
-        # behind; a row created at this watermark never had an earlier position.
-        def moved?
-          previous_id.present? && advanced?
         end
       end
 
@@ -48,7 +44,12 @@ module Collavre
         existing = existing_watermarks
         changes = last_ids_by_topic_id.map { |topic_id, last_id| change_for(existing, topic_id, last_id) }
         store(changes, existing)
-        positions(changes, existing)
+        # The request's own view of the watermark is not what the row now holds:
+        # a concurrent writer may have advanced past it, in which case the
+        # forward-only SQL kept *their* value. Broadcasting this request's
+        # updated_id would repaint the receipt at a position the database has
+        # already moved beyond, so read back what was actually retained.
+        positions(changes, existing, existing_watermarks)
       end
 
       private
@@ -79,7 +80,7 @@ module Collavre
         return unless legacy_change&.stored?
 
         preserve_named_fallbacks(legacy_change, existing, named) if legacy_change.advanced?
-        store_legacy(legacy_change, existing)
+        store_legacy(legacy_change)
       end
 
       # NULLs are distinct in a unique index, so this conflict target only covers
@@ -123,15 +124,27 @@ module Collavre
         SQL
       end
 
-      # A single conditional UPDATE is forward-only without a lock: the row is
-      # only touched when the incoming watermark is genuinely newer.
-      def store_legacy(change, existing)
-        return CommentReadPointer.create!(user: user, creative: creative, topic: nil, last_read_comment_id: change.updated_id) if change.created
-        return if existing[nil] == change.updated_id
+      # The legacy lane has no topic_id, so it needs its own conflict target:
+      # the partial unique index on (user_id, creative_id) WHERE topic_id IS
+      # NULL. Going through the same upsert as named rows means a first-time
+      # write racing another first-time write resolves in the database instead
+      # of raising RecordNotUnique out of a bare create!.
+      def store_legacy(change)
+        now = Time.current
+        row = {
+          user_id: user.id,
+          creative_id: creative.id,
+          topic_id: nil,
+          last_read_comment_id: change.updated_id,
+          created_at: now,
+          updated_at: now
+        }
 
-        CommentReadPointer.where(user: user, creative: creative, topic: nil)
-                          .where("last_read_comment_id IS NULL OR last_read_comment_id < ?", change.updated_id)
-                          .update_all(last_read_comment_id: change.updated_id, updated_at: Time.current)
+        CommentReadPointer.upsert_all(
+          [ row ],
+          unique_by: :index_comment_read_pointers_on_legacy_pointer,
+          on_duplicate: forward_only_assignment
+        )
       end
 
       # The legacy pointer is also the fallback watermark for any named topic
@@ -158,16 +171,19 @@ module Collavre
 
       # A newly created named pointer replaces whatever the legacy fallback was
       # rendering for that topic, so that receipt has to be repainted too.
-      def positions(changes, existing)
+      # `stored` is the post-write state, so a position is only cleared when the
+      # row genuinely left it, and the current position is the retained one.
+      def positions(changes, existing, stored)
         legacy_fallback_id = existing[nil]
         superseded = changes.flat_map do |change|
+          current_id = stored[change.topic_id]
           [
             ([ change.topic_id, legacy_fallback_id ] if change.created && change.topic_id && legacy_fallback_id),
-            ([ change.topic_id, change.previous_id ] if change.moved?)
+            ([ change.topic_id, change.previous_id ] if change.previous_id.present? && change.previous_id != current_id)
           ]
         end
 
-        (superseded.compact + changes.map { |change| [ change.topic_id, change.updated_id ] }).select(&:last)
+        superseded.compact + changes.map { |change| [ change.topic_id, stored[change.topic_id] ] }.select(&:last)
       end
     end
   end

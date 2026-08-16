@@ -37,31 +37,51 @@ module Collavre
 
       test "a concurrent advance survives a stale named write" do
         writer.call(@topic.id => @comments.first.id)
+        positions = nil
 
         racing_writer = writer
-        racing_writer.stub(:existing_watermarks, { @topic.id => @comments.first.id }) do
+        with_stale_first_read(racing_writer, @topic.id => @comments.first.id) do
           # Another tab advances the row after this request read it.
           CommentReadPointer.where(user: @user, creative: @creative, topic: @topic)
                             .update_all(last_read_comment_id: @comments.last.id)
-          racing_writer.call(@topic.id => @comments[1].id)
+          positions = racing_writer.call(@topic.id => @comments[1].id)
         end
 
         assert_equal @comments.last.id, pointer_watermark(@topic.id),
           "the database, not the request's stale read, decides the watermark"
+        assert_equal @comments.last.id, positions.last.last,
+          "the receipt is repainted at the retained watermark, not this request's stale one"
+        assert_not_includes positions.map(&:last), @comments[1].id
       end
 
       test "a concurrent advance survives a stale legacy write" do
         legacy_comments = Array.new(3) { Comment.create!(creative: @creative, user: users(:two), content: "legacy") }
         writer.call(nil => legacy_comments.first.id)
+        positions = nil
 
         racing_writer = writer
-        racing_writer.stub(:existing_watermarks, { nil => legacy_comments.first.id }) do
+        with_stale_first_read(racing_writer, nil => legacy_comments.first.id) do
           CommentReadPointer.where(user: @user, creative: @creative, topic: nil)
                             .update_all(last_read_comment_id: legacy_comments.last.id)
-          racing_writer.call(nil => legacy_comments[1].id)
+          positions = racing_writer.call(nil => legacy_comments[1].id)
         end
 
         assert_equal legacy_comments.last.id, pointer_watermark(nil)
+        assert_equal legacy_comments.last.id, positions.last.last
+      end
+
+      test "a first-time legacy write survives another request creating the row first" do
+        legacy_comment = Comment.create!(creative: @creative, user: users(:two), content: "legacy")
+
+        racing_writer = writer
+        with_stale_first_read(racing_writer, {}) do
+          # Both requests saw no legacy pointer; the other one inserts first.
+          CommentReadPointer.create!(user: @user, creative: @creative, topic: nil, last_read_comment_id: legacy_comment.id)
+          assert_nothing_raised { racing_writer.call(nil => legacy_comment.id) }
+        end
+
+        assert_equal legacy_comment.id, pointer_watermark(nil)
+        assert_equal 1, CommentReadPointer.where(user: @user, creative: @creative, topic: nil).count
       end
 
       test "reports the superseded and current positions to repaint" do
@@ -76,6 +96,16 @@ module Collavre
       end
 
       private
+
+      # Only the read that precedes the write is stale; the writer's read-back
+      # has to see the real post-write row, which is the whole point of it.
+      def with_stale_first_read(target, stale, &block)
+        reads = 0
+        target.stub(:existing_watermarks, lambda {
+          reads += 1
+          reads == 1 ? stale : CommentReadPointer.where(user: @user, creative: @creative).pluck(:topic_id, :last_read_comment_id).to_h
+        }, &block)
+      end
 
       def writer
         ReadPointerWriter.new(creative: @creative, user: @user)
