@@ -576,6 +576,13 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     opacity: 1;
 }
 
+/* The onboarding guide targets this normally hover-only control. */
+.edit-inline-btn.guide-anchor-highlight {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+}
+
 @media (max-width: 768px) {
     .creative-toggle-btn {
         visibility: visible !important;
@@ -596,6 +603,11 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
         transform: translateX(0);
         pointer-events: auto;
         visibility: visible;
+    }
+
+    .edit-inline-btn.guide-anchor-highlight {
+        max-width: 40px;
+        transform: translateX(0);
     }
 }
 
@@ -823,6 +835,12 @@ creative-tree-row.chat-active .creative-row {
 
 .comments-btn.no-comments {
     visibility: hidden;
+}
+
+/* The onboarding guide must reveal the otherwise hover-only chat action. */
+.comments-btn.no-comments.guide-anchor-highlight {
+    visibility: visible;
+    opacity: 1;
 }
 
 .creative-row:hover .comments-btn.no-comments {

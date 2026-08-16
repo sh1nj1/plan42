@@ -989,6 +989,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_14_000001) do
     t.datetime "locked_at"
     t.string "name", null: false
     t.boolean "notifications_enabled"
+    t.datetime "onboarding_completed_at"
+    t.datetime "onboarding_seeded_at"
     t.string "password_digest", null: false
     t.text "routing_expression"
     t.string "routing_subscription_token"

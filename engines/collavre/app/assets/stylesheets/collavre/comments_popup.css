@@ -2110,6 +2110,27 @@ li:hover .topic-create-option {
     text-decoration: underline;
 }
 
+/* First-run onboarding replaces feature cards in an empty chat. */
+.onboarding-card {
+    margin: 10px 12px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-section);
+}
+
+.onboarding-card-heading { font-weight: 700; margin-bottom: 8px; }
+.onboarding-card-step { display: flex; gap: 7px; padding: 3px 0; color: var(--text-muted); font-size: .85em; }
+.onboarding-card-step.is-current { color: var(--text-primary); font-weight: 600; }
+.onboarding-card-step.is-complete { text-decoration: line-through; }
+.onboarding-card-step-number { width: 1.3em; text-align: center; border-radius: 50%; background: var(--surface-hover); }
+.onboarding-card-instruction { margin: 10px 0 0; font-size: .9em; }
+.onboarding-card-control { display: inline-flex; align-items: center; gap: 3px; margin: 0 2px; padding: 1px 5px; min-height: auto; vertical-align: baseline; opacity: 1; }
+.onboarding-card-control:disabled { cursor: default; opacity: 1; }
+.onboarding-card-control--add { color: var(--text-primary); }
+.onboarding-card-actions { display: flex; gap: 10px; align-items: center; }
+.guide-anchor-highlight { outline: 3px solid var(--color-primary, #4f7cff); outline-offset: 3px; border-radius: 4px; }
+
 .chat-empty-minimal {
     display: flex;
     align-items: center;

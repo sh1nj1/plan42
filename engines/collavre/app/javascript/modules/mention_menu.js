@@ -58,7 +58,7 @@ if (!mentionMenuInitialized) {
         if (q.length === 0) { hide(); return }
         clearTimeout(fetchTimer)
         fetchTimer = setTimeout(function () {
-          const url = new URL('/users/search', window.location.origin)
+          const url = new URL(popup?.dataset.userSearchUrl || '/users/search', window.location.origin)
           url.searchParams.set('q', q)
           if (popup && popup.dataset.creativeId) {
             url.searchParams.set('creative_id', popup.dataset.creativeId)

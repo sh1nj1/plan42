@@ -123,6 +123,10 @@
         <br>
         <%= link_to t('collavre.agent_gateways.manage'), collavre.agent_gateways_path %>
         <br>
+        <% if @user == Current.user %>
+          <%= button_to t('collavre.onboarding.reset'), collavre.reset_onboarding_path, method: :post, class: 'link-button' %>
+          <br>
+        <% end %>
         <%= link_to t('doorkeeper.my_applications'), main_app.oauth_applications_path %>
         <% if @user.system_admin? %>
           <br>

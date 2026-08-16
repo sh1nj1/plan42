@@ -25,6 +25,7 @@ describe('WorkspaceTreeController', () => {
           {
             id: 1,
             label: 'Root',
+            progress: 0.5,
             snippet: 'Root chat',
             can_comment: true,
             url: '/creatives?id=1',
@@ -98,6 +99,12 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboFrame).toBe('creative-workspace-content')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboAction).toBe('advance')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboPrefetch).toBe('false')
+    expect(document.querySelector('[data-creative-id="1"] > div > a').dataset.guideAnchor).toBe('tree.node')
+    expect(document.querySelector('[data-creative-id="1"] > div > a').dataset.guideAnchorKey).toBe('1')
+    const progress = document.querySelector('[data-creative-id="1"] .creative-workspace-tree-progress')
+    expect(progress.dataset.guideAnchor).toBeUndefined()
+    expect(progress.dataset.guideAnchorKey).toBeUndefined()
+    expect(progress.textContent).toBe('50%')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
   })
@@ -320,6 +327,8 @@ describe('WorkspaceTreeController', () => {
   test('closes an open drawer when the user clicks outside it', () => {
     const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
     const treeRegion = panelToggle.closest('section')
+    const panelClosed = jest.fn()
+    treeRegion.addEventListener('workspace-tree:panel-closed', panelClosed)
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 })
     panelToggle.click()
 
@@ -327,6 +336,7 @@ describe('WorkspaceTreeController', () => {
 
     expect(treeRegion.classList.contains('is-open')).toBe(false)
     expect(panelToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(panelClosed).toHaveBeenCalledTimes(1)
   })
 
   test('keeps the tree open after an outside click at three-panel width', () => {

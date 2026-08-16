@@ -25,10 +25,6 @@ module Collavre
         return head :forbidden
       end
 
-      unless %w[running pending queued pending_approval delegated].include?(task.status)
-        return head :unprocessable_entity
-      end
-
       # These statuses count against the topic slot (occupying_topic_slot) yet no
       # live worker will run AiAgentJob's ensure-block drain for them:
       #   - delegated / pending_approval already returned from the job holding the
@@ -40,8 +36,18 @@ module Collavre
       # cancelling the blocker leaves agent capacity and the next waiter stuck
       # until stuck recovery. release!/dequeue are idempotent (dequeue is bounded
       # by topic_at_capacity?), so a racing live worker that also drains is harmless.
-      held_slot_without_worker = Task::HELD_SLOT_WITHOUT_WORKER.include?(task.status)
-      task.update!(status: "cancelled")
+      held_slot_without_worker = nil
+      task.with_lock do
+        task.reload
+        unless %w[running pending queued pending_approval delegated].include?(task.status)
+          head :unprocessable_entity
+          next
+        end
+
+        held_slot_without_worker = Task::HELD_SLOT_WITHOUT_WORKER.include?(task.status) || task.externally_claimed?
+        task.update!(status: "cancelled")
+      end
+      return if performed?
 
       # The third door a waiter leaves the queue through without ever being
       # promoted — "queued" is in the whitelist above, so the user's own stop

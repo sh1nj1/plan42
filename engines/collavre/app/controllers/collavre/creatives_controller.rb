@@ -25,6 +25,7 @@ module Collavre
     def index
       respond_to do |format|
         format.html do
+          ensure_onboarding_for_workspace_root
           visit_received_at = Time.current
           # HTML only needs parent_creative for nav/title - skip expensive filtered queries
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
@@ -250,6 +251,7 @@ module Collavre
       @creative = result.creative
 
       if result.success?
+        record_onboarding_creation(@creative)
         # Expose the post-rewrite markdown source so the client can sync its
         # textarea after the server replaces inline data: URIs with blob paths,
         # matching the update endpoint contract. Without this, a freshly created
@@ -279,6 +281,7 @@ module Collavre
       respond_to do |format|
         permitted = creative_params.to_h
         base = @creative.effective_origin(Set.new)
+        previous_description = base.description
         success = true
         previous_progress = base.progress
         requested_progress = permitted["progress"] || permitted[:progress]
@@ -313,6 +316,11 @@ module Collavre
         end
 
         if success
+          record_onboarding_progress(
+            base,
+            previous_description: previous_description,
+            previous_progress: previous_progress
+          )
           format.html { redirect_to @creative }
           format.json do
             base.reload
@@ -350,6 +358,38 @@ module Collavre
           format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
         end
       end
+    end
+
+    def record_onboarding_progress(creative, previous_description:, previous_progress:)
+      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      session = Onboarding::Session.for_user(Current.user)
+      return unless session
+
+      if creative.progress != previous_progress
+        Onboarding::ProgressTracker.record(
+          user: Current.user,
+          event: :progress_changed,
+          creative: creative,
+          before_progress: previous_progress,
+          session: session
+        )
+      end
+      return if creative.description == previous_description
+
+      Onboarding::ProgressTracker.record(
+        user: Current.user,
+        event: :description_changed,
+        creative: creative,
+        before_description: previous_description,
+        session: session
+      )
+    end
+
+    def record_onboarding_creation(creative)
+      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      Onboarding::ProgressTracker.record(user: Current.user, event: :creative_created, creative: creative)
     end
 
     def contexts
@@ -585,6 +625,22 @@ module Collavre
     end
 
     private
+
+      def ensure_onboarding_for_workspace_root
+        return if request.head? || turbo_prefetch_request?
+        return unless Current.user&.creative_workspace_enabled? && params[:id].blank?
+        return if Current.user.onboarding_completed_at?
+
+        session = Onboarding::Seeder.new(user: Current.user).call
+        return unless session
+
+        @onboarding_card_creative = session.root
+        session.update! do |onboarding|
+          next unless onboarding.delete("chat_autoopen_pending")
+
+          @onboarding_chat_creative = session.root
+        end
+      end
       def remember_last_visited_creative(creative, client_id:, sequence:, received_at:)
         return unless Current.user && creative
 

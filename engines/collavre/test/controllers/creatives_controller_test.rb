@@ -316,6 +316,64 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
   end
 
+  test "workspace action paths preserve the engine mount prefix" do
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id), env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :success
+    assert_select "[data-controller='workspace-tree'][data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
+    assert_select "#creatives[data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
+    assert_select "#comments-popup[data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
+    assert_select "#comments-popup[data-user-search-url='/collavre/users/search']"
+  end
+
+  test "completed users skip onboarding progress checks for Creative updates" do
+    user = users(:one)
+    user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: Time.current)
+    creative = creatives(:root_parent)
+
+    Current.set(user: user) do
+      Collavre::Onboarding::Session.stub(:for_user, ->(_requested_user) { flunk("should not load onboarding session") }) do
+        Collavre::CreativesController.new.send(
+          :record_onboarding_progress,
+          creative,
+          previous_description: "Earlier description",
+          previous_progress: creative.progress - 0.1
+        )
+      end
+    end
+  end
+
+  test "Creative updates reuse one onboarding session for all changed fields" do
+    user = users(:one)
+    user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: nil)
+    creative = creatives(:root_parent)
+    session = Object.new
+    session_loads = 0
+    recorded_sessions = []
+
+    Current.set(user: user) do
+      Collavre::Onboarding::Session.stub(:for_user, ->(requested_user) {
+        session_loads += 1
+        assert_equal user, requested_user
+        session
+      }) do
+        Collavre::Onboarding::ProgressTracker.stub(:record, ->(**arguments) { recorded_sessions << arguments.fetch(:session) }) do
+          Collavre::CreativesController.new.send(
+            :record_onboarding_progress,
+            creative,
+            previous_description: "Earlier description",
+            previous_progress: creative.progress - 0.1
+          )
+        end
+      end
+    end
+
+    assert_equal 1, session_loads
+    assert_equal [ session, session ], recorded_sessions
+  end
+
   test "workspace breadcrumb root and ancestor links advance browser history" do
     ancestor = creatives(:unconvert_target)
     child = creatives(:unconvert_child_two)
@@ -328,7 +386,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a.creative-breadcrumb-current[href='#{creative_path(child)}'][data-turbo-action='replace'][data-turbo-prefetch='false']"
   end
 
-  test "workspace tree JSON returns collapsed branches without leaf roots" do
+  test "workspace tree JSON returns collapsed roots including leaves" do
     branch = Creative.create!(user: users(:one), description: "Workspace branch")
     child = Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
     Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
@@ -340,7 +398,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     payload = JSON.parse(response.body)
     ids = payload.fetch("creatives").pluck("id")
     assert_includes ids, branch.id
-    refute_includes ids, leaf.id
+    assert_includes ids, leaf.id
     branch_payload = payload.fetch("creatives").find { |node| node.fetch("id") == branch.id }
     assert_equal creatives_path(id: branch.id), branch_payload.fetch("url")
     assert_equal branch.creative_snippet, branch_payload.fetch("snippet")

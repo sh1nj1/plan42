@@ -82,6 +82,37 @@ module Collavre
       assert_equal [ nil, @creative.id ], dequeue_called_with
     end
 
+    test "destroying comment releases a slot held by an external reply claim" do
+      topic = Topic.create!(name: "Claimed reply deletion", creative: @creative, user: @owner)
+      task = Task.create!(
+        name: "Response to comment_created",
+        status: "running",
+        trigger_event_name: "comment_created",
+        trigger_event_payload: {
+          "comment" => { "id" => @comment.id, "content" => "Hello AI" },
+          "creative" => { "id" => @creative.id }, "external_reply_claimed" => true
+        },
+        agent: @agent,
+        creative_id: @creative.id,
+        topic_id: topic.id
+      )
+
+      tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+      tracker.reset!
+      tracker.reserve!(task.id)
+      dequeue_called_with = nil
+
+      Collavre::Orchestration::AgentOrchestrator.stub(
+        :dequeue_next_for_topic, ->(topic_id, creative_id) { dequeue_called_with = [ topic_id, creative_id ] }
+      ) do
+        @comment.destroy!
+      end
+
+      assert_equal "cancelled", task.reload.status
+      assert_equal 0, tracker.active_jobs
+      assert_equal [ topic.id, @creative.id ], dequeue_called_with
+    end
+
     test "destroying comment cancels queued tasks triggered by that comment" do
       task = Task.create!(
         name: "Response to comment_created",

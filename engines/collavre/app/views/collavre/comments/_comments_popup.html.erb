@@ -1,11 +1,16 @@
 
 <% fullscreen = local_assigns.fetch(:fullscreen, false) %>
 <% auto_fullscreen = local_assigns.fetch(:auto_fullscreen, false) %>
+<% auto_open = local_assigns.fetch(:auto_open, false) %>
 <% docked = local_assigns.fetch(:docked, false) %>
 <% creative = local_assigns[:creative] %>
+<% onboarding_creative = local_assigns[:onboarding_creative] %>
 <div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics comments--contexts comments--drop-trigger share-modal" class="popup-box"
+     data-creative-path-template="<%= creative_path('__CREATIVE_ID__') %>"
+     data-user-search-url="<%= search_users_path %>"
      data-fullscreen="<%= fullscreen %>"
      data-docked="<%= docked %>"
+     data-auto-open="<%= auto_open %>"
      data-docked-empty-text="<%= t('collavre.creatives.workspace.select_chat') %>"
      data-default-title="<%= t('collavre.comments.comments') %>"
      data-close-label="<%= t('collavre.comments.close') %>"
@@ -81,7 +86,7 @@
      >
   <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
   <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
-  <div class="comments-popup-header" data-comments--popup-target="header">
+  <div class="comments-popup-header" data-comments--popup-target="header" data-guide-anchor="chat.toggle">
     <div class="chat-nav-buttons" data-comments--popup-target="navContainer">
       <button class="chat-nav-btn" type="button" disabled
               data-comments--popup-target="navBack"
@@ -146,7 +151,13 @@
   </div>
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
-  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
+  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list">
+    <% if creative.blank? && onboarding_creative.present? %>
+      <%= render "collavre/onboarding/card", creative: onboarding_creative %>
+    <% else %>
+      <%= t('app.loading') %>
+    <% end %>
+  </div>
   <div id="typing-indicator-row">
     <button type="button" id="scroll-prev-msg-btn" class="scroll-prev-msg-btn" data-action="click->comments--list#scrollToPreviousMessage" title="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>" aria-label="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>">&#8963;</button>
     <div id="typing-scroll-viewport" data-comments--presence-target="scrollRow">
@@ -162,7 +173,7 @@
       <button type="button" class="comment-quote-cancel" data-comments--form-target="quoteCancelButton" data-action="click->comments--form#cancelQuote" title="<%= t('app.cancel') %>">&times;</button>
     </div>
     <div class="review-quotes-container" data-comments--form-target="reviewQuotesContainer" style="display:none;"></div>
-    <textarea class="shared-input-surface" name="comment[content]" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
+    <textarea class="shared-input-surface" name="comment[content]" data-guide-anchor="chat.composer" data-comments--form-target="textarea" data-comments--presence-target="textarea" data-comments--mention-menu-target="textarea" rows="2" enterkeyhint="send"></textarea>
     <div class="comment-bottom">
     <input type="file" id="comment-images" name="comment[images][]" accept="image/*" multiple data-comments--form-target="imageInput" style="display:none;" />
     <label style="height: 22px"><input type="hidden" name="comment[private]" value="0" /><input type="checkbox" id="comment-private" data-comments--form-target="privateCheckbox" data-comments--presence-target="privateCheckbox" name="comment[private]" value="1" /> <%= t('collavre.comments.private') %></label>

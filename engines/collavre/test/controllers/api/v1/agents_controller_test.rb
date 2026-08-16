@@ -1101,9 +1101,9 @@ module Collavre
           # worker (cooldown_seconds: 0), TriggerLoopCheckJob could run
           # before comment.save committed, fail to find an agent comment,
           # and leave the drop-trigger loop stuck at state="running" even
-          # though the reply is saved a moment later. The fix moves the
-          # callback replay into finalize_claimed_task (post-save) via
-          # Task#fire_completion_callbacks_after_external_claim.
+          # though the reply is saved a moment later. The fix defers the
+          # terminal transition and its callbacks to TaskClaimService#finalize,
+          # after the comment is persisted.
           reg = register_agent("trigger-loop-timing-test")
           ai_user = User.find(reg["agent_id"])
 
@@ -1167,13 +1167,13 @@ module Collavre
         end
 
         test "Claude Channel reply enqueues TriggerLoopCheckJob for drop-trigger loops" do
-          # claim_delegated_task must use update! (not update_all) so that
-          # Task's after_update_commit :check_trigger_loop_completion fires
-          # on the delegated → done transition. Otherwise drop-trigger loops
-          # whose continue step is delegated to a Claude Channel agent stay
-          # stuck at state="running" because TriggerLoopCheckJob never
-          # enqueues — normal agent completions go through update! so they
-          # advance the loop; Claude replies must match that contract.
+          # The post-save completion must use update! (not update_all) so that
+          # Task's after_update_commit :check_trigger_loop_completion fires on
+          # the running → done transition. Otherwise drop-trigger loops whose
+          # continue step is delegated to a Claude Channel agent stay stuck at
+          # state="running" because TriggerLoopCheckJob never enqueues — normal
+          # agent completions go through update!, so Claude replies must match
+          # that contract.
           reg = register_agent("trigger-loop-callback-test")
           ai_user = User.find(reg["agent_id"])
 
@@ -1464,6 +1464,75 @@ module Collavre
           assert_equal reg["agent_id"], dispatcher_args[:agent].id
           assert_equal text, dispatcher_args[:reply_comment].content
           assert_equal @user, dispatcher_args[:workspace_user]
+        end
+
+        test "reply does not dispatch downstream work when finalization loses a cancellation race" do
+          reg = register_agent("cancelled-finalization-dispatch-test")
+          agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+          task = Collavre::Task.create!(
+            name: "Cancelled reply",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: agent,
+            topic_id: topic.id,
+            creative: creative
+          )
+          dispatched = false
+          original_finalize = Collavre::AiAgent::TaskClaimService.instance_method(:finalize)
+          Collavre::AiAgent::TaskClaimService.define_method(:finalize) do |agent:, task:, comment:|
+            Collavre::Task.where(id: task.id).update_all(status: "cancelled")
+            original_finalize.bind_call(self, agent: agent, task: task, comment: comment)
+          end
+
+          begin
+            Collavre::AiAgent::A2aDispatcher.stub(:new, ->(**_kwargs) { dispatched = true }) do
+              post "/api/v1/agent/reply",
+                params: { topic_id: topic.id, text: "@#{users(:ai_bot).name}: continue", task_id: task.id },
+                headers: auth_headers,
+                as: :json
+            end
+          ensure
+            Collavre::AiAgent::TaskClaimService.define_method(:finalize, original_finalize)
+          end
+
+          assert_response :conflict
+          refute dispatched, "a cancelled reply must not launch downstream A2A work"
+          assert_equal "cancelled", task.reload.status
+        end
+
+        test "reply validation failure does not restore a task cancelled after claim" do
+          reg = register_agent("cancelled-rejected-reply-test")
+          agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+          task = Collavre::Task.create!(
+            name: "Cancelled rejected reply",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: agent,
+            topic_id: topic.id,
+            creative: creative
+          )
+          original_save = Collavre::Comment.instance_method(:save)
+          Collavre::Comment.define_method(:save) do |*args, **kwargs, &block|
+            Collavre::Task.where(id: task.id).update_all(status: "cancelled")
+            original_save.bind_call(self, *args, **kwargs, &block)
+          end
+
+          begin
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic.id, text: "", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+          ensure
+            Collavre::Comment.define_method(:save, original_save)
+          end
+
+          assert_response :unprocessable_entity
+          assert_equal "cancelled", task.reload.status,
+            "validation recovery must not resurrect a task cancelled after its reply claim"
         end
 
         test "reply recovers the claimed task original human for A2A dispatch" do

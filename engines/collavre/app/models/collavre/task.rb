@@ -24,6 +24,7 @@ module Collavre
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
     after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
+    after_update_commit :schedule_onboarding_cleanup, if: :became_inactive?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
       rel = where(topic_id: topic_id, status: %w[running delegated])
@@ -68,6 +69,13 @@ module Collavre
       ACTIVE_STATUSES.include?(status)
     end
 
+    # A Claude Channel /reply claim moves a delegated task to running before a
+    # reply comment can be saved. No worker remains after that handoff, so Stop
+    # must release its slot itself just as it does for delegated tasks.
+    def externally_claimed?
+      trigger_event_payload&.fetch("external_reply_claimed", false)
+    end
+
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same
@@ -78,19 +86,6 @@ module Collavre
         return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
       end
       false
-    end
-
-    # Replay the after_update_commit callbacks when the status transition was
-    # made via an UPDATE that bypassed callbacks (e.g. update_all in an atomic
-    # claim flow). The private callback predicates rely on
-    # saved_change_to_attribute? which is false outside a save lifecycle, so
-    # the callbacks themselves would no-op when called directly. This method
-    # is the supported escape hatch for AgentsController#finalize_claimed_task
-    # to drive the same side effects (trigger-loop continuation + stop-button
-    # broadcast) once the related reply_comment has been persisted.
-    def fire_completion_callbacks_after_external_claim
-      check_trigger_loop_completion if trigger_loop_completion_eligible?
-      broadcast_stop_button_removal if terminal_status?
     end
 
     # What a persisted row says about whether this turn ever handed anything
@@ -147,6 +142,34 @@ module Collavre
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
+    end
+
+    # A completed onboarding session may have stopped retrying its cleanup
+    # while a tool approval waited indefinitely. Once that turn transitions out
+    # of an active state, enqueue one final cleanup instead of polling forever.
+    def became_inactive?
+      saved_change_to_attribute?("status") &&
+        status_before_last_save.in?(ACTIVE_STATUSES) &&
+        !active?
+    end
+
+    def schedule_onboarding_cleanup
+      # The deferred-cleanup marker may have been added after this task loaded
+      # (for example, by onboarding reset), so do not inspect a stale belongs_to
+      # association from the running task instance.
+      creative = Creative.find_by(id: creative_id)
+      onboarding = creative&.data&.fetch("onboarding", {})
+      session_id = onboarding&.fetch("session_id", nil)
+      return if session_id.blank?
+
+      user = creative.user
+      # A reset clears onboarding_completed_at for its replacement session.
+      # The retiring session records its own deferred cleanup eligibility on
+      # its tagged creatives, so its terminal turn remains able to finish
+      # cleanup after the bounded retry window.
+      return unless onboarding["cleanup_pending"] || user&.onboarding_completed_at?
+
+      OnboardingCleanupJob.perform_later(user.id, session_id)
     end
 
     # This turn refused other dispatches on the strength of having read their

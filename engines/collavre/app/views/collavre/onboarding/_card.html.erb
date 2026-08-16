@@ -1,0 +1,40 @@
+<% session = Collavre::Onboarding::Session.for_creative(creative) %>
+<% return unless session %>
+<div class="onboarding-card"
+     data-controller="onboarding-card"
+     data-onboarding-card-state-url-value="<%= collavre.onboarding_path %>"
+     data-onboarding-card-advance-url-value="<%= collavre.advance_onboarding_path %>"
+     data-onboarding-card-complete-url-value="<%= collavre.complete_onboarding_path %>"
+     data-onboarding-card-current-step-value="<%= session.data['current_step'] %>"
+     data-onboarding-card-session-id-value="<%= session.session_id %>">
+  <div class="onboarding-card-heading"><%= t("collavre.onboarding.card.heading") %></div>
+  <% session.scenario.steps.each_with_index do |step, index| %>
+    <div class="onboarding-card-step <%= 'is-current' if session.current_step == step %> <%= 'is-complete' if session.data.dig('steps', step.key.to_s, 'status') == 'completed' %>"
+         data-onboarding-card-target="step" data-step-key="<%= step.key %>">
+      <span class="onboarding-card-step-number"><%= index + 1 %></span>
+      <span><%= t("collavre.onboarding.steps.#{step.key}.title") %></span>
+    </div>
+  <% end %>
+  <p class="onboarding-card-instruction">
+    <span data-onboarding-card-target="instruction">
+      <% if session.current_step&.key == :progress && session.added_practice_creative_id.nil? %>
+        <%= t("collavre.onboarding.steps.progress.body_before") %>
+        <button type="button" class="creative-header-outline-btn onboarding-card-control" disabled aria-hidden="true" tabindex="-1"><%= svg_tag "add.svg", class: "icon-add", width: 16, height: 16 %><span><%= t("collavre.onboarding.steps.progress.control") %></span></button>
+        <%= t("collavre.onboarding.steps.progress.body_after") %>
+      <% elsif session.current_step&.key == :editor %>
+        <%= t("collavre.onboarding.steps.editor.body_before") %>
+        <button type="button" class="creative-action-btn onboarding-card-control" disabled aria-hidden="true" tabindex="-1"><%= t("collavre.onboarding.steps.editor.control") %></button>
+        <%= t("collavre.onboarding.steps.editor.body_after") %>
+      <% else %>
+        <%= session.current_step ? t("collavre.onboarding.steps.#{session.current_step.key}.body") : t("collavre.onboarding.card.complete") %>
+      <% end %>
+    </span>
+  </p>
+  <div class="onboarding-card-actions">
+    <button type="button" class="feature-card-action" data-onboarding-card-target="next" data-action="onboarding-card#advance" <%= 'hidden' unless session.current_step&.completion == :ui %>><%= t("collavre.onboarding.card.next") %></button>
+    <span data-onboarding-card-target="finish" <%= 'hidden' unless session.current_step.nil? %>>
+      <button type="button" class="feature-card-action" data-action="onboarding-card#complete"><%= t("collavre.onboarding.card.finish") %></button>
+      <%= link_to t("collavre.onboarding.card.learn_more"), collavre.features_path, class: "feature-card-guide-link" %>
+    </span>
+  </div>
+</div>

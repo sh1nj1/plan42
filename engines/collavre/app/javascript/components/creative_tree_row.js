@@ -6,6 +6,7 @@ import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
+import { creativePathFromTemplate } from "../lib/creative_path";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -324,7 +325,13 @@ class CreativeTreeRow extends LitElement {
   _renderActionButton() {
     if (this.canWrite) {
       return html`
-        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id=${this.creativeId}>
+        <button
+          type="button"
+          class="creative-action-btn edit-inline-btn"
+          data-creative-id=${this.creativeId}
+          data-guide-anchor="creative.editor"
+          data-guide-anchor-key=${this.creativeId}
+        >
           ${unsafeHTML(this.editIconHtml || "")}
         </button>
       `;
@@ -601,7 +608,8 @@ class CreativeTreeRow extends LitElement {
     try {
       const body = new FormData();
       body.append("creative[progress]", newProgress);
-      const response = await csrfFetch(`/creatives/${creativeId}`, {
+      const pathTemplate = this.closest("[data-creative-path-template]")?.dataset.creativePathTemplate;
+      const response = await csrfFetch(creativePathFromTemplate(pathTemplate, creativeId), {
         method: "PATCH",
         headers: { Accept: "application/json" },
         body,

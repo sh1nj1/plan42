@@ -78,7 +78,13 @@ module Collavre
           stream + button_tag(
             comment_icon + badge,
             name: "show-comments-btn",
-            data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
+            data: {
+              creative_id: creative.id,
+              can_comment: true,
+              creative_snippet: creative.creative_snippet,
+              guide_anchor: "chat.toggle",
+              guide_anchor_key: creative.id
+            },
             class: classes.join(" ")
           )
         else
@@ -130,6 +136,8 @@ module Collavre
           # toggle only ever mean 0 or 1, so emit it as an integer.
           current_progress: complete ? 1 : 0,
           new_progress: new_value,
+          guide_anchor: "tree.progress",
+          guide_anchor_key: creative.id,
           mark_complete: t("collavre.creatives.index.mark_complete"),
           mark_incomplete: t("collavre.creatives.index.mark_incomplete")
         },

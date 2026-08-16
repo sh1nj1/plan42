@@ -33,8 +33,16 @@ module Collavre
       limit = 20 if limit <= 0
       limit = 50 if limit > 50
 
-      user_ids = users.select(:id).distinct.limit(limit).pluck(:id)
-      users = Collavre::User.where(id: user_ids)
+      # An onboarding practice tree grants feedback access to one available AI
+      # helper. Filter by the permission cache in SQL before applying the result
+      # limit, so an inaccessible earlier candidate cannot hide the helper.
+      session = Collavre::Onboarding::Session.for_creative(creative)
+      users = if params[:scope] != "contacts" && session
+        Creatives::PermissionFilter.permitted_users(users.ai_agents, creative, min_permission: :feedback)
+      else
+        users
+      end
+      users = users.order(:name, :id).distinct.limit(limit)
       render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
     end
 

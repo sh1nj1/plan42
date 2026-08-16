@@ -55,6 +55,7 @@ module Collavre
         @comment.skip_dispatch = true
       end
       if @comment.save
+        record_onboarding_comment_progress
         # Cross-post inbox inline replies to the original creative/topic
         InboxReplyService.call(@comment)
 
@@ -64,6 +65,16 @@ module Collavre
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
       end
+    end
+
+    def record_onboarding_comment_progress
+      return unless Current.user.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      session = Onboarding::Session.for_user(Current.user)
+      return unless session
+
+      Onboarding::ProgressTracker.record(user: Current.user, event: :comment_created, comment: @comment, session: session)
+      Onboarding::ProgressTracker.record(user: Current.user, event: :agent_mentioned, comment: @comment, session: session)
     end
 
     def update

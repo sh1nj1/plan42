@@ -196,13 +196,15 @@ module Collavre
           )
 
           if comment.save
-            task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment) if claimed_task
+            return head(:conflict) if claimed_task && !task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment)
+
             dispatch_a2a(agent, comment, task: claimed_task)
             render json: { comment_id: comment.id }, status: :created
           else
             # Restore the dispatch so the MCP client can retry — the failure
-            # is text-level (validation), not task-level.
-            claimed_task&.update!(status: "delegated")
+            # is text-level (validation), not task-level. A concurrent Stop
+            # owns any terminal state, so it must not be resurrected here.
+            task_claim_service.restore_claim(task: claimed_task) if claimed_task
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
         end

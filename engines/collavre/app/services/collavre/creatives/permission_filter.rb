@@ -19,6 +19,63 @@ module Creatives
       @user = user
     end
 
+    # Returns the candidate user ids that may access a creative at the requested
+    # permission level. This is the inverse of #readable_ids: it resolves one
+    # creative for many users without issuing a permission-cache query per user.
+    # User-specific cache entries remain authoritative over a public entry.
+    def self.permitted_user_ids(creative, user_ids, min_permission: :read)
+      user_ids = user_ids.to_a.filter_map { |id| Integer(id, exception: false) }.uniq
+      return [] if creative.blank? || user_ids.empty?
+
+      effective = EffectiveCreativeResolution.effective_creative(creative)
+      min_rank = CreativeShare.permissions.fetch(min_permission.to_s)
+      permissions_by_user_id = CreativeSharesCache
+        .where(creative_id: effective.id, user_id: user_ids + [ nil ])
+        .pluck(:user_id, :permission)
+        .to_h
+      public_permission = permissions_by_user_id.delete(nil)
+
+      user_ids.select do |user_id|
+        if user_id == effective.user_id
+          true
+        elsif permissions_by_user_id.key?(user_id)
+          CreativeShare.permissions.fetch(permissions_by_user_id[user_id]) >= min_rank
+        else
+          public_permission && CreativeShare.permissions.fetch(public_permission) >= min_rank
+        end
+      end
+    end
+
+    # Narrows a User relation to users that can access +creative+ at the
+    # requested level. Keep the permission predicate in SQL so callers can
+    # apply their own ordering and limit *after* inaccessible users have been
+    # excluded. A direct user cache entry remains authoritative over public
+    # access, matching #permitted_user_ids and PermissionChecker.
+    def self.permitted_users(scope, creative, min_permission: :read)
+      return scope.none if creative.blank?
+
+      effective = EffectiveCreativeResolution.effective_creative(creative)
+      min_rank = CreativeShare.permissions.fetch(min_permission.to_s)
+      user_table = User.quoted_table_name
+      cache_table = CreativeSharesCache.quoted_table_name
+      user_cache = "permission_filter_user_cache"
+      public_cache = "permission_filter_public_cache"
+
+      scope
+        .joins(sanitize_join("LEFT OUTER JOIN #{cache_table} #{user_cache} " \
+          "ON #{user_cache}.creative_id = ? AND #{user_cache}.user_id = #{user_table}.id", effective.id))
+        .joins(sanitize_join("LEFT OUTER JOIN #{cache_table} #{public_cache} " \
+          "ON #{public_cache}.creative_id = ? AND #{public_cache}.user_id IS NULL", effective.id))
+        .where(
+          "#{user_table}.id = :owner_id OR " \
+            "CASE WHEN #{user_cache}.id IS NOT NULL THEN #{user_cache}.permission " \
+            "ELSE #{public_cache}.permission END >= :min_rank",
+          owner_id: effective.user_id,
+          min_rank: min_rank
+        )
+        .distinct
+    end
+
     # Returns the subset of `ids` the user may access at `min_permission` or
     # higher, as an Array. `min_permission:` defaults to `:read`, so the no-arg
     # form is unchanged; pass `:write` (etc.) to share the one batch filter with
@@ -112,6 +169,11 @@ module Creatives
     end
 
     private
+
+    def self.sanitize_join(sql, id)
+      ActiveRecord::Base.sanitize_sql_array([ sql, id ])
+    end
+    private_class_method :sanitize_join
 
     attr_reader :user
 

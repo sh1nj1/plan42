@@ -1,0 +1,38 @@
+en:
+  collavre:
+    onboarding:
+      seed:
+        root: "🚀 Get started with Collavre"
+        progress_practice: "Practice item 1"
+        editor_practice: "Practice item 2"
+      card:
+        heading: "Try Collavre"
+        next: "Show me"
+        finish: "Finish and clean up"
+        learn_more: "Explore features"
+        complete: "You have completed the essentials."
+      reset: "View onboarding again"
+      errors:
+        stale_session: "This onboarding session is no longer current."
+      steps:
+        tree_node:
+          title: "Find your starting space"
+          body: "Your practice workspace is in the tree on the left."
+        progress:
+          title: "Add, then complete"
+          body: "Complete the new item you added."
+          body_before: "Use the "
+          body_after: " button to add an item, then complete the new item."
+          control: "Add"
+        editor:
+          title: "Edit an item"
+          body: "On mobile, swipe the item row horizontally to reveal the edit button, then change the text of Practice item 2."
+          body_before: "On mobile, swipe the item row horizontally to reveal the "
+          body_after: " button, then change the text of Practice item 2."
+          control: "Edit"
+        comment:
+          title: "Send a chat message"
+          body: "Send a public message in the chat for Practice item 2."
+        mention:
+          title: "Mention an AI teammate"
+          body: "Mention an available AI teammate with @name: in chat."

@@ -12,6 +12,7 @@
 
       <h1 class="landing-section-title"><%= t('collavre.features.index.title') %></h1>
       <p class="landing-section-sub"><%= t('collavre.features.index.subtitle') %></p>
+      <%= link_to t('collavre.features.nav.back'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name), class: "landing-btn landing-btn-ghost" %>
 
       <div class="landing-features-grid">
         <% @cards.each do |card| %>

@@ -4,6 +4,7 @@ ko:
     features:
       nav:
         landing: "홈"
+        back: "뒤로 가기"
         all: "전체 기능"
         all_arrow: "← 전체 기능"
         separator: "/"

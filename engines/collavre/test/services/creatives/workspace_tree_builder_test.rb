@@ -21,15 +21,16 @@ module Creatives
       @view_context = FakeViewContext.new
     end
 
-    test "returns only readable branches without loading their children" do
+    test "returns readable roots including leaves without loading their children" do
       root = Creative.create!(user: @user, description: "<strong>Root</strong>")
       branch = Creative.create!(user: @user, parent: root, description: "Branch")
       Creative.create!(user: @user, parent: branch, description: "Leaf")
       root_leaf = Creative.create!(user: @user, description: "Root leaf")
+      inbox = Creative.inbox_for(@user)
 
-      nodes = build_tree([ root, root_leaf ])
+      nodes = build_tree([ root, root_leaf, inbox ])
 
-      assert_equal [ root.id ], nodes.pluck(:id)
+      assert_equal [ root.id, root_leaf.id ], nodes.pluck(:id)
       assert_equal "Root", nodes.first[:label]
       assert_equal root.creative_snippet, nodes.first[:snippet]
       assert nodes.first[:can_comment]
@@ -46,15 +47,17 @@ module Creatives
       nodes = build_tree([ root ], expanded_ids: [ root.id ])
 
       assert_equal [ branch.id ], nodes.first[:children].pluck(:id)
-      refute nodes.first[:children].first[:has_children]
+      assert nodes.first[:children].first[:has_children]
       assert_empty nodes.first[:children].first[:children]
     end
 
-    test "hides a branch whose children are not readable" do
+    test "keeps a readable root when none of its children are readable" do
       root = Creative.create!(user: @user, description: "Private child root")
       Creative.create!(user: users(:two), parent: root, description: "Foreign child")
 
-      assert_empty build_tree([ root ])
+      nodes = build_tree([ root ])
+      assert_equal [ root.id ], nodes.pluck(:id)
+      refute nodes.first[:has_children]
     end
 
     test "expands requested paths beyond the former display level" do
@@ -73,7 +76,7 @@ module Creatives
         rendered_ids << remaining.first.fetch(:id)
         remaining = remaining.first.fetch(:children)
       end
-      assert_equal path.map(&:id), rendered_ids
+      assert_equal (path + [ path.last.children.first ]).map(&:id), rendered_ids
     end
 
     test "stops linked shell cycles without hiding the shell" do
@@ -86,6 +89,15 @@ module Creatives
       assert_equal [ shell.id ], nodes.first.fetch(:children).pluck(:id)
       refute nodes.first.fetch(:children).first.fetch(:has_children)
       assert_empty nodes.first.fetch(:children).first.fetch(:children)
+    end
+
+    test "uses the origin progress for a linked creative" do
+      origin = Creative.create!(user: users(:two), description: "Completed shared creative", progress: 1.0)
+      shell = Creative.create!(user: @user, origin: origin, description: "Local shell", progress: 0.0)
+
+      node = build_tree([ shell ]).sole
+
+      assert_equal 1.0, node.fetch(:progress)
     end
 
     test "batches linked origins and permission ranks for each level" do

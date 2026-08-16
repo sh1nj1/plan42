@@ -147,9 +147,20 @@ export default class extends Controller {
       requestAnimationFrame(() => this.openForCreative())
     } else if (this.isDocked()) {
       this.enterDockedMode()
+    } else if (this.openPendingChat()) {
+      // Initial onboarding opens chat on mobile too, where the docked panel is
+      // not active and would otherwise remain below the viewport.
     } else {
       this.openFromUrl()
     }
+  }
+
+  openPendingChat() {
+    if (this.element.dataset.autoOpen !== 'true') return false
+
+    delete this.element.dataset.autoOpen
+    requestAnimationFrame(() => this.openForCreative())
+    return true
   }
 
   disconnect() {
@@ -624,7 +635,7 @@ export default class extends Controller {
           this.openForCreative({ highlightId: this.commentIdFromUrl() })
         }, 0)
       })
-    } else if (this.hasListTarget) {
+    } else if (this.hasListTarget && !this.listTarget.querySelector('.onboarding-card')) {
       this.listTarget.classList.add('docked-empty')
       this.listTarget.textContent = el.dataset.dockedEmptyText || ''
     }

@@ -44,6 +44,7 @@ import WorkspaceTreeController from "./workspace_tree_controller"
 import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
 import AgentVendorController from "./agent_vendor_controller"
+import OnboardingCardController from "./onboarding_card_controller"
 import DesktopProxySetupController from "./desktop_proxy_setup_controller"
 
 // Export all controllers
@@ -88,6 +89,7 @@ export {
   GatewayCheckController,
   AgentConnectionController,
   AgentVendorController,
+  OnboardingCardController,
   DesktopProxySetupController
 }
 
@@ -137,5 +139,6 @@ export function registerControllers(application) {
   application.register("gateway-check", GatewayCheckController)
   application.register("agent-connection", AgentConnectionController)
   application.register("agent-vendor", AgentVendorController)
+  application.register("onboarding-card", OnboardingCardController)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
 }

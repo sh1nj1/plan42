@@ -1,4 +1,6 @@
 <%= turbo_stream_from [creative, :comments] %>
+<% onboarding_session = Collavre::Onboarding::Session.for_creative(creative) %>
+<%= render "collavre/onboarding/card", creative: creative if onboarding_session %>
 <% if comments.any? %>
   <% current_topic_id = local_assigns[:current_topic_id] %>
   <% comments.each do |comment| %>
@@ -6,6 +8,6 @@
   <% end %>
 <% elsif local_assigns[:search].present? %>
   <%= render partial: 'collavre/comments/no_search_results' %>
-<% else %>
+<% elsif onboarding_session.nil? %>
   <%= render partial: 'collavre/comments/empty_state', locals: { creative: creative, topic: local_assigns[:current_topic] } %>
 <% end %>
