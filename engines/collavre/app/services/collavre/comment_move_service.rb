@@ -34,13 +34,14 @@ module Collavre
       if target_creative_id.present?
         target_creative = Creative.find_by(id: target_creative_id)
         raise MoveError, I18n.t("collavre.comments.move_invalid_target") unless target_creative
-        [ target_creative.effective_origin, nil ]
+        target_origin = target_creative.effective_origin
+        [ target_origin, target_origin.main_topic.id ]
       elsif !target_topic_id.nil?
         new_topic_id = target_topic_id.presence
         if new_topic_id.present? && !creative.topics.exists?(id: new_topic_id)
           raise MoveError, I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic")
         end
-        [ creative, new_topic_id ]
+        [ creative, new_topic_id || creative.main_topic.id ]
       else
         raise MoveError, I18n.t("collavre.comments.move_invalid_target")
       end
@@ -68,8 +69,14 @@ module Collavre
           next if same_creative && same_topic
 
           if same_creative
+            preserve_unread_state_for_topic_move(comment, new_topic_id)
             comment.update!(topic_id: new_topic_id)
           else
+            preserve_unread_state_for_topic_move(
+              comment,
+              new_topic_id || target_origin.main_topic.id,
+              destination_creative: target_origin
+            )
             comment.update!(creative: target_origin, topic_id: new_topic_id)
             broadcast_move_removal(comment, comment.creative)
           end
@@ -77,6 +84,53 @@ module Collavre
         end
       end
       moved_count
+    end
+
+    # A topic watermark is an ordered cursor, so a comment moved into a topic
+    # whose cursor is already beyond its id would otherwise become read without
+    # the recipient seeing it. Lower only affected recipients' destination
+    # cursor to just before the moved comment; this is deliberately
+    # conservative and may re-show later destination comments as unread.
+    def preserve_unread_state_for_topic_move(comment, destination_topic_id, destination_creative: creative)
+      source_topic_id = comment.topic_id
+      readable_user_ids = CreativeShare.readable_user_ids_from_shares(
+        destination_creative,
+        readers_affected_by(comment, destination_creative)
+      )
+      readable_user_ids.each do |user_id|
+        source_pointers = CommentReadPointer.where(user_id: user_id, creative: creative).index_by(&:topic_id)
+        destination_pointers = if destination_creative == creative
+          source_pointers
+        else
+          CommentReadPointer.where(user_id: user_id, creative: destination_creative).index_by(&:topic_id)
+        end
+        source_watermark = watermark_for(source_pointers, source_topic_id)
+        destination_watermark = watermark_for(destination_pointers, destination_topic_id)
+        next unless source_watermark < comment.id && destination_watermark >= comment.id
+
+        destination_pointer = destination_pointers[destination_topic_id] || CommentReadPointer.find_or_create_by!(
+          user_id: user_id, creative: destination_creative, topic_id: destination_topic_id
+        )
+        destination_pointer.update!(last_read_comment_id: comment.id - 1)
+      end
+    end
+
+    # A named pointer with a nil cursor is an explicit initial watermark. It
+    # must win over the retained legacy fallback, otherwise a topic preserved
+    # when the legacy lane advanced is incorrectly treated as already read.
+    def watermark_for(pointers, topic_id)
+      return pointers.fetch(topic_id).last_read_comment_id.to_i if pointers.key?(topic_id)
+
+      pointers[nil]&.last_read_comment_id.to_i || 0
+    end
+
+    # Private comments are visible only to their author and approver. Rewinding
+    # another user's cursor would make unrelated destination comments unread.
+    def readers_affected_by(comment, destination_creative)
+      reader_ids = CommentReadPointer.where(creative: [ creative, destination_creative ]).distinct.pluck(:user_id)
+      return reader_ids unless comment.private?
+
+      reader_ids & [ comment.user_id, comment.approver_id ].compact
     end
 
     def broadcast_move_removal(comment, original_creative)

@@ -46,6 +46,9 @@ module Collavre
     after_destroy :touch_creative_subtree
 
     after_commit :dispatch_share_cache_invalidation, on: [ :create, :update ]
+    after_create :reconcile_topic_read_pointers_for_permission_change
+    after_update :reconcile_topic_read_pointers_for_permission_change, if: :permission_context_changed?
+    after_destroy :reconcile_topic_read_pointers_for_permission_change
     after_commit :broadcast_share_change, on: [ :create, :update ]
     after_destroy_commit :remove_cache
     after_destroy_commit :broadcast_share_destroy
@@ -208,6 +211,111 @@ module Collavre
         has_access_changed: permission_allows_access?(previous_permission),
         can_comment_changed: permission_allows_comment?(previous_permission)
       )
+    end
+
+    # Older topic moves could leave a reader's pointer at the former source.
+    # Reconcile those historical rows after a share mutation: a direct,
+    # inherited, or public grant restores the pointer to its topic's Creative.
+    # Pointers remain durable across revocations; read-receipt rendering filters
+    # them by current access, so a later grant can restore the exact cursor.
+    #
+    # Permission caches are refreshed asynchronously, so this resolves the
+    # persisted share hierarchy directly rather than consulting has_permission?.
+    def reconcile_topic_read_pointers_for_permission_change
+      self.class.reconcile_topic_read_pointers(
+        reconciliation_creative_ids,
+        user_ids: reconciliation_user_ids
+      )
+    end
+
+    # Reattaches a durable per-topic cursor to its topic's current Creative
+    # whenever a permission change gives a reader access to that destination.
+    # It intentionally leaves revoked readers' cursors in place: receipt
+    # rendering filters access, and a later grant can then restore the cursor.
+    def self.reconcile_topic_read_pointers(destination_ids, user_ids: nil)
+      destination_ids = Array(destination_ids).compact.uniq
+      return if destination_ids.empty?
+
+      access_by_destination_and_user = {}
+
+      pointers = CommentReadPointer.joins(:topic).where(topics: { creative_id: destination_ids })
+      pointers = pointers.where(user_id: user_ids) if user_ids
+
+      pointers
+        .includes(:user, topic: :creative)
+        .find_each do |pointer|
+          destination = pointer.topic.creative
+          access_key = [ destination.id, pointer.user_id ]
+          has_access = access_by_destination_and_user.fetch(access_key) do
+            access_by_destination_and_user[access_key] = read_access_from_shares?(destination, pointer.user)
+          end
+
+          if has_access
+            Topics::ReadPointerRelocator.relocate(pointer, destination) unless pointer.creative_id == destination.id
+          end
+        end
+    end
+
+    # A relocated share changes access in both its new subtree and the subtree it
+    # vacated. Keep both in the reconciliation set so the permission transition
+    # is evaluated symmetrically.
+    def reconciliation_creative_ids
+      ids = creative.effective_origin.self_and_descendants.pluck(:id)
+      return ids unless saved_change_to_creative_id?
+
+      previous_creative = Creative.find_by(id: creative_id_before_last_save)
+      return ids unless previous_creative
+
+      ids | previous_creative.effective_origin.self_and_descendants.pluck(:id)
+    end
+
+    # A named share can change access only for its prior or current recipient.
+    # A transition to or from public affects every reader, so it deliberately
+    # keeps the full scan even when the other side is a named recipient.
+    def reconciliation_user_ids
+      return user_id ? [ user_id ] : nil if previously_new_record? || destroyed?
+      return nil if user_id.nil? || user_id_before_last_save.nil?
+
+      [ user_id, user_id_before_last_save ].compact.uniq
+    end
+
+    def self.read_access_from_shares?(destination, reader)
+      return false unless reader
+
+      readable_user_ids_from_shares(destination, [ reader.id ]).include?(reader.id)
+    end
+
+    # Resolves access for a group of readers from one snapshot of the creative's
+    # share hierarchy. Receipt rendering commonly has one pointer per topic, so
+    # checking every pointer independently would repeat the same ancestor and
+    # share queries for each topic.
+    def self.readable_user_ids_from_shares(destination, user_ids)
+      user_ids = user_ids.compact.uniq
+      return [] if user_ids.empty?
+
+      readable_user_ids = user_ids & [ destination.user_id ]
+
+      ancestor_ids = [ destination.id ] + destination.ancestors.pluck(:id)
+      shares_by_user_id = CreativeShare
+        .where(creative_id: ancestor_ids, user_id: user_ids + [ nil ])
+        .to_a
+        .group_by(&:user_id)
+      public_share = CreativeShare.closest_parent_share(ancestor_ids, shares_by_user_id[nil])
+
+      user_ids.each do |user_id|
+        next if readable_user_ids.include?(user_id)
+
+        personal_share = CreativeShare.closest_parent_share(ancestor_ids, shares_by_user_id[user_id])
+        effective_share = personal_share || public_share
+        readable_user_ids << user_id if effective_share &&
+          CreativeShare.permissions.fetch(effective_share.permission) >= CreativeShare.permissions.fetch("read")
+      end
+
+      readable_user_ids
+    end
+
+    def permission_context_changed?
+      saved_change_to_permission? || saved_change_to_user_id? || saved_change_to_creative_id?
     end
 
     def permission_allows_access?(value)

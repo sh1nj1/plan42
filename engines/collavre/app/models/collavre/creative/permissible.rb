@@ -24,6 +24,7 @@ module Collavre
         has_many :creative_shares_caches, class_name: "Collavre::CreativeSharesCache", dependent: :delete_all
 
         after_save :accumulate_permission_cache_changes
+        after_update :reconcile_topic_read_pointers_for_owner_change, if: :saved_change_to_user_id?
         after_commit :dispatch_permission_cache_invalidation, unless: :destroyed?
         after_commit :cache_owner_permission, on: :create
         after_rollback :clear_accumulated_permission_changes
@@ -164,6 +165,16 @@ module Collavre
             new_user_id: new_user_id
           )
         end
+      end
+
+      # Topic moves preserve a reader's cursor on the source until that reader
+      # gains access to the destination. A Creative ownership transfer is one
+      # such grant, but it does not touch CreativeShare, so reconcile the new
+      # owner's durable pointers here as well.
+      def reconcile_topic_read_pointers_for_owner_change
+        return unless user_id
+
+        CreativeShare.reconcile_topic_read_pointers(effective_origin.id, user_ids: [ user_id ])
       end
 
       def cache_owner_permission

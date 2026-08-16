@@ -14,8 +14,8 @@ const streamEvent = ({ action = 'append', target = 'comments-list', html = '' } 
   }
 }
 
-const comment = (topicId) =>
-  `<div id="comment_9" class="comment-item" data-topic-id="${topicId}">hello</div>`
+const comment = (topicId, commentId = 9) =>
+  `<div id="comment_${commentId}" class="comment-item" data-comment-id="${commentId}" data-topic-id="${topicId}">hello</div>`
 
 // currentTopicId "" is the All Messages view. archivedIds stands in for the
 // topics controller's archived_topics, which is what the real lookup reads.
@@ -24,6 +24,7 @@ const buildController = ({ currentTopicId = '', archivedIds = [], withPopup = tr
   controller.manualSearchQuery = searchQuery
   controller.currentTopicId = currentTopicId
   controller.allNewerLoaded = true
+  controller.markCommentsRead = jest.fn()
 
   // popupController is a prototype getter reaching into this.application; an
   // own property shadows it without standing up a Stimulus application.
@@ -73,6 +74,61 @@ describe('CommentsListController archived streams in All Messages', () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(badgeEvents).toEqual([])
+    expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
+  })
+
+  test('extends the rendered All Messages watermark for a visible live append', () => {
+    const controller = buildController()
+    controller.renderedAllTopicIds = ['2']
+    controller.renderedAllTopicWatermarks = { 2: 8 }
+
+    controller.handleStreamRender(streamEvent({ html: comment(2, 9) }))
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 2: 9 })
+    expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
+  })
+
+  test('starts a watermark for an initially active topic omitted from the list window', () => {
+    const controller = buildController()
+    controller.renderedAllTopicIds = ['2', '3']
+    controller.renderedAllTopicWatermarks = { 2: 8 }
+
+    controller.handleStreamRender(streamEvent({ html: comment(3, 9) }))
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 2: 8, 3: 9 })
+    expect(controller.markCommentsRead).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not add a topic absent from the rendered All Messages snapshot', () => {
+    const controller = buildController()
+    controller.renderedAllTopicIds = ['2']
+    controller.renderedAllTopicWatermarks = { 2: 8 }
+
+    controller.handleStreamRender(streamEvent({ html: comment(3, 9) }))
+
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 2: 8 })
+  })
+
+  test('blocks a restored topic absent from the rendered All Messages snapshot', () => {
+    const controller = buildController({ archivedIds: [] })
+    controller.renderedAllTopicIds = ['2']
+    const event = streamEvent({ html: comment(3, 9) })
+
+    controller.handleStreamRender(event)
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(badgeEvents).toEqual([{ topicId: '3' }])
+    expect(controller.markCommentsRead).not.toHaveBeenCalled()
+  })
+
+  test('does not mark a foreign message read', () => {
+    const controller = buildController({ currentTopicId: '2' })
+    const event = streamEvent({ html: comment(5) })
+
+    controller.handleStreamRender(event)
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(controller.markCommentsRead).not.toHaveBeenCalled()
   })
 
   test('lets a topic-less comment through without consulting the topics controller', () => {

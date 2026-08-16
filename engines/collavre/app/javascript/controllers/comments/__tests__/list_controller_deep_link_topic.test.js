@@ -201,6 +201,47 @@ describe('CommentsListController deep-linked topic resolution', () => {
     expect(topicsController.setOverrideTopicId).not.toHaveBeenCalled()
   })
 
+  test('does not retain the All Messages snapshot from a superseded load', async () => {
+    const controller = buildListController()
+    controller._loadCommentsVersion = 2
+    controller.renderedAllTopicIds = ['9']
+    controller.renderedAllTopicWatermarks = { 9: 90 }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name) => ({
+          'X-Rendered-Topic-Ids': '1,2',
+          'X-Rendered-Topic-Watermarks': '{"1":10,"2":20}',
+        })[name] || null,
+      },
+      text: async () => '',
+    })
+
+    await controller.fetchComments({}, { loadVersion: 1 })
+
+    expect(controller.renderedAllTopicIds).toEqual(['9'])
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 9: 90 })
+  })
+
+  test('records whether the All Messages snapshot rendered the legacy lane', async () => {
+    const controller = buildListController()
+    controller._loadCommentsVersion = 1
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name) => ({
+          'X-Rendered-Topic-Ids': '1',
+          'X-Rendered-Topic-Watermarks': '{"_legacy":10,"1":20}',
+        })[name] || null,
+      },
+      text: async () => '',
+    })
+
+    await controller.fetchComments({}, { loadVersion: 1 })
+
+    expect(controller.renderedAllIncludesLegacy).toBe(true)
+  })
+
   test('does not pass the topic-guard exemption to the load that superseded it', async () => {
     const { controller, releaseDeepLink, releaseSelected, flush } = raceDeepLinkAgainstSelection()
 

@@ -162,29 +162,7 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.move.session_topic_locked") }, status: :unprocessable_entity and return
       end
 
-      released_agent = nil
-      released_reason = nil
-
-      Topic.transaction do
-        topic.comments.update_all(creative_id: target_creative.id)
-        topic.update!(creative: target_creative)
-
-        # The assignment is exclusive: Matcher#match_by_primary_agent returns []
-        # — silence, not a fallback — when the pinned agent cannot be routed to
-        # at the destination. The pin travels with the topic, so a move into a
-        # creative the agent is not shared on — or, for a Claude Channel session
-        # agent, into an inbox, where Matcher confines it to its own session
-        # topic — would leave the topic unable to route to anyone. Release it
-        # instead, which restores ordinary expression routing at the new
-        # location, and tell the caller so the change is not silent.
-        pinned_agent = topic.primary_agent
-        rejection = pinned_agent && Topic.primary_agent_rejection(target_creative, pinned_agent, topic: topic)
-        if rejection
-          released_agent = pinned_agent
-          released_reason = rejection
-          topic.set_primary_agent!(nil)
-        end
-      end
+      released_agent, released_reason = Topics::TopicMove.new(topic: topic, target_creative: target_creative).call
 
       # update_all above skips counter-cache callbacks, so recompute
       # comments_count on both sides after re-parenting the comments.
@@ -359,6 +337,7 @@ module Collavre
         }
       end
     end
+
 
     def topic_params
       params.require(:topic).permit(:name)

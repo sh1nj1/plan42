@@ -1818,6 +1818,14 @@ export default class extends Controller {
       listElement.appendChild(commentElement)
     }
 
+    // The submit response can win the race against its Turbo Stream echo. Keep
+    // the All Messages read snapshot in step with this visible local append;
+    // the stream then deduplicates without getting a second chance to do it.
+    const addedTopic = listCtrl?.recordRenderedAllTopicWatermarks(
+      commentElement,
+      { includeNewTopics: !replaceExisting },
+    )
+    if (addedTopic) listCtrl?.reportRenderedAllTopics()
     renderMarkdownInContainer(commentElement)
     if (replaceExisting) {
       this.listController?.markCommentsRead()

@@ -41,6 +41,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
                         "expected no version navigator for comment WITHOUT versions"
   end
 
+  test "topic-filtered index keeps legacy fallback receipts in the rendered topic" do
+    reader = users(:two)
+    grant_read_access_to_other_user(user: reader)
+    first_topic = @creative.topics.create!(name: "First receipts", user: @user)
+    second_topic = @creative.topics.create!(name: "Second receipts", user: @user)
+    first = @creative.comments.create!(content: "first", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "second", user: @user, topic: second_topic)
+    CommentReadPointer.create!(user: reader, creative: @creative, last_read_comment_id: second.id)
+
+    get creative_comments_path(@creative), params: { topic_id: first_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, "read_receipts_comment_#{first.id}"
+    assert_includes @response.body, "data-user-id=\"#{reader.id}\""
+  end
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do
@@ -712,6 +728,45 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, topic_comment.content
     assert_includes @response.body, "comment-topic-switch"
     assert_includes @response.body, "##{topic.name}"
+    assert_equal @creative.topics.active.order(:id).pluck(:id).join(","), response.headers["X-Rendered-Topic-Ids"]
+    assert_equal topic_comment.id, JSON.parse(response.headers["X-Rendered-Topic-Watermarks"]).fetch(topic.id.to_s)
+  end
+
+  test "All Messages snapshot includes only topics represented in the rendered page" do
+    creative = Creative.create!(user: @user, description: "Rendered topic snapshot", sequence: 9_912)
+    older_topic = creative.topics.create!(name: "Older", user: @user)
+    rendered_topic = creative.topics.create!(name: "Rendered", user: @user)
+    older_comment = Comment.create!(creative: creative, topic: older_topic, user: users(:two), content: "older unread")
+    20.times do |index|
+      Comment.create!(creative: creative, topic: rendered_topic, user: users(:two), content: "rendered #{index}")
+    end
+
+    get creative_comments_path(creative)
+
+    assert_response :success
+    assert_not_includes @response.body, older_comment.content
+    assert_equal rendered_topic.id.to_s, response.headers["X-Rendered-Topic-Ids"]
+    assert_equal(
+      { rendered_topic.id.to_s => creative.comments.where(topic: rendered_topic).maximum(:id) },
+      JSON.parse(response.headers["X-Rendered-Topic-Watermarks"])
+    )
+  end
+
+  test "All Messages serializes legacy topic-less comments without sorting nil topic ids" do
+    creative = Creative.create!(user: @user, description: "Legacy Main snapshot", sequence: 9_913)
+    topic = creative.topics.create!(name: "Topic", user: @user)
+    legacy_comment = Comment.create!(creative: creative, user: users(:two), content: "legacy")
+    legacy_comment.update_column(:topic_id, nil)
+    topic_comment = Comment.create!(creative: creative, topic: topic, user: users(:two), content: "topic")
+
+    get creative_comments_path(creative)
+
+    assert_response :success
+    assert_equal topic.id.to_s, response.headers["X-Rendered-Topic-Ids"]
+    assert_equal(
+      { "_legacy" => legacy_comment.id, topic.id.to_s => topic_comment.id },
+      JSON.parse(response.headers["X-Rendered-Topic-Watermarks"])
+    )
   end
 
   test "topic view hides topic links and filters comments" do

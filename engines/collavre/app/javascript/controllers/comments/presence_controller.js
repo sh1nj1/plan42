@@ -7,6 +7,7 @@ import { alertDialog } from '../../lib/utils/dialog'
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
+const PRESENCE_HEARTBEAT_INTERVAL = 30000
 
 // agent_status values that keep a task registered. thinking/streaming are the
 // agent producing output; pending_approval is it paused on a tool approval,
@@ -31,20 +32,25 @@ export default class extends Controller {
     this.streamingHeartbeatTimers = {} // { agentId: timeoutHandle }
     this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
+    this.presenceHeartbeatHandle = null
     this.currentUserId = document.body.dataset.currentUserId
     this.selectedTopicId = null
     this.mainTopicId = null
+    this.renderedAllTopicIds = null
+    this.renderedAllIncludesLegacy = false
 
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
     this.handleBlur = this.handleBlur.bind(this)
     this.handleTopicChange = this.handleTopicChange.bind(this)
+    this.handleRenderedAllTopics = this.handleRenderedAllTopics.bind(this)
 
     this.textareaTarget.addEventListener('input', this.handleInput)
     this.textareaTarget.addEventListener('focus', this.handleFocus)
     this.textareaTarget.addEventListener('blur', this.handleBlur)
     this.privateCheckboxTarget?.addEventListener('change', () => this.stoppedTyping())
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.addEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
   }
 
   disconnect() {
@@ -55,6 +61,7 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.removeEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
   }
 
   handleTopicChange(event) {
@@ -70,14 +77,30 @@ export default class extends Controller {
 
     this.selectedTopicId = nextSelectedTopicId
     this.mainTopicId = nextMainTopicId
+    if (selectionChanged) {
+      this.renderedAllTopicIds = null
+      this.renderedAllIncludesLegacy = false
+    }
 
-    if (selectionChanged) this.requestRunningAgents()
+    if (selectionChanged) {
+      this.reportViewingTopic()
+      this.requestRunningAgents()
+    }
 
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
       this.clearChannelChips()
     }
+  }
+
+  handleRenderedAllTopics(event) {
+    const { creativeId, topicIds, includesLegacy } = event.detail || {}
+    if (String(creativeId) !== String(this.creativeId) || this.selectedTopicId) return
+
+    this.renderedAllTopicIds = Array.isArray(topicIds) ? topicIds : []
+    this.renderedAllIncludesLegacy = Boolean(includesLegacy)
+    this.reportViewingTopic()
   }
 
   get listController() {
@@ -103,6 +126,8 @@ export default class extends Controller {
       this.resetAgentActivity()
     }
     this.creativeId = creativeId
+    this.renderedAllTopicIds = null
+    this.renderedAllIncludesLegacy = false
     this.loadParticipants()
     this.subscribe()
     this.renderParticipants([])
@@ -121,6 +146,7 @@ export default class extends Controller {
     const topicId = topicsCtrl?.currentTopicId
     this.selectedTopicId = topicId || null
     this.mainTopicId = topicsCtrl?.mainTopicId || null
+    this.reportViewingTopic()
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -256,6 +282,8 @@ export default class extends Controller {
             this.listController?.loadInitialComments()
           }
           this.hasPresenceConnected = true
+          this.reportViewingTopic()
+          this.startPresenceHeartbeat()
         },
         received: (data) => this.handlePresenceMessage(data),
       },
@@ -263,11 +291,37 @@ export default class extends Controller {
   }
 
   unsubscribe() {
+    this.stopPresenceHeartbeat()
     if (this.presenceSubscription) {
       this.presenceSubscription.unsubscribe()
       this.presenceSubscription = null
     }
     this.stoppedTyping()
+  }
+
+  reportViewingTopic() {
+    if (!this.presenceSubscription) return
+
+    const payload = { topic_id: this.selectedTopicId }
+    if (!this.selectedTopicId && Array.isArray(this.renderedAllTopicIds)) {
+      payload.rendered_topic_ids = this.renderedAllTopicIds
+      if (this.renderedAllIncludesLegacy) payload.rendered_legacy_topic = true
+    }
+    this.presenceSubscription.perform('viewing_topic', payload)
+  }
+
+  startPresenceHeartbeat() {
+    this.stopPresenceHeartbeat()
+    this.presenceHeartbeatHandle = setInterval(() => {
+      this.presenceSubscription?.perform('heartbeat')
+    }, PRESENCE_HEARTBEAT_INTERVAL)
+  }
+
+  stopPresenceHeartbeat() {
+    if (this.presenceHeartbeatHandle) {
+      clearInterval(this.presenceHeartbeatHandle)
+      this.presenceHeartbeatHandle = null
+    }
   }
 
   handlePresenceMessage(data) {

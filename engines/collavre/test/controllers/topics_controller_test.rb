@@ -277,6 +277,99 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
   end
 
+  test "moving a topic moves its read pointers with it" do
+    target_creative = creatives(:root_parent)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @user, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal target_creative.id, pointer.reload.creative_id
+    assert_nil Collavre::CommentReadPointer.find_by(user: @user, creative: @creative, topic: @topic)
+
+    patch move_creative_topic_url(target_creative, @topic), params: { target_creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_equal @creative.id, pointer.reload.creative_id
+  end
+
+  test "moving a topic preserves unread history for destination readers with a newer legacy cursor" do
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 950)
+    target_reader = users(:two)
+    moved_comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "moved unread")
+    newer_target_comment = Collavre::Comment.create!(creative: target_creative, user: @user, content: "newer target comment")
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: target_reader, shared_by: @user, permission: :read
+    )
+    Collavre::CommentReadPointer.create!(
+      user: target_reader, creative: target_creative, last_read_comment: newer_target_comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    pointer = Collavre::CommentReadPointer.find_by(user: target_reader, creative: target_creative, topic: @topic)
+    assert_not_nil pointer
+    assert_nil pointer.last_read_comment_id
+    assert_equal 1, Collavre::Creatives::CommentBadgeIndex.new(user: target_reader)
+      .unread_counts_by_topic(target_creative).fetch(@topic.id)
+  end
+
+  test "moving a topic retains source-only readers' pointers with the topic" do
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 951)
+    source_only_reader = users(:two)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    Collavre::CreativeShare.create!(
+      creative: @creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+    pointer = Collavre::CommentReadPointer.create!(
+      user: source_only_reader, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal target_creative.id, pointer.reload.creative_id
+    assert_empty Collavre::Comments::ReadReceiptIndex.new(
+      creative: target_creative, comments: [ comment ]
+    ).receipts, "the retained pointer must not reveal a receipt before target access is granted"
+
+    @creative.destroy!
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+
+    assert_empty Collavre::Creatives::CommentBadgeIndex.new(user: source_only_reader).unread_counts_by_topic(target_creative)
+  end
+
+  test "moving a topic again retains its pointer with each destination" do
+    middle_creative = Collavre::Creative.create!(user: @user, description: "Pointer middle", sequence: 952)
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 953)
+    source_only_reader = users(:two)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    Collavre::CreativeShare.create!(
+      creative: @creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+    pointer = Collavre::CommentReadPointer.create!(
+      user: source_only_reader, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: middle_creative.id }, as: :json
+    assert_response :success
+    assert_equal middle_creative.id, pointer.reload.creative_id
+
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+    patch move_creative_topic_url(middle_creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal target_creative.id, pointer.reload.creative_id
+  end
+
   test "moving a topic keeps comments_count in sync on both creatives" do
     target_creative = creatives(:root_parent)
     Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "a")

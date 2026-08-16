@@ -188,6 +188,55 @@ describe('CommentsPresenceController', () => {
     expect(perform).toHaveBeenNthCalledWith(2, 'stopped_typing', { topic_id: '45' })
   })
 
+  test('renews the presence lease while the subscription is connected', () => {
+    jest.useFakeTimers()
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+
+    controller.startPresenceHeartbeat()
+    jest.advanceTimersByTime(30000)
+    controller.stopPresenceHeartbeat()
+    jest.useRealTimers()
+
+    expect(perform).toHaveBeenCalledWith('heartbeat')
+  })
+
+  test('reports the rendered All Messages topic snapshot', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = null
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '123', topicIds: ['10', '11'] } })
+
+    expect(perform).toHaveBeenCalledWith('viewing_topic', {
+      topic_id: null,
+      rendered_topic_ids: ['10', '11'],
+    })
+  })
+
+  test('reports a rendered legacy lane with the All Messages snapshot', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = null
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '123', topicIds: ['10'], includesLegacy: true } })
+
+    expect(perform).toHaveBeenCalledWith('viewing_topic', {
+      topic_id: null,
+      rendered_topic_ids: ['10'],
+      rendered_legacy_topic: true,
+    })
+  })
+
+  test('does not report a rendered snapshot from another creative', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '456', topicIds: ['10'] } })
+
+    expect(perform).not.toHaveBeenCalled()
+  })
+
   test('does not request running agents without a presence subscription', () => {
     controller.selectedTopicId = '45'
 
