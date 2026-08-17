@@ -47,16 +47,35 @@ module Collavre
       def pointers
         pointer_table = CommentReadPointer.arel_table
         receipt_comment_id = effective_comment_id_for(pointer_table)
-        CommentReadPointer.where(creative: creative)
-                          .where.not(last_read_comment_id: nil)
-                          .select(pointer_table[Arel.star], receipt_comment_id.as("receipt_comment_id"))
-                          .includes(user: { avatar_attachment: :blob })
+        candidate_pointers
+          .select(pointer_table[Arel.star], receipt_comment_id.as("receipt_comment_id"))
+          .includes(user: { avatar_attachment: :blob })
+      end
+
+      # The correlated lookup is the expensive part of this query, so rows that
+      # cannot possibly paint on this page are excluded before it runs. A pointer
+      # below the first rendered public comment resolves to a receipt below it
+      # too, and on a topic-filtered page only that topic's lane can match.
+      def candidate_pointers
+        scope = CommentReadPointer.where(creative: creative)
+                                  .where(CommentReadPointer.arel_table[:last_read_comment_id].gteq(rendered_public_ids.first))
+        topic_id ? topic_scoped_pointers(scope) : scope
+      end
+
+      # Precedence for a single topic does not need the per-candidate NOT EXISTS:
+      # a legacy pointer covers this topic exactly when the user has no pointer
+      # of their own for it, which one non-correlated subquery decides for the
+      # whole page.
+      def topic_scoped_pointers(scope)
+        named_pointer_user_ids = CommentReadPointer.where(creative: creative, topic_id: topic_id).select(:user_id)
+        scope.where(topic_id: topic_id).or(scope.where(topic_id: nil).where.not(user_id: named_pointer_user_ids))
       end
 
       # Legacy pointers represent the NULL-topic lane after the migration. They
       # can still cover a named topic that has no per-topic pointer, but never
       # override a named pointer for the same user, creative, and topic.
-      def matches_pointer_topic(pointer_table, named_pointer_table, public_comments)
+      def matches_pointer_topic(pointer_table, public_comments)
+        named_pointer_table = CommentReadPointer.arel_table.alias("named_receipt_pointers")
         legacy_pointer_match(pointer_table, named_pointer_table, public_comments).or(
           named_pointer_match(pointer_table, public_comments)
         )
@@ -99,14 +118,17 @@ module Collavre
         scope.arel
       end
 
+      # With a topic filter the candidate set is already restricted to the lanes
+      # that can match, so the topic predicate below would be redundant.
       def public_comment_scope(pointer_table, public_comments)
-        named_pointer_table = CommentReadPointer.arel_table.alias("named_receipt_pointers")
-        Comment.from(public_comments)
-               .select(public_comments[:id].maximum)
-               .where(public_comments[:creative_id].eq(pointer_table[:creative_id]))
-               .where(public_comments[:private].eq(false))
-               .where(matches_pointer_topic(pointer_table, named_pointer_table, public_comments))
-               .where(public_comments[:id].lteq(pointer_table[:last_read_comment_id]))
+        scope = Comment.from(public_comments)
+                       .select(public_comments[:id].maximum)
+                       .where(public_comments[:creative_id].eq(pointer_table[:creative_id]))
+                       .where(public_comments[:private].eq(false))
+                       .where(public_comments[:id].lteq(pointer_table[:last_read_comment_id]))
+        return scope if topic_id
+
+        scope.where(matches_pointer_topic(pointer_table, public_comments))
       end
 
       def legacy_pointer_match(pointer_table, named_pointer_table, public_comments)

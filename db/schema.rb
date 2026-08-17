@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_14_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_16_000001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -172,10 +172,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_14_000001) do
     t.integer "topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.index ["creative_id", "last_read_comment_id"], name: "index_comment_read_pointers_on_creative_and_watermark"
     t.index ["creative_id"], name: "index_comment_read_pointers_on_creative_id"
     t.index ["topic_id"], name: "index_comment_read_pointers_on_topic_id"
-    t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_legacy_pointer", unique: true, where: "topic_id IS NULL"
     t.index ["user_id", "creative_id", "topic_id"], name: "index_comment_read_pointers_on_user_creative_and_topic", unique: true
+    t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_legacy_pointer", unique: true, where: "topic_id IS NULL"
     t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
   end
 
@@ -236,8 +237,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_14_000001) do
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
     t.index ["creative_id", "id"], name: "index_comments_on_creative_id_and_id"
+    t.index ["creative_id", "private", "approver_id", "topic_id"], name: "index_comments_on_creative_private_approver_id_and_topic"
     t.index ["creative_id", "private", "id"], name: "index_comments_on_creative_id_and_private_and_id"
     t.index ["creative_id", "private", "topic_id", "id"], name: "index_comments_on_creative_topic_private_and_id"
+    t.index ["creative_id", "private", "user_id", "topic_id"], name: "index_comments_on_creative_private_user_id_and_topic"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["notification_key"], name: "index_comments_on_notification_key", unique: true, where: "notification_key IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
