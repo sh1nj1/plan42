@@ -7,19 +7,14 @@ const CREATIVE_CLICK_EVENT = 'creative-comments-click'
 const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
 const LONG_PRESS_MS = 500
 
-// A collapsed docked chat shrinks to a 3rem rail where the close button is the
-// only visible control, so it acts as the expand affordance and shows a chevron
-// instead of the close glyph. Matched to the tree chevrons
-// (link_creative_controller.js) so the affordance reads the same everywhere.
-const EXPAND_CHEVRON =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15 6L9 12L15 18"/></svg>'
-
 export default class extends Controller {
   static targets = [
     'title',
     'list',
     'form',
     'closeButton',
+    'closeIcon',
+    'expandDockedIcon',
     'leftHandle',
     'rightHandle',
     'fullscreenButton',
@@ -668,7 +663,8 @@ export default class extends Controller {
 
     if (!this.isDocked()) {
       const label = this.element.dataset.closeLabel || ''
-      this.closeButtonTarget.textContent = '×'
+      this.closeIconTarget.style.display = ''
+      this.expandDockedIconTarget.style.display = 'none'
       this.closeButtonTarget.setAttribute('aria-label', label)
       this.closeButtonTarget.title = label
       return
@@ -678,11 +674,8 @@ export default class extends Controller {
     const label = collapsed
       ? (this.element.dataset.expandDockedLabel || '')
       : (this.element.dataset.collapseDockedLabel || '')
-    if (collapsed) {
-      this.closeButtonTarget.innerHTML = EXPAND_CHEVRON
-    } else {
-      this.closeButtonTarget.textContent = '×'
-    }
+    this.closeIconTarget.style.display = collapsed ? 'none' : ''
+    this.expandDockedIconTarget.style.display = collapsed ? '' : 'none'
     this.closeButtonTarget.setAttribute('aria-label', label)
     this.closeButtonTarget.title = label
   }

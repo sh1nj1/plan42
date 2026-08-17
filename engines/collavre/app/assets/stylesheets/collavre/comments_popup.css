@@ -194,6 +194,9 @@ body.chat-fullscreen {
     color: var(--color-text);
     cursor: pointer;
     padding: 0;
+    width: var(--space-px-5);
+    height: var(--space-px-5);
+    flex: 0 0 var(--space-px-5);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -201,9 +204,16 @@ body.chat-fullscreen {
     line-height: 1;
 }
 
+.comments-popup-action > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .comments-popup-action-icon {
-    width: 16px;
-    height: 16px;
+    display: block;
+    width: var(--space-px-3);
+    height: var(--space-px-3);
     fill: currentColor;
 }
 
