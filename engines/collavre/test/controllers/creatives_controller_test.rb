@@ -316,6 +316,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
   end
 
+  test "comments popup close control uses shared SVG action icons" do
+    get creatives_path(id: creatives(:root_parent))
+
+    assert_response :success
+    assert_select "#close-comments-btn.comments-popup-action.popup-close-btn" do
+      assert_select "[data-comments--popup-target='closeIcon'][aria-hidden='true'] svg.comments-popup-action-icon" do
+        assert_select "path[d='M6 6l12 12M6 18L18 6']"
+      end
+      assert_select "[data-comments--popup-target='expandDockedIcon'][aria-hidden='true'] svg.comments-popup-action-icon" do
+        assert_select "path[d='M15 6L9 12L15 18']"
+      end
+    end
+  end
+
   test "workspace breadcrumb root and ancestor links advance browser history" do
     ancestor = creatives(:unconvert_target)
     child = creatives(:unconvert_child_two)

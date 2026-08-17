@@ -22,7 +22,10 @@ describe('CommentsPopupController', () => {
         <h3 data-comments--popup-target="title">Title</h3>
         <div data-comments--popup-target="list">List</div>
         <a data-comments--popup-target="fullscreenLink" href="#"></a>
-        <button data-comments--popup-target="closeButton">Close</button>
+        <button data-comments--popup-target="closeButton">
+          <span data-comments--popup-target="closeIcon" aria-hidden="true"><svg data-icon="close"></svg></span>
+          <span data-comments--popup-target="expandDockedIcon" aria-hidden="true" style="display:none;"><svg data-icon="expand"></svg></span>
+        </button>
         <div data-comments--popup-target="leftHandle"></div>
         <div data-comments--popup-target="rightHandle"></div>
       </div>
@@ -132,7 +135,7 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
-    test('docked close button keeps the close icon while expanded and shows a chevron when collapsed', () => {
+    test('docked close button shows the close asset while expanded and a chevron when collapsed', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
         popup.dataset.collapseDockedLabel = 'Collapse chat'
@@ -140,26 +143,28 @@ describe('CommentsPopupController', () => {
 
         controller.enterDockedMode()
         controller.syncDockedUI()
-        expect(controller.closeButtonTarget.textContent).toBe('×')
-        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
+        expect(controller.closeIconTarget.getAttribute('aria-hidden')).toBe('true')
+        expect(controller.closeIconTarget.querySelector('[data-icon="close"]')).not.toBeNull()
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
 
         controller.toggleDocked()
         expect(popup.classList.contains('docked-collapsed')).toBe(true)
-        const icon = controller.closeButtonTarget.querySelector('svg')
-        expect(icon).not.toBeNull()
-        expect(icon.getAttribute('aria-hidden')).toBe('true')
-        expect(controller.closeButtonTarget.textContent.trim()).toBe('')
+        expect(controller.closeIconTarget.style.display).toBe('none')
+        expect(controller.expandDockedIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.getAttribute('aria-hidden')).toBe('true')
+        expect(controller.expandDockedIconTarget.querySelector('[data-icon="expand"]')).not.toBeNull()
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
 
         controller.toggleDocked()
         expect(popup.classList.contains('docked-collapsed')).toBe(false)
-        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
-        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
     })
 
-    test('leaving docked mode while collapsed restores the close glyph', () => {
+    test('leaving docked mode while collapsed restores the close asset', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
         popup.dataset.closeLabel = 'Close chat'
@@ -167,13 +172,13 @@ describe('CommentsPopupController', () => {
 
         controller.enterDockedMode()
         controller.toggleDocked()
-        expect(controller.closeButtonTarget.querySelector('svg')).not.toBeNull()
+        expect(controller.expandDockedIconTarget.style.display).toBe('')
 
         controller.dockedMediaQuery.matches = false
         controller.syncDockedUI()
 
-        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
-        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
     })
 
     test('restores the floating close button label after leaving docked mode', () => {
@@ -185,7 +190,8 @@ describe('CommentsPopupController', () => {
 
         controller.syncDockedUI()
 
-        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Close chat')
         expect(controller.closeButtonTarget.title).toBe('Close chat')
     })
