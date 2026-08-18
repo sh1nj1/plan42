@@ -56,8 +56,7 @@ export default class extends Controller {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
-        clearTimeout(this._unreadCountRefreshTimer)
-        this._unreadCountRefreshTimer = null
+        this.cancelUnreadCountRefresh()
         this.unsubscribe()
     }
 
@@ -104,8 +103,7 @@ export default class extends Controller {
         this.releaseAcknowledgedPendingSelfEchoes()
         this.markPendingSelfEchoesAsPossiblyMissed()
         this._loadTopicsVersion += 1
-        clearTimeout(this._unreadCountRefreshTimer)
-        this._unreadCountRefreshTimer = null
+        this.cancelUnreadCountRefresh()
         // The same creative can reopen before an in-flight save broadcasts.
         // Keep that save's claim so its delayed echo remains recognisable on
         // the replacement subscription; a different creative clears it when
@@ -355,10 +353,11 @@ export default class extends Controller {
                 }
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
-                this.refreshOpenTopicListPopup()
+                if (this.currentTopicId) this.clearNewMessageBadge(this.currentTopicId)
                 if (!skipLastTopicReconciliation) {
                     this.restoreSelection({ keepEmptyPick: pickWon })
                 }
+                this.refreshOpenTopicListPopup()
             }
         } catch (e) {
             console.error("Failed to load topics", e)
@@ -920,12 +919,31 @@ export default class extends Controller {
     }
 
     scheduleUnreadCountRefresh() {
+        if (this._unreadCountRefreshInFlight) {
+            this._unreadCountRefreshQueued = true
+            return
+        }
         if (this._unreadCountRefreshTimer) return
 
         this._unreadCountRefreshTimer = setTimeout(() => {
             this._unreadCountRefreshTimer = null
-            this.loadTopics().catch(() => { /* loadTopics already reports the failure */ })
+            this._unreadCountRefreshInFlight = true
+            this.loadTopics()
+                .catch(() => { /* loadTopics already reports the failure */ })
+                .finally(() => {
+                    this._unreadCountRefreshInFlight = false
+                    if (!this._unreadCountRefreshQueued) return
+
+                    this._unreadCountRefreshQueued = false
+                    this.scheduleUnreadCountRefresh()
+                })
         }, UNREAD_COUNT_REFRESH_DELAY)
+    }
+
+    cancelUnreadCountRefresh() {
+        clearTimeout(this._unreadCountRefreshTimer)
+        this._unreadCountRefreshTimer = null
+        this._unreadCountRefreshQueued = false
     }
 
     prepareTopicListToggle(event) {
@@ -1203,7 +1221,12 @@ export default class extends Controller {
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
         if (topicEl) {
             topicEl.classList.remove('has-new-messages')
+            topicEl.querySelector('.topic-unread-badge')?.remove()
         }
+
+        const topic = [...(this.topics || []), ...(this.archivedTopics || [])]
+            .find(candidate => String(candidate.id) === String(topicId))
+        if (topic) topic.unread_count = 0
 
         // The toggle aggregates every archived topic, so it only clears once none
         // of them is left unread.

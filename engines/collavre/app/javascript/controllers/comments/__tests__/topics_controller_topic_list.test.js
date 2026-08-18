@@ -143,6 +143,36 @@ describe('TopicsController#openTopicListPopup', () => {
 		expect(controller.loadTopics).toHaveBeenCalledTimes(1)
     })
 
+    test('queues one trailing reload while an unread reload is in flight', async () => {
+		jest.useFakeTimers()
+		let finishFirstLoad
+		const firstLoad = new Promise(resolve => { finishFirstLoad = resolve })
+		controller.loadTopics = jest.fn()
+			.mockReturnValueOnce(firstLoad)
+			.mockResolvedValueOnce(undefined)
+
+		controller.handleNewMessage({ detail: { topicId: '2' } })
+		await jest.advanceTimersByTimeAsync(250)
+		controller.handleNewMessage({ detail: { topicId: '2' } })
+		controller.handleNewMessage({ detail: { topicId: '2' } })
+
+		expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+		finishFirstLoad()
+		await Promise.resolve()
+		await jest.advanceTimersByTimeAsync(250)
+		expect(controller.loadTopics).toHaveBeenCalledTimes(2)
+	})
+
+    test('clears cached and rendered unread counts when a topic is opened', () => {
+		controller.topics = [{ id: 2, name: 'Alpha', unread_count: 3 }]
+		controller.renderTopics(controller.topics)
+
+		controller.clearNewMessageBadge('2')
+
+		expect(controller.topics[0].unread_count).toBe(0)
+		expect(controller.listTarget.querySelector('[data-id="2"] .topic-unread-badge')).toBeNull()
+    })
+
     test('cancels a scheduled unread reload when the popup closes', async () => {
 		jest.useFakeTimers()
 		controller.creativeIdValue = '42'
