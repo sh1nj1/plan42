@@ -92,6 +92,29 @@ describe('TopicsController#openTopicListPopup', () => {
 		expect(btn.getAttribute('aria-expanded')).toBe('false')
     })
 
+    test('passes unread counts through to the topic-list popup', () => {
+		controller.topics = [{ id: 2, name: 'Alpha', unread_count: 3 }]
+		controller.archivedTopics = [{ id: 3, name: 'Zeta', unread_count: 5 }]
+		const btn = controller.topicListButtonTarget
+		const modal = document.createElement('div')
+		modal.id = 'topic-list-modal'
+		controller.element.appendChild(modal)
+		const popup = { popup: { isOpen: jest.fn(() => false) }, openForTopics: jest.fn() }
+		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+		controller.openTopicListPopup({ currentTarget: btn })
+
+		expect(popup.openForTopics).toHaveBeenCalledWith(
+			expect.objectContaining({
+				topics: controller.topics,
+				archivedTopics: controller.archivedTopics
+			}),
+			expect.any(Object),
+			expect.any(Function),
+			controller.element
+		)
+    })
+
     test('lets other popups process the pointer event and consumes the matching click when open', () => {
 		const btn = controller.topicListButtonTarget
 		const modal = document.createElement('div')

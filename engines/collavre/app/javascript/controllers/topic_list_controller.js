@@ -51,11 +51,20 @@ export default class extends CommonPopupController {
     _buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel }) {
         const main = mainTopicId ? topics.find(t => String(t.id) === String(mainTopicId)) : null
         const others = topics.filter(t => !main || String(t.id) !== String(mainTopicId))
+        const topicItem = (topic, archived) => {
+            const unreadCount = Number(topic.unread_count)
+            return {
+                id: topic.id,
+                label: `#${topic.name}`,
+                archived,
+                unreadCount: Number.isFinite(unreadCount) ? unreadCount : 0
+            }
+        }
         const items = []
-        if (main) items.push({ id: main.id, label: `#${main.name}`, archived: false })
-        others.forEach(t => items.push({ id: t.id, label: `#${t.name}`, archived: false }))
+        if (main) items.push(topicItem(main, false))
+        others.forEach(t => items.push(topicItem(t, false)))
         items.push({ id: '', label: `📋 ${allMessagesLabel}`, archived: false })
-        archivedTopics.forEach(t => items.push({ id: t.id, label: `#${t.name}`, archived: true }))
+        archivedTopics.forEach(t => items.push(topicItem(t, true)))
         return items
     }
 
@@ -81,10 +90,13 @@ export default class extends CommonPopupController {
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
+        const unreadBadge = item.unreadCount > 0
+            ? `<span class="topic-unread-badge">${item.unreadCount}</span>`
+            : ''
         if (item.archived) {
-            return `<span class="topic-list-item topic-list-item--archived">${ICON_ARCHIVE} ${escaped}</span>`
+            return `<span class="topic-list-item topic-list-item--archived">${ICON_ARCHIVE}<span class="topic-list-item-label">${escaped}</span>${unreadBadge}</span>`
         }
-        return `<span class="topic-list-item">${escaped}</span>`
+        return `<span class="topic-list-item"><span class="topic-list-item-label">${escaped}</span>${unreadBadge}</span>`
     }
 
     dispatchClose(reason) {
