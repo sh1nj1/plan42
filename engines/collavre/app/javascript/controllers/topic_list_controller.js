@@ -39,8 +39,13 @@ export default class extends CommonPopupController {
     }
 
     updateTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }) {
+        const activeItem = this.popup.items[this.popup.activeIndex]
         this._allItems = this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel })
         this._onInput()
+        if (!activeItem) return
+
+        const activeIndex = this.popup.items.findIndex(item => String(item.id) === String(activeItem.id))
+        if (activeIndex >= 0) this.popup.setActiveIndex(activeIndex)
     }
 
     isMobile() {

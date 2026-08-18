@@ -114,6 +114,23 @@ describe('TopicListController', () => {
         expect(items()[0].querySelector('.topic-unread-badge').textContent).toBe('3')
     })
 
+    test('preserves the active topic across unread count refreshes', () => {
+        const onSelect = jest.fn()
+        controller.openForTopics(DATA, RECT, onSelect)
+        controller.popup.setActiveIndex(1)
+
+        controller.updateTopics({
+            ...DATA,
+            topics: [{ id: 1, name: 'Main' }, { id: 2, name: 'Alpha', unread_count: 3 }]
+        })
+
+        expect(controller.popup.activeIndex).toBe(1)
+        expect(items()[1].classList).toContain('active')
+        controller.handleInputKeydown({ key: 'Enter', preventDefault: jest.fn() })
+
+        expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }))
+    })
+
     test('escapes topic labels and rejects non-numeric unread counts', () => {
         controller.openForTopics({
             ...DATA,

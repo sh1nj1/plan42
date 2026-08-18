@@ -31,6 +31,7 @@ describe('TopicsController#openTopicListPopup', () => {
     })
 
     afterEach(() => {
+		jest.useRealTimers()
         document.body.innerHTML = ''
         application.stop()
         jest.clearAllMocks()
@@ -115,36 +116,43 @@ describe('TopicsController#openTopicListPopup', () => {
 		)
     })
 
-    test('increments cached unread counts and refreshes an open topic-list popup', () => {
+    test('reloads authoritative unread counts without incrementing the cached snapshot', async () => {
+		jest.useFakeTimers()
 		controller.topics = [{ id: 2, name: 'Alpha', unread_count: 2 }]
 		controller.archivedTopics = [{ id: 3, name: 'Zeta', unread_count: 4 }]
-		const modal = document.createElement('div')
-		modal.id = 'topic-list-modal'
-		controller.element.appendChild(modal)
-		const popup = { popup: { isOpen: jest.fn(() => true) }, updateTopics: jest.fn() }
-		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+		controller.loadTopics = jest.fn().mockResolvedValue(undefined)
 
 		controller.handleNewMessage({ detail: { topicId: '2' } })
+		controller.handleNewMessage({ detail: { topicId: '2' } })
 
-		expect(controller.topics[0].unread_count).toBe(3)
-		expect(popup.updateTopics).toHaveBeenCalledWith(expect.objectContaining({
-			topics: controller.topics,
-			archivedTopics: controller.archivedTopics
-		}))
+		expect(controller.topics[0].unread_count).toBe(2)
+		expect(controller.loadTopics).not.toHaveBeenCalled()
+		await jest.advanceTimersByTimeAsync(250)
+		expect(controller.loadTopics).toHaveBeenCalledTimes(1)
     })
 
-    test('updates archived cached counts but does not refresh a closed popup', () => {
+    test('leaves archived cached counts unchanged while scheduling a reload', async () => {
+		jest.useFakeTimers()
 		controller.archivedTopics = [{ id: 3, name: 'Zeta' }]
-		const modal = document.createElement('div')
-		modal.id = 'topic-list-modal'
-		controller.element.appendChild(modal)
-		const popup = { popup: { isOpen: jest.fn(() => false) }, updateTopics: jest.fn() }
-		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+		controller.loadTopics = jest.fn().mockResolvedValue(undefined)
 
 		controller.handleNewMessage({ detail: { topicId: 3 } })
 
-		expect(controller.archivedTopics[0].unread_count).toBe(1)
-		expect(popup.updateTopics).not.toHaveBeenCalled()
+		expect(controller.archivedTopics[0].unread_count).toBeUndefined()
+		await jest.advanceTimersByTimeAsync(250)
+		expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+    })
+
+    test('cancels a scheduled unread reload when the popup closes', async () => {
+		jest.useFakeTimers()
+		controller.creativeIdValue = '42'
+		controller.loadTopics = jest.fn().mockResolvedValue(undefined)
+		controller.handleNewMessage({ detail: { topicId: '2' } })
+
+		controller.onPopupClosed()
+		await jest.advanceTimersByTimeAsync(250)
+
+		expect(controller.loadTopics).not.toHaveBeenCalled()
     })
 
     test('lets other popups process the pointer event and consumes the matching click when open', () => {

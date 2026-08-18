@@ -7,6 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
+const UNREAD_COUNT_REFRESH_DELAY = 250
 const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
 const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
 const LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX = "collavre:last-topic-save-session:"
@@ -55,6 +56,8 @@ export default class extends Controller {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
+        clearTimeout(this._unreadCountRefreshTimer)
+        this._unreadCountRefreshTimer = null
         this.unsubscribe()
     }
 
@@ -101,6 +104,8 @@ export default class extends Controller {
         this.releaseAcknowledgedPendingSelfEchoes()
         this.markPendingSelfEchoesAsPossiblyMissed()
         this._loadTopicsVersion += 1
+        clearTimeout(this._unreadCountRefreshTimer)
+        this._unreadCountRefreshTimer = null
         // The same creative can reopen before an in-flight save broadcasts.
         // Keep that save's claim so its delayed echo remains recognisable on
         // the replacement subscription; a different creative clears it when
@@ -350,6 +355,7 @@ export default class extends Controller {
                 }
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
+                this.refreshOpenTopicListPopup()
                 if (!skipLastTopicReconciliation) {
                     this.restoreSelection({ keepEmptyPick: pickWon })
                 }
@@ -913,6 +919,15 @@ export default class extends Controller {
         if (popup?.popup?.isOpen()) popup.updateTopics(this.topicListData())
     }
 
+    scheduleUnreadCountRefresh() {
+        if (this._unreadCountRefreshTimer) return
+
+        this._unreadCountRefreshTimer = setTimeout(() => {
+            this._unreadCountRefreshTimer = null
+            this.loadTopics().catch(() => { /* loadTopics already reports the failure */ })
+        }, UNREAD_COUNT_REFRESH_DELAY)
+    }
+
     prepareTopicListToggle(event) {
         if (event.isPrimary === false || event.button !== 0) return
 
@@ -1172,17 +1187,10 @@ export default class extends Controller {
         const isArchived = this.isArchivedTopic(topicId)
         if (isArchived) this.archivedWithNewMessages.add(String(topicId))
 
-        const topic = [...(this.topics || []), ...(this.archivedTopics || [])]
-            .find(candidate => String(candidate.id) === String(topicId))
-        if (topic) {
-            const unreadCount = Number(topic.unread_count)
-            topic.unread_count = (Number.isFinite(unreadCount) && unreadCount > 0 ? unreadCount : 0) + 1
-        }
-
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
         if (topicEl) topicEl.classList.add('has-new-messages')
 
-        this.refreshOpenTopicListPopup()
+        this.scheduleUnreadCountRefresh()
 
         // A collapsed archived section has no chip to badge, so the toggle carries
         // the notice — otherwise a message in an archived topic is invisible.
