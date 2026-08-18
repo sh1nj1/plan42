@@ -7,6 +7,7 @@ import TopicsController from '../topics_controller'
 
 describe('TopicsController#openTopicListPopup', () => {
     let application, controller
+    const originalFetch = global.fetch
 
     beforeEach(() => {
         global.requestAnimationFrame = (fn) => { fn(); return 0 }
@@ -32,6 +33,7 @@ describe('TopicsController#openTopicListPopup', () => {
 
     afterEach(() => {
 		jest.useRealTimers()
+        global.fetch = originalFetch
         document.body.innerHTML = ''
         application.stop()
         jest.clearAllMocks()
@@ -120,34 +122,34 @@ describe('TopicsController#openTopicListPopup', () => {
 		jest.useFakeTimers()
 		controller.topics = [{ id: 2, name: 'Alpha', unread_count: 2 }]
 		controller.archivedTopics = [{ id: 3, name: 'Zeta', unread_count: 4 }]
-		controller.loadTopics = jest.fn().mockResolvedValue(undefined)
+		controller.refreshUnreadCounts = jest.fn().mockResolvedValue(undefined)
 
 		controller.handleNewMessage({ detail: { topicId: '2' } })
 		controller.handleNewMessage({ detail: { topicId: '2' } })
 
 		expect(controller.topics[0].unread_count).toBe(2)
-		expect(controller.loadTopics).not.toHaveBeenCalled()
+		expect(controller.refreshUnreadCounts).not.toHaveBeenCalled()
 		await jest.advanceTimersByTimeAsync(250)
-		expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+		expect(controller.refreshUnreadCounts).toHaveBeenCalledTimes(1)
     })
 
     test('leaves archived cached counts unchanged while scheduling a reload', async () => {
 		jest.useFakeTimers()
 		controller.archivedTopics = [{ id: 3, name: 'Zeta' }]
-		controller.loadTopics = jest.fn().mockResolvedValue(undefined)
+		controller.refreshUnreadCounts = jest.fn().mockResolvedValue(undefined)
 
 		controller.handleNewMessage({ detail: { topicId: 3 } })
 
 		expect(controller.archivedTopics[0].unread_count).toBeUndefined()
 		await jest.advanceTimersByTimeAsync(250)
-		expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+		expect(controller.refreshUnreadCounts).toHaveBeenCalledTimes(1)
     })
 
     test('queues one trailing reload while an unread reload is in flight', async () => {
 		jest.useFakeTimers()
 		let finishFirstLoad
 		const firstLoad = new Promise(resolve => { finishFirstLoad = resolve })
-		controller.loadTopics = jest.fn()
+		controller.refreshUnreadCounts = jest.fn()
 			.mockReturnValueOnce(firstLoad)
 			.mockResolvedValueOnce(undefined)
 
@@ -156,11 +158,48 @@ describe('TopicsController#openTopicListPopup', () => {
 		controller.handleNewMessage({ detail: { topicId: '2' } })
 		controller.handleNewMessage({ detail: { topicId: '2' } })
 
-		expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+		expect(controller.refreshUnreadCounts).toHaveBeenCalledTimes(1)
 		finishFirstLoad()
 		await Promise.resolve()
 		await jest.advanceTimersByTimeAsync(250)
-		expect(controller.loadTopics).toHaveBeenCalledTimes(2)
+		expect(controller.refreshUnreadCounts).toHaveBeenCalledTimes(2)
+	})
+
+    test('reports an unread refresh failure without leaving it in flight', async () => {
+		jest.useFakeTimers()
+		const error = new Error('network failed')
+		controller.refreshUnreadCounts = jest.fn().mockRejectedValue(error)
+		const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+		controller.handleNewMessage({ detail: { topicId: '2' } })
+		await jest.advanceTimersByTimeAsync(250)
+
+		expect(consoleError).toHaveBeenCalledWith('Failed to refresh topic unread counts', error)
+		expect(controller._unreadCountRefreshInFlight).toBe(false)
+	})
+
+    test('retains topic snapshots while refreshing only authoritative unread counts', async () => {
+		let finishRequest
+		global.fetch = jest.fn(() => new Promise(resolve => { finishRequest = resolve }))
+		controller.creativeIdValue = '42'
+		controller.topics = [{ id: 2, name: 'Alpha', unread_count: 2 }]
+		controller.archivedTopics = [{ id: 3, name: 'Zeta', unread_count: 1 }]
+		controller.debounceSaveLastTopic = jest.fn()
+
+		const refreshing = controller.refreshUnreadCounts()
+		expect(controller.topics).toEqual([{ id: 2, name: 'Alpha', unread_count: 2 }])
+		finishRequest({
+			ok: true,
+			json: jest.fn().mockResolvedValue({
+				topics: [{ id: 2, name: 'Changed on server', unread_count: 4 }],
+				archived_topics: [{ id: 3, name: 'Also changed', unread_count: 5 }]
+			})
+		})
+		await refreshing
+
+		expect(controller.topics).toEqual([{ id: 2, name: 'Alpha', unread_count: 4 }])
+		expect(controller.archivedTopics).toEqual([{ id: 3, name: 'Zeta', unread_count: 5 }])
+		expect(controller.debounceSaveLastTopic).not.toHaveBeenCalled()
 	})
 
     test('clears cached and rendered unread counts when a topic is opened', () => {
@@ -176,13 +215,13 @@ describe('TopicsController#openTopicListPopup', () => {
     test('cancels a scheduled unread reload when the popup closes', async () => {
 		jest.useFakeTimers()
 		controller.creativeIdValue = '42'
-		controller.loadTopics = jest.fn().mockResolvedValue(undefined)
+		controller.refreshUnreadCounts = jest.fn().mockResolvedValue(undefined)
 		controller.handleNewMessage({ detail: { topicId: '2' } })
 
 		controller.onPopupClosed()
 		await jest.advanceTimersByTimeAsync(250)
 
-		expect(controller.loadTopics).not.toHaveBeenCalled()
+		expect(controller.refreshUnreadCounts).not.toHaveBeenCalled()
     })
 
     test('lets other popups process the pointer event and consumes the matching click when open', () => {

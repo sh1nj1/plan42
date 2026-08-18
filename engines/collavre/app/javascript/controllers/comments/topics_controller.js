@@ -39,6 +39,7 @@ export default class extends Controller {
         this.subscribedCreativeId = null
         this.topicsSubscription = null
         this._loadTopicsVersion = 0
+        this._unreadCountsOverlay = null
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
@@ -210,6 +211,7 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         const version = ++this._loadTopicsVersion
+        this._unreadCountsOverlay = null
         const selectionEpoch = this.selectionEpoch
         // A response can carry a snapshot produced before a save, while that
         // save's HTTP response reaches us before the snapshot is processed.
@@ -232,7 +234,10 @@ export default class extends Controller {
             }
             if (response.ok) {
                 const data = await response.json()
-                const topics = Array.isArray(data) ? data : data.topics
+                const unreadCounts = this._unreadCountsOverlay?.loadVersion === version
+                    ? this._unreadCountsOverlay.counts
+                    : null
+                const topics = this.applyUnreadCounts(Array.isArray(data) ? data : data.topics, unreadCounts)
                 const canManage = Array.isArray(data) ? false : data.can_manage
                 const canCreateTopic = Array.isArray(data) ? false : (data.can_create_topic ?? canManage)
                 // Assigning an agent is authorized at :write, not :admin, so the
@@ -245,7 +250,7 @@ export default class extends Controller {
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
                 this.canSetPrimaryAgent = canSetPrimaryAgent
-                this.archivedTopics = data.archived_topics || []
+                this.archivedTopics = this.applyUnreadCounts(data.archived_topics || [], unreadCounts)
                 this.pruneArchivedBadges()
                 const effectiveCreativeId = data.effective_creative_id
                     ? String(data.effective_creative_id)
@@ -928,8 +933,8 @@ export default class extends Controller {
         this._unreadCountRefreshTimer = setTimeout(() => {
             this._unreadCountRefreshTimer = null
             this._unreadCountRefreshInFlight = true
-            this.loadTopics()
-                .catch(() => { /* loadTopics already reports the failure */ })
+            this.refreshUnreadCounts()
+                .catch(error => console.error("Failed to refresh topic unread counts", error))
                 .finally(() => {
                     this._unreadCountRefreshInFlight = false
                     if (!this._unreadCountRefreshQueued) return
@@ -944,6 +949,38 @@ export default class extends Controller {
         clearTimeout(this._unreadCountRefreshTimer)
         this._unreadCountRefreshTimer = null
         this._unreadCountRefreshQueued = false
+    }
+
+    async refreshUnreadCounts() {
+        if (!this.creativeId) return
+
+        const creativeId = String(this.creativeId)
+        const loadVersion = this._loadTopicsVersion
+        const response = await fetch(`/creatives/${creativeId}/topics`)
+        if (!response.ok) return
+
+        const data = await response.json()
+        if (String(this.creativeId) !== creativeId || this._loadTopicsVersion !== loadVersion) return
+
+        const activeTopics = Array.isArray(data) ? data : data.topics
+        const counts = new Map(
+            [...(activeTopics || []), ...(data.archived_topics || [])]
+                .map(topic => [String(topic.id), Number(topic.unread_count) || 0])
+        )
+        this._unreadCountsOverlay = { loadVersion, counts }
+        this.topics = this.applyUnreadCounts(this.topics, counts)
+        this.archivedTopics = this.applyUnreadCounts(this.archivedTopics, counts)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
+        if (this.currentTopicId) this.clearNewMessageBadge(this.currentTopicId)
+        this.refreshOpenTopicListPopup()
+    }
+
+    applyUnreadCounts(topics = [], counts = null) {
+        if (!counts) return topics
+
+        return topics.map(topic => counts.has(String(topic.id))
+            ? { ...topic, unread_count: counts.get(String(topic.id)) }
+            : topic)
     }
 
     prepareTopicListToggle(event) {
