@@ -38,7 +38,7 @@ export default class extends Controller {
         this.canSetPrimaryAgent = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
-        this._loadTopicsVersion = 0
+        this._loadTopicsVersion ||= 0
         this._unreadCountsOverlay = null
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
@@ -57,6 +57,7 @@ export default class extends Controller {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
+        this._loadTopicsVersion += 1
         this.cancelUnreadCountRefresh()
         this.unsubscribe()
     }
@@ -918,7 +919,7 @@ export default class extends Controller {
     }
 
     refreshOpenTopicListPopup() {
-        const modal = document.getElementById('topic-list-modal')
+        const modal = this.element.querySelector('#topic-list-modal')
         const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
         if (popup?.popup?.isOpen()) popup.updateTopics(this.topicListData())
     }
@@ -970,8 +971,8 @@ export default class extends Controller {
         this._unreadCountsOverlay = { loadVersion, counts }
         this.topics = this.applyUnreadCounts(this.topics, counts)
         this.archivedTopics = this.applyUnreadCounts(this.archivedTopics, counts)
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         if (this.currentTopicId) this.clearNewMessageBadge(this.currentTopicId)
+        this.refreshRenderedUnreadCounts()
         this.refreshOpenTopicListPopup()
     }
 
@@ -981,6 +982,34 @@ export default class extends Controller {
         return topics.map(topic => counts.has(String(topic.id))
             ? { ...topic, unread_count: counts.get(String(topic.id)) }
             : topic)
+    }
+
+    refreshRenderedUnreadCounts() {
+        const topicsById = new Map(
+            [...(this.topics || []), ...(this.archivedTopics || [])]
+                .map(topic => [String(topic.id), topic])
+        )
+
+        this.listTarget.querySelectorAll('.topic-tag[data-id]').forEach(topicEl => {
+            const topic = topicsById.get(String(topicEl.dataset.id))
+            if (!topic || topicEl.querySelector('.topic-edit-input')) return
+
+            const count = Number(topic.unread_count) || 0
+            const badge = topicEl.querySelector('.topic-unread-badge')
+            if (count <= 0) {
+                badge?.remove()
+                return
+            }
+            if (badge) {
+                badge.textContent = String(count)
+                return
+            }
+
+            const newBadge = document.createElement('span')
+            newBadge.className = 'topic-unread-badge'
+            newBadge.textContent = String(count)
+            topicEl.insertBefore(newBadge, topicEl.querySelector('button'))
+        })
     }
 
     prepareTopicListToggle(event) {
@@ -1158,6 +1187,7 @@ export default class extends Controller {
         if (topicEl && topicEl.dataset.originalHtml) {
             topicEl.innerHTML = topicEl.dataset.originalHtml
             delete topicEl.dataset.originalHtml
+            this.refreshRenderedUnreadCounts()
         }
 
         setTimeout(() => { this.editCancelling = false }, 100)
