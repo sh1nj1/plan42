@@ -99,6 +99,21 @@ describe('TopicListController', () => {
         expect(items()).toHaveLength(0)
     })
 
+    test('refreshes unread counts without clearing the current search', () => {
+        controller.openForTopics(DATA, RECT, () => {})
+        controller.inputTarget.value = 'alpha'
+        controller._onInput()
+
+        controller.updateTopics({
+            ...DATA,
+            topics: [{ id: 1, name: 'Main' }, { id: 2, name: 'Alpha', unread_count: 3 }]
+        })
+
+        expect(controller.inputTarget.value).toBe('alpha')
+        expect(items()).toHaveLength(1)
+        expect(items()[0].querySelector('.topic-unread-badge').textContent).toBe('3')
+    })
+
     test('escapes topic labels and rejects non-numeric unread counts', () => {
         controller.openForTopics({
             ...DATA,

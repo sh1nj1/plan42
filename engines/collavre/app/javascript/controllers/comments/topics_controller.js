@@ -855,12 +855,7 @@ export default class extends Controller {
 
         const openWith = (popup) => {
             popup.openForTopics(
-                {
-                    topics: this.topics || [],
-                    archivedTopics: this.archivedTopics || [],
-                    mainTopicId: this.mainTopicId,
-                    allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
-                },
+                this.topicListData(),
                 btnRect,
                 (item) => this.selectTopic(item.id),
                 this.element
@@ -901,6 +896,21 @@ export default class extends Controller {
             if (popup) openWith(popup)
             else console.error('topic-list controller not found after creation')
         })
+    }
+
+    topicListData() {
+        return {
+            topics: this.topics || [],
+            archivedTopics: this.archivedTopics || [],
+            mainTopicId: this.mainTopicId,
+            allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
+        }
+    }
+
+    refreshOpenTopicListPopup() {
+        const modal = document.getElementById('topic-list-modal')
+        const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+        if (popup?.popup?.isOpen()) popup.updateTopics(this.topicListData())
     }
 
     prepareTopicListToggle(event) {
@@ -1162,8 +1172,17 @@ export default class extends Controller {
         const isArchived = this.isArchivedTopic(topicId)
         if (isArchived) this.archivedWithNewMessages.add(String(topicId))
 
+        const topic = [...(this.topics || []), ...(this.archivedTopics || [])]
+            .find(candidate => String(candidate.id) === String(topicId))
+        if (topic) {
+            const unreadCount = Number(topic.unread_count)
+            topic.unread_count = (Number.isFinite(unreadCount) && unreadCount > 0 ? unreadCount : 0) + 1
+        }
+
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
         if (topicEl) topicEl.classList.add('has-new-messages')
+
+        this.refreshOpenTopicListPopup()
 
         // A collapsed archived section has no chip to badge, so the toggle carries
         // the notice — otherwise a message in an archived topic is invisible.

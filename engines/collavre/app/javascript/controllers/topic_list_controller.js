@@ -25,9 +25,8 @@ export default class extends CommonPopupController {
 
     openForTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }, anchorRect, onSelectCallback, boundsElement = null) {
         this.onSelectCallback = onSelectCallback
-        this._allItems = this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel })
         this.inputTarget.value = ''
-        this.setItems(this._allItems)
+        this.updateTopics({ topics, archivedTopics, mainTopicId, allMessagesLabel })
         super.open(anchorRect, boundsElement)
         if (this.isMobile()) {
             // Autofocusing the search box raises the virtual keyboard, which covers
@@ -37,6 +36,11 @@ export default class extends CommonPopupController {
             return
         }
         requestAnimationFrame(() => this.inputTarget.focus())
+    }
+
+    updateTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }) {
+        this._allItems = this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel })
+        this._onInput()
     }
 
     isMobile() {

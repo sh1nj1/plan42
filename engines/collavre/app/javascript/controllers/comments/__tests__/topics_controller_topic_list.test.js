@@ -115,6 +115,38 @@ describe('TopicsController#openTopicListPopup', () => {
 		)
     })
 
+    test('increments cached unread counts and refreshes an open topic-list popup', () => {
+		controller.topics = [{ id: 2, name: 'Alpha', unread_count: 2 }]
+		controller.archivedTopics = [{ id: 3, name: 'Zeta', unread_count: 4 }]
+		const modal = document.createElement('div')
+		modal.id = 'topic-list-modal'
+		controller.element.appendChild(modal)
+		const popup = { popup: { isOpen: jest.fn(() => true) }, updateTopics: jest.fn() }
+		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+		controller.handleNewMessage({ detail: { topicId: '2' } })
+
+		expect(controller.topics[0].unread_count).toBe(3)
+		expect(popup.updateTopics).toHaveBeenCalledWith(expect.objectContaining({
+			topics: controller.topics,
+			archivedTopics: controller.archivedTopics
+		}))
+    })
+
+    test('updates archived cached counts but does not refresh a closed popup', () => {
+		controller.archivedTopics = [{ id: 3, name: 'Zeta' }]
+		const modal = document.createElement('div')
+		modal.id = 'topic-list-modal'
+		controller.element.appendChild(modal)
+		const popup = { popup: { isOpen: jest.fn(() => false) }, updateTopics: jest.fn() }
+		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+		controller.handleNewMessage({ detail: { topicId: 3 } })
+
+		expect(controller.archivedTopics[0].unread_count).toBe(1)
+		expect(popup.updateTopics).not.toHaveBeenCalled()
+    })
+
     test('lets other popups process the pointer event and consumes the matching click when open', () => {
 		const btn = controller.topicListButtonTarget
 		const modal = document.createElement('div')
