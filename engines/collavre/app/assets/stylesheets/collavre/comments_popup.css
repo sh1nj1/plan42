@@ -1798,13 +1798,21 @@ body.chat-fullscreen {
 
 /* Archived entries inside the topic list popup */
 .topic-list-item {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 0.3em;
+    width: 100%;
 }
 .topic-list-item--archived {
-    opacity: 0.5;
     font-style: italic;
+}
+.topic-list-item--archived > svg,
+.topic-list-item--archived > .topic-list-item-label {
+    opacity: 0.5;
+}
+.topic-list-item .topic-unread-badge {
+    flex-shrink: 0;
+    margin-left: auto;
 }
 .topic-branch-icon {
     font-size: 0.75em;

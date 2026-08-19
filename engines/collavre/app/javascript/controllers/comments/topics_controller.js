@@ -7,6 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
+const UNREAD_COUNT_REFRESH_DELAY = 250
 const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
 const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
 const LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX = "collavre:last-topic-save-session:"
@@ -37,7 +38,8 @@ export default class extends Controller {
         this.canSetPrimaryAgent = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
-        this._loadTopicsVersion = 0
+        this._loadTopicsVersion ||= 0
+        this._unreadCountsOverlay = null
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
@@ -55,6 +57,8 @@ export default class extends Controller {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
+        this._loadTopicsVersion += 1
+        this.cancelUnreadCountRefresh()
         this.unsubscribe()
     }
 
@@ -101,6 +105,7 @@ export default class extends Controller {
         this.releaseAcknowledgedPendingSelfEchoes()
         this.markPendingSelfEchoesAsPossiblyMissed()
         this._loadTopicsVersion += 1
+        this.cancelUnreadCountRefresh()
         // The same creative can reopen before an in-flight save broadcasts.
         // Keep that save's claim so its delayed echo remains recognisable on
         // the replacement subscription; a different creative clears it when
@@ -207,6 +212,7 @@ export default class extends Controller {
         if (!this.creativeId) return
 
         const version = ++this._loadTopicsVersion
+        this._unreadCountsOverlay = null
         const selectionEpoch = this.selectionEpoch
         // A response can carry a snapshot produced before a save, while that
         // save's HTTP response reaches us before the snapshot is processed.
@@ -229,7 +235,10 @@ export default class extends Controller {
             }
             if (response.ok) {
                 const data = await response.json()
-                const topics = Array.isArray(data) ? data : data.topics
+                const unreadCounts = this._unreadCountsOverlay?.loadVersion === version
+                    ? this._unreadCountsOverlay.counts
+                    : null
+                const topics = this.applyUnreadCounts(Array.isArray(data) ? data : data.topics, unreadCounts)
                 const canManage = Array.isArray(data) ? false : data.can_manage
                 const canCreateTopic = Array.isArray(data) ? false : (data.can_create_topic ?? canManage)
                 // Assigning an agent is authorized at :write, not :admin, so the
@@ -242,7 +251,7 @@ export default class extends Controller {
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
                 this.canSetPrimaryAgent = canSetPrimaryAgent
-                this.archivedTopics = data.archived_topics || []
+                this.archivedTopics = this.applyUnreadCounts(data.archived_topics || [], unreadCounts)
                 this.pruneArchivedBadges()
                 const effectiveCreativeId = data.effective_creative_id
                     ? String(data.effective_creative_id)
@@ -350,9 +359,11 @@ export default class extends Controller {
                 }
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
+                if (this.currentTopicId) this.clearNewMessageBadge(this.currentTopicId)
                 if (!skipLastTopicReconciliation) {
                     this.restoreSelection({ keepEmptyPick: pickWon })
                 }
+                this.refreshOpenTopicListPopup()
             }
         } catch (e) {
             console.error("Failed to load topics", e)
@@ -855,12 +866,7 @@ export default class extends Controller {
 
         const openWith = (popup) => {
             popup.openForTopics(
-                {
-                    topics: this.topics || [],
-                    archivedTopics: this.archivedTopics || [],
-                    mainTopicId: this.mainTopicId,
-                    allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
-                },
+                this.topicListData(),
                 btnRect,
                 (item) => this.selectTopic(item.id),
                 this.element
@@ -900,6 +906,109 @@ export default class extends Controller {
             const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
             if (popup) openWith(popup)
             else console.error('topic-list controller not found after creation')
+        })
+    }
+
+    topicListData() {
+        return {
+            topics: this.topics || [],
+            archivedTopics: this.archivedTopics || [],
+            mainTopicId: this.mainTopicId,
+            allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
+        }
+    }
+
+    refreshOpenTopicListPopup() {
+        const modal = this.element.querySelector('#topic-list-modal')
+        const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+        if (popup?.popup?.isOpen()) popup.updateTopics(this.topicListData())
+    }
+
+    scheduleUnreadCountRefresh() {
+        if (this._unreadCountRefreshInFlight) {
+            this._unreadCountRefreshQueued = true
+            return
+        }
+        if (this._unreadCountRefreshTimer) return
+
+        this._unreadCountRefreshTimer = setTimeout(() => {
+            this._unreadCountRefreshTimer = null
+            this._unreadCountRefreshInFlight = true
+            this.refreshUnreadCounts()
+                .catch(error => console.error("Failed to refresh topic unread counts", error))
+                .finally(() => {
+                    this._unreadCountRefreshInFlight = false
+                    if (!this._unreadCountRefreshQueued) return
+
+                    this._unreadCountRefreshQueued = false
+                    this.scheduleUnreadCountRefresh()
+                })
+        }, UNREAD_COUNT_REFRESH_DELAY)
+    }
+
+    cancelUnreadCountRefresh() {
+        clearTimeout(this._unreadCountRefreshTimer)
+        this._unreadCountRefreshTimer = null
+        this._unreadCountRefreshQueued = false
+    }
+
+    async refreshUnreadCounts() {
+        if (!this.creativeId) return
+
+        const creativeId = String(this.creativeId)
+        const loadVersion = this._loadTopicsVersion
+        const response = await fetch(`/creatives/${creativeId}/topics`)
+        if (!response.ok) return
+
+        const data = await response.json()
+        if (String(this.creativeId) !== creativeId || this._loadTopicsVersion !== loadVersion) return
+
+        const activeTopics = Array.isArray(data) ? data : data.topics
+        const counts = new Map(
+            [...(activeTopics || []), ...(data.archived_topics || [])]
+                .map(topic => [String(topic.id), Number(topic.unread_count) || 0])
+        )
+        this._unreadCountsOverlay = { loadVersion, counts }
+        this.topics = this.applyUnreadCounts(this.topics, counts)
+        this.archivedTopics = this.applyUnreadCounts(this.archivedTopics, counts)
+        if (this.currentTopicId) this.clearNewMessageBadge(this.currentTopicId)
+        this.refreshRenderedUnreadCounts()
+        this.refreshOpenTopicListPopup()
+    }
+
+    applyUnreadCounts(topics = [], counts = null) {
+        if (!counts) return topics
+
+        return topics.map(topic => counts.has(String(topic.id))
+            ? { ...topic, unread_count: counts.get(String(topic.id)) }
+            : topic)
+    }
+
+    refreshRenderedUnreadCounts() {
+        const topicsById = new Map(
+            [...(this.topics || []), ...(this.archivedTopics || [])]
+                .map(topic => [String(topic.id), topic])
+        )
+
+        this.listTarget.querySelectorAll('.topic-tag[data-id]').forEach(topicEl => {
+            const topic = topicsById.get(String(topicEl.dataset.id))
+            if (!topic || topicEl.querySelector('.topic-edit-input')) return
+
+            const count = Number(topic.unread_count) || 0
+            const badge = topicEl.querySelector('.topic-unread-badge')
+            if (count <= 0) {
+                badge?.remove()
+                return
+            }
+            if (badge) {
+                badge.textContent = String(count)
+                return
+            }
+
+            const newBadge = document.createElement('span')
+            newBadge.className = 'topic-unread-badge'
+            newBadge.textContent = String(count)
+            topicEl.insertBefore(newBadge, topicEl.querySelector('button'))
         })
     }
 
@@ -1078,6 +1187,7 @@ export default class extends Controller {
         if (topicEl && topicEl.dataset.originalHtml) {
             topicEl.innerHTML = topicEl.dataset.originalHtml
             delete topicEl.dataset.originalHtml
+            this.refreshRenderedUnreadCounts()
         }
 
         setTimeout(() => { this.editCancelling = false }, 100)
@@ -1165,6 +1275,8 @@ export default class extends Controller {
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
         if (topicEl) topicEl.classList.add('has-new-messages')
 
+        this.scheduleUnreadCountRefresh()
+
         // A collapsed archived section has no chip to badge, so the toggle carries
         // the notice — otherwise a message in an archived topic is invisible.
         if (isArchived) {
@@ -1176,7 +1288,12 @@ export default class extends Controller {
         const topicEl = this.listTarget.querySelector(`.topic-tag[data-id="${topicId}"]`)
         if (topicEl) {
             topicEl.classList.remove('has-new-messages')
+            topicEl.querySelector('.topic-unread-badge')?.remove()
         }
+
+        const topic = [...(this.topics || []), ...(this.archivedTopics || [])]
+            .find(candidate => String(candidate.id) === String(topicId))
+        if (topic) topic.unread_count = 0
 
         // The toggle aggregates every archived topic, so it only clears once none
         // of them is left unread.
