@@ -30,6 +30,11 @@ export default class CommonPopup {
     // Set by showAt when the caller can re-measure its anchor — see anchorRect.
     this._anchorProvider = null
     this._anchorRect = null
+    // True once the placement frame has actually revealed the popup. isOpen() is
+    // already true during the frame between display:block and that reveal, so it
+    // cannot tell "on screen" apart from "measured but still blank" — and only
+    // the first of those may skip the blanking step. See showAt.
+    this._revealed = false
 
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
     this.handleViewportResize = this.handleViewportResize.bind(this)
@@ -45,6 +50,12 @@ export default class CommonPopup {
   showAt(anchor, boundsElement = null) {
     if (!this.element) return
 
+    // Typeahead popups call showAt on every keystroke to re-anchor a menu that
+    // is already up (see modules/command_menu.js). Blanking it to
+    // visibility:hidden and waiting a frame would then blink the menu off and
+    // back on once per character, so a popup already on screen is only re-placed.
+    const wasRevealed = this._revealed && this.element.isConnected
+
     // When set, the popup is caged inside this element's rect (e.g. the chat
     // box) instead of the viewport — see updatePosition.
     this._boundsElement = boundsElement
@@ -53,7 +64,10 @@ export default class CommonPopup {
     // popup's content has changed size, and so a provider that stops resolving
     // has something to fall back on.
     this._anchorRect = this._anchorProvider ? null : anchor
-    this._placedAbove = false
+    // Keep the flip decision for the rest of this open: re-anchoring a menu
+    // that is already above the caret must not drop it back under the caret
+    // for a frame before it flips up again.
+    if (!wasRevealed) this._placedAbove = false
 
     // Re-opening while already open (e.g. clicking the same typo mark twice):
     // a listener from the previous open is still live, so the opening mousedown
@@ -64,7 +78,13 @@ export default class CommonPopup {
     document.removeEventListener('touchstart', this.handleOutsideClick)
 
     this.element.style.display = 'block'
-    this.element.style.visibility = 'hidden'
+    if (wasRevealed) {
+      // Already painted, so place it now rather than a frame late — otherwise
+      // the menu sits at the previous caret's position for one frame.
+      this.updatePosition(this.anchorRect())
+    } else {
+      this.element.style.visibility = 'hidden'
+    }
 
     cancelAnimationFrame(this._openFrame)
     this._openFrame = requestAnimationFrame(() => {
@@ -79,6 +99,7 @@ export default class CommonPopup {
 
       this.updatePosition(this.anchorRect())
       this.element.style.visibility = 'visible'
+      this._revealed = true
       // Register the outside-click listeners only after the opening event has
       // finished propagating. When a popup is opened from a mousedown handler
       // (e.g. clicking a typo highlight), registering synchronously here would
@@ -316,6 +337,7 @@ export default class CommonPopup {
     this._openFrame = null
     this.element.style.display = 'none'
     this.element.style.visibility = ''
+    this._revealed = false
     this.items = []
     this.activeIndex = -1
     this.updateActiveItem()
