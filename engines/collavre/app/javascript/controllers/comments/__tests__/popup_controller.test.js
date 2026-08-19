@@ -97,6 +97,26 @@ describe('CommentsPopupController', () => {
         expect(popup.dataset.resized).toBeUndefined()
     })
 
+    test('keeps the mobile chat open while scrolling down inside the topic-list popup', () => {
+		const popup = document.getElementById('comments-popup')
+		const topicListModal = document.createElement('div')
+		const topicListItem = document.createElement('li')
+		topicListModal.id = 'topic-list-modal'
+		topicListModal.appendChild(topicListItem)
+		popup.appendChild(topicListModal)
+		jest.spyOn(controller, 'isMobile').mockReturnValue(true)
+		const close = jest.spyOn(controller, 'close')
+
+		controller.handleTouchStart({
+			target: topicListItem,
+			touches: [{ clientY: 100 }]
+		})
+		controller.handleTouchEnd({ changedTouches: [{ clientY: 180 }] })
+
+		expect(close).not.toHaveBeenCalled()
+		expect(controller.touchStartY).toBeNull()
+    })
+
     test('inherits auto-focus preference from trigger button', async () => {
         const triggerBtn = document.getElementById('trigger-btn')
         const popup = document.getElementById('comments-popup')
