@@ -95,6 +95,131 @@ Import a markdown document as a Creative tree. Uses the built-in MarkdownImporte
 
 **Returns:** `{ success, parent_id, created_count, tree[] }`
 
+## Topic tools
+
+A **topic** is a conversation thread on a Creative, and it is also the unit of
+agent concurrency: tasks dispatched in the same topic are serialized (one holds
+the topic's slot, the rest queue), while tasks in different topics run in
+parallel. Splitting work across topics is what makes it run concurrently.
+
+### topic_list
+
+List a Creative's topics, or describe specific topics by id. The planning call —
+use it before `topic_messages` to see how much conversation each topic holds.
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `creative_id` | Integer | One of | — | List every topic on this Creative |
+| `topic_ids` | String | One of | — | Describe these topics, e.g. `"12,45,78"` |
+| `include_archived` | Boolean | No | false | Include archived topics (listing by `creative_id`) |
+| `include_stats` | Boolean | No | true | Include `message_count` / `message_chars` / `last_message_at` |
+| `include_system` | Boolean | No | false | Count authorless notices and approval prompts |
+
+**Returns:** `{ topics[], errors[] }`. Each topic: `id`, `name`, `creative_id`,
+`archived`, `main`, `system`, `source_topic_id`, `primary_agent`,
+`agent_locked`, `message_count`, `message_chars`, `last_message_at`.
+
+`message_chars` is the length of the stored message HTML — an upper bound on the
+text `topic_messages` returns, good for relative sizing rather than exact
+budgeting. Requires **read** on each topic's Creative; unknown or unreadable ids
+come back in `errors`.
+
+### topic_messages
+
+Read messages from one or more topics, newest first, with paging.
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `topic_ids` | String | **Yes** | — | `"12,45,78"` (max 20 per call); a single id also works |
+| `offset` | Integer | No | 0 | Messages back from the newest, **per topic** |
+| `limit` | Integer | No | 50 | Messages **per topic** (max 200) |
+| `order` | String | No | `"asc"` | Rendering order in the window: `asc` (transcript) or `desc` |
+| `max_message_id` | Integer | No | — | Snapshot anchor: only messages with `id <=` this |
+| `include_system` | Boolean | No | false | Include authorless notices and approval prompts |
+| `max_chars` | Integer | No | 40000 | Cap for the **whole response** (max 200000) |
+| `format` | String | No | `"markdown"` | `markdown` or `json` |
+
+**Windowing.** Selection is always from the newest end: `offset: 0` is the latest
+message. `order` only changes how the selected window is rendered, not which
+messages it contains. With several topics, `offset`/`limit` apply to **each topic
+independently** and results are grouped per topic — never merged into one
+timeline, so an offset stays reproducible.
+
+**Paging a long topic.** Take `newest_message_id` from the first page and pass it
+as `max_message_id` on every later page. Without it, messages arriving mid-read
+shift rows down and you re-read one message while never seeing another.
+
+```
+topic_messages(topic_ids: "12,45,78", limit: 100)          # summarize three topics
+topic_messages(topic_ids: 12, offset: 100, max_message_id: 9931)  # next page
+```
+
+**Returns (json):** `{ topics[], truncated, max_chars }`. Each topic entry:
+`topic_id`, `topic_name`, `creative_id`, `total_count`, `total_chars`, `offset`,
+`limit`, `returned_count`, `returned_chars`, `has_more`, `next_offset`,
+`newest_message_id`, `messages[]`, and `budget_limited` when `max_chars` (rather
+than `limit`) ended the window. Each message: `id`, `author`, `author_id`,
+`agent`, `created_at`, `content` (plain text).
+
+A topic the budget could not reach at all comes back with `skipped_reason` and
+`returned_count: 0` rather than looking like an empty conversation.
+
+Requires **read** on each topic's Creative. Private messages you are not party
+to are always excluded.
+
+### topic_create
+
+Create a topic on a Creative. The fan-out primitive.
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `creative_id` | Integer | **Yes** | — | Creative to create the topic on |
+| `name` | String | No | `"Topic N"` | Must be unique on the Creative |
+| `primary_agent` | String | No | — | Agent to pin — id, email, or exact name |
+| `comment_ids` | String | No | — | Existing messages to **move** into the new topic |
+
+Pinning a `primary_agent` is **exclusive**: the pinned agent alone answers
+ambient messages in the topic and every other agent is silent. The agent must
+already hold **feedback** or better on the Creative, otherwise the pin is
+refused — a pinned agent that cannot answer would silence the topic entirely.
+
+Requires **write** on the Creative. Use `topic_branch` to copy messages instead
+of moving them.
+
+### topic_update
+
+Rename, archive/unarchive, or re-pin a topic. Pass only what changes.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `topic_id` | Integer | **Yes** | Topic to update |
+| `name` | String | No | New name (requires **admin**) |
+| `archived` | Boolean | No | `true` archives, `false` unarchives (requires **write**) |
+| `primary_agent` | String | No | Agent id/email/name, or `"none"` to clear (requires **write**) |
+
+Archiving hides the topic from the active list but keeps every message, and
+`topic_messages` can still read it by id. Archive a topic when its thread has
+reached a conclusion rather than reusing it for the next subject.
+
+A Claude Channel session topic's pin is part of its session identity and cannot
+be changed here.
+
+**Returns:** the topic payload plus `changed[]` naming the fields that moved.
+
+### topic_branch
+
+Create a new topic containing **copies** of selected messages. The originals stay
+in place — the context-length escape hatch.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source_topic_id` | Integer | **Yes** | Topic to branch from |
+| `comment_ids` | String | **Yes** | Messages to copy, e.g. `"991,994,1002"` (max 100) |
+| `name` | String | No | Defaults to `"branch:<source name>"` |
+
+Get the ids from `topic_messages`. Asking for more than the cap is an error, not
+a silent trim. Requires **feedback** or better on the Creative.
+
 ## meta_tool
 
 Introspect and dynamically run any registered MCP tool. Enables tool discovery without CLI updates.
