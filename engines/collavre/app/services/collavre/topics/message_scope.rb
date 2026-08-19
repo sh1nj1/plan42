@@ -9,15 +9,20 @@ module Collavre
       module_function
 
       # include_system: false is the default because the caller is almost always
-      # summarizing a conversation. Authorless rows are the timeline's
-      # furniture — "⏳" concurrency notices, channel announcements — and
-      # approval-action rows are the approval surface, which
-      # Comment.without_approval_action already keeps away from agents
-      # everywhere else. Leaving them in would spend the caller's character
-      # budget on text nobody wrote.
+      # summarizing a conversation, and authorless rows are the timeline's
+      # furniture — "⏳" concurrency notices, channel announcements. Leaving
+      # them in would spend the caller's character budget on text nobody wrote.
       #
-      # visible_to is applied unconditionally: a private comment belongs to its
-      # author and approver, and a tool must not be the way around that.
+      # without_approval_action is NOT part of that switch. Approval-surface
+      # rows are excluded unconditionally, because Comment.without_approval_action
+      # carries an invariant these tools do not get to opt out of: an approval
+      # prompt must never reach an agent as history or trigger context. Every
+      # other agent-context query in the engine applies it the same way, and a
+      # read tool is exactly the back door that invariant exists to close.
+      #
+      # visible_to is applied unconditionally for the same reason: a private
+      # comment belongs to its author and approver, and a tool must not be the
+      # way around that.
       #
       # max_message_id freezes the window. Newest-first offset pagination drifts
       # when the topic is live — a message posted between page 1 and page 2
@@ -30,8 +35,8 @@ module Collavre
 
       # Same rules across many topics at once, for the grouped totals query.
       def for_ids(topic_ids, user:, include_system: false, max_message_id: nil)
-        scope = Comment.where(topic_id: topic_ids).visible_to(user)
-        scope = scope.without_approval_action.where.not(user_id: nil) unless include_system
+        scope = Comment.where(topic_id: topic_ids).visible_to(user).without_approval_action
+        scope = scope.where.not(user_id: nil) unless include_system
         scope = scope.where("comments.id <= ?", max_message_id) if max_message_id
         scope
       end

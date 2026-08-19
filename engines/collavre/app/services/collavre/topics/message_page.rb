@@ -20,6 +20,18 @@ module Collavre
       ORDERS = %w[asc desc].freeze
       DEFAULT_ORDER = "asc"
 
+      # What a message costs the caller, as opposed to what it says. The
+      # rendered line carries an id, an ISO-8601 timestamp, the author name and
+      # two newlines on top of the prose — roughly forty characters that
+      # content-only accounting hands out for free. A few hundred short or
+      # empty messages is then an entire budget spent off the books, which is
+      # the one thing max_chars exists to prevent.
+      ENVELOPE_CHARS = 36
+
+      def self.cost(message)
+        ENVELOPE_CHARS + message[:content].to_s.length + message[:author].to_s.length
+      end
+
       Page = Struct.new(
         :topic, :total_count, :total_chars, :offset, :limit,
         :messages, :newest_message_id, :budget_exhausted,
@@ -27,7 +39,11 @@ module Collavre
       ) do
         def returned_count = messages.size
 
+        # What the caller reads.
         def returned_chars = messages.sum { |m| m[:content].to_s.length }
+
+        # What the caller is charged: prose plus the envelope around it.
+        def billed_chars = messages.sum { |m| MessagePage.cost(m) }
 
         def has_more? = (offset + returned_count) < total_count
 
@@ -111,7 +127,7 @@ module Collavre
           break if spent >= @char_budget
 
           kept << message
-          spent += message[:content].to_s.length
+          spent += self.class.cost(message)
         end
         kept
       end

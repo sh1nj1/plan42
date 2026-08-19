@@ -61,14 +61,25 @@ module Collavre
         assert_equal [ "public one" ], page.messages.map { |m| m[:content] }
       end
 
-      test "excludes authorless and approval-action rows unless include_system" do
+      test "excludes authorless rows unless include_system" do
         post("real message")
         Comment.create!(creative: @creative, topic: @topic, user: nil, content: "⏳ waiting",
                         skip_default_user: true, skip_dispatch: true)
-        post("approve me", action: '{"action":"approve_tool"}')
 
         assert_equal [ "real message" ], page.messages.map { |m| m[:content] }
-        assert_equal 3, page(include_system: true).total_count
+        assert_equal 2, page(include_system: true).total_count
+      end
+
+      # Comment.without_approval_action is an invariant, not a preference: an
+      # approval prompt must never reach an agent as history. include_system is
+      # about authorless furniture and does not reopen that door.
+      test "approval-action rows stay out even with include_system" do
+        post("real message")
+        post("approve me", action: '{"action":"approve_tool"}')
+
+        result = page(include_system: true)
+        assert_equal [ "real message" ], result.messages.map { |m| m[:content] }
+        assert_equal 1, result.total_count
       end
 
       test "max_message_id pins the window so later arrivals do not shift it" do
@@ -113,6 +124,25 @@ module Collavre
 
         assert_equal 2, result.returned_count
         assert_equal 200, result.returned_chars
+        assert result.budget_exhausted
+      end
+
+      # returned_chars is what the caller reads; billed_chars is what it pays.
+      # Charging content alone lets a run of short messages emit ids, timestamps
+      # and author names for free, and the response overruns max_chars.
+      test "billed_chars charges the rendered envelope on top of the prose" do
+        3.times { post("hi") }
+        result = page(limit: 3)
+
+        assert_equal 6, result.returned_chars
+        assert_operator result.billed_chars, :>=, 6 + (3 * MessagePage::ENVELOPE_CHARS)
+      end
+
+      test "char_budget counts the envelope, so tiny messages still cost something" do
+        5.times { post("x") }
+        result = page(limit: 5, char_budget: 2 * MessagePage::ENVELOPE_CHARS)
+
+        assert_operator result.returned_count, :<, 5
         assert result.budget_exhausted
       end
 

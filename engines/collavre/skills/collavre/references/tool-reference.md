@@ -113,7 +113,7 @@ use it before `topic_messages` to see how much conversation each topic holds.
 | `topic_ids` | String | One of | — | Describe these topics, e.g. `"12,45,78"` |
 | `include_archived` | Boolean | No | false | Include archived topics (listing by `creative_id`) |
 | `include_stats` | Boolean | No | true | Include `message_count` / `message_chars` / `last_message_at` |
-| `include_system` | Boolean | No | false | Count authorless notices and approval prompts |
+| `include_system` | Boolean | No | false | Count authorless notices. Approval prompts are never counted |
 
 **Returns:** `{ topics[], errors[] }`. Each topic: `id`, `name`, `creative_id`,
 `archived`, `main`, `system`, `source_topic_id`, `primary_agent`,
@@ -135,7 +135,7 @@ Read messages from one or more topics, newest first, with paging.
 | `limit` | Integer | No | 50 | Messages **per topic** (max 200) |
 | `order` | String | No | `"asc"` | Rendering order in the window: `asc` (transcript) or `desc` |
 | `max_message_id` | Integer | No | — | Snapshot anchor: only messages with `id <=` this |
-| `include_system` | Boolean | No | false | Include authorless notices and approval prompts |
+| `include_system` | Boolean | No | false | Include authorless notices. Approval prompts are never returned |
 | `max_chars` | Integer | No | 40000 | Cap for the **whole response** (max 200000) |
 | `format` | String | No | `"markdown"` | `markdown` or `json` |
 

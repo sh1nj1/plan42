@@ -69,7 +69,7 @@ module Collavre
       test "max_chars is a whole-response cap, and a topic it cannot reach is reported unfetched" do
         post(@a, "x" * 500)
         post(@b, "y" * 500)
-        payload = json(topic_ids: "#{@a.id},#{@b.id}", max_chars: 100)
+        payload = json(topic_ids: "#{@a.id},#{@b.id}", max_chars: 800)
 
         assert payload[:truncated]
         assert_equal 1, entry_for(payload, @a)[:returned_count]
@@ -78,12 +78,34 @@ module Collavre
         assert entry_for(payload, @b)[:has_more]
       end
 
+      # "Nothing fit" and "the topics before you ate it" need different fixes,
+      # so the first topic must not be told it lost a race it never ran.
+      test "a first topic too large for the cap says so rather than blaming earlier topics" do
+        post(@a, "x" * 500)
+        payload = json(topic_ids: @a.id, max_chars: 50)
+
+        assert_equal "max_chars is too small to return anything for this topic",
+                     entry_for(payload, @a)[:skipped_reason]
+      end
+
       test "budget_limited marks a topic the shared cap cut short" do
-        3.times { post(@a, "x" * 100) }
-        payload = json(topic_ids: @a.id, max_chars: 150)
+        3.times { post(@a, "x" * 1000) }
+        payload = json(topic_ids: @a.id, max_chars: 2000)
 
         assert entry_for(payload, @a)[:budget_limited]
         assert payload[:truncated]
+      end
+
+      # max_chars is advertised as a cap on the response, so it has to bound
+      # the response — headers and per-message envelopes included, not just the
+      # prose. Hundreds of one-word messages used to cost almost nothing.
+      test "the rendered response stays within max_chars when messages are tiny" do
+        60.times { |i| post(@a, "m#{i}") }
+        60.times { |i| post(@b, "n#{i}") }
+        cap = 1_500
+        markdown = TopicMessagesService.new.call(topic_ids: "#{@a.id},#{@b.id}", limit: 200, max_chars: cap)
+
+        assert_operator markdown.length, :<=, cap
       end
 
       test "a fully returned topic is not marked truncated" do

@@ -32,6 +32,21 @@ module Collavre
         assert_includes output, "topic_messages(topic_ids: 12, offset: 2, max_message_id: 991)"
       end
 
+      # Dropping include_system from the follow-up call pages a narrower set at
+      # an offset counted against the wider one, which walks straight past
+      # messages the caller has not seen.
+      test "repeats include_system in the next call so the follow-up pages the same set" do
+        output = MessagePageMarkdown.call({ topics: [ entry(include_system: true) ], truncated: false })
+
+        assert_includes output, "max_message_id: 991, include_system: true)"
+      end
+
+      test "leaves include_system out of the next call when it was not requested" do
+        output = MessagePageMarkdown.call({ topics: [ entry ], truncated: false })
+
+        assert_not_includes output, "include_system"
+      end
+
       test "omits the continuation line when the topic is fully read" do
         output = MessagePageMarkdown.call({ topics: [ entry(has_more: false, next_offset: nil) ], truncated: false })
 

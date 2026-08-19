@@ -42,7 +42,7 @@ module Tools
     tool_param :topic_ids, description: "Describe these specific topics. Comma-separated ids, e.g. \"12,45,78\". Either this or creative_id is required.", required: false
     tool_param :include_archived, description: "Include archived topics when listing by creative_id (default: false). Archived topics keep their messages and stay readable by id.", required: false
     tool_param :include_stats, description: "Include message_count / message_chars / last_message_at (default: true). Pass false to skip the totals query on a creative with very many topics.", required: false
-    tool_param :include_system, description: "Count authorless system messages and approval prompts in the totals (default: false). Matches the topic_messages default so the counts describe the same set of messages you would read back.", required: false
+    tool_param :include_system, description: "Count authorless system messages in the totals (default: false). Approval prompts are never counted. Matches the topic_messages default so the counts describe the same set of messages you would read back.", required: false
 
     sig do
       params(

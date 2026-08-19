@@ -52,11 +52,20 @@ module Collavre
       # decode. max_message_id is repeated into it because that is the whole
       # point of the anchor — a caller that drops it silently re-reads messages
       # as the topic grows underneath the pagination.
+      #
+      # include_system is repeated for the same reason, and it matters more:
+      # the anchor shifts rows, but a narrower scope renumbers them. Paging
+      # into a set that no longer contains the system rows the first page
+      # counted lands the offset past messages that were never returned.
       def continuation(entry)
         return [] unless entry[:has_more]
 
         [ "More: topic_messages(topic_ids: #{entry[:topic_id]}, offset: #{entry[:next_offset]}, " \
-          "max_message_id: #{entry[:newest_message_id]})" ]
+          "max_message_id: #{entry[:newest_message_id]}#{scope_option(entry)})" ]
+      end
+
+      def scope_option(entry)
+        entry[:include_system] ? ", include_system: true" : ""
       end
 
       def skipped_notice(entry)
