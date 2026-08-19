@@ -30,6 +30,9 @@ module Tools
 
       The new topic is created on the same creative and records the source in
       source_topic_id. Requires feedback permission or better on the creative.
+
+      Approval prompts cannot be branched — a copy would lose the approval
+      action and read as ordinary history. Passing one is an error.
     DESC
 
     tool_param :source_topic_id, description: "The topic to branch from."
@@ -50,6 +53,7 @@ module Tools
 
       ids = IdList.parse(comment_ids)
       validate_ids!(ids)
+      reject_approval_actions!(source, ids)
 
       # Fully qualified: inside Collavre::Tools, a bare TopicBranchService is
       # this tool, not the branching service it wraps.
@@ -74,6 +78,27 @@ module Tools
       raise ArgumentError,
         "#{ids.size} messages requested but a branch copies at most #{cap}. " \
         "Select fewer messages, or branch more than once."
+    end
+
+    # Copying an approval prompt launders it. The branch copies content but not
+    # `action`, so the copy no longer matches Comment.without_approval_action
+    # and lands in exactly the agent-context queries the column exists to keep
+    # it out of — the invariant survives a move, which keeps the column, but
+    # not a copy. Refused here rather than silently dropped: a caller that
+    # asked for 40 messages and got 39 has no way to learn which one is missing.
+    #
+    # Filtered through Comment#approval_action? rather than a SQL complement of
+    # without_approval_action: the predicate is the documented single source of
+    # truth, and a second copy of the condition could drift out of step with it.
+    # validate_ids! has already capped the selection, so the load is bounded.
+    def reject_approval_actions!(source, ids)
+      blocked = source.comments.where(id: ids).select(&:approval_action?).map(&:id)
+      return if blocked.empty?
+
+      raise ArgumentError,
+        "#{blocked.join(', ')} #{blocked.one? ? 'is an approval prompt' : 'are approval prompts'} " \
+        "and cannot be branched: a copy loses the approval action and becomes ordinary chat " \
+        "history that agents read. Remove #{blocked.one? ? 'it' : 'them'} from comment_ids."
     end
   end
 end

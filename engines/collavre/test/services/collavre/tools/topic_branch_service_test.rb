@@ -16,9 +16,40 @@ module Collavre
 
       teardown { Collavre::Current.user = nil }
 
-      def post(content)
+      def post(content, action: nil)
         Comment.create!(creative: @creative, topic: @source, user: @user, content: content,
-                        skip_default_user: true, skip_dispatch: true)
+                        action: action, skip_default_user: true, skip_dispatch: true)
+      end
+
+      # The branch copies content but not `action`, so a copied approval prompt
+      # stops matching Comment.without_approval_action and lands in the agent
+      # history queries the column exists to keep it out of.
+      test "an approval prompt cannot be branched" do
+        prompt = post("Approve the deploy?", action: "approve")
+
+        error = assert_raises(ArgumentError) do
+          TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: prompt.id)
+        end
+
+        assert_includes error.message, "approval prompt"
+        assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
+      end
+
+      test "an approval prompt mixed into an otherwise valid selection fails the whole branch" do
+        prompt = post("Approve the deploy?", action: "approve")
+        ids = [ @comments.first.id, prompt.id ]
+
+        assert_raises(ArgumentError) do
+          TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: ids.join(","))
+        end
+
+        assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
+      end
+
+      test "the copy of an ordinary message stays outside the approval surface" do
+        result = TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: @comments.first.id)
+
+        assert_equal 1, Topic.find(result[:id]).comments.without_approval_action.count
       end
 
       test "copies the selected messages into a new topic and leaves the originals" do

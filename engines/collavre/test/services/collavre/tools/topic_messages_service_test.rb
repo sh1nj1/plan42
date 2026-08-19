@@ -108,11 +108,34 @@ module Collavre
         assert_operator markdown.length, :<=, cap
       end
 
+      # The other way to blow the cap: one message bigger than the whole budget.
+      # Envelope accounting alone did not stop it, because the loop appended
+      # before it charged.
+      test "the rendered response stays within max_chars against one oversized message" do
+        post(@a, "y" * 50_000)
+        cap = 1_200
+        markdown = TopicMessagesService.new.call(topic_ids: @a.id, max_chars: cap)
+
+        assert_operator markdown.length, :<=, cap
+        assert_includes markdown, "clipped from 50000 chars"
+      end
+
+      # has_more is false here — the window did reach the end of the topic — so
+      # clipped_count is the only thing that can say the answer is partial.
+      test "a clipped message marks the response truncated even with nothing left to page" do
+        post(@a, "y" * 50_000)
+        payload = json(topic_ids: @a.id, max_chars: 1_200)
+
+        assert_equal 1, entry_for(payload, @a)[:clipped_count]
+        assert payload[:truncated]
+      end
+
       test "a fully returned topic is not marked truncated" do
         post(@a, "short")
 
         assert_not json(topic_ids: @a.id)[:truncated]
         assert_not entry_for(json(topic_ids: @a.id), @a).key?(:budget_limited)
+        assert_not entry_for(json(topic_ids: @a.id), @a).key?(:clipped_count)
       end
 
       test "max_chars is clamped and defaults when non-positive" do

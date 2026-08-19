@@ -45,6 +45,11 @@ module Collavre
         # What the caller is charged: prose plus the envelope around it.
         def billed_chars = messages.sum { |m| MessagePage.cost(m) }
 
+        # A clipped message is a partial answer that has_more cannot express:
+        # the window did reach the end of the topic, it just could not print
+        # all of the last thing it found.
+        def clipped_count = messages.count { |m| m[:clipped] }
+
         def has_more? = (offset + returned_count) < total_count
 
         def next_offset = has_more? ? offset + returned_count : nil
@@ -114,22 +119,48 @@ module Collavre
       end
 
       # Trims the newest-first window to the character budget. A message that
-      # crosses the budget is kept whole rather than cut — a half message is
-      # worse than one message too many, and stopping *before* it could return
-      # zero rows and leave the caller paginating forever against an offset that
-      # never advances.
+      # does not fit ends the window rather than being cut in half — except for
+      # the first one, where stopping short would return zero rows at an offset
+      # that does have rows and leave the caller paging against it forever.
+      # That one is clipped to what the budget can pay for, with the clip
+      # announced in its own text, so the cap holds and the offset still moves.
       def within_budget(messages)
         return messages if @char_budget.nil?
 
         spent = 0
         kept = []
         messages.each do |message|
-          break if spent >= @char_budget
+          cost = self.class.cost(message)
+          if spent + cost <= @char_budget
+            kept << message
+            spent += cost
+            next
+          end
 
-          kept << message
-          spent += self.class.cost(message)
+          clipped = kept.empty? ? clip(message, @char_budget) : nil
+          kept << clipped if clipped
+          break
         end
         kept
+      end
+
+      # Returns nil when the budget cannot pay even for the envelope and the
+      # notice — there is no honest way to emit a fragment that small, and the
+      # empty page carries budget_limited to say so.
+      def clip(message, budget)
+        content = message[:content].to_s
+        notice = clip_notice(content.length)
+        room = budget - ENVELOPE_CHARS - message[:author].to_s.length - notice.length
+        return nil if room <= 0
+
+        message.merge(content: content[0, room] + notice, clipped: true)
+      end
+
+      # Counted against the budget like any other content, and phrased for the
+      # reader of the transcript: the caller sees the clip where the words stop,
+      # not only in a flag on the payload it may have rendered away.
+      def clip_notice(total)
+        "…[clipped from #{total} chars — raise max_chars for the rest]"
       end
 
       def serialize(comment)

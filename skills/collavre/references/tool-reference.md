@@ -164,6 +164,12 @@ than `limit`) ended the window. Each message: `id`, `author`, `author_id`,
 A topic the budget could not reach at all comes back with `skipped_reason` and
 `returned_count: 0` rather than looking like an empty conversation.
 
+A single message wider than the whole `max_chars` cap is clipped rather than
+dropped — dropping it would return an empty page at an offset that has rows and
+the caller would page against it forever. The clip is announced in the message
+text and counted in the topic's `clipped_count`, which can be set even when
+`has_more` is false.
+
 Requires **read** on each topic's Creative. Private messages you are not party
 to are always excluded.
 
@@ -219,6 +225,11 @@ in place — the context-length escape hatch.
 
 Get the ids from `topic_messages`. Asking for more than the cap is an error, not
 a silent trim. Requires **feedback** or better on the Creative.
+
+Approval prompts cannot be branched. The copy carries the content but not the
+approval action, so it would stop being excluded from agent history and read as
+an ordinary message. Passing one is an error — `topic_messages` never returns
+their ids in the first place.
 
 ## meta_tool
 

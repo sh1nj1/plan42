@@ -118,13 +118,56 @@ module Collavre
         assert_equal "system", page(include_system: true).messages.first[:author]
       end
 
-      test "char_budget keeps the message that crosses the budget rather than cutting it" do
+      # The budget is a cap, so a message that would cross it ends the window
+      # instead of being emitted on top of it.
+      test "char_budget stops before a message that would cross it" do
         3.times { post("x" * 100) }
-        result = page(limit: 3, char_budget: 150)
+        budget = 150
+        result = page(limit: 3, char_budget: budget)
 
-        assert_equal 2, result.returned_count
-        assert_equal 200, result.returned_chars
+        assert_equal 1, result.returned_count
+        assert_operator result.billed_chars, :<=, budget
         assert result.budget_exhausted
+      end
+
+      # Stopping short of the *first* message would return an empty page at an
+      # offset that has rows, and the caller would page against it forever. It
+      # is clipped instead — bounded, marked, and the offset still moves.
+      test "a message wider than the whole budget is clipped, not emitted whole" do
+        post("y" * 5_000)
+        budget = 400
+        result = page(limit: 3, char_budget: budget)
+
+        assert_equal 1, result.returned_count
+        assert_operator result.billed_chars, :<=, budget
+        assert result.messages.first[:clipped]
+        assert_includes result.messages.first[:content], "clipped from 5000 chars"
+        assert_equal 1, result.clipped_count
+      end
+
+      test "a clipped message still advances the offset for the next page" do
+        post("y" * 5_000)
+        post("z" * 5_000)
+        result = page(limit: 3, char_budget: 400)
+
+        assert_equal 1, result.next_offset
+        assert result.has_more?
+      end
+
+      # No honest fragment exists below the envelope and the notice, so the page
+      # comes back empty and says the budget, not the topic, is why.
+      test "a budget too small for even the clip notice returns nothing" do
+        post("y" * 5_000)
+        result = page(limit: 3, char_budget: 10)
+
+        assert_equal 0, result.returned_count
+        assert result.budget_exhausted
+      end
+
+      test "clipped_count is zero when every message was emitted whole" do
+        3.times { post("m") }
+
+        assert_equal 0, page(limit: 3, char_budget: 10_000).clipped_count
       end
 
       # returned_chars is what the caller reads; billed_chars is what it pays.

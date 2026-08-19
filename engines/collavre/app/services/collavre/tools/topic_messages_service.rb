@@ -56,7 +56,9 @@ module Tools
 
       The response is capped at max_chars in total. A topic that does not fit is
       returned partially or marked not-fetched rather than silently trimmed —
-      check "truncated" and each topic's next_offset.
+      check "truncated" and each topic's next_offset. A single message wider
+      than the whole cap is clipped rather than dropped, marked in its text and
+      counted in the topic's clipped_count.
 
       Long topics: call topic_list first to see message_count, then page. To
       summarize a whole large topic, page from offset 0 upward, keeping
@@ -112,7 +114,7 @@ module Tools
 
       {
         topics: entries + errors,
-        truncated: entries.any? { |entry| entry[:skipped_reason] || entry[:budget_limited] },
+        truncated: entries.any? { |entry| entry[:skipped_reason] || entry[:budget_limited] || entry[:clipped_count] },
         max_chars: options[:budget]
       }
     end
@@ -185,6 +187,9 @@ module Tools
         # is what ended this topic's window — the caller's fix differs: raise
         # max_chars or ask for fewer topics, not just page again.
         budget_limited: page.budget_exhausted.presence,
+        # Present only when max_chars cut a message short rather than cutting
+        # the window short. has_more can be false while this is set.
+        clipped_count: page.clipped_count.nonzero?,
         messages: page.messages
       }.compact
     end
