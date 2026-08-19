@@ -58,10 +58,14 @@ module Tools
       # matches an accessible agent, and a caller with no rights on the topic
       # should not be able to ask.
       authorize!(topic, name)
-      changed = apply(topic, name, archived, Topics::AgentResolver.call(primary_agent))
+      agent_change = Topics::AgentResolver.call(primary_agent)
+      changed = requested(name, archived, agent_change)
       raise ArgumentError, "Nothing to update: pass name, archived, or primary_agent" if changed.empty?
 
-      Topics::Serializer.for_tool(topic.reload).merge(changed: changed)
+      agent = apply(topic, name, archived, agent_change)
+      broadcast_all(topic.reload, changed, archived, agent)
+
+      Topics::Serializer.for_tool(topic).merge(changed: changed)
     end
 
     private
@@ -74,24 +78,34 @@ module Tools
       name.present? ? TopicAuthorizer.authorize_admin!(topic) : TopicAuthorizer.authorize_write!(topic)
     end
 
-    def apply(topic, name, archived, agent_change)
+    def requested(name, archived, agent_change)
       changed = []
-      changed << rename(topic, name) if name.present?
-      changed << set_archived(topic, archived) unless archived.nil?
-      changed << set_agent(topic, agent_change) if agent_change
+      changed << "name" if name.present?
+      changed << "archived" unless archived.nil?
+      changed << "primary_agent" if agent_change
       changed
     end
 
-    def rename(topic, name)
-      topic.update!(name: name)
-      broadcast(topic, "updated", topic: Topics::Serializer.call(topic))
-      "name"
+    # Every requested field is checked before any of them is written, and the
+    # writes share one transaction. A call that renames, archives, and pins an
+    # agent the creative has not shared with must report failure over a topic
+    # that is still named what it was — not one that was quietly renamed and
+    # archived on the way to the error. Nothing broadcasts until the whole set
+    # has committed, for the same reason.
+    def apply(topic, name, archived, agent_change)
+      agent = agent_change ? validated_agent(topic, agent_change) : nil
+
+      Topic.transaction do
+        topic.update!(name: name) if name.present?
+        set_archived(topic, archived) unless archived.nil?
+        topic.set_primary_agent!(agent) if agent_change
+      end
+
+      agent
     end
 
     def set_archived(topic, archived)
       archived ? topic.archive! : topic.unarchive!
-      broadcast(topic, archived ? "archived" : "unarchived", topic: topic.slice(:id, :name, :archived_at))
-      "archived"
     end
 
     # Mirrors TopicsController#set_primary_agent, including the session lock:
@@ -99,15 +113,18 @@ module Tools
     # not a routing preference — Matcher needs it to route the agent at all and
     # SessionProvisioner reuses the topic by it, so rewriting it would leave a
     # live session unroutable and fork the next registration into a second topic.
-    def set_agent(topic, agent_change)
+    def validated_agent(topic, agent_change)
       raise ArgumentError, "This is a session topic; its agent assignment is locked." if topic.session_id.present?
 
       agent = agent_change == Topics::AgentResolver::CLEAR ? nil : agent_change
       reject_unassignable!(topic, agent)
+      agent
+    end
 
-      topic.set_primary_agent!(agent)
-      broadcast(topic, "updated", topic: Topics::Serializer.with_agent(topic, agent))
-      "primary_agent"
+    def broadcast_all(topic, changed, archived, agent)
+      broadcast(topic, "updated", topic: Topics::Serializer.call(topic)) if changed.include?("name")
+      broadcast(topic, archived ? "archived" : "unarchived", topic: topic.slice(:id, :name, :archived_at)) if changed.include?("archived")
+      broadcast(topic, "updated", topic: Topics::Serializer.with_agent(topic, agent)) if changed.include?("primary_agent")
     end
 
     def reject_unassignable!(topic, agent)

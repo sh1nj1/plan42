@@ -47,6 +47,7 @@ module Collavre
       end
 
       def call
+        anchor!
         stat = MessageStats.for(
           [ @topic ], user: @user, include_system: @include_system, max_message_id: @max_message_id
         ).fetch(@topic.id)
@@ -59,12 +60,25 @@ module Collavre
           offset: @offset,
           limit: @limit,
           messages: @order == "asc" ? messages.reverse : messages,
-          newest_message_id: @max_message_id || scope.maximum(:id),
+          newest_message_id: @max_message_id,
           budget_exhausted: @char_budget && messages.size < @limit && (@offset + messages.size) < stat.count
         )
       end
 
       private
+
+      # An unanchored call picks its own anchor before it reads anything else,
+      # so the totals, the window and the advertised newest_message_id all
+      # describe one snapshot. Reading the anchor last instead lets a message
+      # that arrives mid-call land in the totals but not the window, or be
+      # named as newest without having been returned — and the caller then
+      # pages with an anchor that shifts every offset under it, repeating one
+      # message and skipping another.
+      def anchor!
+        @max_message_id ||= MessageScope.for(
+          @topic, user: @user, include_system: @include_system
+        ).maximum(:id)
+      end
 
       def scope
         @scope ||= MessageScope.for(

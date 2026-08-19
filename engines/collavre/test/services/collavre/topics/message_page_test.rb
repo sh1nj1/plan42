@@ -138,6 +138,35 @@ module Collavre
         assert_equal %w[m0 m1], result.messages.map { |m| m[:content] }
       end
 
+      # The anchor is what makes an unanchored first page safe to paginate from.
+      # If it were read after the totals and the window, a message arriving
+      # mid-call would be counted but not returned, and named as the newest
+      # without ever having been in the window the caller was handed.
+      test "a message arriving mid-call is outside the snapshot the page reports" do
+        3.times { |i| post("m#{i}") }
+        arrived = nil
+
+        stats = MessageStats.method(:for)
+        MessageStats.stub(:for, ->(*args, **kwargs) { arrived ||= post("late"); stats.call(*args, **kwargs) }) do
+          @result = page(limit: 10)
+        end
+
+        assert_equal 3, @result.total_count
+        assert_equal %w[m0 m1 m2], @result.messages.map { |m| m[:content] }
+        assert_not_equal arrived.id, @result.newest_message_id
+        assert_not @result.has_more?
+      end
+
+      test "an explicit anchor still wins over the topic's newest message" do
+        3.times { |i| post("m#{i}") }
+        anchor = Comment.order(:id).pluck(:id).second
+
+        result = page(max_message_id: anchor, limit: 10)
+
+        assert_equal 2, result.total_count
+        assert_equal anchor, result.newest_message_id
+      end
+
       test "an empty topic returns an empty page rather than failing" do
         result = page
 

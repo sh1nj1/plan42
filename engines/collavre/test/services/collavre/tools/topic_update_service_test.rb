@@ -131,6 +131,28 @@ module Collavre
         assert_equal %w[updated archived], actions
       end
 
+      test "a rejected pin rolls back the fields that came before it" do
+        assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: @topic.id, name: "Renamed", archived: true,
+                                      primary_agent: "Worker")
+        end
+
+        @topic.reload
+        assert_equal "Work", @topic.name
+        assert_not @topic.archived?
+      end
+
+      test "a failed call broadcasts nothing" do
+        actions = []
+        Collavre::TopicsChannel.stub(:broadcast_to, ->(_creative, data) { actions << data[:action] }) do
+          assert_raises(ArgumentError) do
+            TopicUpdateService.new.call(topic_id: @topic.id, name: "Renamed", primary_agent: "Worker")
+          end
+        end
+
+        assert_empty actions
+      end
+
       test "clearing the pin broadcasts an explicit nil so the avatar is removed" do
         share!(@agent, :feedback)
         @topic.set_primary_agent!(@agent)
