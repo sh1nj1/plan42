@@ -109,4 +109,22 @@ class TopicListPopupTest < ApplicationSystemTestCase
       "document.activeElement === document.querySelector('#topic-list-modal input')"
     )
   end
+
+  test "scrolling down in the topic list keeps the mobile chat open" do
+    resize_window_to(390, 844)
+    open_comments_popup
+    find("#comments-popup .topic-list-btn").click
+    assert_selector "#topic-list-modal", visible: :visible, wait: 5
+
+    page.execute_script(<<~JS)
+      const item = document.querySelector('#topic-list-modal .common-popup-item');
+      const start = new Touch({ identifier: 1, target: item, clientX: 20, clientY: 100 });
+      const end = new Touch({ identifier: 1, target: item, clientX: 20, clientY: 180 });
+      item.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [start] }));
+      item.dispatchEvent(new TouchEvent('touchend', { bubbles: true, changedTouches: [end] }));
+    JS
+
+    assert_selector "#comments-popup", visible: :visible
+    assert_selector "#topic-list-modal", visible: :visible
+  end
 end
