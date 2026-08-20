@@ -86,6 +86,14 @@ module Collavre
         assert_equal({ id: @agent.id, name: "Pinned" }, Serializer.for_tool(@topic)[:primary_agent])
       end
 
+      test "the tool payload flags System only on an inbox creative" do
+        ordinary_system = @creative.topics.create!(name: Creative::SYSTEM_TOPIC_NAME, user: @user)
+        inbox = Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })
+
+        assert_not Serializer.for_tool(ordinary_system)[:system]
+        assert Serializer.for_tool(inbox.system_topic)[:system]
+      end
+
       test "the tool payload drops absent stats instead of reporting them as zero" do
         data = Serializer.for_tool(@topic)
 

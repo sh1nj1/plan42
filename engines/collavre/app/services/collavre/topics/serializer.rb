@@ -68,7 +68,7 @@ module Collavre
           creative_id: topic.creative_id,
           archived: topic.archived?,
           main: topic.name == Creative::MAIN_TOPIC_NAME,
-          system: topic.name == Creative::SYSTEM_TOPIC_NAME,
+          system: topic.creative.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME,
           source_topic_id: topic.source_topic_id,
           primary_agent: primary_agent_for_tool(topic),
           # A session topic's pin is session identity, not a routing choice, and
