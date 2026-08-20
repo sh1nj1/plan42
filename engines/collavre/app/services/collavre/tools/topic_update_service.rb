@@ -115,19 +115,14 @@ module Tools
 
     def reject_reserved_mutation!(topic, name, archived)
       return unless name.present? || !archived.nil?
-      return unless reserved_topic?(topic) || reserved_name?(topic.creative, name)
+      return unless reserved_topic?(topic) || Topics::ReservedName.reserved?(topic.creative, name)
 
       raise ArgumentError,
         "Reserved topic names cannot be assigned or changed, and reserved topics cannot be archived."
     end
 
     def reserved_topic?(topic)
-      reserved_name?(topic.creative, topic.name)
-    end
-
-    def reserved_name?(creative, name)
-      name == Creative::MAIN_TOPIC_NAME ||
-        (creative.inbox? && name == Creative::SYSTEM_TOPIC_NAME)
+      Topics::ReservedName.reserved?(topic.creative, topic.name)
     end
 
     def set_archived(topic, archived)

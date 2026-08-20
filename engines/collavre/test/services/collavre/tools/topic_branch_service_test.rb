@@ -166,6 +166,22 @@ module Collavre
         assert_includes result[:name], I18n.t("collavre.topics.branch_prefix")
       end
 
+      test "an inbox branch cannot take the reserved System name" do
+        inbox = Collavre::Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })
+        source = inbox.topics.create!(name: "Conversation", user: @user)
+        comment = Comment.create!(creative: inbox, topic: source, user: @user, content: "carry me",
+                                  skip_default_user: true, skip_dispatch: true)
+        assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+
+        error = assert_raises(::Collavre::TopicBranchService::BranchError) do
+          TopicBranchService.new.call(source_topic_id: source.id, comment_ids: comment.id,
+                                      name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+        end
+
+        assert_includes error.message, "reserved"
+        assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+      end
+
       test "requires at least one message id" do
         assert_raises(ArgumentError) { TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: "") }
       end

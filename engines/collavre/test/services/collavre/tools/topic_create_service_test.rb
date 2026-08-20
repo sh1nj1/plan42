@@ -91,6 +91,26 @@ module Collavre
         end
       end
 
+      test "an inbox topic cannot take the reserved System name" do
+        inbox = Collavre::Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })
+        assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+
+        error = assert_raises(ArgumentError) do
+          TopicCreateService.new.call(creative_id: inbox.id, name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+        end
+
+        assert_includes error.message, "reserved"
+        assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+      end
+
+      test "System remains an ordinary topic name outside an inbox" do
+        result = TopicCreateService.new.call(
+          creative_id: @creative.id, name: Collavre::Creative::SYSTEM_TOPIC_NAME
+        )
+
+        assert_equal Collavre::Creative::SYSTEM_TOPIC_NAME, result[:name]
+      end
+
       test "requires write permission on the creative" do
         Collavre::Current.user = @stranger
 

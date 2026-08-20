@@ -74,6 +74,7 @@ module Collavre
 
     def create_branch_topic
       topic_name = name.presence || default_branch_name
+      Topics::ReservedName.reject!(creative, topic_name, error_class: BranchError)
 
       creative.topics.create!(
         name: topic_name,

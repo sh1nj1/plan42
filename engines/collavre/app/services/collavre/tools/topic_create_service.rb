@@ -34,7 +34,8 @@ module Tools
       Accepts an agent id, email, or exact name for primary_agent. Searchable
       agents, agents created by the caller, and private agents already shared
       on this creative can be resolved. Omit `name` to get the next default
-      name ("Topic 3").
+      name ("Topic 3"). Main and an inbox's System name are reserved and
+      cannot be assigned to a new topic.
 
       comment_ids moves existing messages out of their current topic into the
       new one. To copy messages and leave the originals in place, use
@@ -91,7 +92,9 @@ module Tools
     end
 
     def build_topic(creative, name, user)
-      creative.topics.build(name: name.presence || Topics::NextName.for(creative), user: user)
+      topic_name = name.presence || Topics::NextName.for(creative)
+      Topics::ReservedName.reject!(creative, topic_name)
+      creative.topics.build(name: topic_name, user: user)
     end
 
     def move_comments(creative, user, topic, comment_ids)

@@ -30,6 +30,8 @@ module Tools
 
       The new topic is created on the same creative and records the source in
       source_topic_id. Requires feedback permission or better on the creative.
+      Main and an inbox's System name are reserved and cannot be assigned to
+      the branch.
 
       Approval prompts cannot be branched — a copy would lose the approval
       action and read as ordinary history. Passing one is an error.
