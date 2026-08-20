@@ -10,6 +10,8 @@ module Collavre
     # change as the topic grows — an oldest-first offset would point somewhere
     # different every time a message arrived.
     class MessagePage
+      include Collavre::PublicAssetsHelper
+
       DEFAULT_LIMIT = 50
       MAX_LIMIT = 200
 
@@ -124,7 +126,7 @@ module Collavre
       # clock tick would otherwise order arbitrarily, and an unstable sort makes
       # offset pagination drop and repeat rows across pages.
       def fetch_window
-        scope.includes(:user)
+        scope.includes(:user, images_attachments: :blob)
              .order(created_at: :desc, id: :desc)
              .offset(@offset)
              .limit(@limit)
@@ -213,7 +215,7 @@ module Collavre
       end
 
       def serialize(comment, content_offset:)
-        content = Collavre::HtmlText.plain(comment.content).strip
+        content = serialized_content(comment)
         start = [ content_offset, content.length ].min
         message = {
           id: comment.id,
@@ -230,6 +232,22 @@ module Collavre
           content_end_offset: content.length,
           content_total_chars: content.length
         )
+      end
+
+      # Image metadata lives inside the pageable content rather than beside it.
+      # That keeps image-only comments meaningful while letting max_chars and
+      # content_offset bound and continue an arbitrarily large attachment list
+      # through the same contract as the message prose.
+      def serialized_content(comment)
+        text = Collavre::HtmlText.plain(comment.content).strip
+        [ text.presence, image_markers(comment).presence ].compact.join("\n\n")
+      end
+
+      def image_markers(comment)
+        comment.images.map.with_index(1) do |image, index|
+          "[Image attachment #{index}: #{image.filename.sanitized} " \
+            "(#{image.content_type}, #{image.byte_size} bytes) — #{public_asset_url(image.blob)}]"
+        end.join("\n")
       end
 
       def budget_exhausted?(messages, stat)

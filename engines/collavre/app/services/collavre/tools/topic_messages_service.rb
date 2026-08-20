@@ -70,6 +70,11 @@ module Tools
       read. Repeat both values with the snapshot id until next_content_offset is
       absent; only then has that message row been consumed.
 
+      Image attachments are appended to message content as explicit markers
+      with filename, content type, byte size, and a readable public-asset URL.
+      Image-only comments therefore remain visible, and attachment metadata is
+      covered by the same max_chars/content_offset continuation as prose.
+
       The response is capped at max_chars in total, measured against the format
       you asked for — json is charged for its field names and string escaping,
       so the same call returns fewer messages as json than as markdown. A topic

@@ -161,8 +161,14 @@ topic_messages(topic_ids: 12, offset: 100, content_offset: 28400, max_message_id
 `limit`, `returned_count`, `returned_chars`, `has_more`, `next_offset`,
 `next_content_offset`, `newest_message_id`, `messages[]`, and `budget_limited`
 when `max_chars` (rather than `limit`) ended the window. Each message: `id`,
-`author`, `author_id`, `agent`, `created_at`, `content` (plain text), plus content
-range fields when the row is continued.
+`author`, `author_id`, `agent`, `created_at`, `content` (plain text plus one
+URL-bearing metadata marker per image attachment), plus content range fields
+when the row is continued.
+
+Attachment markers include filename, content type, byte size, and a readable
+public-asset URL. Because they are part of `content`, image-only comments remain
+visible and long attachment lists page through `content_offset` without evading
+`max_chars`.
 
 A topic the budget could not reach at all comes back with `skipped_reason` and
 `returned_count: 0` rather than looking like an empty conversation.

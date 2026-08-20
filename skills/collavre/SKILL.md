@@ -114,6 +114,10 @@ collavre tool run topic_update --json '{"topic_id": 12, "archived": true}'
 collavre tool run topic_branch --json '{"source_topic_id": 12, "comment_ids": "991,994"}'
 ```
 
+`topic_messages` includes each comment image as a URL-bearing marker in the
+message content. Image-only comments are not blank, and a long attachment list
+uses the same `content_offset` continuation as long prose.
+
 ### Discover & run tools (meta)
 ```bash
 collavre tool list                                # list available tools

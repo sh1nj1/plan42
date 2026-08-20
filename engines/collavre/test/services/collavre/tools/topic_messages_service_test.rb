@@ -21,6 +21,20 @@ module Collavre
                         skip_default_user: true, skip_dispatch: true)
       end
 
+      def post_with_image(topic, content: "")
+        comment = Comment.new(
+          creative: @creative, topic: topic, user: @user, content: content,
+          skip_default_user: true, skip_dispatch: true
+        )
+        comment.images.attach(
+          io: StringIO.new(file_fixture("small.png").binread),
+          filename: "small.png",
+          content_type: "image/png"
+        )
+        comment.save!
+        comment
+      end
+
       def json(**args)
         TopicMessagesService.new.call(format: "json", **args)
       end
@@ -338,6 +352,16 @@ module Collavre
         assert_includes output, "## [topic #{@a.id}] Alpha"
         assert_includes output, "2 messages"
         assert_includes output, "offset: 1"
+      end
+
+      test "image attachment markers are returned in both json and markdown" do
+        post_with_image(@a)
+
+        payload = json(topic_ids: @a.id)
+        markdown = TopicMessagesService.new.call(topic_ids: @a.id)
+
+        assert_includes entry_for(payload, @a)[:messages].first[:content], "Image attachment 1: small.png"
+        assert_match %r{/public-assets/blobs/[^/]+/small\.png}, markdown
       end
 
       test "an unreadable or unknown topic is reported beside the ones that worked" do

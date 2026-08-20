@@ -19,6 +19,20 @@ module Collavre
         )
       end
 
+      def post_with_image(content: "", filename: "small.png")
+        comment = Comment.new(
+          creative: @creative, topic: @topic, user: @user, content: content,
+          skip_default_user: true, skip_dispatch: true
+        )
+        comment.images.attach(
+          io: StringIO.new(file_fixture("small.png").binread),
+          filename: filename,
+          content_type: "image/png"
+        )
+        comment.save!
+        comment
+      end
+
       # char_budget/format are spelled out here rather than in every caller,
       # since what the tests are exercising is the cap, not how it is packaged.
       def page(char_budget: nil, format: CharBudget::DEFAULT_FORMAT, **options)
@@ -114,6 +128,41 @@ module Collavre
         assert_equal "hello there", message[:content]
         assert message[:agent]
         assert_equal "Bot", message[:author]
+      end
+
+      test "an image-only comment exposes attachment metadata and a readable URL" do
+        post_with_image
+
+        content = page.messages.first[:content]
+        assert_includes content, "Image attachment 1: small.png (image/png,"
+        assert_match %r{/public-assets/blobs/[^/]+/small\.png}, content
+      end
+
+      test "an attached image is preserved alongside the message text" do
+        post_with_image(content: "See the screenshot")
+
+        content = page.messages.first[:content]
+        assert_includes content, "See the screenshot"
+        assert_includes content, "Image attachment 1: small.png"
+      end
+
+      test "attachment metadata follows content continuation without loss" do
+        post_with_image(filename: "#{'screenshot-' * 18}.png")
+        expected = page.messages.first[:content]
+        chunks = []
+        content_offset = 0
+
+        20.times do
+          result = page(limit: 1, char_budget: 260, content_offset: content_offset)
+          chunks << result.messages.first[:content]
+          content_offset = result.next_content_offset
+          break unless content_offset
+
+          assert_equal 0, result.next_offset
+        end
+
+        assert_nil content_offset
+        assert_equal expected, chunks.join
       end
 
       test "reports a nil author as system" do
