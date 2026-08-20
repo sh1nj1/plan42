@@ -137,7 +137,7 @@ module Collavre
 
       # Stopping short of the *first* message would return an empty page at an
       # offset that has rows, and the caller would page against it forever. It
-      # is clipped instead — bounded, marked, and the offset still moves.
+      # is clipped instead — bounded, marked, and addressable within the row.
       test "a message wider than the whole budget is clipped, not emitted whole" do
         post("y" * 5_000)
         budget = 400
@@ -146,17 +146,45 @@ module Collavre
         assert_equal 1, result.returned_count
         assert_operator result.billed_chars, :<=, budget
         assert result.messages.first[:clipped]
-        assert_includes result.messages.first[:content], "clipped from 5000 chars"
+        assert_equal 0, result.messages.first[:content_offset]
+        assert_equal 5_000, result.messages.first[:content_total_chars]
+        assert_equal result.messages.first[:content_end_offset], result.next_content_offset
+        assert_includes result.messages.first[:clip_notice], "continue with content_offset"
         assert_equal 1, result.clipped_count
       end
 
-      test "a clipped message still advances the offset for the next page" do
+      test "a clipped message keeps its row offset and advances within its content" do
         post("y" * 5_000)
         post("z" * 5_000)
         result = page(limit: 3, char_budget: 400)
 
-        assert_equal 1, result.next_offset
+        assert_equal 0, result.next_offset
+        assert_operator result.next_content_offset, :>, 0
         assert result.has_more?
+      end
+
+      test "content continuation retrieves every character before consuming the row" do
+        content = ("0123456789" * 120).freeze
+        post(content)
+        chunks = []
+        content_offset = 0
+        anchor = nil
+
+        20.times do
+          result = page(
+            limit: 1, char_budget: 260, order: "desc",
+            content_offset: content_offset, max_message_id: anchor
+          )
+          anchor ||= result.newest_message_id
+          chunks << result.messages.first[:content]
+          content_offset = result.next_content_offset
+          break unless content_offset
+
+          assert_equal 0, result.next_offset
+        end
+
+        assert_nil content_offset
+        assert_equal content, chunks.join
       end
 
       # No honest fragment exists below the envelope and the notice, so the page
@@ -167,6 +195,8 @@ module Collavre
 
         assert_equal 0, result.returned_count
         assert result.budget_exhausted
+        assert_equal 0, result.next_offset
+        assert_equal 0, result.next_content_offset
       end
 
       test "clipped_count is zero when every message was emitted whole" do

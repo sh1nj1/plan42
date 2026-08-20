@@ -23,6 +23,7 @@ module Collavre
       Page = Struct.new(
         :topic, :total_count, :total_chars, :offset, :limit,
         :messages, :newest_message_id, :budget_exhausted, :budget,
+        :content_offset,
         keyword_init: true
       ) do
         def returned_count = messages.size
@@ -34,28 +35,39 @@ module Collavre
         # requested format costs, which is not what their prose measures.
         def billed_chars = messages.sum { |m| budget.cost(m) }
 
-        # A clipped message is a partial answer that has_more cannot express:
-        # the window did reach the end of the topic, it just could not print
-        # all of the last thing it found.
         def clipped_count = messages.count { |m| m[:clipped] }
 
-        def has_more? = (offset + returned_count) < total_count
+        def next_content_offset
+          messages.filter_map { |message| message[:next_content_offset] }.first ||
+            (content_offset if messages.empty? && offset < total_count)
+        end
 
-        def next_offset = has_more? ? offset + returned_count : nil
+        # A clipped row is not consumed. The next call stays on the same row
+        # and advances inside its content; only a complete row advances offset.
+        def has_more? = next_content_offset.present? || (offset + returned_count) < total_count
+
+        def next_offset
+          return offset if next_content_offset.present?
+
+          has_more? ? offset + returned_count : nil
+        end
       end
 
       # budget carries both the cap and the format it is counted in — see
       # CharBudget for why those cannot be separate arguments.
-      def initialize(topic:, user:, offset: 0, limit: DEFAULT_LIMIT, order: DEFAULT_ORDER,
-                     include_system: false, max_message_id: nil, budget: CharBudget.new)
+      def initialize(topic:, user:, **options)
+        options.assert_valid_keys(
+          :offset, :limit, :order, :include_system, :max_message_id, :content_offset, :budget
+        )
         @topic = topic
         @user = user
-        @offset = [ offset.to_i, 0 ].max
-        @limit = clamp_limit(limit)
-        @order = ORDERS.include?(order.to_s) ? order.to_s : DEFAULT_ORDER
-        @include_system = include_system
-        @max_message_id = max_message_id
-        @budget = budget
+        @offset = [ options.fetch(:offset, 0).to_i, 0 ].max
+        @limit = clamp_limit(options.fetch(:limit, DEFAULT_LIMIT))
+        @order = normalized_order(options.fetch(:order, DEFAULT_ORDER))
+        @include_system = options.fetch(:include_system, false)
+        @max_message_id = options[:max_message_id]
+        @content_offset = [ options.fetch(:content_offset, 0).to_i, 0 ].max
+        @budget = options.fetch(:budget, CharBudget.new)
       end
 
       def call
@@ -73,7 +85,8 @@ module Collavre
           limit: @limit,
           messages: @order == "asc" ? messages.reverse : messages,
           newest_message_id: @max_message_id,
-          budget_exhausted: !@budget.unlimited? && messages.size < @limit && (@offset + messages.size) < stat.count,
+          budget_exhausted: budget_exhausted?(messages, stat),
+          content_offset: @content_offset,
           budget: @budget
         )
       end
@@ -114,15 +127,15 @@ module Collavre
              .order(created_at: :desc, id: :desc)
              .offset(@offset)
              .limit(@limit)
-             .map { |comment| serialize(comment) }
+             .map.with_index { |comment, index| serialize(comment, content_offset: index.zero? ? @content_offset : 0) }
       end
 
       # Trims the newest-first window to the character budget. A message that
       # does not fit ends the window rather than being cut in half — except for
       # the first one, where stopping short would return zero rows at an offset
       # that does have rows and leave the caller paging against it forever.
-      # That one is clipped to what the budget can pay for, with the clip
-      # announced in its own text, so the cap holds and the offset still moves.
+      # That one is clipped to what the budget can pay for and exposes a content
+      # continuation. The row offset stays put until all of its prose is read.
       def within_budget(messages)
         return messages if @budget.unlimited?
 
@@ -148,11 +161,10 @@ module Collavre
       # empty page carries budget_limited to say so.
       def clip(message)
         content = message[:content].to_s
-        notice = clip_notice(content.length)
-        room = widest_prefix(message, content, notice)
+        room = widest_prefix(message, content)
         return nil if room <= 0
 
-        clipped(message, content, notice, room)
+        clipped(message, content, room)
       end
 
       # The longest prefix of the prose whose rendered cost still fits.
@@ -162,12 +174,12 @@ module Collavre
       # bound. Cost rises monotonically with the prefix, so the exact answer is
       # a bisection — eighteen serializations at the largest cap, and only on
       # the clip path, which is one message per call at most.
-      def widest_prefix(message, content, notice)
+      def widest_prefix(message, content)
         low = 0
         high = content.length
         while low < high
           mid = (low + high + 1) / 2
-          if @budget.fits?(@budget.cost(clipped(message, content, notice, mid)))
+          if @budget.fits?(@budget.cost(clipped(message, content, mid)))
             low = mid
           else
             high = mid - 1
@@ -176,26 +188,54 @@ module Collavre
         low
       end
 
-      def clipped(message, content, notice, take)
-        message.merge(content: content[0, take] + notice, clipped: true)
+      def clipped(message, content, take)
+        start = message[:content_offset].to_i
+        finish = start + take
+        total = message[:content_total_chars] || content.length
+
+        message.merge(
+          content: content[0, take],
+          content_offset: start,
+          content_end_offset: finish,
+          content_total_chars: total,
+          next_content_offset: finish,
+          clip_notice: clip_notice(finish, total),
+          clipped: true
+        )
       end
 
       # Counted against the budget like any other content, and phrased for the
       # reader of the transcript: the caller sees the clip where the words stop,
       # not only in a flag on the payload it may have rendered away.
-      def clip_notice(total)
-        "…[clipped from #{total} chars — raise max_chars for the rest]"
+      def clip_notice(next_offset, total)
+        "…[clipped at #{next_offset} of #{total} chars — continue with content_offset: #{next_offset}]"
       end
 
-      def serialize(comment)
-        {
+      def serialize(comment, content_offset:)
+        content = Collavre::HtmlText.plain(comment.content).strip
+        start = [ content_offset, content.length ].min
+        message = {
           id: comment.id,
           author: comment.user&.display_name || "system",
           author_id: comment.user_id,
           agent: comment.user&.ai_user? || false,
           created_at: comment.created_at&.iso8601,
-          content: Collavre::HtmlText.plain(comment.content).strip
+          content: content[start..] || ""
         }
+        return message if start.zero?
+
+        message.merge(
+          content_offset: start,
+          content_end_offset: content.length,
+          content_total_chars: content.length
+        )
+      end
+
+      def budget_exhausted?(messages, stat)
+        return false if @budget.unlimited?
+
+        messages.any? { |message| message[:clipped] } ||
+          (messages.size < @limit && (@offset + messages.size) < stat.count)
       end
 
       def clamp_limit(limit)
@@ -203,6 +243,10 @@ module Collavre
         return DEFAULT_LIMIT if limit <= 0
 
         [ limit, MAX_LIMIT ].min
+      end
+
+      def normalized_order(order)
+        ORDERS.include?(order.to_s) ? order.to_s : DEFAULT_ORDER
       end
     end
   end

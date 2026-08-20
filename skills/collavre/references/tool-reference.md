@@ -135,6 +135,7 @@ Read messages from one or more topics, newest first, with paging.
 | `limit` | Integer | No | 50 | Messages **per topic** (max 200) |
 | `order` | String | No | `"asc"` | Rendering order in the window: `asc` (transcript) or `desc` |
 | `max_message_id` | Integer | No | — | Snapshot anchor: only messages with `id <=` this |
+| `content_offset` | Integer | No | 0 | Character offset within the first message selected by `offset`; use the returned `next_content_offset` |
 | `include_system` | Boolean | No | false | Include authorless notices. Approval prompts are never returned |
 | `max_chars` | Integer | No | 40000 | Cap for the **whole response** (min 160, max 200000; smaller positive values are raised to 160) |
 | `format` | String | No | `"markdown"` | `markdown` or `json` |
@@ -152,14 +153,16 @@ shift rows down and you re-read one message while never seeing another.
 ```
 topic_messages(topic_ids: "12,45,78", limit: 100)          # summarize three topics
 topic_messages(topic_ids: 12, offset: 100, max_message_id: 9931)  # next page
+topic_messages(topic_ids: 12, offset: 100, content_offset: 28400, max_message_id: 9931)  # clipped tail
 ```
 
 **Returns (json):** `{ topics[], truncated, max_chars }`. Each topic entry:
 `topic_id`, `topic_name`, `creative_id`, `total_count`, `total_chars`, `offset`,
 `limit`, `returned_count`, `returned_chars`, `has_more`, `next_offset`,
-`newest_message_id`, `messages[]`, and `budget_limited` when `max_chars` (rather
-than `limit`) ended the window. Each message: `id`, `author`, `author_id`,
-`agent`, `created_at`, `content` (plain text).
+`next_content_offset`, `newest_message_id`, `messages[]`, and `budget_limited`
+when `max_chars` (rather than `limit`) ended the window. Each message: `id`,
+`author`, `author_id`, `agent`, `created_at`, `content` (plain text), plus content
+range fields when the row is continued.
 
 A topic the budget could not reach at all comes back with `skipped_reason` and
 `returned_count: 0` rather than looking like an empty conversation.
@@ -170,9 +173,11 @@ a response wider than `max_chars` or silently omitting a topic.
 
 A single message wider than the whole `max_chars` cap is clipped rather than
 dropped — dropping it would return an empty page at an offset that has rows and
-the caller would page against it forever. The clip is announced in the message
-text and counted in the topic's `clipped_count`, which can be set even when
-`has_more` is false.
+the caller would page against it forever. A clipped row keeps `next_offset` on
+the same message and returns `next_content_offset`; pass both values with the
+same `max_message_id` until `next_content_offset` disappears. Only then is the
+message row consumed. The clip notice is separate from `content`, so JSON
+callers can concatenate fragments without stripping tool text.
 
 Asking for more than 20 topics in one call is an error, not a silent trim — the
 ids past the cap were never read, so there would be no per-topic entry to say

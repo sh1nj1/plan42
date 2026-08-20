@@ -32,6 +32,14 @@ module Collavre
         assert_includes output, "topic_messages(topic_ids: 12, offset: 2, max_message_id: 991)"
       end
 
+      test "spells out the content continuation without consuming the clipped row" do
+        output = MessagePageMarkdown.call(
+          { topics: [ entry(next_offset: 0, next_content_offset: 320) ], truncated: true }
+        )
+
+        assert_includes output, "offset: 0, max_message_id: 991, content_offset: 320"
+      end
+
       # Dropping include_system from the follow-up call pages a narrower set at
       # an offset counted against the wider one, which walks straight past
       # messages the caller has not seen.
@@ -58,6 +66,13 @@ module Collavre
 
         assert_includes output, "[990] 2026-08-19T10:00:00Z One\nfirst"
         assert_includes output, "[991] 2026-08-19T10:01:00Z Bot (agent)\nsecond"
+      end
+
+      test "renders a clipped message notice outside its retrievable content fragment" do
+        clipped = entry(messages: [ entry[:messages].first.merge(content: "fragment", clip_notice: "continue") ])
+        output = MessagePageMarkdown.call({ topics: [ clipped ], truncated: true })
+
+        assert_includes output, "\nfragment\ncontinue\n"
       end
 
       test "shows 'none' rather than a nonsense range when the window is empty" do

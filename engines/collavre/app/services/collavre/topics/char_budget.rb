@@ -53,7 +53,8 @@ module Collavre
       def cost(message)
         return message.to_json.length + 1 if json?
 
-        ENVELOPE_CHARS + message[:content].to_s.length + message[:author].to_s.length +
+        ENVELOPE_CHARS + message[:content].to_s.length + message[:clip_notice].to_s.length +
+          message[:author].to_s.length +
           (message[:agent] ? AGENT_SUFFIX_CHARS : 0)
       end
 

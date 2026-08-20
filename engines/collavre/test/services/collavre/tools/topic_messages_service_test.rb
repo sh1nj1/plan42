@@ -175,7 +175,7 @@ module Collavre
         markdown = TopicMessagesService.new.call(topic_ids: @a.id, max_chars: cap)
 
         assert_operator markdown.length, :<=, cap
-        assert_includes markdown, "clipped from 50000 chars"
+        assert_includes markdown, "continue with content_offset"
       end
 
       # max_chars has to bound the response the caller actually receives, and
@@ -238,14 +238,68 @@ module Collavre
                         as_markdown.scan(/^\[\d+\] /).length
       end
 
-      # has_more is false here — the window did reach the end of the topic — so
-      # clipped_count is the only thing that can say the answer is partial.
-      test "a clipped message marks the response truncated even with nothing left to page" do
+      test "a clipped message remains pageable even when it is the topic's only row" do
         post(@a, "y" * 50_000)
         payload = json(topic_ids: @a.id, max_chars: 1_200)
+        entry = entry_for(payload, @a)
 
-        assert_equal 1, entry_for(payload, @a)[:clipped_count]
+        assert_equal 1, entry[:clipped_count]
+        assert entry[:has_more]
+        assert_equal 0, entry[:next_offset]
+        assert_operator entry[:next_content_offset], :>, 0
         assert payload[:truncated]
+      end
+
+
+      test "content continuation returns every character of an oversized message" do
+        content = (%Q(He said "yes".\n) * 600).freeze
+        comment = post(@a, content)
+        chunks = []
+        offset = 0
+        content_offset = 0
+        anchor = nil
+
+        100.times do
+          payload = json(
+            topic_ids: @a.id, limit: 1, max_chars: 1_200,
+            offset: offset, content_offset: content_offset, max_message_id: anchor
+          )
+          entry = entry_for(payload, @a)
+          message = entry[:messages].first
+          anchor ||= entry[:newest_message_id]
+          chunks << message[:content]
+
+          assert_equal comment.id, message[:id]
+          assert_operator payload.to_json.length, :<=, 1_200
+
+          content_offset = entry[:next_content_offset]
+          break unless content_offset
+
+          offset = entry[:next_offset]
+          assert_equal 0, offset
+        end
+
+        assert_nil content_offset
+        assert_equal content.strip, chunks.join
+      end
+
+      test "content beyond the maximum response cap remains retrievable" do
+        content = "z" * (TopicMessagesService::MAX_MAX_CHARS + 1_000)
+        post(@a, content)
+
+        first = json(topic_ids: @a.id, limit: 1, max_chars: TopicMessagesService::MAX_MAX_CHARS)
+        first_entry = entry_for(first, @a)
+        second = json(
+          topic_ids: @a.id, limit: 1, max_chars: TopicMessagesService::MAX_MAX_CHARS,
+          offset: first_entry[:next_offset], content_offset: first_entry[:next_content_offset],
+          max_message_id: first_entry[:newest_message_id]
+        )
+        second_entry = entry_for(second, @a)
+
+        assert_equal 0, first_entry[:next_offset]
+        assert_operator first_entry[:next_content_offset], :>, 0
+        assert_nil second_entry[:next_content_offset]
+        assert_equal content, first_entry[:messages].first[:content] + second_entry[:messages].first[:content]
       end
 
       test "a fully returned topic is not marked truncated" do
