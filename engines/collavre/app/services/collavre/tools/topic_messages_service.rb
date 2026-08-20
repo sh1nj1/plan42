@@ -155,7 +155,7 @@ module Tools
 
     def build_payload(ids:, user:, options:)
       topics, errors = TopicSelection.resolve(ids, user: user)
-      entries = collect(topics, user, options)
+      entries = collect(topics, errors, user, options)
 
       {
         topics: entries + errors,
@@ -178,9 +178,9 @@ module Tools
     # one at a time would charge only the topics that succeed, and the
     # not-fetched notices — which exist precisely because the budget ran out —
     # would push the response over the cap that skipping them was enforcing.
-    def collect(topics, user, options)
+    def collect(topics, errors, user, options)
       budget = options[:budget]
-      remaining = budget.chars - reserved_chars(topics, budget.format)
+      remaining = budget.chars - reserved_chars(topics, errors, budget.format)
       served = false
 
       topics.map do |topic|
@@ -193,9 +193,16 @@ module Tools
       end
     end
 
-    def reserved_chars(topics, format)
+    def reserved_chars(topics, errors, format)
       per_topic = TOPIC_HEADER_CHARS.fetch(format)
-      TRUNCATION_CHARS + topics.sum { |topic| per_topic + topic.name.to_s.length }
+      TRUNCATION_CHARS + topics.sum { |topic| per_topic + topic.name.to_s.length } +
+        error_chars(errors, format)
+    end
+
+    def error_chars(errors, format)
+      return errors.sum { |error| error.to_json.length + 1 } if format == "json"
+
+      errors.sum { |error| Topics::MessagePageMarkdown.render_error(error).length + 1 }
     end
 
     def page_entry(topic, user, options, remaining)

@@ -24,9 +24,9 @@ module Collavre
       raise BranchError, I18n.t("collavre.comments.branch.no_selection") if comment_ids.empty?
 
       validate_permissions!
-      originals = fetch_comments(comment_ids)
-
       Topic.transaction do
+        originals = fetch_comments(comment_ids)
+        reject_approval_actions!(originals)
         @new_topic = create_branch_topic
         copy_comments(originals)
       end
@@ -48,11 +48,17 @@ module Collavre
 
     def fetch_comments(comment_ids)
       scope = source_topic ? source_topic.comments.visible_to(user) : creative.comments.visible_to(user)
-      comments = scope.where(id: comment_ids).order(:created_at).to_a
+      comments = scope.where(id: comment_ids).order(:created_at).lock.to_a
       if comments.length != comment_ids.length
         raise BranchError, I18n.t("collavre.comments.branch.comments_not_found")
       end
       comments
+    end
+
+    def reject_approval_actions!(comments)
+      return unless comments.any?(&:approval_action?)
+
+      raise BranchError, I18n.t("collavre.comments.branch.approval_action_not_branchable")
     end
 
     def create_branch_topic

@@ -151,6 +151,7 @@ en:
         no_selection: "Select at least one message to branch."
         not_authorized: "You don't have permission to branch messages."
         comments_not_found: "Some selected messages could not be found."
+        approval_action_not_branchable: "Approval prompts cannot be branched."
       batch_delete_confirm: Are you sure you want to delete the selected messages?
       batch_delete_no_selection: Select at least one message to delete.
       batch_delete_not_found: Some selected messages could not be found.

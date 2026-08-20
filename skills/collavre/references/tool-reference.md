@@ -119,10 +119,10 @@ use it before `topic_messages` to see how much conversation each topic holds.
 `archived`, `main`, `system`, `source_topic_id`, `primary_agent`,
 `agent_locked`, `message_count`, `message_chars`, `last_message_at`.
 
-`message_chars` is the length of the stored message HTML — an upper bound on the
-text `topic_messages` returns, good for relative sizing rather than exact
-budgeting. Requires **read** on each topic's Creative; unknown or unreadable ids
-come back in `errors`.
+`message_chars` combines stored message HTML length with a conservative estimate
+for the image attachment markers emitted by `topic_messages`. It is good for
+relative sizing rather than exact budgeting. Requires **read** on each topic's
+Creative; unknown or unreadable ids come back in `errors`.
 
 ### topic_messages
 

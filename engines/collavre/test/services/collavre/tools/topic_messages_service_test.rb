@@ -381,6 +381,32 @@ module Collavre
                      payload[:topics].last)
       end
 
+      test "unreadable topic errors do not replace readable messages at the response cap" do
+        post(@a, "visible " * 200)
+        missing_ids = (999_990..999_999).to_a
+        cap = 2_000
+
+        payload = json(topic_ids: [ @a.id, *missing_ids ], max_chars: cap)
+
+        assert_nil payload[:error]
+        assert_operator entry_for(payload, @a)[:returned_count], :>, 0
+        assert_equal missing_ids, payload[:topics].filter_map { |entry| entry[:topic_id] if entry[:error] }
+        assert_operator payload.to_json.length, :<=, cap
+      end
+
+      test "markdown reserves unreadable topic errors without discarding readable messages" do
+        post(@a, "visible " * 200)
+        missing_ids = (999_990..999_999).to_a
+        cap = 2_000
+
+        markdown = TopicMessagesService.new.call(topic_ids: [ @a.id, *missing_ids ], max_chars: cap)
+
+        assert_includes markdown, "visible"
+        assert_equal missing_ids.size, markdown.scan(/^## \[topic \d+\] unavailable$/).size
+        assert_not_includes markdown, "topic_messages metadata needs"
+        assert_operator markdown.length, :<=, cap
+      end
+
       test "a topic on a creative the caller cannot read is refused, not returned" do
         post(@a, "secret")
         Collavre::Current.user = @stranger

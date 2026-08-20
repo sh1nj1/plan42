@@ -290,13 +290,28 @@ describe('CommentsPopupController', () => {
         expect(openFromUrl).not.toHaveBeenCalled()
     })
 
-    test('same-creative workspace deep links refresh the docked chat highlight', () => {
+    test('same-creative workspace deep links reload only the highlighted comment window', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')
         popup.dataset.docked = 'true'
         popup.dataset.creativeId = '123'
         popup.style.display = 'flex'
         const open = jest.spyOn(controller, 'open').mockResolvedValue()
+        const listController = {
+            onPopupOpened: jest.fn(),
+            onPopupClosed: jest.fn(),
+        }
+        Object.defineProperty(controller, 'listController', {
+            configurable: true,
+            value: listController,
+        })
+        Object.defineProperty(controller, 'topicsController', {
+            configurable: true,
+            value: {
+                currentTopicId: '7',
+                onPopupClosed: jest.fn(),
+            },
+        })
 
         document.dispatchEvent(new CustomEvent('creative-comments-click', {
             detail: {
@@ -307,10 +322,47 @@ describe('CommentsPopupController', () => {
             },
         }))
 
-        expect(open).toHaveBeenCalledWith(triggerBtn, {
+        expect(open).not.toHaveBeenCalled()
+        expect(listController.onPopupOpened).toHaveBeenCalledWith({
             creativeId: '123',
             highlightId: '456',
+            topicId: '7',
         })
+    })
+
+    test('same-creative workspace deep links highlight an already loaded comment without reloading', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        const listTarget = document.createElement('div')
+        const comment = document.createElement('div')
+        comment.id = 'comment_456'
+        listTarget.appendChild(comment)
+        popup.appendChild(listTarget)
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+        const listController = {
+            listTarget,
+            highlightComment: jest.fn(),
+            onPopupOpened: jest.fn(),
+            onPopupClosed: jest.fn(),
+        }
+        Object.defineProperty(controller, 'listController', {
+            configurable: true,
+            value: listController,
+        })
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        expect(listController.highlightComment).toHaveBeenCalledWith('456')
+        expect(listController.onPopupOpened).not.toHaveBeenCalled()
     })
 
     test('same-creative workspace sync without a deep link keeps the docked chat', () => {

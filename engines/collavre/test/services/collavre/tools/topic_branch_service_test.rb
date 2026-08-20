@@ -51,6 +51,23 @@ module Collavre
         assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
       end
 
+      test "an ordinary message changed into an approval prompt after preflight is not copied" do
+        comment = @comments.first
+        constructor = ::Collavre::TopicBranchService.method(:new)
+        mutate_after_preflight = lambda do |**arguments|
+          comment.update!(action: "approve")
+          constructor.call(**arguments)
+        end
+
+        assert_raises(::Collavre::TopicBranchService::BranchError) do
+          ::Collavre::TopicBranchService.stub(:new, mutate_after_preflight) do
+            TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: comment.id)
+          end
+        end
+
+        assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
+      end
+
       # The refusal names the id, so running it over the whole topic answered
       # "is comment N an approval prompt?" for a comment the caller cannot read
       # — a distinct error where every other hidden id gets the generic

@@ -148,6 +148,7 @@ ko:
         no_selection: "분기할 메시지를 선택하세요."
         not_authorized: "메시지를 분기할 권한이 없습니다."
         comments_not_found: "일부 선택한 메시지를 찾을 수 없습니다."
+        approval_action_not_branchable: "승인 요청 메시지는 분기할 수 없습니다."
       batch_delete_confirm: 선택한 메시지를 삭제하시겠습니까?
       batch_delete_no_selection: 삭제할 메시지를 선택해주세요.
       batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.

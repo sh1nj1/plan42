@@ -30,9 +30,9 @@ module Tools
       when the topic was branched off another), primary_agent, agent_locked, and
       the message totals.
 
-      message_chars is the length of the stored message HTML — an upper bound on
-      the text topic_messages will return, useful for relative sizing rather
-      than exact budgeting.
+      message_chars combines stored message HTML length with a conservative
+      estimate for image attachment markers. It is useful for relative sizing,
+      not exact budgeting.
 
       Requires read permission on each topic's creative. Unknown or unreadable
       ids come back in "errors" instead of failing the call.

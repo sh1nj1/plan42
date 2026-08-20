@@ -4,7 +4,7 @@ import { attachBundleDragImage } from '../../utils/drag_bundle_image'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
-import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
+import csrfFetch, { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
 import PrevMessageNavigator from './prev_message_navigator'
 // CommonPopup is now used via TopicSearchController (Stimulus)
@@ -529,10 +529,9 @@ export default class extends Controller {
   updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null, { keepalive = false } = {}) {
     if (!creativeId) return
 
-    fetch('/comment_read_pointers/update', {
+    csrfFetch('/comment_read_pointers/update', {
       method: 'POST',
       headers: {
-        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
         'Content-Type': 'application/json',
       },
       keepalive,

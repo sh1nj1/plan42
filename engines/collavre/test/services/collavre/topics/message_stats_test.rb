@@ -17,6 +17,20 @@ module Collavre
                         skip_default_user: true, skip_dispatch: true)
       end
 
+      def post_with_image(topic)
+        comment = Comment.new(
+          creative: @creative, topic: topic, user: @user, content: "",
+          skip_default_user: true, skip_dispatch: true
+        )
+        comment.images.attach(
+          io: StringIO.new(file_fixture("small.png").binread),
+          filename: "small.png",
+          content_type: "image/png"
+        )
+        comment.save!
+        comment
+      end
+
       test "counts, sizes and dates each topic separately in one pass" do
         post(@a, "1234567890")
         post(@a, "12345")
@@ -57,6 +71,16 @@ module Collavre
         post(@a, "later")
 
         assert_equal 1, MessageStats.for([ @a ], user: @user, max_message_id: anchor.id)[@a.id].count
+      end
+
+      test "image attachment markers are included in the size estimate" do
+        post_with_image(@a)
+
+        stat = MessageStats.for([ @a ], user: @user)[@a.id]
+        page = MessagePage.new(topic: @a, user: @user).call
+
+        assert_operator stat.chars, :>=, page.messages.sole[:content].length
+        assert_operator stat.chars, :>, 0
       end
     end
   end
