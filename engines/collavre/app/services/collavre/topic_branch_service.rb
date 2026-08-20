@@ -110,13 +110,13 @@ module Collavre
           new_comment.quoted_comment_id = id_mapping[original.quoted_comment_id]
         end
 
+        # Attach before validation so an image-only comment still satisfies the
+        # Comment content-or-images invariant. Reuse the blobs without copying
+        # file data, as the post-save loop did previously.
+        new_comment.images.attach(original.images.map(&:blob)) if original.images.attached?
+
         new_comment.save!
         id_mapping[original.id] = new_comment.id
-
-        # Share image blobs (no duplication of file data)
-        original.images.each do |image|
-          new_comment.images.attach(image.blob)
-        end
       end
     end
 

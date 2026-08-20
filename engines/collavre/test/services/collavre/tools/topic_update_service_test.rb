@@ -37,6 +37,59 @@ module Collavre
         assert_not @topic.reload.archived?
       end
 
+      test "the Main topic cannot be renamed or archived" do
+        main_topic = @creative.main_topic
+
+        rename_error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: main_topic.id, name: "Replacement")
+        end
+        archive_error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: main_topic.id, archived: true)
+        end
+
+        assert_includes rename_error.message, "reserved"
+        assert_includes archive_error.message, "reserved"
+        assert_equal Collavre::Creative::MAIN_TOPIC_NAME, main_topic.reload.name
+        assert_not main_topic.archived?
+        assert_equal main_topic.id, @creative.main_topic.id
+      end
+
+      test "an inbox System topic cannot be renamed or archived" do
+        inbox = Collavre::Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })
+        system_topic = inbox.system_topic
+
+        assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: system_topic.id, name: "Notices")
+        end
+        assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: system_topic.id, archived: true)
+        end
+
+        assert_equal Collavre::Creative::SYSTEM_TOPIC_NAME, system_topic.reload.name
+        assert_not system_topic.archived?
+        assert_equal system_topic.id, inbox.system_topic.id
+      end
+
+      test "reserved topics still allow primary agent changes" do
+        main_topic = @creative.main_topic
+        share!(@agent, :feedback)
+
+        result = TopicUpdateService.new.call(topic_id: main_topic.id, primary_agent: @agent.id.to_s)
+
+        assert_equal [ "primary_agent" ], result[:changed]
+        assert_equal @agent.id, main_topic.reload.primary_agent_id
+      end
+
+      test "System is an ordinary mutable name outside an inbox" do
+        system_named = @creative.topics.create!(name: Collavre::Creative::SYSTEM_TOPIC_NAME, user: @user)
+
+        result = TopicUpdateService.new.call(topic_id: system_named.id, name: "Alerts", archived: true)
+
+        assert_equal %w[name archived], result[:changed]
+        assert_equal "Alerts", system_named.reload.name
+        assert system_named.archived?
+      end
+
       test "an archived topic keeps its messages and stays readable" do
         Comment.create!(creative: @creative, topic: @topic, user: @user, content: "kept",
                         skip_default_user: true, skip_dispatch: true)

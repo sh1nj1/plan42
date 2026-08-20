@@ -126,6 +126,22 @@ module Collavre
         assert_equal 1, Topic.find(result[:id]).comments.without_approval_action.count
       end
 
+      test "copies an image-only message with its attachments" do
+        original = Comment.new(creative: @creative, topic: @source, user: @user, content: "",
+                               skip_default_user: true, skip_dispatch: true)
+        original.images.attach(
+          io: StringIO.new("image bytes"), filename: "diagram.png", content_type: "image/png"
+        )
+        original.save!
+
+        result = TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: original.id)
+        copy = Topic.find(result[:id]).comments.sole
+
+        assert_equal "", copy.content
+        assert_equal [ original.images.sole.blob_id ], copy.images.map(&:blob_id)
+        assert_equal "diagram.png", copy.images.sole.filename.to_s
+      end
+
       test "copies the selected messages into a new topic and leaves the originals" do
         ids = @comments.first(2).map(&:id)
         result = TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: ids.join(","),

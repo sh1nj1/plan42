@@ -33,8 +33,9 @@ module Tools
 
       Permissions: renaming needs admin on the creative (a rename changes what
       everyone else's links and habits point at); archiving and pin changes need
-      write. A Claude Channel session topic's pin is part of its session
-      identity and cannot be changed here.
+      write. Main and an inbox's System topic are reserved: their names and
+      archive state cannot change, but their pin can. A Claude Channel session
+      topic's pin is part of its session identity and cannot be changed here.
     DESC
 
     tool_param :topic_id, description: "The topic to update."
@@ -96,12 +97,27 @@ module Tools
       agent = agent_change ? validated_agent(topic, agent_change) : nil
 
       Topic.transaction do
+        topic.lock!
+        reject_reserved_mutation!(topic, name, archived)
         topic.update!(name: name) if name.present?
         set_archived(topic, archived) unless archived.nil?
         topic.set_primary_agent!(agent) if agent_change
       end
 
       agent
+    end
+
+    def reject_reserved_mutation!(topic, name, archived)
+      return unless name.present? || !archived.nil?
+      return unless reserved_topic?(topic)
+
+      raise ArgumentError,
+        "#{topic.name} is a reserved topic; its name and archive state cannot be changed."
+    end
+
+    def reserved_topic?(topic)
+      topic.name == Creative::MAIN_TOPIC_NAME ||
+        (topic.creative.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME)
     end
 
     def set_archived(topic, archived)

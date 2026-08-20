@@ -232,6 +232,10 @@ Archiving hides the topic from the active list but keeps every message, and
 `topic_messages` can still read it by id. Archive a topic when its thread has
 reached a conclusion rather than reusing it for the next subject.
 
+Main and an inbox Creative's System topic are reserved. Their names and archive
+state cannot change because message routing looks them up by name; their primary
+agent pin can still change.
+
 A Claude Channel session topic's pin is part of its session identity and cannot
 be changed here.
 
@@ -254,7 +258,8 @@ a silent trim. Requires **feedback** or better on the Creative.
 Approval prompts cannot be branched. The copy carries the content but not the
 approval action, so it would stop being excluded from agent history and read as
 an ordinary message. Passing one is an error — `topic_messages` never returns
-their ids in the first place.
+their ids in the first place. Image attachments, including image-only messages,
+remain attached to the copies.
 
 ## meta_tool
 
