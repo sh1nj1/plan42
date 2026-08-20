@@ -40,6 +40,22 @@ module Collavre
         assert_includes output, "offset: 0, max_message_id: 991, content_offset: 320"
       end
 
+      test "repeats newest-first rendering order in the continuation" do
+        output = MessagePageMarkdown.call(
+          { topics: [ entry(order: "desc") ], truncated: false }
+        )
+
+        assert_includes output, 'max_message_id: 991, order: "desc")'
+      end
+
+      test "leaves the default rendering order out of the continuation" do
+        output = MessagePageMarkdown.call(
+          { topics: [ entry(order: "asc") ], truncated: false }
+        )
+
+        assert_not_includes output, "order:"
+      end
+
       # Dropping include_system from the follow-up call pages a narrower set at
       # an offset counted against the wider one, which walks straight past
       # messages the caller has not seen.

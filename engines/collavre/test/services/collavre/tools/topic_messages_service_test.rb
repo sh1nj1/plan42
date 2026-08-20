@@ -74,6 +74,16 @@ module Collavre
         payload = json(topic_ids: @a.id, limit: 2, order: "desc")
 
         assert_equal %w[m2 m1], entry_for(payload, @a)[:messages].map { |m| m[:content] }
+        assert_equal "desc", entry_for(payload, @a)[:order]
+      end
+
+
+      test "markdown continuation preserves newest-first rendering order" do
+        3.times { |i| post(@a, "m#{i}") }
+
+        markdown = TopicMessagesService.new.call(topic_ids: @a.id, limit: 1, order: "desc")
+
+        assert_includes markdown, 'order: "desc"'
       end
 
       test "max_chars is a whole-response cap, and a topic it cannot reach is reported unfetched" do

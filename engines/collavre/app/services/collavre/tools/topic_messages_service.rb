@@ -210,6 +210,7 @@ module Tools
         total_chars: page.total_chars,
         offset: page.offset,
         limit: page.limit,
+        order: page.order,
         returned_count: page.returned_count,
         returned_chars: page.returned_chars,
         # What this topic charged against max_chars: what emitting these

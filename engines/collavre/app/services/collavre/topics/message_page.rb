@@ -23,7 +23,7 @@ module Collavre
       Page = Struct.new(
         :topic, :total_count, :total_chars, :offset, :limit,
         :messages, :newest_message_id, :budget_exhausted, :budget,
-        :content_offset,
+        :content_offset, :order,
         keyword_init: true
       ) do
         def returned_count = messages.size
@@ -87,6 +87,7 @@ module Collavre
           newest_message_id: @max_message_id,
           budget_exhausted: budget_exhausted?(messages, stat),
           content_offset: @content_offset,
+          order: @order,
           budget: @budget
         )
       end

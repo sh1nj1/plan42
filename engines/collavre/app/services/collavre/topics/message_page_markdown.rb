@@ -61,11 +61,16 @@ module Collavre
         return [] unless entry[:has_more]
 
         [ "More: topic_messages(topic_ids: #{entry[:topic_id]}, offset: #{entry[:next_offset]}, " \
-          "max_message_id: #{entry[:newest_message_id]}#{content_option(entry)}#{scope_option(entry)})" ]
+          "max_message_id: #{entry[:newest_message_id]}#{content_option(entry)}" \
+          "#{order_option(entry)}#{scope_option(entry)})" ]
       end
 
       def content_option(entry)
         entry[:next_content_offset] ? ", content_offset: #{entry[:next_content_offset]}" : ""
+      end
+
+      def order_option(entry)
+        entry[:order] == "desc" ? ', order: "desc"' : ""
       end
 
       def scope_option(entry)
