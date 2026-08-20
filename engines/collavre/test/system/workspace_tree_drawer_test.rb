@@ -62,9 +62,11 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
       find(".creative-workspace-tree-toggle").click
       assert_no_selector ".creative-workspace-tree-region.is-open"
       assert_selector ".creative-workspace-tree-toggle[aria-expanded='false']"
+      assert_drawer_settled(open: false)
       find(".creative-workspace-tree-toggle").click
 
       assert_selector ".creative-workspace-tree-region.is-open"
+      assert_drawer_settled(open: true)
       assert_selector ".creative-workspace-tree-link", text: "Root child", wait: 10
     end
   end
@@ -140,6 +142,13 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     page.evaluate_script(<<~JS)
       getComputedStyle(document.querySelector(#{selector.to_json})).getPropertyValue(#{property.to_json});
     JS
+  end
+
+  def assert_drawer_settled(open:)
+    assert_selector ".creative-workspace-tree-region" do |region|
+      rect = page.evaluate_script("arguments[0].getBoundingClientRect().toJSON()", region)
+      open ? rect.fetch("left").abs < 1 : rect.fetch("right").abs < 1
+    end
   end
 
   # `visible?` only proves the element is painted, not that a tap would land on

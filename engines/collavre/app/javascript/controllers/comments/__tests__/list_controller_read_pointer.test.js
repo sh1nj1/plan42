@@ -8,6 +8,7 @@ import CommentsListController from '../list_controller'
 describe('CommentsListController read pointer updates', () => {
   let controller
   let topicsController
+  const successfulResponse = () => ({ ok: true, headers: { get: () => null } })
 
   beforeEach(() => {
     jest.useFakeTimers()
@@ -28,7 +29,7 @@ describe('CommentsListController read pointer updates', () => {
   })
 
   test('reloads topic unread counts after a successful read pointer update', async () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
 
     controller.markCommentsRead()
     await jest.advanceTimersByTimeAsync(2000)
@@ -40,7 +41,7 @@ describe('CommentsListController read pointer updates', () => {
 
   test('sends the selected topic to the read pointer endpoint', async () => {
     controller.currentTopicId = '9'
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
 
     controller.markCommentsRead()
     await jest.advanceTimersByTimeAsync(2000)
@@ -51,7 +52,7 @@ describe('CommentsListController read pointer updates', () => {
   test('keeps the rendered All Messages topic snapshot in a read update', async () => {
     controller.renderedAllTopicIds = ['1', '2']
     controller.renderedAllTopicWatermarks = { 1: 20, 2: 21 }
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
 
     controller.markCommentsRead()
     await jest.advanceTimersByTimeAsync(2000)
@@ -131,7 +132,7 @@ describe('CommentsListController read pointer updates', () => {
     controller.renderedAllTopicWatermarks = { 1: 20 }
     controller.listTarget = document.createElement('div')
     controller.listTarget.innerHTML = '<div class="comment-item" data-comment-id="21" data-topic-id="1"></div>'
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
 
     controller.recordRenderedAllTopicWatermarks(controller.listTarget.firstElementChild)
     controller.markCommentsRead()
@@ -148,7 +149,7 @@ describe('CommentsListController read pointer updates', () => {
     controller.renderedAllTopicWatermarks = { 1: 20 }
     controller.listTarget = document.createElement('div')
     controller.listTarget.innerHTML = '<div class="comment-item" data-comment-id="21" data-topic-id="2"></div>'
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
 
     const addedTopic = controller.recordRenderedAllTopicWatermarks(
       controller.listTarget.firstElementChild,
@@ -206,7 +207,7 @@ describe('CommentsListController read pointer updates', () => {
   })
 
   test('flushes a pending read pointer update before closing the popup', () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
     controller.resetState = jest.fn()
     controller.listTarget = document.createElement('div')
     controller.markCommentsRead()
@@ -218,7 +219,7 @@ describe('CommentsListController read pointer updates', () => {
   })
 
   test('uses an unload-safe request when disconnecting with a pending read', () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
     controller.listTarget = document.createElement('div')
     document.body.appendChild(controller.listTarget)
     controller.markCommentsRead()
@@ -231,7 +232,7 @@ describe('CommentsListController read pointer updates', () => {
   })
 
   test('flushes a pending read pointer update before switching topics', () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
     controller.resetToLatest = jest.fn()
     controller.markCommentsRead()
 
@@ -242,7 +243,7 @@ describe('CommentsListController read pointer updates', () => {
   })
 
   test('flushes a pending read pointer update before opening another creative', () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
     controller.resetState = jest.fn()
     controller.loadInitialComments = jest.fn()
     controller.listTarget = document.createElement('div')
@@ -256,7 +257,7 @@ describe('CommentsListController read pointer updates', () => {
   })
 
   test('flushes a pending All Messages snapshot before applying a search', () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    global.fetch = jest.fn().mockResolvedValue(successfulResponse())
     controller.renderedAllTopicIds = ['1', '2']
     controller.renderedAllTopicWatermarks = { 1: 20, 2: 21 }
     controller.resetState = jest.fn()

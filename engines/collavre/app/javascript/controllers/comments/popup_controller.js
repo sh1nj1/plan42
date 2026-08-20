@@ -243,7 +243,7 @@ export default class extends Controller {
           // subscriptions survive.
           this.expandDocked()
         } else if (highlightId) {
-          this.open(button, { creativeId, highlightId })
+          this.reloadDockedHighlight(creativeId, highlightId)
         }
         return
       }
@@ -254,6 +254,26 @@ export default class extends Controller {
     const openOptions = { creativeId }
     if (highlightId) openOptions.highlightId = highlightId
     this.open(button, openOptions)
+  }
+
+  reloadDockedHighlight(creativeId, highlightId) {
+    this.openGeneration += 1
+    const listController = this.listController
+    // This direct reload supersedes any full open that is still waiting for
+    // topics. That open will stop at its generation check, so release the
+    // suppression it installed before starting the replacement highlight load.
+    if (listController) listController.suppressTopicChangeLoad = false
+    const existingComment = document.getElementById(`comment_${highlightId}`)
+    if (existingComment && listController?.listTarget?.contains(existingComment)) {
+      listController.highlightComment(highlightId)
+      return
+    }
+
+    listController?.onPopupOpened({
+      creativeId,
+      highlightId,
+      topicId: this.topicsController?.currentTopicId,
+    })
   }
 
   resetDockedToEmpty() {

@@ -16,10 +16,12 @@ en:
       branch_prefix: "Branch"
       main_name: "Main"
       cannot_delete_main: "Cannot delete the Main topic."
+      reserved_name: "This topic name is reserved and cannot be assigned."
       orphaned_cron_notice: "[System] The topic '%{topic_name}' was deleted, but a recurring cron job (%{cron_key}) still targets it and will silently do nothing on each run. Original message: \"%{message}\". Re-point it to another topic or cancel it with cron_cancel."
       create_and_move: 'Create "%{name}" and move'
       move:
         no_target_permission: You don't have write permission on the target creative.
+        source_changed: The topic moved to another creative while this request was waiting. Reload it and try again from its current creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
         session_topic_locked: This topic belongs to a live agent session and cannot be moved.
         primary_agent_released: '@%{agent} was released as primary agent because it has no feedback access in "%{creative}". Share that creative with the agent and assign it again to keep it on this topic.'
@@ -151,6 +153,7 @@ en:
         no_selection: "Select at least one message to branch."
         not_authorized: "You don't have permission to branch messages."
         comments_not_found: "Some selected messages could not be found."
+        approval_action_not_branchable: "Approval prompts cannot be branched."
       batch_delete_confirm: Are you sure you want to delete the selected messages?
       batch_delete_no_selection: Select at least one message to delete.
       batch_delete_not_found: Some selected messages could not be found.

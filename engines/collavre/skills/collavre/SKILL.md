@@ -84,6 +84,40 @@ ops.json format:
 ]
 ```
 
+### Topics and messages
+
+Topics are conversation threads on a Creative — and the unit of agent
+concurrency. Tasks in the same topic are serialized (one runs, the rest queue);
+tasks in different topics run in parallel. There is no dedicated CLI verb yet;
+drive them through `collavre tool run`:
+
+```bash
+# See what topics exist and how much conversation each holds
+collavre tool run topic_list --json '{"creative_id": 8849}'
+
+# Summarize three topics at once — first page only; offset/limit apply per topic
+collavre tool run topic_messages --json '{"topic_ids": "12,45,78", "limit": 100}'
+
+# Continue each topic separately with its own cursor and snapshot id
+collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989:1770000001000000:1770000002000000", "max_message_id": 9931}'
+
+# Continue inside one clipped message, preserving its row cursor
+collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989:1770000001000000:1770000002000000", "content_offset": 28400, "max_message_id": 9931}'
+
+# Fan work out: one topic per unit of work, with an agent pinned to each
+collavre tool run topic_create --json '{"creative_id": 8849, "name": "Research", "primary_agent": "Dev1Claude"}'
+
+# Put a finished thread away (messages are kept and stay readable by id)
+collavre tool run topic_update --json '{"topic_id": 12, "archived": true}'
+
+# Carry the messages that still matter into a fresh topic
+collavre tool run topic_branch --json '{"source_topic_id": 12, "comment_ids": "991,994"}'
+```
+
+`topic_messages` includes each comment image as a URL-bearing marker in the
+message content. Image-only comments are not blank, and a long attachment list
+uses the same `content_offset` continuation as long prose.
+
 ### Discover & run tools (meta)
 ```bash
 collavre tool list                                # list available tools
@@ -97,6 +131,12 @@ collavre tool run <tool_name> --key value         # run with flag args
 ## Key Concepts
 
 - **Tree structure**: Creatives nest via `parent_id`. Use `--level` to control depth.
+- **Topics**: conversation threads on a Creative, and the concurrency unit — same
+  topic serializes, different topics run in parallel. One topic = one thread
+  reaching one conclusion; archive it when it gets there rather than reusing it.
+- **Primary agent**: pinning an agent to a topic is exclusive — that agent alone
+  answers there. Use it for a dedicated 1:1 channel; leave it unset for a thread
+  several participants should hear.
 - **Progress**: Leaf = manual (0.0 or 1.0). Parent = auto-calculated from children.
 - **Import**: Markdown headings/bullets become nested Creatives.
 - **Batch**: All-or-nothing transaction. Requires approval.

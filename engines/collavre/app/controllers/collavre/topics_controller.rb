@@ -1,5 +1,7 @@
 module Collavre
   class TopicsController < ApplicationController
+    rescue_from Topics::TopicMove::SourceChangedError, with: :render_source_changed
+
     include Collavre::CreativePermissionGuard
 
     before_action :set_creative
@@ -270,6 +272,10 @@ module Collavre
 
     private
 
+    def render_source_changed(error)
+      render json: { error: error.message }, status: :forbidden
+    end
+
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
     end
@@ -344,38 +350,21 @@ module Collavre
     end
 
     def generate_next_topic_name
-      prefix = I18n.t("collavre.topics.default_name_prefix")
-      existing_numbers = @creative.topics.active
-        .where("name LIKE ?", "#{Topic.sanitize_sql_like(prefix)}%")
-        .pluck(:name)
-        .filter_map { |n|
-          suffix = n.delete_prefix(prefix)
-          suffix.match?(/\A\d+\z/) ? suffix.to_i : nil
-        }
-
-      next_number = (existing_numbers.max || 0) + 1
-      "#{prefix}#{next_number}"
+      Topics::NextName.for(@creative)
     end
 
+    # Delegated to Topics::Serializer so the topic MCP tools, which broadcast the
+    # same events from outside a request, cannot describe a topic differently
+    # from this controller.
     def topic_json(topic, unread_count: nil)
-      data = topic.slice(:id, :name, :source_topic_id)
-      if topic.primary_agent
-        data[:primary_agent] = agent_json(topic.primary_agent)
-      end
-      data[:agent_locked] = topic.session_id.present?
-      data[:archived_at] = topic.archived_at if topic.archived_at
-      data[:unread_count] = unread_count unless unread_count.nil?
-      data
+      Topics::Serializer.call(topic, unread_count: unread_count)
     end
 
     # Always carries a :primary_agent key, explicitly nil when cleared. The client
     # merges this payload into its cached topic, so an omitted key would leave a
     # stale avatar on screen instead of removing it.
     def topic_json_with_agent(topic, agent)
-      data = topic.slice(:id, :name, :source_topic_id)
-      data[:primary_agent] = agent ? agent_json(agent) : nil
-      data[:agent_locked] = topic.session_id.present?
-      data
+      Topics::Serializer.with_agent(topic, agent)
     end
 
     def agent_json(agent)

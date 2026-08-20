@@ -277,6 +277,24 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
   end
 
+  test "a source changed while waiting for the move lock is forbidden" do
+    target_creative = creatives(:root_parent)
+    failed_move = Object.new
+    failed_move.define_singleton_method(:call) do
+      raise Collavre::Topics::TopicMove::SourceChangedError,
+        I18n.t("collavre.topics.move.source_changed")
+    end
+
+    Collavre::Topics::TopicMove.stub(:new, ->(**) { failed_move }) do
+      patch move_creative_topic_url(@creative, @topic),
+        params: { target_creative_id: target_creative.id }, as: :json
+    end
+
+    assert_response :forbidden
+    assert_includes JSON.parse(response.body).fetch("error"), "moved"
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
   test "moving a topic moves its read pointers with it" do
     target_creative = creatives(:root_parent)
     comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")

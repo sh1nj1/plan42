@@ -26,8 +26,12 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
   end
 
   def focus_checkbox
-    checkbox = find("#{toggle_selector} .progress-toggle-checkbox", visible: :all)
-    page.execute_script("arguments[0].focus()", checkbox)
+    selector = "#{toggle_selector} .progress-toggle-checkbox"
+    assert_selector selector, visible: :all
+    # The PATCH response and broadcast can replace the row between Capybara's
+    # lookup and Selenium's next command. Pass the selector instead of a node so
+    # the browser resolves and focuses the current checkbox atomically.
+    page.execute_script("document.querySelector(arguments[0]).focus()", selector)
     assert checkbox_focused?, "expected the progress checkbox to hold focus"
   end
 

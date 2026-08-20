@@ -1,0 +1,283 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+module Collavre
+  module Tools
+    class TopicUpdateServiceTest < ActiveSupport::TestCase
+      setup do
+        @user = users(:one)
+        @writer = users(:two)
+        @creative = Collavre::Creative.create!(description: "Update Host", user: @user)
+        @topic = @creative.topics.create!(name: "Work", user: @user)
+        @agent = Collavre::User.create!(name: "Worker", email: "worker-#{SecureRandom.hex(4)}@test.test",
+                                        password: "password123", llm_vendor: "google",
+                                        llm_model: "gemini-1.5-flash", searchable: true)
+        Collavre::Current.user = @user
+      end
+
+      teardown { Collavre::Current.user = nil }
+
+      def share!(user, permission)
+        Collavre::CreativeShare.create!(creative: @creative, user: user, permission: permission, shared_by: @user)
+      end
+
+      test "renames a topic and reports what changed" do
+        result = TopicUpdateService.new.call(topic_id: @topic.id, name: "Renamed")
+
+        assert_equal "Renamed", result[:name]
+        assert_equal [ "name" ], result[:changed]
+      end
+
+      test "archives and unarchives" do
+        assert_equal [ "archived" ], TopicUpdateService.new.call(topic_id: @topic.id, archived: true)[:changed]
+        assert @topic.reload.archived?
+
+        TopicUpdateService.new.call(topic_id: @topic.id, archived: false)
+        assert_not @topic.reload.archived?
+      end
+
+      test "the Main topic cannot be renamed or archived" do
+        main_topic = @creative.main_topic
+
+        rename_error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: main_topic.id, name: "Replacement")
+        end
+        archive_error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: main_topic.id, archived: true)
+        end
+
+        assert_includes rename_error.message, "reserved"
+        assert_includes archive_error.message, "reserved"
+        assert_equal Collavre::Creative::MAIN_TOPIC_NAME, main_topic.reload.name
+        assert_not main_topic.archived?
+        assert_equal main_topic.id, @creative.main_topic.id
+      end
+
+      test "an inbox System topic cannot be renamed or archived" do
+        inbox = Collavre::Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })
+        system_topic = inbox.system_topic
+
+        assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: system_topic.id, name: "Notices")
+        end
+        assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: system_topic.id, archived: true)
+        end
+
+        assert_equal Collavre::Creative::SYSTEM_TOPIC_NAME, system_topic.reload.name
+        assert_not system_topic.archived?
+        assert_equal system_topic.id, inbox.system_topic.id
+      end
+
+      test "an ordinary inbox topic cannot take the reserved System name" do
+        inbox = Collavre::Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })
+        ordinary = inbox.topics.create!(name: "Notices", user: @user)
+        assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+
+        error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: ordinary.id,
+                                      name: Collavre::Creative::SYSTEM_TOPIC_NAME, archived: true)
+        end
+
+        assert_includes error.message, "reserved"
+        assert_equal "Notices", ordinary.reload.name
+        assert_not ordinary.archived?
+        assert_not_equal ordinary.id, inbox.system_topic.id
+      end
+
+      test "reserved topics still allow primary agent changes" do
+        main_topic = @creative.main_topic
+        share!(@agent, :feedback)
+
+        result = TopicUpdateService.new.call(topic_id: main_topic.id, primary_agent: @agent.id.to_s)
+
+        assert_equal [ "primary_agent" ], result[:changed]
+        assert_equal @agent.id, main_topic.reload.primary_agent_id
+      end
+
+      test "System is an ordinary mutable name outside an inbox" do
+        system_named = @creative.topics.create!(name: Collavre::Creative::SYSTEM_TOPIC_NAME, user: @user)
+
+        result = TopicUpdateService.new.call(topic_id: system_named.id, name: "Alerts", archived: true)
+
+        assert_equal %w[name archived], result[:changed]
+        assert_equal "Alerts", system_named.reload.name
+        assert system_named.archived?
+      end
+
+      test "an archived topic keeps its messages and stays readable" do
+        Comment.create!(creative: @creative, topic: @topic, user: @user, content: "kept",
+                        skip_default_user: true, skip_dispatch: true)
+        TopicUpdateService.new.call(topic_id: @topic.id, archived: true)
+
+        payload = TopicMessagesService.new.call(topic_ids: @topic.id, format: "json")
+        assert_equal 1, payload[:topics].first[:returned_count]
+      end
+
+      test "pins and clears the primary agent" do
+        share!(@agent, :feedback)
+
+        assert_equal [ "primary_agent" ],
+                     TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: "Worker")[:changed]
+        assert_equal @agent.id, @topic.reload.primary_agent_id
+
+        TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: "none")
+        assert_nil @topic.reload.primary_agent_id
+      end
+
+      test "pins a private agent already shared on the creative" do
+        @agent.update!(searchable: false)
+        share!(@agent, :feedback)
+
+        TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: "Worker")
+
+        assert_equal @agent.id, @topic.reload.primary_agent_id
+      end
+
+      test "several fields change in one call" do
+        share!(@agent, :feedback)
+        result = TopicUpdateService.new.call(topic_id: @topic.id, name: "Done", archived: true,
+                                             primary_agent: "none")
+
+        assert_equal %w[name archived primary_agent], result[:changed]
+      end
+
+      test "refuses to pin an agent without feedback on the creative" do
+        error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: @agent.id.to_s)
+        end
+
+        assert_includes error.message, "no feedback permission"
+        assert_nil @topic.reload.primary_agent_id
+      end
+
+      test "a session topic's agent assignment is locked" do
+        @topic.update!(session_id: "sess-1")
+        share!(@agent, :feedback)
+
+        error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: "Worker")
+        end
+
+        assert_includes error.message, "session topic"
+      end
+
+      test "renaming needs admin, so a writer cannot rename" do
+        share!(@writer, :write)
+        Collavre::Current.user = @writer
+
+        assert_raises(Collavre::Tools::PermissionDeniedError) do
+          TopicUpdateService.new.call(topic_id: @topic.id, name: "Nope")
+        end
+      end
+
+      test "a writer can still archive and pin" do
+        share!(@writer, :write)
+        Collavre::Current.user = @writer
+
+        assert_equal [ "archived" ], TopicUpdateService.new.call(topic_id: @topic.id, archived: true)[:changed]
+      end
+
+      test "reauthorizes after locking a topic moved to an inaccessible creative" do
+        restricted = Collavre::Creative.create!(description: "Restricted", user: @writer)
+        lock_after_move = lambda do
+          @topic.update_column(:creative_id, restricted.id)
+          @topic.reload
+        end
+
+        Collavre::Topic.stub(:find, @topic) do
+          @topic.stub(:lock!, lock_after_move) do
+            assert_raises(Collavre::Tools::PermissionDeniedError) do
+              TopicUpdateService.new.call(topic_id: @topic.id, name: "Unauthorized")
+            end
+          end
+        end
+      end
+
+      test "resolves a requested agent against the locked topic creative" do
+        target = Collavre::Creative.create!(description: "Target", user: @writer)
+        Collavre::CreativeShare.create!(creative: target, user: @user, permission: :write, shared_by: @writer)
+        @agent.update!(searchable: false)
+        share!(@agent, :feedback)
+        lock_after_move = lambda do
+          @topic.update_column(:creative_id, target.id)
+          @topic.reload
+        end
+
+        Collavre::Topic.stub(:find, @topic) do
+          @topic.stub(:lock!, lock_after_move) do
+            assert_raises(Collavre::Topics::AgentResolver::UnknownAgentError) do
+              TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: @agent.id.to_s)
+            end
+          end
+        end
+      end
+
+      test "a reader can do nothing" do
+        share!(@writer, :read)
+        Collavre::Current.user = @writer
+
+        assert_raises(Collavre::Tools::PermissionDeniedError) do
+          TopicUpdateService.new.call(topic_id: @topic.id, archived: true)
+        end
+      end
+
+      test "a call that changes nothing is an error rather than a silent no-op" do
+        error = assert_raises(ArgumentError) { TopicUpdateService.new.call(topic_id: @topic.id) }
+
+        assert_includes error.message, "Nothing to update"
+      end
+
+      test "requires a current user" do
+        Collavre::Current.user = nil
+
+        assert_raises(RuntimeError) { TopicUpdateService.new.call(topic_id: @topic.id, archived: true) }
+      end
+
+      test "broadcasts each change so open clients stay in step" do
+        actions = []
+        Collavre::TopicsChannel.stub(:broadcast_to, ->(_creative, data) { actions << data[:action] }) do
+          TopicUpdateService.new.call(topic_id: @topic.id, name: "Renamed", archived: true)
+        end
+
+        assert_equal %w[updated archived], actions
+      end
+
+      test "a rejected pin rolls back the fields that came before it" do
+        assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: @topic.id, name: "Renamed", archived: true,
+                                      primary_agent: "Worker")
+        end
+
+        @topic.reload
+        assert_equal "Work", @topic.name
+        assert_not @topic.archived?
+      end
+
+      test "a failed call broadcasts nothing" do
+        actions = []
+        Collavre::TopicsChannel.stub(:broadcast_to, ->(_creative, data) { actions << data[:action] }) do
+          assert_raises(ArgumentError) do
+            TopicUpdateService.new.call(topic_id: @topic.id, name: "Renamed", primary_agent: "Worker")
+          end
+        end
+
+        assert_empty actions
+      end
+
+      test "clearing the pin broadcasts an explicit nil so the avatar is removed" do
+        share!(@agent, :feedback)
+        @topic.set_primary_agent!(@agent)
+
+        payload = nil
+        Collavre::TopicsChannel.stub(:broadcast_to, ->(_creative, data) { payload = data }) do
+          TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: "none")
+        end
+
+        assert payload[:topic].key?(:primary_agent)
+        assert_nil payload[:topic][:primary_agent]
+      end
+    end
+  end
+end

@@ -63,6 +63,11 @@ module Collavre
     def perform_move(comments, target_origin, new_topic_id)
       moved_count = 0
       ActiveRecord::Base.transaction do
+        # MessagePage holds the destination topic lock while fixing its
+        # membership anchor. Serialize move-ins on the same row so a comment
+        # cannot be stamped before the snapshot but committed after its reads.
+        Topic.lock.find(new_topic_id)
+
         comments.each do |comment|
           same_creative = comment.creative_id == target_origin.id
           same_topic = comment.topic_id.to_s == new_topic_id.to_s

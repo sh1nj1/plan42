@@ -102,6 +102,7 @@ module Collavre
       # selection cap so full Main history transfers regardless of length.
       main_comment_ids = main.comments
                              .visible_to(creative.user)
+                             .without_approval_action
                              .order(:created_at)
                              .pluck(:id)
 
@@ -113,7 +114,12 @@ module Collavre
           user: creative.user,
           source_topic: main,
           name: DROP_TRIGGER_TOPIC_NAME
-        ).call(comment_ids: main_comment_ids, enforce_limit: false, auto_select: false)
+        ).call(
+          comment_ids: main_comment_ids,
+          enforce_limit: false,
+          auto_select: false,
+          skip_approval_actions: true
+        )
       else
         creative.topics.create!(
           name: DROP_TRIGGER_TOPIC_NAME,

@@ -336,14 +336,19 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creatives_path(id: creative.id)
     assert_selector "#comments-popup[data-creative-id='#{creative.id}']", visible: :visible, wait: 10
+    assert_docked_comments_loaded
     page.execute_script(<<~JS)
       document.querySelector('[data-controller="workspace-tree"]')
         .dataset.persistenceMarker = 'comment-link-mounted';
-      window.Turbo.visit(#{collavre.creative_comment_path(creative, target_comment).to_json}, {
-        action: 'advance',
-        frame: 'creative-workspace-content'
-      });
+      const link = document.createElement('a');
+      link.id = 'same-creative-comment-link';
+      link.href = #{collavre.creative_comment_path(creative, target_comment).to_json};
+      link.dataset.turboFrame = 'creative-workspace-content';
+      link.dataset.turboAction = 'advance';
+      link.textContent = 'Target comment';
+      document.body.appendChild(link);
     JS
+    find("#same-creative-comment-link").click
 
     assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{creative.id}']",
                     visible: :all, wait: 10
@@ -359,6 +364,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creatives_path(id: branch.id)
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}'].is-current", wait: 10
+    assert_docked_comments_loaded
     page.execute_script(<<~JS)
       const link = document.createElement('a');
       link.id = 'inaccessible-workspace-link';
@@ -406,6 +412,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creatives_path(id: leaf.id)
     assert_equal leaf.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+    assert_docked_comments_loaded
 
     leaf.destroy!
     page.execute_script(<<~JS)

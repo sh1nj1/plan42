@@ -29,6 +29,7 @@ class TopicListPopupTest < ApplicationSystemTestCase
     assert_selector "#comments-popup", wait: 5
     # Wait for topics to finish loading (active topic tab appears)
     assert_selector "#comment-topics .topic-tag", text: "Alpha", wait: 10
+    assert_docked_comments_loaded
   end
 
   test "list button opens a searchable popup of active + archived topics" do
@@ -91,9 +92,7 @@ class TopicListPopupTest < ApplicationSystemTestCase
     find("#comments-popup .topic-list-btn").click
     assert_selector "#topic-list-modal", visible: :visible, wait: 5
 
-    assert_equal true, page.evaluate_script(
-      "document.activeElement === document.querySelector('#topic-list-modal input')"
-    )
+    assert_selector "#topic-list-modal input:focus", wait: 5
   end
 
   test "search box stays unfocused on a mobile viewport so the keyboard stays down" do
@@ -105,9 +104,7 @@ class TopicListPopupTest < ApplicationSystemTestCase
     find("#comments-popup .topic-list-btn").click
     assert_selector "#topic-list-modal", visible: :visible, wait: 5
 
-    assert_equal false, page.evaluate_script(
-      "document.activeElement === document.querySelector('#topic-list-modal input')"
-    )
+    assert_no_selector "#topic-list-modal input:focus", wait: 5
   end
 
   test "scrolling down in the topic list keeps the mobile chat open" do
