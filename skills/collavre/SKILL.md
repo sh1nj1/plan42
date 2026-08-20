@@ -95,10 +95,10 @@ drive them through `collavre tool run`:
 # See what topics exist and how much conversation each holds
 collavre tool run topic_list --json '{"creative_id": 8849}'
 
-# Summarize three topics at once — offset/limit apply per topic, newest first
+# Summarize three topics at once — first page only; offset/limit apply per topic
 collavre tool run topic_messages --json '{"topic_ids": "12,45,78", "limit": 100}'
 
-# Page a long topic with the returned next_offset, next_cursor, and snapshot id
+# Continue each topic separately with its own cursor and snapshot id
 collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989:1770000001000000", "max_message_id": 9931}'
 
 # Continue inside one clipped message, preserving its row cursor

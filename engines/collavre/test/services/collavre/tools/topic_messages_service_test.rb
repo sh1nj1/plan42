@@ -71,6 +71,26 @@ module Collavre
         assert_equal 2, entry_for(payload, @b)[:next_offset]
       end
 
+      test "continuation state cannot be shared across multiple topics" do
+        2.times { |i| post(@a, "a#{i}") }
+        2.times { |i| post(@b, "b#{i}") }
+        first = json(topic_ids: [ @a.id, @b.id ], limit: 1)
+        a_page = entry_for(first, @a)
+
+        continuation_options = [
+          { cursor: a_page[:next_cursor] },
+          { max_message_id: a_page[:newest_message_id] },
+          { content_offset: 1 }
+        ]
+
+        continuation_options.each do |options|
+          error = assert_raises(ArgumentError) do
+            json(topic_ids: [ @a.id, @b.id ], limit: 1, **options)
+          end
+          assert_includes error.message, "one topic"
+        end
+      end
+
       test "paging with the returned anchor stays on one snapshot while the topic grows" do
         4.times { |i| post(@a, "m#{i}") }
         first = json(topic_ids: @a.id, limit: 2)

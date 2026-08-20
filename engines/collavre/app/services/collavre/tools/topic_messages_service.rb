@@ -58,6 +58,9 @@ module Tools
       by topic — offset/limit apply to EACH topic, never to a merged timeline.
       Use this to summarize several topics at once, e.g.
       topic_messages(topic_ids: "12,45,78", limit: 100).
+      Multi-topic calls are first-page reads: each topic returns its own cursor
+      and snapshot, so continue each topic in a separate call rather than
+      applying one topic's continuation state to the whole batch.
 
       Every topic reports total_count and total_chars for the whole topic, so
       you can tell how much you have not read yet, plus has_more, next_offset,
@@ -106,11 +109,11 @@ module Tools
 
     tool_param :topic_ids, description: "Topic ids to read. Comma-separated for several, e.g. \"12,45,78\" (max #{TopicSelection::MAX_TOPICS} per call — asking for more is an error, not a silent trim). A single id also works."
     tool_param :offset, description: "How many messages back from the newest to start, applied per topic (default: 0).", required: false
-    tool_param :cursor, description: "Opaque per-topic keyset cursor returned as next_cursor. Pass it on follow-up pages so moved or deleted earlier messages cannot shift and skip unread rows.", required: false
+    tool_param :cursor, description: "Opaque per-topic keyset cursor returned as next_cursor. Pass it on a single-topic follow-up page so moved or deleted earlier messages cannot shift and skip unread rows.", required: false
     tool_param :limit, description: "Messages per topic (default: #{Topics::MessagePage::DEFAULT_LIMIT}, max #{Topics::MessagePage::MAX_LIMIT}).", required: false
     tool_param :order, description: "Rendering order within the returned window: 'asc' (default, oldest-to-newest — reads as a transcript) or 'desc' (newest first). Does not change which messages the window selects.", required: false, enum: Topics::MessagePage::ORDERS
-    tool_param :max_message_id, description: "Only consider messages with id <= this. Pass the newest_message_id from your first page on every follow-up page so paging stays on one snapshot of a live topic.", required: false
-    tool_param :content_offset, description: "Character offset within the first selected message (default: 0). For a clipped message, repeat next_offset and next_cursor, and pass next_content_offset here with the same max_message_id until the whole row has been returned.", required: false
+    tool_param :max_message_id, description: "Only consider messages with id <= this. Pass the newest_message_id from your first page on every single-topic follow-up page so paging stays on one snapshot of a live topic.", required: false
+    tool_param :content_offset, description: "Character offset within the first selected message (default: 0). For a clipped message, make a single-topic follow-up that repeats next_offset and next_cursor, and pass next_content_offset here with the same max_message_id until the whole row has been returned.", required: false
     tool_param :include_system, description: "Include authorless system notices such as concurrency and channel announcements (default: false). Approval prompts are never returned.", required: false
     tool_param :max_chars, description: "Character cap for the whole response across all topics, measured in the format you requested (default: #{DEFAULT_MAX_CHARS}, min #{MIN_MAX_CHARS}, max #{MAX_MAX_CHARS}). Values below the minimum are raised to it.", required: false
     tool_param :format, description: "'markdown' (default, compact transcript) or 'json' (same data, structured; costs noticeably more of max_chars for the same messages, since field names and string escaping are charged too).", required: false, enum: Topics::CharBudget::FORMATS
@@ -128,6 +131,7 @@ module Tools
       user = Current.user || raise("Current.user is required")
       ids = IdList.parse(topic_ids)
       raise ArgumentError, "topic_ids is required" if ids.empty?
+      reject_batch_continuation!(ids, options)
 
       # The cap and the format it counts in are resolved together and carried
       # through as one object, because what a message costs is what emitting it
@@ -145,6 +149,16 @@ module Tools
     end
 
     private
+
+    def reject_batch_continuation!(ids, options)
+      return if ids.one?
+      return unless options[:cursor].present? || options[:max_message_id].present? ||
+        options[:content_offset].to_i.positive?
+
+      raise ArgumentError,
+        "cursor, max_message_id, and content_offset continuation values belong to one topic; " \
+        "continue each topic in a separate topic_messages call."
+    end
 
     def page_options(options, budget)
       {
