@@ -29,15 +29,28 @@ module Collavre
       # already returned can leave the topic without shifting unread survivors
       # ahead of a numeric offset.
       def for(topic, user:, include_system: false, max_message_id: nil)
-        for_ids([ topic.id ], user: user, include_system: include_system, max_message_id: max_message_id)
+        for_topics([ topic ], user: user, include_system: include_system, max_message_id: max_message_id)
       end
 
-      # Same rules across many topics at once, for the grouped totals query.
-      def for_ids(topic_ids, user:, include_system: false, max_message_id: nil)
-        scope = Comment.where(topic_id: topic_ids).visible_to(user).without_approval_action
+      # Pair every topic id with the creative that was authorized. TopicMove
+      # preserves the topic id while relocating all of its comments, so an
+      # id-only query could read the destination creative after the permission
+      # check. The exact pair also avoids cross-topic matches in batch totals.
+      def for_topics(topics, user:, include_system: false, max_message_id: nil)
+        membership = topic_membership(topics)
+        return Comment.none unless membership
+
+        scope = Comment.where(membership).visible_to(user).without_approval_action
         scope = scope.where.not(user_id: nil) unless include_system
         scope = scope.where("comments.id <= ?", max_message_id) if max_message_id
         scope
+      end
+
+      def topic_membership(topics)
+        table = Comment.arel_table
+        Array(topics).map do |topic|
+          table[:topic_id].eq(topic.id).and(table[:creative_id].eq(topic.creative_id))
+        end.reduce { |combined, pair| combined.or(pair) }
       end
     end
   end

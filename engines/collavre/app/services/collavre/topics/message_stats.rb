@@ -36,8 +36,8 @@ module Collavre
         topics = Array(topics)
         return {} if topics.empty?
 
-        scope = MessageScope.for_ids(
-          topics.map(&:id), user: user, include_system: include_system, max_message_id: max_message_id
+        scope = MessageScope.for_topics(
+          topics, user: user, include_system: include_system, max_message_id: max_message_id
         )
         rows = grouped_rows(scope)
         attachment_chars = attachment_chars_by_topic(scope)

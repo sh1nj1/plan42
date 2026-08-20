@@ -432,6 +432,25 @@ module Collavre
         assert_equal [ { topic_id: @a.id, error: "Topic not found or not readable" } ], payload[:topics]
       end
 
+      test "a topic moved after authorization cannot expose its destination messages" do
+        post(@a, "secret after move")
+        restricted = Creative.create!(description: "Restricted", user: @stranger)
+        service = TopicMessagesService.new
+        collect = service.method(:collect)
+        move_before_collect = lambda do |topics, errors, user, options|
+          Topics::TopicMove.new(topic: @a, target_creative: restricted).call
+          collect.call(topics, errors, user, options)
+        end
+
+        payload = service.stub(:collect, move_before_collect) do
+          service.call(topic_ids: @a.id, format: "json")
+        end
+
+        assert_equal 0, entry_for(payload, @a)[:returned_count]
+        assert_empty entry_for(payload, @a)[:messages]
+        assert_equal restricted.id, @a.reload.creative_id
+      end
+
       # Trimming to the cap returned a response that looked complete — every
       # topic present, each one in full — while whole conversations were absent
       # with nothing in the payload to say so. A caller told to summarize all of
