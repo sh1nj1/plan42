@@ -132,6 +132,7 @@ Read messages from one or more topics, newest first, with paging.
 |-------|------|----------|---------|-------------|
 | `topic_ids` | String | **Yes** | — | `"12,45,78"` (max 20 per call); a single id also works |
 | `offset` | Integer | No | 0 | Messages back from the newest, **per topic** |
+| `cursor` | String | No | — | Opaque per-topic keyset cursor returned as `next_cursor` |
 | `limit` | Integer | No | 50 | Messages **per topic** (max 200) |
 | `order` | String | No | `"asc"` | Rendering order in the window: `asc` (transcript) or `desc` |
 | `max_message_id` | Integer | No | — | Snapshot anchor: only messages with `id <=` this |
@@ -146,20 +147,21 @@ messages it contains. With several topics, `offset`/`limit` apply to **each topi
 independently** and results are grouped per topic — never merged into one
 timeline, so an offset stays reproducible.
 
-**Paging a long topic.** Take `newest_message_id` from the first page and pass it
-as `max_message_id` on every later page. Without it, messages arriving mid-read
-shift rows down and you re-read one message while never seeing another.
+**Paging a long topic.** Take `newest_message_id` and `next_cursor` from the
+first page and pass them as `max_message_id` and `cursor` on every later page.
+The snapshot excludes later arrivals; the keyset cursor prevents already-read
+messages that are moved or deleted from shifting unread rows past the offset.
 
 ```
 topic_messages(topic_ids: "12,45,78", limit: 100)          # summarize three topics
-topic_messages(topic_ids: 12, offset: 100, max_message_id: 9931)  # next page
-topic_messages(topic_ids: 12, offset: 100, content_offset: 28400, max_message_id: 9931)  # clipped tail
+topic_messages(topic_ids: 12, offset: 100, cursor: "1770000000000000:9820", max_message_id: 9931)  # next page
+topic_messages(topic_ids: 12, offset: 100, cursor: "1770000000000000:9820", content_offset: 28400, max_message_id: 9931)  # clipped tail
 ```
 
 **Returns (json):** `{ topics[], truncated, max_chars }`. Each topic entry:
 `topic_id`, `topic_name`, `creative_id`, `total_count`, `total_chars`, `offset`,
 `limit`, `returned_count`, `returned_chars`, `has_more`, `next_offset`,
-`next_content_offset`, `newest_message_id`, `messages[]`, and `budget_limited`
+`next_cursor`, `next_content_offset`, `newest_message_id`, `messages[]`, and `budget_limited`
 when `max_chars` (rather than `limit`) ended the window. Each message: `id`,
 `author`, `author_id`, `agent`, `created_at`, `content` (plain text plus one
 URL-bearing metadata marker per image attachment), plus content range fields
@@ -181,13 +183,14 @@ A single message wider than the whole `max_chars` cap is clipped rather than
 dropped — dropping it would return an empty page at an offset that has rows and
 the caller would page against it forever. A clipped row keeps `next_offset` on
 the same message and returns `next_content_offset`; pass both values with the
-same `max_message_id` until `next_content_offset` disappears. Only then is the
-message row consumed. The clip notice is separate from `content`, so JSON
-callers can concatenate fragments without stripping tool text.
+same `next_cursor` and `max_message_id` until `next_content_offset` disappears.
+Only then is the message row consumed. The clip notice is separate from
+`content`, so JSON callers can concatenate fragments without stripping tool
+text.
 
 Markdown `More:` calls repeat the resolved `limit` and `max_chars` alongside
-the snapshot, content offset, order, and system-message scope. Following the
-generated call therefore keeps the same page size and context budget.
+the cursor, snapshot, content offset, order, and system-message scope. Following
+the generated call therefore keeps the same page size and context budget.
 
 Asking for more than 20 topics in one call is an error, not a silent trim — the
 ids past the cap were never read, so there would be no per-topic entry to say

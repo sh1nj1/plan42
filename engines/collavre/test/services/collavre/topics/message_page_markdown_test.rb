@@ -10,7 +10,7 @@ module Collavre
           topic_id: 12, topic_name: "Planning", creative_id: 7,
           total_count: 130, total_chars: 4200,
           offset: 0, limit: 2, max_chars: 1_000, returned_count: 2, returned_chars: 20,
-          has_more: true, next_offset: 2, newest_message_id: 991,
+          has_more: true, next_offset: 2, next_cursor: "1770000000000000:989", newest_message_id: 991,
           messages: [
             { id: 990, created_at: "2026-08-19T10:00:00Z", author: "One", agent: false, content: "first" },
             { id: 991, created_at: "2026-08-19T10:01:00Z", author: "Bot", agent: true, content: "second" }
@@ -30,7 +30,8 @@ module Collavre
         output = MessagePageMarkdown.call({ topics: [ entry ], truncated: false })
 
         assert_includes output,
-                        "topic_messages(topic_ids: 12, offset: 2, max_message_id: 991, limit: 2, max_chars: 1000)"
+                        "topic_messages(topic_ids: 12, offset: 2, cursor: \"1770000000000000:989\", " \
+                          "max_message_id: 991, limit: 2, max_chars: 1000)"
       end
 
       test "spells out the content continuation without consuming the clipped row" do
@@ -38,7 +39,9 @@ module Collavre
           { topics: [ entry(next_offset: 0, next_content_offset: 320) ], truncated: true }
         )
 
-        assert_includes output, "offset: 0, max_message_id: 991, limit: 2, max_chars: 1000, content_offset: 320"
+        assert_includes output,
+                        "offset: 0, cursor: \"1770000000000000:989\", max_message_id: 991, " \
+                          "limit: 2, max_chars: 1000, content_offset: 320"
       end
 
       test "repeats newest-first rendering order in the continuation" do

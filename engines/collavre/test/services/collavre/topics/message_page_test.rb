@@ -71,6 +71,7 @@ module Collavre
 
         assert_not result.has_more?
         assert_nil result.next_offset
+        assert_nil result.next_cursor
       end
 
       test "excludes private comments the reader is not party to" do
@@ -110,6 +111,55 @@ module Collavre
         assert_equal %w[m2 m1], result.messages.map { |m| m[:content] }
         assert_equal 3, result.total_count
         assert_equal anchor, result.newest_message_id
+      end
+
+      test "cursor does not skip remaining rows when an earlier row leaves the topic" do
+        comments = 5.times.map { |i| post("m#{i}") }
+        first = page(limit: 2, order: "desc")
+
+        comments.last.update!(topic: @creative.topics.create!(name: "Moved", user: @user))
+        second = page(
+          limit: 2, order: "desc", offset: first.next_offset,
+          max_message_id: first.newest_message_id, cursor: first.next_cursor
+        )
+
+        assert_equal %w[m4 m3], first.messages.map { |message| message[:content] }
+        assert_equal %w[m2 m1], second.messages.map { |message| message[:content] }
+      end
+
+      test "cursor follows created_at and id ordering rather than id alone" do
+        oldest = post("oldest")
+        newest = post("newest")
+        middle = post("middle")
+        base = Time.current.change(usec: 0)
+        oldest.update_column(:created_at, base)
+        newest.update_column(:created_at, base + 2.seconds)
+        middle.update_column(:created_at, base + 1.second)
+
+        first = page(limit: 1, order: "desc")
+        second = page(
+          limit: 1, order: "desc", offset: first.next_offset,
+          max_message_id: first.newest_message_id, cursor: first.next_cursor
+        )
+
+        assert_operator middle.id, :>, newest.id
+        assert_equal "newest", first.messages.first[:content]
+        assert_equal "middle", second.messages.first[:content]
+      end
+
+      test "content continuation keeps its cursor on the clipped row" do
+        post("older")
+        post("x" * 5_000)
+
+        first = page(limit: 1, char_budget: 300, order: "desc")
+        second = page(
+          limit: 1, char_budget: 300, order: "desc",
+          offset: first.next_offset, max_message_id: first.newest_message_id,
+          cursor: first.next_cursor, content_offset: first.next_content_offset
+        )
+
+        assert_equal first.messages.first[:id], second.messages.first[:id]
+        assert_equal first.next_cursor, second.next_cursor
       end
 
       test "newest_message_id reports the topic's newest id when unpinned" do
@@ -293,6 +343,12 @@ module Collavre
 
         assert_equal 0, result.offset
         assert_equal %w[m0 m1], result.messages.map { |m| m[:content] }
+      end
+
+      test "rejects a malformed cursor" do
+        error = assert_raises(ArgumentError) { page(cursor: "not-a-cursor") }
+
+        assert_equal "cursor is invalid", error.message
       end
 
       # The anchor is what makes an unanchored first page safe to paginate from.

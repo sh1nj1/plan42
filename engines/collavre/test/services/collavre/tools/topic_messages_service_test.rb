@@ -74,13 +74,30 @@ module Collavre
       test "paging with the returned anchor stays on one snapshot while the topic grows" do
         4.times { |i| post(@a, "m#{i}") }
         first = json(topic_ids: @a.id, limit: 2)
-        anchor = entry_for(first, @a)[:newest_message_id]
+        first_entry = entry_for(first, @a)
 
         post(@a, "arrived mid-read")
-        second = json(topic_ids: @a.id, limit: 2, offset: 2, max_message_id: anchor)
+        second = json(
+          topic_ids: @a.id, limit: 2, offset: first_entry[:next_offset],
+          cursor: first_entry[:next_cursor], max_message_id: first_entry[:newest_message_id]
+        )
 
         assert_equal %w[m0 m1], entry_for(second, @a)[:messages].map { |m| m[:content] }
         assert_not entry_for(second, @a)[:has_more]
+      end
+
+      test "paging cursor survives a returned message moving to another topic" do
+        comments = 5.times.map { |i| post(@a, "m#{i}") }
+        first = json(topic_ids: @a.id, limit: 2, order: "desc")
+        first_entry = entry_for(first, @a)
+
+        comments.last.update!(topic: @b)
+        second = json(
+          topic_ids: @a.id, limit: 2, order: "desc", offset: first_entry[:next_offset],
+          cursor: first_entry[:next_cursor], max_message_id: first_entry[:newest_message_id]
+        )
+
+        assert_equal %w[m2 m1], entry_for(second, @a)[:messages].map { |message| message[:content] }
       end
 
       test "order desc renders the window newest-first without changing which messages it selects" do

@@ -24,11 +24,10 @@ module Collavre
       # comment belongs to its author and approver, and a tool must not be the
       # way around that.
       #
-      # max_message_id freezes the window. Newest-first offset pagination drifts
-      # when the topic is live — a message posted between page 1 and page 2
-      # shifts every later row down one, so the caller re-reads one message and
-      # never sees another. Passing back the newest_message_id from the first
-      # page pins every subsequent page to the same snapshot.
+      # max_message_id excludes rows created after the first page. MessagePage's
+      # keyset cursor separately protects the other direction of drift: rows
+      # already returned can leave the topic without shifting unread survivors
+      # ahead of a numeric offset.
       def for(topic, user:, include_system: false, max_message_id: nil)
         for_ids([ topic.id ], user: user, include_system: include_system, max_message_id: max_message_id)
       end

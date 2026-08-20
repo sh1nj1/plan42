@@ -39,7 +39,7 @@ module Tools
     # plus their delimiters — around 285 characters measured, against the two
     # lines markdown prints — so the reserve is per format rather than one
     # constant that is right for one of them and wrong for the other.
-    TOPIC_HEADER_CHARS = { "markdown" => 250, "json" => 425 }.freeze
+    TOPIC_HEADER_CHARS = { "markdown" => 300, "json" => 475 }.freeze
 
     # The trailing "output hit max_chars" notice, which only exists when the
     # budget ran out and so cannot be paid for out of what is left of it.
@@ -60,19 +60,21 @@ module Tools
       topic_messages(topic_ids: "12,45,78", limit: 100).
 
       Every topic reports total_count and total_chars for the whole topic, so
-      you can tell how much you have not read yet, plus has_more and next_offset
-      for the next call. Pass the returned newest_message_id back as
-      max_message_id on follow-up pages: it pins paging to a snapshot, so
-      messages arriving mid-read cannot shift rows between pages.
+      you can tell how much you have not read yet, plus has_more, next_offset,
+      and next_cursor for the next call. Pass next_cursor and the returned
+      newest_message_id back on follow-up pages. The snapshot id excludes later
+      arrivals; the cursor keeps paging stable when earlier rows are moved or
+      deleted.
 
       If one message is too large for the response cap, its row remains at the
       same next_offset and next_content_offset identifies the next character to
-      read. Repeat both values with the snapshot id until next_content_offset is
-      absent; only then has that message row been consumed.
+      read. Repeat those values with next_cursor and the snapshot id until
+      next_content_offset is absent; only then has that message row been
+      consumed.
 
       Markdown "More:" calls repeat the resolved limit and max_chars as well
-      as the snapshot, order, scope, and content offset, so following one keeps
-      the same context budget and paging semantics.
+      as the cursor, snapshot, order, scope, and content offset, so following
+      one keeps the same context budget and paging semantics.
 
       Image attachments are appended to message content as explicit markers
       with filename, content type, byte size, and a readable public-asset URL.
@@ -91,7 +93,7 @@ module Tools
       error instead of exceeding max_chars or silently omitting a topic.
 
       Long topics: call topic_list first to see message_count, then page. To
-      summarize a whole large topic, page from offset 0 upward, keeping
+      summarize a whole large topic, follow next_cursor while keeping
       max_message_id fixed, until has_more is false.
 
       Requires read permission on each topic's creative. Private messages you
@@ -102,10 +104,11 @@ module Tools
 
     tool_param :topic_ids, description: "Topic ids to read. Comma-separated for several, e.g. \"12,45,78\" (max #{TopicSelection::MAX_TOPICS} per call — asking for more is an error, not a silent trim). A single id also works."
     tool_param :offset, description: "How many messages back from the newest to start, applied per topic (default: 0).", required: false
+    tool_param :cursor, description: "Opaque per-topic keyset cursor returned as next_cursor. Pass it on follow-up pages so moved or deleted earlier messages cannot shift and skip unread rows.", required: false
     tool_param :limit, description: "Messages per topic (default: #{Topics::MessagePage::DEFAULT_LIMIT}, max #{Topics::MessagePage::MAX_LIMIT}).", required: false
     tool_param :order, description: "Rendering order within the returned window: 'asc' (default, oldest-to-newest — reads as a transcript) or 'desc' (newest first). Does not change which messages the window selects.", required: false, enum: Topics::MessagePage::ORDERS
     tool_param :max_message_id, description: "Only consider messages with id <= this. Pass the newest_message_id from your first page on every follow-up page so paging stays on one snapshot of a live topic.", required: false
-    tool_param :content_offset, description: "Character offset within the first message selected by offset (default: 0). For a clipped message, repeat next_offset and pass next_content_offset here with the same max_message_id until the whole row has been returned.", required: false
+    tool_param :content_offset, description: "Character offset within the first selected message (default: 0). For a clipped message, repeat next_offset and next_cursor, and pass next_content_offset here with the same max_message_id until the whole row has been returned.", required: false
     tool_param :include_system, description: "Include authorless system notices such as concurrency and channel announcements (default: false). Approval prompts are never returned.", required: false
     tool_param :max_chars, description: "Character cap for the whole response across all topics, measured in the format you requested (default: #{DEFAULT_MAX_CHARS}, min #{MIN_MAX_CHARS}, max #{MAX_MAX_CHARS}). Values below the minimum are raised to it.", required: false
     tool_param :format, description: "'markdown' (default, compact transcript) or 'json' (same data, structured; costs noticeably more of max_chars for the same messages, since field names and string escaping are charged too).", required: false, enum: Topics::CharBudget::FORMATS
@@ -118,7 +121,7 @@ module Tools
     end
     def call(topic_ids:, **options)
       options.assert_valid_keys(
-        :offset, :limit, :order, :max_message_id, :content_offset, :include_system, :max_chars, :format
+        :offset, :limit, :order, :cursor, :max_message_id, :content_offset, :include_system, :max_chars, :format
       )
       user = Current.user || raise("Current.user is required")
       ids = IdList.parse(topic_ids)
@@ -144,6 +147,7 @@ module Tools
     def page_options(options, budget)
       {
         offset: options.fetch(:offset, 0).to_i,
+        cursor: options[:cursor],
         limit: options[:limit],
         order: options[:order],
         max_message_id: options[:max_message_id],
@@ -184,7 +188,7 @@ module Tools
       served = false
 
       topics.map do |topic|
-        next not_fetched(topic, options[:offset], options[:content_offset], served) if remaining <= 0
+        next not_fetched(topic, options[:offset], options[:content_offset], options[:cursor], served) if remaining <= 0
 
         entry = page_entry(topic, user, options, remaining)
         remaining -= entry[:billed_chars].to_i
@@ -210,7 +214,7 @@ module Tools
         topic: topic, user: user,
         offset: options[:offset], limit: options[:limit], order: options[:order] || Topics::MessagePage::DEFAULT_ORDER,
         include_system: options[:include_system], max_message_id: options[:max_message_id],
-        content_offset: options[:content_offset],
+        content_offset: options[:content_offset], cursor: options[:cursor],
         budget: options[:budget].with(chars: remaining)
       ).call
 
@@ -235,6 +239,7 @@ module Tools
         billed_chars: page.billed_chars,
         has_more: page.has_more?,
         next_offset: page.next_offset,
+        next_cursor: page.next_cursor,
         next_content_offset: page.next_content_offset,
         newest_message_id: page.newest_message_id,
         # Echoed so the rendered "More:" line can repeat it. A continuation
@@ -259,7 +264,7 @@ module Tools
     # The reason distinguishes the two ways to run out of room, because the
     # fixes differ: drop topics from the call, or raise the cap. Blaming
     # "earlier topics" when this was the first one sends the caller the wrong way.
-    def not_fetched(topic, offset, content_offset, served)
+    def not_fetched(topic, offset, content_offset, cursor, served)
       reason = if served
         "max_chars budget spent on earlier topics"
       else
@@ -277,6 +282,7 @@ module Tools
         billed_chars: 0,
         has_more: true,
         next_offset: offset,
+        next_cursor: cursor.presence,
         skipped_reason: reason,
         messages: []
       }

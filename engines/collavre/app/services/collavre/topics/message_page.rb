@@ -25,7 +25,7 @@ module Collavre
       Page = Struct.new(
         :topic, :total_count, :total_chars, :offset, :limit,
         :messages, :newest_message_id, :budget_exhausted, :budget,
-        :content_offset, :order,
+        :content_offset, :order, :next_cursor,
         keyword_init: true
       ) do
         def returned_count = messages.size
@@ -41,15 +41,15 @@ module Collavre
 
         def next_content_offset
           messages.filter_map { |message| message[:next_content_offset] }.first ||
-            (content_offset if messages.empty? && offset < total_count)
+            (content_offset if messages.empty? && next_cursor.present?)
         end
 
         # A clipped row is not consumed. The next call stays on the same row
         # and advances inside its content; only a complete row advances offset.
-        def has_more? = next_content_offset.present? || (offset + returned_count) < total_count
+        def has_more? = next_cursor.present?
 
         def next_offset
-          return offset if next_content_offset.present?
+          return offset if next_content_offset.present? || (messages.empty? && has_more?)
 
           has_more? ? offset + returned_count : nil
         end
@@ -59,7 +59,7 @@ module Collavre
       # CharBudget for why those cannot be separate arguments.
       def initialize(topic:, user:, **options)
         options.assert_valid_keys(
-          :offset, :limit, :order, :include_system, :max_message_id, :content_offset, :budget
+          :offset, :limit, :order, :include_system, :max_message_id, :content_offset, :cursor, :budget
         )
         @topic = topic
         @user = user
@@ -69,6 +69,7 @@ module Collavre
         @include_system = options.fetch(:include_system, false)
         @max_message_id = options[:max_message_id]
         @content_offset = [ options.fetch(:content_offset, 0).to_i, 0 ].max
+        @cursor = decode_cursor(options[:cursor])
         @budget = options.fetch(:budget, CharBudget.new)
       end
 
@@ -77,7 +78,9 @@ module Collavre
         stat = MessageStats.for(
           [ @topic ], user: @user, include_system: @include_system, max_message_id: @max_message_id
         ).fetch(@topic.id)
-        messages = within_budget(fetch_window)
+        window = fetch_window
+        messages = within_budget(serialize_window(window.first(@limit)))
+        next_cursor = encode_cursor(next_candidate(window, messages))
 
         Page.new(
           topic: @topic,
@@ -87,9 +90,10 @@ module Collavre
           limit: @limit,
           messages: @order == "asc" ? messages.reverse : messages,
           newest_message_id: @max_message_id,
-          budget_exhausted: budget_exhausted?(messages, stat),
+          budget_exhausted: budget_exhausted?(messages, next_cursor),
           content_offset: @content_offset,
           order: @order,
+          next_cursor: next_cursor,
           budget: @budget
         )
       end
@@ -126,11 +130,60 @@ module Collavre
       # clock tick would otherwise order arbitrarily, and an unstable sort makes
       # offset pagination drop and repeat rows across pages.
       def fetch_window
-        scope.includes(:user, images_attachments: :blob)
-             .order(created_at: :desc, id: :desc)
-             .offset(@offset)
-             .limit(@limit)
-             .map.with_index { |comment, index| serialize(comment, content_offset: index.zero? ? @content_offset : 0) }
+        relation = scope.includes(:user, images_attachments: :blob)
+                        .order(created_at: :desc, id: :desc)
+        relation = after_cursor(relation) if @cursor
+        relation = relation.offset(@offset) unless @cursor
+        relation.limit(@limit + 1).to_a
+      end
+
+      def serialize_window(comments)
+        comments.map.with_index do |comment, index|
+          serialize(comment, content_offset: index.zero? ? @content_offset : 0)
+        end
+      end
+
+      # The cursor names the first row not yet consumed, inclusively. This is
+      # what makes it survive that row itself being deleted or moved: the same
+      # ordered boundary still selects every older surviving row. During a
+      # clipped-row continuation it names the current row instead.
+      def next_candidate(window, messages)
+        return window.first if messages.empty? || messages.first[:clipped]
+
+        window[messages.length]
+      end
+
+      def after_cursor(relation)
+        relation.where(
+          "comments.created_at < :created_at OR " \
+            "(comments.created_at = :created_at AND comments.id <= :id)",
+          created_at: @cursor.fetch(:created_at), id: @cursor.fetch(:id)
+        )
+      end
+
+      def encode_cursor(comment)
+        return unless comment
+
+        micros = (comment.created_at.to_r * 1_000_000).to_i
+        "#{micros}:#{comment.id}"
+      end
+
+      def decode_cursor(value)
+        return if value.blank?
+
+        match = /\A(\d{1,20}):(\d{1,20})\z/.match(value.to_s)
+        raise ArgumentError, "cursor is invalid" unless match
+
+        micros = Integer(match[1], 10)
+        id = Integer(match[2], 10)
+        raise ArgumentError, "cursor is invalid" unless micros.positive? && id.positive?
+
+        {
+          created_at: Time.at(micros / 1_000_000, micros % 1_000_000, :microsecond).utc,
+          id: id
+        }
+      rescue RangeError
+        raise ArgumentError, "cursor is invalid"
       end
 
       # Trims the newest-first window to the character budget. A message that
@@ -250,11 +303,11 @@ module Collavre
         end.join("\n")
       end
 
-      def budget_exhausted?(messages, stat)
+      def budget_exhausted?(messages, next_cursor)
         return false if @budget.unlimited?
 
         messages.any? { |message| message[:clipped] } ||
-          (messages.size < @limit && (@offset + messages.size) < stat.count)
+          (messages.size < @limit && next_cursor.present?)
       end
 
       def clamp_limit(limit)
