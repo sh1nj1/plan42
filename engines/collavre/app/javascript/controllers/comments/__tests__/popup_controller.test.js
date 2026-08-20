@@ -330,6 +330,51 @@ describe('CommentsPopupController', () => {
         })
     })
 
+    test('same-creative deep links clear suppression from a canceled pending open', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        let finishTopicsLoad
+        const listController = {
+            creativeId: null,
+            suppressTopicChangeLoad: false,
+            onPopupOpened: jest.fn(),
+            onPopupClosed: jest.fn(),
+        }
+        const topicsController = {
+            clearOverrideTopicId: jest.fn(),
+            currentTopicId: '7',
+            onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+            onPopupClosed: jest.fn(),
+        }
+        Object.defineProperty(controller, 'listController', { configurable: true, value: listController })
+        Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+
+        const pendingOpen = controller.open(triggerBtn)
+        await Promise.resolve()
+        expect(listController.suppressTopicChangeLoad).toBe(true)
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        const suppressionAfterReload = listController.suppressTopicChangeLoad
+        expect(listController.onPopupOpened).toHaveBeenCalledWith({
+            creativeId: '123',
+            highlightId: '456',
+            topicId: '7',
+        })
+
+        finishTopicsLoad()
+        await pendingOpen
+        expect(suppressionAfterReload).toBe(false)
+    })
+
     test('same-creative workspace deep links highlight an already loaded comment without reloading', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')
