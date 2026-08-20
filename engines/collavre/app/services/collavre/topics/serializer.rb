@@ -28,11 +28,34 @@ module Collavre
         data
       end
 
-      # Avatar URLs are built by a view helper, so reach it through the
-      # controller's helper proxy rather than duplicating the variant/asset
-      # fallback logic here.
+      # Matches ApplicationHelper#user_json's shape, but resolves the avatar
+      # itself. user_json reaches main_app.url_for, which needs the request that
+      # only the controller path has — the MCP tools broadcast this same event
+      # from outside one, and calling it there raises NameError. An attached
+      # avatar therefore resolves to a path, the way CreativesChannel already
+      # does for its out-of-request broadcasts; the client is same-origin, so a
+      # path merges into the sidebar the same as an absolute URL did.
+      AVATAR_SIZE = 20
+
       def agent_json(agent)
-        ::ApplicationController.helpers.user_json(agent)
+        {
+          id: agent.id,
+          name: agent.display_name,
+          avatar_url: avatar_url_for(agent),
+          default_avatar: !agent.avatar.attached? && agent.avatar_url.blank?,
+          initial: agent.display_name&.at(0)&.upcase || "?"
+        }
+      end
+
+      def avatar_url_for(agent)
+        if agent.avatar.attached?
+          variant = agent.avatar.variant(resize_to_fill: [ AVATAR_SIZE, AVATAR_SIZE ])
+          ::Rails.application.routes.url_helpers.rails_representation_path(variant, only_path: true)
+        elsif agent.avatar_url.present?
+          agent.avatar_url
+        else
+          ::ApplicationController.helpers.asset_path("default_avatar.svg")
+        end
       end
 
       # The compact shape the MCP tools return. Deliberately not the broadcast

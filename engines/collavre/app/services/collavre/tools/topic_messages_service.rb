@@ -28,7 +28,12 @@ module Tools
     # or, if it does not fit, its not-fetched notice, which is about the same
     # size. Charged separately from the messages so that a call for many topics
     # cannot overrun the cap on section furniture alone.
-    TOPIC_HEADER_CHARS = 200
+    #
+    # json restates the same section as the seventeen keys of the entry hash
+    # plus their delimiters — around 285 characters measured, against the two
+    # lines markdown prints — so the reserve is per format rather than one
+    # constant that is right for one of them and wrong for the other.
+    TOPIC_HEADER_CHARS = { "markdown" => 200, "json" => 400 }.freeze
 
     # The trailing "output hit max_chars" notice, which only exists when the
     # budget ran out and so cannot be paid for out of what is left of it.
@@ -54,11 +59,13 @@ module Tools
       max_message_id on follow-up pages: it pins paging to a snapshot, so
       messages arriving mid-read cannot shift rows between pages.
 
-      The response is capped at max_chars in total. A topic that does not fit is
-      returned partially or marked not-fetched rather than silently trimmed —
-      check "truncated" and each topic's next_offset. A single message wider
-      than the whole cap is clipped rather than dropped, marked in its text and
-      counted in the topic's clipped_count.
+      The response is capped at max_chars in total, measured against the format
+      you asked for — json is charged for its field names and string escaping,
+      so the same call returns fewer messages as json than as markdown. A topic
+      that does not fit is returned partially or marked not-fetched rather than
+      silently trimmed — check "truncated" and each topic's next_offset. A
+      single message wider than the whole cap is clipped rather than dropped,
+      marked in its text and counted in the topic's clipped_count.
 
       Long topics: call topic_list first to see message_count, then page. To
       summarize a whole large topic, page from offset 0 upward, keeping
@@ -76,8 +83,8 @@ module Tools
     tool_param :order, description: "Rendering order within the returned window: 'asc' (default, oldest-to-newest — reads as a transcript) or 'desc' (newest first). Does not change which messages the window selects.", required: false, enum: Topics::MessagePage::ORDERS
     tool_param :max_message_id, description: "Only consider messages with id <= this. Pass the newest_message_id from your first page on every follow-up page so paging stays on one snapshot of a live topic.", required: false
     tool_param :include_system, description: "Include authorless system notices such as concurrency and channel announcements (default: false). Approval prompts are never returned.", required: false
-    tool_param :max_chars, description: "Character cap for the whole response across all topics (default: #{DEFAULT_MAX_CHARS}, max #{MAX_MAX_CHARS}).", required: false
-    tool_param :format, description: "'markdown' (default, compact transcript) or 'json' (same data, structured).", required: false, enum: %w[markdown json]
+    tool_param :max_chars, description: "Character cap for the whole response across all topics, measured in the format you requested (default: #{DEFAULT_MAX_CHARS}, max #{MAX_MAX_CHARS}).", required: false
+    tool_param :format, description: "'markdown' (default, compact transcript) or 'json' (same data, structured; costs noticeably more of max_chars for the same messages, since field names and string escaping are charged too).", required: false, enum: Topics::CharBudget::FORMATS
 
     sig do
       params(
@@ -97,13 +104,19 @@ module Tools
       ids = IdList.parse(topic_ids)
       raise ArgumentError, "topic_ids is required" if ids.empty?
 
+      # The cap and the format it counts in are resolved together and carried
+      # through as one object, because what a message costs is what emitting it
+      # in this format costs. Budgeting in markdown's units and then returning
+      # json is how a 40k cap emits 60k.
+      budget = Topics::CharBudget.new(chars: clamp_chars(max_chars), format: format)
+
       payload = build_payload(
         ids: ids, user: user,
         options: { offset: offset.to_i, limit: limit, order: order, max_message_id: max_message_id,
-                   include_system: include_system, budget: clamp_chars(max_chars) }
+                   include_system: include_system, budget: budget }
       )
 
-      format.to_s == "json" ? payload : Topics::MessagePageMarkdown.call(payload)
+      budget.json? ? payload : Topics::MessagePageMarkdown.call(payload)
     end
 
     private
@@ -115,7 +128,7 @@ module Tools
       {
         topics: entries + errors,
         truncated: entries.any? { |entry| entry[:skipped_reason] || entry[:budget_limited] || entry[:clipped_count] },
-        max_chars: options[:budget]
+        max_chars: options[:budget].chars
       }
     end
 
@@ -134,7 +147,8 @@ module Tools
     # not-fetched notices — which exist precisely because the budget ran out —
     # would push the response over the cap that skipping them was enforcing.
     def collect(topics, user, options)
-      remaining = options[:budget] - reserved_chars(topics)
+      budget = options[:budget]
+      remaining = budget.chars - reserved_chars(topics, budget.format)
       served = false
 
       topics.map do |topic|
@@ -147,8 +161,9 @@ module Tools
       end
     end
 
-    def reserved_chars(topics)
-      TRUNCATION_CHARS + topics.sum { |topic| TOPIC_HEADER_CHARS + topic.name.to_s.length }
+    def reserved_chars(topics, format)
+      per_topic = TOPIC_HEADER_CHARS.fetch(format)
+      TRUNCATION_CHARS + topics.sum { |topic| per_topic + topic.name.to_s.length }
     end
 
     def page_entry(topic, user, options, remaining)
@@ -156,7 +171,7 @@ module Tools
         topic: topic, user: user,
         offset: options[:offset], limit: options[:limit], order: options[:order] || Topics::MessagePage::DEFAULT_ORDER,
         include_system: options[:include_system], max_message_id: options[:max_message_id],
-        char_budget: remaining
+        budget: options[:budget].with(chars: remaining)
       ).call
 
       serialize(page, include_system: options[:include_system])
@@ -173,8 +188,8 @@ module Tools
         limit: page.limit,
         returned_count: page.returned_count,
         returned_chars: page.returned_chars,
-        # What this topic charged against max_chars: prose plus the rendered
-        # envelope around each message.
+        # What this topic charged against max_chars: what emitting these
+        # messages in the requested format costs, not what their prose measures.
         billed_chars: page.billed_chars,
         has_more: page.has_more?,
         next_offset: page.next_offset,

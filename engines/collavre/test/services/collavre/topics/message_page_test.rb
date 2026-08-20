@@ -19,8 +19,13 @@ module Collavre
         )
       end
 
-      def page(**options)
-        MessagePage.new(topic: @topic, user: @user, **options).call
+      # char_budget/format are spelled out here rather than in every caller,
+      # since what the tests are exercising is the cap, not how it is packaged.
+      def page(char_budget: nil, format: CharBudget::DEFAULT_FORMAT, **options)
+        MessagePage.new(
+          topic: @topic, user: @user,
+          budget: CharBudget.new(chars: char_budget, format: format), **options
+        ).call
       end
 
       test "offset counts back from the newest message" do
@@ -178,12 +183,12 @@ module Collavre
         result = page(limit: 3)
 
         assert_equal 6, result.returned_chars
-        assert_operator result.billed_chars, :>=, 6 + (3 * MessagePage::ENVELOPE_CHARS)
+        assert_operator result.billed_chars, :>=, 6 + (3 * CharBudget::ENVELOPE_CHARS)
       end
 
       test "char_budget counts the envelope, so tiny messages still cost something" do
         5.times { post("x") }
-        result = page(limit: 5, char_budget: 2 * MessagePage::ENVELOPE_CHARS)
+        result = page(limit: 5, char_budget: 2 * CharBudget::ENVELOPE_CHARS)
 
         assert_operator result.returned_count, :<, 5
         assert result.budget_exhausted

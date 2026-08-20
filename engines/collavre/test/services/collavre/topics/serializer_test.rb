@@ -23,6 +23,40 @@ module Collavre
         assert_equal 3, data[:unread_count]
       end
 
+      # The controller built this payload through view_context, which carries the
+      # request; Serializer reaches the same helper through ApplicationController
+      # .helpers, which does not. user_avatar_url falls through to
+      # main_app.url_for(variant) for an attached avatar, and url_for outside a
+      # request needs a host — so an agent with an uploaded avatar is the case
+      # where the two paths could diverge or raise.
+      test "an agent with an attached avatar serializes without a request context" do
+        @agent.avatar.attach(
+          io: StringIO.new(file_fixture("small.png").binread),
+          filename: "avatar.png",
+          content_type: "image/png"
+        )
+        @topic.set_primary_agent!(@agent)
+
+        data = Serializer.call(@topic)
+
+        assert data[:primary_agent][:avatar_url].present?
+        assert_equal false, data[:primary_agent][:default_avatar]
+      end
+
+      # Serializer resolves the avatar itself instead of calling user_json, so
+      # pin the two payloads together for the case where user_json still works
+      # (no attached avatar, hence no main_app.url_for). Guards the keys the
+      # client merges from drifting apart. Compared with string keys because
+      # topic.slice returns a HashWithIndifferentAccess, which stringifies the
+      # nested hash on assignment — true of the controller code this replaced
+      # too, and invisible once the payload is JSON.
+      test "the agent payload matches user_json wherever user_json can run" do
+        @topic.set_primary_agent!(@agent)
+
+        assert_equal ::ApplicationController.helpers.user_json(@agent).deep_stringify_keys,
+          Serializer.call(@topic)[:primary_agent].deep_stringify_keys
+      end
+
       test "unread_count and archived_at are omitted when absent" do
         data = Serializer.call(@topic)
 

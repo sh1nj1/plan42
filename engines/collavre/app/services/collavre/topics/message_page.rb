@@ -20,21 +20,9 @@ module Collavre
       ORDERS = %w[asc desc].freeze
       DEFAULT_ORDER = "asc"
 
-      # What a message costs the caller, as opposed to what it says. The
-      # rendered line carries an id, an ISO-8601 timestamp, the author name and
-      # two newlines on top of the prose — roughly forty characters that
-      # content-only accounting hands out for free. A few hundred short or
-      # empty messages is then an entire budget spent off the books, which is
-      # the one thing max_chars exists to prevent.
-      ENVELOPE_CHARS = 36
-
-      def self.cost(message)
-        ENVELOPE_CHARS + message[:content].to_s.length + message[:author].to_s.length
-      end
-
       Page = Struct.new(
         :topic, :total_count, :total_chars, :offset, :limit,
-        :messages, :newest_message_id, :budget_exhausted,
+        :messages, :newest_message_id, :budget_exhausted, :budget,
         keyword_init: true
       ) do
         def returned_count = messages.size
@@ -42,8 +30,9 @@ module Collavre
         # What the caller reads.
         def returned_chars = messages.sum { |m| m[:content].to_s.length }
 
-        # What the caller is charged: prose plus the envelope around it.
-        def billed_chars = messages.sum { |m| MessagePage.cost(m) }
+        # What the caller is charged: what emitting these messages in the
+        # requested format costs, which is not what their prose measures.
+        def billed_chars = messages.sum { |m| budget.cost(m) }
 
         # A clipped message is a partial answer that has_more cannot express:
         # the window did reach the end of the topic, it just could not print
@@ -55,8 +44,10 @@ module Collavre
         def next_offset = has_more? ? offset + returned_count : nil
       end
 
+      # budget carries both the cap and the format it is counted in — see
+      # CharBudget for why those cannot be separate arguments.
       def initialize(topic:, user:, offset: 0, limit: DEFAULT_LIMIT, order: DEFAULT_ORDER,
-                     include_system: false, max_message_id: nil, char_budget: nil)
+                     include_system: false, max_message_id: nil, budget: CharBudget.new)
         @topic = topic
         @user = user
         @offset = [ offset.to_i, 0 ].max
@@ -64,7 +55,7 @@ module Collavre
         @order = ORDERS.include?(order.to_s) ? order.to_s : DEFAULT_ORDER
         @include_system = include_system
         @max_message_id = max_message_id
-        @char_budget = char_budget
+        @budget = budget
       end
 
       def call
@@ -82,7 +73,8 @@ module Collavre
           limit: @limit,
           messages: @order == "asc" ? messages.reverse : messages,
           newest_message_id: @max_message_id,
-          budget_exhausted: @char_budget && messages.size < @limit && (@offset + messages.size) < stat.count
+          budget_exhausted: !@budget.unlimited? && messages.size < @limit && (@offset + messages.size) < stat.count,
+          budget: @budget
         )
       end
 
@@ -125,19 +117,19 @@ module Collavre
       # That one is clipped to what the budget can pay for, with the clip
       # announced in its own text, so the cap holds and the offset still moves.
       def within_budget(messages)
-        return messages if @char_budget.nil?
+        return messages if @budget.unlimited?
 
         spent = 0
         kept = []
         messages.each do |message|
-          cost = self.class.cost(message)
-          if spent + cost <= @char_budget
+          cost = @budget.cost(message)
+          if @budget.fits?(cost, spent: spent)
             kept << message
             spent += cost
             next
           end
 
-          clipped = kept.empty? ? clip(message, @char_budget) : nil
+          clipped = kept.empty? ? clip(message) : nil
           kept << clipped if clipped
           break
         end
@@ -147,13 +139,38 @@ module Collavre
       # Returns nil when the budget cannot pay even for the envelope and the
       # notice — there is no honest way to emit a fragment that small, and the
       # empty page carries budget_limited to say so.
-      def clip(message, budget)
+      def clip(message)
         content = message[:content].to_s
         notice = clip_notice(content.length)
-        room = budget - ENVELOPE_CHARS - message[:author].to_s.length - notice.length
+        room = widest_prefix(message, content, notice)
         return nil if room <= 0
 
-        message.merge(content: content[0, room] + notice, clipped: true)
+        clipped(message, content, notice, room)
+      end
+
+      # The longest prefix of the prose whose rendered cost still fits.
+      # Subtraction would do for markdown, where a character of content costs a
+      # character of output, but json escapes the prose while serializing it, so
+      # a slice can emit wider than it reads and arithmetic only gives an upper
+      # bound. Cost rises monotonically with the prefix, so the exact answer is
+      # a bisection — eighteen serializations at the largest cap, and only on
+      # the clip path, which is one message per call at most.
+      def widest_prefix(message, content, notice)
+        low = 0
+        high = content.length
+        while low < high
+          mid = (low + high + 1) / 2
+          if @budget.fits?(@budget.cost(clipped(message, content, notice, mid)))
+            low = mid
+          else
+            high = mid - 1
+          end
+        end
+        low
+      end
+
+      def clipped(message, content, notice, take)
+        message.merge(content: content[0, take] + notice, clipped: true)
       end
 
       # Counted against the budget like any other content, and phrased for the

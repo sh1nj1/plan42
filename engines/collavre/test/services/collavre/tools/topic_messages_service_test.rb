@@ -27,6 +27,16 @@ module Collavre
 
       def entry_for(payload, topic) = payload[:topics].find { |t| t[:topic_id] == topic.id }
 
+      # The furniture every requested topic pays for whether or not it fits,
+      # reserved up front so the not-fetched notices cannot themselves overrun
+      # the cap that skipping produced them.
+      def reserved_for(*topics)
+        TopicMessagesService::TRUNCATION_CHARS +
+          topics.sum { |t| TopicMessagesService::TOPIC_HEADER_CHARS.fetch("json") + t.name.length }
+      end
+
+      def billed_chars_of(topic) = entry_for(json(topic_ids: topic.id), topic)[:billed_chars]
+
       test "reads one topic newest-first and renders the window as a forward transcript" do
         3.times { |i| post(@a, "m#{i}") }
         payload = json(topic_ids: @a.id, limit: 2)
@@ -69,7 +79,12 @@ module Collavre
       test "max_chars is a whole-response cap, and a topic it cannot reach is reported unfetched" do
         post(@a, "x" * 500)
         post(@b, "y" * 500)
-        payload = json(topic_ids: "#{@a.id},#{@b.id}", max_chars: 800)
+        # Sized from what Alpha actually bills rather than from a round number,
+        # so this stays a test of the skip semantics and not of anyone's
+        # arithmetic: room for both sections' furniture plus all of Alpha, and
+        # nothing left for Beta.
+        payload = json(topic_ids: "#{@a.id},#{@b.id}",
+                       max_chars: reserved_for(@a, @b) + billed_chars_of(@a))
 
         assert payload[:truncated]
         assert_equal 1, entry_for(payload, @a)[:returned_count]
@@ -118,6 +133,66 @@ module Collavre
 
         assert_operator markdown.length, :<=, cap
         assert_includes markdown, "clipped from 50000 chars"
+      end
+
+      # max_chars has to bound the response the caller actually receives, and
+      # for format: "json" that is the serialized hash — every field name and
+      # delimiter included. Charging markdown's 36-character envelope for a json
+      # message undercounted it by roughly 120, so a few dozen short messages
+      # sailed past the cap. Measured on to_json here for the same reason the
+      # markdown tests measure the rendered string: the emitted form is the only
+      # honest unit. (The MCP layer's own wrapper around this is out of scope —
+      # this tool can only be accountable for what it returns.)
+      test "the json response stays within max_chars when messages are tiny" do
+        60.times { |i| post(@a, "m#{i}") }
+        60.times { |i| post(@b, "n#{i}") }
+        cap = 3_000
+
+        payload = json(topic_ids: "#{@a.id},#{@b.id}", limit: 200, max_chars: cap)
+
+        assert_operator payload.to_json.length, :<=, cap
+        assert_operator entry_for(payload, @a)[:returned_count], :>, 0
+      end
+
+      # The other half of the undercount: json escapes the prose while it
+      # serializes it, so a quote- and newline-heavy message emits far wider
+      # than String#length reads. No fixed envelope constant can track that
+      # ratio, which is why the cost is measured on the serialized form.
+      test "the json response stays within max_chars when the prose is escape-heavy" do
+        20.times { post(@a, %Q(He said "yes",\nthen "no",\tthen \\ nothing.\n) * 20) }
+        cap = 6_000
+
+        payload = json(topic_ids: @a.id, limit: 200, max_chars: cap)
+
+        assert_operator payload.to_json.length, :<=, cap
+        assert_operator entry_for(payload, @a)[:returned_count], :>, 0
+      end
+
+      # Clipping has to respect the format too. The raw subtraction that sized
+      # the fragment is only an upper bound once escaping is in play, so the
+      # clip is bisected against the serialized cost instead of assumed.
+      test "the json response stays within max_chars against one oversized escape-heavy message" do
+        post(@a, %Q("y"\n) * 12_500)
+        cap = 1_500
+
+        payload = json(topic_ids: @a.id, max_chars: cap)
+
+        assert_operator payload.to_json.length, :<=, cap
+        assert_equal 1, entry_for(payload, @a)[:clipped_count]
+      end
+
+      # json pays for its own structure, so the same cap buys strictly fewer
+      # messages there. Pinning the direction guards against a later refactor
+      # collapsing the two cost models back into one.
+      test "json costs more of the budget than markdown for the same messages" do
+        40.times { |i| post(@a, "m#{i}") }
+        cap = 2_000
+
+        as_json = json(topic_ids: @a.id, limit: 200, max_chars: cap)
+        as_markdown = TopicMessagesService.new.call(topic_ids: @a.id, limit: 200, max_chars: cap)
+
+        assert_operator entry_for(as_json, @a)[:returned_count], :<,
+                        as_markdown.scan(/^\[\d+\] /).length
       end
 
       # has_more is false here — the window did reach the end of the topic — so
