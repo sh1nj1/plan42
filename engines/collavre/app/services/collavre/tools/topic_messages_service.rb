@@ -39,7 +39,7 @@ module Tools
     # plus their delimiters — around 285 characters measured, against the two
     # lines markdown prints — so the reserve is per format rather than one
     # constant that is right for one of them and wrong for the other.
-    TOPIC_HEADER_CHARS = { "markdown" => 300, "json" => 475 }.freeze
+    TOPIC_HEADER_CHARS = { "markdown" => 325, "json" => 500 }.freeze
 
     # The trailing "output hit max_chars" notice, which only exists when the
     # budget ran out and so cannot be paid for out of what is left of it.
@@ -64,7 +64,9 @@ module Tools
       and next_cursor for the next call. Pass next_cursor and the returned
       newest_message_id back on follow-up pages. The snapshot id excludes later
       arrivals; the cursor keeps paging stable when earlier rows are moved or
-      deleted.
+      deleted. It also binds a clipped continuation to that row's content
+      version, so an edit restarts the changed message at character zero rather
+      than applying a stale offset.
 
       If one message is too large for the response cap, its row remains at the
       same next_offset and next_content_offset identifies the next character to

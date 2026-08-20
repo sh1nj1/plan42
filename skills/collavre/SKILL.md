@@ -99,10 +99,10 @@ collavre tool run topic_list --json '{"creative_id": 8849}'
 collavre tool run topic_messages --json '{"topic_ids": "12,45,78", "limit": 100}'
 
 # Page a long topic with the returned next_offset, next_cursor, and snapshot id
-collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989", "max_message_id": 9931}'
+collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989:1770000001000000", "max_message_id": 9931}'
 
 # Continue inside one clipped message, preserving its row cursor
-collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989", "content_offset": 28400, "max_message_id": 9931}'
+collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989:1770000001000000", "content_offset": 28400, "max_message_id": 9931}'
 
 # Fan work out: one topic per unit of work, with an agent pinned to each
 collavre tool run topic_create --json '{"creative_id": 8849, "name": "Research", "primary_agent": "Dev1Claude"}'

@@ -163,6 +163,41 @@ module Collavre
         assert_equal [ "archived" ], TopicUpdateService.new.call(topic_id: @topic.id, archived: true)[:changed]
       end
 
+      test "reauthorizes after locking a topic moved to an inaccessible creative" do
+        restricted = Collavre::Creative.create!(description: "Restricted", user: @writer)
+        lock_after_move = lambda do
+          @topic.update_column(:creative_id, restricted.id)
+          @topic.reload
+        end
+
+        Collavre::Topic.stub(:find, @topic) do
+          @topic.stub(:lock!, lock_after_move) do
+            assert_raises(Collavre::Tools::PermissionDeniedError) do
+              TopicUpdateService.new.call(topic_id: @topic.id, name: "Unauthorized")
+            end
+          end
+        end
+      end
+
+      test "resolves a requested agent against the locked topic creative" do
+        target = Collavre::Creative.create!(description: "Target", user: @writer)
+        Collavre::CreativeShare.create!(creative: target, user: @user, permission: :write, shared_by: @writer)
+        @agent.update!(searchable: false)
+        share!(@agent, :feedback)
+        lock_after_move = lambda do
+          @topic.update_column(:creative_id, target.id)
+          @topic.reload
+        end
+
+        Collavre::Topic.stub(:find, @topic) do
+          @topic.stub(:lock!, lock_after_move) do
+            assert_raises(Collavre::Topics::AgentResolver::UnknownAgentError) do
+              TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: @agent.id.to_s)
+            end
+          end
+        end
+      end
+
       test "a reader can do nothing" do
         share!(@writer, :read)
         Collavre::Current.user = @writer

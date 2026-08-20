@@ -149,9 +149,14 @@ module Collavre
       # next surviving row, but its content must start at zero.
       def content_offset_for(first_comment)
         return @content_offset unless @cursor
-        return @content_offset if first_comment&.id == @cursor.fetch(:id)
+        return @content_offset if cursor_row_unchanged?(first_comment)
 
         0
+      end
+
+      def cursor_row_unchanged?(comment)
+        comment&.id == @cursor.fetch(:id) &&
+          timestamp_micros(comment.updated_at) == @cursor.fetch(:updated_at_micros)
       end
 
       # The cursor names the first row not yet consumed, inclusively. This is
@@ -175,26 +180,31 @@ module Collavre
       def encode_cursor(comment)
         return unless comment
 
-        micros = (comment.created_at.to_r * 1_000_000).to_i
-        "#{micros}:#{comment.id}"
+        "#{timestamp_micros(comment.created_at)}:#{comment.id}:#{timestamp_micros(comment.updated_at)}"
       end
 
       def decode_cursor(value)
         return if value.blank?
 
-        match = /\A(\d{1,20}):(\d{1,20})\z/.match(value.to_s)
+        match = /\A(\d{1,20}):(\d{1,20}):(\d{1,20})\z/.match(value.to_s)
         raise ArgumentError, "cursor is invalid" unless match
 
         micros = Integer(match[1], 10)
         id = Integer(match[2], 10)
-        raise ArgumentError, "cursor is invalid" unless micros.positive? && id.positive?
+        updated_at_micros = Integer(match[3], 10)
+        raise ArgumentError, "cursor is invalid" unless micros.positive? && id.positive? && updated_at_micros.positive?
 
         {
           created_at: Time.at(micros / 1_000_000, micros % 1_000_000, :microsecond).utc,
-          id: id
+          id: id,
+          updated_at_micros: updated_at_micros
         }
       rescue RangeError
         raise ArgumentError, "cursor is invalid"
+      end
+
+      def timestamp_micros(time)
+        (time.to_r * 1_000_000).to_i
       end
 
       # Trims the newest-first window to the character budget. A message that

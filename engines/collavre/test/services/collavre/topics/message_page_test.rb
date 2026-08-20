@@ -179,6 +179,22 @@ module Collavre
         assert_equal 0, second.messages.first.fetch(:content_offset, 0)
       end
 
+      test "content continuation resets when its clipped row is edited" do
+        clipped = post("x" * 5_000)
+        first = page(limit: 1, char_budget: 300, order: "desc")
+
+        clipped.update!(content: "replacement content")
+        second = page(
+          limit: 1, char_budget: 300, order: "desc",
+          offset: first.next_offset, max_message_id: first.newest_message_id,
+          cursor: first.next_cursor, content_offset: first.next_content_offset
+        )
+
+        assert_equal clipped.id, second.messages.first[:id]
+        assert_equal "replacement content", second.messages.first[:content]
+        assert_equal 0, second.messages.first.fetch(:content_offset, 0)
+      end
+
       test "newest_message_id reports the topic's newest id when unpinned" do
         post("a")
         newest = post("b")

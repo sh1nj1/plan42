@@ -59,11 +59,10 @@ module Tools
       # matches an accessible agent, and a caller with no rights on the topic
       # should not be able to ask.
       authorize!(topic, name)
-      agent_change = Topics::AgentResolver.call(primary_agent, creative: topic.creative)
-      changed = requested(name, archived, agent_change)
+      changed = requested(name, archived, primary_agent)
       raise ArgumentError, "Nothing to update: pass name, archived, or primary_agent" if changed.empty?
 
-      agent = apply(topic, name, archived, agent_change)
+      agent = apply(topic, name, archived, primary_agent)
       broadcast_all(topic.reload, changed, archived, agent)
 
       Topics::Serializer.for_tool(topic).merge(changed: changed)
@@ -79,11 +78,11 @@ module Tools
       name.present? ? TopicAuthorizer.authorize_admin!(topic) : TopicAuthorizer.authorize_write!(topic)
     end
 
-    def requested(name, archived, agent_change)
+    def requested(name, archived, primary_agent)
       changed = []
       changed << "name" if name.present?
       changed << "archived" unless archived.nil?
-      changed << "primary_agent" if agent_change
+      changed << "primary_agent" unless primary_agent.nil?
       changed
     end
 
@@ -93,18 +92,24 @@ module Tools
     # that is still named what it was — not one that was quietly renamed and
     # archived on the way to the error. Nothing broadcasts until the whole set
     # has committed, for the same reason.
-    def apply(topic, name, archived, agent_change)
-      agent = agent_change ? validated_agent(topic, agent_change) : nil
-
+    def apply(topic, name, archived, primary_agent)
+      agent = nil
       Topic.transaction do
         topic.lock!
+        authorize!(topic, name)
         reject_reserved_mutation!(topic, name, archived)
+        agent = resolve_agent(topic, primary_agent)
         topic.update!(name: name) if name.present?
         set_archived(topic, archived) unless archived.nil?
-        topic.set_primary_agent!(agent) if agent_change
+        topic.set_primary_agent!(agent) unless primary_agent.nil?
       end
 
       agent
+    end
+
+    def resolve_agent(topic, primary_agent)
+      change = Topics::AgentResolver.call(primary_agent, creative: topic.creative)
+      change ? validated_agent(topic, change) : nil
     end
 
     def reject_reserved_mutation!(topic, name, archived)
