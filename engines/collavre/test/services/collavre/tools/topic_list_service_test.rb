@@ -23,6 +23,18 @@ module Collavre
 
       def names(result) = result[:topics].map { |t| t[:name] }
 
+      # Same rule as topic_messages, and for the same reason: a caller sizing up
+      # thirty topics before splitting work would have been handed twenty and
+      # nothing to say the other ten existed. Listing a whole creative is
+      # unaffected — the cap is on explicit id batches, not on what a creative
+      # happens to hold.
+      test "more topic_ids than the per-call cap is an error, not a silent trim" do
+        ids = (1..TopicSelection::MAX_TOPICS + 1).to_a
+
+        error = assert_raises(ArgumentError) { TopicListService.new.call(topic_ids: ids.join(",")) }
+        assert_match(/at most #{TopicSelection::MAX_TOPICS}/, error.message)
+      end
+
       test "lists a creative's active topics with message totals" do
         post(@work, "hello")
         result = TopicListService.new.call(creative_id: @creative.id)

@@ -251,8 +251,28 @@ module Collavre
         assert_equal 0, result.total_count
         assert_equal 0, result.total_chars
         assert_empty result.messages
-        assert_nil result.newest_message_id
         assert_not result.has_more?
+      end
+
+      # nil is how the scope spells "unbounded", so an empty topic anchoring at
+      # nil was not anchored at all: the snapshot the rest of the call reads is
+      # whatever exists by the time each query runs, and the caller is handed no
+      # anchor to pin the next page with. Zero is below every id, so it names
+      # the empty snapshot instead of waiving the bound.
+      test "an empty topic anchors at zero rather than leaving the snapshot unbounded" do
+        assert_equal 0, page.newest_message_id
+      end
+
+      test "a message arriving mid-call cannot enter a snapshot that started empty" do
+        stats = MessageStats.method(:for)
+        MessageStats.stub(:for, ->(*args, **kwargs) { post("late"); stats.call(*args, **kwargs) }) do
+          @result = page(limit: 10)
+        end
+
+        assert_equal 0, @result.total_count
+        assert_empty @result.messages
+        assert_equal 0, @result.newest_message_id
+        assert_not @result.has_more?
       end
     end
   end

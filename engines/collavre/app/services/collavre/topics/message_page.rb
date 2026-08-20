@@ -87,10 +87,17 @@ module Collavre
       # named as newest without having been returned — and the caller then
       # pages with an anchor that shifts every offset under it, repeating one
       # message and skipping another.
+      #
+      # An empty topic anchors at 0 rather than nil, because nil is how this
+      # scope spells "unbounded": leaving it there would let a message arriving
+      # between the anchor and the totals query into both, and then advertise
+      # no anchor for the caller to pin the next page with. Zero is below every
+      # id, so it names the empty snapshot exactly, and Ruby's 0 is truthy —
+      # a caller passing it back gets the same bound rather than a fresh anchor.
       def anchor!
         @max_message_id ||= MessageScope.for(
           @topic, user: @user, include_system: @include_system
-        ).maximum(:id)
+        ).maximum(:id) || 0
       end
 
       def scope

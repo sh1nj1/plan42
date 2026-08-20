@@ -49,6 +49,22 @@ module Collavre
         assert_equal [ @a.id ], topics.map(&:id)
         assert_equal 1, errors.size
       end
+
+      # An unreadable id is reported and the call continues, because the caller
+      # can see that entry and act on it. An over-cap batch cannot be reported
+      # the same way: the ids past the cap were never looked at, so there is no
+      # entry to carry them, and trimming hands back a response that reads as
+      # complete while whole topics are missing from it.
+      test "a batch over the cap is refused rather than trimmed" do
+        ids = (1..TopicSelection::MAX_TOPICS + 1).to_a
+
+        error = assert_raises(ArgumentError) { TopicSelection.resolve(ids, user: @user) }
+        assert_match(/at most #{TopicSelection::MAX_TOPICS}/, error.message)
+      end
+
+      test "a batch exactly at the cap is accepted" do
+        assert_nothing_raised { TopicSelection.resolve((1..TopicSelection::MAX_TOPICS).to_a, user: @user) }
+      end
     end
   end
 end

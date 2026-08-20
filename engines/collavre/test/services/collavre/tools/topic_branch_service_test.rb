@@ -16,9 +16,14 @@ module Collavre
 
       teardown { Collavre::Current.user = nil }
 
-      def post(content, action: nil)
+      def post(content, action: nil, private_flag: false, approver: nil)
         Comment.create!(creative: @creative, topic: @source, user: @user, content: content,
-                        action: action, skip_default_user: true, skip_dispatch: true)
+                        action: action, private: private_flag, approver: approver,
+                        skip_default_user: true, skip_dispatch: true)
+      end
+
+      def share!(user, permission)
+        Collavre::CreativeShare.create!(creative: @creative, user: user, permission: permission, shared_by: @user)
       end
 
       # The branch copies content but not `action`, so a copied approval prompt
@@ -44,6 +49,58 @@ module Collavre
         end
 
         assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
+      end
+
+      # The refusal names the id, so running it over the whole topic answered
+      # "is comment N an approval prompt?" for a comment the caller cannot read
+      # — a distinct error where every other hidden id gets the generic
+      # not-found. Feedback is granted here so the probe reaches the furthest
+      # point it can: the check ran before the wrapped service's permission
+      # gate, so read alone was enough to ask.
+      test "a hidden approval prompt is not distinguishable from any other unreadable id" do
+        hidden = post("Approve the deploy?", action: "approve", private_flag: true)
+        share!(@stranger, :feedback)
+        Collavre::Current.user = @stranger
+
+        hidden_error = assert_raises(::Collavre::TopicBranchService::BranchError) do
+          TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: hidden.id)
+        end
+        absent_error = assert_raises(::Collavre::TopicBranchService::BranchError) do
+          TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: 999_999)
+        end
+
+        assert_equal absent_error.message, hidden_error.message
+        assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
+      end
+
+      # Narrowing the lookup must not open the hole it closed: a prompt the
+      # caller *can* see is still refused, by name.
+      test "a visible approval prompt is still refused by name" do
+        prompt = post("Approve the deploy?", action: "approve")
+
+        error = assert_raises(ArgumentError) do
+          TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: prompt.id)
+        end
+
+        assert_includes error.message, prompt.id.to_s
+      end
+
+      # visible_to reads a private comment for its author and its approver, so
+      # copying `private` without `approver_id` narrows who can see the copy.
+      # The caller selecting the message can be the approver rather than the
+      # author, and would get a branch whose copied_count counts a message the
+      # branch will never show them.
+      test "branching a private message carries its approver onto the copy" do
+        share!(@stranger, :feedback)
+        secret = post("between us", private_flag: true, approver: @stranger)
+        Collavre::Current.user = @stranger
+
+        result = TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: secret.id)
+        copies = Topic.find(result[:id]).comments
+
+        assert_equal 1, result[:copied_count]
+        assert_equal 1, copies.visible_to(@stranger).count
+        assert_equal @stranger.id, copies.sole.approver_id
       end
 
       test "the copy of an ordinary message stays outside the approval surface" do

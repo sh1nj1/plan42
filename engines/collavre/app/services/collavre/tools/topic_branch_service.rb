@@ -53,7 +53,7 @@ module Tools
 
       ids = IdList.parse(comment_ids)
       validate_ids!(ids)
-      reject_approval_actions!(source, ids)
+      reject_approval_actions!(source, ids, user)
 
       # Fully qualified: inside Collavre::Tools, a bare TopicBranchService is
       # this tool, not the branching service it wraps.
@@ -91,8 +91,18 @@ module Tools
     # without_approval_action: the predicate is the documented single source of
     # truth, and a second copy of the condition could drift out of step with it.
     # validate_ids! has already capped the selection, so the load is bounded.
-    def reject_approval_actions!(source, ids)
-      blocked = source.comments.where(id: ids).select(&:approval_action?).map(&:id)
+    #
+    # Scoped to visible_to because this error names an id. Over the whole topic
+    # it answers "is comment 4312 an approval prompt?" for a comment the caller
+    # cannot read — a specific error where any other hidden id gets the generic
+    # not-found — and it runs before the wrapped service checks feedback
+    # permission, so read-only access is enough to ask. Restricted to what the
+    # caller can already see, a hidden id falls through to the same not-found
+    # every other unreadable id gets, and nothing distinguishes them. Approval
+    # prompts stay unbranchable either way: the wrapped service's fetch is
+    # visible_to as well, so an invisible one is refused there instead.
+    def reject_approval_actions!(source, ids, user)
+      blocked = source.comments.visible_to(user).where(id: ids).select(&:approval_action?).map(&:id)
       return if blocked.empty?
 
       raise ArgumentError,

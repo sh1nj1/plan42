@@ -110,7 +110,7 @@ use it before `topic_messages` to see how much conversation each topic holds.
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `creative_id` | Integer | One of | — | List every topic on this Creative |
-| `topic_ids` | String | One of | — | Describe these topics, e.g. `"12,45,78"` |
+| `topic_ids` | String | One of | — | Describe these topics, e.g. `"12,45,78"` (max 20 per call) |
 | `include_archived` | Boolean | No | false | Include archived topics (listing by `creative_id`) |
 | `include_stats` | Boolean | No | true | Include `message_count` / `message_chars` / `last_message_at` |
 | `include_system` | Boolean | No | false | Count authorless notices. Approval prompts are never counted |
@@ -169,6 +169,12 @@ dropped — dropping it would return an empty page at an offset that has rows an
 the caller would page against it forever. The clip is announced in the message
 text and counted in the topic's `clipped_count`, which can be set even when
 `has_more` is false.
+
+Asking for more than 20 topics in one call is an error, not a silent trim — the
+ids past the cap were never read, so there would be no per-topic entry to say
+they were missing. Split them across calls. (Unknown or unreadable ids are
+different: those are reported per topic and the call continues.) `topic_list`
+applies the same cap to `topic_ids`.
 
 Requires **read** on each topic's Creative. Private messages you are not party
 to are always excluded.

@@ -77,7 +77,7 @@ module Tools
       unreadable ids are reported per topic instead of failing the call.
     DESC
 
-    tool_param :topic_ids, description: "Topic ids to read. Comma-separated for several, e.g. \"12,45,78\" (max #{TopicSelection::MAX_TOPICS} per call). A single id also works."
+    tool_param :topic_ids, description: "Topic ids to read. Comma-separated for several, e.g. \"12,45,78\" (max #{TopicSelection::MAX_TOPICS} per call — asking for more is an error, not a silent trim). A single id also works."
     tool_param :offset, description: "How many messages back from the newest to start, applied per topic (default: 0).", required: false
     tool_param :limit, description: "Messages per topic (default: #{Topics::MessagePage::DEFAULT_LIMIT}, max #{Topics::MessagePage::MAX_LIMIT}).", required: false
     tool_param :order, description: "Rendering order within the returned window: 'asc' (default, oldest-to-newest — reads as a transcript) or 'desc' (newest first). Does not change which messages the window selects.", required: false, enum: Topics::MessagePage::ORDERS
@@ -122,7 +122,7 @@ module Tools
     private
 
     def build_payload(ids:, user:, options:)
-      topics, errors = TopicSelection.resolve(ids.first(TopicSelection::MAX_TOPICS), user: user)
+      topics, errors = TopicSelection.resolve(ids, user: user)
       entries = collect(topics, user, options)
 
       {

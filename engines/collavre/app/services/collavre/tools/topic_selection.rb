@@ -21,12 +21,28 @@ module Collavre
       # Returns [topics, errors], preserving the caller's id order so a numbered
       # request reads back in the order it was asked.
       def resolve(ids, user: Collavre::Current.user)
+        enforce_cap!(ids)
         by_id = Topic.where(id: ids).index_by(&:id)
 
         ids.each_with_object([ [], [] ]) do |id, (topics, errors)|
           error = rejection_for(by_id[id], user)
           error ? errors << { topic_id: id, error: error } : topics << by_id[id]
         end
+      end
+
+      # An oversized batch is an error, not a trim. Silently keeping the first
+      # twenty returns a response that looks complete — every topic asked for
+      # that appears, appears in full — while whole conversations are missing
+      # with nothing in the payload that says so, and a caller summarizing
+      # "all of these" would report on a subset believing it had them all.
+      # Unreadable ids are still reported per topic rather than raised: those
+      # the caller can see and act on, one entry each.
+      def enforce_cap!(ids)
+        return if ids.size <= MAX_TOPICS
+
+        raise ArgumentError,
+          "#{ids.size} topics requested but at most #{MAX_TOPICS} can be read per call. " \
+          "Split the ids across several calls."
       end
 
       # Deliberately the same message for missing and unreadable. Distinguishing

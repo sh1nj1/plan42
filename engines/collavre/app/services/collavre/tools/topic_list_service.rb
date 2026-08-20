@@ -39,7 +39,7 @@ module Tools
     DESC
 
     tool_param :creative_id, description: "List every topic on this creative. Either this or topic_ids is required.", required: false
-    tool_param :topic_ids, description: "Describe these specific topics. Comma-separated ids, e.g. \"12,45,78\". Either this or creative_id is required.", required: false
+    tool_param :topic_ids, description: "Describe these specific topics. Comma-separated ids, e.g. \"12,45,78\" (max #{TopicSelection::MAX_TOPICS} per call — asking for more is an error, not a silent trim). Either this or creative_id is required.", required: false
     tool_param :include_archived, description: "Include archived topics when listing by creative_id (default: false). Archived topics keep their messages and stay readable by id.", required: false
     tool_param :include_stats, description: "Include message_count / message_chars / last_message_at (default: true). Pass false to skip the totals query on a creative with very many topics.", required: false
     tool_param :include_system, description: "Count authorless system messages in the totals (default: false). Approval prompts are never counted. Matches the topic_messages default so the counts describe the same set of messages you would read back.", required: false
@@ -71,7 +71,7 @@ module Tools
 
     def select_topics(creative_id, topic_ids, user, include_archived)
       ids = IdList.parse(topic_ids)
-      return TopicSelection.resolve(ids.first(TopicSelection::MAX_TOPICS), user: user) if ids.any?
+      return TopicSelection.resolve(ids, user: user) if ids.any?
       raise ArgumentError, "Either creative_id or topic_ids is required" if creative_id.blank?
 
       [ topics_of(creative_id, user, include_archived), [] ]

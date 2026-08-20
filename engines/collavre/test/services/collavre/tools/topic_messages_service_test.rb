@@ -16,8 +16,8 @@ module Collavre
 
       teardown { Collavre::Current.user = nil }
 
-      def post(topic, content)
-        Comment.create!(creative: @creative, topic: topic, user: @user, content: content,
+      def post(topic, content, user: @user)
+        Comment.create!(creative: @creative, topic: topic, user: user, content: content,
                         skip_default_user: true, skip_dispatch: true)
       end
 
@@ -120,6 +120,19 @@ module Collavre
         cap = 1_500
         markdown = TopicMessagesService.new.call(topic_ids: "#{@a.id},#{@b.id}", limit: 200, max_chars: cap)
 
+        assert_operator markdown.length, :<=, cap
+      end
+
+      # An agent byline renders " (agent)" that content-plus-envelope did not
+      # charge. Eight characters is invisible on one message and larger than the
+      # per-topic reserve across a page of short agent turns — the shape a busy
+      # topic has, since the agent is the one that answers every message.
+      test "the rendered response stays within max_chars when the authors are agents" do
+        60.times { |i| post(@a, "m#{i}", user: users(:ai_bot)) }
+        cap = 1_500
+        markdown = TopicMessagesService.new.call(topic_ids: @a.id, limit: 200, max_chars: cap)
+
+        assert_includes markdown, "(agent)"
         assert_operator markdown.length, :<=, cap
       end
 
@@ -248,11 +261,22 @@ module Collavre
         assert_equal [ { topic_id: @a.id, error: "Topic not found or not readable" } ], payload[:topics]
       end
 
-      test "more topics than the per-call cap are dropped from the tail, not silently merged" do
+      # Trimming to the cap returned a response that looked complete — every
+      # topic present, each one in full — while whole conversations were absent
+      # with nothing in the payload to say so. A caller told to summarize all of
+      # them would have reported on a subset believing it had them all.
+      test "more topics than the per-call cap is an error, not a silent trim" do
         ids = (1..TopicSelection::MAX_TOPICS + 2).map { |i| @creative.topics.create!(name: "T#{i}", user: @user).id }
-        payload = json(topic_ids: ids.join(","))
 
-        assert_equal TopicSelection::MAX_TOPICS, payload[:topics].size
+        error = assert_raises(ArgumentError) { json(topic_ids: ids.join(",")) }
+        assert_match(/#{ids.size} topics requested/, error.message)
+        assert_match(/at most #{TopicSelection::MAX_TOPICS}/, error.message)
+      end
+
+      test "a batch exactly at the cap is still served" do
+        ids = (1..TopicSelection::MAX_TOPICS).map { |i| @creative.topics.create!(name: "T#{i}", user: @user).id }
+
+        assert_equal TopicSelection::MAX_TOPICS, json(topic_ids: ids.join(","))[:topics].size
       end
 
       test "requires at least one topic id" do

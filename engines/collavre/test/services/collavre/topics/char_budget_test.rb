@@ -38,6 +38,17 @@ module Collavre
         assert_operator budget.cost(sample(content: quoted)), :>, budget.cost(sample(content: plain))
       end
 
+      # Markdown tags an AI byline with " (agent)". Charging content, author and
+      # a fixed envelope left those eight characters off the books on every
+      # agent turn — nothing on one message, a page's worth across a stretch of
+      # short ones, which is the shape an agent-heavy topic actually has.
+      test "markdown charges the agent byline suffix" do
+        budget = CharBudget.new(format: "markdown")
+        human = sample.merge(agent: false)
+
+        assert_equal budget.cost(human) + CharBudget::AGENT_SUFFIX_CHARS, budget.cost(sample.merge(agent: true))
+      end
+
       test "an unknown or missing format falls back to markdown rather than raising" do
         assert_equal "markdown", CharBudget.new(format: "yaml").format
         assert_equal "markdown", CharBudget.new.format

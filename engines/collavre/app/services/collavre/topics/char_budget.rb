@@ -20,6 +20,12 @@ module Collavre
       # messages is then an entire budget spent off the books.
       ENVELOPE_CHARS = 36
 
+      # Markdown tags an AI author with a " (agent)" suffix on its byline. Eight
+      # characters is nothing on one message and a page's worth on a stretch of
+      # short agent turns, which is exactly the shape a busy topic has — and it
+      # is more than the margin the per-topic reserve leaves to absorb it.
+      AGENT_SUFFIX_CHARS = " (agent)".length
+
       attr_reader :chars, :format
 
       def self.normalize_format(value)
@@ -47,7 +53,8 @@ module Collavre
       def cost(message)
         return message.to_json.length + 1 if json?
 
-        ENVELOPE_CHARS + message[:content].to_s.length + message[:author].to_s.length
+        ENVELOPE_CHARS + message[:content].to_s.length + message[:author].to_s.length +
+          (message[:agent] ? AGENT_SUFFIX_CHARS : 0)
       end
 
       # Whether a message of this cost still fits alongside what has been spent.

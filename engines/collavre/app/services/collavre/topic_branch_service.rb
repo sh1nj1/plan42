@@ -88,6 +88,12 @@ module Collavre
           user_id: original.user_id,
           content: original.content,
           private: original.private,
+          # Carried with `private`, not separately from it: visible_to reads a
+          # private comment for its author *and* its approver, so copying the
+          # flag without the approver narrows who can see the copy. The user who
+          # selected the message can be the approver rather than the author, and
+          # would then get a branch reporting a message it cannot show them.
+          approver_id: original.approver_id,
           review_type: original.review_type,
           skip_default_user: true,
           skip_dispatch: true
