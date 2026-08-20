@@ -95,12 +95,42 @@ module Collavre
 
       # "Nothing fit" and "the topics before you ate it" need different fixes,
       # so the first topic must not be told it lost a race it never ran.
-      test "a first topic too large for the cap says so rather than blaming earlier topics" do
+      test "a first topic with no message budget says so rather than blaming earlier topics" do
         post(@a, "x" * 500)
-        payload = json(topic_ids: @a.id, max_chars: 50)
+        payload = json(topic_ids: @a.id, max_chars: reserved_for(@a))
 
         assert_equal "max_chars is too small to return anything for this topic",
                      entry_for(payload, @a)[:skipped_reason]
+      end
+
+      test "tiny max_chars is clamped and fixed markdown metadata stays bounded" do
+        markdown = TopicMessagesService.new.call(topic_ids: @a.id, max_chars: 50)
+
+        assert_operator markdown.length, :<=, TopicMessagesService::MIN_MAX_CHARS
+        assert_includes markdown, "metadata needs"
+        assert_includes markdown, "max_chars is #{TopicMessagesService::MIN_MAX_CHARS}"
+      end
+
+      test "tiny max_chars returns a bounded json error instead of oversized topic metadata" do
+        payload = json(topic_ids: @a.id, max_chars: 50)
+
+        assert_equal "topic_messages metadata exceeds max_chars", payload[:error]
+        assert_equal TopicMessagesService::MIN_MAX_CHARS, payload[:max_chars]
+        assert payload[:truncated]
+        assert_operator payload.to_json.length, :<=, payload[:max_chars]
+      end
+
+      test "an unrestricted long topic name cannot exceed the response cap" do
+        @a.update!(name: "a\n\"\\" * 20_000)
+        cap = 1_000
+
+        markdown = TopicMessagesService.new.call(topic_ids: @a.id, max_chars: cap)
+        payload = json(topic_ids: @a.id, max_chars: cap)
+
+        assert_operator markdown.length, :<=, cap
+        assert_includes markdown, "metadata needs"
+        assert_operator payload.to_json.length, :<=, cap
+        assert_equal "topic_messages metadata exceeds max_chars", payload[:error]
       end
 
       test "budget_limited marks a topic the shared cap cut short" do
@@ -231,6 +261,8 @@ module Collavre
 
         assert_equal TopicMessagesService::DEFAULT_MAX_CHARS, json(topic_ids: @a.id)[:max_chars]
         assert_equal TopicMessagesService::DEFAULT_MAX_CHARS, json(topic_ids: @a.id, max_chars: 0)[:max_chars]
+        assert_equal TopicMessagesService::MIN_MAX_CHARS,
+                     json(topic_ids: @a.id, max_chars: 1)[:max_chars]
         assert_equal TopicMessagesService::MAX_MAX_CHARS, json(topic_ids: @a.id, max_chars: 10_000_000)[:max_chars]
       end
 

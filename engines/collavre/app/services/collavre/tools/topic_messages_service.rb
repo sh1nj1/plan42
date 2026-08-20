@@ -24,6 +24,12 @@ module Tools
     DEFAULT_MAX_CHARS = 40_000
     MAX_MAX_CHARS = 200_000
 
+    # A successful bounded fallback needs enough room to explain why the
+    # requested response was omitted. Values below this are raised to the
+    # minimum instead of returning a response wider than the cap just to spell
+    # out that the cap was too small.
+    MIN_MAX_CHARS = 160
+
     # Each topic also pays for its own heading, totals line and "More:" call —
     # or, if it does not fit, its not-fetched notice, which is about the same
     # size. Charged separately from the messages so that a call for many topics
@@ -65,7 +71,9 @@ module Tools
       that does not fit is returned partially or marked not-fetched rather than
       silently trimmed — check "truncated" and each topic's next_offset. A
       single message wider than the whole cap is clipped rather than dropped,
-      marked in its text and counted in the topic's clipped_count.
+      marked in its text and counted in the topic's clipped_count. If fixed
+      metadata such as a topic name cannot fit, the tool returns a bounded
+      error instead of exceeding max_chars or silently omitting a topic.
 
       Long topics: call topic_list first to see message_count, then page. To
       summarize a whole large topic, page from offset 0 upward, keeping
@@ -83,7 +91,7 @@ module Tools
     tool_param :order, description: "Rendering order within the returned window: 'asc' (default, oldest-to-newest — reads as a transcript) or 'desc' (newest first). Does not change which messages the window selects.", required: false, enum: Topics::MessagePage::ORDERS
     tool_param :max_message_id, description: "Only consider messages with id <= this. Pass the newest_message_id from your first page on every follow-up page so paging stays on one snapshot of a live topic.", required: false
     tool_param :include_system, description: "Include authorless system notices such as concurrency and channel announcements (default: false). Approval prompts are never returned.", required: false
-    tool_param :max_chars, description: "Character cap for the whole response across all topics, measured in the format you requested (default: #{DEFAULT_MAX_CHARS}, max #{MAX_MAX_CHARS}).", required: false
+    tool_param :max_chars, description: "Character cap for the whole response across all topics, measured in the format you requested (default: #{DEFAULT_MAX_CHARS}, min #{MIN_MAX_CHARS}, max #{MAX_MAX_CHARS}). Values below the minimum are raised to it.", required: false
     tool_param :format, description: "'markdown' (default, compact transcript) or 'json' (same data, structured; costs noticeably more of max_chars for the same messages, since field names and string escaping are charged too).", required: false, enum: Topics::CharBudget::FORMATS
 
     sig do
@@ -116,7 +124,8 @@ module Tools
                    include_system: include_system, budget: budget }
       )
 
-      budget.json? ? payload : Topics::MessagePageMarkdown.call(payload)
+      response = budget.json? ? payload : Topics::MessagePageMarkdown.call(payload)
+      enforce_cap(response, budget)
     end
 
     private
@@ -242,7 +251,32 @@ module Tools
       value = max_chars.to_i
       return DEFAULT_MAX_CHARS if value <= 0
 
-      [ value, MAX_MAX_CHARS ].min
+      value.clamp(MIN_MAX_CHARS, MAX_MAX_CHARS)
+    end
+
+    # Message budgeting normally keeps the rendered response below max_chars,
+    # but fixed metadata can be wider than its budget by itself: a tiny cap, a
+    # batch of skipped topics, or one unrestricted topic name is enough. The
+    # final emitted form is the only authoritative measurement, so replace an
+    # oversized result with a bounded error instead of silently chopping a
+    # topic name or returning malformed JSON/Markdown.
+    def enforce_cap(response, budget)
+      emitted_chars = budget.json? ? response.to_json.length : response.length
+      return response if emitted_chars <= budget.chars
+
+      bounded_error(budget, required_chars: emitted_chars)
+    end
+
+    def bounded_error(budget, required_chars:)
+      return {
+        error: "topic_messages metadata exceeds max_chars",
+        required_chars: required_chars,
+        max_chars: budget.chars,
+        truncated: true
+      } if budget.json?
+
+      "> topic_messages metadata needs #{required_chars} chars; max_chars is #{budget.chars}. " \
+        "Request fewer topics or raise max_chars.\n"
     end
   end
 end

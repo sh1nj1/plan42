@@ -136,7 +136,7 @@ Read messages from one or more topics, newest first, with paging.
 | `order` | String | No | `"asc"` | Rendering order in the window: `asc` (transcript) or `desc` |
 | `max_message_id` | Integer | No | — | Snapshot anchor: only messages with `id <=` this |
 | `include_system` | Boolean | No | false | Include authorless notices. Approval prompts are never returned |
-| `max_chars` | Integer | No | 40000 | Cap for the **whole response** (max 200000) |
+| `max_chars` | Integer | No | 40000 | Cap for the **whole response** (min 160, max 200000; smaller positive values are raised to 160) |
 | `format` | String | No | `"markdown"` | `markdown` or `json` |
 
 **Windowing.** Selection is always from the newest end: `offset: 0` is the latest
@@ -163,6 +163,10 @@ than `limit`) ended the window. Each message: `id`, `author`, `author_id`,
 
 A topic the budget could not reach at all comes back with `skipped_reason` and
 `returned_count: 0` rather than looking like an empty conversation.
+
+If the fixed topic metadata alone cannot fit — for example, because a topic
+name is unusually long — the tool returns a bounded error instead of emitting
+a response wider than `max_chars` or silently omitting a topic.
 
 A single message wider than the whole `max_chars` cap is clipped rather than
 dropped — dropping it would return an empty page at an offset that has rows and
