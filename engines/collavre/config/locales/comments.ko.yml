@@ -21,6 +21,7 @@ ko:
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
+        source_changed: 요청이 대기하는 동안 토픽이 다른 크리에이티브로 이동했습니다. 현재 크리에이티브에서 다시 불러온 뒤 재시도하세요.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
         session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 이동할 수 없습니다.
         primary_agent_released: '@%{agent}은(는) "%{creative}"에 피드백 권한이 없어 Primary Agent 지정이 해제되었습니다. 계속 담당하게 하려면 해당 크리에이티브를 에이전트와 공유한 뒤 다시 지정하세요.'

@@ -21,6 +21,7 @@ en:
       create_and_move: 'Create "%{name}" and move'
       move:
         no_target_permission: You don't have write permission on the target creative.
+        source_changed: The topic moved to another creative while this request was waiting. Reload it and try again from its current creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
         session_topic_locked: This topic belongs to a live agent session and cannot be moved.
         primary_agent_released: '@%{agent} was released as primary agent because it has no feedback access in "%{creative}". Share that creative with the agent and assign it again to keep it on this topic.'

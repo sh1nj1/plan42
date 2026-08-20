@@ -1,5 +1,7 @@
 module Collavre
   class TopicsController < ApplicationController
+    rescue_from Topics::TopicMove::SourceChangedError, with: :render_source_changed
+
     include Collavre::CreativePermissionGuard
 
     before_action :set_creative
@@ -269,6 +271,10 @@ module Collavre
     end
 
     private
+
+    def render_source_changed(error)
+      render json: { error: error.message }, status: :forbidden
+    end
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin

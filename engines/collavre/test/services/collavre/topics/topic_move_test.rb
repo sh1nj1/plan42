@@ -32,6 +32,27 @@ module Collavre
 
         assert_equal %i[topic_lock comments_update], calls
       end
+
+      test "rejects a move when the source changes before the lock is acquired" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        intervening = Creative.create!(description: "Intervening", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        comment = Comment.create!(creative: source, topic: topic, user: user, content: "message",
+                                  skip_default_user: true, skip_dispatch: true)
+        stale_move = TopicMove.new(topic: topic, target_creative: destination)
+
+        TopicMove.new(topic: topic, target_creative: intervening).call
+
+        error = assert_raises(TopicMove::SourceChangedError) do
+          stale_move.call
+        end
+
+        assert_includes error.message, "moved"
+        assert_equal intervening.id, topic.reload.creative_id
+        assert_equal intervening.id, comment.reload.creative_id
+      end
     end
   end
 end
