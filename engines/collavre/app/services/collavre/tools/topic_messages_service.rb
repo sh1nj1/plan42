@@ -39,7 +39,7 @@ module Tools
     # plus their delimiters — around 285 characters measured, against the two
     # lines markdown prints — so the reserve is per format rather than one
     # constant that is right for one of them and wrong for the other.
-    TOPIC_HEADER_CHARS = { "markdown" => 325, "json" => 500 }.freeze
+    TOPIC_HEADER_CHARS = { "markdown" => 350, "json" => 525 }.freeze
 
     # The trailing "output hit max_chars" notice, which only exists when the
     # budget ran out and so cannot be paid for out of what is left of it.
@@ -66,11 +66,11 @@ module Tools
       Every topic reports total_count and total_chars for the whole topic, so
       you can tell how much you have not read yet, plus has_more, next_offset,
       and next_cursor for the next call. Pass next_cursor and the returned
-      newest_message_id back on follow-up pages. The snapshot id excludes later
-      arrivals; the cursor keeps paging stable when earlier rows are moved or
-      deleted. It also binds a clipped continuation to that row's content
-      version, so an edit restarts the changed message at character zero rather
-      than applying a stale offset.
+      newest_message_id back on follow-up pages. The snapshot id excludes newly
+      created messages; the cursor also excludes older messages moved into the
+      topic later and keeps paging stable when earlier rows leave. It binds a
+      clipped continuation to that row's content version, so an edit restarts
+      the changed message at character zero rather than applying a stale offset.
 
       If one message is too large for the response cap, its row remains at the
       same next_offset and next_content_offset identifies the next character to
@@ -110,7 +110,7 @@ module Tools
 
     tool_param :topic_ids, description: "Topic ids to read. Comma-separated for several, e.g. \"12,45,78\" (max #{TopicSelection::MAX_TOPICS} per call — asking for more is an error, not a silent trim). A single id also works."
     tool_param :offset, description: "How many messages back from the newest to start, applied per topic (default: 0).", required: false
-    tool_param :cursor, description: "Opaque per-topic keyset cursor returned as next_cursor. Pass it on a single-topic follow-up page so moved or deleted earlier messages cannot shift and skip unread rows.", required: false
+    tool_param :cursor, description: "Opaque per-topic snapshot/keyset cursor returned as next_cursor. Pass it on a single-topic follow-up page so later move-ins stay excluded and moved or deleted earlier messages cannot shift and skip unread rows.", required: false
     tool_param :limit, description: "Messages per topic (default: #{Topics::MessagePage::DEFAULT_LIMIT}, max #{Topics::MessagePage::MAX_LIMIT}).", required: false
     tool_param :order, description: "Rendering order within the returned window: 'asc' (default, oldest-to-newest — reads as a transcript) or 'desc' (newest first). Does not change which messages the window selects.", required: false, enum: Topics::MessagePage::ORDERS
     tool_param :max_message_id, description: "Only consider messages with id <= this. Pass the newest_message_id from your first page on every single-topic follow-up page so paging stays on one snapshot of a live topic.", required: false

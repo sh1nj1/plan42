@@ -24,25 +24,29 @@ module Collavre
       # comment belongs to its author and approver, and a tool must not be the
       # way around that.
       #
-      # max_message_id excludes rows created after the first page. MessagePage's
-      # keyset cursor separately protects the other direction of drift: rows
-      # already returned can leave the topic without shifting unread survivors
-      # ahead of a numeric offset.
-      def for(topic, user:, include_system: false, max_message_id: nil)
-        for_topics([ topic ], user: user, include_system: include_system, max_message_id: max_message_id)
+      # max_message_id excludes rows created after the first page. The topic
+      # assignment anchor excludes older rows moved in after that page, while
+      # MessagePage's keyset cursor lets rows leave without shifting unread
+      # survivors ahead of a numeric offset.
+      def for(topic, user:, include_system: false, max_message_id: nil, topic_assigned_before: nil)
+        for_topics(
+          [ topic ], user: user, include_system: include_system,
+          max_message_id: max_message_id, topic_assigned_before: topic_assigned_before
+        )
       end
 
       # Pair every topic id with the creative that was authorized. TopicMove
       # preserves the topic id while relocating all of its comments, so an
       # id-only query could read the destination creative after the permission
       # check. The exact pair also avoids cross-topic matches in batch totals.
-      def for_topics(topics, user:, include_system: false, max_message_id: nil)
+      def for_topics(topics, user:, include_system: false, max_message_id: nil, topic_assigned_before: nil)
         membership = topic_membership(topics)
         return Comment.none unless membership
 
         scope = Comment.where(membership).visible_to(user).without_approval_action
         scope = scope.where.not(user_id: nil) unless include_system
         scope = scope.where("comments.id <= ?", max_message_id) if max_message_id
+        scope = scope.where("comments.topic_assigned_at <= ?", topic_assigned_before) if topic_assigned_before
         scope
       end
 

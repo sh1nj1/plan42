@@ -127,6 +127,28 @@ module Collavre
         assert_equal %w[m2 m1], second.messages.map { |message| message[:content] }
       end
 
+      test "cursor excludes an older message moved into the topic after the snapshot" do
+        other_topic = @creative.topics.create!(name: "Other", user: @user)
+        moved_in = Comment.create!(
+          creative: @creative, topic: other_topic, user: @user, content: "moved in later",
+          skip_default_user: true, skip_dispatch: true
+        )
+        3.times { |i| post("m#{i}") }
+        first = page(limit: 1, order: "desc")
+
+        CommentMoveService.new(creative: @creative, user: @user).call(
+          comment_ids: [ moved_in.id ], target_topic_id: @topic.id
+        )
+        second = page(
+          limit: 10, order: "desc", offset: first.next_offset,
+          max_message_id: first.newest_message_id, cursor: first.next_cursor
+        )
+
+        assert_equal %w[m1 m0], second.messages.map { |message| message[:content] }
+        assert_equal 3, second.total_count
+        assert_not second.has_more?
+      end
+
       test "cursor follows created_at and id ordering rather than id alone" do
         oldest = post("oldest")
         newest = post("newest")

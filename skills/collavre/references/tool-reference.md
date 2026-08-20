@@ -132,7 +132,7 @@ Read messages from one or more topics, newest first, with paging.
 |-------|------|----------|---------|-------------|
 | `topic_ids` | String | **Yes** | — | `"12,45,78"` (max 20 per call); a single id also works |
 | `offset` | Integer | No | 0 | Messages back from the newest, **per topic** |
-| `cursor` | String | No | — | Opaque per-topic keyset cursor returned as `next_cursor` |
+| `cursor` | String | No | — | Opaque per-topic snapshot/keyset cursor returned as `next_cursor` |
 | `limit` | Integer | No | 50 | Messages **per topic** (max 200) |
 | `order` | String | No | `"asc"` | Rendering order in the window: `asc` (transcript) or `desc` |
 | `max_message_id` | Integer | No | — | Snapshot anchor: only messages with `id <=` this |
@@ -149,15 +149,16 @@ timeline, so an offset stays reproducible.
 
 **Paging a long topic.** Take `newest_message_id` and `next_cursor` from the
 first page and pass them as `max_message_id` and `cursor` on every later page.
-The snapshot excludes later arrivals; the keyset cursor prevents already-read
-messages that are moved or deleted from shifting unread rows past the offset.
-It also binds a clipped continuation to the row's content version, so an edit
-restarts that changed message at character zero instead of skipping text.
+The snapshot excludes newly-created messages and older messages moved into the
+topic after page one. The keyset cursor also prevents messages that leave from
+shifting unread rows past the offset. It binds a clipped continuation to the
+row's content version, so an edit restarts that changed message at character
+zero instead of skipping text.
 
 ```
 topic_messages(topic_ids: "12,45,78", limit: 100)          # summarize three topics
-topic_messages(topic_ids: 12, offset: 100, cursor: "1770000000000000:9820:1770000001000000", max_message_id: 9931)  # next page
-topic_messages(topic_ids: 12, offset: 100, cursor: "1770000000000000:9820:1770000001000000", content_offset: 28400, max_message_id: 9931)  # clipped tail
+topic_messages(topic_ids: 12, offset: 100, cursor: "1770000000000000:9820:1770000001000000:1770000002000000", max_message_id: 9931)  # next page
+topic_messages(topic_ids: 12, offset: 100, cursor: "1770000000000000:9820:1770000001000000:1770000002000000", content_offset: 28400, max_message_id: 9931)  # clipped tail
 ```
 
 **Returns (json):** `{ topics[], truncated, max_chars }`. Each topic entry:

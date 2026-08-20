@@ -70,13 +70,28 @@ module Collavre
         @max_message_id = options[:max_message_id]
         @content_offset = [ options.fetch(:content_offset, 0).to_i, 0 ].max
         @cursor = decode_cursor(options[:cursor])
+        @topic_assigned_before = @cursor&.fetch(:topic_assigned_before)
         @budget = options.fetch(:budget, CharBudget.new)
       end
 
       def call
+        # CommentMoveService takes the destination topic lock before changing a
+        # comment's membership. Holding the same lock through the anchor and
+        # reads makes the assignment timestamp a commit-order boundary: a move
+        # is either wholly before this snapshot or wholly after it.
+        Topic.transaction do
+          lock_authorized_topic
+          build_page
+        end
+      end
+
+      private
+
+      def build_page
         anchor!
         stat = MessageStats.for(
-          [ @topic ], user: @user, include_system: @include_system, max_message_id: @max_message_id
+          [ @topic ], user: @user, include_system: @include_system,
+          max_message_id: @max_message_id, topic_assigned_before: @topic_assigned_before
         ).fetch(@topic.id)
         window = fetch_window
         content_offset = content_offset_for(window.first)
@@ -99,7 +114,12 @@ module Collavre
         )
       end
 
-      private
+      # Do not reload @topic here: TopicSelection already authorized its
+      # creative. If a concurrent TopicMove changed that creative, the exact
+      # authorized pair no longer locks or reads anything and fails closed.
+      def lock_authorized_topic
+        Topic.where(id: @topic.id, creative_id: @topic.creative_id).lock.pick(:id)
+      end
 
       # An unanchored call picks its own anchor before it reads anything else,
       # so the totals, the window and the advertised newest_message_id all
@@ -116,14 +136,17 @@ module Collavre
       # id, so it names the empty snapshot exactly, and Ruby's 0 is truthy —
       # a caller passing it back gets the same bound rather than a fresh anchor.
       def anchor!
+        @topic_assigned_before ||= Time.current
         @max_message_id ||= MessageScope.for(
-          @topic, user: @user, include_system: @include_system
+          @topic, user: @user, include_system: @include_system,
+          topic_assigned_before: @topic_assigned_before
         ).maximum(:id) || 0
       end
 
       def scope
         @scope ||= MessageScope.for(
-          @topic, user: @user, include_system: @include_system, max_message_id: @max_message_id
+          @topic, user: @user, include_system: @include_system,
+          max_message_id: @max_message_id, topic_assigned_before: @topic_assigned_before
         )
       end
 
@@ -180,24 +203,35 @@ module Collavre
       def encode_cursor(comment)
         return unless comment
 
-        "#{timestamp_micros(comment.created_at)}:#{comment.id}:#{timestamp_micros(comment.updated_at)}"
+        [
+          timestamp_micros(comment.created_at), comment.id,
+          timestamp_micros(comment.updated_at), timestamp_micros(@topic_assigned_before)
+        ].join(":")
       end
 
       def decode_cursor(value)
         return if value.blank?
 
-        match = /\A(\d{1,20}):(\d{1,20}):(\d{1,20})\z/.match(value.to_s)
+        match = /\A(\d{1,20}):(\d{1,20}):(\d{1,20}):(\d{1,20})\z/.match(value.to_s)
         raise ArgumentError, "cursor is invalid" unless match
 
         micros = Integer(match[1], 10)
         id = Integer(match[2], 10)
         updated_at_micros = Integer(match[3], 10)
-        raise ArgumentError, "cursor is invalid" unless micros.positive? && id.positive? && updated_at_micros.positive?
+        topic_assigned_before_micros = Integer(match[4], 10)
+        unless [ micros, id, updated_at_micros, topic_assigned_before_micros ].all?(&:positive?)
+          raise ArgumentError, "cursor is invalid"
+        end
 
         {
           created_at: Time.at(micros / 1_000_000, micros % 1_000_000, :microsecond).utc,
           id: id,
-          updated_at_micros: updated_at_micros
+          updated_at_micros: updated_at_micros,
+          topic_assigned_before: Time.at(
+            topic_assigned_before_micros / 1_000_000,
+            topic_assigned_before_micros % 1_000_000,
+            :microsecond
+          ).utc
         }
       rescue RangeError
         raise ArgumentError, "cursor is invalid"

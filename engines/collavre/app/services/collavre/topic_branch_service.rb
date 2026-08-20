@@ -18,7 +18,11 @@ module Collavre
     # does not apply.
     # auto_select: false omits user_id from the topic-created broadcast so
     # background/system branches do not hijack the owner's current selection.
-    def call(comment_ids:, enforce_limit: true, auto_select: true)
+    # skip_approval_actions is reserved for system history copies that already
+    # selected an approval-free set but must tolerate a row becoming an approval
+    # prompt before the locked fetch. Interactive branches keep the default
+    # all-or-nothing rejection.
+    def call(comment_ids:, enforce_limit: true, auto_select: true, skip_approval_actions: false)
       comment_ids = Array(comment_ids).map(&:presence).compact.map(&:to_i)
       comment_ids = comment_ids.first(MAX_BRANCH_COMMENTS) if enforce_limit
       raise BranchError, I18n.t("collavre.comments.branch.no_selection") if comment_ids.empty?
@@ -27,6 +31,7 @@ module Collavre
         lock_source!
         validate_permissions!
         originals = fetch_comments(comment_ids)
+        originals = originals.reject(&:approval_action?) if skip_approval_actions
         reject_approval_actions!(originals)
         @new_topic = create_branch_topic
         copy_comments(originals)

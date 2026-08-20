@@ -32,12 +32,13 @@ module Collavre
       # (offset + returned) < total, so a total counting past the anchor would
       # keep claiming there is another page after the snapshot has been fully
       # read — the caller pages forever against rows its anchor excludes.
-      def for(topics, user:, include_system: false, max_message_id: nil)
+      def for(topics, user:, include_system: false, max_message_id: nil, topic_assigned_before: nil)
         topics = Array(topics)
         return {} if topics.empty?
 
         scope = MessageScope.for_topics(
-          topics, user: user, include_system: include_system, max_message_id: max_message_id
+          topics, user: user, include_system: include_system,
+          max_message_id: max_message_id, topic_assigned_before: topic_assigned_before
         )
         rows = grouped_rows(scope)
         attachment_chars = attachment_chars_by_topic(scope)

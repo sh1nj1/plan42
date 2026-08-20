@@ -114,7 +114,12 @@ module Collavre
           user: creative.user,
           source_topic: main,
           name: DROP_TRIGGER_TOPIC_NAME
-        ).call(comment_ids: main_comment_ids, enforce_limit: false, auto_select: false)
+        ).call(
+          comment_ids: main_comment_ids,
+          enforce_limit: false,
+          auto_select: false,
+          skip_approval_actions: true
+        )
       else
         creative.topics.create!(
           name: DROP_TRIGGER_TOPIC_NAME,

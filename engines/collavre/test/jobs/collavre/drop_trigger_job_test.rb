@@ -329,6 +329,46 @@ module Collavre
       refute_includes copied_contents, approval.content
     end
 
+    test "skips a Main message that becomes an approval prompt after selection" do
+      main = @child.main_topic(fallback_user: @owner)
+      visible = @child.comments.create!(
+        content: "ordinary history",
+        topic_id: main.id,
+        user: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      raced = @child.comments.create!(
+        content: "changes after selection",
+        topic_id: main.id,
+        user: @ai_bot,
+        approver: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      constructor = TopicBranchService.method(:new)
+      mutate_after_selection = lambda do |**arguments|
+        service = constructor.call(**arguments)
+        branch = service.method(:call)
+        service.define_singleton_method(:call) do |**options|
+          raced.update!(action: JSON.generate(action: "approve_tool"))
+          branch.call(**options)
+        end
+        service
+      end
+
+      TopicBranchService.stub(:new, mutate_after_selection) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+      end
+
+      topic = @child.topics.find_by!(name: "Drop Trigger")
+      copied_contents = topic.comments.pluck(:content)
+      assert_includes copied_contents, visible.content
+      refute_includes copied_contents, raced.content
+    end
+
     test "branches more than MAX_BRANCH_COMMENTS Main messages without truncation" do
       main = @child.main_topic(fallback_user: @owner)
       total = TopicBranchService::MAX_BRANCH_COMMENTS + 5

@@ -11,7 +11,7 @@ module Collavre
           total_count: 130, total_chars: 4200,
           offset: 0, limit: 2, max_chars: 1_000, returned_count: 2, returned_chars: 20,
           has_more: true, next_offset: 2,
-          next_cursor: "1770000000000000:989:1770000001000000", newest_message_id: 991,
+          next_cursor: "1770000000000000:989:1770000001000000:1770000002000000", newest_message_id: 991,
           messages: [
             { id: 990, created_at: "2026-08-19T10:00:00Z", author: "One", agent: false, content: "first" },
             { id: 991, created_at: "2026-08-19T10:01:00Z", author: "Bot", agent: true, content: "second" }
@@ -32,7 +32,7 @@ module Collavre
 
         assert_includes output,
                         "topic_messages(topic_ids: 12, offset: 2, " \
-                          "cursor: \"1770000000000000:989:1770000001000000\", " \
+                          "cursor: \"1770000000000000:989:1770000001000000:1770000002000000\", " \
                           "max_message_id: 991, limit: 2, max_chars: 1000)"
       end
 
@@ -42,7 +42,7 @@ module Collavre
         )
 
         assert_includes output,
-                        "offset: 0, cursor: \"1770000000000000:989:1770000001000000\", " \
+                        "offset: 0, cursor: \"1770000000000000:989:1770000001000000:1770000002000000\", " \
                           "max_message_id: 991, " \
                           "limit: 2, max_chars: 1000, content_offset: 320"
       end
