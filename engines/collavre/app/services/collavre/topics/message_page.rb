@@ -79,7 +79,8 @@ module Collavre
           [ @topic ], user: @user, include_system: @include_system, max_message_id: @max_message_id
         ).fetch(@topic.id)
         window = fetch_window
-        messages = within_budget(serialize_window(window.first(@limit)))
+        content_offset = content_offset_for(window.first)
+        messages = within_budget(serialize_window(window.first(@limit), content_offset: content_offset))
         next_cursor = encode_cursor(next_candidate(window, messages))
 
         Page.new(
@@ -91,7 +92,7 @@ module Collavre
           messages: @order == "asc" ? messages.reverse : messages,
           newest_message_id: @max_message_id,
           budget_exhausted: budget_exhausted?(messages, next_cursor),
-          content_offset: @content_offset,
+          content_offset: content_offset,
           order: @order,
           next_cursor: next_cursor,
           budget: @budget
@@ -137,10 +138,20 @@ module Collavre
         relation.limit(@limit + 1).to_a
       end
 
-      def serialize_window(comments)
+      def serialize_window(comments, content_offset:)
         comments.map.with_index do |comment, index|
-          serialize(comment, content_offset: index.zero? ? @content_offset : 0)
+          serialize(comment, content_offset: index.zero? ? content_offset : 0)
         end
+      end
+
+      # A content offset belongs to the row named by the cursor. If that row
+      # leaves the topic, the inclusive keyset boundary correctly selects the
+      # next surviving row, but its content must start at zero.
+      def content_offset_for(first_comment)
+        return @content_offset unless @cursor
+        return @content_offset if first_comment&.id == @cursor.fetch(:id)
+
+        0
       end
 
       # The cursor names the first row not yet consumed, inclusively. This is
