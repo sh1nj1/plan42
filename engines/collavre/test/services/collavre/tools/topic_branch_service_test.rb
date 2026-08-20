@@ -32,11 +32,11 @@ module Collavre
       test "an approval prompt cannot be branched" do
         prompt = post("Approve the deploy?", action: "approve")
 
-        error = assert_raises(ArgumentError) do
+        error = assert_raises(::Collavre::TopicBranchService::BranchError) do
           TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: prompt.id)
         end
 
-        assert_includes error.message, "approval prompt"
+        assert_equal I18n.t("collavre.comments.branch.approval_action_not_branchable"), error.message
         assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
       end
 
@@ -44,7 +44,7 @@ module Collavre
         prompt = post("Approve the deploy?", action: "approve")
         ids = [ @comments.first.id, prompt.id ]
 
-        assert_raises(ArgumentError) do
+        assert_raises(::Collavre::TopicBranchService::BranchError) do
           TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: ids.join(","))
         end
 
@@ -90,16 +90,14 @@ module Collavre
         assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
       end
 
-      # Narrowing the lookup must not open the hole it closed: a prompt the
-      # caller *can* see is still refused, by name.
-      test "a visible approval prompt is still refused by name" do
+      test "a visible approval prompt is still refused" do
         prompt = post("Approve the deploy?", action: "approve")
 
-        error = assert_raises(ArgumentError) do
+        error = assert_raises(::Collavre::TopicBranchService::BranchError) do
           TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: prompt.id)
         end
 
-        assert_includes error.message, prompt.id.to_s
+        assert_equal I18n.t("collavre.comments.branch.approval_action_not_branchable"), error.message
       end
 
       # visible_to reads a private comment for its author and its approver, so
@@ -241,6 +239,26 @@ module Collavre
 
         assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
         assert_equal 0, restricted.topics.where(source_topic_id: @source.id).count
+      end
+
+      test "does not reveal approval state after the source moves to an inaccessible creative" do
+        prompt = post("Approve the deploy?", action: "approve")
+        restricted = Collavre::Creative.create!(description: "Restricted", user: @stranger)
+        parse = IdList.method(:parse)
+        move_after_authorization = lambda do |value|
+          @source.comments.update_all(creative_id: restricted.id)
+          @source.update_column(:creative_id, restricted.id)
+          parse.call(value)
+        end
+
+        error = assert_raises(::Collavre::TopicBranchService::BranchError) do
+          IdList.stub(:parse, move_after_authorization) do
+            TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: prompt.id)
+          end
+        end
+
+        assert_equal I18n.t("collavre.comments.branch.not_authorized"), error.message
+        assert_not_includes error.message, "approval"
       end
 
       test "requires a current user" do
