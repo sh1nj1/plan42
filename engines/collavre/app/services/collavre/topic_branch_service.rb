@@ -23,8 +23,9 @@ module Collavre
       comment_ids = comment_ids.first(MAX_BRANCH_COMMENTS) if enforce_limit
       raise BranchError, I18n.t("collavre.comments.branch.no_selection") if comment_ids.empty?
 
-      validate_permissions!
       Topic.transaction do
+        lock_source!
+        validate_permissions!
         originals = fetch_comments(comment_ids)
         reject_approval_actions!(originals)
         @new_topic = create_branch_topic
@@ -39,6 +40,16 @@ module Collavre
     private
 
     attr_reader :creative, :user, :source_topic, :name
+
+    def lock_source!
+      return unless source_topic
+
+      # The topic can move after a caller's preflight authorization. Pin its
+      # current creative under the same lock that protects the comment fetch so
+      # permissions and the branch destination cannot refer to stale state.
+      source_topic.lock!
+      @creative = source_topic.creative
+    end
 
     def validate_permissions!
       unless creative.has_permission?(user, :feedback)

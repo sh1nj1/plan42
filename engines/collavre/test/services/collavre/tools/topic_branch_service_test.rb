@@ -208,6 +208,25 @@ module Collavre
         end
       end
 
+      test "reauthorizes a source moved to an inaccessible creative after locking it" do
+        restricted = Collavre::Creative.create!(description: "Restricted", user: @stranger)
+        lock_after_move = lambda do
+          @source.update_column(:creative_id, restricted.id)
+          @source.reload
+        end
+
+        Collavre::Topic.stub(:find, @source) do
+          @source.stub(:lock!, lock_after_move) do
+            assert_raises(::Collavre::TopicBranchService::BranchError) do
+              TopicBranchService.new.call(source_topic_id: @source.id, comment_ids: @comments.first.id)
+            end
+          end
+        end
+
+        assert_equal 0, @creative.topics.where(source_topic_id: @source.id).count
+        assert_equal 0, restricted.topics.where(source_topic_id: @source.id).count
+      end
+
       test "requires a current user" do
         Collavre::Current.user = nil
 

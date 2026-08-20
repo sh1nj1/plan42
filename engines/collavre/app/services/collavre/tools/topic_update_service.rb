@@ -34,8 +34,9 @@ module Tools
       Permissions: renaming needs admin on the creative (a rename changes what
       everyone else's links and habits point at); archiving and pin changes need
       write. Main and an inbox's System topic are reserved: their names and
-      archive state cannot change, but their pin can. A Claude Channel session
-      topic's pin is part of its session identity and cannot be changed here.
+      archive state cannot change, and those names cannot be assigned to another
+      topic, but their pin can. A Claude Channel session topic's pin is part of
+      its session identity and cannot be changed here.
     DESC
 
     tool_param :topic_id, description: "The topic to update."
@@ -114,15 +115,19 @@ module Tools
 
     def reject_reserved_mutation!(topic, name, archived)
       return unless name.present? || !archived.nil?
-      return unless reserved_topic?(topic)
+      return unless reserved_topic?(topic) || reserved_name?(topic.creative, name)
 
       raise ArgumentError,
-        "#{topic.name} is a reserved topic; its name and archive state cannot be changed."
+        "Reserved topic names cannot be assigned or changed, and reserved topics cannot be archived."
     end
 
     def reserved_topic?(topic)
-      topic.name == Creative::MAIN_TOPIC_NAME ||
-        (topic.creative.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME)
+      reserved_name?(topic.creative, topic.name)
+    end
+
+    def reserved_name?(creative, name)
+      name == Creative::MAIN_TOPIC_NAME ||
+        (creative.inbox? && name == Creative::SYSTEM_TOPIC_NAME)
     end
 
     def set_archived(topic, archived)

@@ -70,6 +70,22 @@ module Collavre
         assert_equal system_topic.id, inbox.system_topic.id
       end
 
+      test "an ordinary inbox topic cannot take the reserved System name" do
+        inbox = Collavre::Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })
+        ordinary = inbox.topics.create!(name: "Notices", user: @user)
+        assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+
+        error = assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: ordinary.id,
+                                      name: Collavre::Creative::SYSTEM_TOPIC_NAME, archived: true)
+        end
+
+        assert_includes error.message, "reserved"
+        assert_equal "Notices", ordinary.reload.name
+        assert_not ordinary.archived?
+        assert_not_equal ordinary.id, inbox.system_topic.id
+      end
+
       test "reserved topics still allow primary agent changes" do
         main_topic = @creative.main_topic
         share!(@agent, :feedback)
