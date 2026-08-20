@@ -102,6 +102,7 @@ module Collavre
       # selection cap so full Main history transfers regardless of length.
       main_comment_ids = main.comments
                              .visible_to(creative.user)
+                             .without_approval_action
                              .order(:created_at)
                              .pluck(:id)
 
