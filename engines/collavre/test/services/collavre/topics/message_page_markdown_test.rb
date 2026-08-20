@@ -114,6 +114,7 @@ module Collavre
         assert_includes output, "## [topic 45] Later (creative 7)"
         assert_includes output, "Not fetched: max_chars budget spent on earlier topics"
         assert_includes output, "Output hit max_chars"
+        assert_empty output.lines.grep(/\AMore:/)
       end
 
       test "an unreadable topic is reported in place, not dropped" do

@@ -168,8 +168,18 @@ module Collavre
         post(@a, "x" * 500)
         payload = json(topic_ids: @a.id, max_chars: reserved_for(@a))
 
-        assert_equal "max_chars is too small to return anything for this topic",
+        assert_equal TopicMessagesService::NOTHING_FITS_REASON,
                      entry_for(payload, @a)[:skipped_reason]
+      end
+
+      test "a positive message budget too small for one fragment is marked unfetched" do
+        post(@a, "x" * 5_000)
+        payload = json(topic_ids: @a.id, max_chars: reserved_for(@a) + 1)
+        entry = entry_for(payload, @a)
+
+        assert_equal TopicMessagesService::NOTHING_FITS_REASON, entry[:skipped_reason]
+        assert_empty entry[:messages]
+        assert payload[:truncated]
       end
 
       test "tiny max_chars is clamped and fixed markdown metadata stays bounded" do

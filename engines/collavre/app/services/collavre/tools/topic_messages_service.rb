@@ -44,6 +44,7 @@ module Tools
     # The trailing "output hit max_chars" notice, which only exists when the
     # budget ran out and so cannot be paid for out of what is left of it.
     TRUNCATION_CHARS = 120
+    NOTHING_FITS_REASON = "max_chars is too small to return anything for this topic"
 
     tool_name "topic_messages"
     tool_description <<~DESC.strip
@@ -269,8 +270,13 @@ module Tools
         # Present only when max_chars cut a message short rather than cutting
         # the window between rows. next_content_offset resumes the same row.
         clipped_count: page.clipped_count.nonzero?,
+        skipped_reason: nothing_fits_reason(page),
         messages: page.messages
       }.compact
+    end
+
+    def nothing_fits_reason(page)
+      NOTHING_FITS_REASON if page.returned_count.zero? && page.budget_exhausted
     end
 
     # Carries has_more/next_offset so the caller can resume this topic without
@@ -284,7 +290,7 @@ module Tools
       reason = if served
         "max_chars budget spent on earlier topics"
       else
-        "max_chars is too small to return anything for this topic"
+        NOTHING_FITS_REASON
       end
 
       {
