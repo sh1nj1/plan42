@@ -29,7 +29,7 @@ module Tools
       alone answers ambient messages and no other agent responds. The agent must
       already have feedback permission or better on the creative. Pass "none" to
       clear the pin and let normal routing resume. Accepts an agent id, email,
-      or exact name.
+      or exact name; private agents already shared on this creative resolve too.
 
       Permissions: renaming needs admin on the creative (a rename changes what
       everyone else's links and habits point at); archiving and pin changes need
@@ -58,7 +58,7 @@ module Tools
       # matches an accessible agent, and a caller with no rights on the topic
       # should not be able to ask.
       authorize!(topic, name)
-      agent_change = Topics::AgentResolver.call(primary_agent)
+      agent_change = Topics::AgentResolver.call(primary_agent, creative: topic.creative)
       changed = requested(name, archived, agent_change)
       raise ArgumentError, "Nothing to update: pass name, archived, or primary_agent" if changed.empty?
 

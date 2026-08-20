@@ -61,7 +61,8 @@ module Collavre
         return [] unless entry[:has_more]
 
         [ "More: topic_messages(topic_ids: #{entry[:topic_id]}, offset: #{entry[:next_offset]}, " \
-          "max_message_id: #{entry[:newest_message_id]}#{content_option(entry)}" \
+          "max_message_id: #{entry[:newest_message_id]}, limit: #{entry[:limit]}, " \
+          "max_chars: #{entry[:max_chars]}#{content_option(entry)}" \
           "#{order_option(entry)}#{scope_option(entry)})" ]
       end
 

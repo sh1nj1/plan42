@@ -100,6 +100,14 @@ module Collavre
         assert_includes markdown, 'order: "desc"'
       end
 
+      test "markdown continuation preserves the resolved limit and max_chars" do
+        3.times { |i| post(@a, "m#{i}") }
+
+        markdown = TopicMessagesService.new.call(topic_ids: @a.id, limit: 1, max_chars: 1_000)
+
+        assert_includes markdown, "limit: 1, max_chars: 1000"
+      end
+
       test "max_chars is a whole-response cap, and a topic it cannot reach is reported unfetched" do
         post(@a, "x" * 500)
         post(@b, "y" * 500)

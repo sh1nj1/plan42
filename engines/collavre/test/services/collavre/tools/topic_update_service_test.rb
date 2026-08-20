@@ -57,6 +57,15 @@ module Collavre
         assert_nil @topic.reload.primary_agent_id
       end
 
+      test "pins a private agent already shared on the creative" do
+        @agent.update!(searchable: false)
+        share!(@agent, :feedback)
+
+        TopicUpdateService.new.call(topic_id: @topic.id, primary_agent: "Worker")
+
+        assert_equal @agent.id, @topic.reload.primary_agent_id
+      end
+
       test "several fields change in one call" do
         share!(@agent, :feedback)
         result = TopicUpdateService.new.call(topic_id: @topic.id, name: "Done", archived: true,

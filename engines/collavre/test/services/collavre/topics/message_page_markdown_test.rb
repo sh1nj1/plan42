@@ -9,7 +9,7 @@ module Collavre
         {
           topic_id: 12, topic_name: "Planning", creative_id: 7,
           total_count: 130, total_chars: 4200,
-          offset: 0, limit: 2, returned_count: 2, returned_chars: 20,
+          offset: 0, limit: 2, max_chars: 1_000, returned_count: 2, returned_chars: 20,
           has_more: true, next_offset: 2, newest_message_id: 991,
           messages: [
             { id: 990, created_at: "2026-08-19T10:00:00Z", author: "One", agent: false, content: "first" },
@@ -29,7 +29,8 @@ module Collavre
       test "spells out the next call including the snapshot anchor" do
         output = MessagePageMarkdown.call({ topics: [ entry ], truncated: false })
 
-        assert_includes output, "topic_messages(topic_ids: 12, offset: 2, max_message_id: 991)"
+        assert_includes output,
+                        "topic_messages(topic_ids: 12, offset: 2, max_message_id: 991, limit: 2, max_chars: 1000)"
       end
 
       test "spells out the content continuation without consuming the clipped row" do
@@ -37,7 +38,7 @@ module Collavre
           { topics: [ entry(next_offset: 0, next_content_offset: 320) ], truncated: true }
         )
 
-        assert_includes output, "offset: 0, max_message_id: 991, content_offset: 320"
+        assert_includes output, "offset: 0, max_message_id: 991, limit: 2, max_chars: 1000, content_offset: 320"
       end
 
       test "repeats newest-first rendering order in the continuation" do
@@ -45,7 +46,7 @@ module Collavre
           { topics: [ entry(order: "desc") ], truncated: false }
         )
 
-        assert_includes output, 'max_message_id: 991, order: "desc")'
+        assert_includes output, 'max_chars: 1000, order: "desc")'
       end
 
       test "leaves the default rendering order out of the continuation" do
@@ -62,7 +63,7 @@ module Collavre
       test "repeats include_system in the next call so the follow-up pages the same set" do
         output = MessagePageMarkdown.call({ topics: [ entry(include_system: true) ], truncated: false })
 
-        assert_includes output, "max_message_id: 991, include_system: true)"
+        assert_includes output, "max_chars: 1000, include_system: true)"
       end
 
       test "leaves include_system out of the next call when it was not requested" do

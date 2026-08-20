@@ -31,8 +31,10 @@ module Tools
       permission or better on the creative, otherwise the pin is refused (a
       pinned agent that cannot answer would silence the topic for everyone).
 
-      Accepts an agent id, email, or exact name for primary_agent. Omit `name`
-      to get the next default name ("Topic 3").
+      Accepts an agent id, email, or exact name for primary_agent. Searchable
+      agents, agents created by the caller, and private agents already shared
+      on this creative can be resolved. Omit `name` to get the next default
+      name ("Topic 3").
 
       comment_ids moves existing messages out of their current topic into the
       new one. To copy messages and leave the originals in place, use
@@ -79,7 +81,7 @@ module Tools
     # session agent can never be routed on it and pinning one would produce a
     # dead topic rather than an error.
     def resolve_agent(primary_agent, creative)
-      resolved = Topics::AgentResolver.call(primary_agent)
+      resolved = Topics::AgentResolver.call(primary_agent, creative: creative)
       return nil if resolved.nil? || resolved == Topics::AgentResolver::CLEAR
 
       rejection = Topic.primary_agent_rejection(creative, resolved)

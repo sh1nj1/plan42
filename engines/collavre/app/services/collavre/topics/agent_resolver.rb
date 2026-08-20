@@ -9,9 +9,9 @@ module Collavre
     # Accepting id / email / display name is what makes topic_create and
     # topic_update usable without a preceding lookup round-trip.
     #
-    # Candidates come from User.accessible_ai_agents_for, the same
-    # owned-or-searchable set CreativeSharesController enforces when sharing to
-    # an AI agent. Resolving over every agent row would let a caller confirm a
+    # Candidates are the owned-or-searchable set plus agents already shared on
+    # the target Creative. The latter matches User.mentionable_for and the UI's
+    # agent palette. Resolving over every agent row would let a caller confirm a
     # private agent's existence by name, and would let them pin one they are not
     # allowed to see.
     module AgentResolver
@@ -30,16 +30,27 @@ module Collavre
       module_function
 
       # Returns nil (no change), CLEAR (unassign), or a User.
-      def call(value, actor: Collavre::Current.user)
+      def call(value, actor: Collavre::Current.user, creative: nil)
         token = value.to_s.strip
         return nil if value.nil?
         return CLEAR if token.empty? || CLEAR_TOKENS.include?(token.downcase)
 
-        candidates = User.accessible_ai_agents_for(actor)
+        candidates = candidates_for(actor, creative)
         find_by_id(candidates, token) ||
           find_by_email(candidates, token) ||
           find_by_name(candidates, token) ||
           raise(UnknownAgentError, unknown_message(token))
+      end
+
+      def candidates_for(actor, creative)
+        accessible = User.accessible_ai_agents_for(actor)
+        return accessible unless creative
+
+        shared = User.mentionable_for(creative).ai_agents
+        base = User.ai_agents
+        base.where(id: accessible.reorder(nil).select(:id))
+            .or(base.where(id: shared.reorder(nil).select(:id)))
+            .distinct.order(:name)
       end
 
       def find_by_id(candidates, token)
@@ -68,7 +79,8 @@ module Collavre
 
       def unknown_message(token)
         "No accessible AI agent matches #{token.inspect}. " \
-          "Pass an agent id, email, or exact name; the agent must be searchable or created by you."
+          "Pass an agent id, email, or exact name; the agent must be searchable, created by you, " \
+          "or already shared on this creative."
       end
     end
   end

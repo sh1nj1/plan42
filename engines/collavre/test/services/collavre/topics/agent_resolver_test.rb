@@ -7,6 +7,7 @@ module Collavre
     class AgentResolverTest < ActiveSupport::TestCase
       setup do
         @user = users(:one)
+        @creative = Collavre::Creative.create!(description: "Agent Host", user: @user)
         @agent = create_agent(name: "Reviewer", searchable: true)
       end
 
@@ -44,6 +45,18 @@ module Collavre
         mine = create_agent(name: "Mine", created_by: @user)
 
         assert_equal mine, AgentResolver.call("Mine", actor: @user)
+      end
+
+      test "a private agent shared on the creative resolves only in that creative" do
+        shared = create_agent(name: "Shared Private")
+        Collavre::CreativeShare.create!(
+          creative: @creative, user: shared, shared_by: @user, permission: :feedback
+        )
+
+        assert_equal shared, AgentResolver.call("Shared Private", actor: @user, creative: @creative)
+        assert_raises(AgentResolver::UnknownAgentError) do
+          AgentResolver.call("Shared Private", actor: @user)
+        end
       end
 
       test "a duplicate name is reported with the candidate ids rather than guessed" do

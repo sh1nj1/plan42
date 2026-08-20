@@ -185,6 +185,10 @@ same `max_message_id` until `next_content_offset` disappears. Only then is the
 message row consumed. The clip notice is separate from `content`, so JSON
 callers can concatenate fragments without stripping tool text.
 
+Markdown `More:` calls repeat the resolved `limit` and `max_chars` alongside
+the snapshot, content offset, order, and system-message scope. Following the
+generated call therefore keeps the same page size and context budget.
+
 Asking for more than 20 topics in one call is an error, not a silent trim — the
 ids past the cap were never read, so there would be no per-topic entry to say
 they were missing. Split them across calls. (Unknown or unreadable ids are
@@ -202,7 +206,7 @@ Create a topic on a Creative. The fan-out primitive.
 |-------|------|----------|---------|-------------|
 | `creative_id` | Integer | **Yes** | — | Creative to create the topic on |
 | `name` | String | No | `"Topic N"` | Must be unique on the Creative |
-| `primary_agent` | String | No | — | Agent to pin — id, email, or exact name |
+| `primary_agent` | String | No | — | Agent to pin — id, email, or exact name; private agents already shared here resolve too |
 | `comment_ids` | String | No | — | Existing messages to **move** into the new topic |
 
 Pinning a `primary_agent` is **exclusive**: the pinned agent alone answers
@@ -222,7 +226,7 @@ Rename, archive/unarchive, or re-pin a topic. Pass only what changes.
 | `topic_id` | Integer | **Yes** | Topic to update |
 | `name` | String | No | New name (requires **admin**) |
 | `archived` | Boolean | No | `true` archives, `false` unarchives (requires **write**) |
-| `primary_agent` | String | No | Agent id/email/name, or `"none"` to clear (requires **write**) |
+| `primary_agent` | String | No | Agent id/email/name, or `"none"` to clear (requires **write**; private agents already shared here resolve too) |
 
 Archiving hides the topic from the active list but keeps every message, and
 `topic_messages` can still read it by id. Archive a topic when its thread has

@@ -44,6 +44,17 @@ module Collavre
         assert_equal({ id: @agent.id, name: "Worker" }, result[:primary_agent])
       end
 
+      test "pins a private agent already shared on the creative" do
+        @agent.update!(searchable: false)
+        share!(:feedback)
+
+        result = TopicCreateService.new.call(
+          creative_id: @creative.id, name: "Shared Pin", primary_agent: "Worker"
+        )
+
+        assert_equal @agent.id, result.dig(:primary_agent, :id)
+      end
+
       test "refuses to pin an agent with no access, and creates no topic" do
         error = assert_raises(ArgumentError) do
           TopicCreateService.new.call(creative_id: @creative.id, name: "Pinned", primary_agent: @agent.id.to_s)

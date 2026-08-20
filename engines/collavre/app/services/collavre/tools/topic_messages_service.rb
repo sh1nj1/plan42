@@ -39,7 +39,7 @@ module Tools
     # plus their delimiters — around 285 characters measured, against the two
     # lines markdown prints — so the reserve is per format rather than one
     # constant that is right for one of them and wrong for the other.
-    TOPIC_HEADER_CHARS = { "markdown" => 200, "json" => 400 }.freeze
+    TOPIC_HEADER_CHARS = { "markdown" => 250, "json" => 425 }.freeze
 
     # The trailing "output hit max_chars" notice, which only exists when the
     # budget ran out and so cannot be paid for out of what is left of it.
@@ -69,6 +69,10 @@ module Tools
       same next_offset and next_content_offset identifies the next character to
       read. Repeat both values with the snapshot id until next_content_offset is
       absent; only then has that message row been consumed.
+
+      Markdown "More:" calls repeat the resolved limit and max_chars as well
+      as the snapshot, order, scope, and content offset, so following one keeps
+      the same context budget and paging semantics.
 
       Image attachments are appended to message content as explicit markers
       with filename, content type, byte size, and a readable public-asset URL.
@@ -203,10 +207,10 @@ module Tools
         budget: options[:budget].with(chars: remaining)
       ).call
 
-      serialize(page, include_system: options[:include_system])
+      serialize(page, include_system: options[:include_system], max_chars: options[:budget].chars)
     end
 
-    def serialize(page, include_system:)
+    def serialize(page, include_system:, max_chars:)
       {
         topic_id: page.topic.id,
         topic_name: page.topic.name,
@@ -215,6 +219,7 @@ module Tools
         total_chars: page.total_chars,
         offset: page.offset,
         limit: page.limit,
+        max_chars: max_chars,
         order: page.order,
         returned_count: page.returned_count,
         returned_chars: page.returned_chars,
