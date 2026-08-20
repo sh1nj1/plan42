@@ -171,7 +171,6 @@ module Collavre
     include Notifiable
     include Approvable
     include ClaudeChannelPermission
-    include TopicMembership
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
@@ -184,6 +183,7 @@ module Collavre
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
+    include TopicMembership
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
