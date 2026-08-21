@@ -45,6 +45,7 @@ mkdir -p "$DESKTOP_DIR/vendor"
 # esbuild versions differ. Outside the repo there is nothing to escape to, and
 # esbuild falls back to its integrity-checked download of the matching binary.
 stage="$(mktemp -d "${TMPDIR:-/tmp}/collavre-proxy.XXXXXX")"
+stage="$(cd -P "$stage" && pwd)"
 cleanup() { rm -rf "$stage"; }
 trap cleanup EXIT
 
