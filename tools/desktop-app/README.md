@@ -119,6 +119,15 @@ its supplied SHA-256, requires a Darwin ARM64 runtime, then resolves and locks
 the exact npm package before `npm ci` installs it. The generated lockfile keeps
 the resolved tarball integrity values inside the signed application bundle.
 
+The proxy tree is installed in a staging directory under `TMPDIR`, outside the
+repository, and only moved into `vendor/proxy/` once it is complete. Node resolves
+modules by walking up the directory tree, so staging inside the repo would let a
+nested package bind to the Rails app's `node_modules` instead of its own — that is
+what made `esbuild` fail its postinstall with `Expected "<a>" but got "<b>"` on
+checkouts whose root `node_modules` carried a different `esbuild`. Point `TMPDIR`
+at a path that is not itself inside a `node_modules` tree; the script refuses to
+run otherwise.
+
 For a local DMG build, no Node runtime environment variables are required. The
 script downloads and verifies its pinned official Apple-Silicon Node archive
 (`v22.13.0`). Set `NODE_RUNTIME_DIR` only for a pre-verified expanded official
