@@ -1019,12 +1019,6 @@ body.chat-fullscreen {
         transition: transform 0.3s;
     }
 
-    .comments-popup-action {
-        width: var(--space-px-4);
-        height: var(--space-px-4);
-        flex-basis: var(--space-px-4);
-    }
-
     #comments-popup.open {
         transform: translateY(0);
     }
