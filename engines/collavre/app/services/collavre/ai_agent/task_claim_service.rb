@@ -49,6 +49,54 @@ module Collavre
         claimed
       end
 
+      # Why #claim refused, so the caller can tell the one benign conflict from
+      # the ones that lose a real reply.
+      #
+      # ALREADY_COMPLETED is the sibling-session dedup this whole claim exists
+      # for: the dispatch WAS answered (by another session sharing this agent, or
+      # by the agent's own job), so the reply being refused is a duplicate of one
+      # that already landed. Dropping it is correct.
+      #
+      # CLAIMED_WITHOUT_REPLY is the same `done` status with no answer behind it.
+      # #claim flips the task to done BEFORE the controller saves the comment, so
+      # between those two statements the row says "completed" while nothing has
+      # been posted — and that window can end in a rollback (blank/invalid text
+      # restores the task to `delegated`) or never end at all (the worker dies).
+      # A concurrent reply landing in it holds the only copy of the answer, so it
+      # must surface. Status alone cannot tell this from the case above; the
+      # linked reply comment can.
+      #
+      # NOT_DELEGATED is everything else: a task moved out of `delegated` without
+      # a reply — cancelled by an offline session, failed, or recovered by the
+      # stuck-task sweeper while the agent was still composing. Nothing answered
+      # that dispatch, so the text the caller is holding is the only copy of that
+      # answer and the conflict has to surface rather than be swallowed. A task
+      # that cannot be found under this agent+topic reads the same way; the reply
+      # path resolves the agent from the task first, so it should not reach here,
+      # and the safe default if it ever does is "surface it".
+      CONFLICT_ALREADY_COMPLETED = "already_completed"
+      CONFLICT_CLAIMED_WITHOUT_REPLY = "claimed_without_reply"
+      CONFLICT_NOT_DELEGATED = "not_delegated"
+
+      # Every winning claim passes through claimed-without-reply on its way to
+      # answered: the status flips first and the link lands one comment save
+      # later. Deciding on the first read would therefore report the ordinary
+      # sibling race as a lost reply purely on timing. Waiting does not weaken
+      # the proof — only an actually linked comment is ever called benign — it
+      # just gives finalization the moment it needs to produce one. Past the
+      # deadline the answer is the same as before: surface it.
+      FINALIZE_GRACE_SECONDS = 0.5
+      FINALIZE_GRACE_INTERVAL = 0.05
+
+      def conflict_reason(agent:, topic:, requested_task_id:)
+        task = Task.find_by(id: requested_task_id, agent_id: agent.id, topic_id: topic.id)
+        return CONFLICT_NOT_DELEGATED unless task&.status == "done"
+
+        # `reply_comment` is what #finalize links (comment.task_id = task.id), so
+        # its presence is the only proof the dispatch was actually answered.
+        await_reply_link(task) ? CONFLICT_ALREADY_COMPLETED : CONFLICT_CLAIMED_WITHOUT_REPLY
+      end
+
       # Post-claim side effects, run only after the reply comment is saved. Links
       # the comment to the claimed task, releases the ResourceTracker slot the
       # AiAgentJob held under task.id, and drains the topic queue — mirroring AiAgentJob#perform's success path for
@@ -75,6 +123,27 @@ module Collavre
       end
 
       private
+
+      # Poll for the link #finalize creates, up to FINALIZE_GRACE_SECONDS.
+      # Monotonic clock so a wall-clock adjustment cannot stretch or collapse
+      # the deadline mid-wait.
+      def await_reply_link(task)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + FINALIZE_GRACE_SECONDS
+        loop do
+          return true if reply_linked?(task)
+          return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+          sleep FINALIZE_GRACE_INTERVAL
+        end
+      end
+
+      # uncached because the point of asking twice is to see a write another
+      # request committed after the first ask. Rails wraps each request in
+      # QueryCache, which would otherwise serve the identical SELECT from the
+      # first (empty) result for the whole wait.
+      def reply_linked?(task)
+        Comment.uncached { Comment.exists?(task_id: task.id) }
+      end
 
       # Clear the chat typing indicator via the canonical status broadcaster (the
       # same one AiAgentService uses for every other agent), so the Claude path
