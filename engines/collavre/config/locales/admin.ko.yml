@@ -8,7 +8,7 @@ ko:
       orchestration: "AI 오케스트레이션"
     settings:
       help_link: "도움말 메뉴 링크 URL"
-      help_link_hint: "상단 내비게이션의 \"?\" 메뉴가 이 URL을 새 탭에서 엽니다. 비워두면 기본 전체 기능 페이지를 엽니다."
+      help_link_hint: "상단 내비게이션의 \"?\" 메뉴가 이 URL을 엽니다. 외부 사이트 URL은 새 탭에서, 이 사이트의 URL은 현재 창에서 엽니다. 비워두면 기본 전체 기능 페이지를 현재 창에서 엽니다."
       mcp_tool_approval: "MCP 도구 승인"
       mcp_tool_approval_hint: "새 MCP 도구 등록 시 시스템 관리자의 승인이 필요합니다."
       creatives_login_required: "Creatives 로그인 필요"

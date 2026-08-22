@@ -6,11 +6,7 @@
 <div class="landing">
   <article class="landing-section">
     <div class="landing-container feature-guide-container">
-      <nav class="feature-guide-breadcrumb">
-        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name) %>
-        <span aria-hidden="true"><%= t('collavre.features.nav.separator') %></span>
-        <%= link_to t('collavre.features.nav.all'), collavre.features_path(locale: I18n.locale, script_name: request.script_name) %>
-      </nav>
+      <%= render "collavre/features/breadcrumb", show_all_features: true %>
 
       <header class="feature-guide-header">
         <div class="landing-feature-icon" aria-hidden="true"><%= @card.icon %></div>

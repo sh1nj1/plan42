@@ -135,12 +135,13 @@ class NavigationHelperTest < ActionView::TestCase
     assert_match(/creative-guide-link/, html)
   end
 
-  test "help partial opens the default features page in a new tab" do
+  test "help partial opens the default features page in the current window" do
     SystemSetting.stub(:help_menu_link, "") do
       I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
     end
 
-    assert_select "a#creative-guide-link[href='/features?locale=en'][target='_blank'][rel='noopener']", count: 1
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
   end
 
   test "help partial preserves the engine mount path" do
@@ -153,12 +154,328 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[href='/collavre/features?locale=ko']", count: 1
   end
 
-  test "help partial preserves the configured link and opens it in a new tab" do
+  test "help partial opens a configured off-site link in a new tab" do
     SystemSetting.stub(:help_menu_link, "https://docs.example.com/help") do
       render partial: "collavre/shared/navigation/help_button"
     end
 
-    assert_select "a#creative-guide-link[href='https://docs.example.com/help'][target='_blank'][rel='noopener']", count: 1
+    assert_select "a#creative-guide-link[href='https://docs.example.com/help']", count: 1
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured same-host link in the current window" do
+    SystemSetting.stub(:help_menu_link, "http://#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[href='http://#{request.host}/docs']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial opens a configured same-host link on another port in a new tab" do
+    SystemSetting.stub(:help_menu_link, "http://#{request.host}:4000/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured same-host link on another scheme in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https://#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured scheme-relative same-origin link in the current window" do
+    SystemSetting.stub(:help_menu_link, "//#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # A scheme-relative URL inherits our scheme but not our port: the browser
+  # resolves "//host/docs" to the scheme's default port, so served on 4000 this
+  # link lands on port 80 — a different service.
+  test "help partial opens a configured scheme-relative link in a new tab when we run on a non-default port" do
+    request.host = "#{request.host}:4000"
+
+    SystemSetting.stub(:help_menu_link, "//#{request.host}/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured scheme-relative link carrying our non-default port in the current window" do
+    request.host = "#{request.host}:4000"
+
+    SystemSetting.stub(:help_menu_link, "//#{request.host}:4000/docs") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial opens a configured relative link in the current window" do
+    SystemSetting.stub(:help_menu_link, "/docs/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[href='/docs/help']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial treats an unparseable relative configured link as internal" do
+    SystemSetting.stub(:help_menu_link, "/docs/hel lo") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # URI.parse rejects these; browsers do not. An internationalized domain is
+  # punycoded and navigated to, so treating it as ours would replace the app
+  # with an off-site page.
+  test "help partial opens an unparseable configured link with a scheme in a new tab" do
+    SystemSetting.stub(:help_menu_link, "http://exa mple.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured internationalized domain in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https://münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a scheme-relative internationalized domain in a new tab" do
+    SystemSetting.stub(:help_menu_link, "//münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # Ruby finds no host past the extra slashes; a browser skips them and lands on
+  # docs.example.com.
+  test "help partial opens a configured link with extra leading slashes in a new tab" do
+    SystemSetting.stub(:help_menu_link, "///docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured link with a scheme and extra slashes in a new tab" do
+    SystemSetting.stub(:help_menu_link, "http:///docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # A browser repairs the missing slash and lands on docs.example.com, because
+  # the scheme is not the one this page was served over.
+  test "help partial opens a configured link with a foreign scheme and a missing slash in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https:/docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens an unparseable link with a foreign scheme and a missing slash in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https:/münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # Same spelling, our own scheme: a browser reads the rest as a path on our
+  # origin rather than as a host.
+  test "help partial keeps a configured link with our scheme and a missing slash in the current window" do
+    SystemSetting.stub(:help_menu_link, "http:/docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # For a special scheme a browser reads "\" as "/", so two of them open an
+  # authority just as "//" does.
+  test "help partial opens a configured backslash authority in a new tab" do
+    SystemSetting.stub(:help_menu_link, "\\\\docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured mixed slash authority in a new tab" do
+    SystemSetting.stub(:help_menu_link, "/\\docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # One backslash is a path separator, not an authority.
+  test "help partial keeps a configured single backslash path in the current window" do
+    SystemSetting.stub(:help_menu_link, "\\docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # A browser strips the padding and navigates off-site; comparing the raw
+  # string would measure something it never sees.
+  test "help partial opens a configured off-site link padded with whitespace in a new tab" do
+    SystemSetting.stub(:help_menu_link, "  https://docs.example.com/help  ") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # Tabs and newlines are removed wherever they sit, so this is an off-site URL.
+  test "help partial opens a configured off-site link split by a tab in a new tab" do
+    SystemSetting.stub(:help_menu_link, "ht\ttps://docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial keeps a configured relative link padded with whitespace in the current window" do
+    SystemSetting.stub(:help_menu_link, " /docs/help ") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # URI::InvalidComponentError is not a URI::InvalidURIError. Letting it escape
+  # would raise on every page that carries the navigation.
+  test "help partial renders a configured link that raises an invalid component error" do
+    SystemSetting.stub(:help_menu_link, "mailto://support@example.com") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # "about:blank" replaces the page with an empty document. Navigating there in
+  # place leaves nothing to click, which is the one outcome the current-window
+  # switch has to avoid.
+  test "help partial opens a configured about link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "about:blank") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial opens a configured blob link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "blob:https://docs.example.com/1234") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # URI.parse raises on this one, so it arrives through the rescue.
+  test "help partial opens a configured data link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "data:text/html,<h1>help</h1>") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # "file:///x" already reads as an authority; a single slash does not.
+  test "help partial opens a configured single slash file link in a new tab" do
+    SystemSetting.stub(:help_menu_link, "file:/Users/me/docs.html") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # A handler scheme hands the URL to something else and leaves the page alone,
+  # so there is nothing to escape from and no tab to open.
+  test "help partial keeps a configured mailto link in the current window" do
+    SystemSetting.stub(:help_menu_link, "mailto:support@example.com") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # The scheme match is anchored to a colon, so a path that merely starts with
+  # one of those words is still a path.
+  test "help partial keeps a configured relative link starting with a scheme word in the current window" do
+    SystemSetting.stub(:help_menu_link, "/about-us/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  # A scheme that executes is never rendered, in any window. Opening a new tab
+  # would not defuse it: that tab starts on an about:blank carrying our origin.
+  test "help partial drops a configured javascript link for the built-in guide" do
+    SystemSetting.stub(:help_menu_link, "javascript:fetch('/evil')") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial drops a configured javascript link written in mixed case" do
+    SystemSetting.stub(:help_menu_link, "JaVaScRiPt:fetch('/evil')") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+  end
+
+  # A browser drops the tab before it reads the scheme, so the check has to run
+  # on the normalized value rather than on what was saved.
+  test "help partial drops a configured javascript link split by a tab" do
+    SystemSetting.stub(:help_menu_link, "java\tscript:fetch('/evil')") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+  end
+
+  test "help partial drops a configured vbscript link for the built-in guide" do
+    SystemSetting.stub(:help_menu_link, "vbscript:msgbox(1)") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 1
+  end
+
+  # The match is anchored to the colon here too: a path may be named after the
+  # language without being written in it.
+  test "help partial keeps a configured path named after a script language" do
+    SystemSetting.stub(:help_menu_link, "/javascript-guide/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[href='/javascript-guide/help']", count: 1
+    assert_select "a#creative-guide-link[target]", count: 0
   end
 
   test "navigation partial renders mobile guest help and sign in buttons" do
@@ -180,12 +497,13 @@ class NavigationHelperTest < ActionView::TestCase
       visible: -> { true }
     )
 
-    render partial: "collavre/shared/navigation"
+    SystemSetting.stub(:help_menu_link, "") do
+      render partial: "collavre/shared/navigation"
+    end
 
     assert_includes rendered, 'class="mobile-only"'
     assert_includes rendered, 'creative-guide-link'
-    assert_includes rendered, 'target="_blank"'
-    assert_includes rendered, 'rel="noopener"'
+    assert_not_includes rendered, 'target="_blank"'
     assert_includes rendered, I18n.t("app.sign_in")
     assert_includes rendered, collavre.new_session_path
   end
@@ -219,7 +537,8 @@ class NavigationHelperTest < ActionView::TestCase
       render partial: "collavre/shared/navigation"
     end
 
-    assert_select "a#creative-guide-link[href='/features?locale=en'][target='_blank'][rel='noopener']", count: 2
+    assert_select "a#creative-guide-link[href='/features?locale=en']", count: 2
+    assert_select "a#creative-guide-link[target]", count: 0
   ensure
     Current.user = nil
   end

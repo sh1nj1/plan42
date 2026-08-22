@@ -6,9 +6,7 @@
 <div class="landing">
   <section class="landing-section landing-features">
     <div class="landing-container">
-      <nav class="feature-guide-breadcrumb">
-        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name) %>
-      </nav>
+      <%= render "collavre/features/breadcrumb" %>
 
       <h1 class="landing-section-title"><%= t('collavre.features.index.title') %></h1>
       <p class="landing-section-sub"><%= t('collavre.features.index.subtitle') %></p>
