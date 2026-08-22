@@ -223,6 +223,26 @@ refused — a pinned agent that cannot answer would silence the topic entirely.
 Requires **write** on the Creative. Use `topic_branch` to copy messages instead
 of moving them.
 
+### topic_message_create
+
+Post one public message to an existing topic and run the topic's normal agent
+routing. This is the step that turns a newly created, pinned topic into active
+work.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `topic_id` | Integer | **Yes** | Topic to post to |
+| `content` | String | **Yes** | Message body or initial instruction; Markdown is supported |
+
+The caller remains the visible author. Human-authored messages follow ordinary
+comment dispatch. Agent-authored messages dispatch as A2A work, so a coordinator
+can create several topics, pin a primary agent on each, then start them with
+independent instructions. Different topics can run concurrently; repeated
+messages in one topic follow that topic's queue.
+
+Requires **feedback** or better on the topic's Creative. Archived Creatives,
+archived topics, and an inbox's reserved System topic reject new messages.
+
 ### topic_update
 
 Rename, archive/unarchive, or re-pin a topic. Pass only what changes.
