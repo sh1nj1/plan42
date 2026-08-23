@@ -68,6 +68,19 @@ module Collavre
       ACTIVE_STATUSES.include?(status)
     end
 
+    # Cancellation callers often select an active row before waiting on another
+    # request's task lock. Reload under that lock so a completed reply cannot be
+    # overwritten by a stale running/delegated instance.
+    def cancel_if_active!(statuses: ACTIVE_STATUSES, **attributes)
+      with_lock do
+        next unless status.in?(statuses)
+
+        previous_status = status
+        update!(attributes.merge(status: "cancelled"))
+        previous_status
+      end
+    end
+
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same

@@ -56,20 +56,21 @@ module Collavre
         comment.update_column(:task_id, task.id)
       end
 
-      # Post-claim side effects, run only after the reply comment transaction has
-      # committed. The topic lock plus the active running state make the gap
-      # move-safe. Finalization takes the same topic lock, commits done, then
-      # releases the ResourceTracker slot the
+      # Finalize the claimed row inside TaskReplyService's topic-lock
+      # transaction. Completion effects are registered after commit, when the
+      # linked comment and done status are both visible. This leaves no gap for
+      # cancellation or TopicMove between reply persistence and completion.
+      # The effects release the ResourceTracker slot the
       # AiAgentJob held under task.id, and drains the topic queue — mirroring AiAgentJob#perform's success path for
       # non-delegated runs.
       def finalize(agent:, task:, comment:)
-        topic = Topic.find(task.topic_id)
-        topic.with_lock do
-          Task.where(id: task.id, status: "running").update_all(status: "done", updated_at: Time.current)
-          task.reload
-          ActiveRecord.after_all_transactions_commit do
-            run_completion_effects(agent, task, comment)
-          end
+        completed = Task.where(id: task.id, status: "running")
+                        .update_all(status: "done", updated_at: Time.current)
+        raise ActiveRecord::RecordNotSaved, "claimed reply task was not running" unless completed == 1
+
+        task.reload
+        ActiveRecord.after_all_transactions_commit do
+          run_completion_effects(agent, task, comment)
         end
       end
 

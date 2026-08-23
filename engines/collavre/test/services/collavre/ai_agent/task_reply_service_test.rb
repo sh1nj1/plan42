@@ -30,10 +30,10 @@ module Collavre
           assert result.comment.persisted?
         end
 
-        assert_equal %i[lock claim link unlock finalize], events
+        assert_equal %i[lock claim link finalize unlock], events
       end
 
-      test "active claimed reply blocks a topic move before finalize" do
+      test "active claimed reply blocks a topic move until finalize" do
         user = users(:one)
         source = Creative.create!(description: "Replies", user: user)
         destination = Creative.create!(description: "Destination", user: user)
@@ -43,10 +43,11 @@ module Collavre
         finalizer = Object.new
         test_case = self
         finalizer.define_singleton_method(:link_reply) { |**args| claim_service.link_reply(**args) }
-        finalizer.define_singleton_method(:finalize) do |**|
+        finalizer.define_singleton_method(:finalize) do |**args|
           test_case.assert_raises(Topics::TopicMove::ActiveTaskError) do
             Topics::TopicMove.new(topic: topic, target_creative: destination).call
           end
+          claim_service.finalize(**args)
         end
 
         result = TaskReplyService.new(
@@ -59,7 +60,7 @@ module Collavre
         ).call
 
         assert_equal :created, result.status
-        assert_equal "running", task.reload.status
+        assert_equal "done", task.reload.status
         assert_equal source.id, topic.reload.creative_id
         assert_equal task.id, result.comment.reload.task_id
       end

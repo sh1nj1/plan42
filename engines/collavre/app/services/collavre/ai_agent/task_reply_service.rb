@@ -19,9 +19,7 @@ module Collavre
       end
 
       def call
-        result = topic.with_lock { build_result }
-        claim_service.finalize(agent: result.agent, task: result.task, comment: result.comment) if result.task
-        result
+        topic.with_lock { build_result }
       end
 
       private
@@ -52,6 +50,7 @@ module Collavre
         return failed_result(comment, task) unless comment.save
 
         claim_service.link_reply(task: task, comment: comment) if task
+        claim_service.finalize(agent: agent, task: task, comment: comment) if task
         Result.new(status: :created, body: { comment_id: comment.id }, comment: comment, agent: agent, task: task)
       end
 
