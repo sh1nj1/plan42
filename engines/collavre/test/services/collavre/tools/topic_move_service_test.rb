@@ -16,9 +16,13 @@ module Collavre
 
       teardown { Current.user = nil }
 
-      test "moves the topic, messages, read cursors, and comment counters" do
+      test "moves the topic, messages, snapshots, read cursors, and comment counters" do
         comment = Comment.create!(creative: @source, topic: @topic, user: @owner, content: "Keep together",
                                   skip_default_user: true, skip_dispatch: true)
+        snapshot = CommentSnapshot.create!(
+          creative: @source, topic: @topic, user: @owner, operation: "compress",
+          comments_data: [ { "id" => comment.id, "topic_id" => @topic.id, "content" => comment.content } ]
+        )
         pointer = CommentReadPointer.create!(
           user: @owner, creative: @source, topic: @topic, last_read_comment: comment
         )
@@ -29,6 +33,7 @@ module Collavre
 
         assert_equal @target.id, @topic.reload.creative_id
         assert_equal @target.id, comment.reload.creative_id
+        assert_equal @target.id, snapshot.reload.creative_id
         assert_equal @target.id, pointer.reload.creative_id
         assert_equal source_before - 1, @source.reload.comments_count
         assert_equal target_before + 1, @target.reload.comments_count
@@ -186,6 +191,17 @@ module Collavre
         @topic.update!(session_id: "session-1")
 
         assert_error(:session_topic, creative_id: @target.id)
+      end
+
+      test "rejects a topic with active agent work" do
+        Task.create!(name: "Moving work", agent: @owner, creative: @source, topic_id: @topic.id, status: :queued)
+
+        error = assert_raises(Topics::TopicMove::ActiveTaskError) do
+          TopicMoveService.new.call(topic_id: @topic.id, creative_id: @target.id)
+        end
+
+        assert_equal I18n.t("collavre.topics.move.active_tasks"), error.message
+        assert_equal @source.id, @topic.reload.creative_id
       end
 
       test "rejects a stale move when the topic changes creatives before its lock" do

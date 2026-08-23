@@ -4,6 +4,7 @@ module Collavre
   module Topics
     class TopicMove
       class SourceChangedError < StandardError; end
+      class ActiveTaskError < StandardError; end
 
       def initialize(topic:, target_creative:)
         @topic = topic
@@ -20,7 +21,9 @@ module Collavre
           topic.lock!
           reject_changed_source!
           yield topic if block_given?
+          reject_active_tasks!
           topic.comments.update_all(creative_id: target_creative.id)
+          topic.comment_snapshots.update_all(creative_id: target_creative.id)
           ReadPointerRelocator.new(topic: topic, target_creative: target_creative).call
           topic.update!(creative: target_creative)
           release_unroutable_primary_agent
@@ -35,6 +38,12 @@ module Collavre
         return if topic.creative_id == source_creative_id
 
         raise SourceChangedError, I18n.t("collavre.topics.move.source_changed")
+      end
+
+      def reject_active_tasks!
+        return unless Task.where(topic_id: topic.id, status: Task::ACTIVE_STATUSES).exists?
+
+        raise ActiveTaskError, I18n.t("collavre.topics.move.active_tasks")
       end
 
       def release_unroutable_primary_agent

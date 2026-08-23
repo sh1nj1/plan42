@@ -24,7 +24,8 @@ module Tools
       permission on the destination. The destination id may be a linked
       creative; the topic moves to its origin. Topic names are unique per
       creative. Main, an inbox's System topic, and live agent session topics
-      cannot be moved.
+      cannot be moved. Wait for or cancel active agent work before moving its
+      topic.
     DESC
 
     tool_param :topic_id, description: "The topic to move."

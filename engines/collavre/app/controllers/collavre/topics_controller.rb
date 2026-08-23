@@ -1,6 +1,7 @@
 module Collavre
   class TopicsController < ApplicationController
     rescue_from Topics::TopicMove::SourceChangedError, with: :render_source_changed
+    rescue_from Topics::TopicMove::ActiveTaskError, with: :render_active_tasks
 
     include Collavre::CreativePermissionGuard
 
@@ -274,6 +275,10 @@ module Collavre
 
     def render_source_changed(error)
       render json: { error: error.message }, status: :forbidden
+    end
+
+    def render_active_tasks(error)
+      render json: { error: error.message }, status: :unprocessable_entity
     end
 
     def set_creative

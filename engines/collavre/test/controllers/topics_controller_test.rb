@@ -277,6 +277,21 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
   end
 
+  test "should reject moving a topic with active agent work" do
+    target_creative = creatives(:root_parent)
+    Collavre::Task.create!(
+      name: "Queued topic work", agent: @user, creative: @creative,
+      topic_id: @topic.id, status: :queued
+    )
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.active_tasks"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
   test "a source changed while waiting for the move lock is forbidden" do
     target_creative = creatives(:root_parent)
     failed_move = Object.new
