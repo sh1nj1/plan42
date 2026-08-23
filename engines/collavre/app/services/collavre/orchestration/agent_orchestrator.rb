@@ -12,8 +12,8 @@ module Collavre
     #   AgentOrchestrator.dispatch("comment_created", context)
     #
     class AgentOrchestrator
-      def self.dispatch(event_name, context)
-        new(event_name: event_name, context: context).dispatch
+      def self.dispatch(event_name, context, on_selected: ->(_) { })
+        new(event_name: event_name, context: context).dispatch(on_selected: on_selected)
       end
 
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
@@ -673,7 +673,7 @@ module Collavre
         @context["event_name"] = event_name
       end
 
-      def dispatch
+      def dispatch(on_selected: ->(_) { })
         # Step 1: Find qualified agents (Matcher)
         candidates = matcher.match
         return [] if candidates.empty?
@@ -684,7 +684,7 @@ module Collavre
 
         # Step 3: Schedule execution (Scheduler) - Phase 3
         # For now, immediate execution
-        decisions = scheduler.schedule(selected)
+        decisions = scheduler.schedule(selected.tap(&on_selected))
 
         # Step 4: Enqueue jobs
         enqueue_jobs(decisions)

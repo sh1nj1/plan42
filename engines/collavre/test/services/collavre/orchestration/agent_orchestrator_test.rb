@@ -94,6 +94,40 @@ module Collavre
         assert_empty result
       end
 
+      test "reports agents after arbitration before scheduling" do
+        other_agent = User.create!(
+          email: "dispatcher_other_agent@example.com",
+          name: "Dispatcher Other Agent",
+          password: "password",
+          llm_vendor: "google",
+          llm_model: "gemini-1.5-flash",
+          searchable: true
+        )
+        context = { "creative" => { "id" => @creative.id } }
+        selected_agent = @ai_agent
+        matcher = Object.new
+        matcher.define_singleton_method(:match) { [ selected_agent, other_agent ] }
+        arbiter = Object.new
+        arbiter.define_singleton_method(:select) { |_candidates| [ selected_agent ] }
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) do |agents|
+          agents.map { |agent| { agent: agent, timing: :rejected, reason: :test } }
+        end
+        selected = nil
+
+        Matcher.stub(:new, matcher) do
+          Arbiter.stub(:new, arbiter) do
+            Scheduler.stub(:new, scheduler) do
+              AgentOrchestrator.dispatch(
+                "comment_created", context, on_selected: ->(agents) { selected = agents }
+              )
+            end
+          end
+        end
+
+        assert_equal [ @ai_agent ], selected
+      end
+
       # Deferred enqueue
       test "deferred decision creates queued task" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)

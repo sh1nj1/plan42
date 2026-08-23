@@ -91,14 +91,16 @@ module Tools
       if comment.topic.primary_agent_id == user.id && principal
         payload[:sender] = SystemEvents::ContextBuilder.sender_context_for(principal)
       end
-      record_interactions(payload, user, comment.creative_id)
       parent = SystemEvents::Envelope.in(Current.agent_turn&.dig(:task)&.trigger_event_payload)
-      SystemEvents::Dispatcher.dispatch("comment_created", payload, source: "a2a", parent: parent)
+      SystemEvents::Dispatcher.dispatch(
+        "comment_created", payload, source: "a2a", parent: parent,
+        on_selected: ->(agents) { record_interactions(agents, user, comment.creative_id) }
+      )
     end
 
-    def record_interactions(payload, user, creative_id)
-      context = SystemEvents::ContextBuilder.new(payload).build
-      Orchestration::Matcher.new(context).match.each do |agent|
+    def record_interactions(selected_agents, user, creative_id)
+      context = { "creative" => { "id" => creative_id } }
+      selected_agents.each do |agent|
         Orchestration::LoopBreaker.new(context).record_interaction(user.id, agent.id, creative_id)
       end
     end

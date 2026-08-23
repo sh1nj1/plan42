@@ -32,6 +32,7 @@ module Collavre
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(event, payload, **options) {
           events << [ event, payload, options ]
+          []
         }) do
           service.call(topic_id: @topic.id, content: "Human instruction")
         end
@@ -59,6 +60,7 @@ module Collavre
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(event, payload, **options) {
           events << [ event, payload, options ]
+          [ worker ]
         }) do
           topics.each do |topic|
             service.call(topic_id: topic[:id], content: "Continue #{topic[:name]} independently.")
@@ -88,7 +90,10 @@ module Collavre
         end
         events = []
 
-        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, payload, **_options) { events << payload }) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, payload, **_options) {
+          events << payload
+          [ coordinator ]
+        }) do
           topics.each do |topic|
             service.call(topic_id: topic[:id], content: "Continue #{topic[:name]} independently.")
           end
@@ -109,7 +114,10 @@ module Collavre
         Current.agent_turn = { user: nil, task: nil }
         payload = nil
 
-        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) {
+          payload = context
+          []
+        }) do
           service.call(topic_id: @topic.id, content: "Agent instruction")
         end
 
@@ -124,7 +132,10 @@ module Collavre
         Current.agent_turn = { user: @reader, task: nil }
         payload = nil
 
-        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) {
+          payload = context
+          []
+        }) do
           service.call(topic_id: @topic.id, content: "Carried instruction")
         end
 
@@ -140,7 +151,10 @@ module Collavre
         Current.agent_turn = { user: @reader, task: task }
         dispatch_options = nil
 
-        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, _context, **options) { dispatch_options = options }) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, _context, **options) {
+          dispatch_options = options
+          []
+        }) do
           service.call(topic_id: @topic.id, content: "Child instruction")
         end
 
@@ -180,18 +194,27 @@ module Collavre
       test "records tool-created A2A interactions for the selected agent" do
         coordinator = create_agent("Interaction Coordinator", creator: @owner)
         worker = create_agent("Interaction Worker", creator: @owner)
+        unselected = create_agent("Unselected Worker", creator: @owner)
         share!(coordinator, :feedback)
         share!(worker, :feedback)
-        @topic.update!(primary_agent: worker)
+        share!(unselected, :feedback)
         Current.user = coordinator
         Current.agent_turn = { user: @owner, task: running_task(coordinator, @creative.main_topic) }
         interactions = []
         breaker = Object.new
         breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
+        matcher = Object.new
+        matcher.define_singleton_method(:match) { [ worker, unselected ] }
 
         Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
-          SystemEvents::Dispatcher.stub(:dispatch, nil) do
-            service.call(topic_id: @topic.id, content: "Track this handoff")
+          Orchestration::Matcher.stub(:new, matcher) do
+            dispatcher = lambda do |_event, _payload, **options|
+              options.fetch(:on_selected).call([ worker ])
+              [ worker ]
+            end
+            SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+              service.call(topic_id: @topic.id, content: "Track this handoff")
+            end
           end
         end
 
