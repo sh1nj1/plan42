@@ -10,8 +10,7 @@ module Collavre
       end
 
       def call(current_topic)
-        Creative.reset_counters(source_creative.id, :comments)
-        Creative.reset_counters(target_creative.id, :comments)
+        reset_comment_counters
         unless current_topic&.creative_id == source_creative.id
           TopicsChannel.broadcast_to(source_creative, { action: "deleted", topic_id: topic.id })
         end
@@ -25,6 +24,12 @@ module Collavre
       private
 
       attr_reader :topic, :source_creative, :target_creative
+
+      def reset_comment_counters
+        [ source_creative, target_creative ].uniq(&:id).sort_by(&:id).each do |creative|
+          Creative.reset_counters(creative.id, :comments)
+        end
+      end
     end
   end
 end

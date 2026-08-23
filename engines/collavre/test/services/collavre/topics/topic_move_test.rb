@@ -151,6 +151,21 @@ module Collavre
         assert_empty broadcasts
       end
 
+      test "resets source and destination counters in creative id order" do
+        user = users(:one)
+        destination = Creative.create!(description: "Destination", user: user)
+        source = Creative.create!(description: "Source", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        reset_ids = []
+
+        Creative.stub(:reset_counters, ->(creative_id, *) { reset_ids << creative_id }) do
+          TopicMoveEffects.new(topic, source, destination).call(nil)
+        end
+
+        assert_operator source.id, :>, destination.id
+        assert_equal [ destination.id, source.id ], reset_ids
+      end
+
       test "moves comment snapshots with the topic" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)
