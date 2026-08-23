@@ -85,6 +85,8 @@ module Tools
     end
 
     def workspace_user(user)
+      return Current.workspace_user if Current.workspace_user_resolved
+
       creator = user.creator
       creator if creator && !creator.ai_user?
     end

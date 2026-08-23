@@ -13,7 +13,7 @@ module Collavre
         Current.user = @owner
       end
 
-      teardown { Current.user = nil }
+      teardown { Current.reset }
 
       test "posts a public message and returns its identity" do
         result = service.call(topic_id: @topic.id, content: "Start with the API contract.")
@@ -101,10 +101,12 @@ module Collavre
         end
       end
 
-      test "an agent without a human creator carries an explicitly empty workspace principal" do
-        coordinator = create_agent("Unowned Coordinator", creator: nil)
+      test "an agent preserves an explicitly empty workspace principal" do
+        coordinator = create_agent("Cleared Coordinator", creator: @owner)
         share!(coordinator, :feedback)
         Current.user = coordinator
+        Current.workspace_user = nil
+        Current.workspace_user_resolved = true
         payload = nil
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
@@ -113,6 +115,21 @@ module Collavre
 
         assert payload.key?(:workspace_user_id)
         assert_nil payload[:workspace_user_id]
+      end
+
+      test "an agent preserves a carried human who is not its creator" do
+        coordinator = create_agent("Carried Coordinator", creator: @owner)
+        share!(coordinator, :feedback)
+        Current.user = coordinator
+        Current.workspace_user = @reader
+        Current.workspace_user_resolved = true
+        payload = nil
+
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
+          service.call(topic_id: @topic.id, content: "Carried instruction")
+        end
+
+        assert_equal @reader.id, payload[:workspace_user_id]
       end
 
       test "feedback permission can post but read permission cannot" do

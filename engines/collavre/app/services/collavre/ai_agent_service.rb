@@ -13,11 +13,12 @@ module Collavre
       @task = task
       @agent = task.agent
       @context = task.trigger_event_payload
+      @original_comment = find_original_comment
     end
 
     def call
       begin
-        Current.set(user: @agent) do
+        Current.set(user: @agent, workspace_user: workspace_user, workspace_user_resolved: true) do
           if @agent.claude_channel_agent?
             delegate_to_claude_channel
           else
@@ -73,7 +74,6 @@ module Collavre
     def execute_llm_conversation
       log_action("start", { message: "Starting agent execution" })
 
-      @original_comment = find_original_comment
       messages_data = build_messages
       log_action("prompt_generated", { messages: messages_data[:messages] })
 

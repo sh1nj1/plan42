@@ -203,8 +203,12 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.handed_off? = true
 
     captured_context = nil
+    current_workspace_user = nil
+    current_workspace_user_resolved = nil
     client_factory = lambda do |**options|
       captured_context = options[:context]
+      current_workspace_user = Current.workspace_user
+      current_workspace_user_resolved = Current.workspace_user_resolved
       mock_client
     end
 
@@ -214,6 +218,10 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     assert_equal @user, captured_context[:workspace_user]
     assert_not_equal upstream_agent, captured_context[:workspace_user]
+    assert_equal @user, current_workspace_user
+    assert current_workspace_user_resolved
+    assert_nil Current.workspace_user
+    assert_nil Current.workspace_user_resolved
   end
 
   test "does not fall back to the creator for an explicitly cleared workspace principal" do
@@ -266,13 +274,22 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     mock_client.define_singleton_method(:last_handoff_failed?) { false }
     mock_client.define_singleton_method(:handed_off?) { true }
     dispatched = nil
+    current_workspace_user = :unset
+    current_workspace_user_resolved = nil
+    client_factory = lambda do |**_options|
+      current_workspace_user = Current.workspace_user
+      current_workspace_user_resolved = Current.workspace_user_resolved
+      mock_client
+    end
 
     SystemEvents::Dispatcher.stub(:dispatch, ->(_event_name, payload, **_options) { dispatched = payload }) do
-      AiClient.stub(:new, mock_client) { AiAgentService.new(@task).call }
+      AiClient.stub(:new, client_factory) { AiAgentService.new(@task).call }
     end
 
     assert dispatched.key?(:workspace_user_id)
     assert_nil dispatched[:workspace_user_id]
+    assert_nil current_workspace_user
+    assert current_workspace_user_resolved
   end
 
   test "does not dispatch A2A when AI response mentions a human user" do
