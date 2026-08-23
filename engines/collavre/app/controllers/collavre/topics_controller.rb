@@ -105,7 +105,7 @@ module Collavre
     def update
       topic = @creative.topics.find(params[:id])
 
-      if topic.update(topic_params)
+      if mutate_locked_topic(topic) { |current_topic| current_topic.update(topic_params) }
         broadcast_topic_event("updated", topic: topic_json(topic))
         render json: topic_json(topic)
       else
@@ -186,7 +186,7 @@ module Collavre
 
     def archive
       topic = @creative.topics.find(params[:id])
-      topic.archive!
+      mutate_locked_topic(topic, &:archive!)
 
       broadcast_topic_event("archived", topic: topic.slice(:id, :name))
       render json: { success: true }
@@ -194,7 +194,7 @@ module Collavre
 
     def unarchive
       topic = @creative.topics.find(params[:id])
-      topic.unarchive!
+      mutate_locked_topic(topic, &:unarchive!)
 
       broadcast_topic_event("unarchived", topic: topic.slice(:id, :name, :archived_at))
       render json: { success: true }
@@ -237,7 +237,7 @@ module Collavre
       # needs a way back to an unassigned topic — otherwise a single avatar click
       # would permanently dedicate the topic to one agent.
       if params[:agent_id].blank?
-        topic.set_primary_agent!(nil)
+        mutate_locked_topic(topic) { |current_topic| current_topic.set_primary_agent!(nil) }
 
         broadcast_topic_event("updated", topic: topic_json_with_agent(topic, nil))
 
@@ -256,7 +256,7 @@ module Collavre
                status: :unprocessable_entity and return
       end
 
-      topic.set_primary_agent!(agent)
+      mutate_locked_topic(topic) { |current_topic| current_topic.set_primary_agent!(agent) }
 
       broadcast_topic_event("updated", topic: topic_json_with_agent(topic, agent))
 
@@ -276,6 +276,8 @@ module Collavre
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
     end
+
+    def mutate_locked_topic(topic, &) = Topics::TopicMutation.new(topic: topic, source_creative: @creative).call(&)
 
     # A move can now release the pin for either reason, and the advice differs:
     # sharing the target creative fixes a missing-permission release, but a
