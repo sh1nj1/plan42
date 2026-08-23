@@ -186,12 +186,14 @@ class AiAgentServiceTest < ActiveSupport::TestCase
       topic: @comment.topic,
       skip_dispatch: true
     )
+    parent = Collavre::SystemEvents::Envelope.root("comment_created", source: "test")
     @task.update!(
       trigger_event_payload: {
         "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
         "creative" => { "id" => @creative.id },
         "topic" => { "id" => upstream_reply.topic_id },
-        "workspace_user_id" => @user.id
+        "workspace_user_id" => @user.id,
+        "event" => parent.to_h
       }
     )
 
@@ -203,12 +205,10 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.handed_off? = true
 
     captured_context = nil
-    current_workspace_user = nil
-    current_workspace_user_resolved = nil
+    current_agent_turn = nil
     client_factory = lambda do |**options|
       captured_context = options[:context]
-      current_workspace_user = Current.workspace_user
-      current_workspace_user_resolved = Current.workspace_user_resolved
+      current_agent_turn = Current.agent_turn
       mock_client
     end
 
@@ -218,10 +218,9 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     assert_equal @user, captured_context[:workspace_user]
     assert_not_equal upstream_agent, captured_context[:workspace_user]
-    assert_equal @user, current_workspace_user
-    assert current_workspace_user_resolved
-    assert_nil Current.workspace_user
-    assert_nil Current.workspace_user_resolved
+    assert_equal @user, current_agent_turn[:user]
+    assert_equal parent, current_agent_turn[:parent]
+    assert_nil Current.agent_turn
   end
 
   test "does not fall back to the creator for an explicitly cleared workspace principal" do
@@ -274,11 +273,9 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     mock_client.define_singleton_method(:last_handoff_failed?) { false }
     mock_client.define_singleton_method(:handed_off?) { true }
     dispatched = nil
-    current_workspace_user = :unset
-    current_workspace_user_resolved = nil
+    current_agent_turn = nil
     client_factory = lambda do |**_options|
-      current_workspace_user = Current.workspace_user
-      current_workspace_user_resolved = Current.workspace_user_resolved
+      current_agent_turn = Current.agent_turn
       mock_client
     end
 
@@ -288,8 +285,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     assert dispatched.key?(:workspace_user_id)
     assert_nil dispatched[:workspace_user_id]
-    assert_nil current_workspace_user
-    assert current_workspace_user_resolved
+    assert_nil current_agent_turn[:user]
   end
 
   test "does not dispatch A2A when AI response mentions a human user" do

@@ -38,20 +38,24 @@ module Tools
       user = Current.user || raise("Current.user is required")
       topic = Topic.find(topic_id)
       TopicAuthorizer.authorize_feedback!(topic, user: user)
+      principal = workspace_user(user)
 
-      comment = create_comment(topic, content, user)
-      dispatch_agent_message(comment, user) if user.ai_user?
+      comment = create_comment(topic, content, user, principal)
+      dispatch_agent_message(comment, user, principal) if user.ai_user?
 
       serialize(comment)
     end
 
     private
 
-    def create_comment(topic, content, user)
+    def create_comment(topic, content, user, principal)
       Comment.transaction do
         topic.lock!
         TopicAuthorizer.authorize_feedback!(topic, user: user)
         reject_closed_topic!(topic)
+        if user.ai_user? && principal.nil? && topic.primary_agent_id == user.id
+          raise ArgumentError, "An agent without a workspace principal cannot dispatch a topic message to itself."
+        end
 
         topic.comments.create!(
           creative: topic.creative,
@@ -71,8 +75,7 @@ module Tools
       raise ArgumentError, "The inbox System topic does not accept user-authored messages."
     end
 
-    def dispatch_agent_message(comment, user)
-      principal = workspace_user(user)
+    def dispatch_agent_message(comment, user, principal)
       payload = comment.dispatch_payload.merge(workspace_user_id: principal&.id)
       # A coordinator may fan itself out into two topic slots. Treat the
       # carried human as that self-dispatch's sender so the downstream turn
@@ -81,11 +84,12 @@ module Tools
       if comment.topic.primary_agent_id == user.id && principal
         payload[:sender] = SystemEvents::ContextBuilder.sender_context_for(principal)
       end
-      SystemEvents::Dispatcher.dispatch("comment_created", payload, source: "a2a")
+      parent = Current.agent_turn&.dig(:parent)
+      SystemEvents::Dispatcher.dispatch("comment_created", payload, source: "a2a", parent: parent)
     end
 
     def workspace_user(user)
-      return Current.workspace_user if Current.workspace_user_resolved
+      return Current.agent_turn[:user] if Current.agent_turn
 
       creator = user.creator
       creator if creator && !creator.ai_user?

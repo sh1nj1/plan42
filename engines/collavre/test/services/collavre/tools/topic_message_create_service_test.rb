@@ -105,8 +105,7 @@ module Collavre
         coordinator = create_agent("Cleared Coordinator", creator: @owner)
         share!(coordinator, :feedback)
         Current.user = coordinator
-        Current.workspace_user = nil
-        Current.workspace_user_resolved = true
+        Current.agent_turn = { user: nil, parent: nil }
         payload = nil
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
@@ -121,8 +120,7 @@ module Collavre
         coordinator = create_agent("Carried Coordinator", creator: @owner)
         share!(coordinator, :feedback)
         Current.user = coordinator
-        Current.workspace_user = @reader
-        Current.workspace_user_resolved = true
+        Current.agent_turn = { user: @reader, parent: nil }
         payload = nil
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
@@ -130,6 +128,36 @@ module Collavre
         end
 
         assert_equal @reader.id, payload[:workspace_user_id]
+      end
+
+      test "an agent preserves its parent event envelope" do
+        coordinator = create_agent("Envelope Coordinator", creator: @owner)
+        share!(coordinator, :feedback)
+        Current.user = coordinator
+        parent = SystemEvents::Envelope.root("comment_created", source: "test")
+        Current.agent_turn = { user: @reader, parent: parent }
+        dispatch_options = nil
+
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, _context, **options) { dispatch_options = options }) do
+          service.call(topic_id: @topic.id, content: "Child instruction")
+        end
+
+        assert_equal parent, dispatch_options[:parent]
+      end
+
+      test "an agent without a workspace principal cannot dispatch to itself" do
+        coordinator = create_agent("Principal-less Coordinator", creator: @owner)
+        share!(coordinator, :feedback)
+        @topic.update!(primary_agent: coordinator)
+        Current.user = coordinator
+        Current.agent_turn = { user: nil, parent: nil }
+
+        error = assert_raises(ArgumentError) do
+          service.call(topic_id: @topic.id, content: "Loop forever")
+        end
+
+        assert_match(/cannot dispatch a topic message to itself/, error.message)
+        assert_not Comment.exists?(topic: @topic, content: "Loop forever")
       end
 
       test "feedback permission can post but read permission cannot" do

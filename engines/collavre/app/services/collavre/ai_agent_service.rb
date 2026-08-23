@@ -18,7 +18,7 @@ module Collavre
 
     def call
       begin
-        Current.set(user: @agent, workspace_user: workspace_user, workspace_user_resolved: true) do
+        Current.set(user: @agent, agent_turn: { user: workspace_user, parent: SystemEvents::Envelope.in(@context) }) do
           if @agent.claude_channel_agent?
             delegate_to_claude_channel
           else

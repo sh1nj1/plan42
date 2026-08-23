@@ -7,8 +7,7 @@ module Collavre
     attribute :mcp_tool_approval_required
     attribute :mcp_request
     attribute :user
-    attribute :workspace_user
-    attribute :workspace_user_resolved
+    attribute :agent_turn
     def user
       super || session&.user
     end
