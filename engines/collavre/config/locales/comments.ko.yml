@@ -23,6 +23,7 @@ ko:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
         source_changed: 요청이 대기하는 동안 토픽이 다른 크리에이티브로 이동했습니다. 현재 크리에이티브에서 다시 불러온 뒤 재시도하세요.
         active_tasks: 이 토픽에서 에이전트 작업이 진행 중입니다. 작업이 끝날 때까지 기다리거나 취소한 뒤 토픽을 이동하세요.
+        pending_deliveries: 이 토픽에는 아직 복구 중인 에이전트 메시지가 있습니다. 복구가 끝난 뒤 토픽을 이동하세요.
         recurring_tasks: 이 토픽을 대상으로 하는 반복 크론 작업이 있습니다. cron_cancel로 취소하고 토픽을 이동한 뒤 다시 생성하세요.
         trigger_loop: 이 토픽은 Drop Trigger loop의 제어 토픽이므로 loop 설정이 참조하는 동안 이동할 수 없습니다.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."

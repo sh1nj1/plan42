@@ -360,11 +360,7 @@ module Collavre
         task.reload
       end
 
-      def self.restored_ids_in(payload)
-        return [] unless payload.is_a?(Hash)
-
-        Array(payload[RESTORED_KEY]).compact.map(&:to_i)
-      end
+      def self.restored_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[RESTORED_KEY]).compact.map(&:to_i) : []
 
       # Take responsibility for putting one dispatch back, or refuse it because
       # somebody already has.
@@ -407,10 +403,12 @@ module Collavre
         end
       end
 
-      def self.dropped_ids_in(payload)
-        return [] unless payload.is_a?(Hash)
+      def self.dropped_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[DROPPED_KEY]).compact.map(&:to_i) : []
 
-        Array(payload[DROPPED_KEY]).compact.map(&:to_i)
+      def self.pending_restoration?(task)
+        payload = task&.trigger_event_payload
+        task&.ended_undelivered? &&
+          (dropped_ids_in(payload) - handed_off_ids_in(payload) - claimed_comment_ids(task)).any?
       end
 
       # Take responsibility for a dispatch about to be discarded, or refuse it.
@@ -519,7 +517,7 @@ module Collavre
         return unless payload.is_a?(Hash) && payload.key?("topic")
 
         orphaned = dropped_ids_in(payload) - handed_off_ids_in(payload) -
-                   claimed_comment_ids(task) - restored_ids_in(payload)
+          claimed_comment_ids(task) - restored_ids_in(payload)
         return if orphaned.empty?
 
         agent = task.agent

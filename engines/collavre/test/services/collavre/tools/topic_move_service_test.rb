@@ -57,17 +57,13 @@ module Collavre
       end
 
       test "broadcasts topic state reloaded under the post-commit lock" do
-        original_find = Topic.method(:find)
-        find_calls = 0
         broadcasts = []
-        find_topic = lambda do |id|
-          find_calls += 1
-          record = original_find.call(id)
-          record.update_column(:name, "Renamed after move") if find_calls == 2
-          original_find.call(id)
+        run_after_commit = lambda do |&callback|
+          @topic.update_column(:name, "Renamed after move")
+          callback.call
         end
 
-        Topic.stub(:find, find_topic) do
+        ActiveRecord.stub(:after_all_transactions_commit, run_after_commit) do
           TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
             TopicMoveService.new.call(topic_id: @topic.id, creative_id: @target.id)
           end
@@ -79,18 +75,17 @@ module Collavre
 
       test "does not broadcast an obsolete destination after a consecutive move" do
         final_target = Creative.create!(description: "Final target", user: @owner)
-        original_find = Topic.method(:find)
-        find_calls = 0
+        moved_again = false
         broadcasts = []
-        find_topic = lambda do |id|
-          find_calls += 1
-          if find_calls == 2
-            Topics::TopicMove.new(topic: original_find.call(id), target_creative: final_target).call
+        run_after_commit = lambda do |&callback|
+          unless moved_again
+            moved_again = true
+            Topics::TopicMove.new(topic: @topic.reload, target_creative: final_target).call
           end
-          original_find.call(id)
+          callback.call
         end
 
-        result = Topic.stub(:find, find_topic) do
+        result = ActiveRecord.stub(:after_all_transactions_commit, run_after_commit) do
           TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
             TopicMoveService.new.call(topic_id: @topic.id, creative_id: @target.id)
           end

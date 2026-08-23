@@ -120,9 +120,9 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.cannot_delete_main") }, status: :unprocessable_entity and return
       end
 
-      topic_id = topic.id
-      topic_name = topic.name
-      topic.destroy
+      topic_id, topic_name = Topics::TopicDestroy.new(
+        topic: topic, source_creative: @creative
+      ).call
 
       # Best-effort orphaned-cron notice. Must never break the core deletion:
       # if it raises, swallow + log so broadcast/head still run.

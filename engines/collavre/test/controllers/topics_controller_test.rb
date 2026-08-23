@@ -329,20 +329,19 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
   test "should not broadcast an obsolete destination after a consecutive move" do
     target_creative = creatives(:root_parent)
     final_target = Collavre::Creative.create!(description: "Final target", user: @user)
-    original_find = Collavre::Topic.method(:find)
     moved_again = false
     broadcasts = []
-    find_topic = lambda do |id|
+    run_after_commit = lambda do |&callback|
       unless moved_again
         moved_again = true
         Collavre::Topics::TopicMove.new(
-          topic: original_find.call(id), target_creative: final_target
+          topic: @topic.reload, target_creative: final_target
         ).call
       end
-      original_find.call(id)
+      callback.call
     end
 
-    Collavre::Topic.stub(:find, find_topic) do
+    ActiveRecord.stub(:after_all_transactions_commit, run_after_commit) do
       Collavre::TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
         patch move_creative_topic_url(@creative, @topic),
           params: { target_creative_id: target_creative.id }, as: :json

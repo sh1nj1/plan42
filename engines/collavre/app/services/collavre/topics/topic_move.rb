@@ -6,6 +6,7 @@ module Collavre
       class SourceChangedError < StandardError; end
       MoveBlockedError = MoveBlocker::MoveBlockedError
       ActiveTaskError = MoveBlocker::ActiveTaskError
+      PendingDeliveryError = MoveBlocker::PendingDeliveryError
       RecurringTaskError = MoveBlocker::RecurringTaskError
       TriggerLoopError = MoveBlocker::TriggerLoopError
 
@@ -48,8 +49,10 @@ module Collavre
 
       def schedule_after_commit(&callback)
         ActiveRecord.after_all_transactions_commit do
-          current_topic = Topic.find(topic.id)
-          current_topic.with_lock { callback.call(current_topic) }
+          Topic.transaction do
+            current_topic = Topic.lock.find_by(id: topic.id)
+            callback.call(current_topic)
+          end
         end
       end
 

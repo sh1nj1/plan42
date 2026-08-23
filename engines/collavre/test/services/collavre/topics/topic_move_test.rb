@@ -110,6 +110,26 @@ module Collavre
         assert_equal source.id, topic.reload.creative_id
       end
 
+      test "runs source cleanup when the moved topic is deleted before post-commit effects" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        effect_topics = []
+        run_after_commit = lambda do |&callback|
+          topic.destroy!
+          callback.call
+        end
+
+        ActiveRecord.stub(:after_all_transactions_commit, run_after_commit) do
+          TopicMove.new(topic: topic, target_creative: destination).call(
+            after_commit: ->(current_topic) { effect_topics << current_topic }
+          )
+        end
+
+        assert_equal [ nil ], effect_topics
+      end
+
       test "moves comment snapshots with the topic" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)
@@ -225,6 +245,52 @@ module Collavre
         %w[done failed cancelled escalated].each do |status|
           Task.create!(name: status, agent: user, creative: source, topic_id: topic.id, status: status)
         end
+
+        TopicMove.new(topic: topic, target_creative: destination).call
+
+        assert_equal destination.id, topic.reload.creative_id
+      end
+
+      test "rejects a terminal task that still owes a dropped dispatch" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        dropped = Comment.create!(creative: source, topic: topic, user: users(:two), content: "Dropped",
+                                  skip_default_user: true, skip_dispatch: true)
+        Task.create!(
+          name: "Cancelled turn", agent: user, creative: source, topic_id: topic.id, status: "cancelled",
+          trigger_event_payload: {
+            "topic" => { "id" => topic.id }, "creative" => { "id" => source.id },
+            Orchestration::DeliveryRecord::DROPPED_KEY => [ dropped.id ],
+            Orchestration::DeliveryRecord::RESTORED_KEY => [ dropped.id ]
+          }
+        )
+
+        error = assert_raises(TopicMove::PendingDeliveryError) do
+          TopicMove.new(topic: topic, target_creative: destination).call
+        end
+
+        assert_equal I18n.t("collavre.topics.move.pending_deliveries"), error.message
+        assert_equal source.id, topic.reload.creative_id
+      end
+
+      test "allows a terminal task whose dropped dispatch reached the provider" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        dropped = Comment.create!(creative: source, topic: topic, user: users(:two), content: "Delivered",
+                                  skip_default_user: true, skip_dispatch: true)
+        Task.create!(
+          name: "Completed turn", agent: user, creative: source, topic_id: topic.id, status: "done",
+          trigger_event_payload: {
+            "topic" => { "id" => topic.id }, "creative" => { "id" => source.id },
+            Orchestration::DeliveryRecord::DROPPED_KEY => [ dropped.id ],
+            Orchestration::DeliveryRecord::HANDED_OFF_KEY => true,
+            Orchestration::DeliveryRecord::HANDED_OFF_IDS_KEY => [ dropped.id ]
+          }
+        )
 
         TopicMove.new(topic: topic, target_creative: destination).call
 
