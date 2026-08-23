@@ -107,22 +107,43 @@ module Collavre
         assert_nil CommentReadPointer.find_by(user: @user, creative: @creative, topic: @topic)
       end
 
-      test "locks archived topics before preserving their legacy fallback" do
+      test "locks the creative before snapshotting archived topic fallbacks" do
         archived = @creative.topics.create!(name: "Archived fallback", user: @user, archived_at: Time.current)
-        original_where = Topic.method(:where)
-        locked_ids = []
-        where_spy = lambda do |*args|
-          criteria = args.first
-          locked_ids.concat(Array(criteria[:id])) if criteria.is_a?(Hash) && criteria.key?(:id)
-          original_where.call(*args)
+        topics = @creative.topics
+        original_ids = topics.method(:ids)
+        creative_locked = false
+        ids_after_lock = lambda do
+          assert creative_locked
+          original_ids.call
         end
 
-        Topic.stub(:where, where_spy) do
-          writer.call(nil => @comments.last.id)
+        @creative.stub(:lock!, -> { creative_locked = true; @creative }) do
+          @creative.stub(:topics, topics) do
+            topics.stub(:ids, ids_after_lock) do
+              writer.call(nil => @comments.last.id)
+            end
+          end
         end
 
-        assert_includes locked_ids, archived.id
         assert CommentReadPointer.exists?(user: @user, creative: @creative, topic: archived)
+      end
+
+      test "snapshots an incoming topic after locking the destination creative" do
+        source = Creative.create!(description: "Incoming source", user: @user)
+        incoming = source.topics.create!(name: "Incoming", user: @user)
+        Comment.create!(creative: source, topic: incoming, user: users(:two), content: "unread incoming")
+        legacy = Comment.create!(creative: @creative, user: users(:two), content: "destination legacy")
+        move_before_lock = lambda do
+          Topics::TopicMove.new(topic: incoming, target_creative: @creative).call
+          @creative
+        end
+
+        @creative.stub(:lock!, move_before_lock) do
+          writer.call(nil => legacy.id)
+        end
+
+        pointer = CommentReadPointer.find_by!(user: @user, creative: @creative, topic: incoming)
+        assert_nil pointer.last_read_comment_id
       end
 
       private

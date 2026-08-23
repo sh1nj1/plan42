@@ -5,7 +5,7 @@ require "test_helper"
 module Collavre
   module Topics
     class TopicMoveTest < ActiveSupport::TestCase
-      test "locks the topic before relocating its comments" do
+      test "locks the topic and creatives before relocating its comments" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)
         destination = Creative.create!(description: "Destination", user: user)
@@ -16,21 +16,25 @@ module Collavre
         calls = []
         comments = topic.comments
         original_update = comments.method(:update_all)
+        move = TopicMove.new(topic: topic, target_creative: destination)
         lock_topic = -> { calls << :topic_lock }
+        lock_creatives = -> { calls << :creative_locks }
         move_comments = lambda do |*arguments|
           calls << :comments_update
           original_update.call(*arguments)
         end
 
-        topic.stub(:lock!, lock_topic) do
-          topic.stub(:comments, comments) do
-            comments.stub(:update_all, move_comments) do
-              TopicMove.new(topic: topic, target_creative: destination).call
+        move.stub(:lock_creative_memberships!, lock_creatives) do
+          topic.stub(:lock!, lock_topic) do
+            topic.stub(:comments, comments) do
+              comments.stub(:update_all, move_comments) do
+                move.call
+              end
             end
           end
         end
 
-        assert_equal %i[topic_lock comments_update], calls
+        assert_equal %i[topic_lock creative_locks comments_update], calls
       end
 
       test "rejects a move when the source changes before the lock is acquired" do

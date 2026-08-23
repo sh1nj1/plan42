@@ -485,6 +485,20 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, source_topic.reload.creative_id
   end
 
+  test "topic update rolls back the move when another attribute is invalid" do
+    source_topic = @creative.topics.create!(name: "Rollback source", user: @user)
+    target_topic = @creative.topics.create!(name: "Rollback target", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+
+    patch creative_comment_path(@creative, comment), params: {
+      comment: { content: "", topic_id: target_topic.id }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal source_topic.id, comment.reload.topic_id
+    assert_equal "Original", comment.content
+  end
+
   test "user can move comments to another creative" do
     target = creatives(:childless_creative)
     comment = @creative.comments.create!(content: "Move me", user: @user)

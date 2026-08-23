@@ -63,14 +63,17 @@ module Collavre
 
       def lock_named_topics!(topic_ids)
         ids = topic_ids.compact.map(&:to_i)
-        ids.concat(creative.topics.ids) if topic_ids.include?(nil)
         ids = ids.uniq.sort
-        return ids if ids.empty?
+        unless ids.empty?
+          locked = Topic.where(id: ids).order(:id).lock.pluck(:id, :creative_id)
+          unless locked.length == ids.length && locked.all? { |_, creative_id| creative_id == creative.id }
+            raise StaleTopicError, I18n.t("collavre.comments.invalid_topic")
+          end
+        end
+        return ids unless topic_ids.include?(nil)
 
-        locked = Topic.where(id: ids).order(:id).lock.pluck(:id, :creative_id)
-        return ids if locked.length == ids.length && locked.all? { |_, creative_id| creative_id == creative.id }
-
-        raise StaleTopicError, I18n.t("collavre.comments.invalid_topic")
+        creative.lock!
+        (ids + creative.topics.ids).uniq
       end
 
       def existing_watermarks

@@ -247,7 +247,10 @@ module Collavre
         CommentMoveService.new(creative: @creative, user: Current.user).call(
           comment_ids: [ @comment.id ], target_topic_id: topic_id
         )
-        @comment.reload.update(attributes)
+        updated = @comment.reload.update(attributes)
+        raise ActiveRecord::Rollback unless updated
+
+        updated
       end
     rescue CommentMoveService::MoveError => e
       @comment.errors.add(:topic, e.message)

@@ -24,6 +24,7 @@ module Collavre
           # relocated the topic's comment rows to the new one.
           topic.lock!
           reject_changed_source!
+          lock_creative_memberships!
           yield topic if block_given?
           MoveBlocker.new(topic).call
           clear_source_last_topic_preferences
@@ -45,6 +46,10 @@ module Collavre
         return if topic.creative_id == source_creative_id
 
         raise SourceChangedError, I18n.t("collavre.topics.move.source_changed")
+      end
+
+      def lock_creative_memberships!
+        Creative.where(id: [ source_creative_id, target_creative.id ].uniq).order(:id).lock.load
       end
 
       def schedule_after_commit(&callback)
