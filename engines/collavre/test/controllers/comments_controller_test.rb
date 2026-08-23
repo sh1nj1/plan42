@@ -459,6 +459,32 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert comment.private?, "Comment should be private after checking"
   end
 
+  test "topic update rejects a comment whose source topic moved after validation" do
+    source_topic = @creative.topics.create!(name: "Update source", user: @user)
+    target_topic = @creative.topics.create!(name: "Update target", user: @user)
+    destination = Creative.create!(description: "Update destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    service = Collavre::CommentMoveService.new(creative: @creative, user: @user)
+    fetch_after_relocation = lambda do |_ids|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      [ comment ]
+    end
+
+    Collavre::CommentMoveService.stub(:new, ->(**) { service }) do
+      service.stub(:fetch_visible_comments, fetch_after_relocation) do
+        patch creative_comment_path(@creative, comment), params: {
+          comment: { content: "Stale update", topic_id: target_topic.id }
+        }
+      end
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal @creative.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
+    assert_equal @creative.id, source_topic.reload.creative_id
+  end
+
   test "user can move comments to another creative" do
     target = creatives(:childless_creative)
     comment = @creative.comments.create!(content: "Move me", user: @user)

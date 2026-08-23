@@ -107,6 +107,24 @@ module Collavre
         assert_nil CommentReadPointer.find_by(user: @user, creative: @creative, topic: @topic)
       end
 
+      test "locks archived topics before preserving their legacy fallback" do
+        archived = @creative.topics.create!(name: "Archived fallback", user: @user, archived_at: Time.current)
+        original_where = Topic.method(:where)
+        locked_ids = []
+        where_spy = lambda do |*args|
+          criteria = args.first
+          locked_ids.concat(Array(criteria[:id])) if criteria.is_a?(Hash) && criteria.key?(:id)
+          original_where.call(*args)
+        end
+
+        Topic.stub(:where, where_spy) do
+          writer.call(nil => @comments.last.id)
+        end
+
+        assert_includes locked_ids, archived.id
+        assert CommentReadPointer.exists?(user: @user, creative: @creative, topic: archived)
+      end
+
       private
 
       # Only the read that precedes the write is stale; the writer's read-back

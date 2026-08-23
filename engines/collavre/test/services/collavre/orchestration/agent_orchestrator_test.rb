@@ -173,6 +173,22 @@ module Collavre
         assert_equal topic.id, queued_task.topic_id
       end
 
+      test "deferred decision creates no waiter after its topic moves" do
+        topic = Topic.create!(name: "Moved deferred topic", creative: @creative, user: @user)
+        destination = Creative.create!(description: "Deferred destination", user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "content" => "stale deferred dispatch" }
+        }
+        orchestrator = AgentOrchestrator.new(event_name: "comment_created", context: context)
+        Topics::TopicMove.new(topic: topic, target_creative: destination).call
+
+        assert_no_difference -> { Task.where(topic_id: topic.id).count } do
+          assert_nil orchestrator.send(:park_waiter, @ai_agent, context)
+        end
+      end
+
       # The "⏳" waiting notice must name the agent holding the running slot, so a
       # waiting user sees *who* is blocking them (and can reach that task's stop
       # button) instead of an anonymous "another task is running" dead end.

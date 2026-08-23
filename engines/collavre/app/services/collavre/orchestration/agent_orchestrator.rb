@@ -770,7 +770,8 @@ module Collavre
             AiAgentJob.perform_later(agent.id, @event_name, context)
             agent
           when :deferred
-            waiter = park_waiter(agent, context)
+            next unless (waiter = park_waiter(agent, context))
+
             post_waiting_notice(agent, decision, waiter: waiter)
             agent
           when :delayed
@@ -814,7 +815,8 @@ module Collavre
         waiter = nil
 
         Task.transaction do
-          TopicSlot.lock!(topic_id, creative_id)
+          next unless TopicSlot.matches_context?(TopicSlot.lock!(topic_id, creative_id), topic_id, creative_id)
+
           waiter = Task.create!(
             name: "Response to #{@event_name}",
             status: "queued",

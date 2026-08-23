@@ -75,7 +75,7 @@ module Collavre
         safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
         validate_topic_id!(safe_params[:topic_id]) or return
 
-        if @comment.update(safe_params)
+        if update_comment(safe_params)
           @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
           render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
         else
@@ -235,6 +235,22 @@ module Collavre
     def validate_topic_id!(topic_id)
       return true if topic_id.blank? || @creative.topics.where(id: topic_id).exists?
       render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity
+      false
+    end
+
+    def update_comment(attributes)
+      return @comment.update(attributes) unless attributes.key?(:topic_id)
+
+      attributes = attributes.dup
+      topic_id = attributes.delete(:topic_id)
+      Comment.transaction do
+        CommentMoveService.new(creative: @creative, user: Current.user).call(
+          comment_ids: [ @comment.id ], target_topic_id: topic_id
+        )
+        @comment.reload.update(attributes)
+      end
+    rescue CommentMoveService::MoveError => e
+      @comment.errors.add(:topic, e.message)
       false
     end
   end
