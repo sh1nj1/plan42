@@ -12,7 +12,9 @@ module Collavre
       def call(current_topic)
         Creative.reset_counters(source_creative.id, :comments)
         Creative.reset_counters(target_creative.id, :comments)
-        TopicsChannel.broadcast_to(source_creative, { action: "deleted", topic_id: topic.id })
+        unless current_topic&.creative_id == source_creative.id
+          TopicsChannel.broadcast_to(source_creative, { action: "deleted", topic_id: topic.id })
+        end
         return unless current_topic&.creative_id == target_creative.id
 
         TopicsChannel.broadcast_to(

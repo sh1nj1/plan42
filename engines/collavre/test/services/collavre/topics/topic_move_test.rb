@@ -130,6 +130,23 @@ module Collavre
         assert_equal [ nil ], effect_topics
       end
 
+      test "does not delete the source sidebar topic after a reverse move" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        effects = TopicMoveEffects.new(topic, source, destination)
+        broadcasts = []
+
+        TopicMove.new(topic: topic, target_creative: destination).call
+        TopicMove.new(topic: topic.reload, target_creative: source).call
+        TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
+          effects.call(topic.reload)
+        end
+
+        assert_empty broadcasts
+      end
+
       test "moves comment snapshots with the topic" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)
