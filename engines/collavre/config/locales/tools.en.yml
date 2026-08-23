@@ -9,3 +9,12 @@ en:
           system_topic: The inbox System topic does not accept user-authored messages.
           current_topic: An agent cannot dispatch a topic message to its own current topic.
           self_route: An agent cannot route an unpinned topic message back to itself.
+      topic_move:
+        errors:
+          current_user_required: Current.user is required.
+          source_permission: Admin permission is required on the topic's current creative.
+          target_permission: Write permission is required on the destination creative.
+          same_creative: The topic already belongs to the destination creative.
+          reserved_topic: Main and an inbox's System topic cannot be moved.
+          session_topic: A live agent session topic cannot be moved.
+          duplicate_name: A topic named '%{name}' already exists in the destination creative.

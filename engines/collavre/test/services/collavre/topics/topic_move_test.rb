@@ -53,6 +53,26 @@ module Collavre
         assert_equal intervening.id, topic.reload.creative_id
         assert_equal intervening.id, comment.reload.creative_id
       end
+
+      test "runs validation after locking and before relocating comments" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        comment = Comment.create!(creative: source, topic: topic, user: user, content: "message",
+                                  skip_default_user: true, skip_dispatch: true)
+
+        error = assert_raises(ArgumentError) do
+          TopicMove.new(topic: topic, target_creative: destination).call do |locked_topic|
+            assert_equal topic, locked_topic
+            raise ArgumentError, "rejected"
+          end
+        end
+
+        assert_equal "rejected", error.message
+        assert_equal source.id, topic.reload.creative_id
+        assert_equal source.id, comment.reload.creative_id
+      end
     end
   end
 end

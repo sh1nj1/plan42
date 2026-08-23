@@ -270,6 +270,27 @@ be changed here.
 
 **Returns:** the topic payload plus `changed[]` naming the fields that moved.
 
+### topic_move
+
+Move one complete topic to another Creative.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `topic_id` | Integer | **Yes** | Topic to move |
+| `creative_id` | Integer | **Yes** | Destination Creative; links resolve to their origin |
+
+The topic keeps its id, messages, archive state, and read cursors. Its primary
+agent stays pinned only when it can still respond on the destination; otherwise
+the result reports that the pin was released. Creative permissions do not move,
+so verify that participants can access the destination.
+
+Requires **admin** on the source and **write** on the destination. Topic names
+must be unique on the destination. Main, an inbox's System topic, and live agent
+session topics cannot move.
+
+**Returns:** the moved topic payload, `moved_from_creative_id`, and an optional
+`released_primary_agent` explanation.
+
 ### topic_branch
 
 Create a new topic containing **copies** of selected messages. The originals stay

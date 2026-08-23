@@ -19,6 +19,7 @@ module Collavre
           # relocated the topic's comment rows to the new one.
           topic.lock!
           reject_changed_source!
+          yield topic if block_given?
           topic.comments.update_all(creative_id: target_creative.id)
           ReadPointerRelocator.new(topic: topic, target_creative: target_creative).call
           topic.update!(creative: target_creative)
