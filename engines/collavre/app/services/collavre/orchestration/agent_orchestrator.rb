@@ -18,6 +18,8 @@ module Collavre
 
       def self.select(event_name, context) = new(event_name: event_name, context: context).select
 
+      def self.prepare_selection(event_name, context) = new(event_name: event_name, context: context).prepare_selection
+
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
         task = claim_next_waiter(topic_id, creative_id)
         if task
@@ -436,12 +438,7 @@ module Collavre
         # revision later. Skip reviews and take the newest ordinary comment,
         # which in the worst case is the waiter's own anchor (a no-op refresh)
         # rather than nothing, so this cannot strand a live waiter.
-        scope = Comment.public_only.without_approval_action
-          .where(creative_id: creative_id, topic_id: topic_id)
-          .where.not(user_id: [ task.agent_id, nil ])
-          .where.not(id: Comment.review_messages.where(creative_id: creative_id, topic_id: topic_id).select(:id))
-          .order(id: :desc)
-        scope = TaskCoalescer.reanchor_scope_for_workspace_principal(scope, task)
+        scope = DeferredTriggerScope.for(task, context)
 
         # Narrowing the destination closes the door this call site opens, but the
         # promotion door still moves the anchor onto the newest comment in the
@@ -676,12 +673,17 @@ module Collavre
       end
 
       def select
-        Selection.new(@context, policy_resolver: policy_resolver).call
+        prepare_selection.commit!.agents
       end
 
-      def dispatch(selected_agents: nil, context_for: nil)
-        selected = selected_agents || select
+      def prepare_selection = Selection.new(@context, policy_resolver: policy_resolver).call
+
+      def dispatch(selected_agents: nil, selection: nil, context_for: nil)
+        selection ||= prepare_selection unless selected_agents
+        selected = selected_agents || selection.agents
         return [] if selected.empty?
+
+        selection&.commit!
 
         # Step 3: Schedule execution (Scheduler) - Phase 3
         # For now, immediate execution

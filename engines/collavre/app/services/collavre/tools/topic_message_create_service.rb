@@ -41,8 +41,8 @@ module Tools
       TopicAuthorizer.authorize_feedback!(topic, user: user)
       principal = workspace_user(user)
 
-      comment, selected_agents = create_comment(topic, content, user, principal)
-      dispatch_agent_message(comment, user, principal, selected_agents) if user.ai_user?
+      comment, selection = create_comment(topic, content, user, principal)
+      dispatch_agent_message(comment, user, principal, selection) if user.ai_user?
 
       serialize(comment)
     end
@@ -63,10 +63,10 @@ module Tools
           private: false,
           skip_dispatch: user.ai_user?
         )
-        selected_agents = preselect_agents(comment, principal) if user.ai_user?
-        reject_selected_self_route!(selected_agents, user, principal)
+        selection = prepare_selection(comment, principal) if user.ai_user?
+        reject_selected_self_route!(selection&.agents, user, principal)
 
-        [ comment, selected_agents ]
+        [ comment, selection ]
       end
     end
 
@@ -91,20 +91,27 @@ module Tools
       raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.current_topic")
     end
 
-    def preselect_agents(comment, principal)
-      Orchestration::AgentOrchestrator.select("comment_created", dispatch_payload(comment, principal))
+    def prepare_selection(comment, principal)
+      Orchestration::AgentOrchestrator.prepare_selection(
+        "comment_created", dispatch_payload(comment, principal)
+      )
     end
 
-    def dispatch_agent_message(comment, user, principal, selected_agents)
+    def dispatch_agent_message(comment, user, principal, selection)
+      selected_agents = selection.agents
       record_interactions(selected_agents, user, comment.creative_id)
       context_for = lambda do |agent|
         next {} unless agent.id == user.id && principal
 
         { "sender" => SystemEvents::ContextBuilder.sender_context_for(principal) }
       end
+      payload = dispatch_payload(comment, principal)
+      if selected_agents.any? { |agent| agent.id == user.id }
+        payload[Orchestration::DeferredTriggerScope::SELF_AUTHORED_COMMENT_ID_KEY] = comment.id
+      end
       SystemEvents::Dispatcher.dispatch(
-        "comment_created", dispatch_payload(comment, principal), source: "a2a",
-        parent: parent_envelope, selected_agents: selected_agents, context_for: context_for
+        "comment_created", payload, source: "a2a", parent: parent_envelope,
+        selection: selection, context_for: context_for
       )
     end
 

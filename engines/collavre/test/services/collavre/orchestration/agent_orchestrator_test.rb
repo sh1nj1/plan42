@@ -108,7 +108,8 @@ module Collavre
         matcher = Object.new
         matcher.define_singleton_method(:match) { [ selected_agent, other_agent ] }
         arbiter = Object.new
-        arbiter.define_singleton_method(:select) { |_candidates| [ selected_agent ] }
+        arbiter.define_singleton_method(:select) { |_candidates, **| [ selected_agent ] }
+        arbiter.define_singleton_method(:commit_selection!) { }
         Matcher.stub(:new, matcher) do
           Arbiter.stub(:new, arbiter) do
             assert_equal [ @ai_agent ], AgentOrchestrator.select("comment_created", context)

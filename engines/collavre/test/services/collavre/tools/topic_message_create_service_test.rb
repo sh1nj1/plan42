@@ -240,7 +240,7 @@ module Collavre
         error = CommentNotificationJob.stub(:perform_later, recorder) do
           CommentBadgesBroadcastJob.stub(:perform_later, recorder) do
             Turbo::Streams::BroadcastJob.stub(:perform_later, recorder) do
-              Orchestration::AgentOrchestrator.stub(:select, [ coordinator ]) do
+              Orchestration::AgentOrchestrator.stub(:prepare_selection, selection_for(coordinator)) do
                 assert_raises(ArgumentError) do
                   service.call(topic_id: destination.id, content: "Unsafe self route")
                 end
@@ -269,7 +269,7 @@ module Collavre
         dispatcher = ->(_event, _payload, **_options) { [ coordinator ] }
 
         Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
-          Orchestration::AgentOrchestrator.stub(:select, [ coordinator ]) do
+          Orchestration::AgentOrchestrator.stub(:prepare_selection, selection_for(coordinator)) do
             SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
               service.call(topic_id: destination.id, content: "Start independent work")
             end
@@ -277,6 +277,55 @@ module Collavre
         end
 
         assert_empty interactions
+      end
+
+      test "keeps a deliberate self-routed instruction eligible while deferred" do
+        coordinator = create_agent("Deferred Coordinator", creator: @owner)
+        blocker = create_agent("Deferred Blocker", creator: @owner)
+        share!(coordinator, :feedback)
+        share!(blocker, :feedback)
+        destination = @creative.topics.create!(
+          name: "Occupied Destination", user: @owner, primary_agent: coordinator
+        )
+        Task.create!(
+          name: "Destination blocker", status: "running", trigger_event_name: "comment_created",
+          trigger_event_payload: {}, agent: blocker, topic_id: destination.id, creative: @creative
+        )
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+
+        result = service.call(topic_id: destination.id, content: "Run after the blocker")
+        waiter = Task.find_by!(status: "queued", agent: coordinator, topic_id: destination.id)
+
+        Orchestration::AgentOrchestrator.send(:refresh_deferred_context!, waiter)
+
+        assert_equal "queued", waiter.reload.status
+        assert_equal result[:id], waiter.trigger_event_payload.dig("comment", "id")
+      end
+
+      test "does not advance round robin when a principal-less self-route is rejected" do
+        coordinator = create_agent("Round Robin Coordinator", creator: @owner)
+        worker = create_agent("Round Robin Worker", creator: @owner)
+        share!(coordinator, :feedback)
+        share!(worker, :feedback)
+        destination = @creative.topics.create!(name: "Round Robin Destination", user: @owner)
+        Current.user = coordinator
+        Current.agent_turn = { user: nil, task: running_task(coordinator, @topic) }
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration", config: { "strategy" => "round_robin" }
+        )
+        cache_key = "orchestrator:round_robin:topic:#{destination.id}"
+        Rails.cache.delete(cache_key)
+        matcher = Object.new
+        matcher.define_singleton_method(:match) { [ coordinator, worker ] }
+
+        Orchestration::Matcher.stub(:new, matcher) do
+          assert_raises(ArgumentError) do
+            service.call(topic_id: destination.id, content: "Rejected rotation")
+          end
+        end
+
+        assert_nil Rails.cache.read(cache_key)
       end
 
       test "records tool-created A2A interactions for the selected agent" do
@@ -292,7 +341,7 @@ module Collavre
         breaker = Object.new
         breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
         Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
-          Orchestration::AgentOrchestrator.stub(:select, [ worker ]) do
+          Orchestration::AgentOrchestrator.stub(:prepare_selection, selection_for(worker)) do
             dispatcher = ->(_event, _payload, **_options) { [ worker ] }
             SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
               service.call(topic_id: @topic.id, content: "Track this handoff")
@@ -321,7 +370,9 @@ module Collavre
           [ coordinator, worker ]
         end
 
-        Orchestration::AgentOrchestrator.stub(:select, [ coordinator, worker ]) do
+        Orchestration::AgentOrchestrator.stub(
+          :prepare_selection, selection_for(coordinator, worker)
+        ) do
           SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
             service.call(topic_id: destination.id, content: "Coordinate and review")
           end
@@ -444,6 +495,10 @@ module Collavre
           topic_id: topic.id,
           creative_id: topic.creative_id
         )
+      end
+
+      def selection_for(*agents)
+        Struct.new(:agents) { def commit! = self }.new(agents)
       end
 
       def share!(user, permission)
