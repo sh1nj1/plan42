@@ -207,6 +207,52 @@ module Collavre
         assert_not Comment.exists?(topic: @topic, content: "Route back to my expression")
       end
 
+      test "an agent cannot self-route in a different unpinned topic" do
+        coordinator = create_agent("Destination Coordinator", creator: @owner)
+        coordinator.update!(routing_expression: "true")
+        share!(coordinator, :feedback)
+        destination = @creative.topics.create!(name: "Unpinned Destination", user: @owner)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+        dispatcher = lambda do |_event, _payload, **options|
+          options.fetch(:on_selected).call([ coordinator ])
+        end
+
+        error = SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+          assert_raises(ArgumentError) do
+            service.call(topic_id: destination.id, content: "Route back from another topic")
+          end
+        end
+
+        assert_equal I18n.t("collavre.tools.topic_message_create.errors.self_route"), error.message
+        assert_not Comment.exists?(topic: destination, content: "Route back from another topic")
+      end
+
+      test "does not count self-pinned fan-out as a ping-pong interaction" do
+        coordinator = create_agent("Fan-out Coordinator", creator: @owner)
+        share!(coordinator, :feedback)
+        destination = @creative.topics.create!(
+          name: "Self Destination", user: @owner, primary_agent: coordinator
+        )
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+        interactions = []
+        breaker = Object.new
+        breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
+        dispatcher = lambda do |_event, _payload, **options|
+          options.fetch(:on_selected).call([ coordinator ])
+          [ coordinator ]
+        end
+
+        Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
+          SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+            service.call(topic_id: destination.id, content: "Start independent work")
+          end
+        end
+
+        assert_empty interactions
+      end
+
       test "records tool-created A2A interactions for the selected agent" do
         coordinator = create_agent("Interaction Coordinator", creator: @owner)
         worker = create_agent("Interaction Worker", creator: @owner)
@@ -277,11 +323,15 @@ module Collavre
 
       test "rejects archived topics and creatives" do
         @topic.archive!
-        assert_raises(ArgumentError) { service.call(topic_id: @topic.id, content: "Closed") }
+        error = assert_raises(ArgumentError) { service.call(topic_id: @topic.id, content: "Closed") }
+        assert_equal I18n.t("collavre.tools.topic_message_create.errors.archived_topic"), error.message
 
         @topic.unarchive!
         @creative.update!(archived_at: Time.current)
-        assert_raises(ArgumentError) { service.call(topic_id: @topic.id, content: "Closed creative") }
+        error = assert_raises(ArgumentError) do
+          service.call(topic_id: @topic.id, content: "Closed creative")
+        end
+        assert_equal I18n.t("collavre.tools.topic_message_create.errors.archived_creative"), error.message
       end
 
       test "rejects the inbox System topic" do
@@ -291,13 +341,24 @@ module Collavre
           service.call(topic_id: inbox.system_topic.id, content: "Not a notification")
         end
 
-        assert_includes error.message, "System topic"
+        assert_equal I18n.t("collavre.tools.topic_message_create.errors.system_topic"), error.message
       end
 
       test "requires a current user" do
         Current.user = nil
 
-        assert_raises(RuntimeError) { service.call(topic_id: @topic.id, content: "No author") }
+        error = assert_raises(RuntimeError) { service.call(topic_id: @topic.id, content: "No author") }
+        assert_equal I18n.t("collavre.tools.topic_message_create.errors.current_user_required"), error.message
+      end
+
+      test "provides English and Korean translations for every tool error" do
+        keys = %w[current_user_required archived_creative archived_topic system_topic current_topic self_route]
+
+        keys.each do |key|
+          path = "collavre.tools.topic_message_create.errors.#{key}"
+          assert I18n.exists?(path, :en)
+          assert I18n.exists?(path, :ko)
+        end
       end
 
       private

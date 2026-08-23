@@ -36,13 +36,12 @@ module Tools
 
     sig { params(topic_id: Integer, content: String).returns(T::Hash[Symbol, T.untyped]) }
     def call(topic_id:, content:)
-      user = Current.user || raise("Current.user is required")
+      user = Current.user || raise(I18n.t("collavre.tools.topic_message_create.errors.current_user_required"))
       topic = Topic.find(topic_id)
       TopicAuthorizer.authorize_feedback!(topic, user: user)
       principal = workspace_user(user)
 
       comment = create_comment(topic, content, user, principal)
-      dispatch_agent_message(comment, user, principal) if user.ai_user?
 
       serialize(comment)
     end
@@ -56,22 +55,28 @@ module Tools
         reject_closed_topic!(topic)
         reject_unrunnable_self_dispatch!(topic, user, principal)
 
-        topic.comments.create!(
+        comment = topic.comments.create!(
           creative: topic.creative,
           content: content,
           user: user,
           private: false,
           skip_dispatch: user.ai_user?
         )
+        dispatch_agent_message(comment, user, principal) if user.ai_user?
+        comment
       end
     end
 
     def reject_closed_topic!(topic)
-      raise ArgumentError, "Archived creatives do not accept topic messages." if topic.creative.archived?
-      raise ArgumentError, "Archived topics do not accept messages." if topic.archived?
+      if topic.creative.archived?
+        raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.archived_creative")
+      end
+      if topic.archived?
+        raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.archived_topic")
+      end
       return unless topic.creative.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME
 
-      raise ArgumentError, "The inbox System topic does not accept user-authored messages."
+      raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.system_topic")
     end
 
     def reject_unrunnable_self_dispatch!(topic, user, principal)
@@ -80,7 +85,7 @@ module Tools
       same_topic = Current.agent_turn&.dig(:task)&.topic_id == topic.id
       return unless same_topic || (principal.nil? && topic.primary_agent_id == user.id)
 
-      raise ArgumentError, "An agent cannot dispatch a topic message to its own current topic."
+      raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.current_topic")
     end
 
     def dispatch_agent_message(comment, user, principal)
@@ -95,13 +100,24 @@ module Tools
       parent = SystemEvents::Envelope.in(Current.agent_turn&.dig(:task)&.trigger_event_payload)
       SystemEvents::Dispatcher.dispatch(
         "comment_created", payload, source: "a2a", parent: parent,
-        on_selected: ->(agents) { record_interactions(agents, user, comment.creative_id) }
+        on_selected: ->(agents) { handle_selected_agents!(agents, user, comment, principal) }
       )
+    end
+
+    def handle_selected_agents!(selected_agents, user, comment, principal)
+      self_selected = selected_agents.any? { |agent| agent.id == user.id }
+      if self_selected && (comment.topic.primary_agent_id != user.id || principal.nil?)
+        raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.self_route")
+      end
+
+      record_interactions(selected_agents, user, comment.creative_id)
     end
 
     def record_interactions(selected_agents, user, creative_id)
       context = { "creative" => { "id" => creative_id } }
       selected_agents.each do |agent|
+        next if agent.id == user.id
+
         Orchestration::LoopBreaker.new(context).record_interaction(user.id, agent.id, creative_id)
       end
     end
