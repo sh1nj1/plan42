@@ -297,6 +297,34 @@ module Collavre
         assert_equal destination.id, topic.reload.creative_id
       end
 
+      test "allows a terminal task whose dropped comments are no longer restorable" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        create_comment = lambda do |**attributes|
+          Comment.create!(creative: source, topic: topic, content: "Dropped",
+                          skip_default_user: true, skip_dispatch: true, **attributes)
+        end
+        deleted = create_comment.call(user: users(:two)).tap(&:destroy!)
+        private_comment = create_comment.call(user: users(:two), private: true)
+        approval = create_comment.call(user: users(:two), action: "approve")
+        agent_comment = create_comment.call(user: user)
+        system_comment = create_comment.call(user: nil)
+        dropped_ids = [ deleted, private_comment, approval, agent_comment, system_comment ].map(&:id)
+        Task.create!(
+          name: "Cancelled turn", agent: user, creative: source, topic_id: topic.id, status: "cancelled",
+          trigger_event_payload: {
+            "topic" => { "id" => topic.id }, "creative" => { "id" => source.id },
+            Orchestration::DeliveryRecord::DROPPED_KEY => dropped_ids
+          }
+        )
+
+        TopicMove.new(topic: topic, target_creative: destination).call
+
+        assert_equal destination.id, topic.reload.creative_id
+      end
+
       test "rejects a topic targeted by a recurring cron job" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)
