@@ -74,6 +74,42 @@ module Collavre
         assert_equal source.id, comment.reload.creative_id
       end
 
+      test "defers move effects until an enclosing transaction commits" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        effects = []
+
+        ApplicationRecord.transaction do
+          TopicMove.new(topic: topic, target_creative: destination).call(
+            after_commit: ->(current_topic) { effects << current_topic.creative_id }
+          )
+
+          assert_empty effects
+        end
+
+        assert_equal [ destination.id ], effects
+      end
+
+      test "discards move effects when an enclosing transaction rolls back" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        effects = []
+
+        ApplicationRecord.transaction do
+          TopicMove.new(topic: topic, target_creative: destination).call(
+            after_commit: ->(current_topic) { effects << current_topic.creative_id }
+          )
+          raise ActiveRecord::Rollback
+        end
+
+        assert_empty effects
+        assert_equal source.id, topic.reload.creative_id
+      end
+
       test "moves comment snapshots with the topic" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)

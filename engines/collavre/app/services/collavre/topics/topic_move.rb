@@ -31,7 +31,7 @@ module Collavre
           topic.update!(creative: target_creative)
           release_unroutable_primary_agent
         end
-        synchronize_after_commit(&after_commit) if after_commit
+        schedule_after_commit(&after_commit) if after_commit
         result
       end
 
@@ -45,9 +45,11 @@ module Collavre
         raise SourceChangedError, I18n.t("collavre.topics.move.source_changed")
       end
 
-      def synchronize_after_commit
-        current_topic = Topic.find(topic.id)
-        current_topic.with_lock { yield current_topic }
+      def schedule_after_commit(&callback)
+        ActiveRecord.after_all_transactions_commit do
+          current_topic = Topic.find(topic.id)
+          current_topic.with_lock { callback.call(current_topic) }
+        end
       end
 
       def release_unroutable_primary_agent

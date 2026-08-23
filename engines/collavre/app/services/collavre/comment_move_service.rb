@@ -63,14 +63,14 @@ module Collavre
     def perform_move(comments, target_origin, new_topic_id)
       moved_count = 0
       ActiveRecord::Base.transaction do
+        locked_source_creative = lock_legacy_source_creative(comments)
         locked_topics = lock_move_topics(comments, new_topic_id)
         validate_destination_topic!(locked_topics, new_topic_id, target_origin)
 
         comments.each do |comment|
-          validate_source_comment!(comment, locked_topics)
+          validate_source_comment!(comment, locked_topics, locked_source_creative)
           same_creative = comment.creative_id == target_origin.id
-          same_topic = comment.topic_id.to_s == new_topic_id.to_s
-          next if same_creative && same_topic
+          next if same_creative && comment.topic_id.to_s == new_topic_id.to_s
 
           if same_creative
             preserve_unread_state_for_topic_move(comment, new_topic_id)
@@ -90,6 +90,12 @@ module Collavre
       moved_count
     end
 
+    def lock_legacy_source_creative(comments)
+      return creative unless comments.any? { |comment| comment.topic_id.nil? }
+
+      Creative.lock.find(creative.id)
+    end
+
     # TopicMove takes the source topic lock before sweeping its comments. Lock
     # every source plus the destination in one deterministic order, so an
     # existing-comment move cannot write a stale topic_id after that sweep.
@@ -104,12 +110,13 @@ module Collavre
       raise MoveError, I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic")
     end
 
-    def validate_source_comment!(comment, locked_topics)
+    def validate_source_comment!(comment, locked_topics, locked_source_creative)
       original_topic_id = comment.topic_id
       comment.reload
       source_topic = locked_topics[original_topic_id]
+      source_membership_valid = original_topic_id.nil? || source_topic&.creative_id == locked_source_creative.id
       return if comment.creative_id == creative.id && comment.topic_id == original_topic_id &&
-                source_topic&.creative_id == creative.id
+                source_membership_valid
 
       raise MoveError, I18n.t("collavre.comments.move_not_allowed")
     end

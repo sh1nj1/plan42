@@ -44,6 +44,20 @@ module Collavre
       assert_equal @creative.main_topic.id, comment.reload.topic_id
     end
 
+    test "moves a retained legacy comment without a source topic" do
+      destination = @creative.topics.create!(name: "Destination", user: @user)
+      comment = Comment.create!(creative: @creative, user: @user, content: "legacy message")
+      comment.update_column(:topic_id, nil)
+
+      result = CommentMoveService.new(creative: @creative, user: @user).call(
+        comment_ids: [ comment.id ], target_topic_id: destination.id
+      )
+
+      assert_equal 1, result[:moved_count]
+      assert_equal @creative.id, comment.reload.creative_id
+      assert_equal destination.id, comment.topic_id
+    end
+
     test "moving an unread comment does not let the destination pointer hide it" do
       source = @creative.topics.create!(name: "Source", user: @user)
       destination = @creative.topics.create!(name: "Destination", user: @user)
