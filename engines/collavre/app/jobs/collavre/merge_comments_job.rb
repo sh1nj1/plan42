@@ -68,24 +68,26 @@ module Collavre
         return
       end
 
-      # Update the first comment and delete the rest atomically
-      remaining_ids = comments[1..].map(&:id)
-      ActiveRecord::Base.transaction do
-        # Save snapshot for recovery before modifying/deleting originals
-        CommentSnapshot.create!(
-          creative: creative,
-          topic_id: topic_id,
-          user_id: user_id,
-          operation: "merge",
-          comments_data: serialize_comments(comments),
-          result_comment: target_comment
-        )
-
-        target_comment.update!(content: merged_content)
-        creative.comments.where(id: remaining_ids).destroy_all
-      end
+      Comments::TopicMutation.call(topic_id, creative_id) { persist_merge(comments, merged_content, user_id) }
     rescue ActiveRecord::RecordNotFound => e
       Rails.logger.error("[MergeCommentsJob] Record not found: #{e.message}")
+    end
+
+    private
+
+    def persist_merge(comments, merged_content, user_id)
+      target_comment = comments.first
+      creative = target_comment.creative
+      CommentSnapshot.create!(
+        creative: creative,
+        topic_id: target_comment.topic_id,
+        user_id: user_id,
+        operation: "merge",
+        comments_data: serialize_comments(comments),
+        result_comment: target_comment
+      )
+      target_comment.update!(content: merged_content)
+      creative.comments.where(id: comments[1..].map(&:id)).destroy_all
     end
   end
 end

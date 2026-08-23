@@ -207,6 +207,26 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert_empty summary_comments
   end
 
+  test "does not persist a summary when the topic moves during the AI call" do
+    create_ai_agent_for_creative
+    destination = Collavre::Creative.create!(description: "Moved compression", user: @user)
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, "summary") do |_messages, **_kwargs, &block|
+      block.call("summary")
+      Collavre::Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    assert_equal destination.id, @topic.reload.creative_id
+    assert_equal [ @comment1.id, @comment2.id, @comment3.id ].sort,
+                 destination.comments.where(topic: @topic).pluck(:id).sort
+    assert_not Collavre::CommentSnapshot.where(topic: @topic).exists?
+  end
+
   private
 
   def create_ai_agent_for_creative

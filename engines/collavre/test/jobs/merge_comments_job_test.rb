@@ -169,4 +169,26 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
     assert Collavre::Comment.exists?(c2.id)
     assert_equal "Message one", c1.reload.content
   end
+
+  test "does not merge comments when the topic moves during the AI call" do
+    destination = Collavre::Creative.create!(description: "Moved merge", user: @user)
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, "merged") do |_messages, **_kwargs, &block|
+      block.call("merged")
+      Collavre::Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::MergeCommentsJob.perform_now(
+        @creative.id, [ @comment1.id, @comment2.id, @comment3.id ], @user.id
+      )
+    end
+
+    assert_equal destination.id, @topic.reload.creative_id
+    assert_equal "First message content", @comment1.reload.content
+    assert Collavre::Comment.exists?(@comment2.id)
+    assert Collavre::Comment.exists?(@comment3.id)
+    assert_not Collavre::CommentSnapshot.where(topic: @topic).exists?
+  end
 end
