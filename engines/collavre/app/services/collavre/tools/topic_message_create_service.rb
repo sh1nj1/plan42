@@ -23,7 +23,9 @@ module Tools
       The caller remains the message author. Human-authored messages use normal
       comment dispatch, while agent-authored messages are dispatched as A2A work
       so an agent can fan work out without impersonating a human. The content is
-      stored as written and may use Markdown.
+      stored as written and may use Markdown. An agent cannot post to the same
+      primary-agent topic it is currently handling; continue that work in the
+      current turn instead.
 
       Requires feedback permission or better on the topic's creative. Archived
       creatives, archived topics, and an inbox's reserved System topic do not
@@ -53,9 +55,7 @@ module Tools
         topic.lock!
         TopicAuthorizer.authorize_feedback!(topic, user: user)
         reject_closed_topic!(topic)
-        if user.ai_user? && principal.nil? && topic.primary_agent_id == user.id
-          raise ArgumentError, "An agent without a workspace principal cannot dispatch a topic message to itself."
-        end
+        reject_unrunnable_self_dispatch!(topic, user, principal)
 
         topic.comments.create!(
           creative: topic.creative,
@@ -75,6 +75,13 @@ module Tools
       raise ArgumentError, "The inbox System topic does not accept user-authored messages."
     end
 
+    def reject_unrunnable_self_dispatch!(topic, user, principal)
+      return unless user.ai_user? && topic.primary_agent_id == user.id
+      return if principal && Current.agent_turn&.dig(:task)&.topic_id != topic.id
+
+      raise ArgumentError, "An agent cannot dispatch a topic message to its own current topic."
+    end
+
     def dispatch_agent_message(comment, user, principal)
       payload = comment.dispatch_payload.merge(workspace_user_id: principal&.id)
       # A coordinator may fan itself out into two topic slots. Treat the
@@ -84,8 +91,16 @@ module Tools
       if comment.topic.primary_agent_id == user.id && principal
         payload[:sender] = SystemEvents::ContextBuilder.sender_context_for(principal)
       end
-      parent = Current.agent_turn&.dig(:parent)
+      record_interactions(payload, user, comment.creative_id)
+      parent = SystemEvents::Envelope.in(Current.agent_turn&.dig(:task)&.trigger_event_payload)
       SystemEvents::Dispatcher.dispatch("comment_created", payload, source: "a2a", parent: parent)
+    end
+
+    def record_interactions(payload, user, creative_id)
+      context = SystemEvents::ContextBuilder.new(payload).build
+      Orchestration::Matcher.new(context).match.each do |agent|
+        Orchestration::LoopBreaker.new(context).record_interaction(user.id, agent.id, creative_id)
+      end
     end
 
     def workspace_user(user)

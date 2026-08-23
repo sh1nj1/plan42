@@ -146,7 +146,9 @@ collavre tool run <tool_name> --key value         # run with flag args
 - **Starting topic work**: after creating and pinning a topic, call
   `topic_message_create` with its initial instruction. Agent-authored messages
   dispatch as A2A work, so one coordinating agent can start independent work in
-  several topics without impersonating a human.
+  several topics without impersonating a human. Do not call it on the same
+  primary-agent topic the caller is currently handling; continue that work in
+  the current turn instead.
 - **Progress**: Leaf = manual (0.0 or 1.0). Parent = auto-calculated from children.
 - **Import**: Markdown headings/bullets become nested Creatives.
 - **Batch**: All-or-nothing transaction. Requires approval.

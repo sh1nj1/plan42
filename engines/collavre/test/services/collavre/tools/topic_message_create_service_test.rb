@@ -78,6 +78,7 @@ module Collavre
         coordinator = create_agent("Self Coordinator", creator: @owner)
         share!(coordinator, :write)
         Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
         topics = %w[TrackOne TrackTwo].map do |name|
           TopicCreateService.new.call(
             creative_id: @creative.id,
@@ -105,7 +106,7 @@ module Collavre
         coordinator = create_agent("Cleared Coordinator", creator: @owner)
         share!(coordinator, :feedback)
         Current.user = coordinator
-        Current.agent_turn = { user: nil, parent: nil }
+        Current.agent_turn = { user: nil, task: nil }
         payload = nil
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
@@ -120,7 +121,7 @@ module Collavre
         coordinator = create_agent("Carried Coordinator", creator: @owner)
         share!(coordinator, :feedback)
         Current.user = coordinator
-        Current.agent_turn = { user: @reader, parent: nil }
+        Current.agent_turn = { user: @reader, task: nil }
         payload = nil
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) { payload = context }) do
@@ -135,7 +136,8 @@ module Collavre
         share!(coordinator, :feedback)
         Current.user = coordinator
         parent = SystemEvents::Envelope.root("comment_created", source: "test")
-        Current.agent_turn = { user: @reader, parent: parent }
+        task = running_task(coordinator, @topic, parent: parent)
+        Current.agent_turn = { user: @reader, task: task }
         dispatch_options = nil
 
         SystemEvents::Dispatcher.stub(:dispatch, ->(_event, _context, **options) { dispatch_options = options }) do
@@ -150,14 +152,50 @@ module Collavre
         share!(coordinator, :feedback)
         @topic.update!(primary_agent: coordinator)
         Current.user = coordinator
-        Current.agent_turn = { user: nil, parent: nil }
+        Current.agent_turn = { user: nil, task: nil }
 
         error = assert_raises(ArgumentError) do
           service.call(topic_id: @topic.id, content: "Loop forever")
         end
 
-        assert_match(/cannot dispatch a topic message to itself/, error.message)
+        assert_match(/cannot dispatch a topic message to its own current topic/, error.message)
         assert_not Comment.exists?(topic: @topic, content: "Loop forever")
+      end
+
+      test "an agent cannot dispatch to its own currently running topic" do
+        coordinator = create_agent("Busy Self Coordinator", creator: @owner)
+        share!(coordinator, :feedback)
+        @topic.update!(primary_agent: coordinator)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+
+        error = assert_raises(ArgumentError) do
+          service.call(topic_id: @topic.id, content: "Queue behind myself")
+        end
+
+        assert_match(/cannot dispatch a topic message to its own current topic/, error.message)
+        assert_not Comment.exists?(topic: @topic, content: "Queue behind myself")
+      end
+
+      test "records tool-created A2A interactions for the selected agent" do
+        coordinator = create_agent("Interaction Coordinator", creator: @owner)
+        worker = create_agent("Interaction Worker", creator: @owner)
+        share!(coordinator, :feedback)
+        share!(worker, :feedback)
+        @topic.update!(primary_agent: worker)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @creative.main_topic) }
+        interactions = []
+        breaker = Object.new
+        breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
+
+        Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
+          SystemEvents::Dispatcher.stub(:dispatch, nil) do
+            service.call(topic_id: @topic.id, content: "Track this handoff")
+          end
+        end
+
+        assert_equal [ [ coordinator.id, worker.id, @creative.id ] ], interactions
       end
 
       test "feedback permission can post but read permission cannot" do
@@ -238,6 +276,23 @@ module Collavre
           llm_model: "gemini-1.5-flash",
           searchable: true,
           creator: creator
+        )
+      end
+
+      def running_task(agent, topic, parent: nil)
+        payload = {
+          "creative" => { "id" => topic.creative_id },
+          "topic" => { "id" => topic.id }
+        }
+        payload[SystemEvents::Envelope::KEY] = parent.to_h if parent
+        Task.create!(
+          name: "Running topic message turn",
+          status: "running",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: payload,
+          agent: agent,
+          topic_id: topic.id,
+          creative_id: topic.creative_id
         )
       end
 

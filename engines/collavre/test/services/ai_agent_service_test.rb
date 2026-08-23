@@ -219,7 +219,8 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_equal @user, captured_context[:workspace_user]
     assert_not_equal upstream_agent, captured_context[:workspace_user]
     assert_equal @user, current_agent_turn[:user]
-    assert_equal parent, current_agent_turn[:parent]
+    assert_equal @task, current_agent_turn[:task]
+    assert_equal parent, Collavre::SystemEvents::Envelope.in(current_agent_turn[:task].trigger_event_payload)
     assert_nil Current.agent_turn
   end
 
