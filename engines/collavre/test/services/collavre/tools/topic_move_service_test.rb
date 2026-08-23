@@ -56,6 +56,27 @@ module Collavre
         assert_equal @topic.id, broadcasts.second.last.dig(:topic, :id)
       end
 
+      test "broadcasts topic state reloaded under the post-commit lock" do
+        original_find = Topic.method(:find)
+        find_calls = 0
+        broadcasts = []
+        find_topic = lambda do |id|
+          find_calls += 1
+          record = original_find.call(id)
+          record.update_column(:name, "Renamed after move") if find_calls == 2
+          original_find.call(id)
+        end
+
+        Topic.stub(:find, find_topic) do
+          TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
+            TopicMoveService.new.call(topic_id: @topic.id, creative_id: @target.id)
+          end
+        end
+
+        created = broadcasts.find { |_creative_id, payload| payload[:action] == "created" }
+        assert_equal "Renamed after move", created.last.dig(:topic, :name)
+      end
+
       test "does not broadcast an obsolete destination after a consecutive move" do
         final_target = Creative.create!(description: "Final target", user: @owner)
         original_find = Topic.method(:find)
