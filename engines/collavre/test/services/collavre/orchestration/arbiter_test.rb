@@ -185,6 +185,25 @@ module Collavre
         assert_equal [ @agent1 ], selected
       end
 
+      test "round_robin can defer its cache update until selection commits" do
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "round_robin" }
+        )
+        cache_key = "orchestrator:round_robin:topic:#{@topic.id}"
+        Rails.cache.delete(cache_key)
+        arbiter = Arbiter.new(@context)
+
+        selected = arbiter.select(@candidates, commit: false)
+
+        assert_equal [ @agent1 ], selected
+        assert_nil Rails.cache.read(cache_key)
+
+        arbiter.commit_selection!
+
+        assert_equal @agent1.id, Rails.cache.read(cache_key)
+      end
+
       # Edge cases
       test "returns empty array for empty candidates" do
         arbiter = Arbiter.new(@context)

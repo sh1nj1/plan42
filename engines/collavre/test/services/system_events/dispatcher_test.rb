@@ -102,6 +102,36 @@ module SystemEvents
       assert_equal "cron", Envelope.in(enqueued_context).source
     end
 
+    test "applies context overrides only to their selected agent" do
+      sender = { "id" => users(:one).id, "is_ai" => false }
+      other_agent = User.create!(
+        email: "dispatcher_other_context_agent@example.com",
+        name: "Dispatcher Other Context Agent",
+        password: "password",
+        llm_vendor: "google",
+        llm_model: "gemini-1.5-flash",
+        searchable: true
+      )
+      Collavre::CreativeShare.create!(
+        creative: @creative, user: other_agent, permission: :feedback, shared_by: users(:one)
+      )
+      Collavre::CreativeSharesCache.create!(
+        creative_id: @creative.id, user_id: other_agent.id, permission: :feedback
+      )
+
+      SystemEvents::Dispatcher.dispatch(
+        "comment_created", @context,
+        selected_agents: [ @agent, other_agent ],
+        context_for: ->(agent) { agent == @agent ? { "sender" => sender } : {} }
+      )
+
+      contexts = ActiveJob::Base.queue_adapter.enqueued_jobs.last(2).to_h do |job|
+        [ job[:args][0], job[:args][2] ]
+      end
+      assert_equal sender["id"], contexts.dig(@agent.id, "sender", "id")
+      assert_nil contexts.dig(other_agent.id, "sender")
+    end
+
     test "does not enqueue work when no agent matches" do
       @agent.update!(routing_expression: "false")
 

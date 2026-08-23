@@ -94,6 +94,57 @@ module Collavre
         assert_empty result
       end
 
+      test "selects agents after arbitration without scheduling" do
+        other_agent = User.create!(
+          email: "dispatcher_other_agent@example.com",
+          name: "Dispatcher Other Agent",
+          password: "password",
+          llm_vendor: "google",
+          llm_model: "gemini-1.5-flash",
+          searchable: true
+        )
+        context = { "creative" => { "id" => @creative.id } }
+        selected_agent = @ai_agent
+        matcher = Object.new
+        matcher.define_singleton_method(:match) { [ selected_agent, other_agent ] }
+        arbiter = Object.new
+        arbiter.define_singleton_method(:select) { |_candidates, **| [ selected_agent ] }
+        arbiter.define_singleton_method(:commit_selection!) { }
+        Matcher.stub(:new, matcher) do
+          Arbiter.stub(:new, arbiter) do
+            assert_equal [ @ai_agent ], AgentOrchestrator.select("comment_created", context)
+          end
+        end
+      end
+
+      test "reports only scheduler-accepted agents before enqueue" do
+        accepted = @ai_agent
+        rejected = User.create!(
+          email: "rejected_scheduled_agent@example.com", name: "Rejected Scheduled Agent",
+          password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash"
+        )
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) do |_agents, **_options|
+          [
+            { agent: accepted, timing: :immediate },
+            { agent: rejected, timing: :rejected, reason: :quota_exceeded }
+          ]
+        end
+        scheduled = nil
+
+        Scheduler.stub(:new, scheduler) do
+          hooks = SchedulingHooks.new(
+            interaction_callback: nil, scheduled_callback: ->(agents) { scheduled = agents }
+          )
+          AgentOrchestrator.dispatch(
+            "comment_created", { "creative" => { "id" => @creative.id } },
+            selected_agents: [ accepted, rejected ], scheduling_hooks: hooks
+          )
+        end
+
+        assert_equal [ accepted ], scheduled
+      end
+
       # Deferred enqueue
       test "deferred decision creates queued task" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)

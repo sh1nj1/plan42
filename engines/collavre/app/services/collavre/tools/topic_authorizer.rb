@@ -20,6 +20,12 @@ module Collavre
         authorize!(topic, :read, user: user)
       end
 
+      # Posting a message is the topic equivalent of commenting through
+      # CommentsController, so it uses the same feedback permission floor.
+      def authorize_feedback!(topic, user: Collavre::Current.user)
+        authorize!(topic, :feedback, user: user)
+      end
+
       # Attaching a channel injects external messages into a topic, and creating
       # or archiving one restructures where conversation lands, so both are
       # write-equivalent mutations.

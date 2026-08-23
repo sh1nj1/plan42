@@ -22,7 +22,7 @@ module Collavre
       # Select which agents will respond from the candidates
       # @param candidates [Array<User>] Qualified agents from Matcher
       # @return [Array<User>] Agents that will actually respond
-      def select(candidates)
+      def select(candidates, commit: true)
         return [] if candidates.empty?
 
         # Review feedback is forced routing: the Matcher already restricts candidates
@@ -47,7 +47,16 @@ module Collavre
         max = @policy_resolver.max_responders
         selected = selected.take(max) if max.present? && max.positive?
 
+        commit_selection! if commit
         selected
+      end
+
+      def commit_selection!
+        pending = @pending_round_robin
+        return unless pending
+
+        Rails.cache.write(pending.first, pending.second, expires_in: 24.hours)
+        @pending_round_robin = nil
       end
 
       private
@@ -140,8 +149,7 @@ module Collavre
                      sorted_candidates.first
         end
 
-        # Store current responder for next rotation
-        Rails.cache.write(cache_key, selected.id, expires_in: 24.hours)
+        @pending_round_robin = [ cache_key, selected.id ]
 
         [ selected ]
       end

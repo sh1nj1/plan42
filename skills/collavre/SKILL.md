@@ -104,8 +104,14 @@ collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "curso
 # Continue inside one clipped message, preserving its row cursor
 collavre tool run topic_messages --json '{"topic_ids": 12, "offset": 100, "cursor": "1770000000000000:989:1770000001000000:1770000002000000", "content_offset": 28400, "max_message_id": 9931}'
 
-# Fan work out: one topic per unit of work, with an agent pinned to each
+# Fan work out: one topic per unit of work, with an agent pinned to each;
+# keep each returned topic id for the initial-message calls
 collavre tool run topic_create --json '{"creative_id": 8849, "name": "Research", "primary_agent": "Dev1Claude"}'
+collavre tool run topic_create --json '{"creative_id": 8849, "name": "Delivery", "primary_agent": "Dev1Claude"}'
+
+# Start the pinned agent independently in both topics
+collavre tool run topic_message_create --json '{"topic_id": 12, "content": "Research the API options and report your recommendation."}'
+collavre tool run topic_message_create --json '{"topic_id": 13, "content": "Build the selected approach and verify it."}'
 
 # Put a finished thread away (messages are kept and stay readable by id)
 collavre tool run topic_update --json '{"topic_id": 12, "archived": true}'
@@ -137,6 +143,11 @@ collavre tool run <tool_name> --key value         # run with flag args
 - **Primary agent**: pinning an agent to a topic is exclusive — that agent alone
   answers there. Use it for a dedicated 1:1 channel; leave it unset for a thread
   several participants should hear.
+- **Starting topic work**: after creating and pinning a topic, call
+  `topic_message_create` with its initial instruction. Agent-authored messages
+  dispatch as A2A work, so one coordinating agent can start independent work in
+  several topics without impersonating a human. Do not call it on the topic the
+  caller is currently handling; continue that work in the current turn instead.
 - **Progress**: Leaf = manual (0.0 or 1.0). Parent = auto-calculated from children.
 - **Import**: Markdown headings/bullets become nested Creatives.
 - **Batch**: All-or-nothing transaction. Requires approval.

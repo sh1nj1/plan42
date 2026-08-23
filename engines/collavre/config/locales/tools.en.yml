@@ -1,0 +1,11 @@
+en:
+  collavre:
+    tools:
+      topic_message_create:
+        errors:
+          current_user_required: Current.user is required.
+          archived_creative: Archived creatives do not accept topic messages.
+          archived_topic: Archived topics do not accept messages.
+          system_topic: The inbox System topic does not accept user-authored messages.
+          current_topic: An agent cannot dispatch a topic message to its own current topic.
+          self_route: An agent cannot route an unpinned topic message back to itself.
