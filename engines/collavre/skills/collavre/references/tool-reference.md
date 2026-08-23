@@ -240,6 +240,9 @@ can create several topics, pin a primary agent on each, then start them with
 independent instructions. Different topics can run concurrently; repeated
 messages in one topic follow that topic's queue.
 
+An agent cannot call this tool on the topic of its current turn. Continue that
+work in the current turn; use this tool to start work in a different topic.
+
 Requires **feedback** or better on the topic's Creative. Archived Creatives,
 archived topics, and an inbox's reserved System topic reject new messages.
 

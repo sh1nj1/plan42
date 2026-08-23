@@ -23,9 +23,8 @@ module Tools
       The caller remains the message author. Human-authored messages use normal
       comment dispatch, while agent-authored messages are dispatched as A2A work
       so an agent can fan work out without impersonating a human. The content is
-      stored as written and may use Markdown. An agent cannot post to the same
-      primary-agent topic it is currently handling; continue that work in the
-      current turn instead.
+      stored as written and may use Markdown. An agent cannot post to the topic
+      it is currently handling; continue that work in the current turn instead.
 
       Requires feedback permission or better on the topic's creative. Archived
       creatives, archived topics, and an inbox's reserved System topic do not
@@ -76,8 +75,10 @@ module Tools
     end
 
     def reject_unrunnable_self_dispatch!(topic, user, principal)
-      return unless user.ai_user? && topic.primary_agent_id == user.id
-      return if principal && Current.agent_turn&.dig(:task)&.topic_id != topic.id
+      return unless user.ai_user?
+
+      same_topic = Current.agent_turn&.dig(:task)&.topic_id == topic.id
+      return unless same_topic || (principal.nil? && topic.primary_agent_id == user.id)
 
       raise ArgumentError, "An agent cannot dispatch a topic message to its own current topic."
     end

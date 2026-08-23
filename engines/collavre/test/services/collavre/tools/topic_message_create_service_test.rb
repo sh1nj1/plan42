@@ -148,6 +148,7 @@ module Collavre
         Current.user = coordinator
         parent = SystemEvents::Envelope.root("comment_created", source: "test")
         task = running_task(coordinator, @topic, parent: parent)
+        destination = @creative.topics.create!(name: "Envelope Destination", user: @owner)
         Current.agent_turn = { user: @reader, task: task }
         dispatch_options = nil
 
@@ -155,7 +156,7 @@ module Collavre
           dispatch_options = options
           []
         }) do
-          service.call(topic_id: @topic.id, content: "Child instruction")
+          service.call(topic_id: destination.id, content: "Child instruction")
         end
 
         assert_equal parent, dispatch_options[:parent]
@@ -189,6 +190,21 @@ module Collavre
 
         assert_match(/cannot dispatch a topic message to its own current topic/, error.message)
         assert_not Comment.exists?(topic: @topic, content: "Queue behind myself")
+      end
+
+      test "an agent cannot self-route in its unpinned current topic" do
+        coordinator = create_agent("Expression Coordinator", creator: @owner)
+        coordinator.update!(routing_expression: "true")
+        share!(coordinator, :feedback)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+
+        error = assert_raises(ArgumentError) do
+          service.call(topic_id: @topic.id, content: "Route back to my expression")
+        end
+
+        assert_match(/cannot dispatch a topic message to its own current topic/, error.message)
+        assert_not Comment.exists?(topic: @topic, content: "Route back to my expression")
       end
 
       test "records tool-created A2A interactions for the selected agent" do
