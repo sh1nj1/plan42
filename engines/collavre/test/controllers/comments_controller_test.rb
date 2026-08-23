@@ -499,6 +499,28 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Original", comment.content
   end
 
+  test "content update rejects a comment whose topic moved before its lock" do
+    source_topic = @creative.topics.create!(name: "Edit source", user: @user)
+    destination = Creative.create!(description: "Edit destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    topic_mutation = Collavre::Comments::TopicMutation.method(:call)
+    mutate_after_relocation = lambda do |*args, &block|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      topic_mutation.call(*args, &block)
+    end
+
+    Collavre::Comments::TopicMutation.stub(:call, mutate_after_relocation) do
+      patch creative_comment_path(@creative, comment), params: {
+        comment: { content: "Stale update" }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal destination.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
+  end
+
   test "user can move comments to another creative" do
     target = creatives(:childless_creative)
     comment = @creative.comments.create!(content: "Move me", user: @user)

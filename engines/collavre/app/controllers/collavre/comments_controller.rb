@@ -239,7 +239,7 @@ module Collavre
     end
 
     def update_comment(attributes)
-      return @comment.update(attributes) unless attributes.key?(:topic_id)
+      return update_comment_under_topic_lock(attributes) unless attributes.key?(:topic_id)
 
       attributes = attributes.dup
       topic_id = attributes.delete(:topic_id)
@@ -254,6 +254,21 @@ module Collavre
       end
     rescue CommentMoveService::MoveError => e
       @comment.errors.add(:topic, e.message)
+      false
+    end
+
+    def update_comment_under_topic_lock(attributes)
+      source_topic_id = @comment.topic_id
+      matching_context = false
+      updated = false
+      Comments::TopicMutation.call(source_topic_id, @creative.id) do
+        @comment.lock!
+        matching_context = @comment.creative_id == @creative.id && @comment.topic_id == source_topic_id
+        updated = @comment.update(attributes) if matching_context
+      end
+      return updated if matching_context
+
+      @comment.errors.add(:topic, I18n.t("collavre.comments.move_not_allowed"))
       false
     end
   end

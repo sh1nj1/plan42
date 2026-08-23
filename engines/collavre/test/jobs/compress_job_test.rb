@@ -227,6 +227,29 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert_not Collavre::CommentSnapshot.where(topic: @topic).exists?
   end
 
+  test "does not compress when a selected comment changes topics during the AI call" do
+    create_ai_agent_for_creative
+    other_topic = @creative.topics.create!(name: "Moved comment", user: @user)
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, "summary") do |_messages, **_kwargs, &block|
+      block.call("summary")
+      Collavre::CommentMoveService.new(creative: @creative, user: @user).call(
+        comment_ids: [ @comment2.id ], target_topic_id: other_topic.id
+      )
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    assert_equal other_topic.id, @comment2.reload.topic_id
+    assert Collavre::Comment.exists?(@comment1.id)
+    assert Collavre::Comment.exists?(@comment3.id)
+    assert_not Collavre::CommentSnapshot.where(topic: @topic).exists?
+    assert_equal 2, @creative.comments.where(topic: @topic).count
+  end
+
   private
 
   def create_ai_agent_for_creative

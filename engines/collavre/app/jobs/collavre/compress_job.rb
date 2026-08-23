@@ -86,6 +86,9 @@ module Collavre
     private
 
     def persist_summary(comments, summary_content, agent, user, compress_pattern)
+      comments = lock_matching_comments(comments)
+      return unless comments
+
       creative = comments.first.creative
       topic_id = comments.first.topic_id
       # Author AI output as the agent so the comment is recognized as AI-generated
@@ -104,6 +107,17 @@ module Collavre
         result_comment: summary_comment
       )
       creative.comments.where(id: comments.map(&:id)).destroy_all
+    end
+
+    def lock_matching_comments(comments)
+      comment_ids = comments.map(&:id)
+      locked = Comment.where(id: comment_ids).order(:id).lock.index_by(&:id)
+      expected = comments.first
+      return unless locked.size == comment_ids.size && locked.values.all? do |comment|
+        comment.creative_id == expected.creative_id && comment.topic_id == expected.topic_id
+      end
+
+      comment_ids.map { |id| locked.fetch(id) }
     end
   end
 end
