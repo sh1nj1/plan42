@@ -143,6 +143,24 @@ module Collavre
 
         assert_not_equal result1[:key], result2[:key]
       end
+
+      test "rejects a topic that moved after resolution and before creation" do
+        destination = Creative.create!(description: "Cron destination", user: @user)
+        service = CronCreateService.new
+        Collavre::Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+
+        result = service.stub(:resolve_topic, @topic) do
+          service.call(
+            creative_id: @creative.id,
+            topic_name: @topic.name,
+            schedule: "0 9 * * *",
+            message: "Stale cron"
+          )
+        end
+
+        assert_equal I18n.t("collavre.comments.invalid_topic"), result[:error]
+        assert_empty SolidQueue::RecurringTask.where(static: false)
+      end
     end
   end
 end

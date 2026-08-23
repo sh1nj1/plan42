@@ -4,7 +4,8 @@ module Collavre
   module Topics
     class TopicMove
       class SourceChangedError < StandardError; end
-      class ActiveTaskError < StandardError; end
+      ActiveTaskError = MoveBlocker::ActiveTaskError
+      RecurringTaskError = MoveBlocker::RecurringTaskError
 
       def initialize(topic:, target_creative:)
         @topic = topic
@@ -21,7 +22,7 @@ module Collavre
           topic.lock!
           reject_changed_source!
           yield topic if block_given?
-          reject_active_tasks!
+          MoveBlocker.new(topic).call
           topic.comments.update_all(creative_id: target_creative.id)
           topic.comment_snapshots.update_all(creative_id: target_creative.id)
           ReadPointerRelocator.new(topic: topic, target_creative: target_creative).call
@@ -40,12 +41,6 @@ module Collavre
         return if topic.creative_id == source_creative_id
 
         raise SourceChangedError, I18n.t("collavre.topics.move.source_changed")
-      end
-
-      def reject_active_tasks!
-        return unless Task.where(topic_id: topic.id, status: Task::ACTIVE_STATUSES).exists?
-
-        raise ActiveTaskError, I18n.t("collavre.topics.move.active_tasks")
       end
 
       def synchronize_after_commit

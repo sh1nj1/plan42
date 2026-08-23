@@ -136,9 +136,34 @@ module Collavre
         assert_equal destination.id, topic.reload.creative_id
       end
 
+      test "rejects a topic targeted by a recurring cron job" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Recurring", user: user)
+        task = SolidQueue::RecurringTask.create!(
+          key: "cron_#{source.id}_#{SecureRandom.hex(4)}",
+          class_name: "Collavre::CronActionJob", schedule: "0 9 * * *",
+          queue_name: "default", static: false,
+          arguments: [ { creative_id: source.id, topic_id: topic.id,
+                         agent_id: user.id, message: "Daily" } ]
+        )
+
+        error = assert_raises(TopicMove::RecurringTaskError) do
+          TopicMove.new(topic: topic, target_creative: destination).call
+        end
+
+        assert_equal I18n.t("collavre.topics.move.recurring_tasks"), error.message
+        assert_equal source.id, topic.reload.creative_id
+      ensure
+        task&.destroy
+      end
+
       test "active task error is translated in English and Korean" do
-        assert I18n.exists?("collavre.topics.move.active_tasks", :en)
-        assert I18n.exists?("collavre.topics.move.active_tasks", :ko)
+        %w[active_tasks recurring_tasks].each do |key|
+          assert I18n.exists?("collavre.topics.move.#{key}", :en)
+          assert I18n.exists?("collavre.topics.move.#{key}", :ko)
+        end
       end
     end
   end

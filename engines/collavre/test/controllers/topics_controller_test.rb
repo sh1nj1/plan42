@@ -292,6 +292,26 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, @topic.reload.creative_id
   end
 
+  test "should reject moving a topic targeted by a recurring cron job" do
+    target_creative = creatives(:root_parent)
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob", schedule: "0 9 * * *",
+      queue_name: "default", static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id,
+                     agent_id: @user.id, message: "Daily" } ]
+    )
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.recurring_tasks"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  ensure
+    task&.destroy
+  end
+
   test "should not broadcast an obsolete destination after a consecutive move" do
     target_creative = creatives(:root_parent)
     final_target = Collavre::Creative.create!(description: "Final target", user: @user)

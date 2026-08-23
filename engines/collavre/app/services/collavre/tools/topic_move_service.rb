@@ -25,7 +25,8 @@ module Tools
       creative; the topic moves to its origin. Topic names are unique per
       creative. Main, an inbox's System topic, and live agent session topics
       cannot be moved. Wait for or cancel active agent work before moving its
-      topic.
+      topic. Cancel recurring cron jobs targeting the topic and recreate them
+      after the move.
     DESC
 
     tool_param :topic_id, description: "The topic to move."

@@ -8,6 +8,7 @@ module Collavre
       included do
         before_validation :assign_main_topic, on: :create
         before_validation :stamp_topic_assignment
+        before_create :lock_matching_topic
       end
 
       private
@@ -26,6 +27,14 @@ module Collavre
         return unless will_save_change_to_topic_id? || topic_assigned_at.nil?
 
         self.topic_assigned_at = Time.current
+      end
+
+      def lock_matching_topic
+        locked_topic = Topic.where(id: topic_id).lock.first
+        return if locked_topic&.creative_id == creative_id
+
+        errors.add(:topic, I18n.t("collavre.comments.invalid_topic"))
+        throw :abort
       end
     end
   end

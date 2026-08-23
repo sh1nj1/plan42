@@ -230,6 +230,25 @@ module Collavre
         assert_equal @source.id, @topic.reload.creative_id
       end
 
+      test "rejects a topic targeted by a recurring cron job" do
+        task = SolidQueue::RecurringTask.create!(
+          key: "cron_#{@source.id}_#{SecureRandom.hex(4)}",
+          class_name: "Collavre::CronActionJob", schedule: "0 9 * * *",
+          queue_name: "default", static: false,
+          arguments: [ { creative_id: @source.id, topic_id: @topic.id,
+                         agent_id: @owner.id, message: "Daily" } ]
+        )
+
+        error = assert_raises(Topics::TopicMove::RecurringTaskError) do
+          TopicMoveService.new.call(topic_id: @topic.id, creative_id: @target.id)
+        end
+
+        assert_equal I18n.t("collavre.topics.move.recurring_tasks"), error.message
+        assert_equal @source.id, @topic.reload.creative_id
+      ensure
+        task&.destroy
+      end
+
       test "rejects a stale move when the topic changes creatives before its lock" do
         intervening = Creative.create!(description: "Intervening", user: @owner)
         stale_move = Topics::TopicMove.new(topic: @topic, target_creative: @target)
