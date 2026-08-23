@@ -695,13 +695,9 @@ module Collavre
 
       private
 
-      def policy_resolver
-        @policy_resolver ||= PolicyResolver.new(@context)
-      end
+      def policy_resolver = @policy_resolver ||= PolicyResolver.new(@context)
 
-      def scheduler
-        @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
-      end
+      def scheduler = @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
 
       def enqueue_jobs(decisions, context_for:)
         decisions.filter_map do |decision|
@@ -895,7 +891,7 @@ module Collavre
       end
 
       def create_waiting_notice(creative, topic_id, reason_text, deferred:, shared:, waiter:)
-        creative.comments.create!(
+        creative.comments.build(
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           topic_id: topic_id,
           private: false,
@@ -908,7 +904,11 @@ module Collavre
           # Comment#cancel_queued_tasks_for_waiting_notice.
           waiting_notice_scope: deferred ? (shared ? Comment::WAITING_NOTICE_TOPIC : Comment::WAITING_NOTICE_TASK) : nil,
           waiting_notice_task_id: (waiter&.id unless shared)
-        )
+        ).tap(&:save!)
+      rescue ActiveRecord::RecordNotSaved => error
+        # A delayed job is already queued when this notice is posted. Topic
+        # relocation may invalidate only the stale notice in that gap.
+        raise unless error.record.errors.include?(:topic)
       end
 
       # Human-readable reason for the "⏳" waiting notice. For topic-concurrency

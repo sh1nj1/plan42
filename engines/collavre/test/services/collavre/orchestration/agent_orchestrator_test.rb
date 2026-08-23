@@ -189,6 +189,35 @@ module Collavre
         end
       end
 
+      test "delayed enqueue survives a topic move before its waiting notice" do
+        topic = Topic.create!(name: "Moved delayed topic", creative: @creative, user: @user)
+        destination = Creative.create!(description: "Delayed destination", user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "content" => "stale delayed dispatch" }
+        }
+        orchestrator = AgentOrchestrator.new(event_name: "comment_created", context: context)
+        queued_job = Object.new
+        queued_job.define_singleton_method(:perform_later) do |*|
+          Topics::TopicMove.new(topic: topic, target_creative: destination).call
+        end
+
+        result = nil
+        assert_no_difference -> { Comment.where(topic_id: topic.id, user_id: nil).count } do
+          AiAgentJob.stub(:set, ->(**) { queued_job }) do
+            result = orchestrator.send(
+              :enqueue_jobs,
+              [ { agent: @ai_agent, timing: :delayed, delay: 1.minute, reason: :busy } ],
+              context_for: nil
+            )
+          end
+        end
+
+        assert_equal [ @ai_agent ], result
+        assert_equal destination, topic.reload.creative
+      end
+
       # The "⏳" waiting notice must name the agent holding the running slot, so a
       # waiting user sees *who* is blocking them (and can reach that task's stop
       # button) instead of an anonymous "another task is running" dead end.
