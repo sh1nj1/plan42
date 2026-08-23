@@ -414,7 +414,7 @@ module Collavre
         Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
           Orchestration::AgentOrchestrator.stub(:prepare_selection, selection_for(worker)) do
             dispatcher = lambda do |_event, _payload, **options|
-              options.fetch(:on_scheduled).call([ worker ])
+              options.fetch(:scheduling_hooks).scheduled([ worker ])
               [ worker ]
             end
             SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
@@ -424,6 +424,33 @@ module Collavre
         end
 
         assert_equal [ [ coordinator.id, worker.id, @creative.id ] ], interactions
+      end
+
+      test "exposes the current handoff to scheduling before recording it" do
+        coordinator = create_agent("Prospective Coordinator", creator: @owner)
+        worker = create_agent("Prospective Worker", creator: @owner)
+        share!(coordinator, :feedback)
+        share!(worker, :feedback)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @creative.main_topic) }
+        prospective = nil
+        dispatcher = lambda do |_event, _payload, **options|
+          hooks = options.fetch(:scheduling_hooks)
+          prospective = hooks.interaction_for(worker)
+          hooks.scheduled([ worker ])
+          [ worker ]
+        end
+
+        Orchestration::AgentOrchestrator.stub(:prepare_selection, selection_for(worker)) do
+          SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+            service.call(topic_id: @topic.id, content: "Check this handoff before scheduling")
+          end
+        end
+
+        assert_equal(
+          { from_agent_id: coordinator.id, to_agent_id: worker.id, creative_id: @creative.id },
+          prospective
+        )
       end
 
       test "does not record interactions for scheduler-rejected agents" do
@@ -437,7 +464,7 @@ module Collavre
         breaker = Object.new
         breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
         dispatcher = lambda do |_event, _payload, **options|
-          options.fetch(:on_scheduled).call([])
+          options.fetch(:scheduling_hooks).scheduled([])
           []
         end
 

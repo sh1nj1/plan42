@@ -116,7 +116,14 @@ module Tools
       SystemEvents::Dispatcher.dispatch(
         "comment_created", payload, source: "a2a", parent: parent_envelope,
         selection: selection, context_for: context_for,
-        on_scheduled: ->(agents) { record_interactions(agents, user, comment.creative_id) }
+        scheduling_hooks: scheduling_hooks(user, comment)
+      )
+    end
+
+    def scheduling_hooks(user, comment)
+      Orchestration::SchedulingHooks.new(
+        interaction_callback: ->(agent) { interaction_for(agent, user, comment.creative_id) },
+        scheduled_callback: ->(agents) { record_interactions(agents, user, comment.creative_id) }
       )
     end
 
@@ -148,10 +155,19 @@ module Tools
     def record_interactions(selected_agents, user, creative_id)
       context = { "creative" => { "id" => creative_id } }
       selected_agents.each do |agent|
-        next if agent.id == user.id
+        interaction = interaction_for(agent, user, creative_id)
+        next unless interaction
 
-        Orchestration::LoopBreaker.new(context).record_interaction(user.id, agent.id, creative_id)
+        Orchestration::LoopBreaker.new(context).record_interaction(
+          interaction[:from_agent_id], interaction[:to_agent_id], creative_id
+        )
       end
+    end
+
+    def interaction_for(agent, user, creative_id)
+      return if agent.id == user.id
+
+      { from_agent_id: user.id, to_agent_id: agent.id, creative_id: creative_id }
     end
 
     def workspace_user(user)

@@ -124,7 +124,7 @@ module Collavre
           password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash"
         )
         scheduler = Object.new
-        scheduler.define_singleton_method(:schedule) do |_agents|
+        scheduler.define_singleton_method(:schedule) do |_agents, **_options|
           [
             { agent: accepted, timing: :immediate },
             { agent: rejected, timing: :rejected, reason: :quota_exceeded }
@@ -133,9 +133,12 @@ module Collavre
         scheduled = nil
 
         Scheduler.stub(:new, scheduler) do
+          hooks = SchedulingHooks.new(
+            interaction_callback: nil, scheduled_callback: ->(agents) { scheduled = agents }
+          )
           AgentOrchestrator.dispatch(
             "comment_created", { "creative" => { "id" => @creative.id } },
-            selected_agents: [ accepted, rejected ], on_scheduled: ->(agents) { scheduled = agents }
+            selected_agents: [ accepted, rejected ], scheduling_hooks: hooks
           )
         end
 

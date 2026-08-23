@@ -678,7 +678,7 @@ module Collavre
 
       def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, **options).call
 
-      def dispatch(selected_agents: nil, selection: nil, context_for: nil, on_scheduled: nil)
+      def dispatch(selected_agents: nil, selection: nil, context_for: nil, scheduling_hooks: nil)
         selected = selected_agents || (selection ||= prepare_selection).agents
         return [] if selected.empty?
 
@@ -686,8 +686,8 @@ module Collavre
 
         # Step 3: Schedule execution (Scheduler) - Phase 3
         # For now, immediate execution
-        decisions = scheduler.schedule(selected)
-        on_scheduled&.call(decisions.filter_map { |decision| decision[:agent] unless decision[:timing] == :rejected })
+        decisions = scheduler.schedule(selected, scheduling_hooks: scheduling_hooks)
+        scheduling_hooks&.scheduled(decisions.filter_map { |decision| decision[:agent] unless decision[:timing] == :rejected })
 
         # Step 4: Enqueue jobs
         enqueue_jobs(decisions, context_for: context_for)
