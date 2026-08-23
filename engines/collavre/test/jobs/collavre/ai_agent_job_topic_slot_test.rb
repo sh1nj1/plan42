@@ -166,6 +166,29 @@ module Collavre
              "a task should have been created and executed"
     end
 
+    test "drops a scheduled job whose topic moved before task admission" do
+      c = comment("scheduled before move")
+      stale_context = context_for(c)
+      destination = Creative.create!(description: "Moved destination", user: @user)
+      Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+      matcher = Struct.new(:agent) do
+        def assignment_permits?(_candidate)
+          true
+        end
+      end.new(@agent)
+      service_started = false
+
+      Orchestration::Matcher.stub(:new, matcher) do
+        AiAgentService.stub(:new, ->(*) { service_started = true }) do
+          AiAgentJob.new.perform(@agent.id, "comment_created", stale_context)
+        end
+      end
+
+      assert_not service_started
+      assert_not Task.where(topic_id: @topic.id, creative_id: @creative.id).exists?
+      assert_equal destination.id, @topic.reload.creative_id
+    end
+
     test "does not defer when the context carries no topic" do
       c = Comment.create!(creative: @creative, user: @user, content: "no topic", skip_dispatch: true)
       context = {
@@ -243,12 +266,12 @@ module Collavre
     # slot before either inserts — the TOCTOU race this check exists to close.
     test "admission counts and claims the slot inside one locked transaction" do
       locked_topic_ids = []
-      lock_relation = Struct.new(:sink) do
+      lock_relation = Struct.new(:sink, :record) do
         def find_by(id:)
           sink << id
-          nil
+          record
         end
-      end.new(locked_topic_ids)
+      end.new(locked_topic_ids, @topic)
 
       # The suite already runs inside a transaction, so `transaction_open?` is
       # always true — compare the nesting depth against the ambient one instead.
@@ -282,12 +305,12 @@ module Collavre
     # both read a free slot before either inserts.
     test "admission on the Main topic serializes on the creative row" do
       locked_creative_ids = []
-      lock_relation = Struct.new(:sink) do
+      lock_relation = Struct.new(:sink, :record) do
         def find_by(id:)
           sink << id
-          nil
+          record
         end
-      end.new(locked_creative_ids)
+      end.new(locked_creative_ids, @creative)
 
       baseline_depth = Task.connection.open_transactions
       check_depth = nil

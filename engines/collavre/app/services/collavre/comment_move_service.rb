@@ -37,7 +37,7 @@ module Collavre
         target_origin = target_creative.effective_origin
         [ target_origin, target_origin.main_topic.id ]
       elsif !target_topic_id.nil?
-        new_topic_id = target_topic_id.presence
+        new_topic_id = target_topic_id.presence&.to_i
         if new_topic_id.present? && !creative.topics.exists?(id: new_topic_id)
           raise MoveError, I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic")
         end
@@ -63,15 +63,14 @@ module Collavre
     def perform_move(comments, target_origin, new_topic_id)
       moved_count = 0
       ActiveRecord::Base.transaction do
-        # MessagePage holds the destination topic lock while fixing its
-        # membership anchor. Serialize move-ins on the same row so a comment
-        # cannot be stamped before the snapshot but committed after its reads.
-        Topic.lock.find(new_topic_id)
+        locked_topics = lock_move_topics(comments, new_topic_id)
+        locked_source_creative = lock_legacy_source_creative(comments)
+        validate_destination_topic!(locked_topics, new_topic_id, target_origin)
 
         comments.each do |comment|
+          validate_source_comment!(comment, locked_topics, locked_source_creative)
           same_creative = comment.creative_id == target_origin.id
-          same_topic = comment.topic_id.to_s == new_topic_id.to_s
-          next if same_creative && same_topic
+          next if same_creative && comment.topic_id.to_s == new_topic_id.to_s
 
           if same_creative
             preserve_unread_state_for_topic_move(comment, new_topic_id)
@@ -89,6 +88,37 @@ module Collavre
         end
       end
       moved_count
+    end
+
+    def lock_legacy_source_creative(comments)
+      return creative unless comments.any? { |comment| comment.topic_id.nil? }
+
+      Creative.lock.find(creative.id)
+    end
+
+    # TopicMove takes the source topic lock before sweeping its comments. Lock
+    # every source plus the destination in one deterministic order, so an
+    # existing-comment move cannot write a stale topic_id after that sweep.
+    def lock_move_topics(comments, destination_topic_id)
+      topic_ids = (comments.map(&:topic_id) + [ destination_topic_id ]).compact.uniq.sort
+      Topic.where(id: topic_ids).order(:id).lock.index_by(&:id)
+    end
+
+    def validate_destination_topic!(locked_topics, topic_id, target_origin)
+      return if locked_topics[topic_id]&.creative_id == target_origin.id
+
+      raise MoveError, I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic")
+    end
+
+    def validate_source_comment!(comment, locked_topics, locked_source_creative)
+      original_topic_id = comment.topic_id
+      comment.reload
+      source_topic = locked_topics[original_topic_id]
+      source_membership_valid = original_topic_id.nil? || source_topic&.creative_id == locked_source_creative.id
+      return if comment.creative_id == creative.id && comment.topic_id == original_topic_id &&
+                source_membership_valid
+
+      raise MoveError, I18n.t("collavre.comments.move_not_allowed")
     end
 
     # A topic watermark is an ordered cursor, so a comment moved into a topic

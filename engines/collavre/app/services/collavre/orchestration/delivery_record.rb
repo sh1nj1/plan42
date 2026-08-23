@@ -340,9 +340,7 @@ module Collavre
         failed
       end
 
-      def self.worker_settling?(payload)
-        payload.is_a?(Hash) && payload[WORKER_SETTLING_KEY] == true
-      end
+      def self.worker_settling?(payload) = payload.is_a?(Hash) && payload[WORKER_SETTLING_KEY] == true
 
       # The original worker has left the provider call, so the handoff records
       # now carry the best answer this attempt can give. Clearing under the row
@@ -360,11 +358,7 @@ module Collavre
         task.reload
       end
 
-      def self.restored_ids_in(payload)
-        return [] unless payload.is_a?(Hash)
-
-        Array(payload[RESTORED_KEY]).compact.map(&:to_i)
-      end
+      def self.restored_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[RESTORED_KEY]).compact.map(&:to_i) : []
 
       # Take responsibility for putting one dispatch back, or refuse it because
       # somebody already has.
@@ -407,10 +401,14 @@ module Collavre
         end
       end
 
-      def self.dropped_ids_in(payload)
-        return [] unless payload.is_a?(Hash)
+      def self.dropped_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[DROPPED_KEY]).compact.map(&:to_i) : []
 
-        Array(payload[DROPPED_KEY]).compact.map(&:to_i)
+      def self.pending_restoration?(task)
+        payload = task&.trigger_event_payload
+        return false unless task&.ended_undelivered? && task.agent
+
+        pending = dropped_ids_in(payload) - handed_off_ids_in(payload) - claimed_comment_ids(task)
+        restorable_comments(task, pending).exists?
       end
 
       # Take responsibility for a dispatch about to be discarded, or refuse it.
@@ -519,7 +517,7 @@ module Collavre
         return unless payload.is_a?(Hash) && payload.key?("topic")
 
         orphaned = dropped_ids_in(payload) - handed_off_ids_in(payload) -
-                   claimed_comment_ids(task) - restored_ids_in(payload)
+          claimed_comment_ids(task) - restored_ids_in(payload)
         return if orphaned.empty?
 
         agent = task.agent
@@ -528,11 +526,7 @@ module Collavre
         # Same eligibility the refresh applies when it moves an anchor: a
         # comment that was deleted, made private, or turned into an approval
         # action while the turn ran has nothing left to answer.
-        Comment.public_only.without_approval_action
-          .where(id: orphaned, topic_id: task.topic_id, creative_id: task.creative_id)
-          .where.not(user_id: [ agent.id, nil ])
-          .order(:id)
-          .each do |comment|
+        restorable_comments(task, orphaned).order(:id).each do |comment|
           begin
             enqueue_restored(task, agent, task.trigger_event_name, restored_context(payload, comment))
           rescue StandardError => e
@@ -705,6 +699,13 @@ module Collavre
         end
       end
       private_class_method :enqueue_restored
+
+      def self.restorable_comments(task, ids)
+        Comment.public_only.without_approval_action
+          .where(id: ids, topic_id: task.topic_id, creative_id: task.creative_id)
+          .where.not(user_id: [ task.agent_id, nil ])
+      end
+      private_class_method :restorable_comments
 
       # Claim the comment, then enqueue — and only in that order. The job leaves
       # no row until a worker runs it, so between the two the comment reads as

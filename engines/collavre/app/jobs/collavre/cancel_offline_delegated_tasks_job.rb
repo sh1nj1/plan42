@@ -83,8 +83,10 @@ module Collavre
 
       tracker = Orchestration::ResourceTracker.for(agent)
       tasks.find_each do |task|
-        was_running = task.status == "running"
-        task.update!(status: "cancelled")
+        previous_status = task.cancel_if_active!(statuses: %w[queued pending running])
+        next unless previous_status
+
+        was_running = previous_status == "running"
         tracker.release!(task.id) if was_running
       end
     end
@@ -94,7 +96,8 @@ module Collavre
 
       tracker = Orchestration::ResourceTracker.for(agent)
       tasks.find_each do |task|
-        task.update!(status: "cancelled")
+        next unless task.cancel_if_active!(statuses: %w[delegated])
+
         tracker.release!(task.id)
 
         if task.topic_id.present?

@@ -18,6 +18,8 @@ module Collavre
     # Because of that the request's own view can be stale, so the positions it
     # reports for broadcasting are read back after the write.
     class ReadPointerWriter
+      class StaleTopicError < StandardError; end
+
       Change = Struct.new(:topic_id, :previous_id, :updated_id, :created, keyword_init: true) do
         def stored?
           created || previous_id != updated_id
@@ -41,20 +43,38 @@ module Collavre
       def call(last_ids_by_topic_id)
         return [] if last_ids_by_topic_id.empty?
 
-        existing = existing_watermarks
-        changes = last_ids_by_topic_id.map { |topic_id, last_id| change_for(existing, topic_id, last_id) }
-        store(changes, existing)
-        # The request's own view of the watermark is not what the row now holds:
-        # a concurrent writer may have advanced past it, in which case the
-        # forward-only SQL kept *their* value. Broadcasting this request's
-        # updated_id would repaint the receipt at a position the database has
-        # already moved beyond, so read back what was actually retained.
-        positions(changes, existing, existing_watermarks)
+        ActiveRecord::Base.transaction do
+          locked_topic_ids = lock_named_topics!(last_ids_by_topic_id.keys)
+          existing = existing_watermarks
+          changes = last_ids_by_topic_id.map { |topic_id, last_id| change_for(existing, topic_id, last_id) }
+          store(changes, existing, locked_topic_ids)
+          # The request's own view of the watermark is not what the row now holds:
+          # a concurrent writer may have advanced past it, in which case the
+          # forward-only SQL kept *their* value. Broadcasting this request's
+          # updated_id would repaint the receipt at a position the database has
+          # already moved beyond, so read back what was actually retained.
+          positions(changes, existing, existing_watermarks)
+        end
       end
 
       private
 
       attr_reader :creative, :user
+
+      def lock_named_topics!(topic_ids)
+        ids = topic_ids.compact.map(&:to_i)
+        ids = ids.uniq.sort
+        unless ids.empty?
+          locked = Topic.where(id: ids).order(:id).lock.pluck(:id, :creative_id)
+          unless locked.length == ids.length && locked.all? { |_, creative_id| creative_id == creative.id }
+            raise StaleTopicError, I18n.t("collavre.comments.invalid_topic")
+          end
+        end
+        return ids unless topic_ids.include?(nil)
+
+        creative.lock!
+        (ids + creative.topics.ids).uniq
+      end
 
       def existing_watermarks
         CommentReadPointer.where(user: user, creative: creative).pluck(:topic_id, :last_read_comment_id).to_h
@@ -73,13 +93,13 @@ module Collavre
         )
       end
 
-      def store(changes, existing)
+      def store(changes, existing, locked_topic_ids)
         named, legacy = changes.partition { |change| change.topic_id.present? }
         upsert_named(named.select(&:stored?))
         legacy_change = legacy.first
         return unless legacy_change&.stored?
 
-        preserve_named_fallbacks(legacy_change, existing, named) if legacy_change.advanced?
+        preserve_named_fallbacks(legacy_change, existing, named, locked_topic_ids) if legacy_change.advanced?
         store_legacy(legacy_change)
       end
 
@@ -151,10 +171,10 @@ module Collavre
       # without its own row. Before moving it forward, pin those topics at the
       # fallback they were already showing, so an unseen older topic does not
       # silently inherit the new legacy value.
-      def preserve_named_fallbacks(change, existing, named_changes)
+      def preserve_named_fallbacks(change, existing, named_changes, locked_topic_ids)
         covered_topic_ids = existing.keys.compact + named_changes.map(&:topic_id)
         now = Time.current
-        rows = creative.topics.where.not(id: covered_topic_ids).pluck(:id).map do |topic_id|
+        rows = (locked_topic_ids - covered_topic_ids).map do |topic_id|
           {
             user_id: user.id,
             creative_id: creative.id,

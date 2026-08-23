@@ -47,9 +47,7 @@ module Collavre
         visible_scope = @creative.comments.visible_to(Current.user)
         comments = visible_scope.where(id: comment_ids).to_a
 
-        if comments.length != comment_ids.length
-          render json: { error: I18n.t("collavre.comments.batch_delete_not_found") }, status: :not_found and return
-        end
+        return unless valid_merge_selection?(comments, comment_ids)
 
         # All comments must belong to the current user or their AI agents
         my_ai_agent_ids = Current.user.created_ai_users.pluck(:id)
@@ -87,6 +85,20 @@ module Collavre
         render json: { error: e.message }, status: :unprocessable_entity
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+      end
+
+      private
+
+      def valid_merge_selection?(comments, comment_ids)
+        if comments.length != comment_ids.length
+          render json: { error: I18n.t("collavre.comments.batch_delete_not_found") }, status: :not_found
+          false
+        elsif comments.map(&:topic_id).uniq.size != 1
+          render json: { error: I18n.t("collavre.comments.merge.same_topic_required") }, status: :unprocessable_entity
+          false
+        else
+          true
+        end
       end
     end
   end

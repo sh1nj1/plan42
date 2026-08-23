@@ -39,7 +39,9 @@ module Collavre
 
       unless agent
         error_msg = I18n.t("collavre.comments.compress_command.no_agent")
-        creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}", skip_dispatch: true)
+        Comments::TopicMutation.call(topic_id, creative_id) do
+          creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}", skip_dispatch: true)
+        end
         Rails.logger.error("[CompressJob] No AI agent found for creative #{creative_id}, topic #{topic_id}")
         return
       end
@@ -74,26 +76,28 @@ module Collavre
       title = I18n.t("collavre.comments.compress_command.summary_title", topic: topic_name)
       summary_content = "**#{title}**\n\n#{summary}"
 
-      # Store comment IDs to delete before creating the new one (all originals including /compress command)
-      comment_ids_to_delete = all_comments.pluck(:id)
+      Comments::TopicMutation.call(topic_id, creative_id) do
+        persist_summary(all_comments, summary_content, agent, user, compress_pattern)
+      end
+    rescue ActiveRecord::RecordNotFound => e
+      Rails.logger.error("[CompressJob] Record not found: #{e.message}")
+    end
 
-      # Create the summary comment in the same topic.
-      # Author it as the AI agent (not the human who ran /compress) so the
-      # comment is recognized as AI-generated content: this makes ai_user? true,
-      # which is what gates the "Review" button in the comment view. The summary
-      # body is AI output, so the agent is the correct author.
+    private
+
+    def persist_summary(comments, summary_content, agent, user, compress_pattern)
+      comments = lock_matching_comments(comments)
+      return unless comments
+
+      creative = comments.first.creative
+      topic_id = comments.first.topic_id
+      # Author AI output as the agent so the comment is recognized as AI-generated
+      # content and offers the Review action.
       summary_comment = creative.comments.create!(
-        user: agent,
-        topic_id: topic_id,
-        content: summary_content,
-        skip_dispatch: true  # system-generated summary, not user input
+        user: agent, topic_id: topic_id, content: summary_content, skip_dispatch: true
       )
-
-      # Save snapshot for recovery before deleting originals
-      # Exclude the last comment only if it's the /compress command trigger
-      last_comment = all_comments.last
-      last_is_command = last_comment&.content.to_s.strip.match?(compress_pattern)
-      restorable_comments = last_is_command ? all_comments[0..-2] : all_comments.to_a
+      last_is_command = comments.last&.content.to_s.strip.match?(compress_pattern)
+      restorable_comments = last_is_command ? comments[0..-2] : comments.to_a
       CommentSnapshot.create!(
         creative: creative,
         topic_id: topic_id,
@@ -102,11 +106,18 @@ module Collavre
         comments_data: serialize_comments(restorable_comments),
         result_comment: summary_comment
       )
+      creative.comments.where(id: comments.map(&:id)).destroy_all
+    end
 
-      # Delete original comments (excluding the newly created summary)
-      creative.comments.where(id: comment_ids_to_delete).destroy_all
-    rescue ActiveRecord::RecordNotFound => e
-      Rails.logger.error("[CompressJob] Record not found: #{e.message}")
+    def lock_matching_comments(comments)
+      comment_ids = comments.map(&:id)
+      locked = Comment.where(id: comment_ids).order(:id).lock.index_by(&:id)
+      expected = comments.first
+      return unless locked.size == comment_ids.size && locked.values.all? do |comment|
+        comment.creative_id == expected.creative_id && comment.topic_id == expected.topic_id
+      end
+
+      comment_ids.map { |id| locked.fetch(id) }
     end
   end
 end

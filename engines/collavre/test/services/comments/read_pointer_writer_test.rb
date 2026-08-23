@@ -95,6 +95,57 @@ module Collavre
         assert_empty writer.call({})
       end
 
+      test "rejects a named pointer after its topic moves to another creative" do
+        destination = Creative.create!(description: "Destination", user: @user)
+        stale_writer = writer
+        Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+
+        assert_raises(ReadPointerWriter::StaleTopicError) do
+          stale_writer.call(@topic.id => @comments.last.id)
+        end
+
+        assert_nil CommentReadPointer.find_by(user: @user, creative: @creative, topic: @topic)
+      end
+
+      test "locks the creative before snapshotting archived topic fallbacks" do
+        archived = @creative.topics.create!(name: "Archived fallback", user: @user, archived_at: Time.current)
+        topics = @creative.topics
+        original_ids = topics.method(:ids)
+        creative_locked = false
+        ids_after_lock = lambda do
+          assert creative_locked
+          original_ids.call
+        end
+
+        @creative.stub(:lock!, -> { creative_locked = true; @creative }) do
+          @creative.stub(:topics, topics) do
+            topics.stub(:ids, ids_after_lock) do
+              writer.call(nil => @comments.last.id)
+            end
+          end
+        end
+
+        assert CommentReadPointer.exists?(user: @user, creative: @creative, topic: archived)
+      end
+
+      test "snapshots an incoming topic after locking the destination creative" do
+        source = Creative.create!(description: "Incoming source", user: @user)
+        incoming = source.topics.create!(name: "Incoming", user: @user)
+        Comment.create!(creative: source, topic: incoming, user: users(:two), content: "unread incoming")
+        legacy = Comment.create!(creative: @creative, user: users(:two), content: "destination legacy")
+        move_before_lock = lambda do
+          Topics::TopicMove.new(topic: incoming, target_creative: @creative).call
+          @creative
+        end
+
+        @creative.stub(:lock!, move_before_lock) do
+          writer.call(nil => legacy.id)
+        end
+
+        pointer = CommentReadPointer.find_by!(user: @user, creative: @creative, topic: incoming)
+        assert_nil pointer.last_read_comment_id
+      end
+
       private
 
       # Only the read that precedes the write is stale; the writer's read-back

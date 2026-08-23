@@ -66,6 +66,21 @@ module Collavre
       end
     end
 
+    test "does not initialize a trigger loop after its topic moves" do
+      topic = @child.topics.create!(name: DropTriggerJob::DROP_TRIGGER_TOPIC_NAME, user: @owner)
+      dispatched = false
+
+      Orchestration::TopicSlot.stub(:lock_matches_context?, false) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [ @ai_bot ] }) do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+      end
+
+      assert_nil @child.reload.data&.dig("trigger", "loop")
+      assert_empty @child.comments.where(topic_id: topic.id)
+      refute dispatched
+    end
+
     test "finds existing comment and retries dispatch on retry" do
       # First run: create comment, dispatch fails
       SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { raise "dispatch error" }) do

@@ -69,6 +69,23 @@ module Collavre
       end
     end
 
+    test "drops an enqueued cron action whose topic moved" do
+      destination = Creative.create!(description: "Cron destination", user: @user)
+      Collavre::Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+
+      assert_no_difference("Comment.count") do
+        CronActionJob.perform_now(
+          creative_id: @creative.id,
+          topic_id: @topic.id,
+          agent_id: @agent.id,
+          message: "Stale scheduled check-in"
+        )
+      end
+
+      assert_empty @creative.comments.where(content: "Stale scheduled check-in")
+      assert_empty destination.comments.where(content: "Stale scheduled check-in")
+    end
+
     # `topic_id: nil` describes the cron's *argument*, not the row: the comment
     # goes through Comment#assign_main_topic, which files it under the
     # creative's real Main topic. A payload that repeats the argument therefore

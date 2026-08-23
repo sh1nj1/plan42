@@ -22,6 +22,10 @@ en:
       move:
         no_target_permission: You don't have write permission on the target creative.
         source_changed: The topic moved to another creative while this request was waiting. Reload it and try again from its current creative.
+        active_tasks: This topic has active agent work. Wait for it to finish or cancel it before moving the topic.
+        pending_deliveries: This topic still has agent messages waiting to be restored. Wait for restoration to finish before moving the topic.
+        recurring_tasks: This topic has a recurring cron job. Cancel it with cron_cancel and recreate it after moving the topic.
+        trigger_loop: This topic controls a Drop Trigger loop and cannot move while that loop configuration references it.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
         session_topic_locked: This topic belongs to a live agent session and cannot be moved.
         primary_agent_released: '@%{agent} was released as primary agent because it has no feedback access in "%{creative}". Share that creative with the agent and assign it again to keep it on this topic.'
@@ -149,6 +153,7 @@ en:
         minimum_required: "Select at least 2 messages to merge."
         not_authorized: "You don't have permission to merge messages."
         own_messages_only: "You can only merge your own messages or messages from your AI agents."
+        same_topic_required: "You can only merge messages from the same topic."
       branch:
         no_selection: "Select at least one message to branch."
         not_authorized: "You don't have permission to branch messages."

@@ -14,6 +14,8 @@ module Collavre
       Comment.broadcast_badge(creative, Current.user)
 
       render json: { success: true }
+    rescue Comments::ReadPointerWriter::StaleTopicError
+      head :unprocessable_entity
     end
 
     private

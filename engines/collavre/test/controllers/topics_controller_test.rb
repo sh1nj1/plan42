@@ -223,6 +223,33 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ai_agent.id, json["primary_agent"]["id"]
   end
 
+  test "update rejects a topic that moved before its lock" do
+    assert_topic_source_change_rejected do
+      patch collavre.creative_topic_url(@creative, @topic),
+        params: { topic: { name: "Stale rename" } }, as: :json
+    end
+
+    assert_equal "Existing Topic", @topic.reload.name
+  end
+
+  test "archive rejects a topic that moved before its lock" do
+    assert_topic_source_change_rejected do
+      patch archive_creative_topic_url(@creative, @topic), as: :json
+    end
+
+    assert_nil @topic.reload.archived_at
+  end
+
+  test "unarchive rejects a topic that moved before its lock" do
+    @topic.archive!
+
+    assert_topic_source_change_rejected do
+      patch unarchive_creative_topic_url(@creative, @topic), as: :json
+    end
+
+    assert_not_nil @topic.reload.archived_at
+  end
+
   test "should not update topic without permission" do
     other_user = users(:two)
     sign_in_as other_user, password: "password"
@@ -277,10 +304,87 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
   end
 
+  test "should reject moving a topic with active agent work" do
+    target_creative = creatives(:root_parent)
+    Collavre::Task.create!(
+      name: "Queued topic work", agent: @user, creative: @creative,
+      topic_id: @topic.id, status: :queued
+    )
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.active_tasks"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
+  test "should reject moving a topic targeted by a recurring cron job" do
+    target_creative = creatives(:root_parent)
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob", schedule: "0 9 * * *",
+      queue_name: "default", static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id,
+                     agent_id: @user.id, message: "Daily" } ]
+    )
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.recurring_tasks"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  ensure
+    task&.destroy
+  end
+
+  test "should reject moving a topic referenced by a trigger loop" do
+    target_creative = creatives(:root_parent)
+    @creative.update!(data: {
+      "trigger" => { "loop" => { "state" => "running", "trigger_topic_id" => @topic.id } }
+    })
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.trigger_loop"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
+  test "should not broadcast an obsolete destination after a consecutive move" do
+    target_creative = creatives(:root_parent)
+    final_target = Collavre::Creative.create!(description: "Final target", user: @user)
+    moved_again = false
+    broadcasts = []
+    run_after_commit = lambda do |&callback|
+      unless moved_again
+        moved_again = true
+        Collavre::Topics::TopicMove.new(
+          topic: @topic.reload, target_creative: final_target
+        ).call
+      end
+      callback.call
+    end
+
+    ActiveRecord.stub(:after_all_transactions_commit, run_after_commit) do
+      Collavre::TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
+        patch move_creative_topic_url(@creative, @topic),
+          params: { target_creative_id: target_creative.id }, as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal final_target.id, @topic.reload.creative_id
+    assert_equal target_creative.id, JSON.parse(response.body).fetch("target_creative_id")
+    assert_equal [ @creative.id ], broadcasts.map(&:first)
+  end
+
   test "a source changed while waiting for the move lock is forbidden" do
     target_creative = creatives(:root_parent)
     failed_move = Object.new
-    failed_move.define_singleton_method(:call) do
+    failed_move.define_singleton_method(:call) do |**|
       raise Collavre::Topics::TopicMove::SourceChangedError,
         I18n.t("collavre.topics.move.source_changed")
     end
@@ -618,6 +722,20 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_nil body["topic"]["primary_agent"]
   end
 
+  test "primary agent update rejects a topic that moved before its lock" do
+    ai_agent = User.create!(
+      email: "stale-pin@test.local", password: "password123", name: "StalePinAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+
+    assert_topic_source_change_rejected do
+      patch set_primary_agent_creative_topic_url(@creative, @topic), params: { agent_id: nil }, as: :json
+    end
+
+    assert_equal ai_agent.id, @topic.reload.primary_agent_id
+  end
+
   # On a session topic primary_agent_id is session identity, not a routing pin:
   # clearing it makes the live session unroutable and makes the next registration
   # create a second topic instead of reusing the conversation.
@@ -878,6 +996,23 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  def assert_topic_source_change_rejected
+    destination = Collavre::Creative.create!(description: "Destination", user: @user)
+    topics = @creative.topics
+    lock_topic = lambda do
+      @topic.update_column(:creative_id, destination.id)
+      @topic.reload
+    end
+
+    Collavre::Creative.stub(:find, @creative) do
+      topics.stub(:find, @topic) do
+        @topic.stub(:lock!, lock_topic) { yield }
+      end
+    end
+
+    assert_response :forbidden
+  end
 
   def move_test_agent(email, name)
     User.create!(

@@ -116,6 +116,9 @@ collavre tool run topic_message_create --json '{"topic_id": 13, "content": "Buil
 # Put a finished thread away (messages are kept and stay readable by id)
 collavre tool run topic_update --json '{"topic_id": 12, "archived": true}'
 
+# Move a complete thread, including its messages and read cursors
+collavre tool run topic_move --json '{"topic_id": 13, "creative_id": 9023}'
+
 # Carry the messages that still matter into a fresh topic
 collavre tool run topic_branch --json '{"source_topic_id": 12, "comment_ids": "991,994"}'
 ```
@@ -148,6 +151,12 @@ collavre tool run <tool_name> --key value         # run with flag args
   dispatch as A2A work, so one coordinating agent can start independent work in
   several topics without impersonating a human. Do not call it on the topic the
   caller is currently handling; continue that work in the current turn instead.
+- **Moving topics**: `topic_move` keeps the thread and its messages together,
+  but Creative permissions stay with each Creative. Verify that participants
+  can access the destination after moving. Wait for or cancel active agent work
+  in the topic before moving it, and wait for dropped-message restoration to
+  settle. Cancel recurring cron jobs that target the topic and recreate them
+  after the move. Topics referenced by a Drop Trigger loop cannot move.
 - **Progress**: Leaf = manual (0.0 or 1.0). Parent = auto-calculated from children.
 - **Import**: Markdown headings/bullets become nested Creatives.
 - **Batch**: All-or-nothing transaction. Requires approval.

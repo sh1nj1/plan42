@@ -24,6 +24,20 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "merge rejects comments from different topics" do
+    first_topic = @creative.topics.create!(name: "First merge topic", user: @user)
+    second_topic = @creative.topics.create!(name: "Second merge topic", user: @user)
+    first = @creative.comments.create!(content: "First merge comment", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "Second merge comment", user: @user, topic: second_topic)
+
+    Collavre::MergeCommentsJob.stub(:perform_later, ->(*) { flunk("merge job should not be enqueued") }) do
+      post merge_creative_comments_path(@creative), params: { comment_ids: [ first.id, second.id ] }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.comments.merge.same_topic_required"), response.parsed_body["error"]
+  end
+
   test "index renders version navigator only for comments with versions" do
     with_versions = @creative.comments.create!(content: "has versions", user: @user)
     Collavre::CommentVersion.create!(comment: with_versions, content: "v1", version_number: 1)
@@ -443,6 +457,68 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     comment.reload
     assert_equal "Now secret", comment.content
     assert comment.private?, "Comment should be private after checking"
+  end
+
+  test "topic update rejects a comment whose source topic moved after validation" do
+    source_topic = @creative.topics.create!(name: "Update source", user: @user)
+    target_topic = @creative.topics.create!(name: "Update target", user: @user)
+    destination = Creative.create!(description: "Update destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    service = Collavre::CommentMoveService.new(creative: @creative, user: @user)
+    fetch_after_relocation = lambda do |_ids|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      [ comment ]
+    end
+
+    Collavre::CommentMoveService.stub(:new, ->(**) { service }) do
+      service.stub(:fetch_visible_comments, fetch_after_relocation) do
+        patch creative_comment_path(@creative, comment), params: {
+          comment: { content: "Stale update", topic_id: target_topic.id }
+        }
+      end
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal @creative.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
+    assert_equal @creative.id, source_topic.reload.creative_id
+  end
+
+  test "topic update rolls back the move when another attribute is invalid" do
+    source_topic = @creative.topics.create!(name: "Rollback source", user: @user)
+    target_topic = @creative.topics.create!(name: "Rollback target", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+
+    patch creative_comment_path(@creative, comment), params: {
+      comment: { content: "", topic_id: target_topic.id }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal source_topic.id, comment.reload.topic_id
+    assert_equal "Original", comment.content
+  end
+
+  test "content update rejects a comment whose topic moved before its lock" do
+    source_topic = @creative.topics.create!(name: "Edit source", user: @user)
+    destination = Creative.create!(description: "Edit destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    topic_mutation = Collavre::Comments::TopicMutation.method(:call)
+    mutate_after_relocation = lambda do |*args, &block|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      topic_mutation.call(*args, &block)
+    end
+
+    Collavre::Comments::TopicMutation.stub(:call, mutate_after_relocation) do
+      patch creative_comment_path(@creative, comment), params: {
+        comment: { content: "Stale update" }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal destination.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
   end
 
   test "user can move comments to another creative" do

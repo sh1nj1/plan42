@@ -137,6 +137,19 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal origin, comment.creative
   end
 
+  test "rejects a stale topic membership after the topic moves" do
+    owner = users(:one)
+    source = Creative.create!(user: owner, description: "Comment source")
+    destination = Creative.create!(user: owner, description: "Comment destination")
+    topic = source.topics.create!(name: "Moving topic", user: owner)
+    comment = source.comments.build(user: owner, topic: topic, content: "Late comment")
+
+    Collavre::Topics::TopicMove.new(topic: topic, target_creative: destination).call
+
+    assert_no_difference("Comment.count") { assert_not comment.save }
+    assert_includes comment.errors[:topic], I18n.t("collavre.comments.invalid_topic")
+  end
+
   test "streaming placeholder does not create inbox comments" do
     owner = users(:one)
     ai_agent = users(:ai_bot)

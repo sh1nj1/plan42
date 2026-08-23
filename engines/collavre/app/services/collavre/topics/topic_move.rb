@@ -4,6 +4,11 @@ module Collavre
   module Topics
     class TopicMove
       class SourceChangedError < StandardError; end
+      MoveBlockedError = MoveBlocker::MoveBlockedError
+      ActiveTaskError = MoveBlocker::ActiveTaskError
+      PendingDeliveryError = MoveBlocker::PendingDeliveryError
+      RecurringTaskError = MoveBlocker::RecurringTaskError
+      TriggerLoopError = MoveBlocker::TriggerLoopError
 
       def initialize(topic:, target_creative:)
         @topic = topic
@@ -11,19 +16,26 @@ module Collavre
         @source_creative_id = topic.creative_id
       end
 
-      def call
-        Topic.transaction do
+      def call(after_commit: nil)
+        result = Topic.transaction do
           # TopicBranchService locks the source before reading its comments.
           # Take the same parent-first lock order here so a branch cannot
           # authorize the old creative while this transaction has already
           # relocated the topic's comment rows to the new one.
           topic.lock!
           reject_changed_source!
+          lock_creative_memberships!
+          yield topic if block_given?
+          MoveBlocker.new(topic).call
+          clear_source_last_topic_preferences
           topic.comments.update_all(creative_id: target_creative.id)
+          topic.comment_snapshots.update_all(creative_id: target_creative.id)
           ReadPointerRelocator.new(topic: topic, target_creative: target_creative).call
           topic.update!(creative: target_creative)
           release_unroutable_primary_agent
         end
+        schedule_after_commit(&after_commit) if after_commit
+        result
       end
 
       private
@@ -34,6 +46,25 @@ module Collavre
         return if topic.creative_id == source_creative_id
 
         raise SourceChangedError, I18n.t("collavre.topics.move.source_changed")
+      end
+
+      def lock_creative_memberships!
+        Creative.where(id: [ source_creative_id, target_creative.id ].uniq).order(:id).lock.load
+      end
+
+      def schedule_after_commit(&callback)
+        ActiveRecord.after_all_transactions_commit do
+          Topic.transaction do
+            current_topic = Topic.lock.find_by(id: topic.id)
+            callback.call(current_topic)
+          end
+        end
+      end
+
+      def clear_source_last_topic_preferences
+        topic.user_creative_preferences_as_last_topic
+             .where(creative_id: source_creative_id)
+             .update_all("last_topic_id = NULL, last_topic_revision = last_topic_revision + 1")
       end
 
       def release_unroutable_primary_agent
