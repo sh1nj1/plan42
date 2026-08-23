@@ -209,7 +209,7 @@ module Collavre
 
       test "an agent uses its carried human when self-routed in a different unpinned topic" do
         coordinator = create_agent("Destination Coordinator", creator: @owner)
-        coordinator.update!(routing_expression: "true")
+        coordinator.update!(routing_expression: "sender.is_ai == false")
         share!(coordinator, :feedback)
         destination = @creative.topics.create!(name: "Unpinned Destination", user: @owner)
         Current.user = coordinator
@@ -226,6 +226,26 @@ module Collavre
 
         assert_equal @owner.id, sender["id"]
         assert Comment.exists?(id: result[:id], topic: destination)
+      end
+
+      test "does not self-route when the delivered human sender fails the expression" do
+        coordinator = create_agent("AI Sender Coordinator", creator: @owner)
+        coordinator.update!(routing_expression: "sender.is_ai == true")
+        share!(coordinator, :feedback)
+        destination = @creative.topics.create!(name: "Humanized Destination", user: @owner)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+        selected = nil
+        dispatcher = lambda do |_event, _payload, **options|
+          selected = options.fetch(:selection).agents
+          []
+        end
+
+        SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+          service.call(topic_id: destination.id, content: "Only route for an AI sender")
+        end
+
+        assert_not_includes selected, coordinator
       end
 
       test "an agent without a principal cannot self-route in a different unpinned topic" do
@@ -342,7 +362,10 @@ module Collavre
         breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
         Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
           Orchestration::AgentOrchestrator.stub(:prepare_selection, selection_for(worker)) do
-            dispatcher = ->(_event, _payload, **_options) { [ worker ] }
+            dispatcher = lambda do |_event, _payload, **options|
+              options.fetch(:on_scheduled).call([ worker ])
+              [ worker ]
+            end
             SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
               service.call(topic_id: @topic.id, content: "Track this handoff")
             end
@@ -350,6 +373,32 @@ module Collavre
         end
 
         assert_equal [ [ coordinator.id, worker.id, @creative.id ] ], interactions
+      end
+
+      test "does not record interactions for scheduler-rejected agents" do
+        coordinator = create_agent("Rejected Coordinator", creator: @owner)
+        worker = create_agent("Rejected Worker", creator: @owner)
+        share!(coordinator, :feedback)
+        share!(worker, :feedback)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @creative.main_topic) }
+        interactions = []
+        breaker = Object.new
+        breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
+        dispatcher = lambda do |_event, _payload, **options|
+          options.fetch(:on_scheduled).call([])
+          []
+        end
+
+        Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
+          Orchestration::AgentOrchestrator.stub(:prepare_selection, selection_for(worker)) do
+            SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+              service.call(topic_id: @topic.id, content: "Rejected handoff")
+            end
+          end
+        end
+
+        assert_empty interactions
       end
 
       test "scopes a carried human sender override to the selected coordinator" do

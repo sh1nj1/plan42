@@ -18,7 +18,7 @@ module Collavre
 
       def self.select(event_name, context) = new(event_name: event_name, context: context).select
 
-      def self.prepare_selection(event_name, context) = new(event_name: event_name, context: context).prepare_selection
+      def self.prepare_selection(event_name, context, **options) = new(event_name: event_name, context: context).prepare_selection(**options)
 
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
         task = claim_next_waiter(topic_id, creative_id)
@@ -676,11 +676,10 @@ module Collavre
         prepare_selection.commit!.agents
       end
 
-      def prepare_selection = Selection.new(@context, policy_resolver: policy_resolver).call
+      def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, **options).call
 
-      def dispatch(selected_agents: nil, selection: nil, context_for: nil)
-        selection ||= prepare_selection unless selected_agents
-        selected = selected_agents || selection.agents
+      def dispatch(selected_agents: nil, selection: nil, context_for: nil, on_scheduled: nil)
+        selected = selected_agents || (selection ||= prepare_selection).agents
         return [] if selected.empty?
 
         selection&.commit!
@@ -688,6 +687,7 @@ module Collavre
         # Step 3: Schedule execution (Scheduler) - Phase 3
         # For now, immediate execution
         decisions = scheduler.schedule(selected)
+        on_scheduled&.call(decisions.filter_map { |decision| decision[:agent] unless decision[:timing] == :rejected })
 
         # Step 4: Enqueue jobs
         enqueue_jobs(decisions, context_for: context_for)

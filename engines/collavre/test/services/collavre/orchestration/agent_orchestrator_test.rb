@@ -117,6 +117,31 @@ module Collavre
         end
       end
 
+      test "reports only scheduler-accepted agents before enqueue" do
+        accepted = @ai_agent
+        rejected = User.create!(
+          email: "rejected_scheduled_agent@example.com", name: "Rejected Scheduled Agent",
+          password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash"
+        )
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) do |_agents|
+          [
+            { agent: accepted, timing: :immediate },
+            { agent: rejected, timing: :rejected, reason: :quota_exceeded }
+          ]
+        end
+        scheduled = nil
+
+        Scheduler.stub(:new, scheduler) do
+          AgentOrchestrator.dispatch(
+            "comment_created", { "creative" => { "id" => @creative.id } },
+            selected_agents: [ accepted, rejected ], on_scheduled: ->(agents) { scheduled = agents }
+          )
+        end
+
+        assert_equal [ accepted ], scheduled
+      end
+
       # Deferred enqueue
       test "deferred decision creates queued task" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)

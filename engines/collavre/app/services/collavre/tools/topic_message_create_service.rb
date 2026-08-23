@@ -93,13 +93,13 @@ module Tools
 
     def prepare_selection(comment, principal)
       Orchestration::AgentOrchestrator.prepare_selection(
-        "comment_created", dispatch_payload(comment, principal)
+        "comment_created", dispatch_payload(comment, principal),
+        candidate_overrides: candidate_overrides(comment.user, principal)
       )
     end
 
     def dispatch_agent_message(comment, user, principal, selection)
       selected_agents = selection.agents
-      record_interactions(selected_agents, user, comment.creative_id)
       context_for = lambda do |agent|
         next {} unless agent.id == user.id && principal
 
@@ -111,8 +111,15 @@ module Tools
       end
       SystemEvents::Dispatcher.dispatch(
         "comment_created", payload, source: "a2a", parent: parent_envelope,
-        selection: selection, context_for: context_for
+        selection: selection, context_for: context_for,
+        on_scheduled: ->(agents) { record_interactions(agents, user, comment.creative_id) }
       )
+    end
+
+    def candidate_overrides(user, principal)
+      return {} unless principal
+
+      { user.id => { "sender" => SystemEvents::ContextBuilder.sender_context_for(principal) } }
     end
 
     def dispatch_payload(comment, principal)

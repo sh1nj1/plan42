@@ -5,14 +5,17 @@ module Collavre
     # The only entry point to orchestration. It validates the event type and
     # stamps its envelope before the payload is persisted or scheduled.
     class Dispatcher
-      def self.dispatch(event_name, context, source: nil, parent: nil, selected_agents: nil, selection: nil, context_for: nil)
+      def self.dispatch(event_name, context, source: nil, parent: nil, selected_agents: nil, selection: nil,
+                        context_for: nil, on_scheduled: nil)
         new.dispatch(
           event_name, context, source: source, parent: parent,
-          selected_agents: selected_agents, selection: selection, context_for: context_for
+          selected_agents: selected_agents, selection: selection, context_for: context_for,
+          on_scheduled: on_scheduled
         )
       end
 
-      def dispatch(event_name, context, source: nil, parent: nil, selected_agents: nil, selection: nil, context_for: nil)
+      def dispatch(event_name, context, source: nil, parent: nil, selected_agents: nil, selection: nil,
+                   context_for: nil, on_scheduled: nil)
         definition = Vocabulary.fetch(event_name)
         ctx = (context || {}).deep_stringify_keys
         envelope = resolve_envelope(definition.name, ctx, source, parent)
@@ -23,7 +26,7 @@ module Collavre
 
         Orchestration::AgentOrchestrator.dispatch(
           definition.name, ctx, selected_agents: selected_agents, selection: selection,
-          context_for: context_for
+          context_for: context_for, on_scheduled: on_scheduled
         )
       end
 

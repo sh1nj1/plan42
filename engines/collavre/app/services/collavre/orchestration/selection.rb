@@ -6,13 +6,14 @@ module Collavre
     class Selection
       attr_reader :agents
 
-      def initialize(context, policy_resolver:)
+      def initialize(context, policy_resolver:, candidate_overrides: {})
         @context = context
         @policy_resolver = policy_resolver
+        @candidate_overrides = candidate_overrides
       end
 
       def call
-        candidates = Matcher.new(@context).match
+        candidates = candidates_for_contexts
         @agents = [] if candidates.empty?
         return self if candidates.empty?
 
@@ -24,6 +25,18 @@ module Collavre
       def commit!
         @arbiter&.commit_selection!
         self
+      end
+
+      private
+
+      def candidates_for_contexts
+        candidates = Matcher.new(@context).match
+        @candidate_overrides.each do |agent_id, override|
+          candidates = candidates.reject { |agent| agent.id == agent_id }
+          overridden = Matcher.new(@context.deep_merge(override.deep_stringify_keys)).match
+          candidates.concat(overridden.select { |agent| agent.id == agent_id })
+        end
+        candidates.uniq(&:id).sort_by(&:id)
       end
     end
   end
