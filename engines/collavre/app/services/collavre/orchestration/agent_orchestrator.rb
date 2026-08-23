@@ -497,7 +497,7 @@ module Collavre
         # reanchor_payload also records the move when it is one, which is what
         # delivered_comment_ids reads below: a comment this turn was handed
         # without having been created for it.
-        context = TaskCoalescer.reanchor_payload(context, latest_comment)
+        context = DeferredTriggerScope.reanchor_payload(task, context, latest_comment)
         # absorb_into_payload also drops the new anchor from the merged list, so
         # a comment promoted from "merged" back to "trigger" is not sent twice.
         context = TaskCoalescer.absorb_into_payload(context, [ previous_anchor_id ].compact)

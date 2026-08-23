@@ -125,6 +125,24 @@ module Collavre
         assert_nil payload[:workspace_user_id]
       end
 
+      test "marks a non-searchable agent tool message as AI-authored" do
+        coordinator = create_agent("Private Coordinator", creator: @owner)
+        coordinator.update!(searchable: false)
+        share!(coordinator, :feedback)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: nil }
+        payload = nil
+
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) {
+          payload = context
+          []
+        }) do
+          service.call(topic_id: @topic.id, content: "Private agent instruction")
+        end
+
+        assert_equal true, payload.dig(:comment, :from_ai)
+      end
+
       test "an agent preserves a carried human who is not its creator" do
         coordinator = create_agent("Carried Coordinator", creator: @owner)
         share!(coordinator, :feedback)
@@ -321,6 +339,39 @@ module Collavre
 
         assert_equal "queued", waiter.reload.status
         assert_equal result[:id], waiter.trigger_event_payload.dig("comment", "id")
+        assert_equal @owner.id, waiter.trigger_event_payload.dig("sender", "id")
+      end
+
+      test "reselects the current primary after the comment commits" do
+        coordinator = create_agent("Repin Coordinator", creator: @owner)
+        former = create_agent("Former Primary", creator: @owner)
+        current = create_agent("Current Primary", creator: @owner)
+        share!(coordinator, :feedback)
+        share!(former, :feedback)
+        share!(current, :feedback)
+        destination = @creative.topics.create!(
+          name: "Repinned Destination", user: @owner, primary_agent: former
+        )
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+        selections = [ selection_for(former), selection_for(current) ]
+        selected = nil
+        prepare = lambda do |*_args, **_options|
+          destination.update!(primary_agent: current) if selections.one?
+          selections.shift
+        end
+        dispatcher = lambda do |_event, _payload, **options|
+          selected = options.fetch(:selection).agents
+          []
+        end
+
+        Orchestration::AgentOrchestrator.stub(:prepare_selection, prepare) do
+          SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+            service.call(topic_id: destination.id, content: "Use the current primary")
+          end
+        end
+
+        assert_equal [ current ], selected
       end
 
       test "does not advance round robin when a principal-less self-route is rejected" do

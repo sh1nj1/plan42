@@ -10,6 +10,14 @@ module Collavre
         new(task, context).relation
       end
 
+      def self.reanchor_payload(task, context, comment)
+        payload = TaskCoalescer.reanchor_payload(context, comment)
+        deliberate_id = context[SELF_AUTHORED_COMMENT_ID_KEY]
+        return payload unless deliberate_id.to_i == comment.id && comment.user_id == task.agent_id
+
+        context.key?("sender") ? payload.merge("sender" => context["sender"]) : payload.except("sender")
+      end
+
       def initialize(task, context)
         @task = task
         @context = context

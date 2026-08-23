@@ -41,8 +41,12 @@ module Tools
       TopicAuthorizer.authorize_feedback!(topic, user: user)
       principal = workspace_user(user)
 
-      comment, selection = create_comment(topic, content, user, principal)
-      dispatch_agent_message(comment, user, principal, selection) if user.ai_user?
+      comment = create_comment(topic, content, user, principal)
+      if user.ai_user?
+        selection = prepare_selection(comment, principal)
+        reject_selected_self_route!(selection.agents, user, principal)
+        dispatch_agent_message(comment, user, principal, selection)
+      end
 
       serialize(comment)
     end
@@ -66,7 +70,7 @@ module Tools
         selection = prepare_selection(comment, principal) if user.ai_user?
         reject_selected_self_route!(selection&.agents, user, principal)
 
-        [ comment, selection ]
+        comment
       end
     end
 
@@ -123,7 +127,9 @@ module Tools
     end
 
     def dispatch_payload(comment, principal)
-      comment.dispatch_payload.merge(workspace_user_id: principal&.id)
+      comment.dispatch_payload.merge(workspace_user_id: principal&.id).tap do |payload|
+        payload[:comment][:from_ai] = comment.user.ai_user?
+      end
     end
 
     def reject_selected_self_route!(selected_agents, user, principal)
