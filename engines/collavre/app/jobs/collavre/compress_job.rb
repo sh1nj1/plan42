@@ -39,7 +39,9 @@ module Collavre
 
       unless agent
         error_msg = I18n.t("collavre.comments.compress_command.no_agent")
-        creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}", skip_dispatch: true)
+        Comments::TopicMutation.call(topic_id, creative_id) do
+          creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}", skip_dispatch: true)
+        end
         Rails.logger.error("[CompressJob] No AI agent found for creative #{creative_id}, topic #{topic_id}")
         return
       end
