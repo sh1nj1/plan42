@@ -63,8 +63,8 @@ module Collavre
     def perform_move(comments, target_origin, new_topic_id)
       moved_count = 0
       ActiveRecord::Base.transaction do
-        locked_source_creative = lock_legacy_source_creative(comments)
         locked_topics = lock_move_topics(comments, new_topic_id)
+        locked_source_creative = lock_legacy_source_creative(comments)
         validate_destination_topic!(locked_topics, new_topic_id, target_origin)
 
         comments.each do |comment|

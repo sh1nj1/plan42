@@ -58,6 +58,29 @@ module Collavre
       assert_equal destination.id, comment.topic_id
     end
 
+    test "locks topics before the source Creative for a mixed legacy move" do
+      source = @creative.topics.create!(name: "Source", user: @user)
+      destination = @creative.topics.create!(name: "Destination", user: @user)
+      named = Comment.create!(creative: @creative, topic: source, user: @user, content: "named")
+      legacy = Comment.create!(creative: @creative, user: @user, content: "legacy")
+      legacy.update_column(:topic_id, nil)
+      service = CommentMoveService.new(creative: @creative, user: @user)
+      original_topic_lock = service.method(:lock_move_topics)
+      original_creative_lock = service.method(:lock_legacy_source_creative)
+      calls = []
+
+      service.stub(:lock_move_topics, ->(*args) { calls << :topics; original_topic_lock.call(*args) }) do
+        service.stub(:lock_legacy_source_creative, lambda { |*args|
+          calls << :creative
+          original_creative_lock.call(*args)
+        }) do
+          service.call(comment_ids: [ named.id, legacy.id ], target_topic_id: destination.id)
+        end
+      end
+
+      assert_equal %i[topics creative], calls.first(2)
+    end
+
     test "moving an unread comment does not let the destination pointer hide it" do
       source = @creative.topics.create!(name: "Source", user: @user)
       destination = @creative.topics.create!(name: "Destination", user: @user)
