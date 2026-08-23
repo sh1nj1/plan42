@@ -94,7 +94,7 @@ module Collavre
         assert_empty result
       end
 
-      test "reports agents after arbitration before scheduling" do
+      test "selects agents after arbitration without scheduling" do
         other_agent = User.create!(
           email: "dispatcher_other_agent@example.com",
           name: "Dispatcher Other Agent",
@@ -109,24 +109,11 @@ module Collavre
         matcher.define_singleton_method(:match) { [ selected_agent, other_agent ] }
         arbiter = Object.new
         arbiter.define_singleton_method(:select) { |_candidates| [ selected_agent ] }
-        scheduler = Object.new
-        scheduler.define_singleton_method(:schedule) do |agents|
-          agents.map { |agent| { agent: agent, timing: :rejected, reason: :test } }
-        end
-        selected = nil
-
         Matcher.stub(:new, matcher) do
           Arbiter.stub(:new, arbiter) do
-            Scheduler.stub(:new, scheduler) do
-              AgentOrchestrator.dispatch(
-                "comment_created", context,
-                on_selected: ->(agents) { selected = agents; nil }
-              )
-            end
+            assert_equal [ @ai_agent ], AgentOrchestrator.select("comment_created", context)
           end
         end
-
-        assert_equal [ @ai_agent ], selected
       end
 
       # Deferred enqueue

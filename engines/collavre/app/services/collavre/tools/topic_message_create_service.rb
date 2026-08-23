@@ -41,8 +41,8 @@ module Tools
       TopicAuthorizer.authorize_feedback!(topic, user: user)
       principal = workspace_user(user)
 
-      comment = create_comment(topic, content, user, principal)
-      dispatch_agent_message(comment, user, principal) if user.ai_user?
+      comment, selected_agents = create_comment(topic, content, user, principal)
+      dispatch_agent_message(comment, user, principal, selected_agents) if user.ai_user?
 
       serialize(comment)
     end
@@ -56,13 +56,17 @@ module Tools
         reject_closed_topic!(topic)
         reject_unrunnable_self_dispatch!(topic, user, principal)
 
-        topic.comments.create!(
+        comment = topic.comments.create!(
           creative: topic.creative,
           content: content,
           user: user,
           private: false,
           skip_dispatch: user.ai_user?
         )
+        selected_agents = preselect_agents(comment, principal) if user.ai_user?
+        reject_selected_self_route!(selected_agents, user, principal)
+
+        [ comment, selected_agents ]
       end
     end
 
@@ -87,33 +91,38 @@ module Tools
       raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.current_topic")
     end
 
-    def dispatch_agent_message(comment, user, principal)
-      payload = comment.dispatch_payload.merge(workspace_user_id: principal&.id)
-      # A coordinator may fan itself out into two topic slots. Treat the
-      # carried human as that self-dispatch's sender so the downstream turn
-      # reports to the requester instead of @mentioning itself and opening a
-      # fresh A2A turn on completion.
-      if comment.topic.primary_agent_id == user.id && principal
-        payload[:sender] = SystemEvents::ContextBuilder.sender_context_for(principal)
+    def preselect_agents(comment, principal)
+      Orchestration::AgentOrchestrator.select("comment_created", dispatch_payload(comment, principal))
+    end
+
+    def dispatch_agent_message(comment, user, principal, selected_agents)
+      record_interactions(selected_agents, user, comment.creative_id)
+      context_for = lambda do |agent|
+        next {} unless agent.id == user.id && principal
+
+        { "sender" => SystemEvents::ContextBuilder.sender_context_for(principal) }
       end
-      parent = SystemEvents::Envelope.in(Current.agent_turn&.dig(:task)&.trigger_event_payload)
       SystemEvents::Dispatcher.dispatch(
-        "comment_created", payload, source: "a2a", parent: parent,
-        on_selected: ->(agents) { handle_selected_agents!(agents, user, comment, principal) }
+        "comment_created", dispatch_payload(comment, principal), source: "a2a",
+        parent: parent_envelope, selected_agents: selected_agents, context_for: context_for
       )
     end
 
-    def handle_selected_agents!(selected_agents, user, comment, principal)
+    def dispatch_payload(comment, principal)
+      comment.dispatch_payload.merge(workspace_user_id: principal&.id)
+    end
+
+    def reject_selected_self_route!(selected_agents, user, principal)
+      return if selected_agents.nil?
+
       self_selected = selected_agents.any? { |agent| agent.id == user.id }
-      if self_selected && principal.nil?
-        comment.destroy!
-        raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.self_route")
-      end
+      return unless self_selected && principal.nil?
 
-      record_interactions(selected_agents, user, comment.creative_id)
-      return unless self_selected
+      raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.self_route")
+    end
 
-      { "sender" => SystemEvents::ContextBuilder.sender_context_for(principal) }
+    def parent_envelope
+      SystemEvents::Envelope.in(Current.agent_turn&.dig(:task)&.trigger_event_payload)
     end
 
     def record_interactions(selected_agents, user, creative_id)

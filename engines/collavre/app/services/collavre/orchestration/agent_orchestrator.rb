@@ -12,9 +12,11 @@ module Collavre
     #   AgentOrchestrator.dispatch("comment_created", context)
     #
     class AgentOrchestrator
-      def self.dispatch(event_name, context, on_selected: ->(_) { })
-        new(event_name: event_name, context: context).dispatch(on_selected: on_selected)
+      def self.dispatch(event_name, context, **options)
+        new(event_name: event_name, context: context).dispatch(**options)
       end
+
+      def self.select(event_name, context) = new(event_name: event_name, context: context).select
 
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
         task = claim_next_waiter(topic_id, creative_id)
@@ -673,21 +675,20 @@ module Collavre
         @context["event_name"] = event_name
       end
 
-      def dispatch(on_selected: ->(_) { })
-        # Step 1: Find qualified agents (Matcher)
-        candidates = matcher.match
-        return [] if candidates.empty?
+      def select
+        Selection.new(@context, policy_resolver: policy_resolver).call
+      end
 
-        # Step 2: Select responders (Arbiter) - with policy-based floor control
-        selected = arbiter.select(candidates)
+      def dispatch(selected_agents: nil, context_for: nil)
+        selected = selected_agents || select
         return [] if selected.empty?
 
         # Step 3: Schedule execution (Scheduler) - Phase 3
         # For now, immediate execution
-        decisions = scheduler.schedule(selected.tap { @context.merge!(on_selected.call(_1) || {}) })
+        decisions = scheduler.schedule(selected)
 
         # Step 4: Enqueue jobs
-        enqueue_jobs(decisions)
+        enqueue_jobs(decisions, context_for: context_for)
       end
 
       private
@@ -696,21 +697,13 @@ module Collavre
         @policy_resolver ||= PolicyResolver.new(@context)
       end
 
-      def matcher
-        @matcher ||= Matcher.new(@context)
-      end
-
-      def arbiter
-        @arbiter ||= Arbiter.new(@context, policy_resolver: policy_resolver)
-      end
-
       def scheduler
         @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
       end
 
-      def enqueue_jobs(decisions)
+      def enqueue_jobs(decisions, context_for:)
         decisions.filter_map do |decision|
-          agent = decision[:agent]
+          context = context_for_agent(agent = decision[:agent], context_for)
           log_decision(decision)
 
           # A rejected decision is not a dispatch, so neither guard below
@@ -729,7 +722,7 @@ module Collavre
           # Guard: skip if agent already has a running task for this comment.
           # Handled, not unscheduled — see the drop guard below for why the two
           # are different answers and what reads them apart.
-          comment_id = @context.dig("comment", "id")
+          comment_id = context.dig("comment", "id")
           if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
             Rails.logger.warn(
               "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
@@ -761,7 +754,7 @@ module Collavre
           # was scheduled*: DropTriggerJob#dispatch_trigger raises
           # DispatchFailedError on an empty result and retries a trigger that
           # was covered, three times, and calls the job failed at the end of it.
-          covering = DeliveryRecord.covering_task(agent, comment_id, @context, @event_name)
+          covering = DeliveryRecord.covering_task(agent, comment_id, context, @event_name)
           if covering && DeliveryRecord.claim_drop!(covering, comment_id)
             Rails.logger.info(
               "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
@@ -772,15 +765,15 @@ module Collavre
 
           case decision[:timing]
           when :immediate
-            AiAgentJob.perform_later(agent.id, @event_name, @context)
+            AiAgentJob.perform_later(agent.id, @event_name, context)
             agent
           when :deferred
-            waiter = park_waiter(agent)
+            waiter = park_waiter(agent, context)
             post_waiting_notice(agent, decision, waiter: waiter)
             agent
           when :delayed
             AiAgentJob.set(wait: decision[:delay]).perform_later(
-              agent.id, @event_name, @context
+              agent.id, @event_name, context
             )
             post_waiting_notice(agent, decision)
             agent
@@ -788,6 +781,11 @@ module Collavre
             nil
           end
         end
+      end
+
+      def context_for_agent(agent, context_for)
+        override = context_for&.call(agent)
+        override.present? ? @context.deep_merge(override.deep_stringify_keys) : @context
       end
 
       # Park this dispatch as a queued waiter and fold the earlier ones into it.
@@ -807,9 +805,9 @@ module Collavre
       # (coalesce_at_start!), so this is not a duplicate turn — but two doors
       # onto one queue should not disagree about when a burst becomes one
       # waiter, and only the serialized one holds without those later passes.
-      def park_waiter(agent)
-        topic_id = @context.dig("topic", "id")
-        creative_id = @context.dig("creative", "id")
+      def park_waiter(agent, context)
+        topic_id = context.dig("topic", "id")
+        creative_id = context.dig("creative", "id")
         coalescing = policy_resolver.coalesce_pending_tasks_for?(agent)
         waiter = nil
 
@@ -819,7 +817,7 @@ module Collavre
             name: "Response to #{@event_name}",
             status: "queued",
             trigger_event_name: @event_name,
-            trigger_event_payload: @context,
+            trigger_event_payload: context,
             agent: agent,
             topic_id: topic_id,
             creative_id: creative_id,

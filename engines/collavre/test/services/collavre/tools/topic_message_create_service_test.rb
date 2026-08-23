@@ -90,8 +90,8 @@ module Collavre
         end
         events = []
 
-        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, payload, **_options) {
-          events << payload
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, payload, **options) {
+          events << payload.deep_stringify_keys.deep_merge(options.fetch(:context_for).call(coordinator))
           [ coordinator ]
         }) do
           topics.each do |topic|
@@ -99,8 +99,8 @@ module Collavre
           end
         end
 
-        assert_equal topics.pluck(:id), events.map { |event| event.dig(:topic, :id) }
-        assert events.all? { |event| event.dig(:sender, "id") == @owner.id }
+        assert_equal topics.pluck(:id), events.map { |event| event.dig("topic", "id") }
+        assert events.all? { |event| event.dig("sender", "id") == @owner.id }
         assert events.all? do |event|
           context = SystemEvents::ContextBuilder.new(event).build
           Orchestration::Matcher.new(context).match == [ coordinator ] && context.dig("sender", "is_ai") == false
@@ -216,8 +216,7 @@ module Collavre
         Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
         sender = nil
         dispatcher = lambda do |_event, _payload, **options|
-          override = options.fetch(:on_selected).call([ coordinator ])
-          sender = override.fetch("sender")
+          sender = options.fetch(:context_for).call(coordinator).fetch("sender")
           [ coordinator ]
         end
 
@@ -236,15 +235,21 @@ module Collavre
         destination = @creative.topics.create!(name: "Principal-less Destination", user: @owner)
         Current.user = coordinator
         Current.agent_turn = { user: nil, task: running_task(coordinator, @topic) }
-        dispatcher = lambda do |_event, _payload, **options|
-          options.fetch(:on_selected).call([ coordinator ])
-        end
-
-        error = SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
-          assert_raises(ArgumentError) do
-            service.call(topic_id: destination.id, content: "Unsafe self route")
+        side_effects = []
+        recorder = ->(*) { side_effects << true }
+        error = CommentNotificationJob.stub(:perform_later, recorder) do
+          CommentBadgesBroadcastJob.stub(:perform_later, recorder) do
+            Turbo::Streams::BroadcastJob.stub(:perform_later, recorder) do
+              Orchestration::AgentOrchestrator.stub(:select, [ coordinator ]) do
+                assert_raises(ArgumentError) do
+                  service.call(topic_id: destination.id, content: "Unsafe self route")
+                end
+              end
+            end
           end
         end
+
+        assert_empty side_effects
 
         assert_equal I18n.t("collavre.tools.topic_message_create.errors.self_route"), error.message
         assert_not Comment.exists?(topic: destination, content: "Unsafe self route")
@@ -261,14 +266,13 @@ module Collavre
         interactions = []
         breaker = Object.new
         breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
-        dispatcher = lambda do |_event, _payload, **options|
-          options.fetch(:on_selected).call([ coordinator ])
-          [ coordinator ]
-        end
+        dispatcher = ->(_event, _payload, **_options) { [ coordinator ] }
 
         Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
-          SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
-            service.call(topic_id: destination.id, content: "Start independent work")
+          Orchestration::AgentOrchestrator.stub(:select, [ coordinator ]) do
+            SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+              service.call(topic_id: destination.id, content: "Start independent work")
+            end
           end
         end
 
@@ -287,15 +291,9 @@ module Collavre
         interactions = []
         breaker = Object.new
         breaker.define_singleton_method(:record_interaction) { |*args| interactions << args }
-        matcher = Object.new
-        matcher.define_singleton_method(:match) { [ worker, unselected ] }
-
         Orchestration::LoopBreaker.stub(:new, ->(_context) { breaker }) do
-          Orchestration::Matcher.stub(:new, matcher) do
-            dispatcher = lambda do |_event, _payload, **options|
-              options.fetch(:on_selected).call([ worker ])
-              [ worker ]
-            end
+          Orchestration::AgentOrchestrator.stub(:select, [ worker ]) do
+            dispatcher = ->(_event, _payload, **_options) { [ worker ] }
             SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
               service.call(topic_id: @topic.id, content: "Track this handoff")
             end
@@ -303,6 +301,36 @@ module Collavre
         end
 
         assert_equal [ [ coordinator.id, worker.id, @creative.id ] ], interactions
+      end
+
+      test "scopes a carried human sender override to the selected coordinator" do
+        coordinator = create_agent("Mixed Coordinator", creator: @owner)
+        worker = create_agent("Mixed Worker", creator: @owner)
+        share!(coordinator, :feedback)
+        share!(worker, :feedback)
+        Current.user = coordinator
+        Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+        destination = @creative.topics.create!(name: "Mixed Destination", user: @owner)
+        contexts = {}
+        dispatcher = lambda do |_event, payload, **options|
+          [ coordinator, worker ].each do |agent|
+            contexts[agent.id] = payload.deep_stringify_keys.deep_merge(
+              options.fetch(:context_for).call(agent)
+            )
+          end
+          [ coordinator, worker ]
+        end
+
+        Orchestration::AgentOrchestrator.stub(:select, [ coordinator, worker ]) do
+          SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+            service.call(topic_id: destination.id, content: "Coordinate and review")
+          end
+        end
+
+        assert_equal @owner.id, contexts.dig(coordinator.id, "sender", "id")
+        assert_equal false, contexts.dig(coordinator.id, "sender", "is_ai")
+        assert_equal coordinator.id, contexts.dig(worker.id, "comment", "user_id")
+        assert_nil contexts.dig(worker.id, "sender")
       end
 
       test "feedback permission can post but read permission cannot" do
