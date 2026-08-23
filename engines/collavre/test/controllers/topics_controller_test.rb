@@ -292,10 +292,39 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, @topic.reload.creative_id
   end
 
+  test "should not broadcast an obsolete destination after a consecutive move" do
+    target_creative = creatives(:root_parent)
+    final_target = Collavre::Creative.create!(description: "Final target", user: @user)
+    original_find = Collavre::Topic.method(:find)
+    moved_again = false
+    broadcasts = []
+    find_topic = lambda do |id|
+      unless moved_again
+        moved_again = true
+        Collavre::Topics::TopicMove.new(
+          topic: original_find.call(id), target_creative: final_target
+        ).call
+      end
+      original_find.call(id)
+    end
+
+    Collavre::Topic.stub(:find, find_topic) do
+      Collavre::TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
+        patch move_creative_topic_url(@creative, @topic),
+          params: { target_creative_id: target_creative.id }, as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal final_target.id, @topic.reload.creative_id
+    assert_equal target_creative.id, JSON.parse(response.body).fetch("target_creative_id")
+    assert_equal [ @creative.id ], broadcasts.map(&:first)
+  end
+
   test "a source changed while waiting for the move lock is forbidden" do
     target_creative = creatives(:root_parent)
     failed_move = Object.new
-    failed_move.define_singleton_method(:call) do
+    failed_move.define_singleton_method(:call) do |**|
       raise Collavre::Topics::TopicMove::SourceChangedError,
         I18n.t("collavre.topics.move.source_changed")
     end

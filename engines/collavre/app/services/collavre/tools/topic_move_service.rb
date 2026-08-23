@@ -40,11 +40,9 @@ module Tools
       authorize_target!(target, user)
       source = topic.creative.effective_origin
 
-      released_agent, released_reason = move(topic, target, user)
-      reset_comment_counters(source, target)
-      broadcast_move(source, target, topic)
+      released_agent, released_reason = move(topic, target, source, user)
 
-      Topics::Serializer.for_tool(topic.reload).merge(
+      Topics::Serializer.for_tool(topic).merge(
         moved_from_creative_id: source.id,
         released_primary_agent: released_agent_payload(released_agent, released_reason, target)
       ).compact
@@ -52,8 +50,9 @@ module Tools
 
     private
 
-    def move(topic, target, user)
-      Topics::TopicMove.new(topic: topic, target_creative: target).call do |locked_topic|
+    def move(topic, target, source, user)
+      effects = Topics::TopicMoveEffects.new(topic, source, target)
+      Topics::TopicMove.new(topic: topic, target_creative: target).call(after_commit: effects.method(:call)) do |locked_topic|
         authorize_source!(locked_topic, user)
         authorize_target!(target, user)
         validate_move!(locked_topic, target)
@@ -84,16 +83,6 @@ module Tools
     def reserved?(topic, target)
       Topics::ReservedName.reserved?(topic.creative, topic.name) ||
         Topics::ReservedName.reserved?(target, topic.name)
-    end
-
-    def reset_comment_counters(source, target)
-      Creative.reset_counters(source.id, :comments)
-      Creative.reset_counters(target.id, :comments)
-    end
-
-    def broadcast_move(source, target, topic)
-      TopicsChannel.broadcast_to(source, { action: "deleted", topic_id: topic.id })
-      TopicsChannel.broadcast_to(target, { action: "created", topic: Topics::Serializer.call(topic) })
     end
 
     def released_agent_payload(agent, reason, target)

@@ -56,6 +56,32 @@ module Collavre
         assert_equal @topic.id, broadcasts.second.last.dig(:topic, :id)
       end
 
+      test "does not broadcast an obsolete destination after a consecutive move" do
+        final_target = Creative.create!(description: "Final target", user: @owner)
+        original_find = Topic.method(:find)
+        find_calls = 0
+        broadcasts = []
+        find_topic = lambda do |id|
+          find_calls += 1
+          if find_calls == 2
+            Topics::TopicMove.new(topic: original_find.call(id), target_creative: final_target).call
+          end
+          original_find.call(id)
+        end
+
+        result = Topic.stub(:find, find_topic) do
+          TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
+            TopicMoveService.new.call(topic_id: @topic.id, creative_id: @target.id)
+          end
+        end
+
+        assert_equal final_target.id, @topic.reload.creative_id
+        assert_equal @target.id, result[:creative_id]
+        assert_equal @source.id, result[:moved_from_creative_id]
+        assert_equal [ @source.id ], broadcasts.map(&:first)
+        assert_equal "deleted", broadcasts.first.last[:action]
+      end
+
       test "a linked destination resolves to its origin" do
         link = Creative.create!(description: "Target link", user: @owner, origin: @target)
 

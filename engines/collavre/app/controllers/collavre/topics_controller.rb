@@ -165,18 +165,10 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.move.session_topic_locked") }, status: :unprocessable_entity and return
       end
 
-      released_agent, released_reason = Topics::TopicMove.new(topic: topic, target_creative: target_creative).call
-
-      # update_all above skips counter-cache callbacks, so recompute
-      # comments_count on both sides after re-parenting the comments.
-      Creative.reset_counters(source_creative.id, :comments)
-      Creative.reset_counters(target_creative.id, :comments)
-
-      broadcast_topic_event("deleted", topic_id: topic.id)
-      # topic_json rather than a bare id/name slice: the pin decides who may
-      # speak, so the target's topic list has to show whether it survived the
-      # move (and, when it did not, show no avatar rather than a stale one).
-      broadcast_topic_event("created", creative: target_creative, topic: topic_json(topic))
+      effects = Topics::TopicMoveEffects.new(topic, source_creative, target_creative)
+      released_agent, released_reason = Topics::TopicMove.new(
+        topic: topic, target_creative: target_creative
+      ).call(after_commit: effects.method(:call))
 
       render json: {
         success: true,

@@ -158,15 +158,6 @@ module Collavre
         # in a topic limited to one. Re-check at the moment the row is created,
         # where the answer is authoritative, and defer into the queue instead.
         task = admit_or_defer!(agent, event_name, context)
-
-        # Counted where the row is created, not where the turn starts — and so
-        # before the deferral returns. Losing the admission race does not make
-        # this a different turn: the same dispatch, from the same burst, is
-        # parked instead of admitted, and the promotion that later runs it
-        # enters the resumed-Task branch above, which records nothing either. A
-        # count taken only on the winning side of a race is exactly blind to the
-        # bursts the threshold exists to catch.
-        record_loop_breaker_turn(agent, context)
         return if task.nil?
       end
 
@@ -290,20 +281,17 @@ module Collavre
         topic_id: context&.dig("topic", "id"),
         creative_id: context&.dig("creative", "id")
       }
-      return Task.create!(attrs.merge(status: "running")) unless topic_admission_scoped?(context)
+      unless topic_admission_scoped?(context)
+        return Task.create!(attrs.merge(status: "running")).tap { record_loop_breaker_turn(agent, context) }
+      end
 
-      topic_id = context.dig("topic", "id")
-      creative_id = context.dig("creative", "id")
-      admitted = false
-      task = nil
+      task, admitted, current_context = nil, false, false
       # A queued row here is a waiter, and what speaks for it is settled now, with
       # the row — not later, from whichever notices happen to be visible. Its
       # notice is posted in a separate transaction below, so between the two this
       # waiter is queued with nothing naming it, and a shared notice deleted in
       # that window would read an opted-out waiter as one of its own and cancel a
       # turn that was only deferred.
-      notice_scope = waiter_notice_scope(agent, context)
-
       # Counting occupants and claiming the slot must be ONE step. Two workers
       # starting within the same millisecond — the exact burst this job defends
       # against — otherwise both read an occupancy below the limit before either
@@ -312,20 +300,24 @@ module Collavre
       # admission for a topic takes the same lock, so the loser reads the
       # winner's committed row.
       Task.transaction do
-        Orchestration::TopicSlot.lock!(topic_id, creative_id)
-        admitted = Orchestration::TopicSlot.available_for?(agent.id, topic_id, creative_id, context)
+        next unless Orchestration::TopicSlot.lock_matches_context?(attrs[:topic_id], attrs[:creative_id])
+
+        current_context = true
+        admitted = Orchestration::TopicSlot.available_for?(agent.id, attrs[:topic_id], attrs[:creative_id], context)
         task = Task.create!(attrs.merge(
           status: admitted ? "running" : "queued",
           # Left nil on an admitted row: it is not waiting, so no notice speaks
           # for it and there is nothing for a stop control to represent.
-          waiting_notice_scope: admitted ? nil : notice_scope
+          waiting_notice_scope: admitted ? nil : waiter_notice_scope(agent, context)
         ))
       end
+      return unless current_context
 
-      return task if admitted
-
-      park_deferred_waiter(task, agent, event_name, context, topic_id, creative_id)
-      nil
+      park_deferred_waiter(task, agent, event_name, context, attrs[:topic_id], attrs[:creative_id]) unless admitted
+      # Count where the row is created, before an admitted turn starts and after
+      # a deferred turn is parked. A stale context creates no row and no count.
+      record_loop_breaker_turn(agent, context)
+      task if admitted
     end
 
     # Record a created turn for the loop breaker's creative-retry count.

@@ -12,8 +12,8 @@ module Collavre
         @source_creative_id = topic.creative_id
       end
 
-      def call
-        Topic.transaction do
+      def call(after_commit: nil)
+        result = Topic.transaction do
           # TopicBranchService locks the source before reading its comments.
           # Take the same parent-first lock order here so a branch cannot
           # authorize the old creative while this transaction has already
@@ -28,6 +28,8 @@ module Collavre
           topic.update!(creative: target_creative)
           release_unroutable_primary_agent
         end
+        synchronize_after_commit(&after_commit) if after_commit
+        result
       end
 
       private
@@ -44,6 +46,11 @@ module Collavre
         return unless Task.where(topic_id: topic.id, status: Task::ACTIVE_STATUSES).exists?
 
         raise ActiveTaskError, I18n.t("collavre.topics.move.active_tasks")
+      end
+
+      def synchronize_after_commit
+        current_topic = Topic.find(topic.id)
+        current_topic.with_lock { yield current_topic }
       end
 
       def release_unroutable_primary_agent
