@@ -131,6 +131,44 @@ module Collavre
         assert_equal topic.id, restored.first.topic_id
       end
 
+      test "clears source last-topic preferences and advances their revisions" do
+        user = users(:one)
+        other_user = users(:two)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        preference = UserCreativePreference.create!(
+          creative: source, user: other_user, expanded_status: {},
+          last_topic: topic, last_topic_revision: 4
+        )
+
+        TopicMove.new(topic: topic, target_creative: destination).call
+
+        preference.reload
+        assert_nil preference.last_topic_id
+        assert_equal 5, preference.last_topic_revision
+      end
+
+      test "restores source last-topic preferences when the move rolls back" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        preference = UserCreativePreference.create!(
+          creative: source, user: users(:two), expanded_status: {},
+          last_topic: topic, last_topic_revision: 4
+        )
+
+        ApplicationRecord.transaction do
+          TopicMove.new(topic: topic, target_creative: destination).call
+          raise ActiveRecord::Rollback
+        end
+
+        preference.reload
+        assert_equal topic.id, preference.last_topic_id
+        assert_equal 4, preference.last_topic_revision
+      end
+
       test "snapshot restoration locks the topic before the snapshot" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)

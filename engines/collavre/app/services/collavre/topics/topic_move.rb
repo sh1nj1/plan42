@@ -25,6 +25,7 @@ module Collavre
           reject_changed_source!
           yield topic if block_given?
           MoveBlocker.new(topic).call
+          clear_source_last_topic_preferences
           topic.comments.update_all(creative_id: target_creative.id)
           topic.comment_snapshots.update_all(creative_id: target_creative.id)
           ReadPointerRelocator.new(topic: topic, target_creative: target_creative).call
@@ -50,6 +51,12 @@ module Collavre
           current_topic = Topic.find(topic.id)
           current_topic.with_lock { callback.call(current_topic) }
         end
+      end
+
+      def clear_source_last_topic_preferences
+        topic.user_creative_preferences_as_last_topic
+             .where(creative_id: source_creative_id)
+             .update_all("last_topic_id = NULL, last_topic_revision = last_topic_revision + 1")
       end
 
       def release_unroutable_primary_agent
