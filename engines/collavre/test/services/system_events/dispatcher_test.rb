@@ -102,6 +102,18 @@ module SystemEvents
       assert_equal "cron", Envelope.in(enqueued_context).source
     end
 
+    test "applies selected-agent context overrides before scheduling" do
+      sender = { "id" => users(:one).id, "is_ai" => false }
+
+      SystemEvents::Dispatcher.dispatch(
+        "comment_created", @context,
+        on_selected: ->(_agents) { { "sender" => sender } }
+      )
+
+      assert_equal sender["id"], enqueued_context.dig("sender", "id")
+      assert_equal sender["is_ai"], enqueued_context.dig("sender", "is_ai")
+    end
+
     test "does not enqueue work when no agent matches" do
       @agent.update!(routing_expression: "false")
 

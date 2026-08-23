@@ -42,6 +42,7 @@ module Tools
       principal = workspace_user(user)
 
       comment = create_comment(topic, content, user, principal)
+      dispatch_agent_message(comment, user, principal) if user.ai_user?
 
       serialize(comment)
     end
@@ -55,15 +56,13 @@ module Tools
         reject_closed_topic!(topic)
         reject_unrunnable_self_dispatch!(topic, user, principal)
 
-        comment = topic.comments.create!(
+        topic.comments.create!(
           creative: topic.creative,
           content: content,
           user: user,
           private: false,
           skip_dispatch: user.ai_user?
         )
-        dispatch_agent_message(comment, user, principal) if user.ai_user?
-        comment
       end
     end
 
@@ -106,11 +105,15 @@ module Tools
 
     def handle_selected_agents!(selected_agents, user, comment, principal)
       self_selected = selected_agents.any? { |agent| agent.id == user.id }
-      if self_selected && (comment.topic.primary_agent_id != user.id || principal.nil?)
+      if self_selected && principal.nil?
+        comment.destroy!
         raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.self_route")
       end
 
       record_interactions(selected_agents, user, comment.creative_id)
+      return unless self_selected
+
+      { "sender" => SystemEvents::ContextBuilder.sender_context_for(principal) }
     end
 
     def record_interactions(selected_agents, user, creative_id)

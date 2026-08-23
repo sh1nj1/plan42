@@ -684,7 +684,7 @@ module Collavre
 
         # Step 3: Schedule execution (Scheduler) - Phase 3
         # For now, immediate execution
-        decisions = scheduler.schedule(selected.tap(&on_selected))
+        decisions = scheduler.schedule(selected.tap { @context.merge!(on_selected.call(_1) || {}) })
 
         # Step 4: Enqueue jobs
         enqueue_jobs(decisions)

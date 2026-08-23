@@ -207,25 +207,47 @@ module Collavre
         assert_not Comment.exists?(topic: @topic, content: "Route back to my expression")
       end
 
-      test "an agent cannot self-route in a different unpinned topic" do
+      test "an agent uses its carried human when self-routed in a different unpinned topic" do
         coordinator = create_agent("Destination Coordinator", creator: @owner)
         coordinator.update!(routing_expression: "true")
         share!(coordinator, :feedback)
         destination = @creative.topics.create!(name: "Unpinned Destination", user: @owner)
         Current.user = coordinator
         Current.agent_turn = { user: @owner, task: running_task(coordinator, @topic) }
+        sender = nil
+        dispatcher = lambda do |_event, _payload, **options|
+          override = options.fetch(:on_selected).call([ coordinator ])
+          sender = override.fetch("sender")
+          [ coordinator ]
+        end
+
+        result = SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
+          service.call(topic_id: destination.id, content: "Route back from another topic")
+        end
+
+        assert_equal @owner.id, sender["id"]
+        assert Comment.exists?(id: result[:id], topic: destination)
+      end
+
+      test "an agent without a principal cannot self-route in a different unpinned topic" do
+        coordinator = create_agent("Principal-less Destination Coordinator", creator: @owner)
+        coordinator.update!(routing_expression: "true")
+        share!(coordinator, :feedback)
+        destination = @creative.topics.create!(name: "Principal-less Destination", user: @owner)
+        Current.user = coordinator
+        Current.agent_turn = { user: nil, task: running_task(coordinator, @topic) }
         dispatcher = lambda do |_event, _payload, **options|
           options.fetch(:on_selected).call([ coordinator ])
         end
 
         error = SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
           assert_raises(ArgumentError) do
-            service.call(topic_id: destination.id, content: "Route back from another topic")
+            service.call(topic_id: destination.id, content: "Unsafe self route")
           end
         end
 
         assert_equal I18n.t("collavre.tools.topic_message_create.errors.self_route"), error.message
-        assert_not Comment.exists?(topic: destination, content: "Route back from another topic")
+        assert_not Comment.exists?(topic: destination, content: "Unsafe self route")
       end
 
       test "does not count self-pinned fan-out as a ping-pong interaction" do

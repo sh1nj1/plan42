@@ -119,7 +119,8 @@ module Collavre
           Arbiter.stub(:new, arbiter) do
             Scheduler.stub(:new, scheduler) do
               AgentOrchestrator.dispatch(
-                "comment_created", context, on_selected: ->(agents) { selected = agents }
+                "comment_created", context,
+                on_selected: ->(agents) { selected = agents; nil }
               )
             end
           end
