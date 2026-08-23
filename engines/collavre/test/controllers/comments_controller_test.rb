@@ -24,6 +24,20 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "merge rejects comments from different topics" do
+    first_topic = @creative.topics.create!(name: "First merge topic", user: @user)
+    second_topic = @creative.topics.create!(name: "Second merge topic", user: @user)
+    first = @creative.comments.create!(content: "First merge comment", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "Second merge comment", user: @user, topic: second_topic)
+
+    Collavre::MergeCommentsJob.stub(:perform_later, ->(*) { flunk("merge job should not be enqueued") }) do
+      post merge_creative_comments_path(@creative), params: { comment_ids: [ first.id, second.id ] }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.comments.merge.same_topic_required"), response.parsed_body["error"]
+  end
+
   test "index renders version navigator only for comments with versions" do
     with_versions = @creative.comments.create!(content: "has versions", user: @user)
     Collavre::CommentVersion.create!(comment: with_versions, content: "v1", version_number: 1)

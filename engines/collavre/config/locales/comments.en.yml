@@ -153,6 +153,7 @@ en:
         minimum_required: "Select at least 2 messages to merge."
         not_authorized: "You don't have permission to merge messages."
         own_messages_only: "You can only merge your own messages or messages from your AI agents."
+        same_topic_required: "You can only merge messages from the same topic."
       branch:
         no_selection: "Select at least one message to branch."
         not_authorized: "You don't have permission to branch messages."
