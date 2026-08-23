@@ -28,6 +28,57 @@ class NavigationHelperTest < ActionView::TestCase
     @authenticated = value
   end
 
+  test "home_navigation_path sends guests to the application root" do
+    self.authenticated = false
+
+    assert_equal "/", home_navigation_path
+  end
+
+  test "home_navigation_path sends signed in users straight to the configured home page" do
+    self.authenticated = true
+
+    Collavre::SystemSetting.stub(:home_page_path_authenticated, "/creatives") do
+      assert_equal "/creatives", home_navigation_path
+    end
+  end
+
+  test "home_navigation_path preserves the engine mount path" do
+    self.authenticated = true
+    request.script_name = "/collavre"
+
+    Collavre::SystemSetting.stub(:home_page_path_authenticated, "/creatives") do
+      assert_equal "/collavre/creatives", home_navigation_path
+    end
+  end
+
+  test "home_navigation_path falls back to the application root for the '/' sentinel" do
+    self.authenticated = true
+
+    Collavre::SystemSetting.stub(:home_page_path_authenticated, "/") do
+      assert_equal "/", home_navigation_path
+    end
+  end
+
+  test "home nav button links to the configured home page rather than '/'" do
+    self.authenticated = true
+    Navigation::Registry.instance.register(
+      key: :home,
+      label: "app.home",
+      type: :button,
+      path: -> { home_navigation_path },
+      html_class: "home-nav-button",
+      priority: 110
+    )
+
+    item = Navigation::Registry.instance.find(:home)
+    html = Collavre::SystemSetting.stub(:home_page_path_authenticated, "/creatives") do
+      render_navigation_item(item)
+    end
+
+    assert_match(%r{action="/creatives"}, html)
+    assert_match(/class="home-nav-button"/, html)
+  end
+
   test "navigation_items_for returns items for section" do
     Navigation::Registry.instance.register(key: :item1, label: "Item 1", section: :main)
     Navigation::Registry.instance.register(key: :item2, label: "Item 2", section: :user)
