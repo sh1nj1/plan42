@@ -110,5 +110,29 @@ module Collavre
       assert_equal moved.id - 1, pointer.last_read_comment_id
       assert_operator Collavre::Creatives::CommentBadgeIndex.new(user: @user).unread_counts_by_topic(destination_creative)[destination_creative.main_topic.id], :>=, 1
     end
+
+    test "rejects a stale existing-comment move after its source topic relocates" do
+      destination_creative = Creative.create!(user: @user, description: "Destination")
+      source_topic = @creative.topics.create!(name: "Source", user: @user)
+      target_topic = @creative.topics.create!(name: "Target", user: @user)
+      comment = Comment.create!(creative: @creative, topic: source_topic, user: @user, content: "move me")
+      service = CommentMoveService.new(creative: @creative, user: @user)
+
+      fetch_after_relocation = lambda do |_ids|
+        Topics::TopicMove.new(topic: source_topic, target_creative: destination_creative).call
+        [ comment ]
+      end
+
+      service.stub(:fetch_visible_comments, fetch_after_relocation) do
+        assert_raises(CommentMoveService::MoveError) do
+          service.call(comment_ids: [ comment.id ], target_topic_id: target_topic.id)
+        end
+      end
+
+      assert_equal destination_creative.id, comment.reload.creative_id
+      assert_equal source_topic.id, comment.topic_id
+      assert_equal destination_creative.id, source_topic.reload.creative_id
+      assert_equal @creative.id, target_topic.reload.creative_id
+    end
   end
 end

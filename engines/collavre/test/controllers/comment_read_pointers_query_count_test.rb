@@ -34,8 +34,9 @@ class CommentReadPointersQueryCountTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    # ~8 of these are session/authentication overhead outside this controller.
-    assert_operator count, :<=, 26, "topic switch took #{count} queries"
+    # ~8 are session/authentication overhead. The topic lock adds one fixed
+    # transaction plus one SELECT, independent of the number of topics.
+    assert_operator count, :<=, 29, "topic switch took #{count} queries"
   end
 
   private

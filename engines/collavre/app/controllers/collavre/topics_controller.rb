@@ -1,8 +1,7 @@
 module Collavre
   class TopicsController < ApplicationController
     rescue_from Topics::TopicMove::SourceChangedError, with: :render_source_changed
-    rescue_from Topics::TopicMove::ActiveTaskError, with: :render_active_tasks
-    rescue_from Topics::TopicMove::RecurringTaskError, with: :render_active_tasks
+    rescue_from Topics::TopicMove::MoveBlockedError, with: :render_active_tasks
 
     include Collavre::CreativePermissionGuard
 

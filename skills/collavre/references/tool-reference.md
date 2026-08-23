@@ -284,7 +284,8 @@ agent stays pinned only when it can still respond on the destination; otherwise
 the result reports that the pin was released. Creative permissions do not move,
 so verify that participants can access the destination. Active agent work must
 finish or be cancelled before the topic can move. Recurring cron jobs targeting
-the topic must be cancelled and recreated after the move.
+the topic must be cancelled and recreated after the move. Topics referenced by
+a Drop Trigger loop cannot move.
 
 Requires **admin** on the source and **write** on the destination. Topic names
 must be unique on the destination. Main, an inbox's System topic, and live agent

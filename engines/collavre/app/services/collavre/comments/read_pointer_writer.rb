@@ -18,6 +18,8 @@ module Collavre
     # Because of that the request's own view can be stale, so the positions it
     # reports for broadcasting are read back after the write.
     class ReadPointerWriter
+      class StaleTopicError < StandardError; end
+
       Change = Struct.new(:topic_id, :previous_id, :updated_id, :created, keyword_init: true) do
         def stored?
           created || previous_id != updated_id
@@ -41,20 +43,33 @@ module Collavre
       def call(last_ids_by_topic_id)
         return [] if last_ids_by_topic_id.empty?
 
-        existing = existing_watermarks
-        changes = last_ids_by_topic_id.map { |topic_id, last_id| change_for(existing, topic_id, last_id) }
-        store(changes, existing)
-        # The request's own view of the watermark is not what the row now holds:
-        # a concurrent writer may have advanced past it, in which case the
-        # forward-only SQL kept *their* value. Broadcasting this request's
-        # updated_id would repaint the receipt at a position the database has
-        # already moved beyond, so read back what was actually retained.
-        positions(changes, existing, existing_watermarks)
+        ActiveRecord::Base.transaction do
+          lock_named_topics!(last_ids_by_topic_id.keys)
+          existing = existing_watermarks
+          changes = last_ids_by_topic_id.map { |topic_id, last_id| change_for(existing, topic_id, last_id) }
+          store(changes, existing)
+          # The request's own view of the watermark is not what the row now holds:
+          # a concurrent writer may have advanced past it, in which case the
+          # forward-only SQL kept *their* value. Broadcasting this request's
+          # updated_id would repaint the receipt at a position the database has
+          # already moved beyond, so read back what was actually retained.
+          positions(changes, existing, existing_watermarks)
+        end
       end
 
       private
 
       attr_reader :creative, :user
+
+      def lock_named_topics!(topic_ids)
+        ids = topic_ids.compact.map(&:to_i).uniq.sort
+        return if ids.empty?
+
+        locked = Topic.where(id: ids).order(:id).lock.pluck(:id, :creative_id)
+        return if locked.length == ids.length && locked.all? { |_, creative_id| creative_id == creative.id }
+
+        raise StaleTopicError, I18n.t("collavre.comments.invalid_topic")
+      end
 
       def existing_watermarks
         CommentReadPointer.where(user: user, creative: creative).pluck(:topic_id, :last_read_comment_id).to_h

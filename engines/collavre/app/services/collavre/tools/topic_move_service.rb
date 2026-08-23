@@ -26,7 +26,7 @@ module Tools
       creative. Main, an inbox's System topic, and live agent session topics
       cannot be moved. Wait for or cancel active agent work before moving its
       topic. Cancel recurring cron jobs targeting the topic and recreate them
-      after the move.
+      after the move. A topic referenced by a Drop Trigger loop cannot move.
     DESC
 
     tool_param :topic_id, description: "The topic to move."

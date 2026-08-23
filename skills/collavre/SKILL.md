@@ -155,7 +155,8 @@ collavre tool run <tool_name> --key value         # run with flag args
   but Creative permissions stay with each Creative. Verify that participants
   can access the destination after moving. Wait for or cancel active agent work
   in the topic before moving it. Cancel recurring cron jobs that target the
-  topic and recreate them after the move.
+  topic and recreate them after the move. Topics referenced by a Drop Trigger
+  loop cannot move.
 - **Progress**: Leaf = manual (0.0 or 1.0). Parent = auto-calculated from children.
 - **Import**: Markdown headings/bullets become nested Creatives.
 - **Batch**: All-or-nothing transaction. Requires approval.

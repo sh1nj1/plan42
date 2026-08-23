@@ -156,55 +156,13 @@ module Collavre
             return
           end
 
-          creative = topic.creative&.effective_origin
-          unless creative
-            render json: { error: "Creative not found" }, status: :not_found
-            return
-          end
-
-          unless creative.has_permission?(current_user, :feedback)
-            render json: { error: "Not authorized" }, status: :forbidden
-            return
-          end
-
-          agent = resolve_reply_agent(topic, params[:task_id])
-          unless agent
-            render json: { error: "Not authorized" }, status: :forbidden
-            return
-          end
-
-          # Atomically claim the delegated task BEFORE saving the reply.
-          # Two concurrent /reply requests with the same task_id can both
-          # pass resolve_reply_agent (which is a read-only scope check) and,
-          # without an atomic WHERE status='delegated' transition, both would
-          # save separate comments and both would run completion logic —
-          # producing duplicate linked replies for one dispatch. Claim first,
-          # save second, so the loser sees rows_updated == 0 and bails out
-          # before touching the comments table.
-          claimed_task = claim_delegated_task(agent, topic, params[:task_id])
-          if params[:task_id].present? && claimed_task.nil?
-            render json: { error: "Task already completed or not delegated" }, status: :conflict
-            return
-          end
-
-          comment = creative.comments.build(
-            content: params[:text].to_s,
-            topic: topic,
-            user: agent,
-            skip_default_user: true,
-            skip_dispatch: true
-          )
-
-          if comment.save
-            task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment) if claimed_task
-            dispatch_a2a(agent, comment, task: claimed_task)
-            render json: { comment_id: comment.id }, status: :created
-          else
-            # Restore the dispatch so the MCP client can retry — the failure
-            # is text-level (validation), not task-level.
-            claimed_task&.update!(status: "delegated")
-            render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
-          end
+          result = AiAgent::TaskReplyService.new(
+            topic: topic, current_user: current_user, text: params[:text], requested_task_id: params[:task_id],
+            agent_resolver: method(:resolve_reply_agent), task_claimer: method(:claim_delegated_task),
+            claim_service: task_claim_service
+          ).call
+          dispatch_a2a(result.agent, result.comment.reload, task: result.task) if result.comment
+          render json: result.body, status: result.status
         end
 
         # POST /api/v1/agent/notify

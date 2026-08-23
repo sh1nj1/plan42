@@ -312,6 +312,20 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     task&.destroy
   end
 
+  test "should reject moving a topic referenced by a trigger loop" do
+    target_creative = creatives(:root_parent)
+    @creative.update!(data: {
+      "trigger" => { "loop" => { "state" => "running", "trigger_topic_id" => @topic.id } }
+    })
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.trigger_loop"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
   test "should not broadcast an obsolete destination after a consecutive move" do
     target_creative = creatives(:root_parent)
     final_target = Collavre::Creative.create!(description: "Final target", user: @user)

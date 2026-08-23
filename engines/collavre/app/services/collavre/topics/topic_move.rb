@@ -4,8 +4,10 @@ module Collavre
   module Topics
     class TopicMove
       class SourceChangedError < StandardError; end
+      MoveBlockedError = MoveBlocker::MoveBlockedError
       ActiveTaskError = MoveBlocker::ActiveTaskError
       RecurringTaskError = MoveBlocker::RecurringTaskError
+      TriggerLoopError = MoveBlocker::TriggerLoopError
 
       def initialize(topic:, target_creative:)
         @topic = topic

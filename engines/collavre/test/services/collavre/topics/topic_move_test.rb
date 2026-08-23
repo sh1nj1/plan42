@@ -95,6 +95,27 @@ module Collavre
         assert_equal topic.id, restored.first.topic_id
       end
 
+      test "snapshot restoration locks the topic before the snapshot" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        topic = source.topics.create!(name: "Restore", user: user)
+        snapshot = CommentSnapshot.create!(
+          creative: source, topic: topic, user: user, operation: "compress",
+          comments_data: [ { "id" => 1, "user_id" => user.id, "topic_id" => topic.id, "content" => "original" } ]
+        )
+        calls = []
+        topic_scope = Topic.lock
+        snapshot_scope = CommentSnapshot.lock
+
+        Topic.stub(:lock, -> { calls << :topic; topic_scope }) do
+          CommentSnapshot.stub(:lock, -> { calls << :snapshot; snapshot_scope }) do
+            CommentSnapshotRestoreService.new(snapshot: snapshot, user: user).call
+          end
+        end
+
+        assert_equal %i[topic snapshot], calls.first(2)
+      end
+
       test "rejects every active task status before relocating topic data" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)
@@ -159,8 +180,60 @@ module Collavre
         task&.destroy
       end
 
+      test "rejects a topic referenced by a trigger loop in every resumable state" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+
+        %w[idle running pending_verification paused awaiting_user stuck completed max_reached].each do |state|
+          topic = source.topics.create!(name: "Trigger #{state}", user: user)
+          source.update!(data: {
+            "trigger" => { "loop" => { "state" => state, "trigger_topic_id" => topic.id } }
+          })
+
+          error = assert_raises(TopicMove::TriggerLoopError) do
+            TopicMove.new(topic: topic, target_creative: destination).call
+          end
+
+          assert_equal I18n.t("collavre.topics.move.trigger_loop"), error.message
+          assert_equal source.id, topic.reload.creative_id
+        end
+      end
+
+      test "allows a topic not referenced by the creative trigger loop to move" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        trigger_topic = source.topics.create!(name: "Trigger", user: user)
+        moving_topic = source.topics.create!(name: "Moving", user: user)
+        source.update!(data: {
+          "trigger" => { "loop" => { "state" => "running", "trigger_topic_id" => trigger_topic.id } }
+        })
+
+        TopicMove.new(topic: moving_topic, target_creative: destination).call
+
+        assert_equal destination.id, moving_topic.reload.creative_id
+      end
+
+      test "reads trigger loop configuration after acquiring the topic lock" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Trigger", user: user)
+        topic.creative
+        Creative.find(source.id).update!(data: {
+          "trigger" => { "loop" => { "state" => "running", "trigger_topic_id" => topic.id } }
+        })
+
+        assert_raises(TopicMove::TriggerLoopError) do
+          TopicMove.new(topic: topic, target_creative: destination).call
+        end
+
+        assert_equal source.id, topic.reload.creative_id
+      end
+
       test "active task error is translated in English and Korean" do
-        %w[active_tasks recurring_tasks].each do |key|
+        %w[active_tasks recurring_tasks trigger_loop].each do |key|
           assert I18n.exists?("collavre.topics.move.#{key}", :en)
           assert I18n.exists?("collavre.topics.move.#{key}", :ko)
         end

@@ -95,6 +95,18 @@ module Collavre
         assert_empty writer.call({})
       end
 
+      test "rejects a named pointer after its topic moves to another creative" do
+        destination = Creative.create!(description: "Destination", user: @user)
+        stale_writer = writer
+        Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+
+        assert_raises(ReadPointerWriter::StaleTopicError) do
+          stale_writer.call(@topic.id => @comments.last.id)
+        end
+
+        assert_nil CommentReadPointer.find_by(user: @user, creative: @creative, topic: @topic)
+      end
+
       private
 
       # Only the read that precedes the write is stale; the writer's read-back
