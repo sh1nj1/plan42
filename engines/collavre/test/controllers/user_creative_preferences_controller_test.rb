@@ -379,6 +379,29 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "update_last_topic rejects a topic moved before its membership lock" do
+    destination = Collavre::Creative.create!(user: @user, description: "Destination")
+    topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Moving Topic")
+    locked_topics = Collavre::Topic.lock
+    moved = false
+
+    Collavre::Topic.stub(:lock, lambda {
+      unless moved
+        moved = true
+        Collavre::Topics::TopicMove.new(topic: topic, target_creative: destination).call
+      end
+      locked_topics
+    }) do
+      patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+            params: { last_topic_id: topic.id },
+            as: :json
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal destination.id, topic.reload.creative_id
+    assert_nil Collavre::UserCreativePreference.find_by(creative: @creative, user: @user)
+  end
+
   test "update_last_topic requires permission" do
     other_user = users(:two)
     other_user.update!(email_verified_at: Time.current)

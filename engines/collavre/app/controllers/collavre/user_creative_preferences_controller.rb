@@ -36,9 +36,11 @@ module Collavre
       creative = Creative.find(params[:creative_id]).effective_origin
 
       return render_forbidden unless readable?(creative)
-      return render_invalid_topic unless valid_last_topic?(creative)
 
-      record, saved = persist_last_topic(creative)
+      result = persist_last_topic_selection(creative)
+      return render_invalid_topic unless result
+
+      record, saved = result
       broadcast_last_topic(creative, record) if saved
 
       render json: {
@@ -80,8 +82,16 @@ module Collavre
         record.last_topic_save_fence_issued.to_i.zero? && record.last_topic_save_fence_applied.to_i.zero?
     end
 
-    def valid_last_topic?(creative)
-      params[:last_topic_id].blank? || creative.topics.exists?(id: params[:last_topic_id])
+    def persist_last_topic_selection(creative)
+      topic_id = params[:last_topic_id].presence
+      return persist_last_topic(creative) unless topic_id
+
+      Topic.transaction do
+        topic = Topic.lock.find_by(id: topic_id)
+        next unless topic&.creative_id == creative.id
+
+        persist_last_topic(creative)
+      end
     end
 
     def persist_last_topic(creative)
