@@ -342,7 +342,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a.creative-breadcrumb-current[href='#{creative_path(child)}'][data-turbo-action='replace'][data-turbo-prefetch='false']"
   end
 
-  test "workspace tree JSON returns collapsed branches and childless roots" do
+  test "workspace tree JSON returns childless creatives at every expanded level" do
     branch = Creative.create!(user: users(:one), description: "Workspace branch")
     child = Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
     nested_leaf = Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
@@ -373,6 +373,14 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     expanded_branch = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
     assert_equal [ child.id ], expanded_branch.fetch("children").pluck("id")
+
+    get creatives_path(format: :json, workspace_tree: 1, expand: [ branch.id, child.id ])
+
+    assert_response :success
+    expanded_branch = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
+    expanded_child = expanded_branch.fetch("children").find { |node| node.fetch("id") == child.id }
+    assert_equal [ nested_leaf.id ], expanded_child.fetch("children").pluck("id")
+    refute expanded_child.fetch("children").first.fetch("has_children")
   end
 
   test "workspace tree JSON ignores invalid and excessive expansion ids" do
