@@ -114,6 +114,19 @@ module CollavreGithub
       )
     end
 
+    # Closing message for `state` (merged / closed_without_merge). Public so
+    # the out-of-band corrector (PrChannelStateUpdater) posts the exact same
+    # text the webhook would have, instead of maintaining a second copy.
+    def closed_message(state = pr_state)
+      verb = state.to_s == "merged" ? t("state_merged") : t("state_closed")
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t("closed_message", label: label, verb: verb),
+        label: label,
+        link: pr_url
+      )
+    end
+
     def reopened_message
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
@@ -153,7 +166,6 @@ module CollavreGithub
       return nil unless payload["action"] == "closed"
       pr = payload["pull_request"]
       new_state = pr["merged"] ? "merged" : "closed_without_merge"
-      verb = pr["merged"] ? t("state_merged") : t("state_closed")
 
       # pr_state is updated atomically with the closing comment: the dispatch
       # path wraps both `handle` and `inject_into_topic!` in a single with_lock
@@ -163,12 +175,7 @@ module CollavreGithub
       self.pr_state = new_state
       save!
 
-      Collavre::Channel::InjectedMessage.new(
-        speaker: channel_bot_user,
-        message: t("closed_message", label: label, verb: verb),
-        label: label,
-        link: pr_url
-      )
+      closed_message(new_state)
       # Detach is performed by the webhook controller AFTER injecting this
       # message, so the chip stays visible until the closing comment lands.
     end
