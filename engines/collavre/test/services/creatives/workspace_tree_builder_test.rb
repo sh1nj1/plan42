@@ -21,7 +21,7 @@ module Creatives
       @view_context = FakeViewContext.new
     end
 
-    test "returns only readable branches without loading their children" do
+    test "returns every readable root without loading their children" do
       root = Creative.create!(user: @user, description: "<strong>Root</strong>")
       branch = Creative.create!(user: @user, parent: root, description: "Branch")
       Creative.create!(user: @user, parent: branch, description: "Leaf")
@@ -29,7 +29,7 @@ module Creatives
 
       nodes = build_tree([ root, root_leaf ])
 
-      assert_equal [ root.id ], nodes.pluck(:id)
+      assert_equal [ root.id, root_leaf.id ], nodes.pluck(:id)
       assert_equal "Root", nodes.first[:label]
       assert_equal root.creative_snippet, nodes.first[:snippet]
       assert nodes.first[:can_comment]
@@ -38,7 +38,44 @@ module Creatives
       assert_empty nodes.first[:children]
     end
 
-    test "loads only requested branches" do
+    test "keeps a childless root visible with its own metadata" do
+      root_leaf = Creative.create!(user: @user, description: "<em>Root leaf</em>")
+
+      nodes = build_tree([ root_leaf ])
+
+      assert_equal [ root_leaf.id ], nodes.pluck(:id)
+      assert_equal "Root leaf", nodes.first[:label]
+      assert_equal root_leaf.creative_snippet, nodes.first[:snippet]
+      assert nodes.first[:can_comment]
+      assert_equal "/creatives?id=#{root_leaf.id}", nodes.first[:url]
+      refute nodes.first[:has_children]
+      assert_empty nodes.first[:children]
+    end
+
+    test "keeps a childless root visible when it is expanded" do
+      root_leaf = Creative.create!(user: @user, description: "Root leaf")
+
+      nodes = build_tree([ root_leaf ], expanded_ids: [ root_leaf.id ])
+
+      assert_equal [ root_leaf.id ], nodes.pluck(:id)
+      refute nodes.first[:has_children]
+      assert_empty nodes.first[:children]
+    end
+
+    test "includes childless creatives below the root level" do
+      root = Creative.create!(user: @user, description: "Root")
+      branch = Creative.create!(user: @user, parent: root, description: "Branch")
+      Creative.create!(user: @user, parent: branch, description: "Leaf")
+      root_child_leaf = Creative.create!(user: @user, parent: root, description: "Root child leaf")
+
+      nodes = build_tree([ root ], expanded_ids: [ root.id ])
+
+      assert_equal [ branch.id, root_child_leaf.id ], nodes.first[:children].pluck(:id)
+      refute nodes.first[:children].last[:has_children]
+      assert_empty nodes.first[:children].last[:children]
+    end
+
+    test "loads children only for expanded creatives" do
       root = Creative.create!(user: @user, description: "Root")
       branch = Creative.create!(user: @user, parent: root, description: "Branch")
       Creative.create!(user: @user, parent: branch, description: "Leaf")
@@ -46,15 +83,33 @@ module Creatives
       nodes = build_tree([ root ], expanded_ids: [ root.id ])
 
       assert_equal [ branch.id ], nodes.first[:children].pluck(:id)
-      refute nodes.first[:children].first[:has_children]
+      assert nodes.first[:children].first[:has_children]
       assert_empty nodes.first[:children].first[:children]
     end
 
-    test "hides a branch whose children are not readable" do
+    test "renders a root whose children are not readable as childless" do
       root = Creative.create!(user: @user, description: "Private child root")
       Creative.create!(user: users(:two), parent: root, description: "Foreign child")
 
-      assert_empty build_tree([ root ])
+      nodes = build_tree([ root ], expanded_ids: [ root.id ])
+
+      assert_equal [ root.id ], nodes.pluck(:id)
+      refute nodes.first[:has_children]
+      assert_empty nodes.first[:children]
+    end
+
+    test "renders a non-root creative whose children are not readable as childless" do
+      root = Creative.create!(user: @user, description: "Root")
+      branch = Creative.create!(user: @user, parent: root, description: "Private child branch")
+      Creative.create!(user: users(:two), parent: branch, description: "Foreign child")
+
+      nodes = build_tree([ root ], expanded_ids: [ root.id ])
+
+      assert_equal [ root.id ], nodes.pluck(:id)
+      assert nodes.first[:has_children]
+      assert_equal [ branch.id ], nodes.first[:children].pluck(:id)
+      refute nodes.first[:children].first[:has_children]
+      assert_empty nodes.first[:children].first[:children]
     end
 
     test "expands requested paths beyond the former display level" do
@@ -63,7 +118,7 @@ module Creatives
       6.times do |index|
         path << Creative.create!(user: @user, parent: path.last, description: "Level #{index + 2}")
       end
-      Creative.create!(user: @user, parent: path.last, description: "Leaf")
+      leaf = Creative.create!(user: @user, parent: path.last, description: "Leaf")
 
       nodes = build_tree([ root ], expanded_ids: path.map(&:id))
 
@@ -73,7 +128,7 @@ module Creatives
         rendered_ids << remaining.first.fetch(:id)
         remaining = remaining.first.fetch(:children)
       end
-      assert_equal path.map(&:id), rendered_ids
+      assert_equal [ *path.map(&:id), leaf.id ], rendered_ids
     end
 
     test "stops linked shell cycles without hiding the shell" do

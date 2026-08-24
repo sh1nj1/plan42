@@ -612,8 +612,8 @@ export default class extends Controller {
   restoreCreativeIdFromFrameResponse(creativeId) {
     const id = String(creativeId)
     if (this.destroyedCreativeIds.has(id)) return
-    // Only a frame request started after the latest invalidation proves current access;
-    // leaf creatives never appear in the workspace tree payload, so this is their only restore path.
+    // Only a frame request started after the latest invalidation proves current access.
+    // This also covers creatives hidden under collapsed ancestors in the tree payload.
     if (this.frameRequestGeneration !== this.invalidationGeneration) return
 
     this.invalidatedCreativeIds.delete(id)
