@@ -126,8 +126,9 @@ module CollavreGithub
 
       # A repository name is not an identity: GitHub can reuse it after a
       # rename. Keep only accounts whose live repository id matches a stable id
-      # stored on an in-scope RepositoryLink, then let resync try each account
-      # until one can read the PR.
+      # stored on an in-scope RepositoryLink, and reject the entire inherited
+      # scope when another link claims the same name with a conflicting id.
+      # Then let resync try each verified account until one can read the PR.
       def verified_github_clients_for(topic, repo)
         candidate_ids = scoped_creative_ids(topic)
         return [] if candidate_ids.empty?
@@ -140,13 +141,19 @@ module CollavreGithub
           .to_a
 
         links.group_by(&:github_account_id).filter_map do |account_id, account_links|
-          verified_client_for(account_id, account_links, repo)
+          verified_client_for(account_id, account_links, topic, repo)
         end
       end
 
-      def verified_client_for(account_id, links, repo)
+      def verified_client_for(account_id, links, topic, repo)
         client = CollavreGithub::Client.new(links.first.github_account)
         identity = client.repository_identity(repo)
+        return nil if CollavreGithub::RepositoryLink.conflicting_repository_in_scope?(
+          creative: topic.creative,
+          full_name: repo,
+          repository_id: identity.id
+        )
+
         return client if links.any? { |link| link.repository_id.to_s == identity.id.to_s }
 
         nil

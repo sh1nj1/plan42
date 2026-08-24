@@ -172,6 +172,29 @@ module CollavreGithub
         assert_not_requested :get, "https://api.github.com/repos/owner/repo/pulls/77"
       end
 
+      test "resync rejects conflicting repository identities in the topic scope" do
+        child = Collavre::Creative.create!(user: @user, description: "child", parent: @creative)
+        topic = Collavre::Topic.create!(name: "Child T", creative: child, user: @user)
+        channel = GithubPrChannel.create!(
+          topic_id: topic.id,
+          config: { "repo_full_name" => "owner/repo", "pr_number" => 77, "pr_state" => "open" }
+        )
+        account = connect_github_account(repository_id: 111, remote_repository_id: 111)
+        CollavreGithub::RepositoryLink.create!(
+          creative: child,
+          github_account: account,
+          repository_full_name: "owner/repo",
+          repository_id: 222
+        )
+
+        result = PrStateSetService.new.call(topic_id: topic.id, pr_url: PR_URL)
+
+        assert_equal false, result[:ok]
+        assert_includes result[:error], "No verified connected GitHub account"
+        assert_equal "open", channel.reload.pr_state
+        assert_not_requested :get, "https://api.github.com/repos/owner/repo/pulls/77"
+      end
+
       test "resync tries the next identity-valid account when the first cannot read the PR" do
         child = Collavre::Creative.create!(user: @user, description: "child", parent: @creative)
         topic = Collavre::Topic.create!(name: "Child T", creative: child, user: @user)
