@@ -91,25 +91,25 @@ module CollavreGithub
           return [ state, "explicit" ]
         end
 
-        client = github_client_for(topic, repo)
-        unless client
+        clients = verified_github_clients_for(topic, repo)
+        if clients.empty?
           return [ {
             ok: false,
-            error: "No connected GitHub account for #{repo} in this topic's creative scope, " \
+            error: "No verified connected GitHub account for #{repo} in this topic's creative scope, " \
                    "so the state could not be read from GitHub. Pass `state` explicitly instead."
           }, "github" ]
         end
 
-        remote = remote_state(client, repo, pr_number)
-        unless remote
-          return [ {
-            ok: false,
-            error: "Could not read #{repo}##{pr_number} from GitHub (not found, or the API call failed). " \
-                   "Pass `state` explicitly instead."
-          }, "github" ]
+        clients.each do |client|
+          remote = remote_state(client, repo, pr_number)
+          return [ remote, "github" ] if remote
         end
 
-        [ remote, "github" ]
+        [ {
+          ok: false,
+          error: "Could not read #{repo}##{pr_number} from GitHub (not found, or the API call failed). " \
+                 "Pass `state` explicitly instead."
+        }, "github" ]
       end
 
       # GitHub reports merge and closure separately: `merged` is the
@@ -124,20 +124,39 @@ module CollavreGithub
         pr.state.to_s == "closed" ? "closed_without_merge" : "open"
       end
 
-      # Case-insensitive because channels store the repo name downcased while
-      # RepositoryLink keeps GitHub's canonical case.
-      def github_client_for(topic, repo)
+      # A repository name is not an identity: GitHub can reuse it after a
+      # rename. Keep only accounts whose live repository id matches a stable id
+      # stored on an in-scope RepositoryLink, then let resync try each account
+      # until one can read the PR.
+      def verified_github_clients_for(topic, repo)
         candidate_ids = scoped_creative_ids(topic)
-        return nil if candidate_ids.empty?
+        return [] if candidate_ids.empty?
 
-        link = CollavreGithub::RepositoryLink
+        links = CollavreGithub::RepositoryLink
           .where("LOWER(repository_full_name) = ?", repo.downcase)
           .where(creative_id: candidate_ids)
+          .where.not(repository_id: nil)
           .order(:id)
-          .find(&:github_account)
-        return nil unless link
+          .to_a
 
-        CollavreGithub::Client.new(link.github_account)
+        links.group_by(&:github_account_id).filter_map do |account_id, account_links|
+          verified_client_for(account_id, account_links, repo)
+        end
+      end
+
+      def verified_client_for(account_id, links, repo)
+        client = CollavreGithub::Client.new(links.first.github_account)
+        identity = client.repository_identity(repo)
+        return client if links.any? { |link| link.repository_id.to_s == identity.id.to_s }
+
+        nil
+      rescue Octokit::Error, Faraday::Error => e
+        Rails.logger.warn(
+          "[pr_state_set] repository identity lookup failed for #{repo} through " \
+          "account #{account_id}: #{e.class}: #{e.message}"
+        )
+
+        nil
       end
     end
   end

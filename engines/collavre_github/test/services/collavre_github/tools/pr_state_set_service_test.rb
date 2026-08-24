@@ -24,7 +24,12 @@ module CollavreGithub
         Collavre::Current.user = nil
       end
 
-      def connect_github_account(repository_full_name: "owner/repo", creative: @creative)
+      def connect_github_account(
+        repository_full_name: "owner/repo",
+        creative: @creative,
+        repository_id: 101,
+        remote_repository_id: repository_id
+      )
         account = CollavreGithub::Account.create!(
           user: @user,
           github_uid: "12345",
@@ -35,8 +40,10 @@ module CollavreGithub
         CollavreGithub::RepositoryLink.create!(
           creative: creative,
           github_account: account,
-          repository_full_name: repository_full_name
+          repository_full_name: repository_full_name,
+          repository_id: repository_id
         )
+        stub_github_repository(repository_full_name.downcase, id: remote_repository_id) if remote_repository_id
         account
       end
 
@@ -154,6 +161,106 @@ module CollavreGithub
         assert_equal "merged", channel.reload.pr_state
       end
 
+      test "resync rejects a reused repository name whose stable id does not match" do
+        connect_github_account(repository_id: 111, remote_repository_id: 222)
+
+        result = PrStateSetService.new.call(topic_id: @topic.id, pr_url: PR_URL)
+
+        assert_equal false, result[:ok]
+        assert_includes result[:error], "No verified connected GitHub account"
+        assert_equal "open", @channel.reload.pr_state
+        assert_not_requested :get, "https://api.github.com/repos/owner/repo/pulls/77"
+      end
+
+      test "resync tries the next identity-valid account when the first cannot read the PR" do
+        child = Collavre::Creative.create!(user: @user, description: "child", parent: @creative)
+        topic = Collavre::Topic.create!(name: "Child T", creative: child, user: @user)
+        channel = GithubPrChannel.create!(
+          topic_id: topic.id,
+          config: { "repo_full_name" => "owner/repo", "pr_number" => 77, "pr_state" => "open" }
+        )
+        first_account = connect_github_account(remote_repository_id: nil)
+        second_user = users(:two)
+        second_account = CollavreGithub::Account.create!(
+          user: second_user,
+          github_uid: "67890",
+          login: "second-user",
+          name: "Second User",
+          token: "second-token"
+        )
+        CollavreGithub::RepositoryLink.create!(
+          creative: child,
+          github_account: second_account,
+          repository_full_name: "owner/repo",
+          repository_id: 101
+        )
+        identity = CollavreGithub::Client::RepositoryIdentity.new(id: 101, full_name: "owner/repo")
+        attempts = []
+        first_client = Object.new
+        first_client.define_singleton_method(:repository_identity) { |_repo| identity }
+        first_client.define_singleton_method(:pull_request_details) do |_repo, _number|
+          attempts << first_account.id
+          nil
+        end
+        second_client = Object.new
+        second_client.define_singleton_method(:repository_identity) { |_repo| identity }
+        second_client.define_singleton_method(:pull_request_details) do |_repo, _number|
+          attempts << second_account.id
+          Struct.new(:merged, :state).new(true, "closed")
+        end
+        clients = { first_account.id => first_client, second_account.id => second_client }
+
+        result = CollavreGithub::Client.stub(:new, ->(account) { clients.fetch(account.id) }) do
+          PrStateSetService.new.call(topic_id: topic.id, pr_url: PR_URL)
+        end
+
+        assert result[:ok]
+        assert_equal [ first_account.id, second_account.id ], attempts
+        assert_equal "merged", channel.reload.pr_state
+      end
+
+      test "resync skips an account whose repository identity lookup fails" do
+        child = Collavre::Creative.create!(user: @user, description: "child", parent: @creative)
+        topic = Collavre::Topic.create!(name: "Child T", creative: child, user: @user)
+        channel = GithubPrChannel.create!(
+          topic_id: topic.id,
+          config: { "repo_full_name" => "owner/repo", "pr_number" => 77, "pr_state" => "open" }
+        )
+        first_account = connect_github_account(remote_repository_id: nil)
+        second_user = users(:two)
+        second_account = CollavreGithub::Account.create!(
+          user: second_user,
+          github_uid: "67890",
+          login: "second-user",
+          name: "Second User",
+          token: "second-token"
+        )
+        CollavreGithub::RepositoryLink.create!(
+          creative: child,
+          github_account: second_account,
+          repository_full_name: "owner/repo",
+          repository_id: 101
+        )
+        identity = CollavreGithub::Client::RepositoryIdentity.new(id: 101, full_name: "owner/repo")
+        first_client = Object.new
+        first_client.define_singleton_method(:repository_identity) do |_repo|
+          raise Octokit::Unauthorized
+        end
+        second_client = Object.new
+        second_client.define_singleton_method(:repository_identity) { |_repo| identity }
+        second_client.define_singleton_method(:pull_request_details) do |_repo, _number|
+          Struct.new(:merged, :state).new(true, "closed")
+        end
+        clients = { first_account.id => first_client, second_account.id => second_client }
+
+        result = CollavreGithub::Client.stub(:new, ->(account) { clients.fetch(account.id) }) do
+          PrStateSetService.new.call(topic_id: topic.id, pr_url: PR_URL)
+        end
+
+        assert result[:ok]
+        assert_equal "merged", channel.reload.pr_state
+      end
+
       test "reports a usable fallback when no GitHub account is connected" do
         result = PrStateSetService.new.call(topic_id: @topic.id, pr_url: PR_URL)
 
@@ -222,11 +329,11 @@ module CollavreGithub
 
       # The tool's own authorization gate rejects a creative-less topic before
       # this runs, so the guard is exercised directly rather than through call.
-      test "resolves no GitHub client when the topic has no creative scope" do
+      test "resolves no verified GitHub clients when the topic has no creative scope" do
         service = PrStateSetService.new
 
         @topic.stub(:creative, nil) do
-          assert_nil service.send(:github_client_for, @topic, "owner/repo")
+          assert_empty service.send(:verified_github_clients_for, @topic, "owner/repo")
         end
       end
 
