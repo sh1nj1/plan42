@@ -715,7 +715,11 @@ export default class extends Controller {
     csrfFetch(`/channels/${id}`, {
       method: 'DELETE',
       headers: { Accept: 'application/json' },
-    }).catch((err) => console.warn('[presence] detach channel failed:', err))
+    })
+      .then((response) => {
+        if (response.ok) btn.closest('.channel-chip')?.remove()
+      })
+      .catch((err) => console.warn('[presence] detach channel failed:', err))
   }
 
   clearTypingTimers() {

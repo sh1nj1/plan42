@@ -448,6 +448,58 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     expect(scrollLeftValue).toBe(0)
   })
 
+  describe('detaching a channel', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    const appendChannelChip = () => {
+      controller.channelChipsTarget.innerHTML = `
+        <span class="channel-chip" data-channel-id="42">
+          Pull request
+          <button data-channel-id="42">Detach</button>
+        </span>
+      `
+      return controller.channelChipsTarget.querySelector('button')
+    }
+
+    test('removes the channel chip immediately after a successful request', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ ok: true, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(global.fetch).toHaveBeenCalledWith('/channels/42', expect.objectContaining({
+        method: 'DELETE',
+      }))
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).toBeNull()
+    })
+
+    test('keeps the channel chip when the request fails', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ ok: false, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+    })
+
+    test('keeps the channel chip when the request is interrupted', async () => {
+      const button = appendChannelChip()
+      jest.spyOn(console, 'warn').mockImplementation(() => {})
+      global.fetch.mockRejectedValueOnce(new Error('offline'))
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+      expect(console.warn).toHaveBeenCalledWith(
+        '[presence] detach channel failed:',
+        expect.any(Error),
+      )
+    })
+  })
+
   describe('agent task status poll', () => {
     const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
