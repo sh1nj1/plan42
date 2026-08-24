@@ -716,9 +716,7 @@ export default class extends Controller {
       method: 'DELETE',
       headers: { Accept: 'application/json' },
     })
-      .then((response) => {
-        if (response.ok) btn.closest('.channel-chip')?.remove()
-      })
+      .then((response) => response.status === 204 && !response.redirected && btn.closest('.channel-chip')?.remove())
       .catch((err) => console.warn('[presence] detach channel failed:', err))
   }
 

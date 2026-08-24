@@ -463,7 +463,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
 
     test('removes the channel chip immediately after a successful request', async () => {
       const button = appendChannelChip()
-      global.fetch.mockResolvedValueOnce({ ok: true, headers: new Headers() })
+      global.fetch.mockResolvedValueOnce({ status: 204, redirected: false, headers: new Headers() })
 
       controller.detachChannel({ currentTarget: button })
       await flush()
@@ -476,7 +476,27 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
 
     test('keeps the channel chip when the request fails', async () => {
       const button = appendChannelChip()
-      global.fetch.mockResolvedValueOnce({ ok: false, headers: new Headers() })
+      global.fetch.mockResolvedValueOnce({ status: 500, redirected: false, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+    })
+
+    test('keeps the channel chip when the request is redirected', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ status: 200, redirected: true, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+    })
+
+    test('keeps the channel chip for an unexpected non-redirect response', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ status: 200, redirected: false, headers: new Headers() })
 
       controller.detachChannel({ currentTarget: button })
       await flush()
