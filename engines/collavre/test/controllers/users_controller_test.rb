@@ -526,6 +526,16 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_select "small", text: description, count: 0
   end
 
+  test "profile opens agent gateway settings outside Turbo navigation" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo='false']", collavre.agent_gateways_path,
+                  text: I18n.t("collavre.agent_gateways.manage")
+  end
+
   test "admin link appears in profile for system admin" do
     sign_in_as(@admin, password: "password")
     get collavre.user_path(@admin)

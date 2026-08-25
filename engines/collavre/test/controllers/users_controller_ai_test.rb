@@ -16,6 +16,8 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", create_ai_users_path
     assert_select "input[name='llm_model'][maxlength=?]", Collavre::LlmModel::MAX_NAME_LENGTH.to_s
     assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
+    assert_select "a[href=?][data-turbo='false']", agent_gateways_path,
+                  text: I18n.t("collavre.users.new_ai.manage_gateways")
     assert_select "[data-controller='llm-model']" do |nodes|
       models = JSON.parse(nodes.first["data-llm-model-models-value"])
       assert_includes models, {

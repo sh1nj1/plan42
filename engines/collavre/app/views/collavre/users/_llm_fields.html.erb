@@ -35,7 +35,8 @@
                     data: { agent_vendor_target: "gatewaySelect" } %>
     <small class="form-text text-muted">
       <%= t("collavre.users.new_ai.agent_gateway_help") %>
-      <%= link_to t("collavre.users.new_ai.manage_gateways"), collavre.agent_gateways_path %>
+      <%= link_to t("collavre.users.new_ai.manage_gateways"), collavre.agent_gateways_path,
+                  data: { turbo: false } %>
     </small>
     <% if selected_gateway %>
       <div class="alert alert-info mt-2">
