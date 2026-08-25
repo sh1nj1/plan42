@@ -89,6 +89,68 @@ class CreativeFilterNavigationTest < ApplicationSystemTestCase
     assert_selector "turbo-frame#creative-workspace-content"
   end
 
+  # The pill's selected surface must live on the ::before overlay and cross-fade
+  # with opacity. Animating `background` on the button itself re-rasterises its
+  # rounded corners on every frame, which is what produced the folded-corner
+  # artifact on mobile once the filter started toggling `.active` in place
+  # instead of reloading the page.
+  def computed(element, property, pseudo = nil)
+    target = pseudo ? "'#{pseudo}'" : "null"
+    page.evaluate_script(
+      "getComputedStyle(arguments[0], #{target}).getPropertyValue('#{property}').trim()",
+      element
+    )
+  end
+
+  def assert_eventually_equal(expected, element, property, pseudo = nil)
+    deadline = Time.current + Capybara.default_max_wait_time
+    actual = computed(element, property, pseudo)
+    while actual != expected && Time.current < deadline
+      sleep 0.05
+      actual = computed(element, property, pseudo)
+    end
+    assert_equal expected, actual
+  end
+
+  TRANSPARENT = "rgba(0, 0, 0, 0)".freeze
+
+  test "chat filter draws its selected surface on an opacity overlay" do
+    visit collavre.creatives_path
+    button = find(COMMENT_BUTTON)
+
+    assert_equal TRANSPARENT, computed(button, "background-color")
+    assert_equal "0", computed(button, "opacity", "::before")
+    assert_equal "opacity", computed(button, "transition-property", "::before")
+    refute_includes computed(button, "transition-property"), "background"
+    refute_equal TRANSPARENT, computed(button, "background-color", "::before")
+
+    button.click
+    assert_selector "#{COMMENT_BUTTON}.active"
+
+    assert_eventually_equal "1", button, "opacity", "::before"
+    assert_equal TRANSPARENT, computed(button, "background-color"),
+                 "the active button must stay transparent so the overlay is the only surface"
+  end
+
+  test "search trigger draws its selected surface on an opacity overlay" do
+    visit collavre.creatives_path
+    trigger = find(".search-popup-trigger")
+
+    assert_equal TRANSPARENT, computed(trigger, "background-color")
+    assert_equal "0", computed(trigger, "opacity", "::before")
+    assert_equal "opacity", computed(trigger, "transition-property", "::before")
+    refute_includes computed(trigger, "transition-property"), "background"
+
+    trigger.click
+    fill_in "search", with: "Root"
+    find("#search").send_keys(:enter)
+
+    assert_selector ".search-popup-trigger.active"
+    trigger = find(".search-popup-trigger")
+    assert_eventually_equal "1", trigger, "opacity", "::before"
+    assert_equal TRANSPARENT, computed(trigger, "background-color")
+  end
+
   test "tree navigation clears persistent search controls with the filter URL" do
     visit collavre.creatives_path
     find(".search-popup-trigger").click
