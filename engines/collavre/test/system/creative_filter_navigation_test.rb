@@ -114,6 +114,18 @@ class CreativeFilterNavigationTest < ApplicationSystemTestCase
 
   TRANSPARENT = "rgba(0, 0, 0, 0)".freeze
 
+  # Selenium parks the pointer wherever it last clicked, so `:hover::before`
+  # holds the overlay at opacity 1 on its own. Asserting the active surface
+  # while the pill is still hovered proves nothing -- the assertion would pass
+  # with `.active::before` deleted, even though keyboard activation and a
+  # filter restored from the URL would then render no selected surface. Park
+  # the pointer in the corner and confirm the pill really lost `:hover`.
+  def unhover(element)
+    page.driver.browser.action.move_to_location(0, 0).perform
+    refute page.evaluate_script("arguments[0].matches(':hover')", element),
+           "pointer still rests on the pill, so :hover would mask .active"
+  end
+
   test "chat filter draws its selected surface on an opacity overlay" do
     visit collavre.creatives_path
     button = find(COMMENT_BUTTON)
@@ -126,6 +138,8 @@ class CreativeFilterNavigationTest < ApplicationSystemTestCase
 
     button.click
     assert_selector "#{COMMENT_BUTTON}.active"
+    button = find(COMMENT_BUTTON)
+    unhover(button)
 
     assert_eventually_equal "1", button, "opacity", "::before"
     assert_equal TRANSPARENT, computed(button, "background-color"),
@@ -147,6 +161,8 @@ class CreativeFilterNavigationTest < ApplicationSystemTestCase
 
     assert_selector ".search-popup-trigger.active"
     trigger = find(".search-popup-trigger")
+    unhover(trigger)
+
     assert_eventually_equal "1", trigger, "opacity", "::before"
     assert_equal TRANSPARENT, computed(trigger, "background-color")
   end
