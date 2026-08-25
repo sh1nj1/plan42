@@ -177,7 +177,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "Renamed inactive proxy agent", @ai_user.reload.name
     assert_equal gateway, @ai_user.agent_gateway
   end
@@ -239,7 +239,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "This user is not an AI agent.", flash[:alert]
   end
 
-  test "should update ai user" do
+  test "should update ai user and redirect to contacts" do
     patch update_ai_user_url(@ai_user), params: {
       user: {
         name: "Updated Bot Name",
@@ -248,7 +248,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         searchable: true
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal "Updated Bot Name", @ai_user.name
     assert_equal "New prompt", @ai_user.system_prompt
@@ -378,7 +378,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { name: "Updated Bot Name", llm_api_key: "" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "existing-secret-key", @ai_user.reload.llm_api_key
   end
 
@@ -389,7 +389,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { llm_api_key: "", clear_llm_api_key: "1" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_nil @ai_user.reload.llm_api_key
   end
 
@@ -413,7 +413,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { llm_api_key: "replacement-secret-key" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "replacement-secret-key", @ai_user.reload.llm_api_key
   end
 
@@ -440,7 +440,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         routing_expression: 'chat.content contains "help"'
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal 'chat.content contains "help"', @ai_user.routing_expression
   end
@@ -451,7 +451,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         routing_expression: 'event_name == "comment_created"'
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal 'event_name == "comment_created"', @ai_user.routing_expression
   end

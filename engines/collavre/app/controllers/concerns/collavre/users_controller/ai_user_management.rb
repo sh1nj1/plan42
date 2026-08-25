@@ -55,7 +55,7 @@ module Collavre
       end
 
       if saved
-        redirect_to user_path(Current.user, tab: "contacts"), notice: I18n.t("collavre.users.create_ai.success")
+        redirect_to current_user_contacts_path, notice: I18n.t("collavre.users.create_ai.success")
       else
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         @available_tools = load_available_tools
@@ -106,7 +106,7 @@ module Collavre
       end
 
       if updated
-        redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
+        redirect_to current_user_contacts_path, notice: I18n.t("collavre.users.update_ai.success")
       else
         @available_tools = load_available_tools
         @llm_models = Collavre::LlmModel.suggestions
@@ -117,6 +117,10 @@ module Collavre
     end
 
     private
+
+    def current_user_contacts_path
+      user_path(Current.user, tab: "contacts")
+    end
 
     def remember_llm_model(user)
       Collavre::LlmModel.remember!(
