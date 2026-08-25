@@ -61,6 +61,18 @@ module Collavre
       value.is_a?(Proc) ? instance_exec(&value) : value
     end
 
+    # Destination for the Home button.
+    #
+    # Authenticated users are sent to the configured home page directly instead
+    # of through "/". "/" means "app launch" and is rewritten to the last
+    # visited Creative, which made Home a no-op for anyone who had opened one.
+    # Guests keep "/" so the middleware rewrite still applies.
+    def home_navigation_path
+      return main_app.root_path unless authenticated?
+
+      HomePagePath.absolute(script_name: request.script_name) || main_app.root_path
+    end
+
     private
 
     def render_nav_button(item)

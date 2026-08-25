@@ -141,12 +141,12 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "authentication submission uses a filtered secret parameter" do
+  test "authentication submission forwards an approved custom provider endpoint and uses a filtered secret parameter" do
     credential = "provider-secret-that-must-not-be-logged"
     received = nil
     fake_client = Object.new
-    fake_client.define_singleton_method(:submit_auth_session) do |engine, session_id, auth_secret|
-      received = [ engine, session_id, auth_secret ]
+    fake_client.define_singleton_method(:submit_auth_session) do |engine, session_id, auth_secret, base_url:|
+      received = [ engine, session_id, auth_secret, base_url ]
       { "status" => "authorized" }
     end
     sign_in_as(@owner, password: "password")
@@ -154,14 +154,65 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
     Collavre::CliProxy::Client.stub(:new, fake_client) do
       post collavre.agent_connection_auth_session_path(
         user_id: @agent.id,
-        engine: "codex",
+        engine: "codex_custom",
         session_id: "session-1"
-      ), params: { auth_secret: credential }, as: :json
+      ), params: { auth_secret: credential, base_url: "https://openrouter.ai/api/v1" }, as: :json
     end
 
     assert_response :success
-    assert_equal [ "codex", "session-1", credential ], received
+    assert_equal [ "codex_custom", "session-1", credential, "https://openrouter.ai/api/v1" ], received
     assert_equal "[FILTERED]", request.filtered_parameters.fetch("auth_secret")
     refute_includes request.filtered_parameters.inspect, credential
+  end
+
+  test "authentication submission blocks a custom provider endpoint on a private address" do
+    sign_in_as(@owner, password: "password")
+
+    post collavre.agent_connection_auth_session_path(
+      user_id: @agent.id,
+      engine: "codex_custom",
+      session_id: "session-1"
+    ), params: { auth_secret: "provider-secret", base_url: "https://127.0.0.1:3000" }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal "insecure_base_url", response.parsed_body.dig("error", "code")
+  end
+
+  test "system administrator gateway owner may submit a loopback custom provider endpoint" do
+    @gateway.update!(owner: users(:one), base_url: "http://127.0.0.1:3456")
+    @agent.update!(created_by_id: users(:one).id)
+    received = nil
+    fake_client = Object.new
+    fake_client.define_singleton_method(:submit_auth_session) do |engine, session_id, auth_secret, base_url:|
+      received = [ engine, session_id, auth_secret, base_url ]
+      { "status" => "authorized" }
+    end
+    sign_in_as(users(:one), password: "password")
+
+    Collavre::CliProxy::Client.stub(:new, fake_client) do
+      post collavre.agent_connection_auth_session_path(
+        user_id: @agent.id,
+        engine: "codex_custom",
+        session_id: "session-1"
+      ), params: { auth_secret: "provider-secret", base_url: "http://127.0.0.1:4000/v1" }, as: :json
+    end
+
+    assert_response :success
+    assert_equal [ "codex_custom", "session-1", "provider-secret", "http://127.0.0.1:4000/v1" ], received
+  end
+
+  test "non-admin contact cannot submit a loopback provider endpoint to an admin-owned gateway" do
+    @gateway.update!(owner: users(:one), base_url: "http://127.0.0.1:3456")
+    @agent.update!(created_by_id: users(:one).id)
+    sign_in_as(@other, password: "password")
+
+    post collavre.agent_connection_auth_session_path(
+      user_id: @agent.id,
+      engine: "codex_custom",
+      session_id: "session-1"
+    ), params: { auth_secret: "provider-secret", base_url: "https://127.0.0.1:4000/v1" }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal "insecure_base_url", response.parsed_body.dig("error", "code")
   end
 end

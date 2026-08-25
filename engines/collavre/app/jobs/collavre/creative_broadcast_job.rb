@@ -57,7 +57,7 @@ module Collavre
 
       # Batch-load all linked creatives for remapping (avoids N+1)
       origin_ids_to_remap = [ data[:parent_id], data[:after_id], data[:previous_sibling_id] ].compact
-      ancestor_origin_ids = (data[:ancestors] || []).map { |a| a[:id] }.compact
+      ancestor_origin_ids = (data[:ancestors] || []).filter_map { |ancestor| ancestor[:origin_id] || ancestor[:id] }
       all_origin_ids = (origin_ids_to_remap + ancestor_origin_ids).uniq
 
       linked_by_user = {}
@@ -67,9 +67,12 @@ module Collavre
           linked_by_user[linked.user_id][linked.origin_id] = linked.id
         end
       end
+      ancestor_progress_controls = build_ancestor_progress_controls(
+        data[:ancestors], target_users, linked_by_user
+      )
 
       target_users.each do |target_user|
-        user_data = data.dup
+        user_data = data.deep_dup
         user_map = linked_by_user[target_user.id] || {}
 
         # Add linked_id
@@ -86,16 +89,18 @@ module Collavre
         # Remap ancestor IDs
         if user_data[:ancestors].present?
           user_data[:ancestors] = user_data[:ancestors].map do |anc|
-            mapped_id = user_map[anc[:id]]
-            mapped_id ? anc.merge(id: mapped_id, origin_id: anc[:id]) : anc
+            origin_id = anc[:origin_id] || anc[:id]
+            mapped_id = user_map[origin_id]
+            mapped_id ? anc.merge(id: mapped_id, origin_id: origin_id) : anc
           end
         end
 
         # Per-user can_write permission
-        user_data[:can_write] = creative.has_permission?(target_user, :write)
+        user_data[:can_write] = creative.has_permission?(target_user, :write) && !creative.effective_origin.read_only_source?
 
         # Per-user progress text
         creative.send(:add_progress_text!, user_data, target_user)
+        add_ancestor_progress_controls!(user_data[:ancestors], target_user, ancestor_progress_controls)
 
         # For created action, render per-user progress_html (includes chat button,
         # badge with turbo-cable-stream-source subscription, and progress span).
@@ -105,6 +110,10 @@ module Collavre
           # target_user already passed find_broadcast_users permission check,
           # so we can skip the expensive permission_via_ancestors walk.
           user_data[:templates][:progress_html] = render_progress_html(creative, target_user, skip_permission_check: true)
+        elsif action == "updated"
+          # Keep unrelated row-end markup (such as comment badges) intact while
+          # replacing the progress control with the recipient-specific version.
+          user_data[:progress_control_html] = render_progress_control_html(creative, target_user)
         end
 
         json_payload = { action: action.to_s, creative: user_data }.to_json
@@ -128,7 +137,7 @@ module Collavre
       linked_map = (options[:destroy_linked_map] || {}).transform_keys(&:to_i)
 
       # Batch-load linked creatives for ancestor remapping
-      ancestor_origin_ids = (payload[:ancestors] || []).map { |a| a[:id] }.compact
+      ancestor_origin_ids = (payload[:ancestors] || []).filter_map { |ancestor| ancestor[:origin_id] || ancestor[:id] }
       all_origin_ids = [ payload[:parent_id], *ancestor_origin_ids ].compact.uniq
 
       linked_by_user = {}
@@ -138,9 +147,12 @@ module Collavre
           linked_by_user[linked.user_id][linked.origin_id] = linked.id
         end
       end
+      ancestor_progress_controls = build_ancestor_progress_controls(
+        payload[:ancestors], users, linked_by_user
+      )
 
       users.each do |target_user|
-        user_data = payload.dup
+        user_data = payload.deep_dup
         user_map = linked_by_user[target_user.id] || {}
 
         user_data[:linked_id] = linked_map[target_user.id] if linked_map[target_user.id]
@@ -148,10 +160,12 @@ module Collavre
 
         if user_data[:ancestors].present?
           user_data[:ancestors] = user_data[:ancestors].map do |anc|
-            mapped_id = user_map[anc[:id]]
-            mapped_id ? anc.merge(id: mapped_id, origin_id: anc[:id]) : anc
+            origin_id = anc[:origin_id] || anc[:id]
+            mapped_id = user_map[origin_id]
+            mapped_id ? anc.merge(id: mapped_id, origin_id: origin_id) : anc
           end
         end
+        add_ancestor_progress_controls!(user_data[:ancestors], target_user, ancestor_progress_controls)
 
         json_payload = { action: "destroyed", creative: user_data }.to_json
         Turbo::StreamsChannel.broadcast_action_to(
@@ -169,49 +183,148 @@ module Collavre
     # Includes:
     # - turbo-cable-stream-source (per-user subscription for badge updates)
     # - comment button (hidden via no-comments class — 0 comments initially)
-    # - progress span
+    # - the same progress control used by normal server rendering
     def render_progress_html(creative, user, skip_permission_check: false)
-      origin = creative.effective_origin
-      progress = creative.progress || 0
-      pct = (progress * 100).round
+      I18n.with_locale(user.locale.presence || I18n.default_locale) do
+        origin = creative.effective_origin
+        progress_part = render_progress_control_html(creative, user)
 
-      # Progress span (comes first, matching helper output order)
-      css_class = pct >= 100 ? "creative-progress-complete" : "creative-progress-incomplete"
-      completion_mark = Collavre::SystemSetting.completion_mark
-      display_text = pct >= 100 && !completion_mark.nil? ? completion_mark : "#{pct}%"
-      progress_span = %(<span class="#{css_class}">#{display_text}</span>)
+        # Comment part — only render if user has feedback permission (matching helper behavior)
+        # When skip_permission_check is true, the user was already verified by find_broadcast_users
+        # (which checks :read permission on target + ancestors). Feedback permission is a subset
+        # of read permission in practice, so we can safely render the comment button.
+        comment_part = ""
+        has_feedback = skip_permission_check ||
+                       creative.has_permission?(user, :feedback) ||
+                       permission_via_ancestors(creative, user, :feedback)
+        if has_feedback
+          # Generate signed stream name for turbo-cable-stream-source
+          stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
+          stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
 
-      # Comment part — only render if user has feedback permission (matching helper behavior)
-      # When skip_permission_check is true, the user was already verified by find_broadcast_users
-      # (which checks :read permission on target + ancestors). Feedback permission is a subset
-      # of read permission in practice, so we can safely render the comment button.
-      comment_part = ""
-      has_feedback = skip_permission_check ||
-                     creative.has_permission?(user, :feedback) ||
-                     permission_via_ancestors(creative, user, :feedback)
-      if has_feedback
-        # Generate signed stream name for turbo-cable-stream-source
-        stream_name = Turbo::StreamsChannel.signed_stream_name([ user, origin, :comment_badge ])
-        stream_tag = %(<turbo-cable-stream-source channel="Turbo::StreamsChannel" signed-stream-name="#{stream_name}"></turbo-cable-stream-source>)
+          # Badge (no comments yet — hidden)
+          badge_id = "comment-badge-#{origin.id}"
+          badge = %(<span id="#{badge_id}" class="badge" style="display:none" data-count="0" data-controller="comment-badge" data-comment-badge-has-comments-value="false"></span>)
 
-        # Badge (no comments yet — hidden)
-        badge_id = "comment-badge-#{origin.id}"
-        badge = %(<span id="#{badge_id}" class="badge" style="display:none" data-count="0" data-controller="comment-badge" data-comment-badge-has-comments-value="false"></span>)
+          # Comment button — no-comments hides via visibility:hidden (0 comments initially)
+          comment_icon = read_svg("comment.svg", class: "comment-icon")
+          btn_classes = "comments-btn creative-action-btn no-comments"
+          comment_btn = %(<button name="show-comments-btn" class="#{btn_classes}" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
+          comment_btn += %(#{comment_icon}#{badge}</button>)
 
-        # Comment button — no-comments hides via visibility:hidden (0 comments initially)
-        comment_icon = read_svg("comment.svg", class: "comment-icon")
-        btn_classes = "comments-btn creative-action-btn no-comments"
-        comment_btn = %(<button name="show-comments-btn" class="#{btn_classes}" data-creative-id="#{creative.id}" data-can-comment="true" data-creative-snippet="#{ERB::Util.html_escape(creative.creative_snippet)}">)
-        comment_btn += %(#{comment_icon}#{badge}</button>)
+          comment_part = "#{stream_tag}#{comment_btn}"
+        end
 
-        comment_part = "#{stream_tag}#{comment_btn}"
+        # Wrap in creative-row-end div — order: progress, then comment (matching helper)
+        %(<div class="creative-row-end">#{progress_part}#{comment_part}</div>)
       end
-
-      # Wrap in creative-row-end div — order: progress, then comment (matching helper)
-      %(<div class="creative-row-end">#{progress_span}#{comment_part}</div>)
     rescue StandardError => e
       Rails.logger.warn "[CreativeBroadcastJob] render_progress_html failed for creative##{creative.id} user##{user.id}: #{e.message}"
       nil
+    end
+
+    def add_ancestor_progress_controls!(ancestors, user, controls_by_user)
+      ancestors&.each do |ancestor|
+        origin_id = ancestor[:origin_id] || ancestor[:id]
+        control = controls_by_user.dig(user.id, origin_id)
+        next unless control
+
+        ancestor.merge!(control)
+      end
+    end
+
+    # Build every recipient's ancestor controls in a bounded number of queries.
+    # The row shown to a recipient may be a linked shell, while its child state
+    # and permission resolve through the effective origin.
+    def build_ancestor_progress_controls(ancestors, users, linked_by_user)
+      origin_ids = ancestors.to_a.filter_map { |ancestor| ancestor[:origin_id] || ancestor[:id] }.uniq
+      return {} if origin_ids.empty?
+
+      effective_ids_by_origin = Creatives::EffectiveCreativeResolution.effective_creative_ids(origin_ids)
+      effective_ids = effective_ids_by_origin.values.uniq
+      displayed_ids = linked_by_user.values.flat_map(&:values)
+      creatives_by_id = Creative.where(id: (origin_ids + effective_ids + displayed_ids).uniq).index_by(&:id)
+      effective_creatives = effective_ids.index_with { |id| creatives_by_id[id] }.compact
+      has_visible_children_by_user = visible_children_by_user(effective_creatives, users)
+      writable_by_user = batch_write_permissions(effective_creatives, users)
+
+      users.each_with_object({}) do |user, controls_by_user|
+        user_map = linked_by_user[user.id] || {}
+        controls_by_user[user.id] = origin_ids.each_with_object({}) do |origin_id, controls|
+          effective = effective_creatives[effective_ids_by_origin[origin_id]]
+          displayed = creatives_by_id[user_map[origin_id] || origin_id]
+          next unless effective && displayed
+
+          progress = effective.progress || 0
+          controls[origin_id] = {
+            progress: progress,
+            progress_text: effective.send(:format_progress_text, progress, user),
+            progress_html: render_progress_control_html(
+              displayed,
+              user,
+              effective: effective,
+              progress: progress,
+              has_children: has_visible_children_by_user.fetch(user.id, Set.new).include?(effective.id),
+              can_write: writable_by_user.dig(user.id, effective.id) && !effective.read_only_source?
+            )
+          }
+        end
+      end
+    end
+
+    # Match ChildrenIndex's default tree semantics: archived children and
+    # children the recipient cannot read do not make a visible row a rollup.
+    # Candidate children are loaded once, then visibility is resolved in a
+    # bounded batch per recipient rather than once per ancestor.
+    def visible_children_by_user(effective_creatives, users)
+      child_rows = Creative.where(parent_id: effective_creatives.keys, archived_at: nil).pluck(:id, :parent_id)
+      child_ids = child_rows.map(&:first)
+
+      users.each_with_object({}) do |user, result|
+        readable_ids = Creatives::PermissionFilter.new(user: user).readable_ids(child_ids).to_set
+        result[user.id] = child_rows.each_with_object(Set.new) do |(child_id, parent_id), parent_ids|
+          parent_ids << parent_id if readable_ids.include?(child_id)
+        end
+      end
+    end
+
+    def batch_write_permissions(effective_creatives, users)
+      effective_ids = effective_creatives.keys
+      return {} if effective_ids.empty?
+
+      user_ids = users.map(&:id)
+      permission_rows = CreativeSharesCache.where(creative_id: effective_ids, user_id: [ nil, *user_ids ])
+                                           .pluck(:creative_id, :user_id, :permission)
+      public_permissions = {}
+      user_permissions = Hash.new { |hash, key| hash[key] = {} }
+      permission_rows.each do |creative_id, user_id, permission|
+        if user_id.nil?
+          public_permissions[creative_id] = permission
+        else
+          user_permissions[user_id][creative_id] = permission
+        end
+      end
+
+      users.each_with_object({}) do |user, permissions_by_user|
+        permissions_by_user[user.id] = effective_ids.index_with do |creative_id|
+          effective = effective_creatives.fetch(creative_id)
+          permission = user_permissions[user.id].fetch(creative_id, public_permissions[creative_id])
+          permission_rank = CreativeShare.permissions.fetch(permission.to_s, 0)
+          effective.user_id == user.id || permission_rank >= CreativeShare.permissions[:write]
+        end
+      end
+    end
+
+    def render_progress_control_html(creative, user, effective: nil, progress: nil, has_children: nil, can_write: nil)
+      I18n.with_locale(user.locale.presence || I18n.default_locale) do
+        effective ||= creative.effective_origin
+        Collavre::ApplicationController.helpers.render_progress_control(
+          creative,
+          progress || effective.progress || 0,
+          has_children: has_children.nil? ? effective.children.exists? : has_children,
+          can_write: (can_write.nil? ? creative.has_permission?(user, :write) : can_write) && !effective.read_only_source?
+        )
+      end
     end
 
     # Check permission via ancestor chain (fallback when creative_shares_caches is not yet populated)

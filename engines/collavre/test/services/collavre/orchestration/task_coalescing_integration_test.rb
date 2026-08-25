@@ -478,7 +478,7 @@ module Collavre
         locked_before_fold = nil
         fold_depth = nil
 
-        TopicSlot.stub(:lock!, ->(topic_id, _creative_id = nil) { locked << topic_id; nil }) do
+        TopicSlot.stub(:lock!, ->(topic_id, _creative_id = nil) { locked << topic_id; @topic }) do
           TaskCoalescer.stub(:coalesce!, ->(_task, **_opts) {
             locked_before_fold ||= locked.dup
             fold_depth ||= Task.connection.open_transactions

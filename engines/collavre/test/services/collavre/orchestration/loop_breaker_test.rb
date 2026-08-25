@@ -90,6 +90,25 @@ module Collavre
         assert result.safe?
       end
 
+      test "checks a prospective interaction without recording it" do
+        create_policy(@enabled_config)
+        resolver = PolicyResolver.new(@context)
+        breaker = LoopBreaker.new(@context, policy_resolver: resolver)
+        breaker.record_interaction(@agent1.id, @agent2.id, @creative.id)
+        breaker.record_interaction(@agent2.id, @agent1.id, @creative.id)
+        breaker.record_interaction(@agent1.id, @agent2.id, @creative.id)
+
+        result = breaker.check(
+          prospective_interaction: {
+            from_agent_id: @agent2.id, to_agent_id: @agent1.id, creative_id: @creative.id
+          }
+        )
+
+        assert result.should_break?
+        assert_equal :ping_pong, result.reason
+        assert breaker.check.safe?
+      end
+
       test "detects creative retry exceeded" do
         policy = create_policy(@enabled_config)
         resolver = PolicyResolver.new(@context)

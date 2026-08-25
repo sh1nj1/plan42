@@ -9,10 +9,18 @@ jest.unstable_mockModule('@hotwired/turbo-rails', () => ({ Turbo: fakeTurbo }))
 jest.unstable_mockModule('../../creatives/tree_renderer', () => ({
   createRow: jest.fn(),
   applyRowProperties: jest.fn(),
+  replaceProgressControl: jest.fn((_html, controlHtml) => controlHtml),
+  updateProgressHtml: jest.fn((html, progress) => progress === 1
+    ? html.replace('class="progress-toggle-checkbox"', 'class="progress-toggle-checkbox" checked="checked"')
+      .replace('data-current-progress="0"', 'data-current-progress="1"')
+      .replace('data-new-progress="1"', 'data-new-progress="0"')
+      .replace('title="Mark complete"', 'title="Mark incomplete"')
+    : html),
 }))
 
 await import('../turbo_stream_actions')
 const { createRow } = await import('../../creatives/tree_renderer')
+const { updateProgressForRow } = await import('../turbo_stream_actions')
 
 const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>'
 
@@ -118,4 +126,65 @@ test('remote destroyed streams keep the placeholder hidden while rows remain', (
 
   expect(container.querySelector('creative-tree-row[creative-id="8"]')).not.toBeNull()
   expect(container.querySelector('[data-creatives-empty-state]').hidden).toBe(true)
+})
+
+test('remote progress updates keep checkbox controls actionable', () => {
+  const row = {
+    dataset: {},
+    progressHtml: '<span class="progress-toggle-wrap" data-progress-toggle="true" data-current-progress="0" data-new-progress="1" data-mark-complete="Mark complete" data-mark-incomplete="Mark incomplete" title="Mark complete"><input type="checkbox" class="progress-toggle-checkbox"></span>',
+  }
+
+  updateProgressForRow(row, 1, '100%')
+
+  expect(row.progressHtml).toContain('checked="checked"')
+  expect(row.progressHtml).toContain('data-current-progress="1"')
+  expect(row.progressHtml).toContain('data-new-progress="0"')
+  expect(row.progressHtml).toContain('title="Mark incomplete"')
+})
+
+test('remote child creation changes the parent checkbox into its rollup control', () => {
+  document.body.innerHTML = '<div id="creatives"><creative-tree-row creative-id="42"></creative-tree-row></div>'
+  const parent = document.querySelector('creative-tree-row[creative-id="42"]')
+  parent.progressHtml = '<span data-progress-toggle="true"><input class="progress-toggle-checkbox"></span>'
+  parent.dataset.progressHtml = parent.progressHtml
+
+  dispatchCreativeTreeStream({
+    action: 'created',
+    creative: {
+      id: 7,
+      parent_id: 42,
+      level: 2,
+      sequence: 0,
+      ancestors: [{ id: 42, progress: 0.5, progress_html: '<span class="creative-progress-incomplete">50%</span>' }],
+    },
+  })
+
+  expect(parent.hasChildren).toBe(true)
+  expect(parent.progressHtml).toBe('<span class="creative-progress-incomplete">50%</span>')
+})
+
+test('remote child deletion restores the parent leaf checkbox control', () => {
+  document.body.innerHTML = `
+    <div id="creatives">
+      <creative-tree-row creative-id="42" has-children></creative-tree-row>
+      <div id="creative-children-42"><creative-tree-row creative-id="7"></creative-tree-row></div>
+    </div>
+  `
+  const parent = document.querySelector('creative-tree-row[creative-id="42"]')
+  parent.hasChildren = true
+  parent.progressHtml = '<span class="creative-progress-incomplete">0%</span>'
+  parent.dataset.progressHtml = parent.progressHtml
+  const checkbox = '<span data-progress-toggle="true"><input class="progress-toggle-checkbox"></span>'
+
+  dispatchCreativeTreeStream({
+    action: 'destroyed',
+    creative: {
+      id: 7,
+      parent_id: 42,
+      ancestors: [{ id: 42, progress: 0, progress_html: checkbox }],
+    },
+  })
+
+  expect(parent.hasChildren).toBe(false)
+  expect(parent.progressHtml).toBe(checkbox)
 })

@@ -26,32 +26,18 @@ module Collavre
         # Guard: same offline-session check as the agent_id branch below.
         # Queued Claude Channel tasks resumed via Orchestration::AgentOrchestrator
         # .dequeue_next_for_topic enter this branch as AiAgentJob.perform_later(task).
-        # If AgentChannel#unsubscribed cleared routing_expression while the
+        # If AgentChannel#unsubscribed removed the last presence row while the
         # task was queued (WS drop without DELETE /agent/:id, e.g. SIGKILL or
         # network blip past the reconnect grace), and another completion later
         # drains the queue, this task would otherwise be promoted to running →
         # delegated and broadcast to a clientless agent:user:<id> stream —
         # held until stuck recovery.
-        if agent.claude_channel_agent? && agent.routing_expression.blank?
+        if agent.claude_channel_agent? && !agent.claude_channel_online?
           Rails.logger.info(
             "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
-            "session offline (routing_expression blank)"
+            "session offline (no live presence)"
           )
-          # Workflow subtasks created by WorkflowExecutor carry parent_task_id and
-          # no topic. If we only cancel the child and return, the parent workflow
-          # stays "running" with its current/pending creative state forever — no
-          # rescue path runs because we never raise. Mirror the StandardError
-          # rescue below: fail the child and notify the parent so the workflow
-          # transitions to "failed" with a failure_reason.
-          if task.parent_task_id.present?
-            task.update!(status: "failed")
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task,
-              error_message: "Claude Channel session offline before dispatch"
-            )
-          else
-            task.update!(status: "cancelled")
-          end
+          task.update!(status: "cancelled")
           if task.trigger_event_payload&.key?("topic")
             Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
           end
@@ -89,15 +75,7 @@ module Collavre
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
             "is now assigned to another agent (agent=#{agent.id})"
           )
-          if task.parent_task_id.present?
-            task.update!(status: "failed")
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task,
-              error_message: "Topic reassigned to another agent before dispatch"
-            )
-          else
-            task.update!(status: "cancelled")
-          end
+          task.update!(status: "cancelled")
           # A pending_approval task kept its slot across the pause (the
           # ApprovalPendingError rescue sets should_release = false), and this
           # early return skips the ensure block that would give it back, so
@@ -115,17 +93,17 @@ module Collavre
 
         # Guard: skip if the Claude Channel session has unregistered (or its WS
         # dropped) during the window between Scheduler enqueue and this job
-        # firing. AgentsController#destroy / AgentChannel#unsubscribed clear
-        # routing_expression on the per-session ai_user, so a blank value here
-        # means there is no live MCP client to receive the dispatch. Without
+        # firing. AgentsController#destroy / AgentChannel#unsubscribed remove
+        # the last presence row, so no live presence here means there is no MCP
+        # client to receive the dispatch. Without
         # this guard, a :delayed (busy / rate-limited) enqueue from
         # Scheduler#evaluate would materialize a fresh Task, flip it to
         # "delegated", and broadcast to a clientless agent:user:<id> stream
         # — holding the topic/agent slot until stuck recovery.
-        if agent.claude_channel_agent? && agent.routing_expression.blank?
+        if agent.claude_channel_agent? && !agent.claude_channel_online?
           Rails.logger.info(
             "[AiAgentJob] Skipping Claude Channel job for agent #{agent.id}: " \
-            "session offline (routing_expression blank, event=#{event_name})"
+            "session offline (no live presence, event=#{event_name})"
           )
           return
         end
@@ -180,15 +158,6 @@ module Collavre
         # in a topic limited to one. Re-check at the moment the row is created,
         # where the answer is authoritative, and defer into the queue instead.
         task = admit_or_defer!(agent, event_name, context)
-
-        # Counted where the row is created, not where the turn starts — and so
-        # before the deferral returns. Losing the admission race does not make
-        # this a different turn: the same dispatch, from the same burst, is
-        # parked instead of admitted, and the promotion that later runs it
-        # enters the resumed-Task branch above, which records nothing either. A
-        # count taken only on the winning side of a race is exactly blind to the
-        # bursts the threshold exists to catch.
-        record_loop_breaker_turn(agent, context)
         return if task.nil?
       end
 
@@ -231,72 +200,26 @@ module Collavre
           task.reload
         end
 
-        response_content = AiAgentService.new(task).call
+        AiAgentService.new(task).call
 
         # Claude Channel agents delegate via MCP; no immediate response expected
         if is_claude_channel_agent
           # Hold agent capacity until reply / cancel / stuck-recovery releases it.
           should_release = false
-        # Workflow subtasks with empty responses should retry, then fail
-        elsif task.parent_task_id.present? && response_content.blank?
-          max_retries = 2
-          current_retry = task.retry_count || 0
-
-          if current_retry < max_retries
-            transition_running_task!(
-              task,
-              retry_count: current_retry + 1,
-              status: "pending"
-            )
-            Rails.logger.warn(
-              "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
-              "retrying (#{current_retry + 1}/#{max_retries})"
-            )
-            AiAgentJob.set(wait: 5.seconds).perform_later(task)
-          else
-            transition_running_task!(task, status: "failed")
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task, error_message: "Agent returned empty response after #{max_retries} retries"
-            )
-          end
         else
           transition_running_task!(task, status: "done")
-          # Advance workflow (release happens in ensure block)
-          if task.parent_task_id.present?
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
-          end
         end
       rescue ApprovalPendingError
         # Task status already set to pending_approval by AiAgentService
         # Don't release resources yet - task will resume
         should_release = false
         Rails.logger.info("AiAgentJob paused for task #{task.id}: awaiting tool approval")
-      rescue TurnDeadlineError => e
-        # The deadline is the one terminal exit this worker inflicts on itself:
-        # every external failer of a workflow subtask (StuckDetector, the
-        # offline guards above, comment deletion) calls fail_subtask! at the
-        # site that writes `failed`, which is why the CancelledError branch
-        # below never has to. Here the writer is AgentLifecycleManager inside
-        # this very call stack, so the parent notification happens here or
-        # nowhere — and without it the parent workflow stays "running" on a
-        # child that already failed underneath it. Restore/settle of dropped
-        # dispatches needs nothing extra: fail_while_worker_settles! marked the
-        # row, and the ensure below settles it.
+      rescue TurnDeadlineError
+        # AgentLifecycleManager already wrote the terminal status inside this
+        # call stack. Restore/settle of dropped dispatches needs nothing extra:
+        # fail_while_worker_settles! marked the row, and the ensure below
+        # settles it.
         Rails.logger.info("AiAgentJob turn deadline exceeded for task #{task.id}")
-        if (parent_task = task.parent_task)
-          # The parent can be stopped independently while this exception
-          # unwinds. Serialize against that transition and report failure only
-          # while it is still the active workflow; an explicit cancellation
-          # that gets the lock first must remain the terminal result.
-          parent_task.with_lock do
-            next unless parent_task.status == "running"
-
-            Collavre::Comments::WorkflowExecutor.new(parent_task).fail_subtask!(
-              task,
-              error_message: "Turn exceeded the #{e.deadline_seconds}s deadline"
-            )
-          end
-        end
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
         Rails.logger.info("AiAgentJob cancelled for task #{task.id}: trigger message deleted")
@@ -310,10 +233,6 @@ module Collavre
         Orchestration::DeliveryRecord.restore_if_undelivered!(task.reload)
       rescue StandardError => e
         task.update!(status: "failed")
-        # Fail workflow if this is a sub-task
-        if task.parent_task_id.present?
-          Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(task, error_message: e.message)
-        end
         Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
         raise e
       ensure
@@ -362,20 +281,17 @@ module Collavre
         topic_id: context&.dig("topic", "id"),
         creative_id: context&.dig("creative", "id")
       }
-      return Task.create!(attrs.merge(status: "running")) unless topic_admission_scoped?(context)
+      unless topic_admission_scoped?(context)
+        return Task.create!(attrs.merge(status: "running")).tap { record_loop_breaker_turn(agent, context) }
+      end
 
-      topic_id = context.dig("topic", "id")
-      creative_id = context.dig("creative", "id")
-      admitted = false
-      task = nil
+      task, admitted, current_context = nil, false, false
       # A queued row here is a waiter, and what speaks for it is settled now, with
       # the row — not later, from whichever notices happen to be visible. Its
       # notice is posted in a separate transaction below, so between the two this
       # waiter is queued with nothing naming it, and a shared notice deleted in
       # that window would read an opted-out waiter as one of its own and cancel a
       # turn that was only deferred.
-      notice_scope = waiter_notice_scope(agent, context)
-
       # Counting occupants and claiming the slot must be ONE step. Two workers
       # starting within the same millisecond — the exact burst this job defends
       # against — otherwise both read an occupancy below the limit before either
@@ -384,20 +300,24 @@ module Collavre
       # admission for a topic takes the same lock, so the loser reads the
       # winner's committed row.
       Task.transaction do
-        Orchestration::TopicSlot.lock!(topic_id, creative_id)
-        admitted = Orchestration::TopicSlot.available_for?(agent.id, topic_id, creative_id, context)
+        next unless Orchestration::TopicSlot.lock_matches_context?(attrs[:topic_id], attrs[:creative_id])
+
+        current_context = true
+        admitted = Orchestration::TopicSlot.available_for?(agent.id, attrs[:topic_id], attrs[:creative_id], context)
         task = Task.create!(attrs.merge(
           status: admitted ? "running" : "queued",
           # Left nil on an admitted row: it is not waiting, so no notice speaks
           # for it and there is nothing for a stop control to represent.
-          waiting_notice_scope: admitted ? nil : notice_scope
+          waiting_notice_scope: admitted ? nil : waiter_notice_scope(agent, context)
         ))
       end
+      return unless current_context
 
-      return task if admitted
-
-      park_deferred_waiter(task, agent, event_name, context, topic_id, creative_id)
-      nil
+      park_deferred_waiter(task, agent, event_name, context, attrs[:topic_id], attrs[:creative_id]) unless admitted
+      # Count where the row is created, before an admitted turn starts and after
+      # a deferred turn is parked. A stale context creates no row and no count.
+      record_loop_breaker_turn(agent, context)
+      task if admitted
     end
 
     # Record a created turn for the loop breaker's creative-retry count.
@@ -426,8 +346,8 @@ module Collavre
       end
     end
 
-    # Is this dispatch subject to the topic concurrency limit at all? Workflow
-    # subtasks and other topic-less dispatches are not.
+    # Is this dispatch subject to the topic concurrency limit at all?
+    # Topic-less dispatches are not.
     def topic_admission_scoped?(context)
       context.is_a?(Hash) && context.key?("topic")
     end

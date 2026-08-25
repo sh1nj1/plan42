@@ -333,11 +333,11 @@ module Collavre
                         "a task that leaves without running has to hand the topic slot on"
       end
 
-      # Control: a cancelled task with no topic (a workflow subtask) has no
-      # queue to drain, and must not fall into topic promotion at all.
+      # Control: a cancelled task with no topic has no queue to drain, and must
+      # not fall into topic promotion at all.
       test "a cancelled task without a topic drains nothing" do
         orphan = Task.create!(
-          name: "Subtask", status: "cancelled", trigger_event_name: "comment_created",
+          name: "Orphan", status: "cancelled", trigger_event_name: "comment_created",
           agent: @agent, trigger_event_payload: { "creative" => { "id" => @creative.id } }
         )
         waiter = task_for(@agent, status: "queued")

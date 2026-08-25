@@ -15,6 +15,13 @@ Collavre::Engine.routes.draw do
   resources :agent_gateways, path: "settings/agent-gateways", except: :show do
     post :check, on: :member
   end
+  get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
+  post "desktop/setup/account", to: "desktop_setup#create_account", as: :desktop_setup_account
+  post "desktop/setup/registration-token", to: "desktop_setup#registration_token", as: :desktop_setup_registration_token
+  get "desktop/setup/sidecar-health", to: "desktop_sidecar_health#show", as: :desktop_setup_sidecar_health
+  post "desktop/setup/validate-registration-grant", to: "desktop_gateway_registrations#validate_registration_grant", as: :desktop_setup_validate_registration_grant
+  post "desktop/setup/gateway-registered", to: "desktop_gateway_registrations#registered", as: :desktop_setup_gateway_registered
+  post "desktop/setup/register-gateway", to: "desktop_gateway_registrations#create", as: :desktop_setup_register_gateway
   resources :users, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     collection do
       get :new_ai
@@ -33,7 +40,6 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
-      get :typo_correction
       get :agent_connection, to: "agent_connections#show"
     end
   end
@@ -71,10 +77,6 @@ Collavre::Engine.routes.draw do
   resources :contacts, only: [ :destroy ]
   resources :devices, only: [ :create ]
 
-  resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
-    get :count, on: :collection
-  end
-
   resources :user_themes, only: [ :index, :create, :destroy ] do
     member do
       post :apply
@@ -82,8 +84,6 @@ Collavre::Engine.routes.draw do
   end
 
   resources :llm_models, only: [ :destroy ]
-
-  resources :typo_corrections, only: [ :create ]
 
   resources :creative_imports, only: [ :create ]
   resources :tasks, only: [] do
@@ -149,17 +149,18 @@ Collavre::Engine.routes.draw do
     collection do
       post :reorder
       post :link_drop
+      patch :next_last_visited_sequence
       get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
       get :append_below, to: "creatives#append_below", as: :append_below_creative
       get :export_markdown
     end
     member do
+      patch :remember_last_visited
       get :children
       post :request_permission, to: "creatives#request_permission"
       post :unconvert
       patch :archive
       patch :unarchive
-      get :parent_suggestions
       get :slide_view
       get :contexts
       patch :update_contexts
@@ -170,9 +171,8 @@ Collavre::Engine.routes.draw do
 
   resources :emails, only: [ :index, :show ]
   resource :invite, only: [ :show, :create ]
-
   post "/creative_expanded_states/toggle", to: "user_creative_preferences#toggle"
-  patch "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", as: :update_last_topic
+  match "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", via: [ :post, :patch ], as: :update_last_topic
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
   post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
   delete "/notices", to: "notices#restore_all", as: :restore_notices
@@ -184,16 +184,6 @@ Collavre::Engine.routes.draw do
       post "agent/reply", to: "agents#reply"
       post "agent/notify", to: "agents#notify"
       delete "agent/:id", to: "agents#destroy"
-
-      # Mobile voice companion (Android): poll Inbox#System messages, read aloud,
-      # reply to the origin topic; a cold mic press starts work in Inbox#Main.
-      namespace :mobile do
-        post "voice_commands", to: "voice_commands#create"
-        get  "agent_events", to: "agent_events#index"
-        post "agent_events/:id/respond", to: "agent_events#respond"
-        post "agent_events/:id/read", to: "agent_events#read"
-        post "devices", to: "devices#create"
-      end
     end
   end
 

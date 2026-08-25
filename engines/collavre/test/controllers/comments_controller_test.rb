@@ -24,6 +24,20 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "merge rejects comments from different topics" do
+    first_topic = @creative.topics.create!(name: "First merge topic", user: @user)
+    second_topic = @creative.topics.create!(name: "Second merge topic", user: @user)
+    first = @creative.comments.create!(content: "First merge comment", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "Second merge comment", user: @user, topic: second_topic)
+
+    Collavre::MergeCommentsJob.stub(:perform_later, ->(*) { flunk("merge job should not be enqueued") }) do
+      post merge_creative_comments_path(@creative), params: { comment_ids: [ first.id, second.id ] }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.comments.merge.same_topic_required"), response.parsed_body["error"]
+  end
+
   test "index renders version navigator only for comments with versions" do
     with_versions = @creative.comments.create!(content: "has versions", user: @user)
     Collavre::CommentVersion.create!(comment: with_versions, content: "v1", version_number: 1)
@@ -39,6 +53,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body,
                         "data-comment-version-comment-id-value=\"#{without_versions.id}\"",
                         "expected no version navigator for comment WITHOUT versions"
+  end
+
+  test "topic-filtered index keeps legacy fallback receipts in the rendered topic" do
+    reader = users(:two)
+    grant_read_access_to_other_user(user: reader)
+    first_topic = @creative.topics.create!(name: "First receipts", user: @user)
+    second_topic = @creative.topics.create!(name: "Second receipts", user: @user)
+    first = @creative.comments.create!(content: "first", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "second", user: @user, topic: second_topic)
+    CommentReadPointer.create!(user: reader, creative: @creative, last_read_comment_id: second.id)
+
+    get creative_comments_path(@creative), params: { topic_id: first_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, "read_receipts_comment_#{first.id}"
+    assert_includes @response.body, "data-user-id=\"#{reader.id}\""
   end
 
   test "convert markdown comment to sub creatives" do
@@ -429,6 +459,68 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert comment.private?, "Comment should be private after checking"
   end
 
+  test "topic update rejects a comment whose source topic moved after validation" do
+    source_topic = @creative.topics.create!(name: "Update source", user: @user)
+    target_topic = @creative.topics.create!(name: "Update target", user: @user)
+    destination = Creative.create!(description: "Update destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    service = Collavre::CommentMoveService.new(creative: @creative, user: @user)
+    fetch_after_relocation = lambda do |_ids|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      [ comment ]
+    end
+
+    Collavre::CommentMoveService.stub(:new, ->(**) { service }) do
+      service.stub(:fetch_visible_comments, fetch_after_relocation) do
+        patch creative_comment_path(@creative, comment), params: {
+          comment: { content: "Stale update", topic_id: target_topic.id }
+        }
+      end
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal @creative.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
+    assert_equal @creative.id, source_topic.reload.creative_id
+  end
+
+  test "topic update rolls back the move when another attribute is invalid" do
+    source_topic = @creative.topics.create!(name: "Rollback source", user: @user)
+    target_topic = @creative.topics.create!(name: "Rollback target", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+
+    patch creative_comment_path(@creative, comment), params: {
+      comment: { content: "", topic_id: target_topic.id }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal source_topic.id, comment.reload.topic_id
+    assert_equal "Original", comment.content
+  end
+
+  test "content update rejects a comment whose topic moved before its lock" do
+    source_topic = @creative.topics.create!(name: "Edit source", user: @user)
+    destination = Creative.create!(description: "Edit destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    topic_mutation = Collavre::Comments::TopicMutation.method(:call)
+    mutate_after_relocation = lambda do |*args, &block|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      topic_mutation.call(*args, &block)
+    end
+
+    Collavre::Comments::TopicMutation.stub(:call, mutate_after_relocation) do
+      patch creative_comment_path(@creative, comment), params: {
+        comment: { content: "Stale update" }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal destination.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
+  end
+
   test "user can move comments to another creative" do
     target = creatives(:childless_creative)
     comment = @creative.comments.create!(content: "Move me", user: @user)
@@ -712,6 +804,45 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, topic_comment.content
     assert_includes @response.body, "comment-topic-switch"
     assert_includes @response.body, "##{topic.name}"
+    assert_equal @creative.topics.active.order(:id).pluck(:id).join(","), response.headers["X-Rendered-Topic-Ids"]
+    assert_equal topic_comment.id, JSON.parse(response.headers["X-Rendered-Topic-Watermarks"]).fetch(topic.id.to_s)
+  end
+
+  test "All Messages snapshot includes only topics represented in the rendered page" do
+    creative = Creative.create!(user: @user, description: "Rendered topic snapshot", sequence: 9_912)
+    older_topic = creative.topics.create!(name: "Older", user: @user)
+    rendered_topic = creative.topics.create!(name: "Rendered", user: @user)
+    older_comment = Comment.create!(creative: creative, topic: older_topic, user: users(:two), content: "older unread")
+    20.times do |index|
+      Comment.create!(creative: creative, topic: rendered_topic, user: users(:two), content: "rendered #{index}")
+    end
+
+    get creative_comments_path(creative)
+
+    assert_response :success
+    assert_not_includes @response.body, older_comment.content
+    assert_equal rendered_topic.id.to_s, response.headers["X-Rendered-Topic-Ids"]
+    assert_equal(
+      { rendered_topic.id.to_s => creative.comments.where(topic: rendered_topic).maximum(:id) },
+      JSON.parse(response.headers["X-Rendered-Topic-Watermarks"])
+    )
+  end
+
+  test "All Messages serializes legacy topic-less comments without sorting nil topic ids" do
+    creative = Creative.create!(user: @user, description: "Legacy Main snapshot", sequence: 9_913)
+    topic = creative.topics.create!(name: "Topic", user: @user)
+    legacy_comment = Comment.create!(creative: creative, user: users(:two), content: "legacy")
+    legacy_comment.update_column(:topic_id, nil)
+    topic_comment = Comment.create!(creative: creative, topic: topic, user: users(:two), content: "topic")
+
+    get creative_comments_path(creative)
+
+    assert_response :success
+    assert_equal topic.id.to_s, response.headers["X-Rendered-Topic-Ids"]
+    assert_equal(
+      { "_legacy" => legacy_comment.id, topic.id.to_s => topic_comment.id },
+      JSON.parse(response.headers["X-Rendered-Topic-Watermarks"])
+    )
   end
 
   test "topic view hides topic links and filters comments" do
@@ -725,6 +856,43 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, topic_comment.content
     assert_not_includes @response.body, other_comment.content
     assert_not_includes @response.body, "comment-topic-switch"
+  end
+
+  # Archiving a topic hides it from the topic strip; it does not close the
+  # conversation. The topic bar links straight to an archived topic, so these
+  # two tests pin the read and write paths the frontend depends on.
+  test "topic view shows comments of an archived topic when it is selected explicitly" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    archived_comment = @creative.comments.create!(content: "Archived lane comment", user: @user, topic: topic)
+    topic.update!(archived_at: Time.current)
+
+    get creative_comments_path(@creative), params: { topic_id: topic.id }
+
+    assert_response :success
+    assert_includes @response.body, archived_comment.content
+  end
+
+  test "posting a comment to an archived topic is accepted" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    topic.update!(archived_at: Time.current)
+
+    assert_difference("Comment.count", 1) do
+      post creative_comments_path(@creative),
+           params: { comment: { content: "Still writing here", topic_id: topic.id } }
+    end
+
+    assert_equal topic.id, Comment.order(:id).last.topic_id
+  end
+
+  test "the main view keeps hiding comments that live in an archived topic" do
+    topic = @creative.topics.create!(name: "Design", user: @user)
+    archived_comment = @creative.comments.create!(content: "Archived lane comment", user: @user, topic: topic)
+    topic.update!(archived_at: Time.current)
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, archived_comment.content
   end
 
 

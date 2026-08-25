@@ -11,14 +11,13 @@ module Collavre
 
     def call
       ActiveRecord::Base.transaction do
-        # Lock the snapshot row to prevent concurrent restore (P2 fix)
-        locked_snapshot = CommentSnapshot.lock.find(@snapshot.id)
+        locked_snapshot = lock_snapshot
 
         if locked_snapshot.restored_at.present?
           raise RestoreError, I18n.t("collavre.comment_snapshots.already_restored")
         end
 
-        validate_permission!
+        validate_permission!(locked_snapshot)
 
         # Build a mapping from old comment IDs to new comments for quoted_comment_id restoration
         old_id_to_new = {}
@@ -71,8 +70,15 @@ module Collavre
 
     private
 
-    def validate_permission!
-      creative = @snapshot.creative
+    # TopicMove locks topic -> snapshots. Match that order so restoration
+    # cannot deadlock relocation while recreating comments.
+    def lock_snapshot
+      Topic.lock.find(@snapshot.topic_id) if @snapshot.topic_id
+      CommentSnapshot.lock.find(@snapshot.id)
+    end
+
+    def validate_permission!(snapshot)
+      creative = snapshot.creative
       unless creative.has_permission?(@user, :write)
         raise RestoreError, I18n.t("collavre.comment_snapshots.not_authorized")
       end

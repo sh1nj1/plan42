@@ -33,8 +33,8 @@ module Tools
         return { error: "No write permission on this Creative", id: creative_id }
       end
 
-      topic_id = resolve_topic_id(creative, topic_name)
-      return topic_id if topic_id.is_a?(Hash) && topic_id[:error]
+      topic = resolve_topic(creative, topic_name)
+      return topic if topic.is_a?(Hash) && topic[:error]
 
       parsed = Fugit.parse(schedule)
       unless parsed.is_a?(Fugit::Cron)
@@ -44,20 +44,11 @@ module Tools
       suffix = SecureRandom.hex(4)
       key = "cron_#{creative_id}_#{suffix}"
 
-      task = SolidQueue::RecurringTask.create!(
-        key: key,
-        class_name: "Collavre::CronActionJob",
-        schedule: schedule,
-        queue_name: "default",
-        static: false,
-        description: description || "Cron job for creative #{creative_id}",
-        arguments: [ {
-          creative_id: creative_id,
-          topic_id: topic_id,
-          agent_id: Current.user.id,
-          message: message
-        } ]
+      task = create_task(
+        topic: topic, creative: creative, creative_id: creative_id,
+        key: key, schedule: schedule, message: message, description: description
       )
+      return task if task.is_a?(Hash) && task[:error]
 
       {
         success: true,
@@ -72,15 +63,38 @@ module Tools
 
     private
 
-    def resolve_topic_id(creative, topic_name)
+    def create_task(topic:, creative:, creative_id:, key:, schedule:, message:, description:)
+      topic.with_lock do
+        unless topic.creative_id == creative.effective_origin.id
+          return { error: I18n.t("collavre.comments.invalid_topic") }
+        end
+
+        SolidQueue::RecurringTask.create!(
+          key: key,
+          class_name: "Collavre::CronActionJob",
+          schedule: schedule,
+          queue_name: "default",
+          static: false,
+          description: description || "Cron job for creative #{creative_id}",
+          arguments: [ {
+            creative_id: creative_id,
+            topic_id: topic.id,
+            agent_id: Current.user.id,
+            message: message
+          } ]
+        )
+      end
+    end
+
+    def resolve_topic(creative, topic_name)
       origin = creative.effective_origin
       if topic_name.casecmp(Creative::MAIN_TOPIC_NAME).zero?
-        origin.main_topic(fallback_user: Current.user).id
+        origin.main_topic(fallback_user: Current.user)
       else
         topic = Topic.find_by(name: topic_name, creative_id: origin.id)
         return { error: "Topic '#{topic_name}' not found for this creative" } unless topic
 
-        topic.id
+        topic
       end
     end
   end

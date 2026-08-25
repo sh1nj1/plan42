@@ -19,6 +19,8 @@ describe("AgentConnectionController", () => {
            data-agent-connection-delete-url-value="/items/__TYPE__/__NAME__"
            data-agent-connection-login-value="로그인"
            data-agent-connection-submit-value="제출"
+           data-agent-connection-base-url-label-value="Provider base URL"
+           data-agent-connection-base-url-help-value="공개 HTTPS 주소를 입력하세요"
            data-agent-connection-cancel-value="취소"
            data-agent-connection-open-url-value="인증 페이지 열기"
            data-agent-connection-approve-value="승인"
@@ -111,7 +113,7 @@ describe("AgentConnectionController", () => {
       document.querySelector('[data-controller="agent-connection"]'),
       "agent-connection"
     )
-    controller.sessionTarget.innerHTML = '<input value="provider-secret">'
+    controller.sessionTarget.innerHTML = '<input data-role="secret" value="provider-secret">'
     let submitted
     global.fetch = async (_url, options) => {
       submitted = JSON.parse(options.body)
@@ -121,5 +123,73 @@ describe("AgentConnectionController", () => {
     await controller.submit({ params: { engine: "codex", session: "session-1" } })
 
     expect(submitted).toEqual({ auth_secret: "provider-secret" })
+  })
+
+  test("renders and submits base URL only for an advertised custom-provider flow", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'),
+      "agent-connection"
+    )
+    controller.baseUrlFlows = new Map([["codex_custom", ["api-key"]]])
+    controller.renderSession({ engine: "codex_custom", flow: "api-key", status: "pending", sessionId: "session-1" })
+
+    const baseUrl = document.querySelector('[data-role="base-url"]')
+    const secret = document.querySelector('[data-role="secret"]')
+    expect(baseUrl).not.toBeNull()
+    expect(secret).not.toBeNull()
+    expect(document.querySelector('[data-agent-connection-target="session"]').textContent).toContain("Provider base URL")
+    baseUrl.value = "https://openrouter.ai/api/v1"
+    secret.value = "provider-secret"
+
+    let submitted
+    global.fetch = async (_url, options) => {
+      submitted = JSON.parse(options.body)
+      return { ok: true, text: async () => JSON.stringify({ engine: "codex_custom", status: "pending" }) }
+    }
+    await controller.submit({ params: { engine: "codex_custom", session: "session-1" } })
+
+    expect(submitted).toEqual({ auth_secret: "provider-secret", base_url: "https://openrouter.ai/api/v1" })
+
+    controller.baseUrlFlows = new Map()
+    controller.renderSession({ engine: "codex", flow: "api-key", status: "pending", sessionId: "session-2" })
+    expect(document.querySelector('[data-role="base-url"]')).toBeNull()
+  })
+
+  test("does not submit a custom-provider session without a valid base URL", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'),
+      "agent-connection"
+    )
+    controller.baseUrlFlows = new Map([["codex_custom", ["api-key"]]])
+    controller.renderSession({ engine: "codex_custom", flow: "api-key", status: "pending", sessionId: "session-1" })
+
+    const baseUrl = document.querySelector('[data-role="base-url"]')
+    let reportValidityCalls = 0
+    let fetchCalled = false
+    baseUrl.reportValidity = () => {
+      reportValidityCalls += 1
+      return false
+    }
+    global.fetch = async () => { fetchCalled = true }
+
+    await controller.submit({ params: { engine: "codex_custom", session: "session-1" } })
+
+    expect(reportValidityCalls).toBe(1)
+    expect(fetchCalled).toBe(false)
+  })
+
+  test("shows routing detail and remains compatible with proxies without base URL flows", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'),
+      "agent-connection"
+    )
+
+    controller.renderEngines([{ engine: "codex_custom", flow: "api-key", status: { state: "authenticated", detail: "routing to https://openrouter.ai/api/v1" } }])
+
+    expect(document.querySelector('[data-agent-connection-target="engines"]').textContent).toContain("routing to https://openrouter.ai/api/v1")
+    expect(controller.requiresBaseUrl("codex_custom", "api-key")).toBe(false)
   })
 })

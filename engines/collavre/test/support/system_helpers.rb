@@ -32,6 +32,20 @@ module SystemHelpers
     # Ignore for drivers that do not support resizing.
   end
 
+  def assert_docked_comments_loaded
+    assert_selector "#comments-popup", wait: 10 do |popup|
+      page.evaluate_script(<<~JS, popup)
+        ((element) => {
+          const controller = window.Stimulus?.getControllerForElementAndIdentifier(
+            element,
+            'comments--list'
+          );
+          return controller?.initialLoadComplete === true;
+        })(arguments[0])
+      JS
+    end
+  end
+
   def wait_for_network_idle(timeout: Capybara.default_max_wait_time)
     start = Time.now
     while Time.now - start < timeout

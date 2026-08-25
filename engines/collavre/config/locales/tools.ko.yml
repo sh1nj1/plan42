@@ -1,0 +1,20 @@
+ko:
+  collavre:
+    tools:
+      topic_message_create:
+        errors:
+          current_user_required: Current.user가 필요합니다.
+          archived_creative: 보관된 크리에이티브에는 토픽 메시지를 작성할 수 없습니다.
+          archived_topic: 보관된 토픽에는 메시지를 작성할 수 없습니다.
+          system_topic: 받은 편지함의 System 토픽에는 사용자가 메시지를 작성할 수 없습니다.
+          current_topic: 에이전트는 현재 처리 중인 토픽에 토픽 메시지를 전달할 수 없습니다.
+          self_route: 에이전트는 고정되지 않은 토픽 메시지를 자신에게 다시 라우팅할 수 없습니다.
+      topic_move:
+        errors:
+          current_user_required: Current.user가 필요합니다.
+          source_permission: 토픽의 현재 크리에이티브에 대한 관리자 권한이 필요합니다.
+          target_permission: 대상 크리에이티브에 대한 쓰기 권한이 필요합니다.
+          same_creative: 토픽이 이미 대상 크리에이티브에 속해 있습니다.
+          reserved_topic: Main 토픽과 받은 편지함의 System 토픽은 이동할 수 없습니다.
+          session_topic: 실행 중인 에이전트 세션 토픽은 이동할 수 없습니다.
+          duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."

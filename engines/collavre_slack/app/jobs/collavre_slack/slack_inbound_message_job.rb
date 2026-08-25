@@ -4,7 +4,7 @@ module CollavreSlack
 
     # Slack is acked (200) the instant this job is enqueued, so a lost job means a
     # lost message. We can't use a job-level `retry_on`: re-running `perform` would
-    # re-run CommandProcessor's non-idempotent commands (/calendar, /work, MCP). So
+    # re-run CommandProcessor's non-idempotent commands (/calendar, MCP). So
     # CommandProcessor runs exactly once and each DB write around it is retried in
     # place via #with_transient_retry.
 
@@ -50,7 +50,7 @@ module CollavreSlack
       end
 
       # Exactly-once guard, claimed here: after the idempotent writes above, immediately
-      # before the non-idempotent CommandProcessor (/calendar, /work, MCP). Slack is acked
+      # before the non-idempotent CommandProcessor (/calendar, MCP). Slack is acked
       # before this job runs, so a message can arrive twice (sequentially or concurrently);
       # a read-only "already applied?" check can't cover concurrency — both jobs read "not
       # applied" and both run the commands. We atomically claim (channel_link, message_ts)

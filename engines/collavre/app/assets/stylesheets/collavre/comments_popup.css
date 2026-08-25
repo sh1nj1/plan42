@@ -194,6 +194,9 @@ body.chat-fullscreen {
     color: var(--color-text);
     cursor: pointer;
     padding: 0;
+    width: var(--space-px-5);
+    height: var(--space-px-5);
+    flex: 0 0 var(--space-px-5);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -201,9 +204,16 @@ body.chat-fullscreen {
     line-height: 1;
 }
 
+.comments-popup-action > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .comments-popup-action-icon {
-    width: 16px;
-    height: 16px;
+    display: block;
+    width: var(--space-px-3);
+    height: var(--space-px-3);
     fill: currentColor;
 }
 
@@ -1524,6 +1534,21 @@ body.chat-fullscreen {
     border-color: var(--color-secondary-active);
 }
 
+.topic-unread-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.3em;
+    height: 1.3em;
+    padding: 0 0.35em;
+    border-radius: 999px;
+    background: var(--color-danger);
+    color: var(--color-badge-text);
+    font-size: 0.75em;
+    font-weight: bold;
+    line-height: 1;
+}
+
 .topic-tag.has-new-messages {
     position: relative;
     border-color: var(--color-active);
@@ -1709,9 +1734,33 @@ body.chat-fullscreen {
 .topic-archived-toggle:hover {
     opacity: 1;
 }
+/* Archived topics still receive messages. When the section is collapsed there is
+   no chip to badge, so the toggle carries the unread dot instead. */
+.topic-archived-toggle.has-new-messages {
+    position: relative;
+    opacity: 1;
+    border-color: var(--color-active);
+}
+.topic-archived-toggle.has-new-messages::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--color-danger);
+}
 .topic-tag.topic-archived {
     opacity: 0.5;
     font-style: italic;
+    cursor: pointer;
+}
+/* Archived topics are readable and selectable — the dimming marks them as
+   archived, it must not make the one you are reading illegible. */
+.topic-tag.topic-archived:hover,
+.topic-tag.topic-archived.active {
+    opacity: 1;
 }
 
 /* Topic list popup button (pinned right of the scrolling tab bar) */
@@ -1742,16 +1791,28 @@ body.chat-fullscreen {
     background: var(--color-section-bg);
     color: var(--color-text);
 }
+.topic-list-btn[aria-expanded="true"] {
+    background: var(--color-section-bg);
+    color: var(--color-text);
+}
 
 /* Archived entries inside the topic list popup */
 .topic-list-item {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 0.3em;
+    width: 100%;
 }
 .topic-list-item--archived {
-    opacity: 0.5;
     font-style: italic;
+}
+.topic-list-item--archived > svg,
+.topic-list-item--archived > .topic-list-item-label {
+    opacity: 0.5;
+}
+.topic-list-item .topic-unread-badge {
+    flex-shrink: 0;
+    margin-left: auto;
 }
 .topic-branch-icon {
     font-size: 0.75em;
@@ -1978,115 +2039,6 @@ body.chat-fullscreen {
 
 li:hover .topic-create-option {
     text-decoration: underline;
-}
-
-/* ── Inline typo correction (volatile overlay; never serialized) ───────────── */
-/* The backdrop mirrors the textarea text exactly and paints <mark> spans over
-   it. The backdrop sits ON TOP of the textarea (higher z-index) but is
-   pointer-events:none, so clicks pass through to the textarea everywhere EXCEPT
-   over a <mark> (pointer-events:auto) — that's what makes the marks clickable.
-   If the textarea were on top, the browser would hit-test it first and the mark
-   click handlers would never fire. The backdrop's text is transparent, so the
-   textarea's real (opaque) glyphs show through and only the underlines paint. */
-.typo-input-wrap {
-    position: relative;
-    display: block;
-}
-
-.typo-input-wrap > textarea {
-    position: relative;
-    background: transparent;
-    z-index: 0;
-}
-
-.typo-backdrop {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    z-index: 1;
-}
-
-.typo-highlights {
-    margin: 0;
-    color: transparent;
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
-    word-break: break-word;
-}
-
-/* Two states, distinguished by BOTH shape and colour (colour-blind safe). */
-.typo-mark {
-    background: transparent;
-    color: transparent;
-    pointer-events: auto;
-    cursor: pointer;
-    border-radius: 2px;
-}
-
-/* Auto-applied (>= threshold): faint straight underline — resolved, dim. */
-.typo-mark-applied {
-    text-decoration: underline solid var(--color-link);
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
-    opacity: 0.55;
-}
-
-/* Candidate (< threshold): wavy dotted amber underline — needs a decision. */
-.typo-mark-candidate {
-    text-decoration: underline wavy var(--color-warning);
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
-}
-
-/* Creatable combobox reusing CommonPopup positioning. */
-.typo-popup {
-    position: absolute;
-    z-index: 100000;
-    min-width: 180px;
-    max-width: 320px;
-    background: var(--surface-section);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
-    padding: 6px;
-}
-
-.typo-popup-input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 6px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    font: inherit;
-    margin-bottom: 6px;
-}
-
-.typo-popup-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-.typo-popup-list .common-popup-item {
-    padding: 6px 8px;
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.typo-popup-list .common-popup-item.active,
-.typo-popup-list .common-popup-item:hover {
-    background: var(--surface-hover);
-}
-
-.typo-popup-role {
-    color: var(--text-muted);
-    font-size: 0.85em;
 }
 
 /* Empty chat state — feature discovery cards */

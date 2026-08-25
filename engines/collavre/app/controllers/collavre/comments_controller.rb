@@ -1,5 +1,6 @@
 module Collavre
   class CommentsController < ApplicationController
+    LEGACY_TOPIC_WATERMARK_KEY = "_legacy"
     include Collavre::Comments::CommentScoping
     include Collavre::Comments::ApprovalActions
     include Collavre::Comments::Conversion
@@ -25,128 +26,7 @@ module Collavre
     end
 
     def index
-      limit = 20
-
-      visible_scope = @creative.comments.visible_to(Current.user)
-      scope = visible_scope.with_attached_images.includes(:task, :topic, :comment_reactions, :comment_versions, :snapshot_as_result)
-
-      if params[:search].present?
-        words = params[:search].to_s.strip.downcase.split(/\s+/)
-                  .first(Creatives::Filters::SearchFilter::MAX_SEARCH_WORDS)
-        words.each do |word|
-          sanitized = "%#{ActiveRecord::Base.sanitize_sql_like(word)}%"
-          scope = scope.where("LOWER(comments.content) LIKE ?", sanitized)
-        end
-      end
-
-      # Filter by topic
-      # Logic:
-      # 1. Prefer params[:topic_id] if explicit.
-      # 2. If deep linking (around_comment_id), infer from target comment if valid.
-      # 3. Default to nil (Main).
-
-      effective_topic_id = params[:topic_id].presence
-
-      if params[:around_comment_id].present?
-        target_id = params[:around_comment_id].to_i
-        # Ensure target is visible and belongs to this creative
-        target_comment = visible_scope.find_by(id: target_id)
-
-        if target_comment
-          effective_topic_id = target_comment.topic_id
-          # Inform frontend about the topic switch
-          response.headers["X-Topic-Id"] = effective_topic_id.to_s
-        end
-      end
-
-      # Apply the Topic Filter
-      if effective_topic_id.present?
-        scope = scope.where(topic_id: effective_topic_id)
-      else
-        # Main view: exclude comments from archived topics
-        archived_topic_ids = @creative.topics.archived.pluck(:id)
-        scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
-      end
-
-      # Default order: Newest first (id DESC)
-      # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
-      # We order by id, not created_at: id is a single monotonic sequence that reflects the true insertion
-      # (causal) order, whereas created_at is stamped by whichever process wrote the row. A user message is
-      # stamped by the web request while its agent reply is stamped by a background worker, and clock skew
-      # between those processes can backdate the reply below the message that triggered it. The pagination
-      # cursors below are all id-based ("Newer = higher id"), so ordering by id keeps display and cursors
-      # consistent.
-      scope = scope.order(id: :desc)
-
-
-      @comments = if params[:around_comment_id].present?
-        # Deep linking: Load context around a specific comment
-        target_id = params[:around_comment_id].to_i
-
-        # Newer messages have HIGHER IDs.
-        # Older messages have LOWER IDs.
-
-        # Newer bundle (including target): ID >= target_id
-        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(id: :asc).limit(limit / 2 + 1)
-
-        # Older bundle: ID < target_id
-        older_bundle = scope.where("comments.id < ?", target_id).limit(limit / 2)
-
-        # Combine: [Newer (ASC) ... Target ... Older (DESC)]
-        # We need final output to be ASC due to restored view logic: [Oldest ... Target ... Newest]
-        (older_bundle.to_a.reverse + newer_bundle.to_a).uniq
-      elsif params[:after_id].present? && params[:before_id].present?
-          # Invalid state, prioritize before (loading older history)
-          scope.where("comments.id < ?", params[:before_id].to_i).limit(limit).to_a.reverse
-      elsif params[:before_id].present?
-        # Load OLDER messages (lower IDs)
-        # Visually scrolling UP
-        scope.where("comments.id < ?", params[:before_id].to_i).limit(limit).to_a.reverse
-      elsif params[:after_id].present?
-        # Load NEWER messages (higher IDs)
-        # Visually scrolling DOWN
-        # We want the ones immediately *after* the current newest.
-        # Since default sort is DESC (Newest first), "after" means id > after_id.
-        # But standard DESC query would give us the VERY Newest.
-        # We want the ones just above `after_id`.
-
-        # Use reorder(id: :asc) to get the ones immediately larger than after_id, then reverse back to DESC.
-        scope.where("comments.id > ?", params[:after_id].to_i).reorder(id: :asc).limit(limit)
-      else
-        # Initial Load (Latest messages)
-        scope.limit(limit).to_a.reverse
-      end
-
-      current_topic = if @comments.empty? && effective_topic_id.present?
-        @creative.topics.find_by(id: effective_topic_id)
-      end
-
-      present_user_ids = CommentPresenceStore.list(@creative.id)
-
-      # Read receipts land on the nearest preceding PUBLIC comment, so a user who
-      # last read a private comment shows up above it. The index resolves that
-      # against the rendered window rather than the whole conversation.
-      # Fully qualified: a top-level ::Comments namespace exists too (see
-      # ::Comments::CommandProcessor below), so a bare Comments:: here would be
-      # resolved by lexical luck rather than intent.
-      read_receipts = Collavre::Comments::ReadReceiptIndex.new(creative: @creative, comments: @comments).receipts
-
-      if params[:after_id].present? || params[:before_id].present?
-        render partial: "collavre/comments/comment",
-               collection: @comments,
-               as: :comment,
-               locals: { read_receipts: read_receipts, present_user_ids: present_user_ids, current_topic_id: effective_topic_id }
-      else
-        render partial: "collavre/comments/list", locals: {
-          comments: @comments,
-          creative: @creative,
-          search: params[:search],
-          read_receipts: read_receipts,
-          present_user_ids: present_user_ids,
-          current_topic_id: effective_topic_id,
-          current_topic: current_topic
-        }
-      end
+      Collavre::Comments::ListResponse.new(controller: self, creative: @creative).render
     end
 
     def create
@@ -195,7 +75,7 @@ module Collavre
         safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
         validate_topic_id!(safe_params[:topic_id]) or return
 
-        if @comment.update(safe_params)
+        if update_comment(safe_params)
           @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
           render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
         else
@@ -355,6 +235,40 @@ module Collavre
     def validate_topic_id!(topic_id)
       return true if topic_id.blank? || @creative.topics.where(id: topic_id).exists?
       render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity
+      false
+    end
+
+    def update_comment(attributes)
+      return update_comment_under_topic_lock(attributes) unless attributes.key?(:topic_id)
+
+      attributes = attributes.dup
+      topic_id = attributes.delete(:topic_id)
+      Comment.transaction do
+        CommentMoveService.new(creative: @creative, user: Current.user).call(
+          comment_ids: [ @comment.id ], target_topic_id: topic_id
+        )
+        updated = @comment.reload.update(attributes)
+        raise ActiveRecord::Rollback unless updated
+
+        updated
+      end
+    rescue CommentMoveService::MoveError => e
+      @comment.errors.add(:topic, e.message)
+      false
+    end
+
+    def update_comment_under_topic_lock(attributes)
+      source_topic_id = @comment.topic_id
+      matching_context = false
+      updated = false
+      Comments::TopicMutation.call(source_topic_id, @creative.id) do
+        @comment.lock!
+        matching_context = @comment.creative_id == @creative.id && @comment.topic_id == source_topic_id
+        updated = @comment.update(attributes) if matching_context
+      end
+      return updated if matching_context
+
+      @comment.errors.add(:topic, I18n.t("collavre.comments.move_not_allowed"))
       false
     end
   end

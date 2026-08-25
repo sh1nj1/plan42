@@ -308,7 +308,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{leaf.id}']",
                     visible: :all, wait: 10
-    assert_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}'].is-current"
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{leaf.id}'].is-current"
     assert_equal leaf.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
 
     visit collavre.creatives_path
@@ -336,14 +336,19 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creatives_path(id: creative.id)
     assert_selector "#comments-popup[data-creative-id='#{creative.id}']", visible: :visible, wait: 10
+    assert_docked_comments_loaded
     page.execute_script(<<~JS)
       document.querySelector('[data-controller="workspace-tree"]')
         .dataset.persistenceMarker = 'comment-link-mounted';
-      window.Turbo.visit(#{collavre.creative_comment_path(creative, target_comment).to_json}, {
-        action: 'advance',
-        frame: 'creative-workspace-content'
-      });
+      const link = document.createElement('a');
+      link.id = 'same-creative-comment-link';
+      link.href = #{collavre.creative_comment_path(creative, target_comment).to_json};
+      link.dataset.turboFrame = 'creative-workspace-content';
+      link.dataset.turboAction = 'advance';
+      link.textContent = 'Target comment';
+      document.body.appendChild(link);
     JS
+    find("#same-creative-comment-link").click
 
     assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{creative.id}']",
                     visible: :all, wait: 10
@@ -359,6 +364,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creatives_path(id: branch.id)
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}'].is-current", wait: 10
+    assert_docked_comments_loaded
     page.execute_script(<<~JS)
       const link = document.createElement('a');
       link.id = 'inaccessible-workspace-link';
@@ -378,34 +384,53 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_text I18n.t("collavre.creatives.workspace.select_chat")
   end
 
+  test "workspace tree keeps a childless nested creative visible and selectable" do
+    resize_window_to(1440, 900)
+    root = Creative.create!(user: @user, description: "Workspace root")
+    childless_creative = Creative.create!(user: @user, parent: root, description: "Childless nested creative")
+
+    visit collavre.creatives_path(id: childless_creative.id)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{childless_creative.id}']", wait: 10
+
+    find(".creative-workspace-tree-link[data-creative-id='#{childless_creative.id}']").click
+
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{childless_creative.id}'].is-current", wait: 10
+    assert_selector "#comments-popup[data-creative-id='#{childless_creative.id}']", visible: :visible, wait: 10
+  end
+
   test "workspace tree refreshes first-child and last-child structural changes" do
     resize_window_to(1440, 900)
-    stable_branch = Creative.create!(user: @user, description: "Stable workspace branch")
+    root = Creative.create!(user: @user, description: "Structural workspace root")
+    stable_branch = Creative.create!(user: @user, parent: root, description: "Stable workspace branch")
     Creative.create!(user: @user, parent: stable_branch, description: "Stable child")
-    changing_creative = Creative.create!(user: @user, description: "Changing workspace creative")
+    changing_creative = Creative.create!(user: @user, parent: root, description: "Changing workspace creative")
 
     visit collavre.creatives_path(id: stable_branch.id)
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{stable_branch.id}']", wait: 10
-    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']"
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']"
+    assert_no_selector ".creative-workspace-tree-item[data-creative-id='#{changing_creative.id}'] .creative-workspace-tree-branch-toggle"
 
     child = Creative.create!(user: @user, parent: changing_creative, description: "Temporary child")
     page.execute_script("document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))")
 
-    assert_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
+    assert_selector ".creative-workspace-tree-item[data-creative-id='#{changing_creative.id}'] .creative-workspace-tree-branch-toggle", wait: 10
 
     child.destroy!
     page.execute_script("document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))")
 
-    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
+    assert_no_selector ".creative-workspace-tree-item[data-creative-id='#{changing_creative.id}'] .creative-workspace-tree-branch-toggle", wait: 10
   end
 
   test "workspace tree refresh does not reopen a destroyed creative chat" do
     resize_window_to(1440, 900)
-    branch = Creative.create!(user: @user, description: "Destroyed chat branch")
+    root = Creative.create!(user: @user, description: "Destroyed chat root")
+    branch = Creative.create!(user: @user, parent: root, description: "Destroyed chat branch")
     leaf = Creative.create!(user: @user, parent: branch, description: "Destroyed chat leaf")
 
     visit collavre.creatives_path(id: leaf.id)
     assert_equal leaf.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+    assert_docked_comments_loaded
 
     leaf.destroy!
     page.execute_script(<<~JS)
@@ -416,7 +441,9 @@ class InlineScriptsTest < ApplicationSystemTestCase
     JS
 
     assert_selector "#comments-popup[data-creative-id='']", visible: :visible, wait: 10
-    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}']", wait: 10
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}']", wait: 10
+    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{leaf.id}']", wait: 10
+    assert_no_selector ".creative-workspace-tree-item[data-creative-id='#{branch.id}'] .creative-workspace-tree-branch-toggle", wait: 10
     assert_text I18n.t("collavre.creatives.workspace.select_chat")
   end
 

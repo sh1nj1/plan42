@@ -68,9 +68,8 @@ module Collavre
 
       # Point a payload's sender at the comment the trigger has just been moved
       # onto. Only when the author actually changed: a payload may carry a sender
-      # its producer shaped deliberately (Comments::WorkflowExecutor attributes a
-      # sub-task to the user who issued /work), and re-anchoring inside one user's
-      # own burst is no reason to touch it.
+      # its producer shaped deliberately, and re-anchoring inside one user's own
+      # burst is no reason to touch it.
       #
       # A rebuild that finds no user drops the key rather than leaving a wrong
       # one: ClaudeChannelAdapter then falls back to the comment's own user_id and

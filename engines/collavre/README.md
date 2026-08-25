@@ -169,7 +169,6 @@ gem "rubyzip"
 | `Collavre::Comment` | Real-time chat messages within creatives |
 | `Collavre::Topic` | Conversation namespaces within creatives |
 | `Collavre::CreativeShare` | Permission grants for sharing creatives |
-| `Collavre::InboxItem` | User notifications |
 
 ## Permissions
 

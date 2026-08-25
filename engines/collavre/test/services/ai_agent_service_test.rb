@@ -157,13 +157,12 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.handed_off? = true
 
     dispatched = false
-    original_dispatch = Collavre::SystemEvents::Dispatcher.method(:dispatch)
-
-    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(event_name, context) {
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(event_name, context, **options) {
       dispatched = true
       assert_equal "comment_created", event_name
       assert_equal "@AgentB: 이 주제에 대해 어떻게 생각해?", context[:comment][:content]
       assert_equal @user.id, context[:workspace_user_id]
+      assert_equal "a2a", options[:source]
     } do
       AiClient.stub :new, mock_client do
         AiAgentService.new(@task).call
@@ -187,12 +186,14 @@ class AiAgentServiceTest < ActiveSupport::TestCase
       topic: @comment.topic,
       skip_dispatch: true
     )
+    parent = Collavre::SystemEvents::Envelope.root("comment_created", source: "test")
     @task.update!(
       trigger_event_payload: {
         "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
         "creative" => { "id" => @creative.id },
         "topic" => { "id" => upstream_reply.topic_id },
-        "workspace_user_id" => @user.id
+        "workspace_user_id" => @user.id,
+        "event" => parent.to_h
       }
     )
 
@@ -204,8 +205,10 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.handed_off? = true
 
     captured_context = nil
+    current_agent_turn = nil
     client_factory = lambda do |**options|
       captured_context = options[:context]
+      current_agent_turn = Current.agent_turn
       mock_client
     end
 
@@ -215,6 +218,10 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     assert_equal @user, captured_context[:workspace_user]
     assert_not_equal upstream_agent, captured_context[:workspace_user]
+    assert_equal @user, current_agent_turn[:user]
+    assert_equal @task, current_agent_turn[:task]
+    assert_equal parent, Collavre::SystemEvents::Envelope.in(current_agent_turn[:task].trigger_event_payload)
+    assert_nil Current.agent_turn
   end
 
   test "does not fall back to the creator for an explicitly cleared workspace principal" do
@@ -267,13 +274,19 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     mock_client.define_singleton_method(:last_handoff_failed?) { false }
     mock_client.define_singleton_method(:handed_off?) { true }
     dispatched = nil
+    current_agent_turn = nil
+    client_factory = lambda do |**_options|
+      current_agent_turn = Current.agent_turn
+      mock_client
+    end
 
-    SystemEvents::Dispatcher.stub(:dispatch, ->(_event_name, payload) { dispatched = payload }) do
-      AiClient.stub(:new, mock_client) { AiAgentService.new(@task).call }
+    SystemEvents::Dispatcher.stub(:dispatch, ->(_event_name, payload, **_options) { dispatched = payload }) do
+      AiClient.stub(:new, client_factory) { AiAgentService.new(@task).call }
     end
 
     assert dispatched.key?(:workspace_user_id)
     assert_nil dispatched[:workspace_user_id]
+    assert_nil current_agent_turn[:user]
   end
 
   test "does not dispatch A2A when AI response mentions a human user" do

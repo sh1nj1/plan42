@@ -45,13 +45,10 @@ class Collavre::InboxBadgeChannelTest < ActionCable::Channel::TestCase
     assert_includes html, 'data-count="1"'
   end
 
-  # When the user has the inbox comments popup open they are registered in
-  # CommentPresenceStore, and the steady-state badge is suppressed to 0 (the
-  # user is actively viewing the unread items). The reconnect snapshot must
-  # honor the same suppression — otherwise it repaints the raw unread count
-  # over the suppressed badge after a WebSocket gap, leaving it stale until the
-  # next event or read-pointer update.
-  test "subscribing while present suppresses the inbox badge to zero" do
+  # The reconnect snapshot must honor the same topic-specific suppression as a
+  # live badge update, rather than treating presence anywhere in the inbox as a
+  # reason to clear every unread topic.
+  test "subscribing while viewing an inbox topic suppresses that topic's badge" do
     user = users(:one)
     inbox = Collavre::Creative.inbox_for(user)
     inbox.comments.create!(
@@ -61,6 +58,7 @@ class Collavre::InboxBadgeChannelTest < ActionCable::Channel::TestCase
       topic: inbox.system_topic(fallback_user: user)
     )
     Collavre::CommentPresenceStore.add(inbox.id, user.id)
+    Collavre::CommentPresenceStore.set_topic(inbox.id, user.id, inbox.system_topic.id)
 
     stub_connection current_user: user
 
@@ -71,5 +69,25 @@ class Collavre::InboxBadgeChannelTest < ActionCable::Channel::TestCase
     html = transmissions.last
     assert_not_nil html, "expected the channel to transmit a badge snapshot on subscribe"
     assert_includes html, 'data-count="0"'
+  end
+
+  test "subscribing while viewing Main keeps unread System notices in the inbox badge" do
+    user = users(:one)
+    inbox = Collavre::Creative.inbox_for(user)
+    inbox.comments.create!(
+      content: "unread system notice",
+      user: nil,
+      skip_default_user: true,
+      topic: inbox.system_topic(fallback_user: user)
+    )
+    Collavre::CommentPresenceStore.add(inbox.id, user.id)
+    Collavre::CommentPresenceStore.set_topic(inbox.id, user.id, inbox.main_topic.id)
+
+    stub_connection current_user: user
+
+    subscribe
+
+    assert subscription.confirmed?
+    assert_includes transmissions.last, 'data-count="1"'
   end
 end

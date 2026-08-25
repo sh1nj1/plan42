@@ -22,7 +22,10 @@ describe('CommentsPopupController', () => {
         <h3 data-comments--popup-target="title">Title</h3>
         <div data-comments--popup-target="list">List</div>
         <a data-comments--popup-target="fullscreenLink" href="#"></a>
-        <button data-comments--popup-target="closeButton">Close</button>
+        <button data-comments--popup-target="closeButton">
+          <span data-comments--popup-target="closeIcon" aria-hidden="true"><svg data-icon="close"></svg></span>
+          <span data-comments--popup-target="expandDockedIcon" aria-hidden="true" style="display:none;"><svg data-icon="expand"></svg></span>
+        </button>
         <div data-comments--popup-target="leftHandle"></div>
         <div data-comments--popup-target="rightHandle"></div>
       </div>
@@ -94,6 +97,26 @@ describe('CommentsPopupController', () => {
         expect(popup.dataset.resized).toBeUndefined()
     })
 
+    test('keeps the mobile chat open while scrolling down inside the topic-list popup', () => {
+		const popup = document.getElementById('comments-popup')
+		const topicListModal = document.createElement('div')
+		const topicListItem = document.createElement('li')
+		topicListModal.id = 'topic-list-modal'
+		topicListModal.appendChild(topicListItem)
+		popup.appendChild(topicListModal)
+		jest.spyOn(controller, 'isMobile').mockReturnValue(true)
+		const close = jest.spyOn(controller, 'close')
+
+		controller.handleTouchStart({
+			target: topicListItem,
+			touches: [{ clientY: 100 }]
+		})
+		controller.handleTouchEnd({ changedTouches: [{ clientY: 180 }] })
+
+		expect(close).not.toHaveBeenCalled()
+		expect(controller.touchStartY).toBeNull()
+    })
+
     test('inherits auto-focus preference from trigger button', async () => {
         const triggerBtn = document.getElementById('trigger-btn')
         const popup = document.getElementById('comments-popup')
@@ -132,7 +155,7 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
-    test('docked close button keeps the close icon while expanded and shows a chevron when collapsed', () => {
+    test('docked close button shows the close asset while expanded and a chevron when collapsed', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
         popup.dataset.collapseDockedLabel = 'Collapse chat'
@@ -140,26 +163,28 @@ describe('CommentsPopupController', () => {
 
         controller.enterDockedMode()
         controller.syncDockedUI()
-        expect(controller.closeButtonTarget.textContent).toBe('×')
-        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
+        expect(controller.closeIconTarget.getAttribute('aria-hidden')).toBe('true')
+        expect(controller.closeIconTarget.querySelector('[data-icon="close"]')).not.toBeNull()
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
 
         controller.toggleDocked()
         expect(popup.classList.contains('docked-collapsed')).toBe(true)
-        const icon = controller.closeButtonTarget.querySelector('svg')
-        expect(icon).not.toBeNull()
-        expect(icon.getAttribute('aria-hidden')).toBe('true')
-        expect(controller.closeButtonTarget.textContent.trim()).toBe('')
+        expect(controller.closeIconTarget.style.display).toBe('none')
+        expect(controller.expandDockedIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.getAttribute('aria-hidden')).toBe('true')
+        expect(controller.expandDockedIconTarget.querySelector('[data-icon="expand"]')).not.toBeNull()
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
 
         controller.toggleDocked()
         expect(popup.classList.contains('docked-collapsed')).toBe(false)
-        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
-        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
     })
 
-    test('leaving docked mode while collapsed restores the close glyph', () => {
+    test('leaving docked mode while collapsed restores the close asset', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
         popup.dataset.closeLabel = 'Close chat'
@@ -167,13 +192,13 @@ describe('CommentsPopupController', () => {
 
         controller.enterDockedMode()
         controller.toggleDocked()
-        expect(controller.closeButtonTarget.querySelector('svg')).not.toBeNull()
+        expect(controller.expandDockedIconTarget.style.display).toBe('')
 
         controller.dockedMediaQuery.matches = false
         controller.syncDockedUI()
 
-        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
-        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
     })
 
     test('restores the floating close button label after leaving docked mode', () => {
@@ -185,7 +210,8 @@ describe('CommentsPopupController', () => {
 
         controller.syncDockedUI()
 
-        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeIconTarget.style.display).toBe('')
+        expect(controller.expandDockedIconTarget.style.display).toBe('none')
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Close chat')
         expect(controller.closeButtonTarget.title).toBe('Close chat')
     })
@@ -284,13 +310,28 @@ describe('CommentsPopupController', () => {
         expect(openFromUrl).not.toHaveBeenCalled()
     })
 
-    test('same-creative workspace deep links refresh the docked chat highlight', () => {
+    test('same-creative workspace deep links reload only the highlighted comment window', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')
         popup.dataset.docked = 'true'
         popup.dataset.creativeId = '123'
         popup.style.display = 'flex'
         const open = jest.spyOn(controller, 'open').mockResolvedValue()
+        const listController = {
+            onPopupOpened: jest.fn(),
+            onPopupClosed: jest.fn(),
+        }
+        Object.defineProperty(controller, 'listController', {
+            configurable: true,
+            value: listController,
+        })
+        Object.defineProperty(controller, 'topicsController', {
+            configurable: true,
+            value: {
+                currentTopicId: '7',
+                onPopupClosed: jest.fn(),
+            },
+        })
 
         document.dispatchEvent(new CustomEvent('creative-comments-click', {
             detail: {
@@ -301,10 +342,92 @@ describe('CommentsPopupController', () => {
             },
         }))
 
-        expect(open).toHaveBeenCalledWith(triggerBtn, {
+        expect(open).not.toHaveBeenCalled()
+        expect(listController.onPopupOpened).toHaveBeenCalledWith({
             creativeId: '123',
             highlightId: '456',
+            topicId: '7',
         })
+    })
+
+    test('same-creative deep links clear suppression from a canceled pending open', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        let finishTopicsLoad
+        const listController = {
+            creativeId: null,
+            suppressTopicChangeLoad: false,
+            onPopupOpened: jest.fn(),
+            onPopupClosed: jest.fn(),
+        }
+        const topicsController = {
+            clearOverrideTopicId: jest.fn(),
+            currentTopicId: '7',
+            onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+            onPopupClosed: jest.fn(),
+        }
+        Object.defineProperty(controller, 'listController', { configurable: true, value: listController })
+        Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+
+        const pendingOpen = controller.open(triggerBtn)
+        await Promise.resolve()
+        expect(listController.suppressTopicChangeLoad).toBe(true)
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        const suppressionAfterReload = listController.suppressTopicChangeLoad
+        expect(listController.onPopupOpened).toHaveBeenCalledWith({
+            creativeId: '123',
+            highlightId: '456',
+            topicId: '7',
+        })
+
+        finishTopicsLoad()
+        await pendingOpen
+        expect(suppressionAfterReload).toBe(false)
+    })
+
+    test('same-creative workspace deep links highlight an already loaded comment without reloading', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        const listTarget = document.createElement('div')
+        const comment = document.createElement('div')
+        comment.id = 'comment_456'
+        listTarget.appendChild(comment)
+        popup.appendChild(listTarget)
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+        const listController = {
+            listTarget,
+            highlightComment: jest.fn(),
+            onPopupOpened: jest.fn(),
+            onPopupClosed: jest.fn(),
+        }
+        Object.defineProperty(controller, 'listController', {
+            configurable: true,
+            value: listController,
+        })
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        expect(listController.highlightComment).toHaveBeenCalledWith('456')
+        expect(listController.onPopupOpened).not.toHaveBeenCalled()
     })
 
     test('same-creative workspace sync without a deep link keeps the docked chat', () => {

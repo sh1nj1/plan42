@@ -35,5 +35,14 @@ module Collavre
       Task.where(id: task.id).update_all(status: "done")
       assert task.reload.done?
     end
+
+    test "stale cancellation does not overwrite a completed task" do
+      task = Task.create!(name: "T", status: "running", agent: @agent)
+      stale_task = Task.find(task.id)
+      Task.where(id: task.id).update_all(status: "done")
+
+      assert_nil stale_task.cancel_if_active!
+      assert task.reload.done?
+    end
   end
 end

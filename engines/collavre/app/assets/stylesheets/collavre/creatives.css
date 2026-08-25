@@ -334,64 +334,86 @@ creative-tree-row.show-edit .creative-row {
     color: var(--text-muted);
 }
 
-/* Progress toggle (hover-to-complete) */
+/* Leaf creatives with binary progress are directly actionable. The checkbox and
+   the completion mark share one grid cell so the control keeps a single width
+   whichever state is showing. */
 .progress-toggle-wrap {
-    position: relative;
     cursor: pointer;
-    display: inline-flex;
+    display: inline-grid;
+    grid-template-areas: "progress-state";
     align-items: center;
+    justify-items: center;
+    min-width: 1.5em;
     padding-top: 4px;
 }
 
-.progress-toggle-wrap .creative-progress-complete,
-.progress-toggle-wrap .creative-progress-incomplete {
-    padding-top: 0;
+.progress-toggle-wrap > * {
+    grid-area: progress-state;
 }
 
 .progress-toggle-checkbox {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
+    width: 1em;
+    height: 1em;
     margin: 0;
-    z-index: 1;
+    cursor: pointer;
+    accent-color: var(--color-brand);
+    transition: opacity 0.12s ease;
 }
 
-/* Desktop: show checkbox on row hover (same pattern as edit-btn, comments-btn) */
+/* A completed leaf shows the admin completion mark (blank by default) instead of
+   a checked box, so finished rows read as quietly as completed parent rows. */
+.progress-toggle-mark {
+    color: var(--color-brand);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-checkbox {
+    opacity: 0;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-mark {
+    opacity: 1;
+}
+
+/* Hover or keyboard focus brings the checked box back, so an accidental
+   completion is undone in place instead of through the inline editor. */
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-checkbox,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-checkbox {
+    opacity: 1;
+}
+
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-mark,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-mark {
+    opacity: 0;
+}
+
+/* Pointer devices keep a resting row quiet: the checkbox joins the row's other
+   hover-revealed actions (edit, comments) instead of standing in every row, and
+   keyboard focus reveals it for pointerless navigation. Touch devices have no
+   hover to reveal it, so there the checkbox stays visible. The wrap keeps its
+   width either way, so revealing the box never shifts the row. */
 @media (hover: hover) {
-    .progress-toggle-checkbox {
-        width: 1em;
-        height: 1em;
-        visibility: hidden;
+    .creative-row .progress-toggle-checkbox {
         opacity: 0;
-        position: absolute;
-        margin: auto;
-        pointer-events: none;
     }
 
-    .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
-    .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
-        visibility: hidden;
-    }
-
-    .creative-row:hover .progress-toggle-checkbox {
-        visibility: visible;
+    .creative-row:hover .progress-toggle-checkbox,
+    .creative-row .progress-toggle-wrap:focus-within .progress-toggle-checkbox {
         opacity: 1;
-        position: absolute;
-        inset: 0;
-        margin: auto;
-        pointer-events: auto;
-        accent-color: var(--color-brand);
+    }
+
+    .creative-row:hover .progress-toggle-wrap[data-current-progress="1"] .progress-toggle-mark,
+    .creative-row .progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-mark {
+        opacity: 0;
     }
 }
 
-/* Touch devices: always show both text and clickable area */
-@media (hover: none) {
-    .progress-toggle-checkbox {
-        opacity: 0;
-        pointer-events: auto;
+@media (prefers-reduced-motion: reduce) {
+    .progress-toggle-checkbox,
+    .progress-toggle-mark {
+        transition: none;
     }
 }
 

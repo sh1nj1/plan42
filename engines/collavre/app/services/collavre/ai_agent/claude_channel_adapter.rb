@@ -17,10 +17,9 @@ module Collavre
 
       def deliver
         unless @topic_id
-          # Workflow subtasks build context without a topic (see
-          # WorkflowExecutor#build_subtask_context). A Claude Channel agent
-          # cannot service those — raise so AiAgentJob fails the task and the
-          # parent workflow advances via fail_subtask! instead of hanging.
+          # A Claude Channel agent has no place to deliver a dispatch that
+          # carries no topic — raise so AiAgentJob fails the task instead of
+          # broadcasting into nowhere.
           raise UndeliverableError,
                 "Claude Channel delivery requires a topic_id (agent=#{@agent.id})"
         end

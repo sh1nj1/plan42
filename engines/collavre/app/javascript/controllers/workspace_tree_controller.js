@@ -1,4 +1,11 @@
 import { Controller } from '@hotwired/stimulus'
+import {
+  cancelPendingLastVisitedCreative,
+  prepareLastVisitedCreativeNavigation,
+  rememberLastVisitedCreative,
+} from '../lib/last_visited_creative'
+// Keep the workspace tree's branch affordance visually aligned with the
+// central creative tree (components/creative_tree_row.js#_toggleIcon).
 import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
 
 // Module-scoped: a history restore replaces the whole body, swapping this
@@ -14,6 +21,9 @@ export default class extends Controller {
 
   static values = {
     url: String,
+    lastVisitedCreativeUrl: String,
+    lastVisitedCreativeVisitToken: String,
+    lastVisitedCreativeVisitSequence: Number,
     currentPath: Array,
     loadingText: String,
     emptyText: String,
@@ -29,6 +39,7 @@ export default class extends Controller {
     this.invalidationGeneration = 0
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleFrameRequest = this.handleFrameRequest.bind(this)
+    this.handleFetchRequest = this.handleFetchRequest.bind(this)
     this.handleTurboRender = this.handleTurboRender.bind(this)
     this.handleVisitStart = this.handleVisitStart.bind(this)
     this.handlePopState = this.handlePopState.bind(this)
@@ -41,6 +52,7 @@ export default class extends Controller {
     this.element.addEventListener('touchend', this.handlePanelTouchEnd, { passive: true })
     document.addEventListener('turbo:visit', this.handleVisitStart)
     document.addEventListener('turbo:before-fetch-request', this.handleFrameRequest)
+    document.addEventListener('turbo:before-fetch-request', this.handleFetchRequest)
     document.addEventListener('turbo:frame-load', this.handleFrameLoad)
     document.addEventListener('turbo:frame-render', this.handleFrameLoad)
     document.addEventListener('turbo:render', this.handleTurboRender)
@@ -55,7 +67,11 @@ export default class extends Controller {
     // have started in between and supersedes the restore.
     if (lastVisitAction === 'restore') {
       requestAnimationFrame(() => {
-        if (lastVisitAction === 'restore') this.ensureFrameMatchesLocation()
+        if (lastVisitAction !== 'restore' || !this.element.isConnected) return
+
+        this.ensureFrameMatchesLocation()
+        this.syncFromWorkspaceFrame(undefined, { rememberLastVisited: true })
+        lastVisitAction = null
       })
     }
     this.load({ syncChat: false })
@@ -71,6 +87,7 @@ export default class extends Controller {
     this.element.removeEventListener('touchend', this.handlePanelTouchEnd)
     document.removeEventListener('turbo:visit', this.handleVisitStart)
     document.removeEventListener('turbo:before-fetch-request', this.handleFrameRequest)
+    document.removeEventListener('turbo:before-fetch-request', this.handleFetchRequest)
     document.removeEventListener('turbo:frame-load', this.handleFrameLoad)
     document.removeEventListener('turbo:frame-render', this.handleFrameLoad)
     document.removeEventListener('turbo:render', this.handleTurboRender)
@@ -180,6 +197,7 @@ export default class extends Controller {
     link.className = 'creative-workspace-tree-link'
     link.dataset.turboFrame = 'creative-workspace-content'
     link.dataset.turboAction = 'advance'
+    link.dataset.turboPrefetch = 'false'
     link.dataset.creativeId = String(node.id)
     link.dataset.creativeSnippet = node.snippet || node.label
     link.dataset.canComment = String(node.can_comment === true)
@@ -284,7 +302,16 @@ export default class extends Controller {
     this.frameRequestGeneration = this.invalidationGeneration
   }
 
+  handleFetchRequest(event) {
+    prepareLastVisitedCreativeNavigation(
+      event,
+      this.lastVisitedCreativeUrlValue,
+      this.lastVisitedCreativeVisitTokenValue,
+    )
+  }
+
   handleVisitStart(event) {
+    cancelPendingLastVisitedCreative()
     lastVisitAction = event.detail?.action
   }
 
@@ -306,8 +333,12 @@ export default class extends Controller {
     requestAnimationFrame(() => {
       // The restore check must run even from an instance the render just
       // disconnected — it only reads the current document and URL.
-      if (lastVisitAction === 'restore') this.ensureFrameMatchesLocation()
-      if (this.element.isConnected) this.syncFromWorkspaceFrame()
+      const restoringHistory = lastVisitAction === 'restore'
+      if (restoringHistory) this.ensureFrameMatchesLocation()
+      if (this.element.isConnected) {
+        this.syncFromWorkspaceFrame(undefined, { rememberLastVisited: restoringHistory })
+        if (restoringHistory) lastVisitAction = null
+      }
     })
   }
 
@@ -355,7 +386,7 @@ export default class extends Controller {
 
   syncFromWorkspaceFrame(
     frame = document.getElementById('creative-workspace-content'),
-    { authoritative = false, syncChat = true } = {}
+    { authoritative = false, syncChat = true, rememberLastVisited = false } = {}
   ) {
     if (!frame) return
 
@@ -363,6 +394,7 @@ export default class extends Controller {
     if (!state) return
 
     const stateCreativeId = state.dataset.creativeId
+    this.updateLastVisitedCreativeNavigation(state)
     const locationCreativeId = this.creativeIdFromLocation()
     if (!stateCreativeId && (authoritative || !locationCreativeId)) {
       this.currentPathValue = []
@@ -398,6 +430,27 @@ export default class extends Controller {
         highlightId: authoritative ? this.commentIdFromLocation() : undefined,
       })
     }
+
+    if (rememberLastVisited) this.rememberLastVisitedCreative(stateCreativeId)
+  }
+
+  rememberLastVisitedCreative(creativeId) {
+    if (!creativeId || !this.hasLastVisitedCreativeUrlValue || !this.hasLastVisitedCreativeVisitTokenValue) return
+
+    rememberLastVisitedCreative(
+      this.lastVisitedCreativeUrlValue,
+      creativeId,
+      this.lastVisitedCreativeVisitTokenValue
+    )
+  }
+
+  updateLastVisitedCreativeNavigation(state) {
+    const token = state.dataset.lastVisitedCreativeVisitToken
+    const sequence = Number(state.dataset.lastVisitedCreativeVisitSequence)
+    if (!token || !Number.isFinite(sequence)) return
+
+    this.lastVisitedCreativeVisitTokenValue = token
+    this.lastVisitedCreativeVisitSequenceValue = sequence
   }
 
   setActiveId(id) {
@@ -559,8 +612,8 @@ export default class extends Controller {
   restoreCreativeIdFromFrameResponse(creativeId) {
     const id = String(creativeId)
     if (this.destroyedCreativeIds.has(id)) return
-    // Only a frame request started after the latest invalidation proves current access;
-    // leaf creatives never appear in the workspace tree payload, so this is their only restore path.
+    // Only a frame request started after the latest invalidation proves current access.
+    // This also covers creatives hidden under collapsed ancestors in the tree payload.
     if (this.frameRequestGeneration !== this.invalidationGeneration) return
 
     this.invalidatedCreativeIds.delete(id)

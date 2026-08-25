@@ -18,6 +18,11 @@ module Collavre
     has_many :user_creative_preferences_as_last_topic, class_name: "Collavre::UserCreativePreference",
              foreign_key: :last_topic_id, dependent: :nullify, inverse_of: :last_topic
 
+    # The dependent nullify below clears a user's selected topic without going
+    # through the preference controller. Advance the ordering token first so a
+    # client can distinguish that deletion from an older empty preference.
+    before_destroy :advance_last_topic_preference_revisions, prepend: true
+
     # --- Archive scopes ---
     scope :active, -> { where(archived_at: nil) }
     scope :archived, -> { where.not(archived_at: nil) }
@@ -88,6 +93,10 @@ module Collavre
     end
 
     private
+
+    def advance_last_topic_preference_revisions
+      user_creative_preferences_as_last_topic.update_all("last_topic_revision = last_topic_revision + 1")
+    end
 
     def set_default_position
       return if position_changed? && position != 0

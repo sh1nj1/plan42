@@ -1,5 +1,5 @@
 import CommonPopup from '../lib/common_popup'
-import { getCaretClientRect } from '../utils/caret_position'
+import { caretAnchor } from '../utils/caret_position'
 import CommandArgsForm from './command_args_form'
 import { openCreativeLinkPicker } from './creative_link_picker'
 
@@ -128,18 +128,25 @@ if (!commandMenuInitialized) {
       textarea.setSelectionRange(cleaned.length, cleaned.length)
     }
 
+    // Cached by creative id, and cached as the *promise* rather than its result:
+    // the list is fetched on every keystroke, so caching only after the response
+    // lands would fire one request per character of "/task" before the first one
+    // returns. In-flight callers share the request instead.
     function fetchCommands(creativeId) {
       if (!creativeId) return Promise.resolve([])
-      if (commandCache.has(creativeId)) return Promise.resolve(commandCache.get(creativeId))
+      if (commandCache.has(creativeId)) return commandCache.get(creativeId)
 
-      return fetch(`/creatives/${creativeId}/comments/commands`, { headers: { Accept: 'application/json' } })
+      const request = fetch(`/creatives/${creativeId}/comments/commands`, { headers: { Accept: 'application/json' } })
         .then((response) => (response.ok ? response.json() : []))
-        .then((data) => {
-          const list = Array.isArray(data) ? data : []
-          commandCache.set(creativeId, list)
-          return list
+        .then((data) => (Array.isArray(data) ? data : []))
+        .catch(() => {
+          // Don't leave a failed lookup cached — the next keystroke retries.
+          commandCache.delete(creativeId)
+          return []
         })
-        .catch(() => [])
+
+      commandCache.set(creativeId, request)
+      return request
     }
 
     function insert(command) {
@@ -171,8 +178,7 @@ if (!commandMenuInitialized) {
       }
 
       popupMenu.setItems(filtered)
-      const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
-      popupMenu.showAt(caretRect)
+      popupMenu.showAt(caretAnchor(textarea))
     }
 
     function openCreativePicker(textarea) {
@@ -185,10 +191,17 @@ if (!commandMenuInitialized) {
       if (popupMenu.handleKey(event)) return
     })
 
+    // Bumped by every input event, so a lookup that resolves after the user has
+    // typed on (or deleted the "/" entirely) is dropped instead of rendering the
+    // menu from a query that no longer matches the box — the late response would
+    // otherwise pop the menu back up over an unrelated draft.
+    let queryToken = 0
+
     textarea.addEventListener('input', function () {
       // If args form is open, don't show command menu
       if (argsForm.isOpen()) return
 
+      const token = ++queryToken
       const pos = textarea.selectionStart
       const before = textarea.value.slice(0, pos)
       // Only trigger when "/" is at the very beginning of the message
@@ -202,7 +215,10 @@ if (!commandMenuInitialized) {
       const query = match[1]
 
       fetchCommands(creativeId)
-        .then((commands) => show(commands, query))
+        .then((commands) => {
+          if (token !== queryToken) return
+          show(commands, query)
+        })
     })
   })
 }

@@ -23,7 +23,13 @@ module Collavre
       # badge stale. transmit only reaches this just-confirmed subscriber, so the
       # snapshot can never be sent while no client is listening.
       inbox = Creative.inbox_for(current_user)
-      snapshot = Comment.inbox_badge_turbo_stream(inbox, current_user)
+      badge_index = Creatives::CommentBadgeIndex.new(user: current_user)
+      badge_index.index([ inbox ])
+      snapshot = Comment.inbox_badge_turbo_stream(
+        inbox,
+        current_user,
+        count: badge_index.unread_count_for(inbox)
+      )
       transmit(snapshot) if snapshot
     end
   end

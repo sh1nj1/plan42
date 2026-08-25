@@ -1,68 +1,97 @@
 module Collavre
   class CommentReadPointersController < ApplicationController
+    LEGACY_TOPIC_WATERMARK_KEY = "_legacy"
+
     def update
       creative = Creative.find(params[:creative_id]).effective_origin
-      last_id = creative.comments.visible_to(Current.user).maximum(:id)
-      pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative)
+      topic = params[:topic_id].present? && creative.topics.find_by(id: params[:topic_id])
+      return head :unprocessable_entity if params[:topic_id].present? && !topic
 
-      previous_last_read_id = pointer.last_read_comment_id
-      pointer.last_read_comment_id = last_id
-      pointer.save!
+      last_ids = topic ? topic_last_id(creative, topic) : all_message_last_ids(creative)
+      positions = Comments::ReadPointerWriter.new(creative: creative, user: Current.user).call(last_ids)
+      Comments::ReadReceiptBroadcaster.new(creative: creative).call(positions)
 
-      mark_inbox_items_read(creative, last_id)
       Comment.broadcast_badge(creative, Current.user)
 
-      if previous_last_read_id && previous_last_read_id != last_id
-        broadcast_read_receipts(creative, previous_last_read_id)
-      end
-      broadcast_read_receipts(creative, last_id)
-
       render json: { success: true }
+    rescue Comments::ReadPointerWriter::StaleTopicError
+      head :unprocessable_entity
     end
 
     private
 
-    def broadcast_read_receipts(creative, comment_id)
-      return unless comment_id
-
-      # We map to the nearest PUBLIC comment to avoid leaking the existence/ID of private comments
-      # via the public action cable channel.
-      # Trade-off: Private-only threads (with no preceding public comment) will not get real-time read updates.
-      effective_id = find_nearest_public_comment_id(creative, comment_id)
-      return unless effective_id
-
-      users = fetch_users_on_effective_id(creative, effective_id)
-
-      present_user_ids = CommentPresenceStore.list(creative.id)
-
-      Turbo::StreamsChannel.broadcast_update_to(
-        [ creative, :comments ],
-        target: "read_receipts_comment_#{effective_id}",
-        partial: "collavre/comments/read_receipts",
-        locals: { read_by_users: users, present_user_ids: present_user_ids }
-      )
+    def topic_last_id(creative, topic)
+      { topic.id => creative.comments.visible_to(Current.user).where(topic: topic).maximum(:id) }
     end
 
-    def find_nearest_public_comment_id(creative, comment_id)
-      creative.comments.public_only.where("id <= ?", comment_id).maximum(:id)
+    # All Messages renders Main plus active topics, not archived ones. Do not
+    # advance the retained legacy pointer here: an archived topic without its
+    # own pointer falls back to it, so moving that watermark would silently mark
+    # its hidden comments as read.
+    def all_message_last_ids(creative)
+      visible_comments = creative.comments.visible_to(Current.user)
+      topic_watermarks, legacy_watermark = normalized_topic_watermarks(params[:topic_watermarks])
+      return watermarked_last_ids(creative, visible_comments, topic_watermarks, legacy_watermark) if
+        topic_watermarks.any? || legacy_watermark.positive?
+
+      unwatermarked_last_ids(creative, visible_comments)
     end
 
-    def fetch_users_on_effective_id(creative, effective_id)
-      next_public_id = creative.comments.public_only.where("id > ?", effective_id).minimum(:id)
+    def normalized_topic_watermarks(rendered_topic_watermarks)
+      raw_watermarks = rendered_topic_watermarks.respond_to?(:to_unsafe_h) ? rendered_topic_watermarks.to_unsafe_h : rendered_topic_watermarks.to_h
+      topic_watermarks = raw_watermarks.filter_map do |topic_id, comment_id|
+        [ topic_id.to_i, comment_id.to_i ] if topic_id.to_i.positive? && comment_id.to_i.positive?
+      end.to_h
 
-      query = CommentReadPointer.where(creative: creative)
-                                .where("last_read_comment_id >= ?", effective_id)
-
-      query = query.where("last_read_comment_id < ?", next_public_id) if next_public_id
-
-      query.includes(user: { avatar_attachment: :blob }).map(&:user)
+      [ topic_watermarks, raw_watermarks[LEGACY_TOPIC_WATERMARK_KEY].to_i ]
     end
 
-    # No-op: inbox notifications are now comments on the user's inbox creative.
-    # Reading comments on a creative updates the CommentReadPointer, which
-    # automatically handles the unread count for the inbox badge.
-    def mark_inbox_items_read(_creative, _last_comment_id)
-      # Intentionally empty — kept for backward compatibility during transition.
+    def watermarked_last_ids(creative, visible_comments, topic_watermarks, legacy_watermark)
+      last_ids = bounded_topic_last_ids(creative, visible_comments, topic_watermarks)
+      return last_ids unless legacy_watermark.positive?
+
+      legacy_last_id = visible_comments.where(topic_id: nil).where("comments.id <= ?", legacy_watermark).maximum(:id)
+      legacy_last_id ? last_ids.merge(nil => legacy_last_id) : last_ids
+    end
+
+    # Every rendered topic carries its own bound, so the maxima are OR-ed into a
+    # single grouped query rather than one MAX per topic. Built from relations
+    # rather than a SQL fragment: a hand-built string here would be safe (literal
+    # template, bound values) but unprovably so to a scanner.
+    def bounded_topic_last_ids(creative, visible_comments, topic_watermarks)
+      topic_ids = creative.topics.where(id: topic_watermarks.keys).pluck(:id)
+      return {} if topic_ids.empty?
+
+      scopes = topic_ids.map do |topic_id|
+        Comment.where(creative_id: creative.id, topic_id: topic_id)
+               .where(Comment.arel_table[:id].lteq(topic_watermarks.fetch(topic_id)))
+      end
+      maxima = grouped_topic_maxima(visible_comments, scopes)
+      topic_ids.index_with { |topic_id| maxima[topic_id] }
+    end
+
+    def unwatermarked_last_ids(creative, visible_comments)
+      rendered_topic_ids_supplied = params.key?(:topic_ids)
+      topics = rendered_topic_ids_supplied ? creative.topics.where(id: Array(params[:topic_ids])) : creative.topics
+      topic_ids = topics.pluck(:id)
+      maxima = visible_comments.where(topic_id: topic_ids).group(:topic_id).maximum(:id)
+      last_ids = topic_ids.index_with { |topic_id| maxima[topic_id] }
+      return last_ids if rendered_topic_ids_supplied
+
+      legacy_client_last_ids(visible_comments, last_ids)
+    end
+
+    # Clients deployed before topic-scoped watermarks only send creative_id.
+    # Preserve the previous creative-wide endpoint semantics for them: every
+    # named topic, including archived topics, and the retained legacy lane
+    # advance through the visible history.
+    def legacy_client_last_ids(visible_comments, last_ids)
+      legacy_last_id = visible_comments.where(topic_id: nil).maximum(:id)
+      legacy_last_id ? last_ids.merge(nil => legacy_last_id) : last_ids
+    end
+
+    def grouped_topic_maxima(visible_comments, scopes)
+      visible_comments.merge(scopes.reduce { |combined, scope| combined.or(scope) }).group(:topic_id).maximum(:id)
     end
   end
 end

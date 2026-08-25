@@ -1351,51 +1351,6 @@ module Collavre
             "no comment should be saved when task_id resolves to a foreign agent"
         end
 
-        test "reply advances parent workflow when delegated subtask completes" do
-          reg = register_agent("workflow-subtask-test")
-          topic_id = reg["topic_id"]
-          ai_user = User.find(reg["agent_id"])
-          topic = Topic.find(topic_id)
-          creative = topic.creative.effective_origin
-
-          parent_task = Collavre::Task.create!(
-            name: "Parent workflow",
-            status: "running",
-            agent: ai_user,
-            topic_id: topic_id,
-            creative_id: creative.id
-          )
-          subtask = Collavre::Task.create!(
-            name: "Subtask",
-            status: "delegated",
-            trigger_event_name: "comment_created",
-            agent: ai_user,
-            topic_id: topic_id,
-            creative_id: creative.id,
-            parent_task: parent_task
-          )
-
-          completed_with = nil
-          executor_stub = lambda { |passed_parent|
-            assert_equal parent_task.id, passed_parent.id
-            mock = Minitest::Mock.new
-            mock.expect(:complete_subtask!, nil) { |t| completed_with = t.id; true }
-            mock
-          }
-
-          Collavre::Comments::WorkflowExecutor.stub(:new, executor_stub) do
-            post "/api/v1/agent/reply",
-              params: { topic_id: topic_id, text: "Subtask done" },
-              headers: auth_headers,
-              as: :json
-          end
-          assert_response :created
-
-          assert_equal "done", subtask.reload.status
-          assert_equal subtask.id, completed_with,
-            "WorkflowExecutor#complete_subtask! must be called with the freshly-completed subtask"
-        end
-
         test "reply drains topic queue after delegated task completes" do
           reg = register_agent("dequeue-test")
           topic_id = reg["topic_id"]
@@ -1956,16 +1911,10 @@ module Collavre
             "so a sibling's queued task on the shared topic is promoted"
         end
 
-        test "destroy clears routing_expression to exclude session agent from Matcher" do
-          # Per-session ai_users left lying around with routing_expression="true"
-          # keep being scanned by Orchestration::Matcher#match_by_expression,
-          # creating delegated tasks for a session whose MCP client has exited.
+        test "destroy preserves a Claude agent's explicit routing expression" do
           reg = register_agent("disable-routing-test")
           ai_user = User.find(reg["agent_id"])
-          # Register no longer activates routing — AgentChannel does on subscribe.
-          # Simulate a subscribed session by flipping routing_expression manually
-          # so destroy has something to clear.
-          ai_user.update_column(:routing_expression, "true")
+          ai_user.update_column(:routing_expression, 'event_name == "comment_created"')
 
           delete "/api/v1/agent/#{ai_user.id}",
             params: { topic_id: reg["topic_id"] },
@@ -1973,32 +1922,27 @@ module Collavre
             as: :json
           assert_response :no_content
 
-          assert_nil ai_user.reload.routing_expression,
-            "unregister must null routing_expression so the matcher skips the session agent"
+          assert_equal 'event_name == "comment_created"', ai_user.reload.routing_expression,
+            "unregister must not use routing_expression as a presence flag"
         end
 
-        test "re-register reuses agent but leaves routing_expression nil until subscribe" do
-          # After the activation-on-subscribe move, re-register must NOT
-          # auto-restore routing_expression: doing so would reopen the race
-          # where matched comments broadcast into an empty stream during the
-          # window between register returning and the new cable subscribe.
+        test "re-register reuses agent without changing its routing expression" do
           first = register_agent("restore-routing-test")
           agent_id = first["agent_id"]
-          # Simulate live session having activated routing on subscribe.
-          User.find(agent_id).update_column(:routing_expression, "true")
+          User.find(agent_id).update_column(:routing_expression, 'event_name == "comment_created"')
 
           delete "/api/v1/agent/#{agent_id}",
             params: { topic_id: first["topic_id"] },
             headers: auth_headers,
             as: :json
           assert_response :no_content
-          assert_nil User.find(agent_id).routing_expression
+          assert_equal 'event_name == "comment_created"', User.find(agent_id).routing_expression
 
           second = register_agent("restore-routing-test")
           assert_equal agent_id, second["agent_id"],
             "same session_name must reuse the same ai_user row"
-          assert_nil User.find(agent_id).routing_expression,
-            "re-register must NOT restore routing_expression — wait for subscribe"
+          assert_equal 'event_name == "comment_created"', User.find(agent_id).routing_expression,
+            "re-register must not change an explicit routing expression"
         end
 
         test "destroy leaves shared-agent routing and a live sibling's work intact" do
@@ -2023,7 +1967,6 @@ module Collavre
           ai_user = User.find(reg_a["agent_id"])
           # Session B is live: holds a presence row, routing active.
           Collavre::AgentSubscription.create!(agent_id: ai_user.id, token: "sess-b-token")
-          ai_user.update_column(:routing_expression, "true")
 
           # B's in-flight delegated work on B's own topic.
           topic_b = Topic.find(reg_b["topic_id"])
@@ -2040,8 +1983,8 @@ module Collavre
             headers: auth_headers, as: :json
           assert_response :no_content
 
-          assert_equal "true", ai_user.reload.routing_expression,
-            "routing must stay active while the sibling session is still live"
+          assert ai_user.claude_channel_online?,
+            "dispatch must stay active while the sibling session is still live"
           assert_equal "delegated", b_task.reload.status,
             "the sibling session's in-flight work must not be cancelled"
           assert_equal 1, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
@@ -2071,7 +2014,6 @@ module Collavre
 
           ai_user = User.find(reg_a["agent_id"])
           Collavre::AgentSubscription.create!(agent_id: ai_user.id, token: "sess-b-token")
-          ai_user.update_column(:routing_expression, "true")
 
           topic_a = Topic.find(reg_a["topic_id"])
           a_task = Collavre::Task.create!(
@@ -2091,8 +2033,8 @@ module Collavre
             "the ending session's own-topic delegated work must be cancelled"
           assert_equal 0, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
             "the ending session's slot must be released"
-          assert_equal "true", ai_user.reload.routing_expression,
-            "routing still stays active for the live sibling"
+          assert ai_user.claude_channel_online?,
+            "dispatch stays active for the live sibling"
         end
 
         test "destroy clears routing when the only session's own presence row is still live" do
@@ -2117,7 +2059,6 @@ module Collavre
           Collavre::AgentSubscription.create!(
             agent_id: ai_user.id, token: "solo-token", session_id: "sess-solo"
           )
-          ai_user.update_column(:routing_expression, "true")
 
           topic = Topic.find(reg["topic_id"])
           task = Collavre::Task.create!(
@@ -2133,8 +2074,8 @@ module Collavre
             headers: auth_headers, as: :json
           assert_response :no_content
 
-          assert_nil ai_user.reload.routing_expression,
-            "the last session leaving must clear routing even if its own WS row is still live"
+          assert_not ai_user.claude_channel_online?,
+            "the last session leaving must remove its live presence row"
           assert_equal "cancelled", task.reload.status,
             "the last session's delegated work must be cancelled, not stranded"
           assert_equal 0, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
@@ -2164,7 +2105,6 @@ module Collavre
           Collavre::AgentSubscription.create!(
             agent_id: ai_user.id, token: "stale-token", session_id: "sess-stale"
           )
-          ai_user.update_column(:routing_expression, "true")
 
           # A non-resolving topic_id (never belonged to this agent), but the
           # stable session_id is supplied — destroy must still tear down.
@@ -2173,8 +2113,8 @@ module Collavre
             headers: auth_headers, as: :json
           assert_response :no_content
 
-          assert_nil ai_user.reload.routing_expression,
-            "session_id param must let destroy clear routing even when topic_id does not resolve"
+          assert_not ai_user.claude_channel_online?,
+            "session_id param must let destroy remove presence even when topic_id does not resolve"
           assert_equal 0, Collavre::AgentSubscription.where(agent_id: ai_user.id).count,
             "the exiting session's own presence row must be removed via session_id"
         end
@@ -2196,15 +2136,14 @@ module Collavre
           Collavre::AgentSubscription.create!(
             agent_id: ai_user.id, token: "b-token", session_id: "sess-b"
           )
-          ai_user.update_column(:routing_expression, "true")
 
           delete "/api/v1/agent/#{ai_user.id}",
             params: { topic_id: reg_a["topic_id"] },
             headers: auth_headers, as: :json
           assert_response :no_content
 
-          assert_equal "true", ai_user.reload.routing_expression,
-            "routing must stay active for the still-live sibling session"
+          assert ai_user.claude_channel_online?,
+            "dispatch must stay active for the still-live sibling session"
           refute Collavre::AgentSubscription.where(agent_id: ai_user.id, session_id: "sess-a").exists?,
             "the exiting session's own presence row must be removed"
           assert Collavre::AgentSubscription.where(agent_id: ai_user.id, session_id: "sess-b").exists?,

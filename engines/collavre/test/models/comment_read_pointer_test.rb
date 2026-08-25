@@ -10,4 +10,14 @@ class CommentReadPointerTest < ActiveSupport::TestCase
 
     refute duplicate.valid?
   end
+
+  test "allows one pointer per topic on the same creative" do
+    user = User.create!(email: "topic-read-pointer@example.com", password: TEST_PASSWORD, name: "Reader")
+    creative = Creative.create!(user: user, description: "Creative")
+    first_topic = creative.main_topic
+    second_topic = creative.topics.create!(name: "Second", user: user)
+    CommentReadPointer.create!(user: user, creative: creative, topic: first_topic)
+
+    assert CommentReadPointer.new(user: user, creative: creative, topic: second_topic).valid?
+  end
 end

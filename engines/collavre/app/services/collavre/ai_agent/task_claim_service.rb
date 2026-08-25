@@ -14,12 +14,15 @@ module Collavre
       #      echoes the dispatch's task_id). Without task_id (legacy clients),
       #      oldest-first.
       #   2. Inside a transaction: SELECT FOR UPDATE the row, re-check
-      #      status == 'delegated' under the lock, then update! to 'done'.
+      #      status == 'delegated' under the lock, then update it to 'running'.
       #      Concurrent claimers block on the lock; the loser sees the
       #      already-flipped status post-lock and returns nil so the caller can
       #      refuse the duplicate.
-      # update_all (NOT update!) is required to skip Task's after_update_commit
-      # callbacks at claim time. The callbacks fire check_trigger_loop_completion
+      # running is a transient claimed-reply state. It remains active while the
+      # comment transaction commits, so TopicMove cannot slip between claim and
+      # finalize; another /reply cannot claim it because only delegated rows are
+      # eligible. update_all (NOT update!) is required to skip callbacks at
+      # claim time. The callbacks fire check_trigger_loop_completion
       # (which enqueues TriggerLoopCheckJob) and broadcast_stop_button_removal
       # (which reads reply_comment). Both depend on the reply comment already
       # existing — but reply() claims BEFORE comment.save to win the race against
@@ -43,25 +46,38 @@ module Collavre
           locked = Task.lock.find_by(id: candidate.id)
           next unless locked && locked.status == "delegated"
 
-          Task.where(id: locked.id).update_all(status: "done", pending_tool_call: nil, updated_at: Time.current)
+          Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
           claimed = locked.reload
         end
         claimed
       end
 
-      # Post-claim side effects, run only after the reply comment is saved. Links
-      # the comment to the claimed task, releases the ResourceTracker slot the
-      # AiAgentJob held under task.id, advances the parent workflow (if any), and
-      # drains the topic queue — mirroring AiAgentJob#perform's success path for
+      def link_reply(task:, comment:)
+        comment.update_column(:task_id, task.id)
+      end
+
+      # Finalize the claimed row inside TaskReplyService's topic-lock
+      # transaction. Completion effects are registered after commit, when the
+      # linked comment and done status are both visible. This leaves no gap for
+      # cancellation or TopicMove between reply persistence and completion.
+      # The effects release the ResourceTracker slot the
+      # AiAgentJob held under task.id, and drains the topic queue — mirroring AiAgentJob#perform's success path for
       # non-delegated runs.
       def finalize(agent:, task:, comment:)
-        comment.update_column(:task_id, task.id)
+        completed = Task.where(id: task.id, status: "running")
+                        .update_all(status: "done", updated_at: Time.current)
+        raise ActiveRecord::RecordNotSaved, "claimed reply task was not running" unless completed == 1
 
-        Orchestration::ResourceTracker.for(agent).release!(task.id)
-
-        if task.parent_task_id.present?
-          Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
+        task.reload
+        ActiveRecord.after_all_transactions_commit do
+          run_completion_effects(agent, task, comment)
         end
+      end
+
+      private
+
+      def run_completion_effects(agent, task, comment)
+        Orchestration::ResourceTracker.for(agent).release!(task.id)
 
         Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
 
@@ -78,8 +94,6 @@ module Collavre
         # drops the moment Claude's reply lands.
         broadcast_claude_idle(agent, task, comment)
       end
-
-      private
 
       # Clear the chat typing indicator via the canonical status broadcaster (the
       # same one AiAgentService uses for every other agent), so the Claude path

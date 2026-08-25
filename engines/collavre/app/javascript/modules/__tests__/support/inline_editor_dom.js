@@ -13,7 +13,7 @@ export const BUTTON_IDS = [
   'inline-metadata-btn', 'inline-toggle-markdown', 'inline-move-up', 'inline-move-down',
   'inline-add', 'inline-level-down', 'inline-level-up', 'inline-archive', 'inline-delete',
   'inline-delete-with-children', 'inline-link', 'inline-unconvert', 'inline-unlink',
-  'inline-close', 'inline-recommend-parent', 'metadata-popup-close', 'metadata-save-btn',
+  'inline-close', 'metadata-popup-close', 'metadata-save-btn',
 ]
 
 export const HIDDEN_INPUT_IDS = [
@@ -66,10 +66,6 @@ export function buildEditorDom(container, {
   const metadataTextarea = document.createElement('textarea')
   metadataTextarea.id = 'metadata-yaml-editor'
   form.appendChild(metadataTextarea)
-  const suggestions = document.createElement('select')
-  suggestions.id = 'parent-suggestions'
-  form.appendChild(suggestions)
-
   BUTTON_IDS.forEach((id) => {
     const button = document.createElement('button')
     button.type = 'button'

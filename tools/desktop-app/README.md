@@ -29,16 +29,30 @@ commas):
 {
   "allowed_hosts": ["xxx.tailadceed.ts.net"],
   "bind_host": "0.0.0.0",
-  "port": 4000
+  "port": 45173
 }
 ```
 
 - `allowed_hosts` — a JSON array, or a `"a,b"` comma-separated string.
 - `bind_host` — omit to stay on loopback (`127.0.0.1`); set `"0.0.0.0"` to open.
-- `port` — omit for an ephemeral port.
+- `port` — omit to use the stable default, `45173`.
 
 A missing or malformed file is the normal closed-loopback case and is ignored
 (the app never fails to launch over a bad config).
+
+## Port policy
+
+The desktop shell uses `http://127.0.0.1:45173` when no valid `PORT` setting is
+provided. This origin is deliberately stable so local firewall rules and future
+PKCE/loopback OAuth callback registrations can target one URL. A valid `PORT`
+environment variable or `config.json` `port` value is an explicit override; an
+OAuth client using one must register that alternate callback URL.
+
+The shell never silently falls back to an ephemeral port when the selected port
+is occupied. Starting on a different port would appear to work while breaking
+registered callbacks and firewall rules. Port-collision recovery is a separate
+user-facing concern and must preserve an explicitly configured, registered
+origin.
 
 ## Layout
 
@@ -49,12 +63,13 @@ tools/desktop-app/
     Cargo.toml
     tauri.conf.json
     build.rs
-    src/{main,lib}.rs        # free port → spawn sidecar → health-gate /up → webview
+    src/{main,lib}.rs        # stable port → spawn sidecar → health-gate /up → webview
     capabilities/default.json
     dist/index.html          # placeholder (real UI is the server-rendered app)
   scripts/
     provision-secrets.rb     # first-run SECRET_KEY_BASE (stable; keys derive from it)
     bundle-ruby.sh           # vendor portable Ruby + app gems
+    bundle-proxy.sh          # bundle a pinned npm proxy + private Node runtime
     build-macos.sh           # stage app + precompile assets + tauri build
 ```
 
@@ -79,15 +94,69 @@ All mutable state lives under the OS app-data dir (the `.app` is read-only):
   storage/            # Active Storage blobs
   credentials/secret_key_base
   config.json         # optional: open-mode settings for a Finder-launched .app
+  proxy/config.json   # public proxy port + bundled version; never credentials
   log/desktop.log
+  log/desktop-proxy.log
 ```
+
+## cli-openai-proxy
+
+The desktop release embeds one Apple-Silicon Node runtime and one exact
+published `cli-openai-proxy` version. It does not use Homebrew, a global npm
+install, or the user's `node` binary at runtime.
+
+For a reproducible release build, supply the official archive and its checksum:
+
+```bash
+CLI_OPENAI_PROXY_VERSION=0.1.0
+NODE_RUNTIME_URL=https://nodejs.org/dist/v<node-version>/node-v<node-version>-darwin-arm64.tar.xz
+NODE_RUNTIME_SHA256=<official-node-sha256>
+tools/desktop-app/scripts/build-macos.sh
+```
+
+`bundle-proxy.sh` downloads the official Node archive only over HTTPS, verifies
+its supplied SHA-256, requires a Darwin ARM64 runtime, then resolves and locks
+the exact npm package before `npm ci` installs it. The generated lockfile keeps
+the resolved tarball integrity values inside the signed application bundle.
+
+The proxy tree is installed in a staging directory under `TMPDIR`, outside the
+repository, and only moved into `vendor/proxy/` once it is complete. Node resolves
+modules by walking up the directory tree, so staging inside the repo would let a
+nested package bind to the Rails app's `node_modules` instead of its own — that is
+what made `esbuild` fail its postinstall with `Expected "<a>" but got "<b>"` on
+checkouts whose root `node_modules` carried a different `esbuild`. Point `TMPDIR`
+at a path that is not itself inside a `node_modules` tree; the script refuses to
+run otherwise.
+
+For a local DMG build, no Node runtime environment variables are required. The
+script downloads and verifies its pinned official Apple-Silicon Node archive
+(`v22.13.0`). Set `NODE_RUNTIME_DIR` only for a pre-verified expanded official
+archive, or set both `NODE_RUNTIME_URL` and `NODE_RUNTIME_SHA256` to use a
+different verified official archive.
+
+Tauri exposes internal setup commands for the first-run wizard:
+
+- `desktop_proxy_status` returns installation/process status and the public
+  port/version only. It never returns either secret.
+- `desktop_proxy_complete_setup` detects executable availability for Claude
+  Code/Codex without running either CLI, then sends Keychain-held proxy secrets
+  directly to a short-lived, loopback-only Rails registration endpoint. It
+  registers the local Gateway and creates presets only for detected adapters.
+
+The setup UI calls `desktop_proxy_complete_setup` only after explicit consent
+and a locally created or signed-in administrator account. On later launches, a
+registered proxy is restarted automatically and the normal Collavre home opens.
+The proxy keeps the user's `HOME` and an executable-only PATH so existing
+Claude/Codex logins remain usable, but its own mutable provision state stays
+under the Collavre app-data directory. No existing provider credential or
+configuration is read, displayed, or sent externally.
 
 ## Run without packaging (verified)
 
 The whole desktop env runs from a dev checkout — no Tauri, no vendored Ruby:
 
 ```bash
-PORT=4000 bin/desktop-server
+PORT=45173 bin/desktop-server
 # → boots RAILS_ENV=desktop on SQLite, /up returns 200, no https redirect
 ```
 
@@ -108,7 +177,44 @@ drives esbuild from `node_modules` — Node.js is a build prerequisite.
 The app icon is generated during the build from `public/icon-*.png` (the app's
 own brand icon) into the git-ignored `src-tauri/icons/` — nothing to prepare.
 
-First launch: right-click → **Open** (the build is unsigned; Gatekeeper).
+This is a local development build. Use the release script below for a signed
+and notarized distribution build.
+
+## Publish a desktop release
+
+`script/release-desktop.sh` is the single operator entry point. The canonical
+version is `src-tauri/tauri.conf.json`; the script keeps Cargo's manifest and
+lockfile package versions in sync, proposes a semantic bump from all bundled
+source commits, then requires an explicit version that advances the current
+version and final confirmation before creating the version commit.
+
+It runs the desktop Rust and Rails test suites, creates the Apple-Silicon DMG,
+checks its code signature, submits and staples it with Apple notarization,
+writes a SHA-256 checksum, and only then creates a GitHub Release. The Git tag
+format is `desktop-v<semver>` and release notes are generated from bundled
+source commits since the preceding desktop tag. If publication fails after the
+version commit, rerun `script/release-desktop.sh --resume <version>` from that clean
+release checkout; it safely rebases an unpushed release commit onto current
+`origin/main` before rebuilding.
+
+Run it only from a clean, current `main` checkout on an Apple-Silicon Mac:
+
+```bash
+export APPLE_SIGNING_IDENTITY='Developer ID Application: Example, Inc. (TEAMID)'
+export APPLE_ID='releases@example.com'
+export APPLE_APP_SPECIFIC_PASSWORD='xxxx-xxxx-xxxx-xxxx'
+export APPLE_TEAM_ID='TEAMID'
+script/release-desktop.sh
+```
+
+The release script defaults to a pinned, verified official Apple-Silicon Node
+archive. To use a different runtime archive, set both `NODE_RUNTIME_URL` and
+`NODE_RUNTIME_SHA256` before running it.
+
+The Apple signing identity and App Store app-specific password must be stored
+only in the protected release environment or the release operator's keychain;
+they are never committed. The GitHub CLI must already be authenticated with
+permission to push `main`, tags, and releases.
 
 ## Known follow-ups (out of v1 scope)
 
@@ -116,7 +222,7 @@ First launch: right-click → **Open** (the build is unsigned; Gatekeeper).
   variants in the `desktop` env.
 - **OAuth** — client secrets can't ship in a distributed binary; desktop v1 uses
   password auth (PKCE/loopback OAuth later).
-- **Signing / notarization / .dmg / auto-update** — deferred.
+- **Auto-update** — deferred.
 - **Windows / Linux** — deferred (the Rust shell and Rails env are already
   cross-platform; packaging scripts are macOS-only for now).
 - **Relocatable Ruby** — the vendored Ruby is happiest when the app lives at a

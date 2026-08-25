@@ -11,7 +11,7 @@ module Collavre
     def new_ai
       @available_tools = load_available_tools
       @llm_models = Collavre::LlmModel.suggestions
-      @agent_gateways = Current.user.owned_agent_gateways.active.order(:name)
+      @agent_gateways = chat_capable_agent_gateways(Current.user)
 
       if params[:copy_from].present?
         source = Collavre::User.find_by(id: params[:copy_from])
@@ -60,7 +60,7 @@ module Collavre
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         @available_tools = load_available_tools
         @llm_models = Collavre::LlmModel.suggestions
-        @agent_gateways = Current.user.owned_agent_gateways.active.order(:name)
+        @agent_gateways = chat_capable_agent_gateways(Current.user)
         render :new_ai, status: :unprocessable_entity
       end
     end
@@ -148,7 +148,12 @@ module Collavre
 
     def editable_agent_gateways(agent)
       gateways = gateway_owner_for(agent).owned_agent_gateways
-      gateways.active.or(gateways.where(id: agent.agent_gateway_id)).order(:name)
+      selected_gateway = gateways.find_by(id: agent.agent_gateway_id)
+      (chat_capable_agent_gateways(gateway_owner_for(agent)) + [ selected_gateway ]).compact.uniq.sort_by(&:name)
+    end
+
+    def chat_capable_agent_gateways(owner)
+      owner.owned_agent_gateways.active.order(:name).select(&:chat_capable?)
     end
 
     def set_user_for_ai_actions

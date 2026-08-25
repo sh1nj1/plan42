@@ -1,5 +1,8 @@
 module Collavre
   class TopicsController < ApplicationController
+    rescue_from Topics::TopicMove::SourceChangedError, with: :render_source_changed
+    rescue_from Topics::TopicMove::MoveBlockedError, with: :render_active_tasks
+
     include Collavre::CreativePermissionGuard
 
     before_action :set_creative
@@ -25,24 +28,20 @@ module Collavre
       system_topic = @creative.inbox? ? @creative.system_topic(fallback_user: Current.user) : nil
 
       active_topics = @creative.topics.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at).to_a
-      archived_topics = @creative.topics.archived.order(:created_at)
-
-      last_topic_id = if Current.user
-                        UserCreativePreference
-                          .where(user_id: Current.user.id, creative_id: @creative.id)
-                          .pick(:last_topic_id)
-      end
+      archived_topics = @creative.topics.archived.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at).to_a
+      unread_counts_by_topic = Creatives::CommentBadgeIndex.new(user: Current.user)
+        .unread_counts_by_topic(@creative)
 
       system_topic_id = system_topic&.id
       main_topic_id = main_topic.id
 
       render json: {
-        topics: active_topics.map { |t| topic_json(t) },
-        archived_topics: archived_topics,
+        topics: active_topics.map { |t| topic_json(t, unread_count: unread_counts_by_topic.fetch(t.id, 0)) },
+        archived_topics: archived_topics.map { |t| topic_json(t, unread_count: unread_counts_by_topic.fetch(t.id, 0)) },
         can_manage: can_manage,
         can_create_topic: can_write,
         can_set_primary_agent: can_write,
-        last_topic_id: last_topic_id,
+        **Topics::LastTopicPreferencePayload.new(creative: @creative, user: Current.user).call,
         is_inbox: @creative.inbox?,
         system_topic_id: system_topic_id,
         main_topic_id: main_topic_id,
@@ -106,7 +105,7 @@ module Collavre
     def update
       topic = @creative.topics.find(params[:id])
 
-      if topic.update(topic_params)
+      if mutate_locked_topic(topic) { |current_topic| current_topic.update(topic_params) }
         broadcast_topic_event("updated", topic: topic_json(topic))
         render json: topic_json(topic)
       else
@@ -121,9 +120,9 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.cannot_delete_main") }, status: :unprocessable_entity and return
       end
 
-      topic_id = topic.id
-      topic_name = topic.name
-      topic.destroy
+      topic_id, topic_name = Topics::TopicDestroy.new(
+        topic: topic, source_creative: @creative
+      ).call
 
       # Best-effort orphaned-cron notice. Must never break the core deletion:
       # if it raises, swallow + log so broadcast/head still run.
@@ -166,40 +165,10 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.move.session_topic_locked") }, status: :unprocessable_entity and return
       end
 
-      released_agent = nil
-      released_reason = nil
-
-      Topic.transaction do
-        topic.comments.update_all(creative_id: target_creative.id)
-        topic.update!(creative: target_creative)
-
-        # The assignment is exclusive: Matcher#match_by_primary_agent returns []
-        # — silence, not a fallback — when the pinned agent cannot be routed to
-        # at the destination. The pin travels with the topic, so a move into a
-        # creative the agent is not shared on — or, for a Claude Channel session
-        # agent, into an inbox, where Matcher confines it to its own session
-        # topic — would leave the topic unable to route to anyone. Release it
-        # instead, which restores ordinary expression routing at the new
-        # location, and tell the caller so the change is not silent.
-        pinned_agent = topic.primary_agent
-        rejection = pinned_agent && Topic.primary_agent_rejection(target_creative, pinned_agent, topic: topic)
-        if rejection
-          released_agent = pinned_agent
-          released_reason = rejection
-          topic.set_primary_agent!(nil)
-        end
-      end
-
-      # update_all above skips counter-cache callbacks, so recompute
-      # comments_count on both sides after re-parenting the comments.
-      Creative.reset_counters(source_creative.id, :comments)
-      Creative.reset_counters(target_creative.id, :comments)
-
-      broadcast_topic_event("deleted", topic_id: topic.id)
-      # topic_json rather than a bare id/name slice: the pin decides who may
-      # speak, so the target's topic list has to show whether it survived the
-      # move (and, when it did not, show no avatar rather than a stale one).
-      broadcast_topic_event("created", creative: target_creative, topic: topic_json(topic))
+      effects = Topics::TopicMoveEffects.new(topic, source_creative, target_creative)
+      released_agent, released_reason = Topics::TopicMove.new(
+        topic: topic, target_creative: target_creative
+      ).call(after_commit: effects.method(:call))
 
       render json: {
         success: true,
@@ -217,7 +186,7 @@ module Collavre
 
     def archive
       topic = @creative.topics.find(params[:id])
-      topic.archive!
+      mutate_locked_topic(topic, &:archive!)
 
       broadcast_topic_event("archived", topic: topic.slice(:id, :name))
       render json: { success: true }
@@ -225,7 +194,7 @@ module Collavre
 
     def unarchive
       topic = @creative.topics.find(params[:id])
-      topic.unarchive!
+      mutate_locked_topic(topic, &:unarchive!)
 
       broadcast_topic_event("unarchived", topic: topic.slice(:id, :name, :archived_at))
       render json: { success: true }
@@ -268,7 +237,7 @@ module Collavre
       # needs a way back to an unassigned topic — otherwise a single avatar click
       # would permanently dedicate the topic to one agent.
       if params[:agent_id].blank?
-        topic.set_primary_agent!(nil)
+        mutate_locked_topic(topic) { |current_topic| current_topic.set_primary_agent!(nil) }
 
         broadcast_topic_event("updated", topic: topic_json_with_agent(topic, nil))
 
@@ -287,7 +256,7 @@ module Collavre
                status: :unprocessable_entity and return
       end
 
-      topic.set_primary_agent!(agent)
+      mutate_locked_topic(topic) { |current_topic| current_topic.set_primary_agent!(agent) }
 
       broadcast_topic_event("updated", topic: topic_json_with_agent(topic, agent))
 
@@ -296,9 +265,19 @@ module Collavre
 
     private
 
+    def render_source_changed(error)
+      render json: { error: error.message }, status: :forbidden
+    end
+
+    def render_active_tasks(error)
+      render json: { error: error.message }, status: :unprocessable_entity
+    end
+
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
     end
+
+    def mutate_locked_topic(topic, &) = Topics::TopicMutation.new(topic: topic, source_creative: @creative).call(&)
 
     # A move can now release the pin for either reason, and the advice differs:
     # sharing the target creative fixes a missing-permission release, but a
@@ -364,41 +343,27 @@ module Collavre
       end
     end
 
+
     def topic_params
       params.require(:topic).permit(:name)
     end
 
     def generate_next_topic_name
-      prefix = I18n.t("collavre.topics.default_name_prefix")
-      existing_numbers = @creative.topics.active
-        .where("name LIKE ?", "#{Topic.sanitize_sql_like(prefix)}%")
-        .pluck(:name)
-        .filter_map { |n|
-          suffix = n.delete_prefix(prefix)
-          suffix.match?(/\A\d+\z/) ? suffix.to_i : nil
-        }
-
-      next_number = (existing_numbers.max || 0) + 1
-      "#{prefix}#{next_number}"
+      Topics::NextName.for(@creative)
     end
 
-    def topic_json(topic)
-      data = topic.slice(:id, :name, :source_topic_id)
-      if topic.primary_agent
-        data[:primary_agent] = agent_json(topic.primary_agent)
-      end
-      data[:agent_locked] = topic.session_id.present?
-      data
+    # Delegated to Topics::Serializer so the topic MCP tools, which broadcast the
+    # same events from outside a request, cannot describe a topic differently
+    # from this controller.
+    def topic_json(topic, unread_count: nil)
+      Topics::Serializer.call(topic, unread_count: unread_count)
     end
 
     # Always carries a :primary_agent key, explicitly nil when cleared. The client
     # merges this payload into its cached topic, so an omitted key would leave a
     # stale avatar on screen instead of removing it.
     def topic_json_with_agent(topic, agent)
-      data = topic.slice(:id, :name, :source_topic_id)
-      data[:primary_agent] = agent ? agent_json(agent) : nil
-      data[:agent_locked] = topic.session_id.present?
-      data
+      Topics::Serializer.with_agent(topic, agent)
     end
 
     def agent_json(agent)

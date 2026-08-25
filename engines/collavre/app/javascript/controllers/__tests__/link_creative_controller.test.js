@@ -555,4 +555,144 @@ describe('LinkCreativeController picker', () => {
 
     application.stop()
   })
+
+  // The popup is placed one frame after open(), while the list is still the
+  // "Loading…" placeholder. Anchored to a caret in a bottom-pinned composer,
+  // that measurement is what left only one tree row visible, so every render
+  // that resizes the list has to ask the popup to place itself again.
+  describe('re-placing the popup as its content changes', () => {
+    const openWithSpy = async () => {
+      const installed = await installController()
+      const reposition = jest.spyOn(installed.controller.popup, 'reposition')
+      return { ...installed, reposition }
+    }
+
+    test('re-places after the browse tree renders', async () => {
+      browse.mockResolvedValue([{ id: 1, description: 'Root', progress: 0, has_children: false }])
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      expect(document.querySelectorAll('.link-tree-item')).toHaveLength(1)
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places after the loading and empty placeholders render', async () => {
+      browse.mockResolvedValue([])
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      // "Loading…" then "Empty" — two renders, both resizing the list.
+      expect(document.querySelector('.link-popup-message').textContent).toBe('Empty')
+      expect(reposition.mock.calls.length).toBeGreaterThanOrEqual(2)
+
+      application.stop()
+    })
+
+    test('re-places after search results render', async () => {
+      browse.mockResolvedValue([])
+      search.mockResolvedValue([{ id: 9, description: 'Found', progress: 0, path: [] }])
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+      reposition.mockClear()
+
+      controller.inputTarget.value = 'fo'
+      controller.search()
+      await flush()
+
+      expect(document.querySelectorAll('.link-result-item')).toHaveLength(1)
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places when a node is expanded, re-expanded from cache, and collapsed', async () => {
+      browse.mockImplementation((parentId) => {
+        if (parentId === null) {
+          return Promise.resolve([{ id: 1, description: 'Root', progress: 0, has_children: true }])
+        }
+        return Promise.resolve([{ id: 2, description: 'Child', progress: 0, has_children: false }])
+      })
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      const item = document.querySelector('.link-tree-item[data-id="1"]')
+
+      reposition.mockClear()
+      await controller._expandNode(item)
+      await flush()
+      expect(document.querySelectorAll('.link-tree-item[data-id="2"]')).toHaveLength(1)
+      expect(reposition).toHaveBeenCalled()
+
+      // Collapsing removes the children from the flow.
+      reposition.mockClear()
+      controller._collapseNode(item)
+      expect(reposition).toHaveBeenCalled()
+
+      // Re-expanding serves the already-loaded children without a fetch.
+      reposition.mockClear()
+      await controller._expandNode(item)
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places when an expanded node turns out to have no children', async () => {
+      browse.mockImplementation((parentId) =>
+        Promise.resolve(
+          parentId === null
+            ? [{ id: 1, description: 'Root', progress: 0, has_children: true }]
+            : [],
+        ),
+      )
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      const item = document.querySelector('.link-tree-item[data-id="1"]')
+      reposition.mockClear()
+      await controller._expandNode(item)
+      await flush()
+
+      expect(item.querySelector('.link-tree-empty').textContent).toBe('Empty')
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places when loading a node\'s children fails', async () => {
+      browse.mockImplementation((parentId) => {
+        if (parentId === null) {
+          return Promise.resolve([{ id: 1, description: 'Root', progress: 0, has_children: true }])
+        }
+        return Promise.reject(new Error('boom'))
+      })
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      const item = document.querySelector('.link-tree-item[data-id="1"]')
+      reposition.mockClear()
+      await controller._expandNode(item)
+      await flush()
+
+      // The failed load is retryable and the placeholder row is gone, so the
+      // popup is a different size than it was mid-fetch.
+      expect(item.dataset.loaded).toBe('0')
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+  })
 })

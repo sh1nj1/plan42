@@ -59,6 +59,22 @@ describe('TopicListController', () => {
         expect(archived[0].textContent).toContain('#Zeta')
     })
 
+    test('renders unread badges for active and archived topics, but not zero counts', () => {
+        controller.openForTopics({
+            ...DATA,
+            topics: [
+                { id: 1, name: 'Main', unread_count: 2 },
+                { id: 2, name: 'Alpha', unread_count: 0 }
+            ],
+            archivedTopics: [{ id: 3, name: 'Zeta', unread_count: 4 }]
+        }, RECT, () => {})
+
+        expect(items()[0].querySelector('.topic-unread-badge').textContent).toBe('2')
+        expect(items()[1].querySelector('.topic-unread-badge')).toBeNull()
+        expect(items()[2].querySelector('.topic-unread-badge')).toBeNull()
+        expect(items()[3].querySelector('.topic-unread-badge').textContent).toBe('4')
+    })
+
     test('filters by label substring and adds NO create option', () => {
         controller.openForTopics(DATA, RECT, () => {})
         controller.inputTarget.value = 'alpha'
@@ -71,6 +87,62 @@ describe('TopicListController', () => {
         expect(items()).toHaveLength(0) // no "create and move" pseudo-item
     })
 
+    test('does not include unread counts in topic search', () => {
+        controller.openForTopics({
+            ...DATA,
+            topics: [{ id: 1, name: 'Main', unread_count: 42 }],
+            archivedTopics: []
+        }, RECT, () => {})
+        controller.inputTarget.value = '42'
+        controller._onInput()
+
+        expect(items()).toHaveLength(0)
+    })
+
+    test('refreshes unread counts without clearing the current search', () => {
+        controller.openForTopics(DATA, RECT, () => {})
+        controller.inputTarget.value = 'alpha'
+        controller._onInput()
+
+        controller.updateTopics({
+            ...DATA,
+            topics: [{ id: 1, name: 'Main' }, { id: 2, name: 'Alpha', unread_count: 3 }]
+        })
+
+        expect(controller.inputTarget.value).toBe('alpha')
+        expect(items()).toHaveLength(1)
+        expect(items()[0].querySelector('.topic-unread-badge').textContent).toBe('3')
+    })
+
+    test('preserves the active topic across unread count refreshes', () => {
+        const onSelect = jest.fn()
+        controller.openForTopics(DATA, RECT, onSelect)
+        controller.popup.setActiveIndex(1)
+
+        controller.updateTopics({
+            ...DATA,
+            topics: [{ id: 1, name: 'Main' }, { id: 2, name: 'Alpha', unread_count: 3 }]
+        })
+
+        expect(controller.popup.activeIndex).toBe(1)
+        expect(items()[1].classList).toContain('active')
+        controller.handleInputKeydown({ key: 'Enter', preventDefault: jest.fn() })
+
+        expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }))
+    })
+
+    test('escapes topic labels and rejects non-numeric unread counts', () => {
+        controller.openForTopics({
+            ...DATA,
+            topics: [{ id: 1, name: '<img src=x onerror=alert(1)>', unread_count: '<img src=x>' }],
+            archivedTopics: []
+        }, RECT, () => {})
+
+        expect(controller.listTarget.querySelector('img')).toBeNull()
+        expect(controller.listTarget.textContent).toContain('#<img src=x onerror=alert(1)>')
+        expect(controller.listTarget.querySelector('.topic-unread-badge')).toBeNull()
+    })
+
     test('select invokes the callback with the item and closes', () => {
         const cb = jest.fn()
         controller.openForTopics(DATA, RECT, cb)
@@ -78,5 +150,44 @@ describe('TopicListController', () => {
         controller.select(item)
         expect(cb).toHaveBeenCalledWith(item)
         expect(controller.popup.isOpen()).toBe(false)
+    })
+
+    describe('search-box focus', () => {
+        const originalInnerWidth = window.innerWidth
+        const setViewportWidth = (value) =>
+            Object.defineProperty(window, 'innerWidth', { value, configurable: true })
+
+        afterEach(() => setViewportWidth(originalInnerWidth))
+
+        test('focuses the search box on desktop widths', () => {
+            setViewportWidth(1024)
+            controller.openForTopics(DATA, RECT, () => {})
+            expect(document.activeElement).toBe(controller.inputTarget)
+        })
+
+        test('does not focus the search box on mobile widths', () => {
+            setViewportWidth(390)
+            controller.openForTopics(DATA, RECT, () => {})
+            expect(document.activeElement).not.toBe(controller.inputTarget)
+        })
+
+        test('blurs the previously focused element on mobile so the keyboard closes', () => {
+            setViewportWidth(390)
+            const chatInput = document.createElement('textarea')
+            document.body.appendChild(chatInput)
+            chatInput.focus()
+            expect(document.activeElement).toBe(chatInput)
+
+            controller.openForTopics(DATA, RECT, () => {})
+
+            expect(document.activeElement).toBe(document.body)
+        })
+
+        test('tolerates a mobile open with nothing focused', () => {
+            setViewportWidth(390)
+            expect(document.activeElement).toBe(document.body)
+            expect(() => controller.openForTopics(DATA, RECT, () => {})).not.toThrow()
+            expect(document.activeElement).toBe(document.body)
+        })
     })
 })

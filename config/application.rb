@@ -58,7 +58,10 @@ module Collavre
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w[assets tasks middleware omniauth])
+    # complexity_ratchet.rb and its directory back bin/complexity_check, a
+    # CI-only lint tool. They have no business being eager loaded into a booted
+    # app, and bin/ runs them outside Rails anyway.
+    config.autoload_lib(ignore: %w[assets tasks middleware omniauth complexity_ratchet complexity_ratchet.rb])
 
     config.app_version = Collavre::VERSION
 

@@ -16,10 +16,16 @@ en:
       branch_prefix: "Branch"
       main_name: "Main"
       cannot_delete_main: "Cannot delete the Main topic."
+      reserved_name: "This topic name is reserved and cannot be assigned."
       orphaned_cron_notice: "[System] The topic '%{topic_name}' was deleted, but a recurring cron job (%{cron_key}) still targets it and will silently do nothing on each run. Original message: \"%{message}\". Re-point it to another topic or cancel it with cron_cancel."
       create_and_move: 'Create "%{name}" and move'
       move:
         no_target_permission: You don't have write permission on the target creative.
+        source_changed: The topic moved to another creative while this request was waiting. Reload it and try again from its current creative.
+        active_tasks: This topic has active agent work. Wait for it to finish or cancel it before moving the topic.
+        pending_deliveries: This topic still has agent messages waiting to be restored. Wait for restoration to finish before moving the topic.
+        recurring_tasks: This topic has a recurring cron job. Cancel it with cron_cancel and recreate it after moving the topic.
+        trigger_loop: This topic controls a Drop Trigger loop and cannot move while that loop configuration references it.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
         session_topic_locked: This topic belongs to a live agent session and cannot be moved.
         primary_agent_released: '@%{agent} was released as primary agent because it has no feedback access in "%{creative}". Share that creative with the agent and assign it again to keep it on this topic.'
@@ -147,10 +153,12 @@ en:
         minimum_required: "Select at least 2 messages to merge."
         not_authorized: "You don't have permission to merge messages."
         own_messages_only: "You can only merge your own messages or messages from your AI agents."
+        same_topic_required: "You can only merge messages from the same topic."
       branch:
         no_selection: "Select at least one message to branch."
         not_authorized: "You don't have permission to branch messages."
         comments_not_found: "Some selected messages could not be found."
+        approval_action_not_branchable: "Approval prompts cannot be branched."
       batch_delete_confirm: Are you sure you want to delete the selected messages?
       batch_delete_no_selection: Select at least one message to delete.
       batch_delete_not_found: Some selected messages could not be found.
@@ -159,9 +167,6 @@ en:
       topic_list: Topic list
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
-      typo_keep_label: keep
-      typo_custom_label: custom
-      typo_input_label: correction
       move_invalid_target: Select a valid creative to move messages to.
       move_invalid_topic: Invalid topic selected.
       move_not_allowed: You do not have permission to move these messages.
@@ -173,8 +178,6 @@ en:
         calendar_args: "YYYY-MM-DD@HH:MM memo (today/tomorrow, +3days, +2weeks, +1months, +1years, +mon)"
         topic_description: "Create a new topic with optional primary agent."
         topic_args: '"topic name" @agent_name'
-        work_description: "Create a workflow to execute tasks on child creatives via DFS traversal."
-        work_args: "@agent_name workflow_context"
         compress_description: "Summarize all messages in the current topic and remove originals."
         compress_args: "[additional instructions]"
         creative_description: "Insert a link to a creative. In AI chats, the linked creative tree is injected as context."
@@ -182,8 +185,6 @@ en:
         calendar_memo_hint: "Event memo (optional)"
         topic_name_hint: "Topic name"
         topic_agent_hint: "@agent_name (optional)"
-        work_agent_hint: "@agent_name"
-        work_context_hint: "Workflow context (optional)"
         compress_instructions_hint: "Additional instructions (optional)"
         form_submit: "OK"
         form_cancel: "Cancel"
@@ -212,23 +213,6 @@ en:
         session_topic_locked: 'Topic "%{name}" belongs to a live agent session. Its primary agent cannot be changed or released.'
         agent_no_creative_access: '@%{agent} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first.'
         session_agent_not_assignable: '@%{agent} is a live agent session and only responds in its own session topic, so it cannot be the primary agent here.'
-      work_command:
-        agent_not_found: "Please mention an AI agent to execute the workflow."
-        no_children: "This creative has no child creatives to work on."
-        all_already_tasked: "All child creatives already have active tasks."
-        started: 'Workflow started with @%{agent}: %{total} tasks queued (%{skipped} skipped).'
-        trigger_comment: '📋 [Workflow] %{context}'
-        subtask_started: '📋 @%{agent} starting work on "%{creative}" (%{current}/%{total})'
-        subtask_completed: '✅ @%{agent} completed "%{creative}" (%{completed}/%{total}, %{progress}%%)'
-        workflow_completed: '✅ Workflow completed by @%{agent}: %{completed} creatives processed.'
-        workflow_failed: 'Workflow failed by @%{agent} on "%{creative}": %{reason}'
-        workflow_stopped: '⏹️ Workflow stopped by @%{agent}. %{completed} completed, %{remaining} remaining.'
-        workflow_resumed: '▶️ Workflow resumed by @%{agent}. %{remaining} tasks remaining.'
-        stopped: 'Workflow stopped for @%{agent}.'
-        resumed: 'Workflow resumed for @%{agent}: %{remaining} tasks remaining.'
-        no_active_workflow: 'No active workflow found on this creative.'
-        no_resumable_workflow: 'No failed or stopped workflow found to resume.'
-        supervisor_instruction: "If you need clarification, have questions, or are unsure about anything, ask @%{supervisor}: instead of the user. They will guide you."
       versions:
         previous: Previous version
         next: Next version
@@ -335,8 +319,3 @@ en:
       not_authorized: "You don't have permission to restore this snapshot."
       restore_confirm: "Restore original messages? The summary will be removed."
       restore_button: "Restore originals"
-    inbox_mailer:
-      daily_summary:
-        subject: Your inbox summary
-        greeting: 'Here are your unread messages:'
-        view: View

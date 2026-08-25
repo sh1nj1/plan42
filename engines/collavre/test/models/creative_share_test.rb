@@ -150,4 +150,64 @@ class CreativeShareTest < ActiveSupport::TestCase
     assert_equal true, broadcasts.last[1][:has_access_changed]
     assert_equal false, broadcasts.last[1][:can_comment_changed]
   end
+
+  test "a named share reconciles only its recipient's topic pointers" do
+    owner = users(:one)
+    recipient = users(:two)
+    unaffected_reader = users(:three)
+    source = Creative.create!(user: owner, description: "Pointer source")
+    destination = Creative.create!(user: owner, description: "Pointer destination")
+    topic = destination.topics.create!(name: "Moved topic", user: owner)
+    comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "read comment")
+    share = CreativeShare.create!(creative: destination, user: recipient, permission: :read)
+    CommentReadPointer.create!(user: recipient, creative: source, topic: topic, last_read_comment: comment)
+    CommentReadPointer.create!(user: unaffected_reader, creative: source, topic: topic, last_read_comment: comment)
+    checked_user_ids = []
+
+    CreativeShare.stub :read_access_from_shares?, ->(_creative, user) {
+      checked_user_ids << user.id
+      false
+    } do
+      share.send(:reconcile_topic_read_pointers_for_permission_change)
+    end
+
+    assert_equal [ recipient.id ], checked_user_ids
+  end
+
+  test "changing a named share to public reconciles every reader's stranded pointer" do
+    owner = users(:one)
+    former_recipient = users(:two)
+    other_reader = users(:three)
+    source = Creative.create!(user: owner, description: "Pointer source")
+    destination = Creative.create!(user: owner, description: "Pointer destination")
+    topic = destination.topics.create!(name: "Moved topic", user: owner)
+    comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "read comment")
+    share = CreativeShare.create!(creative: destination, user: former_recipient, permission: :read)
+    former_pointer = CommentReadPointer.create!(user: former_recipient, creative: source, topic: topic, last_read_comment: comment)
+    other_pointer = CommentReadPointer.create!(user: other_reader, creative: source, topic: topic, last_read_comment: comment)
+
+    share.update!(user: nil)
+
+    assert_equal destination.id, former_pointer.reload.creative_id
+    assert_equal destination.id, other_pointer.reload.creative_id
+  end
+
+  test "reconciling a share merges duplicate topic pointers at the destination" do
+    owner = users(:one)
+    recipient = users(:two)
+    source = Creative.create!(user: owner, description: "Pointer source")
+    destination = Creative.create!(user: owner, description: "Pointer destination")
+    topic = destination.topics.create!(name: "Moved topic", user: owner)
+    older_comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "older read comment")
+    newer_comment = Comment.create!(creative: destination, topic: topic, user: owner, content: "newer read comment")
+    share = CreativeShare.create!(creative: destination, user: recipient, permission: :no_access)
+    CommentReadPointer.create!(user: recipient, creative: source, topic: topic, last_read_comment: older_comment)
+    CommentReadPointer.create!(user: recipient, creative: destination, topic: topic, last_read_comment: newer_comment)
+
+    share.update!(permission: :read)
+
+    pointers = CommentReadPointer.where(user: recipient, topic: topic)
+    assert_equal [ destination.id ], pointers.pluck(:creative_id)
+    assert_equal newer_comment.id, pointers.sole.last_read_comment_id
+  end
 end

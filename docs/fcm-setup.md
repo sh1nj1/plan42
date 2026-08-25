@@ -95,12 +95,13 @@ fetch('/devices', {
 The server persists the payload in the `devices` table with the following columns:
 
 - `client_id`: An identifier that distinguishes the browser or device.
-- `device_type`: One of `web`, `pwa`, `android`, or `ios`.
+- `device_type`: One of `web`, `pwa`, or `ios`. The `android` enum value is
+  reserved for legacy records and is no longer registered.
 - `app_id`: The application ID.
 - `app_version`: The application version.
 - `fcm_token`: The token issued by FCM.
 
-Whenever a new `InboxItem` is created, a push notification is sent to every device registered for that user.
+When a notification comment is created in a user's Inbox Creative, a push notification is sent to every device registered for that user.
 
 ## FCM with AWS Workload Identity Federation
 

@@ -113,6 +113,27 @@ module Collavre
         assert_equal :immediate, decisions.first[:timing]
       end
 
+      test "checks a prospective handoff before accepting the schedule" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          config: { "loop_breaker_enabled" => true, "ping_pong_threshold" => 1 }
+        )
+        breaker = LoopBreaker.new(@context)
+        breaker.record_interaction(@agent.id, @user.id, @creative.id)
+        hooks = SchedulingHooks.new(
+          interaction_callback: lambda do |_agent|
+            { from_agent_id: @user.id, to_agent_id: @agent.id, creative_id: @creative.id }
+          end,
+          scheduled_callback: nil
+        )
+
+        decisions = Scheduler.new(@context).schedule([ @agent ], scheduling_hooks: hooks)
+
+        assert_equal :rejected, decisions.first[:timing]
+        assert_equal :loop_detected, decisions.first[:reason]
+        assert breaker.check.safe?
+      end
+
       # Rate limiting
       test "delays when rate limited" do
         OrchestratorPolicy.create!(

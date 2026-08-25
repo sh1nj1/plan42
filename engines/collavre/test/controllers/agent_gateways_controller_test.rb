@@ -44,11 +44,32 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert @owner.owned_agent_gateways.exists?(name: "Second proxy")
   end
 
+  test "owner can create a gateway without a completion key" do
+    sign_in_as(@owner, password: "password")
+
+    post collavre.agent_gateways_path, params: {
+      agent_gateway: {
+        name: "Provisioning-only proxy",
+        base_url: "https://provisioning.example.com",
+        admin_key: "admin-2",
+        completion_key: "",
+        tenant_id: "collavre",
+        workspace_mode: "shared",
+        active: "1"
+      }
+    }
+
+    assert_redirected_to collavre.agent_gateways_path
+    assert_predicate @owner.owned_agent_gateways.find_by!(name: "Provisioning-only proxy").completion_key, :blank?
+  end
+
   test "gateway form explains the owner-specific endpoint policy" do
     sign_in_as(@owner, password: "password")
     get collavre.new_agent_gateway_path
     assert_response :success
     assert_includes response.body, I18n.t("collavre.agent_gateways.base_url_help")
+    assert_includes response.body, I18n.t("collavre.agent_gateways.completion_key_help")
+    assert_select "input[name='agent_gateway[completion_key]'][required]", count: 0
 
     sign_out
     sign_in_as(users(:one), password: "password")
@@ -81,6 +102,151 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to collavre.agent_gateways_path
     assert_equal "admin", @gateway.reload.admin_key
     assert_equal "completion", @gateway.completion_key
+  end
+
+  test "owner can explicitly clear an unassigned gateway completion key" do
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(@gateway), params: {
+      agent_gateway: {
+        name: @gateway.name,
+        base_url: @gateway.base_url,
+        admin_key: "",
+        completion_key: "",
+        clear_completion_key: "1",
+        identity_secret: "",
+        tenant_id: @gateway.tenant_id,
+        workspace_mode: @gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_redirected_to collavre.agent_gateways_path
+    assert_nil @gateway.reload.completion_key
+  end
+
+  test "gateway edit form offers to clear an existing completion key" do
+    sign_in_as(@owner, password: "password")
+
+    get collavre.edit_agent_gateway_path(@gateway)
+
+    assert_response :success
+    assert_select "input[type='checkbox'][name='agent_gateway[clear_completion_key]'][value='1']"
+    assert_select "label[for='agent_gateway_clear_completion_key']", I18n.t("collavre.agent_gateways.clear_completion_key_label")
+  end
+
+  test "gateway edit preserves completion key removal intent after validation failure" do
+    sign_in_as(@owner, password: "password")
+    @gateway.update!(completion_key: "stored-completion-secret")
+
+    patch collavre.agent_gateway_path(@gateway), params: {
+      agent_gateway: {
+        name: "",
+        base_url: @gateway.base_url,
+        admin_key: "",
+        completion_key: "",
+        clear_completion_key: "1",
+        identity_secret: "",
+        tenant_id: @gateway.tenant_id,
+        workspace_mode: @gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_select "input[type='checkbox'][name='agent_gateway[clear_completion_key]'][checked='checked']"
+    assert_equal "stored-completion-secret", @gateway.reload.completion_key
+    assert_not_includes response.body, "stored-completion-secret"
+  end
+
+  test "owner cannot retarget a desktop-managed gateway from settings" do
+    desktop_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Desktop proxy",
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin",
+      completion_key: "desktop-completion",
+      identity_secret: "d" * 32,
+      desktop_managed: true
+    )
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(desktop_gateway), params: {
+      agent_gateway: {
+        name: desktop_gateway.name,
+        base_url: "http://127.0.0.1:45678",
+        admin_key: "",
+        completion_key: "",
+        identity_secret: "",
+        tenant_id: desktop_gateway.tenant_id,
+        workspace_mode: desktop_gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal "http://127.0.0.1:34567", desktop_gateway.reload.base_url
+  end
+
+  test "owner cannot replace desktop-managed credentials from settings" do
+    desktop_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Desktop proxy",
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin",
+      completion_key: "desktop-completion",
+      identity_secret: "d" * 32,
+      desktop_managed: true
+    )
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(desktop_gateway), params: {
+      agent_gateway: {
+        name: desktop_gateway.name,
+        base_url: desktop_gateway.base_url,
+        admin_key: "replacement-admin",
+        completion_key: "replacement-completion",
+        identity_secret: "r" * 32,
+        tenant_id: desktop_gateway.tenant_id,
+        workspace_mode: desktop_gateway.workspace_mode,
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    desktop_gateway.reload
+    assert_equal "desktop-admin", desktop_gateway.admin_key
+    assert_equal "desktop-completion", desktop_gateway.completion_key
+    assert_equal "d" * 32, desktop_gateway.identity_secret
+  end
+
+  test "owner cannot switch a desktop-managed gateway to per-user mode from settings" do
+    desktop_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Desktop proxy",
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin",
+      completion_key: "desktop-completion",
+      identity_secret: "d" * 32,
+      desktop_managed: true
+    )
+    sign_in_as(@owner, password: "password")
+
+    patch collavre.agent_gateway_path(desktop_gateway), params: {
+      agent_gateway: {
+        name: desktop_gateway.name,
+        base_url: desktop_gateway.base_url,
+        admin_key: "",
+        completion_key: "",
+        identity_secret: "",
+        tenant_id: desktop_gateway.tenant_id,
+        workspace_mode: "per_user",
+        active: "1"
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_predicate desktop_gateway.reload, :shared?
   end
 
   test "connection check uses completion key as mapped user key" do

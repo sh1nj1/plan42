@@ -94,6 +94,57 @@ module Collavre
         assert_empty result
       end
 
+      test "selects agents after arbitration without scheduling" do
+        other_agent = User.create!(
+          email: "dispatcher_other_agent@example.com",
+          name: "Dispatcher Other Agent",
+          password: "password",
+          llm_vendor: "google",
+          llm_model: "gemini-1.5-flash",
+          searchable: true
+        )
+        context = { "creative" => { "id" => @creative.id } }
+        selected_agent = @ai_agent
+        matcher = Object.new
+        matcher.define_singleton_method(:match) { [ selected_agent, other_agent ] }
+        arbiter = Object.new
+        arbiter.define_singleton_method(:select) { |_candidates, **| [ selected_agent ] }
+        arbiter.define_singleton_method(:commit_selection!) { }
+        Matcher.stub(:new, matcher) do
+          Arbiter.stub(:new, arbiter) do
+            assert_equal [ @ai_agent ], AgentOrchestrator.select("comment_created", context)
+          end
+        end
+      end
+
+      test "reports only scheduler-accepted agents before enqueue" do
+        accepted = @ai_agent
+        rejected = User.create!(
+          email: "rejected_scheduled_agent@example.com", name: "Rejected Scheduled Agent",
+          password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash"
+        )
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) do |_agents, **_options|
+          [
+            { agent: accepted, timing: :immediate },
+            { agent: rejected, timing: :rejected, reason: :quota_exceeded }
+          ]
+        end
+        scheduled = nil
+
+        Scheduler.stub(:new, scheduler) do
+          hooks = SchedulingHooks.new(
+            interaction_callback: nil, scheduled_callback: ->(agents) { scheduled = agents }
+          )
+          AgentOrchestrator.dispatch(
+            "comment_created", { "creative" => { "id" => @creative.id } },
+            selected_agents: [ accepted, rejected ], scheduling_hooks: hooks
+          )
+        end
+
+        assert_equal [ accepted ], scheduled
+      end
+
       # Deferred enqueue
       test "deferred decision creates queued task" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
@@ -120,6 +171,51 @@ module Collavre
         queued_task = queued_tasks.last
         assert_equal @ai_agent.id, queued_task.agent_id
         assert_equal topic.id, queued_task.topic_id
+      end
+
+      test "deferred decision creates no waiter after its topic moves" do
+        topic = Topic.create!(name: "Moved deferred topic", creative: @creative, user: @user)
+        destination = Creative.create!(description: "Deferred destination", user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "content" => "stale deferred dispatch" }
+        }
+        orchestrator = AgentOrchestrator.new(event_name: "comment_created", context: context)
+        Topics::TopicMove.new(topic: topic, target_creative: destination).call
+
+        assert_no_difference -> { Task.where(topic_id: topic.id).count } do
+          assert_nil orchestrator.send(:park_waiter, @ai_agent, context)
+        end
+      end
+
+      test "delayed enqueue survives a topic move before its waiting notice" do
+        topic = Topic.create!(name: "Moved delayed topic", creative: @creative, user: @user)
+        destination = Creative.create!(description: "Delayed destination", user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "content" => "stale delayed dispatch" }
+        }
+        orchestrator = AgentOrchestrator.new(event_name: "comment_created", context: context)
+        queued_job = Object.new
+        queued_job.define_singleton_method(:perform_later) do |*|
+          Topics::TopicMove.new(topic: topic, target_creative: destination).call
+        end
+
+        result = nil
+        assert_no_difference -> { Comment.where(topic_id: topic.id, user_id: nil).count } do
+          AiAgentJob.stub(:set, ->(**) { queued_job }) do
+            result = orchestrator.send(
+              :enqueue_jobs,
+              [ { agent: @ai_agent, timing: :delayed, delay: 1.minute, reason: :busy } ],
+              context_for: nil
+            )
+          end
+        end
+
+        assert_equal [ @ai_agent ], result
+        assert_equal destination, topic.reload.creative
       end
 
       # The "⏳" waiting notice must name the agent holding the running slot, so a

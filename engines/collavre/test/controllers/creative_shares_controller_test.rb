@@ -17,6 +17,194 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert Contact.exists?(user: @owner, contact_user: @target_user)
   end
 
+  test "granting destination access keeps a moved topic pointer at its destination" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source", sequence: 811)
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_equal @creative.id, pointer.reload.creative_id
+
+    post collavre.creative_creative_shares_path(@creative),
+      params: { user_email: @target_user.email, permission: :read }, as: :json
+
+    assert_response :created
+    assert_equal @creative.id, pointer.reload.creative_id
+  end
+
+  test "removing a destination no_access share keeps a moved topic pointer at its destination" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination_parent = Collavre::Creative.create!(user: @owner, description: "Pointer destination parent")
+    destination = Collavre::Creative.create!(
+      user: @owner, parent: destination_parent, description: "Pointer destination"
+    )
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    blocked_share = nil
+    perform_enqueued_jobs do
+      Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+      Collavre::CreativeShare.create!(
+        creative: destination_parent, user: @target_user, shared_by: @owner, permission: :read
+      )
+      blocked_share = Collavre::CreativeShare.create!(
+        creative: destination, user: @target_user, shared_by: @owner, permission: :no_access
+      )
+    end
+
+    refute destination.has_permission?(@target_user, :read)
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
+
+    assert_response :success
+    assert_equal destination.id, pointer.reload.creative_id
+
+    perform_enqueued_jobs { blocked_share.destroy! }
+
+    assert destination.reload.has_permission?(@target_user, :read)
+    assert_equal destination.id, pointer.reload.creative_id
+  end
+
+  test "a public ancestor grant keeps moved pointers on descendant topics" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination_parent = Collavre::Creative.create!(user: @owner, description: "Pointer destination parent")
+    destination = Collavre::Creative.create!(user: @owner, parent: destination_parent, description: "Pointer destination")
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
+
+    assert_response :success
+    assert_equal destination.id, pointer.reload.creative_id
+
+    Collavre::CreativeShare.create!(creative: destination_parent, user: nil, permission: :read)
+
+    assert_equal destination.id, pointer.reload.creative_id
+  end
+
+  test "an inherited named grant keeps moved pointers on descendant topics" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination_parent = Collavre::Creative.create!(user: @owner, description: "Pointer destination parent")
+    destination = Collavre::Creative.create!(user: @owner, parent: destination_parent, description: "Pointer destination")
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
+
+    assert_response :success
+    assert_equal destination.id, pointer.reload.creative_id
+
+    Collavre::CreativeShare.create!(
+      creative: destination_parent, user: @target_user, shared_by: @owner, permission: :read
+    )
+
+    assert_equal destination.id, pointer.reload.creative_id
+  end
+
+  test "revoking destination access retains its topic read pointer" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination = Collavre::Creative.create!(user: @owner, description: "Pointer destination")
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+    destination_share = nil
+    perform_enqueued_jobs do
+      destination_share = Collavre::CreativeShare.create!(
+        creative: destination, user: @target_user, shared_by: @owner, permission: :read
+      )
+    end
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
+
+    assert_response :success
+    assert_equal destination.id, pointer.reload.creative_id
+
+    destination_share.update!(permission: :no_access)
+
+    assert_equal destination.id, pointer.reload.creative_id
+  end
+
+  test "removing and restoring destination access preserves its topic read pointer" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination = Collavre::Creative.create!(user: @owner, description: "Pointer destination")
+    topic = source.topics.create!(name: "Moved topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    Collavre::CreativeShare.create!(creative: source, user: @target_user, shared_by: @owner, permission: :read)
+    destination_share = nil
+    perform_enqueued_jobs do
+      destination_share = Collavre::CreativeShare.create!(
+        creative: destination, user: @target_user, shared_by: @owner, permission: :read
+      )
+    end
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    sign_in_as(@owner, password: "password")
+    patch move_creative_topic_url(source, topic), params: { target_creative_id: destination.id }, as: :json
+
+    assert_response :success
+    assert_equal destination.id, pointer.reload.creative_id
+
+    destination_share.destroy!
+
+    assert_equal destination.id, pointer.reload.creative_id
+
+    Collavre::CreativeShare.create!(
+      creative: destination, user: @target_user, shared_by: @owner, permission: :read
+    )
+
+    assert_equal destination.id, pointer.reload.creative_id
+  end
+
+  test "relocating a share hides its retained source pointer receipt" do
+    source = Collavre::Creative.create!(user: @owner, description: "Pointer source")
+    destination = Collavre::Creative.create!(user: @owner, description: "Pointer destination")
+    topic = source.topics.create!(name: "Source topic", user: @owner)
+    comment = Collavre::Comment.create!(creative: source, topic: topic, user: @owner, content: "read comment")
+    share = Collavre::CreativeShare.create!(
+      creative: source, user: @target_user, shared_by: @owner, permission: :read
+    )
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @target_user, creative: source, topic: topic, last_read_comment: comment
+    )
+
+    share.update!(creative: destination)
+
+    assert_equal source.id, pointer.reload.creative_id
+    assert_empty Collavre::Comments::ReadReceiptIndex.new(creative: source, comments: [ comment ]).receipts
+
+    share.update!(creative: source)
+
+    assert_equal({ comment.id => [ @target_user ] },
+      Collavre::Comments::ReadReceiptIndex.new(creative: source, comments: [ comment ]).receipts)
+  end
+
   test "non-owner cannot share non-searchable AI agent" do
     # Create a non-searchable AI agent owned by @owner
     ai_agent = User.create!(

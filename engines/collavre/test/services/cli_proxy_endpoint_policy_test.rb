@@ -40,6 +40,20 @@ class CliProxyEndpointPolicyTest < ActiveSupport::TestCase
     end
   end
 
+  test "rejects user info, query strings, and fragments" do
+    [
+      "https://user:pass@proxy.example.com",
+      "https://proxy.example.com?target=internal",
+      "https://proxy.example.com#fragment"
+    ].each do |url|
+      assert_raises(Collavre::CliProxy::EndpointPolicy::UnsafeEndpoint, url) do
+        policy_for("8.8.8.8").resolve!(url)
+      end
+
+      refute policy_for("8.8.8.8").safe_literal?(url)
+    end
+  end
+
   test "literal preflight rejects local targets without DNS" do
     policy = policy_for
 
