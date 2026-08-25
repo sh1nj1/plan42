@@ -1111,11 +1111,25 @@ creative-tree-row.is-being-edited .creative-tree {
     padding: var(--space-7) var(--space-3) var(--space-8);
 }
 
+/* The disc is painted by a gradient rather than by a border-radius background
+ * on purpose. Some Android devices (reproduced on a Galaxy S24 / Android 16,
+ * screenshot measured pixel by pixel) draw the *last* corner of a rounded-rect
+ * background fill — bottom-left — as the straight chord of its arc instead of
+ * the arc, which reads as a folded-over corner. It is the fill only; rounded
+ * borders on the same page come out correct. It is also independent of the
+ * radius value: `1e5px`, `9999px` and `50%` all resolve to the identical used
+ * radius (exactly 28 for this 56px box), so swapping the radius cannot help.
+ * A gradient never asks the rasteriser for a rounded rect in the first place.
+ *
+ * So: no border-radius on this rule. Putting one back reinstates the rounded
+ * background clip, and the artifact with it.
+ */
 .creative-empty-state-icon {
     width: 56px;
     height: 56px;
-    border-radius: var(--radius-round);
-    background: var(--surface-btn);
+    background: radial-gradient(circle closest-side,
+                                var(--surface-btn) calc(100% - 0.5px),
+                                transparent 100%);
     display: flex;
     align-items: center;
     justify-content: center;
