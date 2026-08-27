@@ -30,12 +30,28 @@ module CollavreGithub
         assert_equal 77, channel.pr_number
       end
 
-      test "first attach seeds chip label and link so the chip is clickable before any webhook fires" do
+      test "returns a tagged channel reference and semantic destination context" do
+        creative = creatives(:unconvert_target)
+        topic = Collavre::Topic.create!(name: "Review", creative: creative, user: @user)
+
         result = PrMonitorService.new.call(
+          topic_id: topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+
+        channel = GithubPrChannel.last
+        assert_equal "ch_#{channel.id}", result[:channel_ref]
+        assert_not result.key?(:channel_id)
+        assert_equal({ id: topic.id, name: "Review" }, result[:topic])
+        assert_equal({ id: creative.id, title: "Unconvert Target" }, result[:creative])
+      end
+
+      test "first attach seeds chip label and link so the chip is clickable before any webhook fires" do
+        PrMonitorService.new.call(
           topic_id: @topic.id,
           pr_url: "https://github.com/owner/repo/pull/77"
         )
-        channel = GithubPrChannel.find(result[:channel_id])
+        channel = GithubPrChannel.last
         assert_equal "PR #77", channel.latest_label
         assert_equal "https://github.com/owner/repo/pull/77", channel.latest_link
       end
@@ -79,7 +95,7 @@ module CollavreGithub
           pr_url: "https://github.com/Owner/Repo/pull/88"
         )
         assert result[:ok]
-        channel = GithubPrChannel.find(result[:channel_id])
+        channel = GithubPrChannel.last
         assert_equal "owner/repo", channel.repo_full_name
       end
 
@@ -92,7 +108,7 @@ module CollavreGithub
           topic_id: @topic.id,
           pr_url: "https://github.com/OWNER/REPO/pull/99"
         )
-        assert_equal first[:channel_id], second[:channel_id]
+        assert_equal first[:channel_ref], second[:channel_ref]
         assert_equal 1, GithubPrChannel.where(topic_id: @topic.id).count
       end
 
@@ -122,7 +138,7 @@ module CollavreGithub
         )
 
         assert result[:ok]
-        assert_equal channel.id, result[:channel_id]
+        assert_equal "ch_#{channel.id}", result[:channel_ref]
         assert channel.reload.active?
       end
 

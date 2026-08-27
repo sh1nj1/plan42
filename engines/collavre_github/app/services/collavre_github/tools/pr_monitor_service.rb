@@ -14,7 +14,8 @@ module CollavreGithub
       tool_description <<~DESC.strip
         Attach a GitHub PR monitor to a Collavre topic. After attachment,
         PR comments, review comments, and review submissions are injected
-        into the topic as chat messages. Idempotent.
+        into the topic as chat messages. The response identifies the attached
+        topic and creative and uses a typed channel reference. Idempotent.
       DESC
 
       tool_param :topic_id, description: "The Collavre topic id to attach the PR channel to."
@@ -34,7 +35,14 @@ module CollavreGithub
           channel.inject_into_topic!(channel.attached_message)
         end
 
-        result = { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
+        result = {
+          ok: true,
+          channel_ref: "ch_#{channel.id}",
+          topic: { id: topic.id, name: topic.name },
+          creative: { id: topic.creative.id, title: topic.creative.creative_snippet },
+          repo: repo,
+          pr_number: pr_number
+        }
         warning = ensure_webhook_events(topic, repo)
         result[:webhook_warning] = warning if warning
         result
