@@ -73,6 +73,48 @@ describe('CommentsPopupController', () => {
         expect(document.body.classList.contains('chat-fullscreen')).toBe(false)
     })
 
+    test('scrolls to the active topic only once after exiting fullscreen', () => {
+        jest.useFakeTimers()
+        const popup = document.getElementById('comments-popup')
+        const scrollToActiveTopic = jest.fn()
+        Object.defineProperty(controller, 'topicsController', {
+            configurable: true,
+            value: {
+                clearOverrideTopicId: jest.fn(),
+                onPopupClosed: jest.fn(),
+                onPopupOpened: jest.fn(),
+                scrollToActiveTopic,
+            },
+        })
+        popup.dataset.fullscreen = 'true'
+        popup.dataset.creativeId = '123'
+        controller._savedStyles = {
+            top: '10px',
+            right: '20px',
+            left: '',
+            width: '300px',
+            height: '400px',
+        }
+        const addEventListener = jest.spyOn(popup, 'addEventListener')
+
+        try {
+            controller.toggleFullscreen()
+            const transitionCleanup = addEventListener.mock.calls.find(
+                ([type]) => type === 'transitionend',
+            )[1]
+            transitionCleanup()
+            transitionCleanup()
+            jest.advanceTimersByTime(300)
+
+            expect(scrollToActiveTopic).toHaveBeenCalledTimes(1)
+            expect(jest.getTimerCount()).toBe(0)
+        } finally {
+            addEventListener.mockRestore()
+            delete controller.topicsController
+            jest.useRealTimers()
+        }
+    })
+
     test('clears resized dataset attribute on close', () => {
         const triggerBtn = document.getElementById('trigger-btn')
         const popup = document.getElementById('comments-popup')
