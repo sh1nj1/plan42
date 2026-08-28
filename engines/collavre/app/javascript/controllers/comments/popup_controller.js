@@ -1183,7 +1183,15 @@ export default class extends Controller {
       el.style.width = `${animWidth}px`
       el.style.height = `${animHeight}px`
 
+      let cleanupTimer = null
+      let cleanedUp = false
       const cleanup = () => {
+        if (cleanedUp) return
+        cleanedUp = true
+        if (cleanupTimer !== null) {
+          clearTimeout(cleanupTimer)
+          cleanupTimer = null
+        }
         el.removeEventListener('transitionend', cleanup)
         // Popup is always position: fixed — just apply final coords
         el.style.transition = 'none'
@@ -1224,7 +1232,7 @@ export default class extends Controller {
         this.topicsController?.scrollToActiveTopic()
       }
       el.addEventListener('transitionend', cleanup, { once: true })
-      setTimeout(cleanup, 300)
+      cleanupTimer = setTimeout(cleanup, 300)
 
       // Update URL — append open_comments=true so the popup stays open on refresh
       let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
