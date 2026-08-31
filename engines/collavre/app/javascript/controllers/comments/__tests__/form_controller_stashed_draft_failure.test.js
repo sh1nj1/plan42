@@ -44,6 +44,7 @@ const buildController = () => {
   }
 
   const controller = Object.create(CommentsFormController.prototype)
+  Object.defineProperty(controller, 'element', { get: () => document.getElementById('comments-popup') })
   Object.defineProperty(controller, 'textareaTarget', { get: () => textarea })
   Object.defineProperty(controller, 'formTarget', { get: () => form })
   Object.defineProperty(controller, 'listController', { get: () => listCtrl })
@@ -87,7 +88,7 @@ const COMMAND_TEXT = '/calendar 2026-08-14 10:00 Sync'
 describe('CommentsFormController stashed draft across a send failure', () => {
   beforeEach(() => {
     global.fetch = jest.fn()
-    alertDialog.mockClear()
+    alertDialog.mockReset().mockResolvedValue()
   })
 
   test('restores the draft over the command text a failed send left behind', async () => {
@@ -127,6 +128,8 @@ describe('CommentsFormController stashed draft across a send failure', () => {
 
   test('still restores the draft into the box a successful send cleared', async () => {
     const { controller, textarea } = buildController()
+    const settled = jest.fn()
+    controller.element.addEventListener('comments--form:submit-settled', settled)
     global.fetch.mockResolvedValue({ ok: true, text: () => Promise.resolve('<div></div>') })
 
     stash(controller, 'roadmap notes')
@@ -137,6 +140,7 @@ describe('CommentsFormController stashed draft across a send failure', () => {
 
     expect(controller.resetForm).toHaveBeenCalledTimes(1)
     expect(textarea.value).toBe('roadmap notes')
+    expect(settled).toHaveBeenCalledTimes(1)
   })
 
   test('a failure with nothing stashed leaves the submitted text for a retry', async () => {
@@ -148,5 +152,26 @@ describe('CommentsFormController stashed draft across a send failure', () => {
     await flush()
 
     expect(textarea.value).toBe('an ordinary message')
+  })
+
+  test('announces settlement only after the failure dialog is dismissed', async () => {
+    const { controller, textarea } = buildController()
+    const settled = jest.fn()
+    let dismissDialog
+    controller.element.addEventListener('comments--form:submit-settled', settled)
+    global.fetch.mockResolvedValue(failedResponse())
+    alertDialog.mockReturnValue(new Promise((resolve) => { dismissDialog = resolve }))
+
+    textarea.value = COMMAND_TEXT
+    controller.handleSend(new Event('submit'))
+    await flush()
+
+    expect(alertDialog).toHaveBeenCalledTimes(1)
+    expect(settled).not.toHaveBeenCalled()
+
+    dismissDialog()
+    await flush()
+
+    expect(settled).toHaveBeenCalledTimes(1)
   })
 })

@@ -16,6 +16,7 @@ if (!commandMenuInitialized) {
 
     const list = menu.querySelector('[data-popup-list]')
     const commandCache = new Map()
+    let skipNextMenuInput = false
 
     const argsForm = new CommandArgsForm({
       container: popup,
@@ -47,10 +48,22 @@ if (!commandMenuInitialized) {
           }))
         }
         textarea.value = commandText
+        // Keep the normal input listeners (drafts, resize, submit state) in
+        // sync without treating this programmatic command as a new typeahead
+        // query. A schema command with no entered values is just "/name", so
+        // the command menu would otherwise reopen as soon as the form closes.
+        skipNextMenuInput = true
         textarea.dispatchEvent(new Event('input', { bubbles: true }))
         // Trigger form submission directly
         const submitBtn = document.querySelector('#new-comment-form [data-comments--form-target="submit"]')
         if (submitBtn) {
+          // Keep focus out of the textarea while its value is still the command
+          // being sent. The form announces settlement after success/failure
+          // cleanup, so typing cannot append to the in-flight command.
+          popup.addEventListener('comments--form:submit-settled', () => {
+            const active = document.activeElement
+            if (!active || active === document.body) textarea.focus()
+          }, { once: true })
           submitBtn.click()
         }
       },
@@ -198,10 +211,16 @@ if (!commandMenuInitialized) {
     let queryToken = 0
 
     textarea.addEventListener('input', function () {
+      const token = ++queryToken
+      if (skipNextMenuInput) {
+        skipNextMenuInput = false
+        popupMenu.hide()
+        return
+      }
+
       // If args form is open, don't show command menu
       if (argsForm.isOpen()) return
 
-      const token = ++queryToken
       const pos = textarea.selectionStart
       const before = textarea.value.slice(0, pos)
       // Only trigger when "/" is at the very beginning of the message
