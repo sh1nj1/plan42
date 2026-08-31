@@ -8,6 +8,7 @@ const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
 const UNREAD_COUNT_REFRESH_DELAY = 250
+const TOPIC_SCROLL_DURATION = 250
 const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
 const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
 const LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX = "collavre:last-topic-save-session:"
@@ -40,6 +41,7 @@ export default class extends Controller {
         this.topicsSubscription = null
         this._loadTopicsVersion ||= 0
         this._unreadCountsOverlay = null
+        this._topicScrollFrame = null
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
@@ -48,15 +50,21 @@ export default class extends Controller {
         this.handleNewMessage = this.handleNewMessage.bind(this)
         this.handleTopicMoved = this.handleTopicMoved.bind(this)
         this.handleTopicListClose = this.handleTopicListClose.bind(this)
+        this.cancelProgrammaticScroll = this.cancelProgrammaticScroll.bind(this)
         window.addEventListener('comments--topics:new-message', this.handleNewMessage)
         window.addEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.addEventListener('topic-list:close', this.handleTopicListClose)
+        this.listTarget.addEventListener('wheel', this.cancelProgrammaticScroll, { passive: true })
+        this.listTarget.addEventListener('touchstart', this.cancelProgrammaticScroll, { passive: true })
     }
 
     disconnect() {
+        this.cancelProgrammaticScroll()
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
+        this.listTarget.removeEventListener('wheel', this.cancelProgrammaticScroll)
+        this.listTarget.removeEventListener('touchstart', this.cancelProgrammaticScroll)
         this._loadTopicsVersion += 1
         this.cancelUnreadCountRefresh()
         this.unsubscribe()
@@ -1236,17 +1244,48 @@ export default class extends Controller {
                 activeEl = el
             }
         })
-        // Scroll active topic into view
-        if (activeEl) {
-            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-        }
+        if (activeEl) this.scrollTopicIntoView(activeEl)
     }
 
     scrollToActiveTopic() {
         const activeEl = this.listTarget.querySelector('.topic-tag.active')
-        if (activeEl) {
-            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+        if (activeEl) this.scrollTopicIntoView(activeEl)
+    }
+
+    scrollTopicIntoView(topic) {
+        this.cancelProgrammaticScroll()
+        const list = this.listTarget
+        const listRect = list.getBoundingClientRect()
+        const topicRect = topic.getBoundingClientRect()
+        const maxLeft = Math.max(0, list.scrollWidth - list.clientWidth)
+        const targetLeft = Math.max(0, Math.min(
+            maxLeft,
+            list.scrollLeft + topicRect.left + (topicRect.width / 2)
+                - listRect.left - (listRect.width / 2),
+        ))
+        const startLeft = list.scrollLeft
+        const distance = targetLeft - startLeft
+        if (Math.abs(distance) < 1) return
+
+        const startedAt = performance.now()
+        const step = now => {
+            const progress = Math.min((now - startedAt) / TOPIC_SCROLL_DURATION, 1)
+            const easedProgress = 1 - ((1 - progress) ** 3)
+            list.scrollLeft = startLeft + (distance * easedProgress)
+            if (progress < 1) {
+                this._topicScrollFrame = requestAnimationFrame(step)
+            } else {
+                this._topicScrollFrame = null
+            }
         }
+        this._topicScrollFrame = requestAnimationFrame(step)
+    }
+
+    cancelProgrammaticScroll() {
+        if (this._topicScrollFrame === null) return
+
+        cancelAnimationFrame(this._topicScrollFrame)
+        this._topicScrollFrame = null
     }
 
     handleTopicMoved(event) {

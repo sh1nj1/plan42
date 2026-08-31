@@ -1,0 +1,98 @@
+/**
+ * @jest-environment jsdom
+ */
+
+import { Application } from '@hotwired/stimulus'
+import { jest } from '@jest/globals'
+import TopicsController from '../topics_controller'
+
+describe('TopicsController topic strip scrolling', () => {
+    let application
+    let controller
+    let list
+    let activeTopic
+    let frames
+    let nextFrameId
+
+    beforeEach(async () => {
+        document.body.innerHTML = `
+          <div data-controller="comments--topics">
+            <div data-comments--topics-target="list">
+              <span class="topic-tag active"></span>
+            </div>
+          </div>
+        `
+        frames = new Map()
+        nextFrameId = 1
+        global.requestAnimationFrame = jest.fn(callback => {
+            const frameId = nextFrameId++
+            frames.set(frameId, callback)
+            return frameId
+        })
+        global.cancelAnimationFrame = jest.fn(frameId => frames.delete(frameId))
+        jest.spyOn(performance, 'now').mockReturnValue(0)
+        application = Application.start()
+        application.register('comments--topics', TopicsController)
+        await new Promise(resolve => setTimeout(resolve, 0))
+
+        const element = document.querySelector('[data-controller="comments--topics"]')
+        controller = application.getControllerForElementAndIdentifier(element, 'comments--topics')
+        list = controller.listTarget
+        activeTopic = list.querySelector('.active')
+        Object.defineProperties(list, {
+            scrollLeft: { configurable: true, value: 0, writable: true },
+            scrollWidth: { configurable: true, value: 1_000 },
+            clientWidth: { configurable: true, value: 200 },
+        })
+        list.getBoundingClientRect = jest.fn(() => ({ left: 100, width: 200 }))
+        activeTopic.getBoundingClientRect = jest.fn(() => ({ left: 800, width: 100 }))
+    })
+
+    afterEach(() => {
+        application.stop()
+        document.body.innerHTML = ''
+        jest.restoreAllMocks()
+        delete global.requestAnimationFrame
+        delete global.cancelAnimationFrame
+    })
+
+    test.each(['wheel', 'touchstart'])(
+        'cancels a smooth active-topic scroll when the user starts a %s gesture',
+        eventName => {
+            controller.scrollToActiveTopic()
+            const firstFrameId = controller._topicScrollFrame
+            const firstFrame = frames.get(firstFrameId)
+            frames.delete(firstFrameId)
+            firstFrame(50)
+            const pendingFrameId = controller._topicScrollFrame
+            const interruptedAt = list.scrollLeft
+
+            list.dispatchEvent(new Event(eventName, { bubbles: true }))
+
+            expect(cancelAnimationFrame).toHaveBeenCalledWith(pendingFrameId)
+            expect(controller._topicScrollFrame).toBeNull()
+            expect(frames.has(pendingFrameId)).toBe(false)
+            expect(list.scrollLeft).toBe(interruptedAt)
+        },
+    )
+
+    test('finishes the active-topic scroll at the centered position', () => {
+        controller.scrollToActiveTopic()
+        const frame = frames.get(controller._topicScrollFrame)
+
+        frame(250)
+
+        expect(list.scrollLeft).toBe(650)
+        expect(controller._topicScrollFrame).toBeNull()
+    })
+
+    test('does not schedule a scroll when the topic is already centered', () => {
+        list.scrollLeft = 650
+        activeTopic.getBoundingClientRect.mockReturnValue({ left: 150, width: 100 })
+
+        controller.scrollToActiveTopic()
+
+        expect(requestAnimationFrame).not.toHaveBeenCalled()
+        expect(controller._topicScrollFrame).toBeNull()
+    })
+})
