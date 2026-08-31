@@ -18,7 +18,7 @@ describe('TopicsController topic strip scrolling', () => {
         document.body.innerHTML = `
           <div data-controller="comments--topics">
             <div data-comments--topics-target="list">
-              <span class="topic-tag active"></span>
+              <span class="topic-tag active" data-id="1"></span>
             </div>
           </div>
         `
@@ -73,8 +73,23 @@ describe('TopicsController topic strip scrolling', () => {
             expect(controller._topicScrollFrame).toBeNull()
             expect(frames.has(pendingFrameId)).toBe(false)
             expect(list.scrollLeft).toBe(interruptedAt)
+
+            requestAnimationFrame.mockClear()
+            controller.scrollToActiveTopic()
+
+            expect(requestAnimationFrame).not.toHaveBeenCalled()
+            expect(list.scrollLeft).toBe(interruptedAt)
         },
     )
+
+    test('allows a new active-topic scroll after an explicit topic pick', () => {
+        list.dispatchEvent(new Event('wheel', { bubbles: true }))
+
+        controller.updateSelectionUI('1', { pick: true, persist: false })
+
+        expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
+        expect(controller._topicScrollInterrupted).toBe(false)
+    })
 
     test('finishes the active-topic scroll at the centered position', () => {
         controller.scrollToActiveTopic()
@@ -93,6 +108,16 @@ describe('TopicsController topic strip scrolling', () => {
         controller.scrollToActiveTopic()
 
         expect(requestAnimationFrame).not.toHaveBeenCalled()
+        expect(controller._topicScrollFrame).toBeNull()
+    })
+
+    test('cancels an active-topic scroll when the popup closes', () => {
+        controller.scrollToActiveTopic()
+        const pendingFrameId = controller._topicScrollFrame
+
+        controller.onPopupClosed()
+
+        expect(cancelAnimationFrame).toHaveBeenCalledWith(pendingFrameId)
         expect(controller._topicScrollFrame).toBeNull()
     })
 })

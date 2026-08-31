@@ -42,6 +42,7 @@ export default class extends Controller {
         this._loadTopicsVersion ||= 0
         this._unreadCountsOverlay = null
         this._topicScrollFrame = null
+        this._topicScrollInterrupted = false
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
@@ -50,12 +51,12 @@ export default class extends Controller {
         this.handleNewMessage = this.handleNewMessage.bind(this)
         this.handleTopicMoved = this.handleTopicMoved.bind(this)
         this.handleTopicListClose = this.handleTopicListClose.bind(this)
-        this.cancelProgrammaticScroll = this.cancelProgrammaticScroll.bind(this)
+        this.handleTopicScrollInput = this.handleTopicScrollInput.bind(this)
         window.addEventListener('comments--topics:new-message', this.handleNewMessage)
         window.addEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.addEventListener('topic-list:close', this.handleTopicListClose)
-        this.listTarget.addEventListener('wheel', this.cancelProgrammaticScroll, { passive: true })
-        this.listTarget.addEventListener('touchstart', this.cancelProgrammaticScroll, { passive: true })
+        this.listTarget.addEventListener('wheel', this.handleTopicScrollInput, { passive: true })
+        this.listTarget.addEventListener('touchstart', this.handleTopicScrollInput, { passive: true })
     }
 
     disconnect() {
@@ -63,14 +64,16 @@ export default class extends Controller {
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
-        this.listTarget.removeEventListener('wheel', this.cancelProgrammaticScroll)
-        this.listTarget.removeEventListener('touchstart', this.cancelProgrammaticScroll)
+        this.listTarget.removeEventListener('wheel', this.handleTopicScrollInput)
+        this.listTarget.removeEventListener('touchstart', this.handleTopicScrollInput)
         this._loadTopicsVersion += 1
         this.cancelUnreadCountRefresh()
         this.unsubscribe()
     }
 
     onPopupOpened({ creativeId }) {
+        this.cancelProgrammaticScroll()
+        this._topicScrollInterrupted = false
         this._popupClosed = false
         const previousCreativeId = this.creativeIdValue
         this.creativeIdValue = creativeId
@@ -109,6 +112,7 @@ export default class extends Controller {
     }
 
     onPopupClosed() {
+        this.cancelProgrammaticScroll()
         this._popupClosed = true
         this.releaseAcknowledgedPendingSelfEchoes()
         this.markPendingSelfEchoesAsPossiblyMissed()
@@ -1233,6 +1237,7 @@ export default class extends Controller {
     }
 
     updateSelectionUI(id, { pick = true, persist = true, pending = false } = {}) {
+        if (pick) this._topicScrollInterrupted = false
         this.applySelection(id, { pick, persist, pending })
         // Update UI
         let activeEl = null
@@ -1253,6 +1258,8 @@ export default class extends Controller {
     }
 
     scrollTopicIntoView(topic) {
+        if (this._topicScrollInterrupted) return
+
         this.cancelProgrammaticScroll()
         const list = this.listTarget
         const listRect = list.getBoundingClientRect()
@@ -1286,6 +1293,11 @@ export default class extends Controller {
 
         cancelAnimationFrame(this._topicScrollFrame)
         this._topicScrollFrame = null
+    }
+
+    handleTopicScrollInput() {
+        this._topicScrollInterrupted = true
+        this.cancelProgrammaticScroll()
     }
 
     handleTopicMoved(event) {
