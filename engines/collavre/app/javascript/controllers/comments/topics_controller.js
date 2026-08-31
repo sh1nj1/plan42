@@ -1370,7 +1370,7 @@ export default class extends Controller {
 
             if (response.ok) {
                 const topic = await response.json()
-				this._topicScrollInterrupted = false
+                this._topicScrollInterrupted = false
                 this.currentTopicId = topic.id
                 // Flush save immediately so loadTopics gets the correct value from server
                 await this.flushSaveLastTopic(topic.id)
@@ -2573,7 +2573,7 @@ export default class extends Controller {
 
         const result = await createTopicWithComments(this.creativeId, name, commentIds)
         if (result.ok) {
-			this._topicScrollInterrupted = false
+            this._topicScrollInterrupted = false
             this.currentTopicId = result.topic.id
             await this.flushSaveLastTopic(result.topic.id)
             await this.loadTopics()
@@ -2678,7 +2678,7 @@ export default class extends Controller {
 
             if (response.ok) {
                 const topic = await response.json()
-				this._topicScrollInterrupted = false
+                this._topicScrollInterrupted = false
                 this.currentTopicId = topic.id
                 await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()

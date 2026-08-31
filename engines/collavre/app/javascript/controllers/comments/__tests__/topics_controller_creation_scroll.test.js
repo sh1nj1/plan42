@@ -18,6 +18,7 @@ const TopicsController = (await import('../topics_controller')).default
 describe('TopicsController user-created topic scrolling', () => {
   let application
   let controller
+  let interruptionStatesAtLoad
 
   beforeEach(async () => {
     document.head.innerHTML = '<meta name="csrf-token" content="test-csrf">'
@@ -38,8 +39,9 @@ describe('TopicsController user-created topic scrolling', () => {
     controller._topicScrollInterrupted = true
     controller.debounceSaveLastTopic = jest.fn()
     controller.flushSaveLastTopic = jest.fn().mockResolvedValue()
+    interruptionStatesAtLoad = []
     controller.loadTopics = jest.fn(async () => {
-      expect(controller._topicScrollInterrupted).toBe(false)
+      interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
     })
     controller.dispatch = jest.fn()
   })
@@ -61,6 +63,7 @@ describe('TopicsController user-created topic scrolling', () => {
     await controller.createTopic('New topic')
 
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+    expect(interruptionStatesAtLoad).toEqual([false])
   })
 
   test('allows the new topic to scroll into view after moving comments', async () => {
@@ -72,6 +75,7 @@ describe('TopicsController user-created topic scrolling', () => {
     await controller.createTopicAndMoveComments(['comment-1'], 'Moved comments')
 
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+    expect(interruptionStatesAtLoad).toEqual([false])
   })
 
   test('allows the new topic to scroll into view after an agent drop', async () => {
@@ -83,5 +87,6 @@ describe('TopicsController user-created topic scrolling', () => {
     await controller.createTopicWithAgent({ id: 5, name: 'Reviewer' })
 
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+    expect(interruptionStatesAtLoad).toEqual([false])
   })
 })

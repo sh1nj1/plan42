@@ -65,6 +65,33 @@ describe('CommentsListController deep-linked topic resolution', () => {
     expect(topicsController.selectTopic).toHaveBeenCalledWith('3', { userInitiated: true })
   })
 
+  test('marks topic creation from the move popup as user initiated', () => {
+    const controller = buildListController()
+    controller.selection = new Set(['comment-1'])
+    controller.clearSelection = jest.fn()
+    controller.switchToTopic = jest.fn()
+    const topicSearchController = {
+      openForCreative: jest.fn((_creativeId, _rect, onSelect) => {
+        onSelect({ id: '9', created: true })
+      }),
+    }
+    const modal = document.createElement('div')
+    modal.id = 'topic-search-modal'
+    document.body.appendChild(modal)
+    Object.defineProperty(controller, 'application', {
+      value: {
+        getControllerForElementAndIdentifier: jest.fn(() => topicSearchController),
+      },
+    })
+
+    controller.openTopicSearchPopup({
+      currentTarget: { getBoundingClientRect: () => ({}) },
+    })
+
+    expect(controller.clearSelection).toHaveBeenCalledTimes(1)
+    expect(controller.switchToTopic).toHaveBeenCalledWith('9')
+  })
+
   // updateSelectionUI only repaints chips: it neither expands the archived
   // section nor tells form_controller which conversation the reply belongs to.
   test('routes the server-resolved topic through selectTopic', async () => {

@@ -991,9 +991,8 @@ export default class extends Controller {
         btnRect,
         (topic) => {
           if (topic.created) {
-            // Topic was just created with comments moved — refresh
             this.clearSelection()
-            this.loadInitialComments()
+            this.switchToTopic(topic.id)
           } else {
             this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
           }
