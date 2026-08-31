@@ -70,6 +70,7 @@ module Collavre
       @llm_models = Collavre::LlmModel.suggestions
       @agent_gateways = editable_agent_gateways(@user)
       @has_stored_llm_api_key = @user.llm_api_key.present?
+      @return_to = safe_return_to(params[:return_to].presence || request.referer)
     end
 
     def update_ai
@@ -106,13 +107,9 @@ module Collavre
       end
 
       if updated
-        redirect_to current_user_contacts_path, notice: I18n.t("collavre.users.update_ai.success")
+        redirect_to update_ai_destination, notice: I18n.t("collavre.users.update_ai.success")
       else
-        @available_tools = load_available_tools
-        @llm_models = Collavre::LlmModel.suggestions
-        @agent_gateways = editable_agent_gateways(@user)
-        flash.now[:alert] = @user.errors.full_messages.to_sentence
-        render :edit_ai, status: :unprocessable_entity
+        render_ai_edit_failure
       end
     end
 
@@ -120,6 +117,40 @@ module Collavre
 
     def current_user_contacts_path
       user_path(Current.user, tab: "contacts")
+    end
+
+    def render_ai_edit_failure
+      @available_tools = load_available_tools
+      @llm_models = Collavre::LlmModel.suggestions
+      @agent_gateways = editable_agent_gateways(@user)
+      @return_to = safe_return_to(params[:return_to])
+      flash.now[:alert] = @user.errors.full_messages.to_sentence
+      render :edit_ai, status: :unprocessable_entity
+    end
+
+    # Saving should land back on whatever list opened the form (the admin user
+    # list, a profile's contacts tab, the org chart), not a fixed page.
+    def update_ai_destination
+      safe_return_to(params[:return_to]) || current_user_contacts_path
+    end
+
+    def safe_return_to(candidate)
+      path = local_path_for(candidate)
+      return nil if path.nil? || path.split("?").first == edit_ai_user_path(@user)
+
+      path
+    end
+
+    def local_path_for(candidate)
+      return nil if candidate.blank?
+
+      uri = URI.parse(candidate)
+      return nil if uri.host.present? && uri.host != request.host
+      return nil unless uri.path.to_s.start_with?("/") && !uri.path.start_with?("//")
+
+      [ uri.path, uri.query ].compact_blank.join("?")
+    rescue URI::InvalidURIError
+      nil
     end
 
     def remember_llm_model(user)
