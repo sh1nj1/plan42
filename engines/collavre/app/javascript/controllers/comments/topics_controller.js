@@ -43,6 +43,7 @@ export default class extends Controller {
         this._unreadCountsOverlay = null
         this._topicScrollFrame = null
         this._topicScrollInterrupted = false
+        this._topicScrollInterruptionVersion ||= 0
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
@@ -756,6 +757,9 @@ export default class extends Controller {
 
         if (!topicId) return
 
+        const deletingSelectedTopic = String(this.currentTopicId) === String(topicId)
+        const scrollInterruptionVersion = this._topicScrollInterruptionVersion
+
         try {
             const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}`, {
                 method: 'DELETE',
@@ -765,8 +769,15 @@ export default class extends Controller {
             })
 
             if (response.ok) {
-                if (String(this.currentTopicId) === String(topicId)) {
+                // The server can broadcast "deleted" before this response. In
+                // that case removeTopic() has already cleared currentTopicId,
+                // but this local removal should still reveal All Messages.
+                // A newer wheel/touch gesture always wins, though.
+                if (deletingSelectedTopic
+                    && this._topicScrollInterruptionVersion === scrollInterruptionVersion) {
                     this._topicScrollInterrupted = false
+                }
+                if (String(this.currentTopicId) === String(topicId)) {
                     // Same deep-link hazard as the "deleted" broadcast: this
                     // path reaches restoreSelection through loadTopics instead
                     // of removeTopic, but the getter is the same one.
@@ -1298,6 +1309,7 @@ export default class extends Controller {
     }
 
     handleTopicScrollInput() {
+        this._topicScrollInterruptionVersion += 1
         this._topicScrollInterrupted = true
         this.cancelProgrammaticScroll()
     }
