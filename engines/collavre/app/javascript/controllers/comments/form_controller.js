@@ -1105,6 +1105,7 @@ export default class extends Controller {
         } else {
           this._stashedDraft = null
         }
+        this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled'))
       })
   }
 

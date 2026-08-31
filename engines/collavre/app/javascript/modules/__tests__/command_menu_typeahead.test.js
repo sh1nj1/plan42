@@ -136,7 +136,7 @@ describe('command menu typeahead', () => {
     }
   })
 
-  test('submitting command arguments keeps the menu closed and returns focus to chat input', async () => {
+  test('submitting command arguments keeps the menu closed and refocuses after the send settles', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([{
@@ -172,7 +172,13 @@ describe('command menu typeahead', () => {
 
     expect(document.getElementById('command-args-dialog')).toBeNull()
     expect(menu.style.display).toBe('none')
-    expect(document.activeElement).toBe(textarea)
     expect(submitClick).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).not.toBe(textarea)
+
+    document.getElementById('comments-popup').dispatchEvent(
+      new CustomEvent('comments--form:submit-settled'),
+    )
+
+    expect(document.activeElement).toBe(textarea)
   })
 })

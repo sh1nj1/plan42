@@ -44,6 +44,7 @@ const buildController = () => {
   }
 
   const controller = Object.create(CommentsFormController.prototype)
+  Object.defineProperty(controller, 'element', { get: () => document.getElementById('comments-popup') })
   Object.defineProperty(controller, 'textareaTarget', { get: () => textarea })
   Object.defineProperty(controller, 'formTarget', { get: () => form })
   Object.defineProperty(controller, 'listController', { get: () => listCtrl })
@@ -127,6 +128,8 @@ describe('CommentsFormController stashed draft across a send failure', () => {
 
   test('still restores the draft into the box a successful send cleared', async () => {
     const { controller, textarea } = buildController()
+    const settled = jest.fn()
+    controller.element.addEventListener('comments--form:submit-settled', settled)
     global.fetch.mockResolvedValue({ ok: true, text: () => Promise.resolve('<div></div>') })
 
     stash(controller, 'roadmap notes')
@@ -137,6 +140,7 @@ describe('CommentsFormController stashed draft across a send failure', () => {
 
     expect(controller.resetForm).toHaveBeenCalledTimes(1)
     expect(textarea.value).toBe('roadmap notes')
+    expect(settled).toHaveBeenCalledTimes(1)
   })
 
   test('a failure with nothing stashed leaves the submitted text for a retry', async () => {
