@@ -930,6 +930,7 @@ export default class extends Controller {
       method = 'PATCH'
     }
 
+    let settlementUi = Promise.resolve()
     const doFetch = () => fetch(url, {
       method,
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
@@ -1090,7 +1091,7 @@ export default class extends Controller {
           this._updateSubmitButton()
         }
         this._persistFailedSubmissionDraft(submittedDraft)
-        alertDialog(error?.message || 'Failed to submit comment')
+        settlementUi = alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
         this._pendingDraftSubmissions.delete(submittedDraft)
@@ -1105,7 +1106,10 @@ export default class extends Controller {
         } else {
           this._stashedDraft = null
         }
-        this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled'))
+        const announceSettlement = () => {
+          this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled'))
+        }
+        settlementUi.then(announceSettlement, announceSettlement)
       })
   }
 

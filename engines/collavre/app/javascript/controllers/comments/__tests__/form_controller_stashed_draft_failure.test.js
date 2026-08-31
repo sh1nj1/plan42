@@ -88,7 +88,7 @@ const COMMAND_TEXT = '/calendar 2026-08-14 10:00 Sync'
 describe('CommentsFormController stashed draft across a send failure', () => {
   beforeEach(() => {
     global.fetch = jest.fn()
-    alertDialog.mockClear()
+    alertDialog.mockReset().mockResolvedValue()
   })
 
   test('restores the draft over the command text a failed send left behind', async () => {
@@ -152,5 +152,26 @@ describe('CommentsFormController stashed draft across a send failure', () => {
     await flush()
 
     expect(textarea.value).toBe('an ordinary message')
+  })
+
+  test('announces settlement only after the failure dialog is dismissed', async () => {
+    const { controller, textarea } = buildController()
+    const settled = jest.fn()
+    let dismissDialog
+    controller.element.addEventListener('comments--form:submit-settled', settled)
+    global.fetch.mockResolvedValue(failedResponse())
+    alertDialog.mockReturnValue(new Promise((resolve) => { dismissDialog = resolve }))
+
+    textarea.value = COMMAND_TEXT
+    controller.handleSend(new Event('submit'))
+    await flush()
+
+    expect(alertDialog).toHaveBeenCalledTimes(1)
+    expect(settled).not.toHaveBeenCalled()
+
+    dismissDialog()
+    await flush()
+
+    expect(settled).toHaveBeenCalledTimes(1)
   })
 })
