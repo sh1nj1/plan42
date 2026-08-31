@@ -1308,6 +1308,7 @@ export default class extends Controller {
         if (String(sourceCreativeId) === String(this.creativeId)) {
             // If we were viewing the moved topic, switch to Main
             if (String(this.currentTopicId) === String(topicId)) {
+                this._topicScrollInterrupted = false
                 this.currentTopicId = ""
                 this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
             }

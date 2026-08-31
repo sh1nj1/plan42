@@ -151,4 +151,32 @@ describe('TopicsController topic strip scrolling', () => {
 
         expect(requestAnimationFrame).not.toHaveBeenCalled()
     })
+
+    test('allows All Messages to scroll into view after moving the selected topic away', () => {
+        controller.creativeIdValue = '42'
+        controller.serverLastTopicId = '1'
+        controller._topicScrollInterrupted = true
+        const interruptionStatesAtLoad = []
+        controller.loadTopics = jest.fn(() => {
+            interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+        })
+
+        controller.handleTopicMoved({ detail: { sourceCreativeId: '42', topicId: '1' } })
+
+        expect(interruptionStatesAtLoad).toEqual([false])
+    })
+
+    test('preserves the user scroll lock when moving an inactive topic away', () => {
+        controller.creativeIdValue = '42'
+        controller.serverLastTopicId = '1'
+        controller._topicScrollInterrupted = true
+        const interruptionStatesAtLoad = []
+        controller.loadTopics = jest.fn(() => {
+            interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+        })
+
+        controller.handleTopicMoved({ detail: { sourceCreativeId: '42', topicId: '2' } })
+
+        expect(interruptionStatesAtLoad).toEqual([true])
+    })
 })
