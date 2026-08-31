@@ -60,7 +60,10 @@ if (!commandMenuInitialized) {
           // Keep focus out of the textarea while its value is still the command
           // being sent. The form announces settlement after success/failure
           // cleanup, so typing cannot append to the in-flight command.
-          popup.addEventListener('comments--form:submit-settled', () => textarea.focus(), { once: true })
+          popup.addEventListener('comments--form:submit-settled', () => {
+            const active = document.activeElement
+            if (!active || active === document.body) textarea.focus()
+          }, { once: true })
           submitBtn.click()
         }
       },

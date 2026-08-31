@@ -136,7 +136,7 @@ describe('command menu typeahead', () => {
     }
   })
 
-  test('submitting command arguments keeps the menu closed and refocuses after the send settles', async () => {
+  test('command arguments refocus after settlement without stealing deliberate focus', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([{
@@ -180,5 +180,29 @@ describe('command menu typeahead', () => {
     )
 
     expect(document.activeElement).toBe(textarea)
+
+    type(textarea, '/task')
+    await settle()
+    textarea.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+    document.querySelector('#command-args-dialog textarea').dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+    await flush()
+
+    const otherControl = document.createElement('button')
+    document.body.appendChild(otherControl)
+    otherControl.focus()
+    document.getElementById('comments-popup').dispatchEvent(
+      new CustomEvent('comments--form:submit-settled'),
+    )
+
+    expect(submitClick).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(otherControl)
   })
 })
