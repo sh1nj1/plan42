@@ -766,6 +766,7 @@ export default class extends Controller {
 
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
+                    this._topicScrollInterrupted = false
                     // Same deep-link hazard as the "deleted" broadcast: this
                     // path reaches restoreSelection through loadTopics instead
                     // of removeTopic, but the getter is the same one.
@@ -797,6 +798,7 @@ export default class extends Controller {
 
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
+                    this._topicScrollInterrupted = false
                     // Archiving the topic in view switches to All Messages, but
                     // the preference save is debounced 500ms and both this
                     // reload and the "archived" broadcast's own reload can beat

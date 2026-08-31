@@ -92,6 +92,23 @@ describe('TopicsController#deleteTopic', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  test('allows All Messages to scroll into view after deleting the selected topic', async () => {
+    controller.serverLastTopicId = '99'
+    controller._topicScrollInterrupted = true
+    const interruptionStatesAtLoad = []
+    controller.loadTopics = jest.fn(() => {
+      interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+    })
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = '99'
+
+    await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+
+    expect(interruptionStatesAtLoad).toEqual([false])
+  })
+
   // Assigning "" only moves serverLastTopicId, and both deep-link sources
   // outrank it in the currentTopicId getter — so without the release the
   // deleted id keeps answering for every later restoreSelection().

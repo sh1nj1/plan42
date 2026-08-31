@@ -507,6 +507,23 @@ describe('TopicsController archived topic messages', () => {
       expect(controller.currentTopicId).toBe('1')
     })
 
+    test('allows All Messages to scroll into view after archiving the selected topic', async () => {
+      controller.serverLastTopicId = '2'
+      controller._topicScrollInterrupted = true
+      const interruptionStatesAtLoad = []
+      controller.loadTopics = jest.fn(() => {
+        interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+      })
+      global.fetch = jest.fn().mockResolvedValue({ ok: true })
+
+      await controller.archiveTopic({
+        stopPropagation: jest.fn(),
+        currentTarget: { dataset: { id: '2' } },
+      })
+
+      expect(interruptionStatesAtLoad).toEqual([false])
+    })
+
     test('leaves the archived section collapsed instead of revealing the archived topic', async () => {
       controller.serverLastTopicId = '2'
       render()
