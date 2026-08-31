@@ -148,9 +148,10 @@ describe('command menu typeahead', () => {
     })
     const { textarea, menu } = setup()
     const submit = document.createElement('button')
+    const submitClick = jest.fn()
     submit.type = 'button'
-    submit.dataset.commentsFormTarget = 'submit'
-    submit.addEventListener('click', jest.fn())
+    submit.setAttribute('data-comments--form-target', 'submit')
+    submit.addEventListener('click', submitClick)
     document.getElementById('new-comment-form').appendChild(submit)
 
     type(textarea, '/task')
@@ -172,5 +173,6 @@ describe('command menu typeahead', () => {
     expect(document.getElementById('command-args-dialog')).toBeNull()
     expect(menu.style.display).toBe('none')
     expect(document.activeElement).toBe(textarea)
+    expect(submitClick).toHaveBeenCalledTimes(1)
   })
 })
