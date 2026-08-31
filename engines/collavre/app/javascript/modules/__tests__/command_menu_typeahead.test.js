@@ -149,9 +149,16 @@ describe('command menu typeahead', () => {
     const { textarea, menu } = setup()
     const submit = document.createElement('button')
     const submitClick = jest.fn()
+    let submissionId
     submit.type = 'button'
     submit.setAttribute('data-comments--form-target', 'submit')
-    submit.addEventListener('click', submitClick)
+    submit.addEventListener('click', (event) => {
+      submitClick()
+      submissionId = event.commandSubmissionId
+      document.getElementById('comments-popup').dispatchEvent(
+        new CustomEvent('comments--form:submit-started', { detail: { submissionId } }),
+      )
+    })
     document.getElementById('new-comment-form').appendChild(submit)
 
     type(textarea, '/task')
@@ -176,7 +183,14 @@ describe('command menu typeahead', () => {
     expect(document.activeElement).not.toBe(textarea)
 
     document.getElementById('comments-popup').dispatchEvent(
-      new CustomEvent('comments--form:submit-settled'),
+      new CustomEvent('comments--form:submit-settled', {
+        detail: { submissionId: 'an-unrelated-send' },
+      }),
+    )
+    expect(document.activeElement).not.toBe(textarea)
+
+    document.getElementById('comments-popup').dispatchEvent(
+      new CustomEvent('comments--form:submit-settled', { detail: { submissionId } }),
     )
 
     expect(document.activeElement).toBe(textarea)
@@ -199,10 +213,55 @@ describe('command menu typeahead', () => {
     document.body.appendChild(otherControl)
     otherControl.focus()
     document.getElementById('comments-popup').dispatchEvent(
-      new CustomEvent('comments--form:submit-settled'),
+      new CustomEvent('comments--form:submit-settled', { detail: { submissionId } }),
     )
 
     expect(submitClick).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(otherControl)
+  })
+
+  test('a rejected command submission removes its settlement listener', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([{
+        name: 'task_create',
+        label: '/task_create',
+        aliases: [],
+        input_schema: [{ name: 'title', type: 'string', required: false }],
+      }]),
+    })
+    const { textarea } = setup()
+    const submit = document.createElement('button')
+    let rejectedSubmissionId
+    submit.type = 'button'
+    submit.setAttribute('data-comments--form-target', 'submit')
+    submit.addEventListener('click', (event) => {
+      rejectedSubmissionId = event.commandSubmissionId
+      // No submit-started event: the form controller rejected this attempt.
+    })
+    document.getElementById('new-comment-form').appendChild(submit)
+
+    type(textarea, '/task')
+    await settle()
+    textarea.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true,
+    }))
+    document.querySelector('#command-args-dialog textarea').dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true,
+    }))
+    await flush()
+
+    expect(document.activeElement).toBe(textarea)
+
+    const otherControl = document.createElement('button')
+    document.body.appendChild(otherControl)
+    otherControl.focus()
+    document.getElementById('comments-popup').dispatchEvent(
+      new CustomEvent('comments--form:submit-settled', {
+        detail: { submissionId: rejectedSubmissionId },
+      }),
+    )
+
     expect(document.activeElement).toBe(otherControl)
   })
 })
