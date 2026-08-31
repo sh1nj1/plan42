@@ -56,6 +56,15 @@ describe('CommentsListController deep-linked topic resolution', () => {
     jest.clearAllMocks()
   })
 
+  test('marks a comment topic-link switch as user initiated', () => {
+    const topicsController = { selectTopic: jest.fn() }
+    const controller = buildListController({ topicsController })
+
+    controller.switchToTopic('3')
+
+    expect(topicsController.selectTopic).toHaveBeenCalledWith('3', { userInitiated: true })
+  })
+
   // updateSelectionUI only repaints chips: it neither expands the archived
   // section nor tells form_controller which conversation the reply belongs to.
   test('routes the server-resolved topic through selectTopic', async () => {

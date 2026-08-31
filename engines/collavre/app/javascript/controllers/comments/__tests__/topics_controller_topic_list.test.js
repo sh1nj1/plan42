@@ -104,8 +104,10 @@ describe('TopicsController#openTopicListPopup', () => {
 		controller.element.appendChild(modal)
 		const popup = { popup: { isOpen: jest.fn(() => false) }, openForTopics: jest.fn() }
 		jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+		const selectTopic = jest.spyOn(controller, 'selectTopic').mockImplementation(() => {})
 
 		controller.openTopicListPopup({ currentTarget: btn })
+		popup.openForTopics.mock.calls[0][2]({ id: 2 })
 
 		expect(popup.openForTopics).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -116,6 +118,7 @@ describe('TopicsController#openTopicListPopup', () => {
 			expect.any(Function),
 			controller.element
 		)
+		expect(selectTopic).toHaveBeenCalledWith(2, { userInitiated: true })
     })
 
     test('reloads authoritative unread counts without incrementing the cached snapshot', async () => {

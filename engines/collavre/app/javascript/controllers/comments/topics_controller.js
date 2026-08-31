@@ -880,7 +880,7 @@ export default class extends Controller {
             popup.openForTopics(
                 this.topicListData(),
                 btnRect,
-                (item) => this.selectTopic(item.id),
+                (item) => this.selectTopic(item.id, { userInitiated: true }),
                 this.element
             )
             this.setTopicListButtonExpanded(true)
@@ -1121,7 +1121,7 @@ export default class extends Controller {
         if (event.target.closest('.topic-branch-icon')) {
             const sourceTopicId = event.currentTarget.dataset.sourceTopicId
             if (sourceTopicId) {
-                this.selectTopic(sourceTopicId)
+                this.selectTopic(sourceTopicId, { userInitiated: true })
                 return
             }
         }
@@ -1134,10 +1134,10 @@ export default class extends Controller {
             return
         }
 
-        this.selectTopic(id)
+        this.selectTopic(id, { userInitiated: true })
     }
 
-    selectTopic(id, { reveal = true, pick = true, persist = true } = {}) {
+    selectTopic(id, { reveal = true, pick = true, persist = true, userInitiated = false } = {}) {
         // Only restoreSelection() is guarded, so reaching selectTopic with this
         // id means the user deliberately went back into the archived topic.
         // The transition is over.
@@ -1145,7 +1145,7 @@ export default class extends Controller {
             this.archivedAwayTopicId = null
         }
         if (reveal) this.revealArchivedTopic(id)
-        this.updateSelectionUI(id, { pick, persist, pending: pick })
+        this.updateSelectionUI(id, { pick, persist, pending: pick, userInitiated })
         if (id) {
             this.clearNewMessageBadge(id)
         }
@@ -1236,8 +1236,8 @@ export default class extends Controller {
         }
     }
 
-    updateSelectionUI(id, { pick = true, persist = true, pending = false } = {}) {
-        if (pick) this._topicScrollInterrupted = false
+    updateSelectionUI(id, { pick = true, persist = true, pending = false, userInitiated = false } = {}) {
+        if (userInitiated) this._topicScrollInterrupted = false
         this.applySelection(id, { pick, persist, pending })
         // Update UI
         let activeEl = null
@@ -1258,7 +1258,7 @@ export default class extends Controller {
     }
 
     scrollTopicIntoView(topic) {
-        if (this._topicScrollInterrupted) return
+        if (this._popupClosed || this._topicScrollInterrupted) return
 
         this.cancelProgrammaticScroll()
         const list = this.listTarget

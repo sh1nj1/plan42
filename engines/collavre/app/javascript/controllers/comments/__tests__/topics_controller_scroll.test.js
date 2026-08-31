@@ -82,13 +82,39 @@ describe('TopicsController topic strip scrolling', () => {
         },
     )
 
-    test('allows a new active-topic scroll after an explicit topic pick', () => {
+    test('does not resume scrolling for a non-user pick', () => {
         list.dispatchEvent(new Event('wheel', { bubbles: true }))
 
         controller.updateSelectionUI('1', { pick: true, persist: false })
 
+        expect(requestAnimationFrame).not.toHaveBeenCalled()
+        expect(controller._topicScrollInterrupted).toBe(true)
+    })
+
+    test('allows a new active-topic scroll after an explicit user pick', () => {
+        list.dispatchEvent(new Event('wheel', { bubbles: true }))
+
+        controller.updateSelectionUI('1', {
+            pick: true,
+            persist: false,
+            userInitiated: true,
+        })
+
         expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
         expect(controller._topicScrollInterrupted).toBe(false)
+    })
+
+    test('marks branch-icon navigation as user initiated', () => {
+        activeTopic.dataset.sourceTopicId = '2'
+        activeTopic.innerHTML = '<span class="topic-branch-icon"></span>'
+        const selectTopic = jest.spyOn(controller, 'selectTopic').mockImplementation(() => {})
+
+        controller.select({
+            target: activeTopic.querySelector('.topic-branch-icon'),
+            currentTarget: activeTopic,
+        })
+
+        expect(selectTopic).toHaveBeenCalledWith('2', { userInitiated: true })
     })
 
     test('finishes the active-topic scroll at the centered position', () => {
@@ -119,5 +145,10 @@ describe('TopicsController topic strip scrolling', () => {
 
         expect(cancelAnimationFrame).toHaveBeenCalledWith(pendingFrameId)
         expect(controller._topicScrollFrame).toBeNull()
+
+        requestAnimationFrame.mockClear()
+        controller.scrollToActiveTopic()
+
+        expect(requestAnimationFrame).not.toHaveBeenCalled()
     })
 })

@@ -1185,7 +1185,7 @@ export default class extends Controller {
     if (!topicId) return
     const topicsController = this.popupController?.topicsController
     if (topicsController?.selectTopic) {
-      topicsController.selectTopic(topicId)
+      topicsController.selectTopic(topicId, { userInitiated: true })
     } else {
       this.currentTopicId = topicId
       this.resetToLatest()
