@@ -128,19 +128,25 @@ describe('CommentsFormController stashed draft across a send failure', () => {
 
   test('still restores the draft into the box a successful send cleared', async () => {
     const { controller, textarea } = buildController()
+    const started = jest.fn()
     const settled = jest.fn()
+    controller.element.addEventListener('comments--form:submit-started', started)
     controller.element.addEventListener('comments--form:submit-settled', settled)
     global.fetch.mockResolvedValue({ ok: true, text: () => Promise.resolve('<div></div>') })
 
     stash(controller, 'roadmap notes')
     textarea.value = COMMAND_TEXT
 
-    controller.handleSend(new Event('submit'))
+    const event = new Event('submit')
+    event.commandSubmissionId = 'command-1'
+    controller.handleSend(event)
     await flush()
 
     expect(controller.resetForm).toHaveBeenCalledTimes(1)
     expect(textarea.value).toBe('roadmap notes')
+    expect(started.mock.calls[0][0].detail).toEqual({ submissionId: 'command-1' })
     expect(settled).toHaveBeenCalledTimes(1)
+    expect(settled.mock.calls[0][0].detail).toEqual({ submissionId: 'command-1' })
   })
 
   test('a failure with nothing stashed leaves the submitted text for a retry', async () => {

@@ -4,6 +4,7 @@ import CommandArgsForm from './command_args_form'
 import { openCreativeLinkPicker } from './creative_link_picker'
 
 let commandMenuInitialized = false
+let commandSubmissionSequence = 0
 
 if (!commandMenuInitialized) {
   commandMenuInitialized = true
@@ -57,14 +58,31 @@ if (!commandMenuInitialized) {
         // Trigger form submission directly
         const submitBtn = document.querySelector('#new-comment-form [data-comments--form-target="submit"]')
         if (submitBtn) {
+          const submissionId = String(++commandSubmissionSequence)
+          let submissionStarted = false
+          const markSubmission = (event) => { event.commandSubmissionId = submissionId }
+          const onSubmissionStarted = (event) => {
+            if (event.detail?.submissionId === submissionId) submissionStarted = true
+          }
           // Keep focus out of the textarea while its value is still the command
           // being sent. The form announces settlement after success/failure
           // cleanup, so typing cannot append to the in-flight command.
-          popup.addEventListener('comments--form:submit-settled', () => {
+          const onSubmissionSettled = (event) => {
+            if (event.detail?.submissionId !== submissionId) return
+            popup.removeEventListener('comments--form:submit-settled', onSubmissionSettled)
             const active = document.activeElement
             if (!active || active === document.body) textarea.focus()
-          }, { once: true })
+          }
+          submitBtn.addEventListener('click', markSubmission, { capture: true, once: true })
+          popup.addEventListener('comments--form:submit-started', onSubmissionStarted)
+          popup.addEventListener('comments--form:submit-settled', onSubmissionSettled)
           submitBtn.click()
+          submitBtn.removeEventListener('click', markSubmission, true)
+          popup.removeEventListener('comments--form:submit-started', onSubmissionStarted)
+          if (!submissionStarted) {
+            popup.removeEventListener('comments--form:submit-settled', onSubmissionSettled)
+            textarea.focus()
+          }
         }
       },
       onCancel: () => {

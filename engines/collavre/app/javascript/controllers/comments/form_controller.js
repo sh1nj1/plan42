@@ -822,6 +822,7 @@ export default class extends Controller {
 
   handleSend(event) {
     event.preventDefault()
+    const commandSubmissionId = event.commandSubmissionId || null
 
     // If active quote exists, handle based on type
     const store = this._reviewStore
@@ -845,6 +846,11 @@ export default class extends Controller {
     this.sending = true
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
+    if (commandSubmissionId) {
+      this.element.dispatchEvent(new CustomEvent('comments--form:submit-started', {
+        detail: { submissionId: commandSubmissionId },
+      }))
+    }
 
     // Cancel any pending input debounce before capturing the submission. A
     // write while the request is in flight looks like a newer draft and can
@@ -1107,7 +1113,9 @@ export default class extends Controller {
           this._stashedDraft = null
         }
         const announceSettlement = () => {
-          this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled'))
+          this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled', {
+            detail: { submissionId: commandSubmissionId },
+          }))
         }
         settlementUi.then(announceSettlement, announceSettlement)
       })
