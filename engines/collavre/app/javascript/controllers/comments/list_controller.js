@@ -991,9 +991,8 @@ export default class extends Controller {
         btnRect,
         (topic) => {
           if (topic.created) {
-            // Topic was just created with comments moved — refresh
             this.clearSelection()
-            this.loadInitialComments()
+            this.switchToTopic(topic.id)
           } else {
             this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
           }
@@ -1185,7 +1184,7 @@ export default class extends Controller {
     if (!topicId) return
     const topicsController = this.popupController?.topicsController
     if (topicsController?.selectTopic) {
-      topicsController.selectTopic(topicId)
+      topicsController.selectTopic(topicId, { userInitiated: true })
     } else {
       this.currentTopicId = topicId
       this.resetToLatest()

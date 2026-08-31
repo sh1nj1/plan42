@@ -8,6 +8,7 @@ const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
 const UNREAD_COUNT_REFRESH_DELAY = 250
+const TOPIC_SCROLL_DURATION = 250
 const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
 const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
 const LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX = "collavre:last-topic-save-session:"
@@ -40,6 +41,9 @@ export default class extends Controller {
         this.topicsSubscription = null
         this._loadTopicsVersion ||= 0
         this._unreadCountsOverlay = null
+        this._topicScrollFrame = null
+        this._topicScrollInterrupted = false
+        this._topicScrollInterruptionVersion ||= 0
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
@@ -48,21 +52,29 @@ export default class extends Controller {
         this.handleNewMessage = this.handleNewMessage.bind(this)
         this.handleTopicMoved = this.handleTopicMoved.bind(this)
         this.handleTopicListClose = this.handleTopicListClose.bind(this)
+        this.handleTopicScrollInput = this.handleTopicScrollInput.bind(this)
         window.addEventListener('comments--topics:new-message', this.handleNewMessage)
         window.addEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.addEventListener('topic-list:close', this.handleTopicListClose)
+        this.listTarget.addEventListener('wheel', this.handleTopicScrollInput, { passive: true })
+        this.listTarget.addEventListener('touchstart', this.handleTopicScrollInput, { passive: true })
     }
 
     disconnect() {
+        this.cancelProgrammaticScroll()
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
         this.element.removeEventListener('topic-list:close', this.handleTopicListClose)
+        this.listTarget.removeEventListener('wheel', this.handleTopicScrollInput)
+        this.listTarget.removeEventListener('touchstart', this.handleTopicScrollInput)
         this._loadTopicsVersion += 1
         this.cancelUnreadCountRefresh()
         this.unsubscribe()
     }
 
     onPopupOpened({ creativeId }) {
+        this.cancelProgrammaticScroll()
+        this._topicScrollInterrupted = false
         this._popupClosed = false
         const previousCreativeId = this.creativeIdValue
         this.creativeIdValue = creativeId
@@ -101,6 +113,7 @@ export default class extends Controller {
     }
 
     onPopupClosed() {
+        this.cancelProgrammaticScroll()
         this._popupClosed = true
         this.releaseAcknowledgedPendingSelfEchoes()
         this.markPendingSelfEchoesAsPossiblyMissed()
@@ -744,6 +757,9 @@ export default class extends Controller {
 
         if (!topicId) return
 
+        const deletingSelectedTopic = String(this.currentTopicId) === String(topicId)
+        const scrollInterruptionVersion = this._topicScrollInterruptionVersion
+
         try {
             const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}`, {
                 method: 'DELETE',
@@ -753,6 +769,14 @@ export default class extends Controller {
             })
 
             if (response.ok) {
+                // The server can broadcast "deleted" before this response. In
+                // that case removeTopic() has already cleared currentTopicId,
+                // but this local removal should still reveal All Messages.
+                // A newer wheel/touch gesture always wins, though.
+                if (deletingSelectedTopic
+                    && this._topicScrollInterruptionVersion === scrollInterruptionVersion) {
+                    this._topicScrollInterrupted = false
+                }
                 if (String(this.currentTopicId) === String(topicId)) {
                     // Same deep-link hazard as the "deleted" broadcast: this
                     // path reaches restoreSelection through loadTopics instead
@@ -785,6 +809,7 @@ export default class extends Controller {
 
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
+                    this._topicScrollInterrupted = false
                     // Archiving the topic in view switches to All Messages, but
                     // the preference save is debounced 500ms and both this
                     // reload and the "archived" broadcast's own reload can beat
@@ -868,7 +893,7 @@ export default class extends Controller {
             popup.openForTopics(
                 this.topicListData(),
                 btnRect,
-                (item) => this.selectTopic(item.id),
+                (item) => this.selectTopic(item.id, { userInitiated: true }),
                 this.element
             )
             this.setTopicListButtonExpanded(true)
@@ -1109,7 +1134,7 @@ export default class extends Controller {
         if (event.target.closest('.topic-branch-icon')) {
             const sourceTopicId = event.currentTarget.dataset.sourceTopicId
             if (sourceTopicId) {
-                this.selectTopic(sourceTopicId)
+                this.selectTopic(sourceTopicId, { userInitiated: true })
                 return
             }
         }
@@ -1122,10 +1147,10 @@ export default class extends Controller {
             return
         }
 
-        this.selectTopic(id)
+        this.selectTopic(id, { userInitiated: true })
     }
 
-    selectTopic(id, { reveal = true, pick = true, persist = true } = {}) {
+    selectTopic(id, { reveal = true, pick = true, persist = true, userInitiated = false } = {}) {
         // Only restoreSelection() is guarded, so reaching selectTopic with this
         // id means the user deliberately went back into the archived topic.
         // The transition is over.
@@ -1133,7 +1158,7 @@ export default class extends Controller {
             this.archivedAwayTopicId = null
         }
         if (reveal) this.revealArchivedTopic(id)
-        this.updateSelectionUI(id, { pick, persist, pending: pick })
+        this.updateSelectionUI(id, { pick, persist, pending: pick, userInitiated })
         if (id) {
             this.clearNewMessageBadge(id)
         }
@@ -1224,7 +1249,8 @@ export default class extends Controller {
         }
     }
 
-    updateSelectionUI(id, { pick = true, persist = true, pending = false } = {}) {
+    updateSelectionUI(id, { pick = true, persist = true, pending = false, userInitiated = false } = {}) {
+        if (userInitiated) this._topicScrollInterrupted = false
         this.applySelection(id, { pick, persist, pending })
         // Update UI
         let activeEl = null
@@ -1236,17 +1262,56 @@ export default class extends Controller {
                 activeEl = el
             }
         })
-        // Scroll active topic into view
-        if (activeEl) {
-            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-        }
+        if (activeEl) this.scrollTopicIntoView(activeEl)
     }
 
     scrollToActiveTopic() {
         const activeEl = this.listTarget.querySelector('.topic-tag.active')
-        if (activeEl) {
-            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+        if (activeEl) this.scrollTopicIntoView(activeEl)
+    }
+
+    scrollTopicIntoView(topic) {
+        if (this._popupClosed || this._topicScrollInterrupted) return
+
+        this.cancelProgrammaticScroll()
+        const list = this.listTarget
+        const listRect = list.getBoundingClientRect()
+        const topicRect = topic.getBoundingClientRect()
+        const maxLeft = Math.max(0, list.scrollWidth - list.clientWidth)
+        const targetLeft = Math.max(0, Math.min(
+            maxLeft,
+            list.scrollLeft + topicRect.left + (topicRect.width / 2)
+                - listRect.left - (listRect.width / 2),
+        ))
+        const startLeft = list.scrollLeft
+        const distance = targetLeft - startLeft
+        if (Math.abs(distance) < 1) return
+
+        const startedAt = performance.now()
+        const step = now => {
+            const progress = Math.min((now - startedAt) / TOPIC_SCROLL_DURATION, 1)
+            const easedProgress = 1 - ((1 - progress) ** 3)
+            list.scrollLeft = startLeft + (distance * easedProgress)
+            if (progress < 1) {
+                this._topicScrollFrame = requestAnimationFrame(step)
+            } else {
+                this._topicScrollFrame = null
+            }
         }
+        this._topicScrollFrame = requestAnimationFrame(step)
+    }
+
+    cancelProgrammaticScroll() {
+        if (this._topicScrollFrame === null) return
+
+        cancelAnimationFrame(this._topicScrollFrame)
+        this._topicScrollFrame = null
+    }
+
+    handleTopicScrollInput() {
+        this._topicScrollInterruptionVersion += 1
+        this._topicScrollInterrupted = true
+        this.cancelProgrammaticScroll()
     }
 
     handleTopicMoved(event) {
@@ -1255,6 +1320,7 @@ export default class extends Controller {
         if (String(sourceCreativeId) === String(this.creativeId)) {
             // If we were viewing the moved topic, switch to Main
             if (String(this.currentTopicId) === String(topicId)) {
+                this._topicScrollInterrupted = false
                 this.currentTopicId = ""
                 this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
             }
@@ -1319,6 +1385,7 @@ export default class extends Controller {
 
             if (response.ok) {
                 const topic = await response.json()
+                this._topicScrollInterrupted = false
                 this.currentTopicId = topic.id
                 // Flush save immediately so loadTopics gets the correct value from server
                 await this.flushSaveLastTopic(topic.id)
@@ -2521,6 +2588,7 @@ export default class extends Controller {
 
         const result = await createTopicWithComments(this.creativeId, name, commentIds)
         if (result.ok) {
+            this._topicScrollInterrupted = false
             this.currentTopicId = result.topic.id
             await this.flushSaveLastTopic(result.topic.id)
             await this.loadTopics()
@@ -2625,6 +2693,7 @@ export default class extends Controller {
 
             if (response.ok) {
                 const topic = await response.json()
+                this._topicScrollInterrupted = false
                 this.currentTopicId = topic.id
                 await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()

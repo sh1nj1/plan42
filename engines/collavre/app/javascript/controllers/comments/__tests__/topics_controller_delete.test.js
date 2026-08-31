@@ -86,10 +86,98 @@ describe('TopicsController#deleteTopic', () => {
     const event = { stopPropagation: jest.fn(), currentTarget: button }
 
     confirmDialog.mockResolvedValue(false)
+    controller._topicScrollInterrupted = true
 
     await controller.deleteTopic(event)
 
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(controller._topicScrollInterrupted).toBe(true)
+  })
+
+  test('allows All Messages to scroll into view after deleting the selected topic', async () => {
+    controller.serverLastTopicId = '99'
+    controller._topicScrollInterrupted = true
+    const interruptionStatesAtLoad = []
+    controller.loadTopics = jest.fn(() => {
+      interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+    })
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = '99'
+
+    await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+
+    expect(interruptionStatesAtLoad).toEqual([false])
+  })
+
+  test('allows All Messages to scroll into view when the deleted broadcast arrives before the response', async () => {
+    controller.serverLastTopicId = '99'
+    controller._topicScrollInterrupted = true
+    controller.topics = [{ id: 99, name: 'Selected topic' }]
+    controller.renderTopics = jest.fn()
+    controller.restoreSelection = jest.fn()
+    const interruptionStatesAtLoad = []
+    controller.loadTopics = jest.fn(() => {
+      interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+    })
+    let resolveDelete
+    global.fetch = jest.fn(() => new Promise(resolve => { resolveDelete = resolve }))
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = '99'
+
+    const deletion = controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+    await Promise.resolve()
+    controller.removeTopic('99')
+    resolveDelete({ ok: true })
+    await deletion
+
+    expect(controller.currentTopicId).toBe('')
+    expect(interruptionStatesAtLoad).toEqual([false])
+  })
+
+  test('preserves a newer user scroll after the deleted broadcast', async () => {
+    controller.serverLastTopicId = '99'
+    controller._topicScrollInterrupted = true
+    controller.topics = [{ id: 99, name: 'Selected topic' }]
+    controller.renderTopics = jest.fn()
+    controller.restoreSelection = jest.fn()
+    const interruptionStatesAtLoad = []
+    controller.loadTopics = jest.fn(() => {
+      interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+    })
+    let resolveDelete
+    global.fetch = jest.fn(() => new Promise(resolve => { resolveDelete = resolve }))
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = '99'
+
+    const deletion = controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+    await Promise.resolve()
+    controller.removeTopic('99')
+    controller.handleTopicScrollInput()
+    resolveDelete({ ok: true })
+    await deletion
+
+    expect(interruptionStatesAtLoad).toEqual([true])
+  })
+
+  test('preserves the user scroll lock after deleting an inactive topic', async () => {
+    controller.serverLastTopicId = '1'
+    controller._topicScrollInterrupted = true
+    const interruptionStatesAtLoad = []
+    controller.loadTopics = jest.fn(() => {
+      interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+    })
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = '99'
+
+    await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+
+    expect(interruptionStatesAtLoad).toEqual([true])
   })
 
   // Assigning "" only moves serverLastTopicId, and both deep-link sources
