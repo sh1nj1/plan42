@@ -135,4 +135,42 @@ describe('command menu typeahead', () => {
       expect(menu.style.visibility).toBe('visible')
     }
   })
+
+  test('submitting command arguments keeps the menu closed and returns focus to chat input', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([{
+        name: 'task_create',
+        label: '/task_create',
+        aliases: [],
+        input_schema: [{ name: 'title', type: 'string', required: false }],
+      }]),
+    })
+    const { textarea, menu } = setup()
+    const submit = document.createElement('button')
+    submit.type = 'button'
+    submit.dataset.commentsFormTarget = 'submit'
+    submit.addEventListener('click', jest.fn())
+    document.getElementById('new-comment-form').appendChild(submit)
+
+    type(textarea, '/task')
+    await settle()
+    textarea.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+
+    const titleInput = document.querySelector('#command-args-dialog textarea')
+    titleInput.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+    await flush()
+
+    expect(document.getElementById('command-args-dialog')).toBeNull()
+    expect(menu.style.display).toBe('none')
+    expect(document.activeElement).toBe(textarea)
+  })
 })
