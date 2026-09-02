@@ -1,7 +1,7 @@
 PATH
   remote: engines/collavre_completion_api
   specs:
-    collavre_completion_api (0.2.3)
+    collavre_completion_api (0.2.4)
       collavre
       doorkeeper
       rails (>= 8.0)
@@ -9,7 +9,7 @@ PATH
 PATH
   remote: engines/collavre_github
   specs:
-    collavre_github (0.6.3)
+    collavre_github (0.7.0)
       collavre
       octokit
       rails (>= 8.0)
@@ -17,14 +17,14 @@ PATH
 PATH
   remote: engines/collavre_linear
   specs:
-    collavre_linear (0.2.2)
+    collavre_linear (0.2.3)
       collavre
       rails (>= 8.0)
 
 PATH
   remote: engines/collavre_notion
   specs:
-    collavre_notion (0.1.5)
+    collavre_notion (0.1.6)
       collavre
       httparty
       rails (>= 8.0)
@@ -32,7 +32,7 @@ PATH
 PATH
   remote: engines/collavre_openclaw
   specs:
-    collavre_openclaw (0.6.5)
+    collavre_openclaw (0.6.6)
       eventmachine (~> 1.2)
       faraday (>= 2.0)
       faye-websocket (~> 0.11)
@@ -48,7 +48,7 @@ PATH
 PATH
   remote: engines/collavre_slack
   specs:
-    collavre_slack (0.2.9)
+    collavre_slack (0.2.10)
       collavre
       faraday
       faraday-retry
@@ -57,7 +57,7 @@ PATH
 PATH
   remote: engines/collavre
   specs:
-    collavre (0.24.1)
+    collavre (0.25.0)
       bcrypt
       closure_tree
       commonmarker

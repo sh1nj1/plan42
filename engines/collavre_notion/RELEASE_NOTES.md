@@ -1,3 +1,8 @@
+## v0.1.6 (2026-09-02)
+
+### Changes
+- 36e777f4 fix: decode HTML character references in plain-text creative labels (#1488)
+
 ## v0.1.5 (2026-07-16)
 
 ### Changes

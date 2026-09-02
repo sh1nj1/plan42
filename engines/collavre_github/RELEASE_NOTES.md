@@ -1,3 +1,12 @@
+## v0.7.0 (2026-09-02)
+
+### Changes
+- e70f5bcc fix: clarify pr monitor response destination (#1593)
+- c9bfea86 feat(github): add pr_state_set tool to correct missed PR state (#1579)
+- 27c8e185 feat: introduce system event envelope and vocabulary (#1563)
+- 2165f470 fix: route GitHub webhooks by repository id so a rename cannot silence them (#1465)
+- 6f3a3d42 fix: stop GitHub webhook events from being processed multiple times (#1457)
+
 ## v0.6.3 (2026-07-21)
 
 ### Changes
