@@ -75,6 +75,7 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     visit_workspace(MOBILE_WIDTH)
     find(".creative-workspace-tree-toggle").click
     assert_selector ".creative-workspace-tree-region.is-open"
+    assert_drawer_settled(open: true)
 
     # The docked chat is normally closed below 768px. Show it at its mobile
     # position to exercise the exact overlap that previously hid the drawer.

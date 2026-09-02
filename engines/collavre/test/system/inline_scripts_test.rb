@@ -224,6 +224,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{second_branch.id}'].is-current"
     assert_equal "mounted", find("[data-controller='workspace-tree']")["data-persistence-marker"]
     assert_equal second_branch.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+    assert_eventually { page.evaluate_script("window.Turbo?.navigator?.currentVisit == null") }
 
     page.go_back
 
