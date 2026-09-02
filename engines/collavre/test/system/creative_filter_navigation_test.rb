@@ -72,6 +72,7 @@ class CreativeFilterNavigationTest < ApplicationSystemTestCase
     visit collavre.creatives_path
     find(COMMENT_BUTTON).click
     assert_selector "#{COMMENT_BUTTON}.active"
+    assert_current_path(/comment=true/, url: false)
 
     find(COMMENT_BUTTON).click
 
