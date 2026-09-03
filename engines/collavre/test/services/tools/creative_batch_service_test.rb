@@ -96,6 +96,38 @@ module Collavre
         assert linked.reload.archived?
       end
 
+      test "undo treats an independently restored hidden shell as complete" do
+        child, linked = create_private_linked_pair
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        linked.update_column(:archived_at, nil)
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_equal "reverted", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+      end
+
+      test "undo does not overwrite or expose an independently rearchived hidden shell" do
+        child, linked = create_private_linked_pair
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        later_archive = 1.hour.from_now
+        linked.update_column(:archived_at, later_archive)
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :partial, revert.status
+        assert_equal "applied", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_in_delta later_archive, linked.reload.archived_at, 0.001
+        assert_not_includes revert.skipped, linked.id
+      end
+
       test "mixed operations in a single batch" do
         child = Creative.create!(description: "<p>Child</p>", user: @user, parent: @root)
         service = CreativeBatchService.new
@@ -176,6 +208,17 @@ module Collavre
 
         assert_not result[:success]
         assert_equal initial_count, Creative.count
+      end
+
+      private
+
+      def create_private_linked_pair
+        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root)
+        foreign_user = users(:two)
+        foreign_root = Creative.create!(description: "<p>Private tree</p>", user: foreign_user)
+        linked = Creative.create!(origin: child, user: foreign_user, parent: foreign_root)
+        Current.change_set = nil
+        [ child, linked ]
       end
     end
   end

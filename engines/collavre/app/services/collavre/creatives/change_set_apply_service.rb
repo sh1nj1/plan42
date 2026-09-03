@@ -85,11 +85,12 @@ module Collavre
       end
 
       def classify_propagated_target(change, creative, snapshot, plan)
-        unless creative && History.snapshot(creative)["archived_at"] == change.public_send(source_snapshot_side)["archived_at"]
+        current_archived_at = History.snapshot(creative)["archived_at"] if creative
+        return if current_archived_at == snapshot["archived_at"]
+        unless creative && current_archived_at == change.public_send(source_snapshot_side)["archived_at"]
           @complete = false
           return
         end
-        return if History.snapshot(creative)["archived_at"] == snapshot["archived_at"]
 
         plan << [ creative, snapshot, true ]
       end
