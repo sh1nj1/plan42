@@ -199,6 +199,17 @@ describe('EntityListController', () => {
         expect(controller.popup.isOpen()).toBe(false)
     })
 
+    test('Escape closes the popup when filtering leaves no items', () => {
+	controller.openForItems(ITEMS, RECT, () => {})
+	controller.inputTarget.value = 'nothing'
+	controller._onInput()
+
+	controller.handleInputKeydown({ key: 'Escape', preventDefault: jest.fn() })
+
+	expect(controller.popup.items).toEqual([])
+	expect(controller.popup.isOpen()).toBe(false)
+    })
+
     test('Tab closes without selecting or preventing focus traversal', () => {
         const cb = jest.fn()
         const preventDefault = jest.fn()
