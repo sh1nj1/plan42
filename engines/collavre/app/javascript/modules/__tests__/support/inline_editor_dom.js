@@ -20,6 +20,7 @@ export const HIDDEN_INPUT_IDS = [
   'inline-method', 'inline-creative-description', 'inline-content-type',
   'inline-markdown-editor', 'inline-markdown-source', 'inline-parent-id',
   'inline-before-id', 'inline-after-id', 'inline-child-id', 'inline-origin-id',
+  'inline-history-anchor-id', 'inline-change-group-token',
 ]
 
 export const DIV_IDS = [
@@ -48,6 +49,8 @@ export function buildEditorDom(container, {
     const input = document.createElement('input')
     input.type = 'hidden'
     input.id = id
+    if (id === 'inline-history-anchor-id') input.name = 'history_anchor_id'
+    if (id === 'inline-change-group-token') input.name = 'change_group_token'
     form.appendChild(input)
   })
   const progress = document.createElement('input')

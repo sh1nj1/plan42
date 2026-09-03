@@ -109,6 +109,29 @@ module Collavre
         assert_equal @user, creative.user
       end
 
+      test "records sibling resequencing when inserting before a sibling" do
+        Collavre::CreativeChangeSet.destroy_all
+        Current.reset
+        first = Creative.create!(description: "First", user: @user, parent: @parent_creative, sequence: 0)
+        second = Creative.create!(description: "Second", user: @user, parent: @parent_creative, sequence: 1)
+        Current.user = @user
+
+        result = CreativeCreateService.new.call(
+          parent_id: @parent_creative.id,
+          description: "Inserted",
+          before_id: second.id
+        )
+
+        assert result[:success]
+        created = Creative.find(result.fetch(:id))
+        changes = CreativeChangeSet.sole.creative_changes.index_by(&:creative_id)
+        assert_equal [ created.id, second.id ].sort, changes.keys.sort
+        assert_equal "create", changes.fetch(created.id).operation
+        assert_equal 1, changes.fetch(created.id).after.fetch("sequence")
+        assert_equal [ 2, 1 ], [ created, second ].map { |creative| creative.reload.revision }
+        assert_equal 0, first.reload.revision
+      end
+
       test "returns error when parent not found" do
         service = CreativeCreateService.new
 
