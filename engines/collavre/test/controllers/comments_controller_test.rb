@@ -108,6 +108,42 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".creative-history-item", count: 1
     assert_select ".creative-history-list", count: 0
     assert_select ".creative-history-item[data-change-set-id='#{sets.first.id}']", count: 1
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id, after_id: sets.last.id }
+    assert_response :success
+    assert_select ".creative-history-item", count: 0
+  end
+
+  test "History pagination scans past an invisible page" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    visible = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "explicit", user: @user,
+      actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+    )
+    visible.creative_changes.create!(
+      creative: @creative, operation: "update", before: snapshot,
+      after: snapshot.merge("description" => "Visible history"), position: 0
+    )
+    foreign = Collavre::Creative.create!(description: "Foreign", user: users(:two))
+    foreign_snapshot = Collavre::Creatives::History.snapshot(foreign)
+    20.times do |index|
+      hidden = Collavre::CreativeChangeSet.create!(
+        anchor_creative: @creative, anchor_source: "explicit", user: users(:two),
+        actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+      )
+      hidden.creative_changes.create!(
+        creative: @creative, operation: "update", before: snapshot,
+        after: snapshot, position: 0
+      ).update_columns(creative_id: foreign.id, previous_parent_id: @creative.id)
+      hidden.update_column(:summary, "Hidden #{index}")
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-item[data-change-set-id='#{visible.id}']", count: 1
   end
 
   test "merge rejects comments from different topics" do

@@ -34,7 +34,13 @@ module Collavre
       def render_history
         change_sets = CreativeChangeSet.for_creative_scope(@history_scope_creative)
           .visible_by_default.includes(:creative_changes, :user)
-        change_sets = history_page(change_sets)
+        change_sets = Creatives::HistoryPage.new(
+          scope: change_sets,
+          user: Current.user,
+          before_id: params[:before_id],
+          after_id: params[:after_id],
+          limit: LIMIT
+        ).call
         response.headers["X-Topic-Id"] = params[:topic_id].to_s
         controller.render partial: "collavre/creative_change_sets/list",
                           locals: {
@@ -42,17 +48,6 @@ module Collavre
                             change_sets: change_sets,
                             pagination: params[:before_id].present? || params[:after_id].present?
                           }
-      end
-
-      def history_page(scope)
-        if params[:before_id].present?
-          scope.where("creative_change_sets.id < ?", params[:before_id].to_i).limit(LIMIT).to_a.reverse
-        elsif params[:after_id].present?
-          scope.where("creative_change_sets.id > ?", params[:after_id].to_i)
-            .reorder("creative_change_sets.id ASC").limit(LIMIT).to_a
-        else
-          scope.limit(LIMIT).to_a.reverse
-        end
       end
 
       def load_comments

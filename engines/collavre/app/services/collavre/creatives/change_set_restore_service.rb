@@ -9,15 +9,10 @@ module Collavre
       end
 
       def call
-        all_changes = @change_set.creative_changes.order(:position)
-        changes = ChangeSetVisibility.new(user: @user).changes(all_changes)
-        targets = changes.to_h { |change| [ change, change.after ] }
         ChangeSetApplyService.new(
           source: @change_set,
           user: @user,
-          targets: targets,
-          mode: :restore,
-          complete: changes.size == all_changes.size
+          mode: :restore
         ).call
       end
     end

@@ -4,6 +4,7 @@ module Collavre
   module Creatives
     class ChangeSetVisibility
       def initialize(user:)
+        @user_id = user&.id
         @permission_filter = PermissionFilter.new(user: user)
       end
 
@@ -12,6 +13,7 @@ module Collavre
         existing_ids = Creative.unscoped.where(id: changes.map(&:creative_id)).pluck(:id).to_set
         visible_ids = readable_ids(existing_ids)
         missing = changes.reject { |change| existing_ids.include?(change.creative_id) }
+          .select { |change| historical_snapshot_visible?(change) }
         readable_parents = readable_ids(missing.filter_map { |change| historical_parent_id(change) })
 
         append_visible_descendants(missing, visible_ids, readable_parents)
@@ -45,6 +47,15 @@ module Collavre
 
       def historical_parent_id(change)
         change.previous_parent_id || change.before["parent_id"] || change.after["parent_id"]
+      end
+
+      # A hard delete removes the Creative and its direct permission boundary.
+      # The former parent alone cannot prove that another viewer could read the
+      # deleted child (a closer no_access share may have overridden it), so only
+      # the actor who performed that explicit deletion may inspect its snapshot.
+      # AI deletes are archival and keep their live permission rows.
+      def historical_snapshot_visible?(change)
+        @user_id && change.change_set.user_id == @user_id
       end
 
       def readable_ids(ids)

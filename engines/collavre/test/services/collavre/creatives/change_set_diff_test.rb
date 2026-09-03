@@ -114,6 +114,31 @@ module Collavre
         assert_includes group.fetch(:before), "Removed child"
         assert_not_includes group.fetch(:after), "Removed child"
       end
+
+      test "does not infer permission to a deleted snapshot from its former parent" do
+        reader = users(:two)
+        root_share = CreativeShare.create!(
+          creative: @root, user: reader, shared_by: @user, permission: :read
+        )
+        deny = CreativeShare.create!(
+          creative: @child, user: reader, shared_by: @user, permission: :no_access
+        )
+        PermissionCacheBuilder.propagate_share(root_share)
+        PermissionCacheBuilder.propagate_share(deny)
+        change = @change_set.creative_changes.sole
+        change.update!(
+          operation: "destroy",
+          before: change.before.merge("parent_id" => @root.id, "description" => "Removed secret"),
+          after: {},
+          previous_parent_id: @root.id
+        )
+        @child.destroy!
+
+        diff = ChangeSetDiff.new(@change_set, user: reader)
+
+        assert_empty diff.groups
+        assert_equal 0, diff.change_count
+      end
     end
   end
 end

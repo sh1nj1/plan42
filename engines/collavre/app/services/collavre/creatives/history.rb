@@ -87,8 +87,38 @@ module Collavre
         change.operation = merged_operation(change.operation, operation.to_s)
         change.conflict ||= {}
         change.save!
+        retain_snapshot_files!(change)
         change_set.touch
         change
+      end
+
+      def retain_snapshot_files!(change)
+        blobs = snapshot_signed_ids(change).filter_map do |signed_id|
+          ActiveStorage::Blob.find_signed(signed_id)
+        rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+          nil
+        end.uniq(&:id)
+        retained_ids = change.history_file_attachments.pluck(:blob_id)
+        change.history_file_attachments.where.not(blob_id: blobs.map(&:id)).delete_all
+        blobs.reject { |blob| retained_ids.include?(blob.id) }.each do |blob|
+          change.history_file_attachments.create!(name: "history_files", blob: blob)
+        end
+      end
+
+      def snapshot_signed_ids(change)
+        [ change.before, change.after ].flat_map do |snapshot|
+          [ snapshot["description"], snapshot["markdown_source"] ].flat_map do |markup|
+            extract_signed_ids(markup)
+          end
+        end.uniq
+      end
+
+      def extract_signed_ids(markup)
+        return [] if markup.blank?
+
+        markup.to_s.scan(%r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/?#]+)}).flatten +
+          markup.to_s.scan(%r{/rails/active_storage/blobs/([^/?#]+)}).flatten +
+          markup.to_s.scan(%r{/public-assets/blobs/([^/?#]+)}).flatten
       end
 
       def snapshot(creative, persisted: false)

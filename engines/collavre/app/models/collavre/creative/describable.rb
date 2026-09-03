@@ -313,8 +313,9 @@ module Collavre
                                    .exists?
         return if still_referenced
         return if ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+        return if Creatives::History.recordable?
 
-        blob.purge_later
+        PurgeUnreferencedBlobJob.perform_later(blob.id)
       end
 
       def purge_description_attachments
@@ -332,7 +333,7 @@ module Collavre
                             .where("description LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%")
                             .exists?
 
-            blob.purge
+            PurgeUnreferencedBlobJob.perform_later(blob.id)
           rescue ActiveRecord::RecordNotFound, ActiveSupport::MessageVerifier::InvalidSignature
             Rails.logger.warn("Creative##{id}: could not find blob for signed_id=#{signed_id}")
           rescue StandardError => e

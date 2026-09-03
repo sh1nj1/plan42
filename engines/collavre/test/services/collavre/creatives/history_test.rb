@@ -5,6 +5,7 @@ require "test_helper"
 module Collavre
   module Creatives
     class HistoryTest < ActiveSupport::TestCase
+      include ActiveJob::TestHelper
       include ActiveSupport::Testing::TimeHelpers
 
       setup do
@@ -187,6 +188,40 @@ module Collavre
         assert_equal "destroy", change.operation
         assert_equal "Child", change.before.fetch("description")
         assert_equal({}, change.after)
+      end
+
+      test "retains blobs referenced by a historical snapshot" do
+        blob = ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new("historical file"),
+          filename: "history.txt",
+          content_type: "text/plain"
+        )
+        path = Rails.application.routes.url_helpers.rails_blob_path(blob, only_path: true)
+        @child.update!(description: %(<a href="#{path}">History file</a>))
+        CreativeChangeSet.delete_all
+
+        perform_enqueued_jobs do
+          History.track(actor: @user, origin: :editor, anchor: @root) do
+            @child.update!(description: "Removed attachment")
+          end
+        end
+
+        change = CreativeChange.sole
+        assert ActiveStorage::Blob.exists?(blob.id)
+        assert_equal [ blob.id ], change.history_file_attachments.pluck(:blob_id)
+
+        result = ChangeSetRevertService.new(change_set: change.change_set, user: @user).call
+        assert_equal :applied, result.status
+        assert_includes @child.reload.description, blob.signed_id
+        assert_includes @child.files.blobs, blob
+      end
+
+      test "ignores invalid signed blob references in snapshots" do
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          @child.update!(description: '<a href="/public-assets/blobs/invalid/file.txt">Invalid</a>')
+        end
+
+        assert_empty CreativeChange.sole.history_file_attachments
       end
 
       test "keeps bulk snapshots and writes in one transaction" do

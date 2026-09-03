@@ -5,18 +5,17 @@ module Collavre
     class ChangeSetApplyService
       Result = Struct.new(:status, :change_set, :conflicts, :skipped, keyword_init: true)
 
-      def initialize(source:, user:, targets:, resolutions: {}, mode: :revert, complete: true)
+      def initialize(source:, user:, resolutions: {}, mode: :revert)
         @source = source
         @user = user
-        @targets = targets
         @resolutions = resolutions.stringify_keys
         @mode = mode.to_sym
-        @complete = complete
       end
 
       def call
         CreativeChangeSet.transaction do
           source = CreativeChangeSet.lock.find(@source.id)
+          build_targets(source)
           next result(:not_revertible) unless revertible?(source)
 
           plan, conflicts, skipped = build_plan
@@ -31,6 +30,13 @@ module Collavre
       end
 
       private
+
+      def build_targets(source)
+        all_changes = source.creative_changes.order(@mode == :revert ? { position: :desc } : { position: :asc })
+        changes = ChangeSetVisibility.new(user: @user).changes(all_changes)
+        @targets = changes.to_h { |change| [ change, @mode == :revert ? change.before : change.after ] }
+        @complete = changes.size == all_changes.size
+      end
 
       def build_plan
         records = locked_records
@@ -60,7 +66,8 @@ module Collavre
       end
 
       def target_writable?(creative, snapshot, records, writable_ids)
-        creative && writable_ids.include?(creative.id) && target_parent_writable?(creative, snapshot, records, writable_ids)
+        creative && !creative.read_only_source? && writable_ids.include?(creative.id) &&
+          target_parent_writable?(creative, snapshot, records, writable_ids)
       end
 
       def revertible?(source)
@@ -77,7 +84,11 @@ module Collavre
       def target_parent_writable?(creative, snapshot, records, writable_ids)
         parent_id = snapshot["parent_id"]
         parent_id.nil? || parent_id == creative.parent_id ||
-          (records.key?(parent_id) && writable_ids.include?(parent_id))
+          writable_parent?(records[parent_id], writable_ids)
+      end
+
+      def writable_parent?(parent, writable_ids)
+        parent && !parent.read_only_source? && writable_ids.include?(parent.id)
       end
 
       def current_conflict?(creative, change)
@@ -125,7 +136,6 @@ module Collavre
       def apply_snapshot(creative, snapshot)
         return creative.update!(archived_at: Time.current) if snapshot.empty?
 
-        creative.skip_read_only_source_validation = true
         creative.assign_attributes(snapshot_attributes(creative, snapshot))
         creative.save!
       end

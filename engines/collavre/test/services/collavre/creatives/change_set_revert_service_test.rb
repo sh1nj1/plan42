@@ -76,6 +76,59 @@ module Collavre
         assert_equal @root, @child.reload.parent
       end
 
+      test "does not move a Creative under a read only parent" do
+        read_only_parent = Creative.create!(
+          description: "Synced",
+          user: @user,
+          data: { "source" => { "type" => "github_markdown" } }
+        )
+        change = @change_set.creative_changes.sole
+        change.update!(before: change.before.merge("parent_id" => read_only_parent.id))
+
+        result = ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+
+        assert_equal :skipped, result.status
+        assert_equal [ @child.id ], result.skipped
+        assert_equal @root, @child.reload.parent
+      end
+
+      test "skips a Creative that became read only after the recorded edit" do
+        data = @child.data.deep_dup
+        data["source"] = { "type" => "github_markdown" }
+        @child.update_column(:data, data)
+
+        result = ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+
+        assert_equal :skipped, result.status
+        assert_equal [ @child.id ], result.skipped
+        assert_equal "After", @child.reload.description
+      end
+
+      test "loads merged targets while holding the source lock" do
+        sibling = Creative.create!(description: "Sibling after", user: @user, parent: @root)
+        source = @change_set
+        lock_relation = Object.new
+        lock_relation.define_singleton_method(:find) do |id|
+          source.creative_changes.create!(
+            creative: sibling,
+            operation: "update",
+            before: History.snapshot(sibling).merge("description" => "Sibling before"),
+            after: History.snapshot(sibling),
+            position: 1
+          )
+          CreativeChangeSet.find(id)
+        end
+
+        result = CreativeChangeSet.stub(:lock, lock_relation) do
+          ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+        end
+
+        assert_equal :applied, result.status
+        assert_equal "Before", @child.reload.description
+        assert_equal "Sibling before", sibling.reload.description
+        assert_equal "reverted", @change_set.reload.status
+      end
+
       test "keeps a partial revert retryable and skips already reverted Creatives" do
         foreign = Creative.create!(description: "Foreign after", user: users(:two))
         perform_enqueued_jobs do
