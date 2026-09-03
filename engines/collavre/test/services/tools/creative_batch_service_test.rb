@@ -58,7 +58,13 @@ module Collavre
         assert result[:results][0][:archived]
         assert child.reload.archived?
         assert grandchild.reload.archived?
-        assert_equal %w[archive archive], CreativeChangeSet.newest_first.first.creative_changes.order(:creative_id).pluck(:operation)
+        change_set = CreativeChangeSet.newest_first.first
+        assert_equal %w[archive archive], change_set.creative_changes.order(:creative_id).pluck(:operation)
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+        assert_equal :applied, revert.status
+        assert_not child.reload.archived?
+        assert_not grandchild.reload.archived?
       end
 
       test "mixed operations in a single batch" do
