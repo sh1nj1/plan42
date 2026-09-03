@@ -27,6 +27,17 @@ module Collavre
         assert_not comment.private?
       end
 
+      test "rejects messages in the read-only History topic" do
+        history = @creative.history_topic
+
+        error = assert_raises(ArgumentError) do
+          service.call(topic_id: history.id, content: "Rewrite the audit trail")
+        end
+
+        assert_equal I18n.t("collavre.tools.topic_message_create.errors.history_topic"), error.message
+        assert_not Comment.exists?(topic: history)
+      end
+
       test "uses normal comment dispatch exactly once for a human author" do
         events = []
 

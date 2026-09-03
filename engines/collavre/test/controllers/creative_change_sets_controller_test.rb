@@ -64,6 +64,27 @@ module Collavre
       assert_equal [ @creative.id ], response.parsed_body["skipped"]
     end
 
+    test "a partial revert stays successful and retryable" do
+      foreign = Creative.create!(description: "Foreign after", user: users(:two))
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: foreign, user: @user, shared_by: users(:two), permission: :read)
+      end
+      @change_set.creative_changes.create!(
+        creative: foreign,
+        operation: "update",
+        before: Creatives::History.snapshot(foreign).merge("description" => "Foreign before"),
+        after: Creatives::History.snapshot(foreign),
+        position: 1
+      )
+
+      post creative_apply_change_set_path(@creative, @change_set), params: { mode: "revert" }, as: :json
+
+      assert_response :success
+      assert_equal "partial", response.parsed_body["status"]
+      assert_equal [ foreign.id ], response.parsed_body["skipped"]
+      assert_equal "applied", @change_set.reload.status
+    end
+
     test "restore makes the selected snapshot current without a conflict" do
       @creative.update!(progress: 0.9)
 
@@ -72,6 +93,29 @@ module Collavre
       assert_response :success
       assert_equal 0.75, @creative.reload.progress
       assert_equal "applied", @change_set.reload.status
+    end
+
+    test "revert resolves a change set through a linked Creative scope" do
+      linked = nil
+      creation = nil
+      Creatives::History.track(actor: @user, origin: :tool, anchor: @creative) do
+        linked = Creative.create!(user: @user, origin: @creative)
+        creation = Current.change_set
+      end
+
+      post creative_apply_change_set_path(linked, creation), params: { mode: "revert" }, as: :json
+
+      assert_response :success
+      assert linked.reload.archived?
+    end
+
+    test "rejects a foreign private linked placement even when its origin is readable" do
+      foreign_parent = Creative.create!(description: "Private", user: users(:two))
+      linked = Creative.create!(user: users(:two), parent: foreign_parent, origin: @creative)
+
+      post creative_apply_change_set_path(linked, @change_set), params: { mode: "revert" }, as: :json
+
+      assert_response :forbidden
     end
   end
 end

@@ -56,12 +56,73 @@ module Collavre
         assert_equal "Before", @child.reload.description
       end
 
-      test "skips Creatives without write permission" do
+      test "skips unreadable Creatives without exposing their ids" do
         result = ChangeSetRevertService.new(change_set: @change_set, user: users(:two)).call
 
         assert_equal :skipped, result.status
-        assert_equal [ @child.id ], result.skipped
+        assert_empty result.skipped
         assert_equal "After", @child.reload.description
+      end
+
+      test "does not move a Creative under a parent the user cannot write" do
+        foreign_parent = Creative.create!(description: "Private", user: users(:two))
+        change = @change_set.creative_changes.sole
+        change.update!(before: change.before.merge("parent_id" => foreign_parent.id))
+
+        result = ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+
+        assert_equal :skipped, result.status
+        assert_equal [ @child.id ], result.skipped
+        assert_equal @root, @child.reload.parent
+      end
+
+      test "keeps a partial revert retryable and skips already reverted Creatives" do
+        foreign = Creative.create!(description: "Foreign after", user: users(:two))
+        perform_enqueued_jobs do
+          CreativeShare.create!(creative: foreign, user: @user, shared_by: users(:two), permission: :read)
+        end
+        @change_set.creative_changes.create!(
+          creative: foreign,
+          operation: "update",
+          before: History.snapshot(foreign).merge("description" => "Foreign before"),
+          after: History.snapshot(foreign),
+          position: 1
+        )
+
+        partial = ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+        assert_equal :partial, partial.status
+        assert_equal [ foreign.id ], partial.skipped
+        assert_equal "Before", @child.reload.description
+        assert_equal "applied", @change_set.reload.status
+
+        perform_enqueued_jobs do
+          CreativeShare.find_by!(creative: foreign, user: @user).update!(permission: :write)
+        end
+        retried = ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+
+        assert_equal :applied, retried.status
+        assert_equal "Foreign before", foreign.reload.description
+        assert_equal "Before", @child.reload.description
+        assert_equal "reverted", @change_set.reload.status
+        assert_equal [ foreign.id ], retried.change_set.creative_changes.pluck(:creative_id)
+      end
+
+      test "does not expose or mark unreadable changes as reverted" do
+        foreign = Creative.create!(description: "Foreign after", user: users(:two))
+        @change_set.creative_changes.create!(
+          creative: foreign,
+          operation: "update",
+          before: History.snapshot(foreign).merge("description" => "Foreign before"),
+          after: History.snapshot(foreign),
+          position: 1
+        )
+
+        result = ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+
+        assert_equal :partial, result.status
+        assert_empty result.skipped
+        assert_equal "Foreign after", foreign.reload.description
+        assert_equal "applied", @change_set.reload.status
       end
 
       test "does not revert synchronized or already reverted sets" do
@@ -70,6 +131,15 @@ module Collavre
                      ChangeSetRevertService.new(change_set: @change_set, user: @user).call.status
 
         @change_set.update!(origin: "editor", status: "reverted")
+        assert_equal :not_revertible,
+                     ChangeSetRevertService.new(change_set: @change_set, user: @user).call.status
+      end
+
+      test "does not offer a lossy reconstruction for hard-deleted Creatives" do
+        change = @change_set.creative_changes.sole
+        change.update!(operation: "destroy", after: {})
+        @child.destroy!
+
         assert_equal :not_revertible,
                      ChangeSetRevertService.new(change_set: @change_set, user: @user).call.status
       end
@@ -113,7 +183,11 @@ module Collavre
         assert_equal :applied, result.status
         assert_equal "After", @child.reload.description
         assert_equal "applied", @change_set.reload.status
-        assert_equal @change_set, result.change_set.reverts
+        assert_nil result.change_set.reverts
+
+        reverted = ChangeSetRevertService.new(change_set: @change_set, user: @user).call
+        assert_equal :applied, reverted.status
+        assert_equal "Before", @child.reload.description
       end
 
       private

@@ -28,7 +28,7 @@ module Collavre
       end
 
       test "renders changes under the observed anchor as one document diff" do
-        group = ChangeSetDiff.new(@change_set).groups.sole
+        group = ChangeSetDiff.new(@change_set, user: @user).groups.sole
 
         assert_equal @root.id, group.fetch(:root_id)
         assert_equal "Root", group.fetch(:label)
@@ -51,7 +51,7 @@ module Collavre
         )
 
         assert_equal [ @child.id, outside.id ].sort,
-                     ChangeSetDiff.new(@change_set).groups.pluck(:root_id).sort
+                     ChangeSetDiff.new(@change_set, user: @user).groups.pluck(:root_id).sort
       end
 
       test "treats a Creative moved to the tree root as outside the anchor" do
@@ -63,7 +63,7 @@ module Collavre
         )
         @child.update!(parent: nil)
 
-        group = ChangeSetDiff.new(@change_set).groups.sole
+        group = ChangeSetDiff.new(@change_set, user: @user).groups.sole
         assert_equal @child.id, group.fetch(:root_id)
         assert group.fetch(:moved)
       end
@@ -78,10 +78,41 @@ module Collavre
           position: 1
         )
 
-        group = ChangeSetDiff.new(@change_set).groups.sole
+        group = ChangeSetDiff.new(@change_set, user: @user).groups.sole
         assert_not_includes group.fetch(:before), "Created"
         assert_includes group.fetch(:after), "Created"
         assert group.fetch(:split_rows).any? { |row| row.fetch(:action) != "=" }
+      end
+
+      test "filters changes outside the viewer's permission boundary" do
+        foreign = Creative.create!(description: "Foreign secret", user: users(:two))
+        @change_set.creative_changes.create!(
+          creative: foreign,
+          operation: "update",
+          before: History.snapshot(foreign).merge("description" => "Earlier secret"),
+          after: History.snapshot(foreign),
+          position: 1
+        )
+
+        diff = ChangeSetDiff.new(@change_set, user: @user)
+        rendered = diff.groups.to_json
+
+        assert_not_includes rendered, "Foreign secret"
+        assert_not_includes rendered, "Earlier secret"
+        assert_equal 1, diff.change_count
+        assert_not diff.fully_visible?
+      end
+
+      test "keeps a destroyed descendant visible through its readable former parent" do
+        change = @change_set.creative_changes.sole
+        before = change.before.merge("parent_id" => @root.id, "description" => "Removed child")
+        change.update!(operation: "destroy", before: before, after: {}, previous_parent_id: @root.id)
+        @child.destroy!
+
+        group = ChangeSetDiff.new(@change_set, user: @user).groups.sole
+
+        assert_includes group.fetch(:before), "Removed child"
+        assert_not_includes group.fetch(:after), "Removed child"
       end
     end
   end

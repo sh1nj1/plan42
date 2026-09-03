@@ -5,7 +5,7 @@ module Collavre
     before_action :set_creative
 
     def apply
-      change_set = CreativeChangeSet.for_creative_scope(@creative).find(params[:id])
+      change_set = CreativeChangeSet.for_creative_scope(@requested_creative).find(params[:id])
       result = apply_service(change_set).call
 
       render json: payload_for(result), status: response_status(result)
@@ -30,8 +30,9 @@ module Collavre
     end
 
     def set_creative
-      @creative = Creative.find(params[:creative_id]).effective_origin
-      head :forbidden unless @creative.has_permission?(Current.user, :read)
+      @requested_creative = Creative.find(params[:creative_id])
+      readable_ids = Creatives::PermissionFilter.new(user: Current.user).readable_ids([ @requested_creative.id ])
+      head :forbidden unless readable_ids.include?(@requested_creative.id)
     end
 
     def payload_for(result)
@@ -46,7 +47,7 @@ module Collavre
 
     def response_status(result)
       return :conflict if result.status == :conflict
-      return :unprocessable_entity unless result.status == :applied
+      return :unprocessable_entity unless result.status.in?(%i[applied partial])
 
       :ok
     end

@@ -27,8 +27,8 @@ module Tools
       it is currently handling; continue that work in the current turn instead.
 
       Requires feedback permission or better on the topic's creative. Archived
-      creatives, archived topics, and an inbox's reserved System topic do not
-      accept messages through this tool.
+      creatives, archived topics, History topics, and an inbox's reserved System
+      topic do not accept messages through this tool.
     DESC
 
     tool_param :topic_id, description: "The topic to post the message to."
@@ -80,6 +80,9 @@ module Tools
       end
       if topic.archived?
         raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.archived_topic")
+      end
+      if topic.name == Creative::HISTORY_TOPIC_NAME
+        raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.history_topic")
       end
       return unless topic.creative.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME
 

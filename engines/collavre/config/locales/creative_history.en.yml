@@ -14,6 +14,7 @@ en:
       revert: Revert change
       restore: Restore this version
       reverted: Reverted
+      irreversible: Cannot be restored
       revert_confirm: Revert this entire change set?
       restore_confirm: Make this version the current version?
       conflict_choice: "Creative #%{id} changed afterward. Force revert it, or skip it?"
@@ -21,6 +22,7 @@ en:
       skip: Skip
       results:
         applied: The change was reverted.
+        partial: The writable changes were applied. You can retry the remaining changes after permissions change.
         conflict: Resolve each conflict before reverting.
         skipped: No writable creatives remained to revert.
         not_revertible: This change cannot be reverted.

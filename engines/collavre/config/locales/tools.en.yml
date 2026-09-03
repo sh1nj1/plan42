@@ -7,6 +7,7 @@ en:
           archived_creative: Archived creatives do not accept topic messages.
           archived_topic: Archived topics do not accept messages.
           system_topic: The inbox System topic does not accept user-authored messages.
+          history_topic: History topics are read-only.
           current_topic: An agent cannot dispatch a topic message to its own current topic.
           self_route: An agent cannot route an unpinned topic message back to itself.
       topic_move:

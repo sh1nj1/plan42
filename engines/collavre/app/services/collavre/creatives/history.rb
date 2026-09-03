@@ -46,14 +46,16 @@ module Collavre
       end
 
       def record_bulk(creatives, operation:)
-        records = creatives.to_a
-        before = records.to_h { |creative| [ creative.id, locked_snapshot(creative) ] }
-        result = yield
-        records.each do |creative|
-          creative.reload
-          record(creative, operation: operation, before: before.fetch(creative.id), after: snapshot(creative))
+        records = creatives.to_a.sort_by(&:id)
+        Creative.transaction do
+          before = records.to_h { |creative| [ creative.id, locked_snapshot(creative) ] }
+          result = yield
+          records.each do |creative|
+            creative.reload
+            record(creative, operation: operation, before: before.fetch(creative.id), after: snapshot(creative))
+          end
+          result
         end
-        result
       end
 
       def record(creative, operation:, before:, after:)
@@ -72,7 +74,9 @@ module Collavre
         if change.new_record?
           change.before = before
           change.position = next_position(change_set)
-          change.previous_parent_id = before["parent_id"] if operation.to_s == "destroy"
+        end
+        if operation.to_s.in?(%w[destroy move])
+          change.previous_parent_id ||= change.before["parent_id"] || before["parent_id"]
         end
         change.after = after
         if change.persisted? && change.before == after

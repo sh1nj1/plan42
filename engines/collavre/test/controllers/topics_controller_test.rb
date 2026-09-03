@@ -92,10 +92,13 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
   test "index returns effective_creative_id for linked creative (origin id)" do
     linked = Collavre::Creative.create!(user: @user, description: "linked wrapper", origin: @creative)
+    history = linked.history_topic
     get collavre.creative_topics_url(linked), as: :json
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal @creative.id, json["effective_creative_id"]
+    assert_includes json["topics"].pluck("id"), history.id
+    assert_equal @creative, history.creative
   end
 
   # set_primary_agent is guarded by require_creative_write!, so the client needs a

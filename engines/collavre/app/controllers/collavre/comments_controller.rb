@@ -28,7 +28,11 @@ module Collavre
     end
 
     def index
-      Collavre::Comments::ListResponse.new(controller: self, creative: @creative).render
+      Collavre::Comments::ListResponse.new(
+        controller: self,
+        creative: @creative,
+        history_scope_creative: @requested_creative
+      ).render
     end
 
     def create

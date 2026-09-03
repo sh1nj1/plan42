@@ -7,9 +7,10 @@ module Collavre
     class ChangeSetDiff
       BLOCK_SEPARATOR = "\n\n---\n\n"
 
-      def initialize(change_set)
+      def initialize(change_set, user:)
         @change_set = change_set
-        @changes = change_set.creative_changes.order(:position).to_a
+        @visibility = ChangeSetVisibility.new(user: user)
+        @changes = @visibility.changes(change_set.creative_changes.order(:position))
         @changes_by_id = @changes.index_by(&:creative_id)
       end
 
@@ -17,12 +18,21 @@ module Collavre
         group_root_ids.map { |root_id| build_group(root_id) }
       end
 
+      def change_count = @changes.size
+
+      def fully_visible? = change_count == @change_set.creative_changes.size
+
+      def revertible? = @change_set.origin != "sync" && @changes.none? { |change| change.operation == "destroy" }
+
       private
 
       def group_root_ids
         tops = touched_top_ids
+        return [] if tops.empty?
+
         anchor_id = @change_set.anchor_creative_id
-        return [ anchor_id ] if anchor_id && tops.all? { |id| descendant_of?(id, anchor_id) }
+        anchor_visible = @changes_by_id.key?(anchor_id) || @visibility.visible_id?(anchor_id)
+        return [ anchor_id ] if anchor_visible && tops.all? { |id| descendant_of?(id, anchor_id) }
 
         tops
       end
@@ -89,7 +99,8 @@ module Collavre
 
       def candidate_nodes(root_id)
         roots = Creative.unscoped.where(id: [ root_id, *@changes_by_id.keys ])
-        roots.flat_map { |creative| creative.self_and_descendants.to_a }.uniq(&:id)
+        candidates = roots.flat_map { |creative| creative.self_and_descendants.to_a }.uniq(&:id)
+        @visibility.nodes(candidates)
       end
 
       def ordered_node_ids(root_id, nodes)

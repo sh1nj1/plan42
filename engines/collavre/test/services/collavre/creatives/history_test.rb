@@ -189,6 +189,44 @@ module Collavre
         assert_equal({}, change.after)
       end
 
+      test "keeps bulk snapshots and writes in one transaction" do
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          History.record_bulk([ @child ], operation: "reorder") do
+            assert Creative.connection.transaction_open?
+            @child.update_column(:sequence, 7)
+            raise ActiveRecord::Rollback
+          end
+        end
+
+        assert_not_equal 7, @child.reload.sequence
+        assert_empty CreativeChangeSet.all
+      end
+
+      test "retains the former parent when an existing change becomes a destroy" do
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          @child.update!(description: "Updated before deletion")
+          @child.destroy!
+        end
+
+        change = CreativeChange.sole
+        assert_equal "destroy", change.operation
+        assert_equal @root.id, change.previous_parent_id
+        assert_equal [ change.change_set ], CreativeChangeSet.for_creative_scope(@root).to_a
+      end
+
+      test "retains the former parent when a Creative moves to another tree" do
+        destination = Creative.create!(description: "Destination", user: @user)
+
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          @child.update!(parent: destination)
+        end
+
+        change = CreativeChange.find_by!(creative_id: @child.id)
+        assert_equal "move", change.operation
+        assert_equal @root.id, change.previous_parent_id
+        assert_includes CreativeChangeSet.for_creative_scope(@root), change.change_set
+      end
+
       test "does not create a History topic when the deleted Creative was its own anchor" do
         root = Creative.create!(description: "Deleted root", user: @user)
 

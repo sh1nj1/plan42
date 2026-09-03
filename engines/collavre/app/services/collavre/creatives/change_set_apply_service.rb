@@ -5,12 +5,13 @@ module Collavre
     class ChangeSetApplyService
       Result = Struct.new(:status, :change_set, :conflicts, :skipped, keyword_init: true)
 
-      def initialize(source:, user:, targets:, resolutions: {}, mode: :revert)
+      def initialize(source:, user:, targets:, resolutions: {}, mode: :revert, complete: true)
         @source = source
         @user = user
         @targets = targets
         @resolutions = resolutions.stringify_keys
         @mode = mode.to_sym
+        @complete = complete
       end
 
       def call
@@ -32,29 +33,51 @@ module Collavre
       private
 
       def build_plan
-        plan = []
-        conflicts = []
-        skipped = []
-        creatives = Creative.unscoped.where(id: @targets.keys.map(&:creative_id)).order(:id).lock.index_by(&:id)
-        @targets.each do |change, snapshot|
-          creative = creatives[change.creative_id]
-          if creative.nil? || !creative.has_permission?(@user, :write)
-            skipped << change.creative_id
-          elsif History.snapshot(creative) == snapshot
-            next
-          elsif current_conflict?(creative, change) && resolution(change) != "force"
-            resolution(change) == "skip" ? skipped << change.creative_id : conflicts << conflict_for(creative, change)
-          else
-            plan << [ creative, snapshot ]
-          end
+        records = locked_records
+        writable_ids = writable_ids_for(records.keys)
+        @targets.each_with_object([ [], [], [] ]) do |(change, snapshot), buckets|
+          classify_target(change, snapshot, records, writable_ids, buckets)
         end
-        [ plan, conflicts, skipped ]
+      end
+
+      def locked_records
+        target_ids = @targets.keys.map(&:creative_id)
+        parent_ids = @targets.values.filter_map { |snapshot| snapshot["parent_id"] }
+        Creative.unscoped.where(id: [ *target_ids, *parent_ids ]).order(:id).lock.index_by(&:id)
+      end
+
+      def classify_target(change, snapshot, records, writable_ids, buckets)
+        plan, conflicts, skipped = buckets
+        creative = records[change.creative_id]
+        return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids)
+        return if History.snapshot(creative) == snapshot
+
+        if current_conflict?(creative, change) && resolution(change) != "force"
+          resolution(change) == "skip" ? skipped << change.creative_id : conflicts << conflict_for(creative, change)
+        else
+          plan << [ creative, snapshot ]
+        end
+      end
+
+      def target_writable?(creative, snapshot, records, writable_ids)
+        creative && writable_ids.include?(creative.id) && target_parent_writable?(creative, snapshot, records, writable_ids)
       end
 
       def revertible?(source)
-        return false if source.origin == "sync"
+        return false if source.origin == "sync" || @targets.keys.any? { |change| change.operation == "destroy" }
 
         @mode == :restore ? source.status.in?(%w[applied reverted]) : source.status == "applied"
+      end
+
+      def writable_ids_for(ids)
+        PermissionFilter.new(user: @user)
+          .readable_ids(ids, min_permission: :write).to_set
+      end
+
+      def target_parent_writable?(creative, snapshot, records, writable_ids)
+        parent_id = snapshot["parent_id"]
+        parent_id.nil? || parent_id == creative.parent_id ||
+          (records.key?(parent_id) && writable_ids.include?(parent_id))
       end
 
       def current_conflict?(creative, change)
@@ -81,8 +104,9 @@ module Collavre
           Current.change_set = reverse
           plan.each { |creative, snapshot| apply_snapshot(creative, snapshot) }
         end
-        source.update!(status: "reverted", reverted_by: reverse) if @mode == :revert
-        result(:applied, change_set: reverse, skipped: skipped)
+        source.update!(status: "reverted", reverted_by: reverse) if @mode == :revert && skipped.empty? && @complete
+        status = skipped.empty? && @complete ? :applied : :partial
+        result(status, change_set: reverse, skipped: skipped)
       end
 
       def create_reverse_set(source)
@@ -93,7 +117,7 @@ module Collavre
           actor_kind: @user&.ai_user? ? "agent" : "human",
           origin: "revert",
           status: "applied",
-          reverts: source,
+          reverts: @mode == :revert ? source : nil,
           summary: source.summary,
           applied_at: Time.current
         )

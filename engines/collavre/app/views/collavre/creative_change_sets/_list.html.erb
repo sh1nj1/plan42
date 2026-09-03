@@ -1,14 +1,15 @@
-<div class="creative-history-list" data-controller="creative-history">
-  <% if change_sets.empty? %>
+<% unless pagination %><div class="creative-history-list" data-controller="creative-history"><% end %>
+  <% if change_sets.empty? && !pagination %>
     <p class="creative-history-empty"><%= t("collavre.creative_history.empty") %></p>
   <% end %>
 
   <% change_sets.each do |change_set| %>
-    <% diff = Collavre::Creatives::ChangeSetDiff.new(change_set) %>
+    <% diff = Collavre::Creatives::ChangeSetDiff.new(change_set, user: Current.user) %>
     <% groups = diff.groups %>
+    <% next if groups.empty? %>
     <% additions = groups.sum { |group| group[:additions] } %>
     <% deletions = groups.sum { |group| group[:deletions] } %>
-    <article class="creative-history-item" data-change-set-id="<%= change_set.id %>">
+    <article class="creative-history-item" data-change-set-id="<%= change_set.id %>" data-controller="creative-history">
       <header class="creative-history-header">
         <%= render Collavre::AvatarComponent.new(user: change_set.user, size: 20, classes: "avatar") %>
         <strong><%= change_set.user&.display_name || t("collavre.comments.system_user") %></strong>
@@ -18,9 +19,11 @@
         </time>
       </header>
 
-      <p class="creative-history-summary"><%= change_set.summary.presence || t("collavre.creative_history.default_summary") %></p>
+      <p class="creative-history-summary">
+        <%= (diff.fully_visible? ? change_set.summary : nil).presence || t("collavre.creative_history.default_summary") %>
+      </p>
       <p class="creative-history-stats">
-        <%= t("collavre.creative_history.changed_count", count: change_set.creative_changes.size) %>
+        <%= t("collavre.creative_history.changed_count", count: diff.change_count) %>
         · <ins>+<%= additions %></ins> <del>−<%= deletions %></del>
       </p>
 
@@ -53,7 +56,7 @@
         </details>
       <% end %>
 
-      <% if change_set.status == "applied" && change_set.origin != "sync" %>
+      <% if change_set.status == "applied" && diff.revertible? %>
         <button type="button"
                 class="creative-history-revert"
                 data-action="creative-history#revert"
@@ -67,8 +70,10 @@
         </button>
       <% elsif change_set.status == "reverted" %>
         <span class="creative-history-state"><%= t("collavre.creative_history.reverted") %></span>
+      <% elsif !diff.revertible? %>
+        <span class="creative-history-state"><%= t("collavre.creative_history.irreversible") %></span>
       <% end %>
-      <% if change_set.origin != "sync" && change_set.status.in?(%w[applied reverted]) %>
+      <% if diff.revertible? && change_set.status.in?(%w[applied reverted]) %>
         <button type="button"
                 class="creative-history-restore"
                 data-action="creative-history#revert"
@@ -80,4 +85,4 @@
       <% end %>
     </article>
   <% end %>
-</div>
+<% unless pagination %></div><% end %>

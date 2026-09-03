@@ -82,6 +82,22 @@ describe('CreativeHistoryController', () => {
     expect(button.disabled).toBe(false)
   })
 
+  test('reports a partial revert and reloads the remaining changes', async () => {
+    confirmDialog.mockResolvedValue(true)
+    csrfFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'partial', message: 'Some changes remain' }),
+    })
+    const reload = jest.fn()
+    jest.spyOn(controller, 'listController', 'get').mockReturnValue({ loadInitialComments: reload })
+
+    await controller.revert({ currentTarget: button })
+
+    expect(alertDialog).toHaveBeenCalledWith('Some changes remain')
+    expect(reload).toHaveBeenCalled()
+  })
+
   test('returns no list controller outside a comments list', () => {
     expect(controller.listController).toBeNull()
   })

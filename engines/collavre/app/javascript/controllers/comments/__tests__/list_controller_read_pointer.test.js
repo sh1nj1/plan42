@@ -94,6 +94,17 @@ describe('CommentsListController read pointer updates', () => {
     })
   })
 
+  test('uses History change set IDs when the read-only topic has no comment rows', () => {
+    controller.listTarget = document.createElement('div')
+    controller.listTarget.innerHTML = `
+      <article class="creative-history-item" data-change-set-id="7"></article>
+      <article class="creative-history-item" data-change-set-id="9"></article>
+    `
+
+    expect(controller.getMinId()).toBe(7)
+    expect(controller.getMaxId()).toBe(9)
+  })
+
   test('extends the All Messages read bound when pagination renders a legacy comment', async () => {
     controller.currentTopicId = null
     controller.renderedAllTopicIds = ['1']
