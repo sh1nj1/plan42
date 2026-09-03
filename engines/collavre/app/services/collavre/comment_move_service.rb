@@ -106,7 +106,7 @@ module Collavre
 
     def validate_destination_topic!(locked_topics, topic_id, target_origin)
       topic = locked_topics[topic_id]
-      if topic&.name == Creative::HISTORY_TOPIC_NAME
+      if topic&.history?
         raise MoveError, I18n.t("collavre.creative_history.read_only")
       end
       return if topic&.creative_id == target_origin.id

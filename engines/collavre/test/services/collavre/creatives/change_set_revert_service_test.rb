@@ -92,6 +92,24 @@ module Collavre
         assert_equal @root, @child.reload.parent
       end
 
+      test "does not restore a move that would create a hierarchy cycle" do
+        destination = Creative.create!(description: "Destination", user: @user)
+        moved = nil
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          @child.update!(parent: destination)
+          moved = Current.change_set
+        end
+        Current.reset
+        @root.update!(parent: @child)
+
+        result = ChangeSetRevertService.new(change_set: moved, user: @user).call
+
+        assert_equal :skipped, result.status
+        assert_equal [ @child.id ], result.skipped
+        assert_equal destination, @child.reload.parent
+        assert_equal @child, @root.reload.parent
+      end
+
       test "skips a Creative that became read only after the recorded edit" do
         data = @child.data.deep_dup
         data["source"] = { "type" => "github_markdown" }

@@ -21,7 +21,7 @@ module Collavre
       def reject_reserved_topic_mutation!
         topic = @creative.topics.find(params[:id])
         new_name = topic_params[:name] if action_name == "update"
-        reject_reserved_topic! if ReservedName.reserved?(@creative, topic.name) ||
+        reject_reserved_topic! if ReservedName.reserved_topic?(@creative, topic) ||
                                   ReservedName.reserved?(@creative, new_name)
       end
 
@@ -32,7 +32,7 @@ module Collavre
       def pin_history_topic_last!
         return unless params[:topic_ids].is_a?(Array)
 
-        history_id = @creative.topics.find_by(name: Creative::HISTORY_TOPIC_NAME)&.id
+        history_id = @creative.topics.history.pick(:id)
         params[:topic_ids] = [ *(params[:topic_ids].map(&:to_s) - [ history_id&.to_s ]), history_id ].compact
       end
     end

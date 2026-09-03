@@ -86,6 +86,18 @@ module Collavre
         assert_equal({ id: @agent.id, name: "Pinned" }, Serializer.for_tool(@topic)[:primary_agent])
       end
 
+      test "History payloads expose the localized display contract instead of an internal collision name" do
+        @creative.topics.create!(name: Creative::HISTORY_TOPIC_NAME, user: @user)
+        history = @creative.history_topic
+
+        assert_equal Creative::HISTORY_TOPIC_INTERNAL_NAME, history.name
+        assert Serializer.call(history)[:read_only]
+        assert_equal I18n.t("collavre.topics.history_name"), Serializer.call(history)[:display_name]
+        assert Serializer.with_agent(history, nil)[:read_only]
+        assert_equal Creative::HISTORY_TOPIC_NAME, Serializer.for_tool(history)[:name]
+        assert Serializer.for_tool(history)[:read_only]
+      end
+
       test "the tool payload flags System only on an inbox creative" do
         ordinary_system = @creative.topics.create!(name: Creative::SYSTEM_TOPIC_NAME, user: @user)
         inbox = Creative.create!(description: "Inbox", user: @user, data: { "kind" => "inbox" })

@@ -81,7 +81,7 @@ module Tools
       if topic.archived?
         raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.archived_topic")
       end
-      if topic.name == Creative::HISTORY_TOPIC_NAME
+      if topic.history?
         raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.history_topic")
       end
       return unless topic.creative.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME

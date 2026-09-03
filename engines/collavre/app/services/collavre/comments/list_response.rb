@@ -28,7 +28,7 @@ module Collavre
 
       def history_topic?
         params[:topic_id].present? &&
-          creative.topics.where(id: params[:topic_id], name: Creative::HISTORY_TOPIC_NAME).exists?
+          creative.topics.history.exists?(id: params[:topic_id])
       end
 
       def render_history

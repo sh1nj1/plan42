@@ -83,8 +83,10 @@ module Collavre
 
       def target_parent_writable?(creative, snapshot, records, writable_ids)
         parent_id = snapshot["parent_id"]
-        parent_id.nil? || parent_id == creative.parent_id ||
-          writable_parent?(records[parent_id], writable_ids)
+        return true if parent_id.nil? || parent_id == creative.parent_id
+
+        parent = records[parent_id]
+        writable_parent?(parent, writable_ids) && !parent.self_and_ancestors.exists?(id: creative.id)
       end
 
       def writable_parent?(parent, writable_ids)

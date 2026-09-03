@@ -41,6 +41,31 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_operator history.position, :>, @topic.reload.position
   end
 
+  test "an existing ordinary History topic remains a normal conversation" do
+    legacy = @creative.topics.create!(name: "History", user: @user)
+    @creative.topics.create!(name: Collavre::Creative::HISTORY_TOPIC_INTERNAL_NAME, user: @user)
+    comment = @creative.comments.create!(topic: legacy, user: @user, content: "Existing history discussion")
+    history = @creative.history_topic
+
+    assert_not_equal legacy, history
+    assert legacy.reload.system_kind.nil?
+    assert history.history?
+    assert_equal "#{Collavre::Creative::HISTORY_TOPIC_INTERNAL_NAME}_2", history.name
+
+    get collavre.creative_topics_url(@creative), as: :json
+    topics = response.parsed_body["topics"].index_by { |topic| topic["id"] }
+    assert_not topics.fetch(legacy.id)["read_only"]
+    assert topics.fetch(history.id)["read_only"]
+
+    get collavre.creative_comments_url(@creative), params: { topic_id: legacy.id }
+    assert_response :success
+    assert_includes response.body, comment.content
+
+    patch collavre.creative_topic_url(@creative, legacy), params: { topic: { name: "History notes" } }, as: :json
+    assert_response :success
+    assert_equal "History notes", legacy.reload.name
+  end
+
   test "index returns the last topic revision" do
     preference = Collavre::UserCreativePreference.create!(
       creative: @creative,
