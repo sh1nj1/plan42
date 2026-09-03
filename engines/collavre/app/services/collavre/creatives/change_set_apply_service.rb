@@ -77,7 +77,6 @@ module Collavre
         end.to_set
         @propagated_attributes = PropagatedChangeAuthorization.new(
           changes: @targets.keys,
-          visible_change_ids: @visible_change_ids,
           records: records,
           writable_origin_ids: visible_origins
         ).call

@@ -3,9 +3,8 @@
 module Collavre
   module Creatives
     class PropagatedChangeAuthorization
-      def initialize(changes:, visible_change_ids:, records:, writable_origin_ids:)
+      def initialize(changes:, records:, writable_origin_ids:)
         @changes = changes
-        @visible_change_ids = visible_change_ids
         @records = records
         @writable_origin_ids = writable_origin_ids
       end
@@ -21,7 +20,7 @@ module Collavre
       def linked_archive_attributes
         changes.each_with_object({}) do |change, attributes|
           creative = records[change.creative_id]
-          next if visible_change_ids.include?(change.id) || !creative&.origin_id.in?(writable_origin_ids)
+          next unless creative&.origin_id.in?(writable_origin_ids)
           next unless transition_only?(change, "archived_at", %w[archive unarchive])
 
           attributes[change.id] = "archived_at"
@@ -41,8 +40,8 @@ module Collavre
       def parent_progress_additions(parent_ids, attributes)
         changes.filter_map do |change|
           creative = records[change.creative_id]
-          change if !visible_change_ids.include?(change.id) && !attributes.key?(change.id) &&
-            parent_ids.include?(creative&.id) && transition_only?(change, "progress", %w[update])
+          change if !attributes.key?(change.id) && parent_ids.include?(creative&.id) &&
+            transition_only?(change, "progress", %w[update])
         end
       end
 
@@ -62,7 +61,7 @@ module Collavre
         @change_by_id ||= changes.index_by(&:id)
       end
 
-      attr_reader :changes, :visible_change_ids, :records, :writable_origin_ids
+      attr_reader :changes, :records, :writable_origin_ids
     end
   end
 end

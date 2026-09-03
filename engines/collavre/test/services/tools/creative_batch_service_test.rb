@@ -94,6 +94,24 @@ module Collavre
         assert linked.reload.archived?
       end
 
+      test "undo restores a linked placement the actor can read but not write" do
+        child, linked = create_private_linked_pair
+        CreativeSharesCache.create!(creative: linked, user: @user, permission: :read)
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        filter = Creatives::PermissionFilter.new(user: @user)
+        assert_includes filter.readable_ids([ linked.id ]), linked.id
+        assert_not_includes filter.readable_ids([ linked.id ], min_permission: :write), linked.id
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+        assert_in_delta 0.5, linked.parent.reload.progress, 0.01
+      end
+
       test "undo treats an independently restored hidden shell as complete" do
         child, linked = create_private_linked_pair
 
