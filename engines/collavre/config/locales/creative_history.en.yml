@@ -1,0 +1,26 @@
+---
+en:
+  collavre:
+    creative_history:
+      read_only: History topics are read-only.
+      empty: No changes have been recorded here yet.
+      default_summary: Creative updated
+      changed_count:
+        one: 1 creative
+        other: "%{count} creatives"
+      inline: Inline diff
+      split: Split diff
+      moved: Moved
+      revert: Revert change
+      restore: Restore this version
+      reverted: Reverted
+      revert_confirm: Revert this entire change set?
+      restore_confirm: Make this version the current version?
+      conflict_choice: "Creative #%{id} changed afterward. Force revert it, or skip it?"
+      force: Force revert
+      skip: Skip
+      results:
+        applied: The change was reverted.
+        conflict: Resolve each conflict before reverting.
+        skipped: No writable creatives remained to revert.
+        not_revertible: This change cannot be reverted.

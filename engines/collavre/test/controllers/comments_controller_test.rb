@@ -24,6 +24,26 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "History topic renders change sets and rejects comments" do
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: @creative, anchor_source: :explicit) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert", count: 1
+
+    assert_no_difference("Comment.count") do
+      post creative_comments_path(@creative),
+           params: { comment: { topic_id: history_topic.id, content: "not allowed" } }, as: :json
+    end
+    assert_response :forbidden
+    assert_equal I18n.t("collavre.creative_history.read_only"), response.parsed_body["error"]
+  end
+
   test "merge rejects comments from different topics" do
     first_topic = @creative.topics.create!(name: "First merge topic", user: @user)
     second_topic = @creative.topics.create!(name: "Second merge topic", user: @user)

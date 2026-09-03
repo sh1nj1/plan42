@@ -189,6 +189,14 @@ module Collavre
         assert_equal({}, change.after)
       end
 
+      test "does not create a History topic when the deleted Creative was its own anchor" do
+        root = Creative.create!(description: "Deleted root", user: @user)
+
+        History.track(actor: @user, origin: :editor, anchor: root) { root.destroy! }
+
+        assert_nil Topic.find_by(creative_id: root.id, name: Creative::HISTORY_TOPIC_NAME)
+      end
+
       test "discards a change that returns to its initial state" do
         History.track(actor: @user, origin: :editor, anchor: @root) do
           @child.update!(description: "Temporary")

@@ -12,6 +12,8 @@ module Collavre
       end
 
       def render
+        return render_history if history_topic?
+
         comments, topic_id, all_messages = load_comments
         write_rendered_topic_headers(comments) if all_messages
         controller.render(**render_options(comments, topic_id))
@@ -22,6 +24,18 @@ module Collavre
       attr_reader :controller, :creative
 
       delegate :params, :response, to: :controller
+
+      def history_topic?
+        params[:topic_id].present? &&
+          creative.topics.where(id: params[:topic_id], name: Creative::HISTORY_TOPIC_NAME).exists?
+      end
+
+      def render_history
+        change_sets = CreativeChangeSet.for_creative_scope(creative).visible_by_default.limit(LIMIT)
+        response.headers["X-Topic-Id"] = params[:topic_id].to_s
+        controller.render partial: "collavre/creative_change_sets/list",
+                          locals: { creative: creative, change_sets: change_sets }
+      end
 
       def load_comments
         visible_scope = creative.comments.visible_to(Current.user)

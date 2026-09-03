@@ -13,5 +13,18 @@ module Collavre
 
     validates :operation, inclusion: { in: OPERATIONS }
     validates :creative_id, uniqueness: { scope: :creative_change_set_id }
+
+    after_create_commit :ensure_history_topic
+
+    private
+
+    def ensure_history_topic
+      return if change_set.origin == "sync"
+
+      anchor = change_set.anchor_creative || Creative.unscoped.find_by(id: creative_id)
+      return unless anchor
+
+      anchor.history_topic(fallback_user: change_set.user || anchor.user)
+    end
   end
 end

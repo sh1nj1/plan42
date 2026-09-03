@@ -16,6 +16,8 @@ module Collavre
         data = topic.slice(:id, :name, :source_topic_id)
         data[:primary_agent] = agent_json(topic.primary_agent) if topic.primary_agent
         data[:agent_locked] = topic.session_id.present?
+        data[:read_only] = topic.name == Creative::HISTORY_TOPIC_NAME
+        data[:display_name] = I18n.t("collavre.topics.history_name") if data[:read_only]
         data[:archived_at] = topic.archived_at if topic.archived_at
         data[:unread_count] = unread_count unless unread_count.nil?
         data
@@ -25,6 +27,8 @@ module Collavre
         data = topic.slice(:id, :name, :source_topic_id)
         data[:primary_agent] = agent ? agent_json(agent) : nil
         data[:agent_locked] = topic.session_id.present?
+        data[:read_only] = topic.name == Creative::HISTORY_TOPIC_NAME
+        data[:display_name] = I18n.t("collavre.topics.history_name") if data[:read_only]
         data
       end
 
@@ -68,6 +72,7 @@ module Collavre
           creative_id: topic.creative_id,
           archived: topic.archived?,
           main: topic.name == Creative::MAIN_TOPIC_NAME,
+          read_only: topic.name == Creative::HISTORY_TOPIC_NAME,
           system: topic.creative.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME,
           source_topic_id: topic.source_topic_id,
           primary_agent: primary_agent_for_tool(topic),

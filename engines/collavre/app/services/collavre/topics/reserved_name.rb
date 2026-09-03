@@ -5,6 +5,7 @@ module Collavre
 
       def reserved?(creative, name)
         name == Creative::MAIN_TOPIC_NAME ||
+          name == Creative::HISTORY_TOPIC_NAME ||
           (creative.inbox? && name == Creative::SYSTEM_TOPIC_NAME)
       end
 

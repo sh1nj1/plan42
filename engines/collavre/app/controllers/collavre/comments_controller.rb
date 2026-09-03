@@ -9,6 +9,8 @@ module Collavre
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
 
+    include Collavre::Comments::HistoryTopicGuard
+
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.
       # This way the creative list loads behind the popup, so exiting fullscreen

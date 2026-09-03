@@ -15,6 +15,32 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  test "History topic is read-only, reserved, and kept last" do
+    history = @creative.history_topic
+    other = @creative.topics.create!(name: "Later", user: @user)
+    assert_equal history, @creative.topics.active.last
+
+    get collavre.creative_topics_url(@creative), as: :json
+    assert response.parsed_body["topics"].find { |topic| topic["id"] == history.id }["read_only"]
+
+    post collavre.creative_topics_url(@creative), params: { topic: { name: "History" } }, as: :json
+    assert_response :unprocessable_entity
+
+    patch collavre.creative_topic_url(@creative, history), params: { topic: { name: "Renamed" } }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "History", history.reload.name
+
+    delete collavre.creative_topic_url(@creative, history), as: :json
+    assert_response :unprocessable_entity
+    assert history.reload.persisted?
+
+    post collavre.reorder_creative_topics_url(@creative),
+         params: { topic_ids: [ history.id, other.id, @topic.id ] }, as: :json
+    assert_response :success
+    assert_operator history.reload.position, :>, other.reload.position
+    assert_operator history.position, :>, @topic.reload.position
+  end
+
   test "index returns the last topic revision" do
     preference = Collavre::UserCreativePreference.create!(
       creative: @creative,

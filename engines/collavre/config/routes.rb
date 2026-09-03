@@ -95,6 +95,7 @@ Collavre::Engine.routes.draw do
     end
   end
   resources :creatives do
+    post "history/:id/apply", to: "creative_change_sets#apply", as: :apply_change_set
     resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
@@ -114,8 +115,7 @@ Collavre::Engine.routes.draw do
     resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
       member do
         post :convert
-        post :approve
-        post :deny
+        %i[approve deny].each { |action| post action }
         patch :update_action
         delete :reactions, to: "comments/reactions#destroy"
         get :download_images
