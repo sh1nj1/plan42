@@ -23,16 +23,18 @@ class UsersIndexTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "div.table-scroll > table.users-table"
     assert_select "th", text: I18n.t("collavre.users.table.joined_at")
-    assert_includes response.body, I18n.l(user.created_at, format: :short)
+    assert_includes response.body, I18n.l(user.created_at, format: :collavre_users_joined_at)
+    assert_includes response.body, user.created_at.year.to_s
   end
 
   test "paginates users by joined date with newest users first" do
+    oldest_joined_at = 30.days.ago.change(usec: 0)
     users = 21.times.map do |index|
       User.create!(
         email: "page-user-#{index}@example.com",
         password: TEST_PASSWORD,
         name: "Page User #{index}",
-        created_at: Time.utc(2040, 1, 1) + index.days
+        created_at: oldest_joined_at + [ index, 19 ].min.days
       )
     end
 
@@ -41,6 +43,8 @@ class UsersIndexTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes response.body, users.last.email
     assert_not_includes response.body, users.first.email
+    assert_equal users[-2].created_at, users.last.created_at
+    assert_operator users.last.id, :>, users[-2].id
     assert_operator response.body.index(users.last.email), :<, response.body.index(users[-2].email)
     assert_select "nav[aria-label=?]", I18n.t("collavre.users.pagination.label")
     assert_select "a[href=?]", users_path(page: 2), text: I18n.t("collavre.users.pagination.next")

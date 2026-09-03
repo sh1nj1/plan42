@@ -1,5 +1,8 @@
 ---
 en:
+  time:
+    formats:
+      collavre_users_joined_at: "%b %-d, %Y %H:%M"
   collavre:
     users:
       app_header:

@@ -38,7 +38,7 @@
             <% end %>
           </td>
           <td><%= user.email %></td>
-          <td><%= I18n.l(user.created_at, format: :short) %></td>
+          <td><%= I18n.l(user.created_at, format: :collavre_users_joined_at) %></td>
           <td>
             <% if last_login_at %>
               <%= I18n.l(last_login_at, format: :short) %>
