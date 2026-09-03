@@ -58,9 +58,11 @@ export default class extends Controller {
         this.contexts = []
         this.canManage = false
         this._selfContextDisabled = false
+	this.listVisible = false
         if (this.hasListTarget) {
             this.listTarget.innerHTML = ''
         }
+	this._updateListVisibility()
         if (this.hasAddButtonTarget) this.addButtonTarget.style.display = 'none'
     }
 

@@ -278,12 +278,16 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
     test('closing the chat clears context state and invalidates pending loads', () => {
         controller._activeCreativeId = '42'
         controller.contexts = [{ id: 1, description: 'Old context' }]
+	controller.listVisible = true
+	controller._updateListVisibility()
         const loadVersion = controller._contextLoadVersion
 
         controller.onPopupClosed()
 
         expect(controller._activeCreativeId).toBeNull()
         expect(controller.contexts).toEqual([])
+	expect(controller.listVisible).toBe(false)
+	expect(controller.barTarget.style.display).toBe('none')
         expect(controller._contextLoadVersion).toBeGreaterThan(loadVersion)
     })
 
