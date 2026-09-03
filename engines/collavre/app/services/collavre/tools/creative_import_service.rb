@@ -32,7 +32,14 @@ module Collavre
         return { error: "Parent Creative not found", id: parent_id } unless parent
         return { error: "No write permission on parent Creative", id: parent_id } unless parent.has_permission?(Current.user, :write)
 
-        created = MarkdownImporter.import(markdown, parent: parent, user: Current.user)
+        created = Creatives::History.track(
+          actor: Current.user,
+          origin: :import,
+          anchor: parent,
+          anchor_source: :import_target
+        ) do
+          MarkdownImporter.import(markdown, parent: parent, user: Current.user)
+        end
 
         {
           success: true,

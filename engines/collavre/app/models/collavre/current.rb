@@ -8,6 +8,9 @@ module Collavre
     attribute :mcp_request
     attribute :user
     attribute :agent_turn
+    attribute :change_set
+    attribute :creative_history_context
+
     def user
       super || session&.user
     end

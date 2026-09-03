@@ -77,7 +77,9 @@ module Collavre
       end
 
       def resequence(siblings)
-        siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
+        Creatives::History.record_bulk(siblings, operation: "reorder") do
+          siblings.each_with_index { |creative, index| creative.update_column(:sequence, index) }
+        end
       end
 
       def apply_tags(creative)

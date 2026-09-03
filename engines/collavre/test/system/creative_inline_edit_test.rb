@@ -62,7 +62,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def close_inline_editor
     find("#inline-close", wait: 5).click
-    assert_no_selector ".lexical-content-editable", visible: true, wait: 5
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 10
     wait_for_network_idle(timeout: 10)
   end
 

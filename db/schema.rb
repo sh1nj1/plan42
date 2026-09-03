@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_03_070800) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_03_180000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -262,6 +262,45 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_070800) do
     t.index ["user_id"], name: "index_contacts_on_user_id"
   end
 
+  create_table "creative_change_sets", force: :cascade do |t|
+    t.string "actor_kind", null: false
+    t.integer "anchor_creative_id"
+    t.string "anchor_source"
+    t.datetime "applied_at"
+    t.string "change_group_token"
+    t.datetime "created_at", null: false
+    t.string "origin", null: false
+    t.integer "reverted_by_id"
+    t.integer "reverts_id"
+    t.string "status", default: "applied", null: false
+    t.text "summary"
+    t.integer "task_id"
+    t.integer "topic_id"
+    t.datetime "updated_at", null: false
+    t.integer "user_id"
+    t.index ["anchor_creative_id", "created_at"], name: "idx_on_anchor_creative_id_created_at_15aafa2718"
+    t.index ["change_group_token", "user_id"], name: "index_creative_change_sets_on_change_group_token_and_user_id"
+    t.index ["status"], name: "index_creative_change_sets_on_status"
+    t.index ["task_id"], name: "index_creative_change_sets_on_task_id"
+  end
+
+  create_table "creative_changes", force: :cascade do |t|
+    t.json "after", default: {}, null: false
+    t.json "before", default: {}, null: false
+    t.json "conflict", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "creative_change_set_id", null: false
+    t.integer "creative_id", null: false
+    t.integer "previous_parent_id"
+    t.string "operation", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_change_set_id", "creative_id"], name: "idx_creative_changes_on_set_and_creative", unique: true
+    t.index ["creative_change_set_id"], name: "index_creative_changes_on_creative_change_set_id"
+    t.index ["creative_id", "id"], name: "index_creative_changes_on_creative_id_and_id"
+    t.index ["previous_parent_id"], name: "index_creative_changes_on_previous_parent_id"
+  end
+
   create_table "creative_hierarchies", id: false, force: :cascade do |t|
     t.integer "ancestor_id", null: false
     t.integer "descendant_id", null: false
@@ -305,6 +344,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_070800) do
     t.integer "origin_id"
     t.integer "parent_id"
     t.float "progress", default: 0.0
+    t.integer "revision", default: 0, null: false
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
@@ -1064,6 +1104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_070800) do
   add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "contacts", "users"
   add_foreign_key "contacts", "users", column: "contact_user_id"
+  add_foreign_key "creative_changes", "creative_change_sets", on_delete: :cascade
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
   add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify

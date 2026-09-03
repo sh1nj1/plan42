@@ -87,7 +87,13 @@ module Tools
         end
       end
 
-      siblings.each_with_index { |c, idx| c.update_column(:sequence, idx) }
+      resequence(siblings)
+    end
+
+    def resequence(siblings)
+      Creatives::History.record_bulk(siblings, operation: "reorder") do
+        siblings.each_with_index { |creative, index| creative.update_column(:sequence, index) }
+      end
     end
   end
 end
