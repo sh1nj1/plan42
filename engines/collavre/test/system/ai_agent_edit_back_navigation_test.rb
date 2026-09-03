@@ -39,4 +39,24 @@ class AiAgentEditBackNavigationTest < ApplicationSystemTestCase
     page.go_back
     assert_current_path collavre.users_path
   end
+
+  # Opening the form from the profile's user management tab used to leave the
+  # edit form on screen after going back: switching tabs overwrote the history
+  # entry's Turbo state, so Turbo skipped the restore and only the URL changed.
+  test "backing out of the ai agent form restores the user management tab" do
+    Collavre::Contact.ensure(user: @admin, contact_user: @agent)
+
+    visit collavre.user_path(@admin)
+    click_button I18n.t("collavre.users.tabs.user_management")
+    assert_selector ".tab-panel.active[data-tab-name='contacts']"
+
+    click_link I18n.t("collavre.users.edit_ai.link")
+    assert_current_path collavre.edit_ai_user_path(@agent)
+
+    page.go_back
+
+    assert_current_path collavre.user_path(@admin), ignore_query: true
+    assert_no_selector "form[action='#{collavre.update_ai_user_path(@agent)}']"
+    assert_selector ".tab-panel.active[data-tab-name='contacts']"
+  end
 end
