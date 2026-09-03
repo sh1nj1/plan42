@@ -162,6 +162,8 @@ ko:
       topic_search_placeholder: 토픽 검색...
       topic_main: 전체 메세지
       topic_list: 토픽 목록
+      participant_list: 사용자 목록
+      participant_search_placeholder: 사용자 검색...
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.

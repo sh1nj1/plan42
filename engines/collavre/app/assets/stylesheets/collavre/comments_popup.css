@@ -1042,13 +1042,33 @@ body.chat-fullscreen {
     }
 }
 
+.comment-participants-bar,
+.comment-contexts-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.comment-participants-bar #comment-participants,
+.comment-contexts-bar .comment-contexts-list {
+    flex: 1;
+    min-width: 0;
+}
+
 #comment-participants {
     padding: var(--space-1) 0;
     min-height: 20px;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     gap: 0.2em;
+}
+
+#comment-participants::-webkit-scrollbar {
+    display: none;
 }
 
 #comment-participants .avatar-wrapper {
@@ -1773,7 +1793,8 @@ body.chat-fullscreen {
     flex: 1;
     min-width: 0;
 }
-.topic-list-btn {
+.topic-list-btn,
+.bar-list-btn {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -1787,13 +1808,49 @@ body.chat-fullscreen {
     color: var(--color-muted);
     padding: 0;
 }
-.topic-list-btn:hover {
+.topic-list-btn:hover,
+.bar-list-btn:hover {
     background: var(--color-section-bg);
     color: var(--color-text);
 }
-.topic-list-btn[aria-expanded="true"] {
+.topic-list-btn[aria-expanded="true"],
+.bar-list-btn[aria-expanded="true"] {
     background: var(--color-section-bg);
     color: var(--color-text);
+}
+
+/* Rows inside the shared entity list popup (contexts, users) */
+.entity-list-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+    width: 100%;
+}
+.entity-list-item--muted {
+    font-style: italic;
+}
+.entity-list-item--muted > svg,
+.entity-list-item--muted > .entity-list-item-avatar,
+.entity-list-item--muted > .entity-list-item-label {
+    opacity: 0.5;
+}
+.entity-list-item-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    object-fit: cover;
+}
+.entity-list-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.entity-list-item-badge {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: 0.75em;
+    opacity: 0.6;
 }
 
 /* Archived entries inside the topic list popup */

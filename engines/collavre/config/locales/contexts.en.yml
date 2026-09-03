@@ -6,3 +6,6 @@ en:
       toggle_label: "Contexts"
       self_context_label: "Current creative context"
       navigate_label: "Go to creative"
+      add_context: "Add context"
+      context_list: "Context list"
+      search_placeholder: "Search contexts..."

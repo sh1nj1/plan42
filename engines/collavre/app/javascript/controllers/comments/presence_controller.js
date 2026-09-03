@@ -3,11 +3,13 @@ import { createSubscription } from '../../services/cable'
 import TouchDragHandler from '../../lib/touch_drag'
 import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
+import PopupToggleGuard from '../../lib/popup_toggle_guard'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
 const PRESENCE_HEARTBEAT_INTERVAL = 30000
+const PARTICIPANT_LIST_MODAL_ID = 'participant-list-modal'
 
 // agent_status values that keep a task registered. thinking/streaming are the
 // agent producing output; pending_approval is it paused on a tool approval,
@@ -16,7 +18,8 @@ const PRESENCE_HEARTBEAT_INTERVAL = 30000
 const LIVE_AGENT_STATUSES = new Set(['thinking', 'streaming', 'pending_approval'])
 
 export default class extends Controller {
-  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow']
+  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow',
+    'addParticipantButton', 'participantListButton']
 
   connect() {
     this.creativeId = null
@@ -44,6 +47,7 @@ export default class extends Controller {
     this.handleBlur = this.handleBlur.bind(this)
     this.handleTopicChange = this.handleTopicChange.bind(this)
     this.handleRenderedAllTopics = this.handleRenderedAllTopics.bind(this)
+    this.handleParticipantListClose = this.handleParticipantListClose.bind(this)
 
     this.textareaTarget.addEventListener('input', this.handleInput)
     this.textareaTarget.addEventListener('focus', this.handleFocus)
@@ -51,6 +55,7 @@ export default class extends Controller {
     this.privateCheckboxTarget?.addEventListener('change', () => this.stoppedTyping())
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
     this.element.addEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
+    this.element.addEventListener('entity-list:close', this.handleParticipantListClose)
   }
 
   disconnect() {
@@ -62,6 +67,7 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
     this.element.removeEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
+    this.element.removeEventListener('entity-list:close', this.handleParticipantListClose)
   }
 
   handleTopicChange(event) {
@@ -439,6 +445,7 @@ export default class extends Controller {
   renderParticipants(presentIds) {
     if (!this.hasParticipantsTarget || !this.participantsData) {
       if (this.hasParticipantsTarget) this.participantsTarget.innerHTML = ''
+      this.updateParticipantActionButtons(presentIds)
       return
     }
     this.participantsTarget.innerHTML = ''
@@ -502,17 +509,138 @@ export default class extends Controller {
       this.participantsTarget.appendChild(wrapper)
     })
 
-    if (this.canShare) {
-      const addBtn = document.createElement('button')
-      addBtn.className = 'add-participant-btn'
-      addBtn.textContent = '+'
-      addBtn.title = this.element.dataset.addParticipantText || 'Add user'
-      addBtn.dataset.action = 'click->share-modal#open'
-      addBtn.dataset.shareModalUrlParam = `/creatives/${this.creativeId}/creative_shares`
-      this.participantsTarget.appendChild(addBtn)
+    this.updateParticipantActionButtons(presentIds)
+    this.updateReadReceiptPresence(presentIds)
+  }
+
+  // The add and list buttons are pinned outside the horizontally scrolling avatar
+  // strip, so they stay reachable however many participants there are.
+  updateParticipantActionButtons(presentIds = this.currentPresentIds) {
+    if (this.hasAddParticipantButtonTarget) {
+      this.addParticipantButtonTarget.style.display = this.canShare ? '' : 'none'
+      if (this.creativeId) {
+        this.addParticipantButtonTarget.dataset.shareModalUrlParam = `/creatives/${this.creativeId}/creative_shares`
+      }
+    }
+    if (this.hasParticipantListButtonTarget) {
+      const hasParticipants = (this.participantsData || []).length > 0
+      this.participantListButtonTarget.style.display = hasParticipants ? '' : 'none'
+    }
+    this.refreshOpenParticipantListPopup(presentIds)
+  }
+
+  // --- Participant list popup (mirrors the topic list button) ---
+  get participantListToggleGuard() {
+    this._participantListToggleGuard ||= new PopupToggleGuard()
+    return this._participantListToggleGuard
+  }
+
+  prepareParticipantListToggle(event) {
+    this.participantListToggleGuard.prepare(event, Boolean(this._participantListPopup()?.popup?.isOpen()))
+  }
+
+  finishParticipantListToggle(event) {
+    this.participantListToggleGuard.finish(event)
+  }
+
+  cancelParticipantListToggle(event = {}) {
+    this.participantListToggleGuard.cancel(event)
+  }
+
+  _participantListPopup() {
+    const modal = document.getElementById(PARTICIPANT_LIST_MODAL_ID)
+    return modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+  }
+
+  openParticipantListPopup(event) {
+    if (this.participantListToggleGuard.consume()) return
+
+    const btnRect = event.currentTarget.getBoundingClientRect()
+
+    const openWith = (popup) => {
+      popup.openForItems(
+        this.participantListItems(),
+        btnRect,
+        (item) => this.selectParticipantListItem(item),
+        this.element
+      )
+      this.setParticipantListButtonExpanded(true)
     }
 
-    this.updateReadReceiptPresence(presentIds)
+    let modal = document.getElementById(PARTICIPANT_LIST_MODAL_ID)
+    if (modal) {
+      const popup = this._participantListPopup()
+      if (popup?.popup?.isOpen()) {
+        popup.close()
+        this.setParticipantListButtonExpanded(false)
+      } else if (popup) {
+        openWith(popup)
+      }
+      return
+    }
+
+    modal = document.createElement('div')
+    modal.id = PARTICIPANT_LIST_MODAL_ID
+    modal.className = 'common-popup'
+    modal.style.display = 'none'
+    modal.dataset.controller = 'entity-list'
+    modal.innerHTML = `
+      <button type="button" class="popup-close-btn" data-entity-list-target="close">&times;</button>
+      <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+        data-entity-list-target="input">
+      <ul class="common-popup-list" data-popup-list data-entity-list-target="list"></ul>
+    `
+    modal.querySelector('input').placeholder =
+      this.element.dataset.participantSearchPlaceholderText || 'Search users...'
+    // Caged inside the chat box, like the topic list popup.
+    this.element.appendChild(modal)
+
+    requestAnimationFrame(() => {
+      const popup = this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+      if (popup) openWith(popup)
+      else console.error('entity-list controller not found after creation')
+    })
+  }
+
+  participantListItems(presentIds = this.currentPresentIds) {
+    const present = presentIds || []
+    return (this.participantsData || []).map((user) => ({
+      id: user.id,
+      label: user.name,
+      avatarUrl: user.avatar_url,
+      iconKey: user.avatar_url ? null : 'user',
+      // Offline reads the same here as it does on the avatar strip.
+      muted: present.indexOf(user.id) === -1
+    }))
+  }
+
+  // Selecting mirrors clicking the avatar: it mentions the user in the composer.
+  selectParticipantListItem(item) {
+    const user = (this.participantsData || []).find((u) => String(u.id) === String(item.id))
+    if (!user) return
+
+    const mentionMenu = this.application.getControllerForElementAndIdentifier(this.element, 'comments--mention-menu')
+    if (!mentionMenu) return
+
+    mentionMenu.insertMention({ id: user.id, name: user.name })
+    this.textareaTarget?.focus()
+  }
+
+  refreshOpenParticipantListPopup(presentIds = this.currentPresentIds) {
+    const modal = this.element.querySelector(`#${PARTICIPANT_LIST_MODAL_ID}`)
+    const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+    if (popup?.popup?.isOpen()) popup.updateItems(this.participantListItems(presentIds))
+  }
+
+  handleParticipantListClose(event) {
+    if (event.target?.id !== PARTICIPANT_LIST_MODAL_ID) return
+    this.setParticipantListButtonExpanded(false)
+  }
+
+  setParticipantListButtonExpanded(expanded) {
+    if (this.hasParticipantListButtonTarget) {
+      this.participantListButtonTarget.setAttribute('aria-expanded', String(expanded))
+    }
   }
 
 

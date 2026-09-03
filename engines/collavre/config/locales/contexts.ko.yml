@@ -6,3 +6,6 @@ ko:
       toggle_label: "컨텍스트"
       self_context_label: "현재 크리에이티브 컨텍스트"
       navigate_label: "크리에이티브로 이동"
+      add_context: "컨텍스트 추가"
+      context_list: "컨텍스트 목록"
+      search_placeholder: "컨텍스트 검색..."
