@@ -46,7 +46,7 @@ parse_release_options() {
 	;;
       --resume)
 	[[ -z "$RESUME_VERSION" ]] || die "--resume was provided more than once"
-	[[ $# -ge 2 && "$2" != --* ]] || { usage; die "--resume requires a version"; }
+	[[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { usage; die "--resume requires a version"; }
 	RESUME_VERSION="$2"
 	shift 2
 	;;

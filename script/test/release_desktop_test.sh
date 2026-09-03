@@ -47,6 +47,7 @@ parse_release_options
 assert_equal "0" "$UNSIGNED_RELEASE"
 assert_equal "" "$RESUME_VERSION"
 if (parse_release_options --resume) 2>/dev/null || \
+  (parse_release_options --resume "") 2>/dev/null || \
   (parse_release_options --unknown) 2>/dev/null || \
   (parse_release_options --unsigned --unsigned) 2>/dev/null; then
   echo "invalid release options were accepted" >&2
