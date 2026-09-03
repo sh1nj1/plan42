@@ -109,6 +109,7 @@ module Collavre
 
       test "does not expose or mark unreadable changes as reverted" do
         foreign = Creative.create!(description: "Foreign after", user: users(:two))
+        @change_set.update!(summary: "Foreign secret summary")
         @change_set.creative_changes.create!(
           creative: foreign,
           operation: "update",
@@ -123,6 +124,7 @@ module Collavre
         assert_empty result.skipped
         assert_equal "Foreign after", foreign.reload.description
         assert_equal "applied", @change_set.reload.status
+        assert_nil result.change_set.summary
       end
 
       test "does not revert synchronized or already reverted sets" do

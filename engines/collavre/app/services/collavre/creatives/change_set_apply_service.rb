@@ -118,7 +118,6 @@ module Collavre
           origin: "revert",
           status: "applied",
           reverts: @mode == :revert ? source : nil,
-          summary: source.summary,
           applied_at: Time.current
         )
       end
