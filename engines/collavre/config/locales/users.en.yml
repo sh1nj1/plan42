@@ -176,6 +176,7 @@ en:
         avatar: Avatar
         name: Name
         email: Email
+        joined_at: Joined
         last_login_at: Last login
         last_login_unknown: Never
         push_token: Push token
@@ -186,6 +187,11 @@ en:
         actions: Actions
         current_user: This is you
         system_admin: System admin
+      pagination:
+        label: User list pages
+        prev: Previous
+        next: Next
+        page_info: Page %{current} of %{total}
     user_mailer:
       email_verification:
         subject: Verify your email

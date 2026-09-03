@@ -2,12 +2,21 @@ module Collavre
   module UsersController::AdminOperations
     extend ActiveSupport::Concern
 
+    USERS_PER_PAGE = 20
+
     included do
       before_action :require_system_admin!, only: [ :index, :grant_system_admin, :revoke_system_admin, :unlock, :lock ]
     end
 
     def index
-      @users = Collavre::User.includes(:sessions, :devices)
+      users = Collavre::User.all
+      @total_user_pages = [ (users.count.to_f / USERS_PER_PAGE).ceil, 1 ].max
+      @user_page = [ [ params[:page].to_i, 1 ].max, @total_user_pages ].min
+      @users = users
+        .includes(:sessions, :devices)
+        .order(created_at: :desc, id: :desc)
+        .offset((@user_page - 1) * USERS_PER_PAGE)
+        .limit(USERS_PER_PAGE)
     end
 
     def destroy
