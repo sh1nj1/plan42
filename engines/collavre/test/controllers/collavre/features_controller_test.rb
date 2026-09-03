@@ -39,6 +39,18 @@ module Collavre
       assert_includes I18n.t("collavre.features.index.card_more", locale: :ko), "→"
     end
 
+    test "index renders a localized home button and preserves the mount prefix" do
+      request_env = { "SCRIPT_NAME" => "/collavre" }
+
+      %i[en ko].each do |locale|
+        get "/features", params: { locale: locale }, env: request_env
+
+        assert_response :success
+        assert_select "a.landing-btn.landing-btn-ghost[href=?]", "/collavre/landing?locale=#{locale}",
+                      text: I18n.t("collavre.features.nav.back_home", locale: locale), count: 1
+      end
+    end
+
     test "index is readable without signing in" do
       get "/features"
 
