@@ -165,6 +165,10 @@ en:
       topic_search_placeholder: Search topics...
       topic_main: All Messages
       topic_list: Topic list
+      participant_list: User list
+      participant_search_placeholder: Search users...
+      participant_online: Online
+      participant_offline: Offline
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
       move_invalid_target: Select a valid creative to move messages to.

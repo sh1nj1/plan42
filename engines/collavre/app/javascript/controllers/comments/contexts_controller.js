@@ -1,9 +1,13 @@
 import { Controller } from "@hotwired/stimulus"
+import PopupToggleGuard from '../../lib/popup_toggle_guard'
+import { elementAnchor } from '../../lib/common_popup'
 
 const CREATIVE_MIME_TYPE = 'application/x-collavre-creative'
+const CONTEXT_LIST_MODAL_ID = 'context-list-modal'
+const SELF_CONTEXT_ID = 'self'
 
 export default class extends Controller {
-    static targets = ["list", "toggleButton"]
+    static targets = ["list", "toggleButton", "bar", "addButton", "listButton"]
 
     static ICON_CONTEXT_LINK = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
     static ICON_CONTEXT_PIN = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>'
@@ -11,48 +15,85 @@ export default class extends Controller {
     connect() {
         this.contexts = []
         this.canManage = false
+        this._activeCreativeId = null
+        this._contextLoadVersion = 0
+        this._contextSaveChain = Promise.resolve()
         this.draggingContextId = null
         this.listVisible = false
+        this.handleContextListClose = this.handleContextListClose.bind(this)
+        this.element.addEventListener('entity-list:close', this.handleContextListClose)
         // External drop zone handlers are now Stimulus actions on the list target
+    }
+
+    disconnect() {
+        this._contextLoadVersion += 1
+        this._closeContextListPopup()
+        this.element.removeEventListener('entity-list:close', this.handleContextListClose)
     }
 
     get creativeId() {
         return this.element.closest('#comments-popup')?.dataset?.creativeId
     }
 
+    onChatWillOpen({ creativeId }) {
+        if (String(creativeId) !== String(this._activeCreativeId)) {
+            this._resetContextState()
+            this._activeCreativeId = creativeId
+        }
+    }
+
     async onPopupOpened({ creativeId }) {
+	this.onChatWillOpen({ creativeId })
         this._hasBeenManuallyToggled = false
         this.listVisible = false
         this._updateListVisibility()
-        await this.loadContexts()
+        await this.loadContexts(creativeId)
         this._bindPopupDragDetection()
     }
 
     onPopupClosed() {
-        this.contexts = []
-        this.canManage = false
-        if (this.hasListTarget) {
-            this.listTarget.innerHTML = ''
-        }
+        this._activeCreativeId = null
+        this._resetContextState()
         this._unbindPopupDragDetection()
     }
 
-    async loadContexts() {
-        const creativeId = this.creativeId
+    _resetContextState() {
+        this._contextLoadVersion += 1
+        this._closeContextListPopup()
+        this.contexts = []
+        this.canManage = false
+        this._selfContextDisabled = false
+	this.listVisible = false
+        if (this.hasListTarget) {
+            this.listTarget.innerHTML = ''
+        }
+	this._updateListVisibility()
+	if (this.hasToggleButtonTarget) this.toggleButtonTarget.style.display = 'none'
+        if (this.hasAddButtonTarget) this.addButtonTarget.style.display = 'none'
+    }
+
+    async loadContexts(creativeId = this.creativeId) {
         if (!creativeId) return
+        const loadVersion = ++this._contextLoadVersion
 
         try {
             const response = await fetch(`/creatives/${creativeId}/contexts`)
             if (response.ok) {
                 const data = await response.json()
+                if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
                 this.contexts = data.contexts || []
                 this.canManage = data.can_manage || false
                 this._selfContextDisabled = data.disabled_self_context || false
                 this.renderContexts()
             }
         } catch (e) {
+            if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
             console.error("Failed to load contexts", e)
         }
+    }
+
+    _isCurrentContextLoad(loadVersion, creativeId) {
+        return loadVersion === this._contextLoadVersion && String(creativeId) === String(this.creativeId)
     }
 
     toggleVisibility() {
@@ -63,12 +104,18 @@ export default class extends Controller {
 
     _updateListVisibility() {
         if (!this.hasListTarget) return
-        this.listTarget.style.display = this.listVisible ? '' : 'none'
+        // The pinned add/list buttons live in the bar alongside the scrolling
+        // chips, so visibility is a property of the bar, not of the chip list.
+        this._visibilityElement.style.display = this.listVisible ? '' : 'none'
 
         // Update toggle button active state
         if (this.hasToggleButtonTarget) {
             this.toggleButtonTarget.classList.toggle('context-toggle-active', this.listVisible)
         }
+    }
+
+    get _visibilityElement() {
+        return this.hasBarTarget ? this.barTarget : this.listTarget
     }
 
     _updateToggleButton() {
@@ -143,11 +190,148 @@ export default class extends Controller {
             html += `</span>`
         })
 
-        if (this.canManage) {
-            html += `<button class="add-context-btn" data-action="click->comments--contexts#addContext">+</button>`
+        this.listTarget.innerHTML = html
+        this._updateActionButtons()
+    }
+
+    _updateActionButtons() {
+        if (this.hasAddButtonTarget) {
+            this.addButtonTarget.style.display = this.canManage ? '' : 'none'
+        }
+        this.refreshOpenContextListPopup()
+    }
+
+    // --- Context list popup (mirrors the topic list button) ---
+    get contextListToggleGuard() {
+        this._contextListToggleGuard ||= new PopupToggleGuard()
+        return this._contextListToggleGuard
+    }
+
+    prepareContextListToggle(event) {
+        this.contextListToggleGuard.prepare(event, Boolean(this._contextListPopup()?.popup?.isOpen()))
+    }
+
+    finishContextListToggle(event) {
+        this.contextListToggleGuard.finish(event)
+    }
+
+    cancelContextListToggle(event = {}) {
+        this.contextListToggleGuard.cancel(event)
+    }
+
+    _contextListPopup() {
+        const modal = document.getElementById(CONTEXT_LIST_MODAL_ID)
+        return modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+    }
+
+    _closeContextListPopup() {
+        const modal = this.element.querySelector(`#${CONTEXT_LIST_MODAL_ID}`)
+        const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+        popup?.close()
+        modal?.remove()
+        this._contextListToggleGuard?.cancel()
+        this.setContextListButtonExpanded(false)
+    }
+
+    openContextListPopup(event) {
+        if (this.contextListToggleGuard.consume()) return
+
+        const anchor = elementAnchor(event.currentTarget)
+
+        const openWith = (popup) => {
+            popup.openForItems(
+                this.contextListItems(),
+                anchor,
+                (item) => this.selectContextListItem(item),
+                this.element
+            )
+            this.setContextListButtonExpanded(true)
         }
 
-        this.listTarget.innerHTML = html
+        let modal = document.getElementById(CONTEXT_LIST_MODAL_ID)
+        if (modal) {
+            const popup = this._contextListPopup()
+            if (popup?.popup?.isOpen()) {
+                popup.close()
+                this.setContextListButtonExpanded(false)
+            } else if (popup) {
+                openWith(popup)
+            }
+            return
+        }
+
+        modal = document.createElement('div')
+        modal.id = CONTEXT_LIST_MODAL_ID
+        modal.className = 'common-popup'
+        modal.style.display = 'none'
+        modal.dataset.controller = 'entity-list'
+        modal.dataset.closeLabel = this.element.dataset.closeLabel || ''
+        modal.innerHTML = `
+          <button type="button" class="popup-close-btn" data-entity-list-target="close">&times;</button>
+          <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+            data-entity-list-target="input">
+          <ul class="common-popup-list" data-popup-list data-entity-list-target="list"></ul>
+        `
+        modal.querySelector('input').placeholder = this.element.dataset.contextSearchPlaceholderText || 'Search contexts...'
+        // Caged inside the chat box, like the topic list popup.
+        this.element.appendChild(modal)
+
+        requestAnimationFrame(() => {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+            if (popup) openWith(popup)
+            else console.error('entity-list controller not found after creation')
+        })
+    }
+
+    contextListItems() {
+        const items = [{
+            id: SELF_CONTEXT_ID,
+            label: this.currentCreativeSnippet || 'Self',
+            iconKey: 'pin',
+            muted: this.selfContextDisabled,
+            selected: !this.selfContextDisabled,
+            actionable: this.canManage,
+            statusLabel: this.selfContextDisabled ? this.disabledContextLabel : this.enabledContextLabel
+        }]
+
+        this.contexts.forEach(ctx => items.push({
+            id: ctx.id,
+            label: ctx.description,
+            iconKey: 'context',
+            muted: Boolean(ctx.disabled),
+            selected: !ctx.disabled,
+            actionable: this.canManage,
+            statusLabel: ctx.disabled ? this.disabledContextLabel : this.enabledContextLabel,
+            badge: ctx.inherited ? this.inheritedLabel : null
+        }))
+
+        return items
+    }
+
+    // Selecting mirrors clicking the chip: it toggles the context on or off.
+    // Returning true keeps the popup open so several can be toggled in a row.
+    selectContextListItem(item) {
+        if (!this.canManage) return true
+        if (String(item.id) === SELF_CONTEXT_ID) this.toggleSelfContext()
+        else this.toggleContextById(item.id)
+        return true
+    }
+
+    refreshOpenContextListPopup() {
+        const modal = this.element.querySelector(`#${CONTEXT_LIST_MODAL_ID}`)
+        const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+        if (popup?.popup?.isOpen()) popup.updateItems(this.contextListItems())
+    }
+
+    handleContextListClose(event) {
+        if (event.target?.id !== CONTEXT_LIST_MODAL_ID) return
+        this.setContextListButtonExpanded(false)
+    }
+
+    setContextListButtonExpanded(expanded) {
+        if (this.hasListButtonTarget) {
+            this.listButtonTarget.setAttribute('aria-expanded', String(expanded))
+        }
     }
 
     get inheritedLabel() {
@@ -162,6 +346,14 @@ export default class extends Controller {
         return this.listTarget.dataset.navigateLabel || 'Go to creative'
     }
 
+    get enabledContextLabel() {
+        return this.element.dataset.contextEnabledText || 'Enabled'
+    }
+
+    get disabledContextLabel() {
+        return this.element.dataset.contextDisabledText || 'Disabled'
+    }
+
     get currentCreativeSnippet() {
         const popup = this.element.closest('#comments-popup')
         return popup?.querySelector('#comments-popup-title')?.textContent?.trim()
@@ -172,6 +364,7 @@ export default class extends Controller {
     }
 
     toggleSelfContext(event) {
+        if (!this.canManage) return
         this._selfContextDisabled = !this._selfContextDisabled
         this.renderContexts()
         this._saveSelfContextState()
@@ -191,10 +384,15 @@ export default class extends Controller {
     toggleContext(event) {
         if (event.target.closest('.delete-context-btn') || event.target.closest('.navigate-context-btn')) return
 
-        const contextId = parseInt(event.currentTarget.dataset.contextId)
-        if (!contextId) return
+        this.toggleContextById(event.currentTarget.dataset.contextId)
+    }
 
-        const ctx = this.contexts.find(c => c.id === contextId)
+    toggleContextById(contextId) {
+        if (!this.canManage) return
+        const id = parseInt(contextId)
+        if (!id) return
+
+        const ctx = this.contexts.find(c => c.id === id)
         if (!ctx) return
 
         ctx.disabled = !ctx.disabled
@@ -226,7 +424,7 @@ export default class extends Controller {
             return
         }
 
-        const addBtn = this.listTarget.querySelector('.add-context-btn')
+        const addBtn = this.hasAddButtonTarget ? this.addButtonTarget : this.listTarget.querySelector('.add-context-btn')
         const rect = addBtn?.getBoundingClientRect() || { top: 200, left: 200, bottom: 230, right: 230 }
 
         linkController.open(rect, (selectedCreative) => {
@@ -346,10 +544,16 @@ export default class extends Controller {
         await this._patchContexts({ disabled_context_ids: disabledIds })
     }
 
-    async _patchContexts(params) {
+    _patchContexts(params) {
         const creativeId = this.creativeId
-        if (!creativeId) return
+        if (!creativeId) return Promise.resolve()
 
+        const save = () => this._sendContextPatch(creativeId, params)
+        this._contextSaveChain = this._contextSaveChain.then(save, save)
+        return this._contextSaveChain
+    }
+
+    async _sendContextPatch(creativeId, params) {
         try {
             const response = await fetch(`/creatives/${creativeId}/update_contexts`, {
                 method: 'PATCH',

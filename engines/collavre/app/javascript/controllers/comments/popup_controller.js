@@ -430,6 +430,13 @@ export default class extends Controller {
       this.formController.currentTopicId = ''
       this.formController._mainTopicId = null
     }
+    // Switching creatives reuses the context controller. Clear its previous
+    // creative synchronously so a slow topic load cannot leave stale context
+    // controls interactive under the new creative title.
+    this.contextsController?.onChatWillOpen?.({ creativeId })
+    // Participant rows can insert mentions, so clear them before the same topic
+    // await rather than leaving the previous creative's popup interactive.
+    this.presenceController?.onChatWillOpen?.({ creativeId })
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID
@@ -798,7 +805,7 @@ export default class extends Controller {
       this.touchStartY = null
       return
     }
-    if (event.target.closest('#comments-list, .chat-nav-dropdown, #topic-list-modal')) {
+    if (event.target.closest('#comments-list, .chat-nav-dropdown, .common-popup')) {
       this.touchStartY = null
     } else {
       this.touchStartY = event.touches[0].clientY

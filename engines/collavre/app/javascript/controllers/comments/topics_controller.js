@@ -2,6 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
 import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
 import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
+import PopupToggleGuard from '../../lib/popup_toggle_guard'
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
@@ -882,10 +883,7 @@ export default class extends Controller {
     }
 
     openTopicListPopup(event) {
-        if (this.topicListTogglePointerDown) {
-            this.cancelTopicListToggle()
-            return
-        }
+        if (this.topicListToggleGuard.consume()) return
 
         const btnRect = event.currentTarget.getBoundingClientRect()
 
@@ -1037,43 +1035,27 @@ export default class extends Controller {
         })
     }
 
-    prepareTopicListToggle(event) {
-        if (event.isPrimary === false || event.button !== 0) return
+    get topicListToggleGuard() {
+        this._topicListToggleGuard ||= new PopupToggleGuard()
+        return this._topicListToggleGuard
+    }
 
+    get topicListTogglePointerDown() {
+        return this.topicListToggleGuard.pointerDown
+    }
+
+    prepareTopicListToggle(event) {
         const modal = document.getElementById('topic-list-modal')
         const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
-        // Let every open popup receive this pointer event and perform its normal
-        // outside-click cleanup. If this popup was one of them, consume the
-        // following click so it does not immediately reopen.
-        if (popup?.popup?.isOpen()) {
-            this.topicListTogglePointerDown = true
-            this.topicListTogglePointerId = event.pointerId
-            event.currentTarget.setPointerCapture(event.pointerId)
-        }
+        this.topicListToggleGuard.prepare(event, Boolean(popup?.popup?.isOpen()))
     }
 
     finishTopicListToggle(event) {
-        if (event.pointerId !== this.topicListTogglePointerId) return
-
-        const rect = event.currentTarget.getBoundingClientRect()
-        const releasedOutsideButton = event.clientX < rect.left || event.clientX > rect.right ||
-            event.clientY < rect.top || event.clientY > rect.bottom
-        if (releasedOutsideButton) {
-            this.cancelTopicListToggle(event)
-        } else {
-            // A completed activation dispatches click before the next task. Clear a
-            // canceled in-button gesture afterwards so it cannot consume a later click.
-            this.topicListToggleClearTimeout = setTimeout(() => this.cancelTopicListToggle(event), 0)
-        }
+        this.topicListToggleGuard.finish(event)
     }
 
     cancelTopicListToggle(event = {}) {
-        if (event.pointerId != null && event.pointerId !== this.topicListTogglePointerId) return
-
-        clearTimeout(this.topicListToggleClearTimeout)
-        this.topicListToggleClearTimeout = undefined
-        this.topicListTogglePointerDown = false
-        this.topicListTogglePointerId = undefined
+        this.topicListToggleGuard.cancel(event)
     }
 
     handleTopicListClose() {

@@ -361,7 +361,7 @@ describe('TopicsController#openTopicListPopup', () => {
 		controller.prepareTopicListToggle({ isPrimary: true, button: 2, pointerId: 2 })
 		controller.cancelTopicListToggle({ pointerId: 3 })
 
-		expect(controller.topicListTogglePointerDown).toBeUndefined()
+		expect(controller.topicListTogglePointerDown).toBe(false)
 	})
 
     test('removes the topic-list close listener when disconnecting', () => {

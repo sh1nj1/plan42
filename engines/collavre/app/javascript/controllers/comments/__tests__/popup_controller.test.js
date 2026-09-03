@@ -144,6 +144,7 @@ describe('CommentsPopupController', () => {
 		const topicListModal = document.createElement('div')
 		const topicListItem = document.createElement('li')
 		topicListModal.id = 'topic-list-modal'
+		topicListModal.className = 'common-popup'
 		topicListModal.appendChild(topicListItem)
 		popup.appendChild(topicListModal)
 		jest.spyOn(controller, 'isMobile').mockReturnValue(true)
@@ -158,6 +159,30 @@ describe('CommentsPopupController', () => {
 		expect(close).not.toHaveBeenCalled()
 		expect(controller.touchStartY).toBeNull()
     })
+
+	test.each(['context-list-modal', 'participant-list-modal'])(
+		'keeps the mobile chat open while scrolling down inside %s',
+		(modalId) => {
+			const popup = document.getElementById('comments-popup')
+			const modal = document.createElement('div')
+			const item = document.createElement('li')
+			modal.id = modalId
+			modal.className = 'common-popup'
+			modal.appendChild(item)
+			popup.appendChild(modal)
+			jest.spyOn(controller, 'isMobile').mockReturnValue(true)
+			const close = jest.spyOn(controller, 'close')
+
+			controller.handleTouchStart({
+				target: item,
+				touches: [{ clientY: 100 }]
+			})
+			controller.handleTouchEnd({ changedTouches: [{ clientY: 180 }] })
+
+			expect(close).not.toHaveBeenCalled()
+			expect(controller.touchStartY).toBeNull()
+		}
+	)
 
     test('inherits auto-focus preference from trigger button', async () => {
         const triggerBtn = document.getElementById('trigger-btn')
@@ -802,6 +827,64 @@ describe('CommentsPopupController', () => {
         expect(formController.onPopupOpened).toHaveBeenCalledWith({
             creativeId: '456', canComment: true,
         })
+    })
+
+    test('clears stale contexts before awaiting topics and loads them after topics resolve', async () => {
+	let finishTopicsLoad
+	const topicsController = {
+	    clearOverrideTopicId: jest.fn(),
+	    currentTopicId: 'new-topic',
+	    onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+	}
+	const contextsController = {
+	    onChatWillOpen: jest.fn(),
+	    onPopupOpened: jest.fn(),
+	}
+	Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+	Object.defineProperty(controller, 'contextsController', { configurable: true, value: contextsController })
+
+	controller.openGeneration = 1
+	const pendingOpen = controller.notifyChildControllers({
+	    creativeId: '456', canComment: true, openGeneration: 1,
+	})
+	await Promise.resolve()
+
+	expect(contextsController.onChatWillOpen).toHaveBeenCalledWith({ creativeId: '456' })
+	expect(contextsController.onPopupOpened).not.toHaveBeenCalled()
+
+	finishTopicsLoad()
+	await pendingOpen
+
+	expect(contextsController.onPopupOpened).toHaveBeenCalledWith({ creativeId: '456' })
+    })
+
+    test('clears stale participants before awaiting topics and loads them after topics resolve', async () => {
+        let finishTopicsLoad
+        const topicsController = {
+            clearOverrideTopicId: jest.fn(),
+            currentTopicId: 'new-topic',
+            onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+        }
+        const presenceController = {
+            onChatWillOpen: jest.fn(),
+            onPopupOpened: jest.fn(),
+        }
+        Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+        Object.defineProperty(controller, 'presenceController', { configurable: true, value: presenceController })
+
+        controller.openGeneration = 1
+        const pendingOpen = controller.notifyChildControllers({
+            creativeId: '456', canComment: true, openGeneration: 1,
+        })
+        await Promise.resolve()
+
+        expect(presenceController.onChatWillOpen).toHaveBeenCalledWith({ creativeId: '456' })
+        expect(presenceController.onPopupOpened).not.toHaveBeenCalled()
+
+        finishTopicsLoad()
+        await pendingOpen
+
+        expect(presenceController.onPopupOpened).toHaveBeenCalledWith({ creativeId: '456' })
     })
 
     test('logout submit clears popup size and chat drafts from localStorage', () => {
