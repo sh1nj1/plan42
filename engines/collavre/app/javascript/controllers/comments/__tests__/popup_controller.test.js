@@ -144,6 +144,7 @@ describe('CommentsPopupController', () => {
 		const topicListModal = document.createElement('div')
 		const topicListItem = document.createElement('li')
 		topicListModal.id = 'topic-list-modal'
+		topicListModal.className = 'common-popup'
 		topicListModal.appendChild(topicListItem)
 		popup.appendChild(topicListModal)
 		jest.spyOn(controller, 'isMobile').mockReturnValue(true)
@@ -158,6 +159,30 @@ describe('CommentsPopupController', () => {
 		expect(close).not.toHaveBeenCalled()
 		expect(controller.touchStartY).toBeNull()
     })
+
+	test.each(['context-list-modal', 'participant-list-modal'])(
+		'keeps the mobile chat open while scrolling down inside %s',
+		(modalId) => {
+			const popup = document.getElementById('comments-popup')
+			const modal = document.createElement('div')
+			const item = document.createElement('li')
+			modal.id = modalId
+			modal.className = 'common-popup'
+			modal.appendChild(item)
+			popup.appendChild(modal)
+			jest.spyOn(controller, 'isMobile').mockReturnValue(true)
+			const close = jest.spyOn(controller, 'close')
+
+			controller.handleTouchStart({
+				target: item,
+				touches: [{ clientY: 100 }]
+			})
+			controller.handleTouchEnd({ changedTouches: [{ clientY: 180 }] })
+
+			expect(close).not.toHaveBeenCalled()
+			expect(controller.touchStartY).toBeNull()
+		}
+	)
 
     test('inherits auto-focus preference from trigger button', async () => {
         const triggerBtn = document.getElementById('trigger-btn')

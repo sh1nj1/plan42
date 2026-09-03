@@ -798,7 +798,7 @@ export default class extends Controller {
       this.touchStartY = null
       return
     }
-    if (event.target.closest('#comments-list, .chat-nav-dropdown, #topic-list-modal')) {
+    if (event.target.closest('#comments-list, .chat-nav-dropdown, .common-popup')) {
       this.touchStartY = null
     } else {
       this.touchStartY = event.touches[0].clientY
