@@ -99,9 +99,20 @@ module Collavre
           nil
         end.uniq(&:id)
         retained_ids = change.history_file_attachments.pluck(:blob_id)
-        change.history_file_attachments.where.not(blob_id: blobs.map(&:id)).delete_all
+        stale_attachments = change.history_file_attachments.where.not(blob_id: blobs.map(&:id))
+        stale_blob_ids = stale_attachments.pluck(:blob_id)
+        stale_attachments.delete_all
+        schedule_blob_purge_rechecks(stale_blob_ids)
         blobs.reject { |blob| retained_ids.include?(blob.id) }.each do |blob|
           change.history_file_attachments.create!(name: "history_files", blob: blob)
+        end
+      end
+
+      def schedule_blob_purge_rechecks(blob_ids)
+        return if blob_ids.empty?
+
+        ActiveRecord.after_all_transactions_commit do
+          blob_ids.each { |blob_id| PurgeUnreferencedBlobJob.perform_later(blob_id) }
         end
       end
 

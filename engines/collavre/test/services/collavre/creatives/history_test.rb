@@ -216,6 +216,28 @@ module Collavre
         assert_includes @child.files.blobs, blob
       end
 
+      test "rechecks blobs dropped from merged snapshot retention after commit" do
+        first_blob = create_blob("first.txt")
+        second_blob = create_blob("second.txt")
+        callbacks = []
+        capture_callback = ->(&callback) { callbacks << callback }
+
+        ActiveRecord.stub(:after_all_transactions_commit, capture_callback) do
+          History.track(actor: @user, origin: :editor, anchor: @root) do
+            @child.update!(description: blob_link(first_blob))
+            @child.update!(description: blob_link(second_blob))
+          end
+        end
+
+        assert_equal [ second_blob.id ], CreativeChange.sole.history_file_attachments.pluck(:blob_id)
+        assert_equal 1, callbacks.size
+        scheduled_blob_ids = []
+        PurgeUnreferencedBlobJob.stub(:perform_later, ->(blob_id) { scheduled_blob_ids << blob_id }) do
+          callbacks.sole.call
+        end
+        assert_equal [ first_blob.id ], scheduled_blob_ids
+      end
+
       test "ignores invalid signed blob references in snapshots" do
         History.track(actor: @user, origin: :editor, anchor: @root) do
           @child.update!(description: '<a href="/public-assets/blobs/invalid/file.txt">Invalid</a>')
@@ -450,6 +472,17 @@ module Collavre
       end
 
       private
+
+      def create_blob(filename)
+        ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new(filename), filename: filename, content_type: "text/plain"
+        )
+      end
+
+      def blob_link(blob)
+        path = Rails.application.routes.url_helpers.rails_blob_path(blob, only_path: true)
+        %(<a href="#{path}">#{blob.filename}</a>)
+      end
 
       def track_editor_change(token, &block)
         History.track(
