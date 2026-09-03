@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build, notarize, and publish one signed Apple-Silicon Collavre Desktop DMG.
+# Build and publish one Apple-Silicon Collavre Desktop DMG, either signed and
+# notarized or explicitly unsigned for developer-only distribution.
 #
 # The Tauri config is the canonical desktop version. Cargo.toml is kept in sync
 # because Cargo requires a package version too. This script is deliberately
@@ -16,6 +17,8 @@ CARGO_LOCK="$TAURI_DIR/Cargo.lock"
 TAG_PREFIX="desktop-v"
 ARTIFACT_DIR="$PROJECT_ROOT/build/desktop-release"
 RELEASE_ARTIFACT=""
+UNSIGNED_RELEASE=0
+RESUME_VERSION=""
 
 die() {
   echo "[release-desktop] $*" >&2
@@ -24,6 +27,42 @@ die() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command is unavailable: $1"
+}
+
+usage() {
+  printf 'usage: %s [--unsigned] [--resume VERSION]\n' "$0" >&2
+}
+
+parse_release_options() {
+  UNSIGNED_RELEASE=0
+  RESUME_VERSION=""
+
+  while (($#)); do
+    case "$1" in
+      --unsigned)
+	((UNSIGNED_RELEASE == 0)) || die "--unsigned was provided more than once"
+	UNSIGNED_RELEASE=1
+	shift
+	;;
+      --resume)
+	[[ -z "$RESUME_VERSION" ]] || die "--resume was provided more than once"
+	[[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { usage; die "--resume requires a version"; }
+	RESUME_VERSION="$2"
+	shift 2
+	;;
+      *)
+	usage
+	die "unknown option: $1"
+	;;
+    esac
+  done
+
+  [[ -z "$RESUME_VERSION" ]] || valid_semver "$RESUME_VERSION" || \
+    die "resume version must be valid semver"
+}
+
+release_is_unsigned() {
+  ((UNSIGNED_RELEASE))
 }
 
 check_desktop_build_prerequisites() {
@@ -182,6 +221,13 @@ release_notes() {
 
   {
     printf '# Collavre Desktop %s\n\n' "$version"
+    if release_is_unsigned; then
+      printf '## Installation notice\n\n'
+      printf 'This developer build is not code signed or notarized. '
+      printf 'On macOS 15 or later, first try to open the app, then go to '
+      printf 'System Settings > Privacy & Security and choose Open Anyway. '
+      printf 'On earlier macOS versions, right-click the app and choose Open.\n\n'
+    fi
     printf '## Changes\n\n'
     git log --format='- %s (%h)' "$range"
   } > "$ARTIFACT_DIR/release-notes.md"
@@ -411,6 +457,7 @@ publish_release() {
       # A failed upload can leave a draft with only one stale asset. Replace
       # both artifacts from this build before publishing so the checksum and
       # DMG always describe the same release output.
+      remove_opposite_mode_assets "$tag" "$version"
       gh release upload "$tag" "$artifact" "$checksum" --clobber
       publish_draft_release "$tag" "$version"
     fi
@@ -422,6 +469,23 @@ publish_release() {
   gh "${create_args[@]}"
   gh release upload "$tag" "$artifact" "$checksum" --clobber
   publish_draft_release "$tag" "$version"
+}
+
+remove_opposite_mode_assets() {
+  local tag="$1"
+  local version="$2"
+  local opposite_artifact assets asset
+
+  if release_is_unsigned; then
+    opposite_artifact="Collavre-Desktop_${version}_aarch64.dmg"
+  else
+    opposite_artifact="Collavre-Desktop_${version}_aarch64-unsigned.dmg"
+  fi
+  assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+  for asset in "$opposite_artifact" "${opposite_artifact}.sha256"; do
+    grep -Fqx -- "$asset" <<< "$assets" || continue
+    gh release delete-asset "$tag" "$asset" --yes
+  done
 }
 
 publish_draft_release() {
@@ -441,22 +505,39 @@ check_prerequisites() {
   [[ "$(git branch --show-current)" == "main" ]] || die "run from the main branch"
   [[ -z "$(git status --porcelain)" ]] || die "working tree is not clean"
 
-  for command in git gh ruby node npm bundle cargo codesign security spctl xcrun shasum hdiutil curl tar; do
+  local command
+  local -a commands=(git gh ruby node npm bundle cargo shasum hdiutil curl tar)
+  if ! release_is_unsigned; then
+    commands+=(codesign security spctl xcrun)
+  fi
+  for command in "${commands[@]}"; do
     require_command "$command"
   done
   check_desktop_build_prerequisites
 
+  check_node_runtime_configuration
+  check_distribution_prerequisites
+  gh auth status >/dev/null 2>&1 || die "GitHub CLI is not authenticated"
+}
+
+check_node_runtime_configuration() {
+  if [[ -z "${NODE_RUNTIME_DIR:-}" && ( -n "${NODE_RUNTIME_URL:-}" || -n "${NODE_RUNTIME_SHA256:-}" ) ]]; then
+    [[ -n "${NODE_RUNTIME_URL:-}" && -n "${NODE_RUNTIME_SHA256:-}" ]] || die "set both NODE_RUNTIME_URL and NODE_RUNTIME_SHA256"
+  fi
+}
+
+check_distribution_prerequisites() {
+  release_is_unsigned || check_signing_prerequisites
+}
+
+check_signing_prerequisites() {
   [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]] || die "APPLE_SIGNING_IDENTITY is required"
   [[ -n "${APPLE_ID:-}" ]] || die "APPLE_ID is required"
   [[ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]] || die "APPLE_APP_SPECIFIC_PASSWORD is required"
   [[ -n "${APPLE_TEAM_ID:-}" ]] || die "APPLE_TEAM_ID is required"
-  if [[ -z "${NODE_RUNTIME_DIR:-}" && ( -n "${NODE_RUNTIME_URL:-}" || -n "${NODE_RUNTIME_SHA256:-}" ) ]]; then
-    [[ -n "${NODE_RUNTIME_URL:-}" && -n "${NODE_RUNTIME_SHA256:-}" ]] || die "set both NODE_RUNTIME_URL and NODE_RUNTIME_SHA256"
-  fi
 
   security find-identity -v -p codesigning | grep -Fq "$APPLE_SIGNING_IDENTITY" || \
     die "APPLE_SIGNING_IDENTITY is not available in this keychain"
-  gh auth status >/dev/null 2>&1 || die "GitHub CLI is not authenticated"
 }
 
 run_checks() {
@@ -532,16 +613,39 @@ build_notarized_dmg() {
   RELEASE_ARTIFACT="$artifact"
 }
 
+build_unsigned_dmg() {
+  local version="$1"
+  local source_dmg artifact checksum target_dir mount_dir dmg_attached=0
+
+  echo "[release-desktop] Building unsigned DMG..."
+  target_dir="$(tauri_target_dir)"
+  rm -rf "$target_dir/release/bundle/dmg"
+  "$DESKTOP_DIR/scripts/build-macos.sh" --no-sign
+
+  source_dmg="$(find "$target_dir/release/bundle/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit 2>/dev/null || true)"
+  [[ -n "$source_dmg" ]] || die "Tauri DMG was not created"
+  artifact="$ARTIFACT_DIR/Collavre-Desktop_${version}_aarch64-unsigned.dmg"
+  cp "$source_dmg" "$artifact"
+
+  mount_dir="$(mktemp -d)"
+  (
+    trap 'cleanup_mounted_dmg "$mount_dir" "$dmg_attached"' EXIT
+    hdiutil attach "$artifact" -readonly -nobrowse -mountpoint "$mount_dir" >/dev/null
+    dmg_attached=1
+    [[ -d "$mount_dir/Collavre Desktop.app" ]] || die "DMG does not contain Collavre Desktop.app"
+  )
+
+  checksum="${artifact}.sha256"
+  write_checksum "$artifact" "$checksum"
+  RELEASE_ARTIFACT="$artifact"
+}
+
 main() {
   cd "$PROJECT_ROOT"
+  parse_release_options "$@"
   check_prerequisites
 
-  local current_version previous_tag range bump suggested_version selected_version tag artifact resume_version="" prerelease_promotion=0
-  if (($#)); then
-    [[ $# -eq 2 && "$1" == "--resume" ]] || die "usage: $0 [--resume VERSION]"
-    resume_version="$2"
-    valid_semver "$resume_version" || die "resume version must be valid semver"
-  fi
+  local current_version previous_tag range bump suggested_version selected_version tag artifact resume_version="$RESUME_VERSION" prerelease_promotion=0
 
   git fetch origin main --tags
   if [[ -z "$resume_version" ]]; then
@@ -619,9 +723,17 @@ main() {
   printf '\nBundled source commits included in this release:\n'
   git log --oneline "$range"
   if [[ -n "$resume_version" ]]; then
-    read -r -p "Rebuild, notarize, and resume publishing $tag? [y/N] " confirm
+    if release_is_unsigned; then
+      read -r -p "Rebuild unsigned DMG and resume publishing $tag? [y/N] " confirm
+    else
+      read -r -p "Rebuild, notarize, and resume publishing $tag? [y/N] " confirm
+    fi
   else
-    read -r -p "Commit version $selected_version, build, notarize, and publish $tag? [y/N] " confirm
+    if release_is_unsigned; then
+      read -r -p "Commit version $selected_version, build unsigned DMG, and publish $tag? [y/N] " confirm
+    else
+      read -r -p "Commit version $selected_version, build, notarize, and publish $tag? [y/N] " confirm
+    fi
   fi
   [[ "$confirm" =~ ^[Yy]$ ]] || die "release cancelled"
 
@@ -636,7 +748,11 @@ main() {
   fi
 
   run_checks
-  build_notarized_dmg "$selected_version"
+  if release_is_unsigned; then
+    build_unsigned_dmg "$selected_version"
+  else
+    build_notarized_dmg "$selected_version"
+  fi
   artifact="$RELEASE_ARTIFACT"
 
   ensure_release_tag "$tag" "$selected_version"
