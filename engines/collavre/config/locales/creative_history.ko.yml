@@ -13,6 +13,9 @@ ko:
       restore: 이 버전으로 복원
       reverted: 되돌림 완료
       irreversible: 복원할 수 없음
+      undo_notice: "AI가 크리에이티브 %{count}개를 수정했습니다."
+      undo: 되돌리기
+      dismiss: 닫기
       revert_confirm: 이 변경 셋 전체를 되돌릴까요?
       restore_confirm: 이 버전을 현재 버전으로 적용할까요?
       conflict_choice: "크리에이티브 #%{id}이(가) 이후에 변경되었습니다. 강제로 되돌리거나 건너뛰세요."

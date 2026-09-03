@@ -44,8 +44,10 @@ module Collavre
         assert_equal 1.0, result[:results][0][:progress]
       end
 
-      test "deletes a creative via batch" do
-        child = Creative.create!(description: "<p>To delete</p>", user: @user, parent: @root)
+      test "archives a creative subtree via batch" do
+        child = Creative.create!(description: "<p>To archive</p>", user: @user, parent: @root)
+        grandchild = Creative.create!(description: "<p>Nested</p>", user: @user, parent: child)
+        Current.change_set = nil
 
         service = CreativeBatchService.new
         result = service.call(operations: [
@@ -53,8 +55,10 @@ module Collavre
         ])
 
         assert result[:success]
-        assert result[:results][0][:deleted]
-        assert_nil Creative.find_by(id: child.id)
+        assert result[:results][0][:archived]
+        assert child.reload.archived?
+        assert grandchild.reload.archived?
+        assert_equal %w[archive archive], CreativeChangeSet.newest_first.first.creative_changes.order(:creative_id).pluck(:operation)
       end
 
       test "mixed operations in a single batch" do

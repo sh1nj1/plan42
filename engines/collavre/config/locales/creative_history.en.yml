@@ -15,6 +15,11 @@ en:
       restore: Restore this version
       reverted: Reverted
       irreversible: Cannot be restored
+      undo_notice:
+        one: AI updated 1 creative.
+        other: "AI updated %{count} creatives."
+      undo: Undo
+      dismiss: Dismiss
       revert_confirm: Revert this entire change set?
       restore_confirm: Make this version the current version?
       conflict_choice: "Creative #%{id} changed afterward. Force revert it, or skip it?"

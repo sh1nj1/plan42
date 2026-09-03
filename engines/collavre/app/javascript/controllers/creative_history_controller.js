@@ -18,6 +18,7 @@ export default class extends Controller {
       if (!response.ok) throw new Error(body.message)
       if (body.status === 'partial') await alertDialog(body.message)
 
+      this.dispatch('applied', { detail: body })
       this.listController?.loadInitialComments()
       window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete'))
     } catch (error) {

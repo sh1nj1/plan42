@@ -1,0 +1,23 @@
+<aside id="creative-history-undo-<%= change_set.id %>"
+       class="creative-history-undo-toast"
+       role="status"
+       data-controller="creative-history creative-history-undo"
+       data-creative-history-undo-timeout-value="30000"
+       data-action="creative-history:applied->creative-history-undo#dismiss">
+  <span><%= t("collavre.creative_history.undo_notice", count: change_count) %></span>
+  <button type="button"
+          class="creative-history-revert"
+          data-action="creative-history#revert"
+          data-url="<%= apply_url %>"
+          data-mode="revert"
+          data-confirm="<%= t("collavre.creative_history.revert_confirm") %>"
+          data-conflict="<%= t("collavre.creative_history.conflict_choice") %>"
+          data-force="<%= t("collavre.creative_history.force") %>"
+          data-skip="<%= t("collavre.creative_history.skip") %>">
+    <%= t("collavre.creative_history.undo") %>
+  </button>
+  <button type="button"
+          class="creative-history-undo-dismiss"
+          aria-label="<%= t("collavre.creative_history.dismiss") %>"
+          data-action="creative-history-undo#dismiss">×</button>
+</aside>

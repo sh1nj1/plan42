@@ -52,6 +52,8 @@ describe('CreativeHistoryController', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'applied' }) })
     const reload = jest.fn()
     jest.spyOn(controller, 'listController', 'get').mockReturnValue({ loadInitialComments: reload })
+    const applied = jest.fn()
+    controller.element.addEventListener('creative-history:applied', applied)
 
     await controller.revert({ currentTarget: button })
 
@@ -60,6 +62,7 @@ describe('CreativeHistoryController', () => {
       12: 'skip',
     })
     expect(reload).toHaveBeenCalled()
+    expect(applied).toHaveBeenCalled()
     expect(alertDialog).not.toHaveBeenCalled()
   })
 

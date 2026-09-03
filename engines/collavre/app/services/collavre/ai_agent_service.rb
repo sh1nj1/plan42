@@ -18,7 +18,7 @@ module Collavre
 
     def call
       begin
-        Current.set(user: @agent, agent_turn: { user: workspace_user, task: @task }) do
+        Creatives::AgentTurnHistory.call(@agent, workspace_user, @task) do
           if @agent.claude_channel_agent?
             delegate_to_claude_channel
           else

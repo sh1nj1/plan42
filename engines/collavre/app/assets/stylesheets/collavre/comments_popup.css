@@ -2301,3 +2301,38 @@ li:hover .topic-create-option {
     background: var(--surface-hover);
     color: var(--text-primary);
 }
+
+.creative-history-toast-container {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 1200;
+    display: grid;
+    gap: 8px;
+}
+
+.creative-history-undo-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(420px, calc(100vw - 40px));
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-3);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
+    color: var(--text-primary);
+}
+
+.creative-history-undo-toast .creative-history-revert {
+    margin-top: 0;
+    white-space: nowrap;
+}
+
+.creative-history-undo-dismiss {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.2rem;
+}

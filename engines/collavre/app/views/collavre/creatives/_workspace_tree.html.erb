@@ -12,6 +12,7 @@
       grid shell it would become a grid item with its own implicit row and
       push all three columns down. %>
   <%= turbo_stream_from Current.user, :creative_tree %>
+  <div id="creative-history-toast-container" class="creative-history-toast-container"></div>
   <button type="button"
           class="creative-workspace-tree-toggle"
           data-workspace-tree-target="panelToggle"
