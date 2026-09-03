@@ -68,17 +68,14 @@ module Collavre
       end
 
       test "undo restores linked shells propagated into a private tree" do
-        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root)
-        foreign_user = users(:two)
-        foreign_root = Creative.create!(description: "<p>Private tree</p>", user: foreign_user)
-        linked = Creative.create!(origin: child, user: foreign_user, parent: foreign_root)
-        Current.change_set = nil
+        child, linked = create_private_linked_pair
 
         result = CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
         change_set = CreativeChangeSet.newest_first.first
 
         assert result[:success]
         assert linked.reload.archived?
+        assert_in_delta 0, linked.parent.reload.progress, 0.01
         assert_not_includes Creatives::PermissionFilter.new(user: @user).readable_ids([ linked.id ]), linked.id
 
         revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
@@ -87,6 +84,7 @@ module Collavre
         assert_equal "reverted", change_set.reload.status
         assert_not child.reload.archived?
         assert_not linked.reload.archived?
+        assert_in_delta 0.5, linked.parent.reload.progress, 0.01
         assert_includes revert.change_set.creative_changes.pluck(:creative_id), linked.id
 
         restore = Creatives::ChangeSetRestoreService.new(change_set: change_set, user: @user).call
@@ -230,9 +228,10 @@ module Collavre
       private
 
       def create_private_linked_pair
-        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root)
+        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root, progress: 1)
         foreign_user = users(:two)
         foreign_root = Creative.create!(description: "<p>Private tree</p>", user: foreign_user)
+        Creative.create!(description: "<p>Incomplete</p>", user: foreign_user, parent: foreign_root, progress: 0)
         linked = Creative.create!(origin: child, user: foreign_user, parent: foreign_root)
         Current.change_set = nil
         [ child, linked ]
