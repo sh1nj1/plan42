@@ -4,6 +4,7 @@
 import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import PresenceController from '../presence_controller'
+import EntityListController from '../../entity_list_controller'
 
 describe('CommentsPresenceController — pinned add/list buttons', () => {
     let application, controller
@@ -19,6 +20,7 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
 
         document.body.innerHTML = `
           <div id="comments-popup" data-controller="comments--presence"
+               data-close-label="Close"
                data-participant-search-placeholder-text="Search users...">
             <div data-comments--presence-target="participants"></div>
             <button class="add-participant-btn" data-comments--presence-target="addParticipantButton" style="display:none;">+</button>
@@ -31,6 +33,7 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         `
         application = Application.start()
         application.register('comments--presence', PresenceController)
+        application.register('entity-list', EntityListController)
         await new Promise((resolve) => setTimeout(resolve, 0))
         controller = application.getControllerForElementAndIdentifier(
             document.getElementById('comments-popup'), 'comments--presence'
@@ -98,6 +101,14 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(modal.querySelector('[data-entity-list-target="input"]').placeholder).toBe('Search users...')
         expect(modal.querySelector('[data-entity-list-target="list"]')).not.toBeNull()
         expect(modal.querySelector('[data-entity-list-target="close"]')).not.toBeNull()
+    })
+
+    test('gives the popup close button the localized accessible label', async () => {
+        controller.participantsData = USERS
+        controller.openParticipantListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(document.querySelector('#participant-list-modal .popup-close-btn').getAttribute('aria-label')).toBe('Close')
     })
 
     test('toggles an open popup closed and clears the button state', () => {
@@ -245,5 +256,77 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
             expect.objectContaining({ id: 1, muted: false }),
             expect.objectContaining({ id: 2, muted: false })
         ])
+    })
+
+    test('switching creatives clears the old popup, participants, and share URL', async () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+        controller.openParticipantListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        jest.spyOn(controller, 'loadParticipants').mockImplementation(() => {})
+        jest.spyOn(controller, 'subscribe').mockImplementation(() => {})
+        jest.spyOn(controller, 'bootstrapChannelChips').mockImplementation(() => {})
+
+        controller.onPopupOpened({ creativeId: '77' })
+
+        expect(document.getElementById('participant-list-modal')).toBeNull()
+        expect(controller.participantsData).toBeNull()
+        expect(controller.canShare).toBe(false)
+        expect(controller.addParticipantButtonTarget.style.display).toBe('none')
+        expect(controller.addParticipantButtonTarget.dataset.shareModalUrlParam).toBeUndefined()
+        expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('closing an empty dock clears the previous creative share state', () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+
+        controller.onPopupClosed()
+
+        expect(controller.creativeId).toBeNull()
+        expect(controller.canShare).toBe(false)
+        expect(controller.addParticipantButtonTarget.style.display).toBe('none')
+        expect(controller.addParticipantButtonTarget.dataset.shareModalUrlParam).toBeUndefined()
+    })
+
+    test('ignores a participants response from the creative that was left', async () => {
+        let resolveOld
+        let resolveCurrent
+        global.fetch
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveCurrent = resolve }))
+
+        const oldLoad = controller.loadParticipants('42')
+        controller.creativeId = '77'
+        const currentLoad = controller.loadParticipants('77')
+        resolveCurrent({
+            ok: true,
+            json: async () => ({ users: [USERS[1]], can_share: true, can_comment: true })
+        })
+        await currentLoad
+        resolveOld({
+            ok: true,
+            json: async () => ({ users: [USERS[0]], can_share: false, can_comment: false })
+        })
+        await oldLoad
+
+        expect(controller.participantsData).toEqual([USERS[1]])
+        expect(controller.canShare).toBe(true)
+    })
+
+    test('clears participant controls when the current load fails', async () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+        global.fetch.mockRejectedValueOnce(new Error('network failed'))
+
+        await controller.loadParticipants('42')
+
+        expect(controller.participantsData).toEqual([])
+        expect(controller.canShare).toBe(false)
+        expect(controller.addParticipantButtonTarget.style.display).toBe('none')
+        expect(controller.participantListButtonTarget.style.display).toBe('none')
     })
 })

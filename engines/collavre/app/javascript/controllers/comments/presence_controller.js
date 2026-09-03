@@ -24,6 +24,8 @@ export default class extends Controller {
   connect() {
     this.creativeId = null
     this.participantsData = null
+    this.canShare = false
+    this._participantLoadVersion = 0
     this.currentPresentIds = []
     this.typingUsers = {}
     this.typingTimers = {}
@@ -59,6 +61,8 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this._participantLoadVersion += 1
+    this._closeParticipantListPopup()
     this.unsubscribe()
     this.stopAgentTaskPoll()
     this.clearAllStreamingHeartbeats()
@@ -130,11 +134,12 @@ export default class extends Controller {
     // renders cancels a turn in a creative that is no longer on screen.
     if (this.creativeId !== undefined && String(creativeId) !== String(this.creativeId)) {
       this.resetAgentActivity()
+      this.resetParticipantState()
     }
     this.creativeId = creativeId
     this.renderedAllTopicIds = null
     this.renderedAllIncludesLegacy = false
-    this.loadParticipants()
+    this.loadParticipants(creativeId)
     this.subscribe()
     this.renderParticipants([])
     this.renderTypingIndicator()
@@ -201,13 +206,22 @@ export default class extends Controller {
 
   onPopupClosed() {
     this.unsubscribe()
-    this.participantsData = null
-    this.currentPresentIds = []
+    this.creativeId = null
+    this.resetParticipantState()
     this.resetAgentActivity()
     this.clearManualTypingMessage()
     this.renderParticipants([])
     this.renderTypingIndicator()
     this.element.style.bottom = ''
+  }
+
+  resetParticipantState() {
+    this._participantLoadVersion += 1
+    this._closeParticipantListPopup()
+    this.participantsData = null
+    this.currentPresentIds = []
+    this.canShare = false
+    this.renderParticipants([])
   }
 
   setManualTypingMessage(message) {
@@ -248,9 +262,10 @@ export default class extends Controller {
     this.presenceSubscription.perform('running_agents', { topic_id: this.selectedTopicId })
   }
 
-  loadParticipants() {
-    if (!this.creativeId) return
-    fetch(`/creatives/${this.creativeId}/comments/participants`, {
+  loadParticipants(creativeId = this.creativeId) {
+    if (!creativeId) return
+    const loadVersion = ++this._participantLoadVersion
+    return fetch(`/creatives/${creativeId}/comments/participants`, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     })
@@ -262,6 +277,7 @@ export default class extends Controller {
         return response.json()
       })
       .then((data) => {
+        if (!this._isCurrentParticipantLoad(loadVersion, creativeId)) return
         this.participantsData = data.users
         this.canShare = data.can_share
         this.formController?.setCommentPermission(data.can_comment)
@@ -269,11 +285,16 @@ export default class extends Controller {
         this.renderTypingIndicator()
       })
       .catch(() => {
+        if (!this._isCurrentParticipantLoad(loadVersion, creativeId)) return
         this.participantsData = []
         this.canShare = false
         this.renderParticipants([])
         this.renderTypingIndicator()
       })
+  }
+
+  _isCurrentParticipantLoad(loadVersion, creativeId) {
+    return loadVersion === this._participantLoadVersion && String(creativeId) === String(this.creativeId)
   }
 
   subscribe() {
@@ -517,9 +538,12 @@ export default class extends Controller {
   // strip, so they stay reachable however many participants there are.
   updateParticipantActionButtons(presentIds = this.currentPresentIds) {
     if (this.hasAddParticipantButtonTarget) {
-      this.addParticipantButtonTarget.style.display = this.canShare ? '' : 'none'
-      if (this.creativeId) {
+      const canOpenShare = Boolean(this.canShare && this.creativeId)
+      this.addParticipantButtonTarget.style.display = canOpenShare ? '' : 'none'
+      if (canOpenShare) {
         this.addParticipantButtonTarget.dataset.shareModalUrlParam = `/creatives/${this.creativeId}/creative_shares`
+      } else {
+        delete this.addParticipantButtonTarget.dataset.shareModalUrlParam
       }
     }
     if (this.hasParticipantListButtonTarget) {
@@ -550,6 +574,15 @@ export default class extends Controller {
   _participantListPopup() {
     const modal = document.getElementById(PARTICIPANT_LIST_MODAL_ID)
     return modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+  }
+
+  _closeParticipantListPopup() {
+    const modal = this.element.querySelector(`#${PARTICIPANT_LIST_MODAL_ID}`)
+    const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+    popup?.close()
+    modal?.remove()
+    this._participantListToggleGuard?.cancel()
+    this.setParticipantListButtonExpanded(false)
   }
 
   openParticipantListPopup(event) {
@@ -584,6 +617,7 @@ export default class extends Controller {
     modal.className = 'common-popup'
     modal.style.display = 'none'
     modal.dataset.controller = 'entity-list'
+    modal.dataset.closeLabel = this.element.dataset.closeLabel || ''
     modal.innerHTML = `
       <button type="button" class="popup-close-btn" data-entity-list-target="close">&times;</button>
       <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"

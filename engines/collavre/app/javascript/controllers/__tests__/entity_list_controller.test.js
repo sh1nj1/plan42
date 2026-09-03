@@ -10,7 +10,7 @@ describe('EntityListController', () => {
 
     const mount = () => {
         document.body.innerHTML = `
-          <div id="entity-list-modal" class="common-popup" data-controller="entity-list">
+          <div id="entity-list-modal" class="common-popup" data-controller="entity-list" data-close-label="Close">
             <button data-entity-list-target="close">×</button>
             <input data-entity-list-target="input">
             <ul class="common-popup-list" data-popup-list data-entity-list-target="list"></ul>
@@ -50,6 +50,43 @@ describe('EntityListController', () => {
         expect(items().map((li) => li.textContent.trim())).toEqual([
             'This creative', 'Alpha', 'BetaInherited'
         ])
+    })
+
+    test('exposes combobox, listbox, option, and active-row semantics', () => {
+        controller.openForItems(ITEMS, RECT, () => {})
+        const rows = items()
+
+        expect(controller.inputTarget.getAttribute('role')).toBe('combobox')
+        expect(controller.inputTarget.getAttribute('aria-expanded')).toBe('true')
+        expect(controller.inputTarget.getAttribute('aria-controls')).toBe(controller.listTarget.id)
+        expect(controller.listTarget.getAttribute('role')).toBe('listbox')
+        expect(rows.every((row) => row.getAttribute('role') === 'option')).toBe(true)
+        expect(controller.inputTarget.getAttribute('aria-activedescendant')).toBe(rows[0].id)
+        expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+
+        controller.handleInputKeydown({ key: 'ArrowDown', preventDefault: jest.fn() })
+
+        expect(controller.inputTarget.getAttribute('aria-activedescendant')).toBe(rows[1].id)
+        expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false'])
+    })
+
+    test('uses stable option ids across filtering', () => {
+        controller.openForItems(ITEMS, RECT, () => {})
+        const alphaId = items()[1].id
+        controller.inputTarget.value = 'alpha'
+        controller._onInput()
+
+        expect(items()[0].id).toBe(alphaId)
+    })
+
+    test('labels the close button and clears expanded state on close', () => {
+        expect(controller.closeTarget.getAttribute('aria-label')).toBe('Close')
+        controller.openForItems(ITEMS, RECT, () => {})
+
+        controller.close()
+
+        expect(controller.inputTarget.getAttribute('aria-expanded')).toBe('false')
+        expect(controller.inputTarget.hasAttribute('aria-activedescendant')).toBe(false)
     })
 
     test('marks muted items with the distinguishing class', () => {

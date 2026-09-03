@@ -17,12 +17,26 @@ export default class extends CommonPopupController {
     connect() {
         super.connect()
         this._allItems = []
+        this._configureAccessibility()
+        this.popup.onActiveChange = () => this._syncActiveDescendant()
         this._onInputBound = this._onInput.bind(this)
         this._onKeydownBound = this.handleInputKeydown.bind(this)
         this._onCloseBound = () => this.close()
         this.inputTarget.addEventListener('input', this._onInputBound)
         this.inputTarget.addEventListener('keydown', this._onKeydownBound)
         this.closeTarget.addEventListener('click', this._onCloseBound)
+    }
+
+    _configureAccessibility() {
+        if (!this.listTarget.id) this.listTarget.id = `${this.element.id || 'entity-list'}-options`
+        this.listTarget.setAttribute('role', 'listbox')
+        this.inputTarget.setAttribute('role', 'combobox')
+        this.inputTarget.setAttribute('aria-autocomplete', 'list')
+        this.inputTarget.setAttribute('aria-haspopup', 'listbox')
+        this.inputTarget.setAttribute('aria-controls', this.listTarget.id)
+        this.inputTarget.setAttribute('aria-expanded', 'false')
+        const closeLabel = this.element.dataset.closeLabel
+        if (closeLabel) this.closeTarget.setAttribute('aria-label', closeLabel)
     }
 
     disconnect() {
@@ -39,6 +53,7 @@ export default class extends CommonPopupController {
         this.inputTarget.value = ''
         this.updateItems(items)
         super.open(anchorRect, boundsElement)
+        this.inputTarget.setAttribute('aria-expanded', 'true')
         if (this.isMobile()) {
             // Autofocusing the search box raises the virtual keyboard, which covers
             // the very list the user just asked to see.
@@ -56,6 +71,23 @@ export default class extends CommonPopupController {
 
         const activeIndex = this.popup.items.findIndex(item => String(item.id) === String(activeItem.id))
         if (activeIndex >= 0) this.popup.setActiveIndex(activeIndex)
+    }
+
+    setItems(items) {
+        super.setItems(items)
+        Array.from(this.listTarget.children).forEach((row, index) => {
+            row.id = `${this.listTarget.id}-option-${encodeURIComponent(String(items[index]?.id ?? index))}`
+            row.setAttribute('role', 'option')
+        })
+        this._syncActiveDescendant()
+    }
+
+    _syncActiveDescendant() {
+        const rows = Array.from(this.listTarget.children)
+        rows.forEach((row, index) => row.setAttribute('aria-selected', String(index === this.popup.activeIndex)))
+        const activeRow = rows[this.popup.activeIndex]
+        if (activeRow) this.inputTarget.setAttribute('aria-activedescendant', activeRow.id)
+        else this.inputTarget.removeAttribute('aria-activedescendant')
     }
 
     isMobile() {
@@ -104,6 +136,8 @@ export default class extends CommonPopupController {
 
     dispatchClose(reason) {
         this.onSelectCallback = null
+        this.inputTarget.setAttribute('aria-expanded', 'false')
+        this.inputTarget.removeAttribute('aria-activedescendant')
         super.dispatchClose(reason)
     }
 }

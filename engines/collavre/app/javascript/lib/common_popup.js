@@ -291,6 +291,7 @@ export default class CommonPopup {
     })
 
     const activeItem = items[this.activeIndex]
+    this.onActiveChange?.(activeItem, this.activeIndex)
     if (activeItem && activeItem.scrollIntoView) {
       activeItem.scrollIntoView({ block: 'nearest' })
     }

@@ -16,6 +16,7 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
         document.body.innerHTML = `
           <div id="comments-popup" data-controller="comments--contexts"
                data-creative-id="42"
+               data-close-label="Close"
                data-context-search-placeholder-text="Search contexts...">
             <h3 id="comments-popup-title">Current creative</h3>
             <button data-comments--contexts-target="toggleButton"></button>
@@ -107,6 +108,13 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
         expect(modal.querySelector('[data-entity-list-target="input"]').placeholder).toBe('Search contexts...')
         expect(modal.querySelector('[data-entity-list-target="list"]')).not.toBeNull()
         expect(modal.querySelector('[data-entity-list-target="close"]')).not.toBeNull()
+    })
+
+    test('gives the popup close button the localized accessible label', async () => {
+        controller.openContextListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(document.querySelector('#context-list-modal .popup-close-btn').getAttribute('aria-label')).toBe('Close')
     })
 
     test('toggles an open popup closed and clears the button state', () => {
@@ -246,5 +254,105 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
         expect(popup.updateItems).toHaveBeenCalledWith(
             expect.arrayContaining([expect.objectContaining({ id: 1, label: 'Alpha' })])
         )
+    })
+
+    test('switching creatives closes stale items before loading the replacement', async () => {
+        controller._activeCreativeId = '42'
+        controller.contexts = [{ id: 1, description: 'Old context', disabled: false, inherited: false }]
+        controller.canManage = true
+        controller.renderContexts()
+        controller.openContextListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        document.getElementById('comments-popup').dataset.creativeId = '77'
+        jest.spyOn(controller, 'loadContexts').mockResolvedValue()
+
+        await controller.onPopupOpened({ creativeId: '77' })
+
+        expect(document.getElementById('context-list-modal')).toBeNull()
+        expect(controller.contexts).toEqual([])
+        expect(controller.canManage).toBe(false)
+        expect(controller.addButtonTarget.style.display).toBe('none')
+        expect(controller.listButtonTarget.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('closing the chat clears context state and invalidates pending loads', () => {
+        controller._activeCreativeId = '42'
+        controller.contexts = [{ id: 1, description: 'Old context' }]
+        const loadVersion = controller._contextLoadVersion
+
+        controller.onPopupClosed()
+
+        expect(controller._activeCreativeId).toBeNull()
+        expect(controller.contexts).toEqual([])
+        expect(controller._contextLoadVersion).toBeGreaterThan(loadVersion)
+    })
+
+    test('disconnecting invalidates pending loads and closes the list popup', () => {
+        const close = jest.spyOn(controller, '_closeContextListPopup')
+        const loadVersion = controller._contextLoadVersion
+
+        controller.disconnect()
+
+        expect(controller._contextLoadVersion).toBe(loadVersion + 1)
+        expect(close).toHaveBeenCalled()
+    })
+
+    test('ignores a contexts response from the creative that was left', async () => {
+        let resolveOld
+        let resolveCurrent
+        global.fetch
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveCurrent = resolve }))
+
+        const oldLoad = controller.loadContexts('42')
+        document.getElementById('comments-popup').dataset.creativeId = '77'
+        const currentLoad = controller.loadContexts('77')
+        resolveCurrent({
+            ok: true,
+            json: async () => ({ contexts: [{ id: 2, description: 'Current' }], can_manage: true })
+        })
+        await currentLoad
+        resolveOld({
+            ok: true,
+            json: async () => ({ contexts: [{ id: 1, description: 'Old' }], can_manage: false })
+        })
+        await oldLoad
+
+        expect(controller.contexts).toEqual([{ id: 2, description: 'Current' }])
+        expect(controller.canManage).toBe(true)
+    })
+
+    test('reports a contexts load failure for the current creative', async () => {
+        const error = new Error('network failed')
+        const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+        global.fetch.mockRejectedValueOnce(error)
+
+        await controller.loadContexts('42')
+
+        expect(consoleError).toHaveBeenCalledWith('Failed to load contexts', error)
+    })
+
+    test('serializes context patches and preserves their captured creative', async () => {
+        let resolveFirst
+        global.fetch
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+            .mockResolvedValueOnce({ ok: true })
+
+        const first = controller._patchContexts({ disabled_self_context: true })
+        const second = controller._patchContexts({ disabled_context_ids: [1] })
+        await Promise.resolve()
+
+        expect(global.fetch).toHaveBeenCalledTimes(1)
+        document.getElementById('comments-popup').dataset.creativeId = '77'
+        resolveFirst({ ok: true })
+        await first
+        await second
+
+        expect(global.fetch).toHaveBeenCalledTimes(2)
+        expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+            '/creatives/42/update_contexts',
+            '/creatives/42/update_contexts'
+        ])
+        expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toEqual({ disabled_context_ids: [1] })
     })
 })

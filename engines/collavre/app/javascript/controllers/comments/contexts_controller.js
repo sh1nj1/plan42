@@ -14,6 +14,9 @@ export default class extends Controller {
     connect() {
         this.contexts = []
         this.canManage = false
+        this._activeCreativeId = null
+        this._contextLoadVersion = 0
+        this._contextSaveChain = Promise.resolve()
         this.draggingContextId = null
         this.listVisible = false
         this.handleContextListClose = this.handleContextListClose.bind(this)
@@ -22,6 +25,8 @@ export default class extends Controller {
     }
 
     disconnect() {
+        this._contextLoadVersion += 1
+        this._closeContextListPopup()
         this.element.removeEventListener('entity-list:close', this.handleContextListClose)
     }
 
@@ -30,38 +35,57 @@ export default class extends Controller {
     }
 
     async onPopupOpened({ creativeId }) {
+        if (String(creativeId) !== String(this._activeCreativeId)) {
+            this._resetContextState()
+            this._activeCreativeId = creativeId
+        }
         this._hasBeenManuallyToggled = false
         this.listVisible = false
         this._updateListVisibility()
-        await this.loadContexts()
+        await this.loadContexts(creativeId)
         this._bindPopupDragDetection()
     }
 
     onPopupClosed() {
-        this.contexts = []
-        this.canManage = false
-        if (this.hasListTarget) {
-            this.listTarget.innerHTML = ''
-        }
+        this._activeCreativeId = null
+        this._resetContextState()
         this._unbindPopupDragDetection()
     }
 
-    async loadContexts() {
-        const creativeId = this.creativeId
+    _resetContextState() {
+        this._contextLoadVersion += 1
+        this._closeContextListPopup()
+        this.contexts = []
+        this.canManage = false
+        this._selfContextDisabled = false
+        if (this.hasListTarget) {
+            this.listTarget.innerHTML = ''
+        }
+        if (this.hasAddButtonTarget) this.addButtonTarget.style.display = 'none'
+    }
+
+    async loadContexts(creativeId = this.creativeId) {
         if (!creativeId) return
+        const loadVersion = ++this._contextLoadVersion
 
         try {
             const response = await fetch(`/creatives/${creativeId}/contexts`)
             if (response.ok) {
                 const data = await response.json()
+                if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
                 this.contexts = data.contexts || []
                 this.canManage = data.can_manage || false
                 this._selfContextDisabled = data.disabled_self_context || false
                 this.renderContexts()
             }
         } catch (e) {
+            if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
             console.error("Failed to load contexts", e)
         }
+    }
+
+    _isCurrentContextLoad(loadVersion, creativeId) {
+        return loadVersion === this._contextLoadVersion && String(creativeId) === String(this.creativeId)
     }
 
     toggleVisibility() {
@@ -192,6 +216,15 @@ export default class extends Controller {
         return modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
     }
 
+    _closeContextListPopup() {
+        const modal = this.element.querySelector(`#${CONTEXT_LIST_MODAL_ID}`)
+        const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+        popup?.close()
+        modal?.remove()
+        this._contextListToggleGuard?.cancel()
+        this.setContextListButtonExpanded(false)
+    }
+
     openContextListPopup(event) {
         if (this.contextListToggleGuard.consume()) return
 
@@ -224,6 +257,7 @@ export default class extends Controller {
         modal.className = 'common-popup'
         modal.style.display = 'none'
         modal.dataset.controller = 'entity-list'
+        modal.dataset.closeLabel = this.element.dataset.closeLabel || ''
         modal.innerHTML = `
           <button type="button" class="popup-close-btn" data-entity-list-target="close">&times;</button>
           <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
@@ -485,10 +519,16 @@ export default class extends Controller {
         await this._patchContexts({ disabled_context_ids: disabledIds })
     }
 
-    async _patchContexts(params) {
+    _patchContexts(params) {
         const creativeId = this.creativeId
-        if (!creativeId) return
+        if (!creativeId) return Promise.resolve()
 
+        const save = () => this._sendContextPatch(creativeId, params)
+        this._contextSaveChain = this._contextSaveChain.then(save, save)
+        return this._contextSaveChain
+    }
+
+    async _sendContextPatch(creativeId, params) {
         try {
             const response = await fetch(`/creatives/${creativeId}/update_contexts`, {
                 method: 'PATCH',
