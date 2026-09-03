@@ -150,6 +150,21 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('false')
     })
 
+    test('routes popup selection through the participant-list handler', () => {
+	controller.participantsData = USERS
+	const modal = document.createElement('div')
+	modal.id = 'participant-list-modal'
+	controller.element.appendChild(modal)
+	const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+	jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+	const select = jest.spyOn(controller, 'selectParticipantListItem').mockImplementation(() => {})
+
+	controller.openParticipantListPopup(anchorEvent())
+	popup.openForItems.mock.calls[0][2]({ id: 1 })
+
+	expect(select).toHaveBeenCalledWith({ id: 1 })
+    })
+
     test('ignores close events from another popup sharing the entity-list controller', () => {
         controller.setParticipantListButtonExpanded(true)
         const other = document.createElement('div')

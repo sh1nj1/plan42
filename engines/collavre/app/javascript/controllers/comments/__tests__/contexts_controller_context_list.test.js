@@ -158,6 +158,20 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
         expect(controller.listButtonTarget.getAttribute('aria-expanded')).toBe('false')
     })
 
+    test('routes popup selection through the context-list handler', () => {
+	const modal = document.createElement('div')
+	modal.id = 'context-list-modal'
+	controller.element.appendChild(modal)
+	const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+	jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+	const select = jest.spyOn(controller, 'selectContextListItem').mockReturnValue(true)
+
+	controller.openContextListPopup(anchorEvent())
+	popup.openForItems.mock.calls[0][2]({ id: 'self' })
+
+	expect(select).toHaveBeenCalledWith({ id: 'self' })
+    })
+
     test('ignores close events from another popup sharing the entity-list controller', () => {
         controller.setContextListButtonExpanded(true)
         const other = document.createElement('div')
@@ -244,6 +258,17 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
 
         expect(keepOpen).toBe(true)
         expect(controller.contexts[0].disabled).toBe(true)
+    })
+
+    test('routes chip clicks through the shared context toggle', () => {
+	const target = document.createElement('span')
+	const currentTarget = document.createElement('button')
+	currentTarget.dataset.contextId = '1'
+	const toggle = jest.spyOn(controller, 'toggleContextById')
+
+	controller.toggleContext({ target, currentTarget })
+
+	expect(toggle).toHaveBeenCalledWith('1')
     })
 
     test('selecting the self entry toggles the self context', () => {
