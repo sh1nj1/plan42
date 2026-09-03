@@ -4,6 +4,7 @@ import TouchDragHandler from '../../lib/touch_drag'
 import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
+import { elementAnchor } from '../../lib/common_popup'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
@@ -125,7 +126,7 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--popup')
   }
 
-  onPopupOpened({ creativeId }) {
+  onChatWillOpen({ creativeId }) {
     // Navigating the OPEN popup to another creative comes through here, not through
     // onPopupClosed() — PopupController#_navigateToEntry reuses open()/openForCreative().
     // Every piece of agent state below belongs to the chat being left: the poll is keyed
@@ -137,6 +138,10 @@ export default class extends Controller {
       this.resetParticipantState()
     }
     this.creativeId = creativeId
+  }
+
+  onPopupOpened({ creativeId }) {
+    this.onChatWillOpen({ creativeId })
     this.renderedAllTopicIds = null
     this.renderedAllIncludesLegacy = false
     this.loadParticipants(creativeId)
@@ -588,12 +593,12 @@ export default class extends Controller {
   openParticipantListPopup(event) {
     if (this.participantListToggleGuard.consume()) return
 
-    const btnRect = event.currentTarget.getBoundingClientRect()
+    const anchor = elementAnchor(event.currentTarget)
 
     const openWith = (popup) => {
       popup.openForItems(
         this.participantListItems(),
-        btnRect,
+        anchor,
         (item) => this.selectParticipantListItem(item),
         this.element
       )
@@ -644,7 +649,10 @@ export default class extends Controller {
       avatarUrl: user.avatar_url,
       iconKey: user.avatar_url ? null : 'user',
       // Offline reads the same here as it does on the avatar strip.
-      muted: present.indexOf(user.id) === -1
+      muted: present.indexOf(user.id) === -1,
+      statusLabel: present.indexOf(user.id) === -1
+        ? (this.element.dataset.participantOfflineText || 'Offline')
+        : (this.element.dataset.participantOnlineText || 'Online')
     }))
   }
 

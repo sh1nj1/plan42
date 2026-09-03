@@ -35,6 +35,9 @@ export default class extends CommonPopupController {
         this.inputTarget.setAttribute('aria-haspopup', 'listbox')
         this.inputTarget.setAttribute('aria-controls', this.listTarget.id)
         this.inputTarget.setAttribute('aria-expanded', 'false')
+        if (!this.inputTarget.getAttribute('aria-label') && this.inputTarget.placeholder) {
+            this.inputTarget.setAttribute('aria-label', this.inputTarget.placeholder)
+        }
         const closeLabel = this.element.dataset.closeLabel
         if (closeLabel) this.closeTarget.setAttribute('aria-label', closeLabel)
     }
@@ -56,8 +59,9 @@ export default class extends CommonPopupController {
         this.inputTarget.setAttribute('aria-expanded', 'true')
         if (this.isMobile()) {
             // Autofocusing the search box raises the virtual keyboard, which covers
-            // the very list the user just asked to see.
-            this._blurActiveElement()
+            // the very list the user just asked to see. Keep keyboard focus inside
+            // the popup without focusing a text field.
+            this.closeTarget.focus()
             return
         }
         requestAnimationFrame(() => this.inputTarget.focus())
@@ -78,13 +82,22 @@ export default class extends CommonPopupController {
         Array.from(this.listTarget.children).forEach((row, index) => {
             row.id = `${this.listTarget.id}-option-${encodeURIComponent(String(items[index]?.id ?? index))}`
             row.setAttribute('role', 'option')
+            if (items[index]?.actionable === false) row.setAttribute('aria-disabled', 'true')
+            else row.removeAttribute('aria-disabled')
         })
         this._syncActiveDescendant()
     }
 
     _syncActiveDescendant() {
         const rows = Array.from(this.listTarget.children)
-        rows.forEach((row, index) => row.setAttribute('aria-selected', String(index === this.popup.activeIndex)))
+        rows.forEach((row, index) => {
+            const item = this.popup.items[index]
+            if (Object.prototype.hasOwnProperty.call(item || {}, 'selected')) {
+                row.setAttribute('aria-selected', String(Boolean(item.selected)))
+            } else {
+                row.removeAttribute('aria-selected')
+            }
+        })
         const activeRow = rows[this.popup.activeIndex]
         if (activeRow) this.inputTarget.setAttribute('aria-activedescendant', activeRow.id)
         else this.inputTarget.removeAttribute('aria-activedescendant')
@@ -94,23 +107,26 @@ export default class extends CommonPopupController {
         return window.innerWidth <= 600
     }
 
-    _blurActiveElement() {
-        const active = document.activeElement
-        if (active && active !== document.body && typeof active.blur === 'function') active.blur()
-    }
-
     _onInput() {
         const q = this.inputTarget.value.toLowerCase().trim()
-        if (!q) { this.setItems(this._allItems); return }
-        this.setItems(this._allItems.filter(i => (i.label || '').toLowerCase().includes(q)))
+        const items = q
+            ? this._allItems.filter(i => (i.label || '').toLowerCase().includes(q))
+            : this._allItems
+        this.setItems(items)
+        this.popup?.reposition()
     }
 
     handleInputKeydown(event) {
+        if (event.key === 'Tab') {
+            this.close()
+            return
+        }
         if (this.handleKey(event)) return
         if (event.key === 'Escape') this.close()
     }
 
     select(item) {
+        if (item?.actionable === false) return
         const keepOpen = this.onSelectCallback ? this.onSelectCallback(item) : false
         if (keepOpen !== true) this.close()
     }
@@ -122,8 +138,11 @@ export default class extends CommonPopupController {
             ? `<img class="entity-list-item-avatar" src="${this._escape(item.avatarUrl)}" alt="">`
             : ''
         const badge = item.badge ? `<span class="entity-list-item-badge">${this._escape(item.badge)}</span>` : ''
+        const status = item.statusLabel
+            ? `<span class="entity-list-item-status">${this._escape(item.statusLabel)}</span>`
+            : ''
         const mutedClass = item.muted ? ' entity-list-item--muted' : ''
-        return `<span class="entity-list-item${mutedClass}">${avatar}${icon}<span class="entity-list-item-label">${label}</span>${badge}</span>`
+        return `<span class="entity-list-item${mutedClass}">${avatar}${icon}<span class="entity-list-item-label">${label}</span>${status}${badge}</span>`
     }
 
     _escape(value) {

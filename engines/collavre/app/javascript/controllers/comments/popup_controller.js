@@ -434,6 +434,9 @@ export default class extends Controller {
     // creative synchronously so a slow topic load cannot leave stale context
     // controls interactive under the new creative title.
     this.contextsController?.onChatWillOpen?.({ creativeId })
+    // Participant rows can insert mentions, so clear them before the same topic
+    // await rather than leaving the previous creative's popup interactive.
+    this.presenceController?.onChatWillOpen?.({ creativeId })
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID

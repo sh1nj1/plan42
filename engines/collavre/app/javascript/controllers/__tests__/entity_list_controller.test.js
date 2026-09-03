@@ -12,7 +12,7 @@ describe('EntityListController', () => {
         document.body.innerHTML = `
           <div id="entity-list-modal" class="common-popup" data-controller="entity-list" data-close-label="Close">
             <button data-entity-list-target="close">×</button>
-            <input data-entity-list-target="input">
+            <input data-entity-list-target="input" placeholder="Search entities...">
             <ul class="common-popup-list" data-popup-list data-entity-list-target="list"></ul>
           </div>
         `
@@ -53,16 +53,17 @@ describe('EntityListController', () => {
     })
 
     test('exposes combobox, listbox, option, and active-row semantics', () => {
-        controller.openForItems(ITEMS, RECT, () => {})
+        controller.openForItems(ITEMS.map((item, index) => ({ ...item, selected: index === 1 })), RECT, () => {})
         const rows = items()
 
         expect(controller.inputTarget.getAttribute('role')).toBe('combobox')
+        expect(controller.inputTarget.getAttribute('aria-label')).toBe('Search entities...')
         expect(controller.inputTarget.getAttribute('aria-expanded')).toBe('true')
         expect(controller.inputTarget.getAttribute('aria-controls')).toBe(controller.listTarget.id)
         expect(controller.listTarget.getAttribute('role')).toBe('listbox')
         expect(rows.every((row) => row.getAttribute('role') === 'option')).toBe(true)
         expect(controller.inputTarget.getAttribute('aria-activedescendant')).toBe(rows[0].id)
-        expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+        expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false'])
 
         controller.handleInputKeydown({ key: 'ArrowDown', preventDefault: jest.fn() })
 
@@ -95,12 +96,29 @@ describe('EntityListController', () => {
         expect(items()[2].querySelector('.entity-list-item--muted')).not.toBeNull()
     })
 
+    test('exposes localized item status text to assistive technology', () => {
+        controller.openForItems([{ id: 1, label: 'Ada', muted: true, statusLabel: 'Offline' }], RECT, () => {})
+
+        expect(items()[0].querySelector('.entity-list-item-status').textContent).toBe('Offline')
+    })
+
+    test('marks non-actionable options disabled and does not select them', () => {
+        const cb = jest.fn()
+        controller.openForItems([{ id: 1, label: 'Read only', actionable: false }], RECT, cb)
+
+        expect(items()[0].getAttribute('aria-disabled')).toBe('true')
+        controller.select(controller.popup.items[0])
+        expect(cb).not.toHaveBeenCalled()
+        expect(controller.popup.isOpen()).toBe(true)
+    })
+
     test('renders an avatar when the item carries one', () => {
         controller.openForItems([{ id: 9, label: 'Ada', avatarUrl: '/avatars/9.png' }], RECT, () => {})
         expect(items()[0].querySelector('.entity-list-item-avatar').getAttribute('src')).toBe('/avatars/9.png')
     })
 
     test('filters by label substring', () => {
+        const reposition = jest.spyOn(controller.popup, 'reposition')
         controller.openForItems(ITEMS, RECT, () => {})
         controller.inputTarget.value = 'alp'
         controller._onInput()
@@ -109,6 +127,7 @@ describe('EntityListController', () => {
         controller.inputTarget.value = 'nothing'
         controller._onInput()
         expect(items()).toHaveLength(0)
+        expect(reposition).toHaveBeenCalled()
     })
 
     test('updateItems keeps the current search and the active row', () => {
@@ -172,6 +191,18 @@ describe('EntityListController', () => {
         expect(controller.popup.isOpen()).toBe(false)
     })
 
+    test('Tab closes without selecting or preventing focus traversal', () => {
+        const cb = jest.fn()
+        const preventDefault = jest.fn()
+        controller.openForItems(ITEMS, RECT, cb)
+
+        controller.handleInputKeydown({ key: 'Tab', preventDefault })
+
+        expect(cb).not.toHaveBeenCalled()
+        expect(preventDefault).not.toHaveBeenCalled()
+        expect(controller.popup.isOpen()).toBe(false)
+    })
+
     describe('search-box focus', () => {
         const originalInnerWidth = window.innerWidth
         const setViewportWidth = (value) =>
@@ -185,7 +216,7 @@ describe('EntityListController', () => {
             expect(document.activeElement).toBe(controller.inputTarget)
         })
 
-        test('does not focus the search box on mobile widths', () => {
+        test('focuses the close button instead of the search box on mobile widths', () => {
             setViewportWidth(390)
             const chatInput = document.createElement('textarea')
             document.body.appendChild(chatInput)
@@ -193,7 +224,7 @@ describe('EntityListController', () => {
 
             controller.openForItems(ITEMS, RECT, () => {})
 
-            expect(document.activeElement).toBe(document.body)
+            expect(document.activeElement).toBe(controller.closeTarget)
         })
     })
 })

@@ -9,3 +9,5 @@ en:
       add_context: "Add context"
       context_list: "Context list"
       search_placeholder: "Search contexts..."
+      enabled: "Enabled"
+      disabled: "Disabled"

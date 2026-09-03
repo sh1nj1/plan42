@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
+import { elementAnchor } from '../../lib/common_popup'
 
 const CREATIVE_MIME_TYPE = 'application/x-collavre-creative'
 const CONTEXT_LIST_MODAL_ID = 'context-list-modal'
@@ -235,12 +236,12 @@ export default class extends Controller {
     openContextListPopup(event) {
         if (this.contextListToggleGuard.consume()) return
 
-        const btnRect = event.currentTarget.getBoundingClientRect()
+        const anchor = elementAnchor(event.currentTarget)
 
         const openWith = (popup) => {
             popup.openForItems(
                 this.contextListItems(),
-                btnRect,
+                anchor,
                 (item) => this.selectContextListItem(item),
                 this.element
             )
@@ -287,7 +288,10 @@ export default class extends Controller {
             id: SELF_CONTEXT_ID,
             label: this.currentCreativeSnippet || 'Self',
             iconKey: 'pin',
-            muted: this.selfContextDisabled
+            muted: this.selfContextDisabled,
+            selected: !this.selfContextDisabled,
+            actionable: this.canManage,
+            statusLabel: this.selfContextDisabled ? this.disabledContextLabel : this.enabledContextLabel
         }]
 
         this.contexts.forEach(ctx => items.push({
@@ -295,6 +299,9 @@ export default class extends Controller {
             label: ctx.description,
             iconKey: 'context',
             muted: Boolean(ctx.disabled),
+            selected: !ctx.disabled,
+            actionable: this.canManage,
+            statusLabel: ctx.disabled ? this.disabledContextLabel : this.enabledContextLabel,
             badge: ctx.inherited ? this.inheritedLabel : null
         }))
 
@@ -304,6 +311,7 @@ export default class extends Controller {
     // Selecting mirrors clicking the chip: it toggles the context on or off.
     // Returning true keeps the popup open so several can be toggled in a row.
     selectContextListItem(item) {
+        if (!this.canManage) return true
         if (String(item.id) === SELF_CONTEXT_ID) this.toggleSelfContext()
         else this.toggleContextById(item.id)
         return true
@@ -338,6 +346,14 @@ export default class extends Controller {
         return this.listTarget.dataset.navigateLabel || 'Go to creative'
     }
 
+    get enabledContextLabel() {
+        return this.element.dataset.contextEnabledText || 'Enabled'
+    }
+
+    get disabledContextLabel() {
+        return this.element.dataset.contextDisabledText || 'Disabled'
+    }
+
     get currentCreativeSnippet() {
         const popup = this.element.closest('#comments-popup')
         return popup?.querySelector('#comments-popup-title')?.textContent?.trim()
@@ -348,6 +364,7 @@ export default class extends Controller {
     }
 
     toggleSelfContext(event) {
+        if (!this.canManage) return
         this._selfContextDisabled = !this._selfContextDisabled
         this.renderContexts()
         this._saveSelfContextState()
@@ -371,6 +388,7 @@ export default class extends Controller {
     }
 
     toggleContextById(contextId) {
+        if (!this.canManage) return
         const id = parseInt(contextId)
         if (!id) return
 

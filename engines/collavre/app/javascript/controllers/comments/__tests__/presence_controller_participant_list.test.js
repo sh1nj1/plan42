@@ -21,6 +21,8 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         document.body.innerHTML = `
           <div id="comments-popup" data-controller="comments--presence"
                data-close-label="Close"
+               data-participant-online-text="Online"
+               data-participant-offline-text="Offline"
                data-participant-search-placeholder-text="Search users...">
             <div data-comments--presence-target="participants"></div>
             <button class="add-participant-btn" data-comments--presence-target="addParticipantButton" style="display:none;">+</button>
@@ -85,8 +87,14 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         controller.currentPresentIds = [1]
 
         expect(controller.participantListItems()).toEqual([
-            { id: 1, label: 'Ada', avatarUrl: '/avatars/1.png', iconKey: null, muted: false },
-            { id: 2, label: 'Grace', avatarUrl: '/avatars/2.png', iconKey: null, muted: true }
+            {
+                id: 1, label: 'Ada', avatarUrl: '/avatars/1.png', iconKey: null,
+                muted: false, statusLabel: 'Online'
+            },
+            {
+                id: 2, label: 'Grace', avatarUrl: '/avatars/2.png', iconKey: null,
+                muted: true, statusLabel: 'Offline'
+            }
         ])
     })
 
@@ -134,7 +142,7 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
 
         controller.openParticipantListPopup(anchorEvent())
         expect(popup.openForItems).toHaveBeenCalledWith(
-            expect.any(Array), expect.any(Object), expect.any(Function), controller.element
+            expect.any(Array), expect.any(Function), expect.any(Function), controller.element
         )
         expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('true')
 
@@ -242,6 +250,26 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(insertMention).not.toHaveBeenCalled()
     })
 
+    test('passes a live list-button anchor to the popup', () => {
+        const firstRect = { top: 10, left: 20, bottom: 30, right: 40 }
+        const secondRect = { top: 110, left: 120, bottom: 130, right: 140 }
+        const getRect = jest.spyOn(controller.participantListButtonTarget, 'getBoundingClientRect')
+            .mockReturnValueOnce(firstRect)
+            .mockReturnValue(secondRect)
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.openParticipantListPopup(anchorEvent())
+        const anchor = popup.openForItems.mock.calls[0][1]
+
+        expect(anchor()).toBe(firstRect)
+        expect(anchor()).toBe(secondRect)
+        expect(getRect).toHaveBeenCalledTimes(2)
+    })
+
     test('re-rendering refreshes an open popup so presence changes are reflected', () => {
         const modal = document.createElement('div')
         modal.id = 'participant-list-modal'
@@ -276,6 +304,23 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(controller.addParticipantButtonTarget.style.display).toBe('none')
         expect(controller.addParticipantButtonTarget.dataset.shareModalUrlParam).toBeUndefined()
         expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('preparing a creative switch clears stale participants before starting the next load', async () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+        controller.openParticipantListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        const loadParticipants = jest.spyOn(controller, 'loadParticipants')
+
+        controller.onChatWillOpen({ creativeId: '77' })
+
+        expect(controller.creativeId).toBe('77')
+        expect(document.getElementById('participant-list-modal')).toBeNull()
+        expect(controller.participantsData).toBeNull()
+        expect(controller.canShare).toBe(false)
+        expect(loadParticipants).not.toHaveBeenCalled()
     })
 
     test('closing an empty dock clears the previous creative share state', () => {

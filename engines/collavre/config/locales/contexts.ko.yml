@@ -9,3 +9,5 @@ ko:
       add_context: "컨텍스트 추가"
       context_list: "컨텍스트 목록"
       search_placeholder: "컨텍스트 검색..."
+      enabled: "활성화됨"
+      disabled: "비활성화됨"

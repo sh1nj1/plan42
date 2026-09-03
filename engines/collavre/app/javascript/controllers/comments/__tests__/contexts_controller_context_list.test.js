@@ -17,6 +17,8 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
           <div id="comments-popup" data-controller="comments--contexts"
                data-creative-id="42"
                data-close-label="Close"
+               data-context-enabled-text="Enabled"
+               data-context-disabled-text="Disabled"
                data-context-search-placeholder-text="Search contexts...">
             <h3 id="comments-popup-title">Current creative</h3>
             <button data-comments--contexts-target="toggleButton"></button>
@@ -91,9 +93,18 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
         ]
 
         expect(controller.contextListItems()).toEqual([
-            { id: 'self', label: 'Current creative', iconKey: 'pin', muted: true },
-            { id: 1, label: 'Alpha', iconKey: 'context', muted: false, badge: null },
-            { id: 2, label: 'Beta', iconKey: 'context', muted: true, badge: 'Inherited from parent' }
+            {
+                id: 'self', label: 'Current creative', iconKey: 'pin', muted: true,
+                selected: false, actionable: false, statusLabel: 'Disabled'
+            },
+            {
+                id: 1, label: 'Alpha', iconKey: 'context', muted: false,
+                selected: true, actionable: false, statusLabel: 'Enabled', badge: null
+            },
+            {
+                id: 2, label: 'Beta', iconKey: 'context', muted: true,
+                selected: false, actionable: false, statusLabel: 'Disabled', badge: 'Inherited from parent'
+            }
         ])
     })
 
@@ -139,7 +150,7 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
 
         controller.openContextListPopup(anchorEvent())
         expect(popup.openForItems).toHaveBeenCalledWith(
-            expect.any(Array), expect.any(Object), expect.any(Function), controller.element
+            expect.any(Array), expect.any(Function), expect.any(Function), controller.element
         )
         expect(controller.listButtonTarget.getAttribute('aria-expanded')).toBe('true')
 
@@ -226,6 +237,7 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
     })
 
     test('selecting a context toggles it and keeps the popup open', () => {
+        controller.canManage = true
         controller.contexts = [{ id: 1, description: 'Alpha', disabled: false, inherited: false }]
 
         const keepOpen = controller.selectContextListItem({ id: 1 })
@@ -235,10 +247,46 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
     })
 
     test('selecting the self entry toggles the self context', () => {
+        controller.canManage = true
         controller._selfContextDisabled = false
 
         expect(controller.selectContextListItem({ id: 'self' })).toBe(true)
         expect(controller.selfContextDisabled).toBe(true)
+    })
+
+    test('keeps context rows read-only when the user cannot manage contexts', () => {
+        controller.canManage = false
+        controller.contexts = [{ id: 1, description: 'Alpha', disabled: false, inherited: false }]
+        const save = jest.spyOn(controller, '_saveDisabledState')
+
+        expect(controller.selectContextListItem({ id: 1 })).toBe(true)
+        controller.toggleSelfContext()
+        controller.toggleContextById(1)
+
+        expect(controller.contexts[0].disabled).toBe(false)
+        expect(controller.selfContextDisabled).toBe(false)
+        expect(save).not.toHaveBeenCalled()
+        expect(controller.contextListItems().every((item) => item.actionable === false)).toBe(true)
+    })
+
+    test('passes a live list-button anchor to the popup', () => {
+        const firstRect = { top: 10, left: 20, bottom: 30, right: 40 }
+        const secondRect = { top: 110, left: 120, bottom: 130, right: 140 }
+        const getRect = jest.spyOn(controller.listButtonTarget, 'getBoundingClientRect')
+            .mockReturnValueOnce(firstRect)
+            .mockReturnValue(secondRect)
+        const modal = document.createElement('div')
+        modal.id = 'context-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.openContextListPopup(anchorEvent())
+        const anchor = popup.openForItems.mock.calls[0][1]
+
+        expect(anchor()).toBe(firstRect)
+        expect(anchor()).toBe(secondRect)
+        expect(getRect).toHaveBeenCalledTimes(2)
     })
 
     test('re-rendering refreshes an open popup so toggles are reflected', () => {
