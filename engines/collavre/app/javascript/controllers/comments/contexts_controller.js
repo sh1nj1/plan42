@@ -63,6 +63,7 @@ export default class extends Controller {
             this.listTarget.innerHTML = ''
         }
 	this._updateListVisibility()
+	if (this.hasToggleButtonTarget) this.toggleButtonTarget.style.display = 'none'
         if (this.hasAddButtonTarget) this.addButtonTarget.style.display = 'none'
     }
 

@@ -288,7 +288,20 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
         expect(controller.contexts).toEqual([])
 	expect(controller.listVisible).toBe(false)
 	expect(controller.barTarget.style.display).toBe('none')
+	expect(controller.toggleButtonTarget.style.display).toBe('none')
         expect(controller._contextLoadVersion).toBeGreaterThan(loadVersion)
+    })
+
+    test('shows the context toggle again after the next creative contexts load', async () => {
+	controller.onPopupClosed()
+	global.fetch.mockResolvedValueOnce({
+	    ok: true,
+	    json: async () => ({ contexts: [], can_manage: false })
+	})
+
+	await controller.onPopupOpened({ creativeId: '42' })
+
+	expect(controller.toggleButtonTarget.style.display).toBe('')
     })
 
     test('disconnecting invalidates pending loads and closes the list popup', () => {
