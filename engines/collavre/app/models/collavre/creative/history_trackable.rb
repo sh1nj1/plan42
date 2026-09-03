@@ -19,7 +19,43 @@ module Collavre
         end
       end
 
+      def archived?
+        archived_at.present?
+      end
+
+      def archive!
+        mutate_archive_family(archived_at: Time.current, operation: "archive")
+      end
+
+      def unarchive!
+        mutate_archive_family(archived_at: nil, operation: "unarchive")
+      end
+
       private
+
+      def mutate_archive_family(archived_at:, operation:)
+        affected_ids = []
+        self.class.transaction do
+          targets = archive_targets(archived_at)
+          affected_ids = targets.pluck(:id)
+          Creatives::History.record_bulk(targets, operation: operation) do
+            targets.update_all(archived_at: archived_at)
+          end
+          refresh_archive_parent_progress
+        end
+        CreativeTreeInvalidationJob.perform_later(affected_ids) if affected_ids.any?
+      end
+
+      def archive_targets(archived_at)
+        scope = self.class.where(id: archive_family_ids)
+        archived_at ? scope.where(archived_at: nil) : scope.where.not(archived_at: nil)
+      end
+
+      def refresh_archive_parent_progress
+        reload
+        parent&.reload
+        Creatives::ProgressService.new(parent).update_progress_from_children! if parent
+      end
 
       def record_change_history(&block)
         Creatives::History.capture(self, &block)
