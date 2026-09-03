@@ -78,11 +78,17 @@ describe('CreativeHistoryController', () => {
   test('applies a toast undo immediately when confirmation is omitted', async () => {
     delete button.dataset.confirm
     csrfFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: 'applied' }) })
+    const legacyRefresh = jest.fn()
+    const workspaceRefresh = jest.fn()
+    document.addEventListener('creative-sync:refetch', legacyRefresh, { once: true })
+    document.addEventListener('workspace-tree:invalidate', workspaceRefresh, { once: true })
 
     await controller.revert({ currentTarget: button })
 
     expect(confirmDialog).not.toHaveBeenCalled()
     expect(csrfFetch).toHaveBeenCalled()
+    expect(legacyRefresh).toHaveBeenCalled()
+    expect(workspaceRefresh).toHaveBeenCalled()
   })
 
   test('shows an error and re-enables the button when the request fails', async () => {

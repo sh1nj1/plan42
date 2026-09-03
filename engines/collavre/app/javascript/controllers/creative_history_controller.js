@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../lib/utils/dialog'
+import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 
 export default class extends Controller {
   async revert(event) {
@@ -20,7 +21,7 @@ export default class extends Controller {
 
       this.dispatch('applied', { detail: body })
       this.listController?.loadInitialComments()
-      window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete'))
+      invalidateCreativeTree()
     } catch (error) {
       await alertDialog(error.message)
       button.disabled = false

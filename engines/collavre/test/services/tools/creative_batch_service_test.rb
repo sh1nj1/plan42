@@ -67,6 +67,35 @@ module Collavre
         assert_not grandchild.reload.archived?
       end
 
+      test "undo restores linked shells propagated into a private tree" do
+        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root)
+        foreign_user = users(:two)
+        foreign_root = Creative.create!(description: "<p>Private tree</p>", user: foreign_user)
+        linked = Creative.create!(origin: child, user: foreign_user, parent: foreign_root)
+        Current.change_set = nil
+
+        result = CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+
+        assert result[:success]
+        assert linked.reload.archived?
+        assert_not_includes Creatives::PermissionFilter.new(user: @user).readable_ids([ linked.id ]), linked.id
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_equal "reverted", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+        assert_includes revert.change_set.creative_changes.pluck(:creative_id), linked.id
+
+        restore = Creatives::ChangeSetRestoreService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, restore.status
+        assert child.reload.archived?
+        assert linked.reload.archived?
+      end
+
       test "mixed operations in a single batch" do
         child = Creative.create!(description: "<p>Child</p>", user: @user, parent: @root)
         service = CreativeBatchService.new

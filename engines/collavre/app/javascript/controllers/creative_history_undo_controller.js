@@ -1,10 +1,11 @@
 import { Controller } from '@hotwired/stimulus'
+import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 
 export default class extends Controller {
   static values = { timeout: { type: Number, default: 30000 } }
 
   connect() {
-    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete'))
+    invalidateCreativeTree()
     this.timer = window.setTimeout(() => this.dismiss(), this.timeoutValue)
   }
 

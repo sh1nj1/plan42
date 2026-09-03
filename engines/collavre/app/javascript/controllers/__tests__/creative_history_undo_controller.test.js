@@ -8,12 +8,15 @@ import CreativeHistoryUndoController from '../creative_history_undo_controller'
 
 describe('CreativeHistoryUndoController', () => {
   let application
-  let treeRefresh
+  let legacyTreeRefresh
+  let workspaceTreeRefresh
 
   beforeEach(async () => {
     jest.useFakeTimers()
-    treeRefresh = jest.fn()
-    window.addEventListener('collavre:creative-drop-complete', treeRefresh)
+    legacyTreeRefresh = jest.fn()
+    workspaceTreeRefresh = jest.fn()
+    document.addEventListener('creative-sync:refetch', legacyTreeRefresh)
+    document.addEventListener('workspace-tree:invalidate', workspaceTreeRefresh)
     document.body.innerHTML = `
       <aside data-controller="creative-history-undo"
              data-creative-history-undo-timeout-value="30000">
@@ -26,13 +29,15 @@ describe('CreativeHistoryUndoController', () => {
 
   afterEach(() => {
     application.stop()
-    window.removeEventListener('collavre:creative-drop-complete', treeRefresh)
+    document.removeEventListener('creative-sync:refetch', legacyTreeRefresh)
+    document.removeEventListener('workspace-tree:invalidate', workspaceTreeRefresh)
     jest.useRealTimers()
     document.body.innerHTML = ''
   })
 
   test('dismisses itself after thirty seconds', () => {
-    expect(treeRefresh).toHaveBeenCalledTimes(1)
+    expect(legacyTreeRefresh).toHaveBeenCalledTimes(1)
+    expect(workspaceTreeRefresh).toHaveBeenCalledTimes(1)
     jest.advanceTimersByTime(30000)
 
     expect(document.querySelector('aside')).toBeNull()
