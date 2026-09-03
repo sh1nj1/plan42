@@ -189,13 +189,14 @@ source commits, then requires an explicit version that advances the current
 version and final confirmation before creating the version commit.
 
 It runs the desktop Rust and Rails test suites, creates the Apple-Silicon DMG,
-checks its code signature, submits and staples it with Apple notarization,
-writes a SHA-256 checksum, and only then creates a GitHub Release. The Git tag
-format is `desktop-v<semver>` and release notes are generated from bundled
-source commits since the preceding desktop tag. If publication fails after the
-version commit, rerun `script/release-desktop.sh --resume <version>` from that clean
-release checkout; it safely rebases an unpushed release commit onto current
-`origin/main` before rebuilding.
+writes a SHA-256 checksum, and only then creates a GitHub Release. By default it
+also checks the code signature and submits and staples the DMG with Apple
+notarization. The Git tag format is `desktop-v<semver>` and release notes are
+generated from bundled source commits since the preceding desktop tag. If
+publication fails after the version commit, rerun
+`script/release-desktop.sh --resume <version>` from that clean release checkout;
+it safely rebases an unpushed release commit onto current `origin/main` before
+rebuilding.
 
 Run it only from a clean, current `main` checkout on an Apple-Silicon Mac:
 
@@ -206,6 +207,19 @@ export APPLE_APP_SPECIFIC_PASSWORD='xxxx-xxxx-xxxx-xxxx'
 export APPLE_TEAM_ID='TEAMID'
 script/release-desktop.sh
 ```
+
+For developer-only distribution without an Apple Developer account, explicitly
+select the unsigned mode:
+
+```bash
+script/release-desktop.sh --unsigned
+```
+
+The unsigned asset is named
+`Collavre-Desktop_<version>_aarch64-unsigned.dmg`. Its release notes warn that
+macOS Gatekeeper will require the developer to right-click the app and choose
+Open on first launch. Resume an interrupted unsigned release with
+`script/release-desktop.sh --unsigned --resume <version>`.
 
 The release script defaults to a pinned, verified official Apple-Silicon Node
 archive. To use a different runtime archive, set both `NODE_RUNTIME_URL` and
