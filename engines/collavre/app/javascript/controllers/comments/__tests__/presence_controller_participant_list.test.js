@@ -323,6 +323,19 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(loadParticipants).not.toHaveBeenCalled()
     })
 
+    test('unsubscribes from the previous creative before assigning the next creative id', () => {
+        controller.creativeId = '42'
+        const creativeIdsAtUnsubscribe = []
+        jest.spyOn(controller, 'unsubscribe').mockImplementation(() => {
+            creativeIdsAtUnsubscribe.push(controller.creativeId)
+        })
+
+        controller.onChatWillOpen({ creativeId: '77' })
+
+        expect(creativeIdsAtUnsubscribe).toEqual(['42'])
+        expect(controller.creativeId).toBe('77')
+    })
+
     test('closing an empty dock clears the previous creative share state', () => {
         controller.participantsData = USERS
         controller.canShare = true

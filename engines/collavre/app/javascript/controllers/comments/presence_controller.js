@@ -134,6 +134,7 @@ export default class extends Controller {
     // carried-over id keeps a foreign task's indicator alive here, and the Stop button it
     // renders cancels a turn in a creative that is no longer on screen.
     if (this.creativeId !== undefined && String(creativeId) !== String(this.creativeId)) {
+      this.unsubscribe()
       this.resetAgentActivity()
       this.resetParticipantState()
     }
