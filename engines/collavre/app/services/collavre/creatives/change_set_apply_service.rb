@@ -22,7 +22,7 @@ module Collavre
           if conflicts.any?
             result(:conflict, conflicts: conflicts, skipped: skipped)
           elsif plan.empty?
-            result(:skipped, skipped: skipped)
+            complete_noop(source, skipped)
           else
             apply(source, plan, skipped)
           end
@@ -163,6 +163,13 @@ module Collavre
           reverts: @mode == :revert ? source : nil,
           applied_at: Time.current
         )
+      end
+
+      def complete_noop(source, skipped)
+        return result(:skipped, skipped: skipped) unless skipped.empty? && @complete
+
+        source.update!(status: "reverted") if @mode == :revert
+        result(:applied)
       end
 
       def apply_snapshot(creative, snapshot, archive_only: false)

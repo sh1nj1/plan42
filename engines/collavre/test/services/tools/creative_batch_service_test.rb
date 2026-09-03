@@ -111,6 +111,23 @@ module Collavre
         assert_not linked.reload.archived?
       end
 
+      test "undo succeeds when the entire propagated family was already restored" do
+        child, linked = create_private_linked_pair
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        Current.change_set = nil
+        child.unarchive!
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_nil revert.change_set
+        assert_equal "reverted", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+      end
+
       test "undo does not overwrite or expose an independently rearchived hidden shell" do
         child, linked = create_private_linked_pair
 

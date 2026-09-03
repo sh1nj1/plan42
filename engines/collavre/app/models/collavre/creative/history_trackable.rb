@@ -38,10 +38,11 @@ module Collavre
         self.class.transaction do
           targets = archive_targets(archived_at)
           affected_ids = targets.pluck(:id)
+          parent_ids = targets.where.not(parent_id: nil).distinct.pluck(:parent_id)
           Creatives::History.record_bulk(targets, operation: operation) do
             targets.update_all(archived_at: archived_at)
           end
-          refresh_archive_parent_progress
+          refresh_archive_parent_progress(parent_ids)
         end
         CreativeTreeInvalidationJob.perform_later(affected_ids) if affected_ids.any?
       end
@@ -51,10 +52,11 @@ module Collavre
         archived_at ? scope.where(archived_at: nil) : scope.where.not(archived_at: nil)
       end
 
-      def refresh_archive_parent_progress
+      def refresh_archive_parent_progress(parent_ids)
         reload
-        parent&.reload
-        Creatives::ProgressService.new(parent).update_progress_from_children! if parent
+        self.class.where(id: parent_ids).find_each do |affected_parent|
+          Creatives::ProgressService.new(affected_parent).update_progress_from_children!
+        end
       end
 
       def record_change_history(&block)
