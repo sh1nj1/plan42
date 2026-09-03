@@ -61,6 +61,7 @@ describe('EntityListController', () => {
         expect(controller.inputTarget.getAttribute('aria-expanded')).toBe('true')
         expect(controller.inputTarget.getAttribute('aria-controls')).toBe(controller.listTarget.id)
         expect(controller.listTarget.getAttribute('role')).toBe('listbox')
+        expect(controller.listTarget.getAttribute('aria-multiselectable')).toBe('true')
         expect(rows.every((row) => row.getAttribute('role') === 'option')).toBe(true)
         expect(controller.inputTarget.getAttribute('aria-activedescendant')).toBe(rows[0].id)
         expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false'])
@@ -69,6 +70,13 @@ describe('EntityListController', () => {
 
         expect(controller.inputTarget.getAttribute('aria-activedescendant')).toBe(rows[1].id)
         expect(rows.map((row) => row.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false'])
+    })
+
+    test('removes multiselect semantics when items do not expose selection state', () => {
+        controller.openForItems([{ id: 1, label: 'Alpha', selected: true }], RECT, () => {})
+        controller.updateItems(ITEMS)
+
+        expect(controller.listTarget.hasAttribute('aria-multiselectable')).toBe(false)
     })
 
     test('uses stable option ids across filtering', () => {

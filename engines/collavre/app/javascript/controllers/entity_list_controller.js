@@ -79,6 +79,11 @@ export default class extends CommonPopupController {
 
     setItems(items) {
         super.setItems(items)
+        const hasIndependentSelection = items.some((item) =>
+            Object.prototype.hasOwnProperty.call(item, 'selected')
+        )
+        if (hasIndependentSelection) this.listTarget.setAttribute('aria-multiselectable', 'true')
+        else this.listTarget.removeAttribute('aria-multiselectable')
         Array.from(this.listTarget.children).forEach((row, index) => {
             row.id = `${this.listTarget.id}-option-${encodeURIComponent(String(items[index]?.id ?? index))}`
             row.setAttribute('role', 'option')
