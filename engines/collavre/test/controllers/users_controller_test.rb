@@ -70,6 +70,30 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute @regular_user.reload.system_admin?
   end
 
+  test "system admin row actions preserve and clamp the user page" do
+    sign_in_as(@admin, password: "password")
+    (20 - User.count).times do |index|
+      User.create!(email: "page-filler-#{index}@example.com", password: "password", name: "Page Filler #{index}")
+    end
+    target = User.create!(email: "page-target@example.com", password: "password", name: "Page Target")
+    final_target = User.create!(email: "final-page-target@example.com", password: "password", name: "Final Page Target")
+    page_two = collavre.users_path(page: 2)
+
+    patch collavre.grant_system_admin_user_path(target, page: 2)
+    assert_redirected_to page_two
+    patch collavre.revoke_system_admin_user_path(target, page: 2)
+    assert_redirected_to page_two
+    patch collavre.lock_user_path(target, page: 2)
+    assert_redirected_to page_two
+    patch collavre.unlock_user_path(target, page: 2)
+    assert_redirected_to page_two
+
+    delete collavre.user_path(target, page: 2)
+    assert_redirected_to page_two
+    delete collavre.user_path(final_target, page: 2)
+    assert_redirected_to collavre.users_path
+  end
+
   test "system admin cannot delete themselves" do
     sign_in_as(@admin, password: "password")
 

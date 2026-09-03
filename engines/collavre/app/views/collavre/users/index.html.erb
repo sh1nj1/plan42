@@ -61,30 +61,30 @@
             <% if user != Current.user %>
               <% if user.system_admin? %>
                 <%= button_to t('collavre.users.make_normal_user'),
-                              collavre.revoke_system_admin_user_path(user),
+                              collavre.revoke_system_admin_user_path(user, page: @user_page),
                               method: :patch,
                               class: 'btn btn-xs btn-secondary' %>
               <% else %>
                 <%= button_to t('collavre.users.make_system_admin'),
-                              collavre.grant_system_admin_user_path(user),
+                              collavre.grant_system_admin_user_path(user, page: @user_page),
                               method: :patch,
                               class: 'btn btn-xs btn-success',
                               form: { data: { turbo_confirm: t('collavre.users.confirm_grant_system_admin') } } %>
               <% end %>
               <% if user.locked? %>
                 <%= button_to t('collavre.users.unlock.button'),
-                              collavre.unlock_user_path(user),
+                              collavre.unlock_user_path(user, page: @user_page),
                               method: :patch,
                               class: 'btn btn-xs btn-secondary' %>
               <% else %>
                 <%= button_to t('collavre.users.lock.button'),
-                              collavre.lock_user_path(user),
+                              collavre.lock_user_path(user, page: @user_page),
                               method: :patch,
                               class: 'btn btn-xs btn-danger',
                               form: { data: { turbo_confirm: t('collavre.users.lock.confirm') } } %>
               <% end %>
               <%= button_to t('collavre.users.delete'),
-                            collavre.user_path(user),
+                            collavre.user_path(user, page: @user_page),
                             method: :delete,
                             class: 'btn btn-xs btn-danger',
                             form: { data: { turbo_confirm: t('collavre.users.confirm_destroy') } } %>

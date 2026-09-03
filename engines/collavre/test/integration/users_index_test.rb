@@ -56,6 +56,24 @@ class UsersIndexTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", users_path(page: 1), text: I18n.t("collavre.users.pagination.prev")
   end
 
+  test "preserves the current page in row action forms" do
+    older_admin = User.create!(email: "older-admin@example.com", password: TEST_PASSWORD, name: "Older Admin", system_admin: true, created_at: 1.year.ago)
+    older_locked = User.create!(email: "older-locked@example.com", password: TEST_PASSWORD, name: "Older Locked", created_at: 2.years.ago)
+    older_locked.lock_account!
+    19.times do |index|
+      User.create!(email: "newer-user-#{index}@example.com", password: TEST_PASSWORD, name: "Newer User #{index}")
+    end
+
+    get users_path(page: 2)
+
+    assert_response :success
+    assert_select "form[action=?]", revoke_system_admin_user_path(older_admin, page: 2)
+    assert_select "form[action=?]", lock_user_path(older_admin, page: 2)
+    assert_select "form[action=?]", unlock_user_path(older_locked, page: 2)
+    assert_select "form[action=?]", grant_system_admin_user_path(older_locked, page: 2)
+    assert_select "form[action=?]", user_path(older_locked, page: 2)
+  end
+
   test "shows last login timestamp and inactive avatar count" do
     initial_inactive = User.left_outer_joins(:sessions).where(sessions: { id: nil }).count
 
