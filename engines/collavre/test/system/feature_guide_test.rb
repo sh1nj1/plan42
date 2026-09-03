@@ -34,11 +34,19 @@ class FeatureGuideTest < ApplicationSystemTestCase
     original_help_item ? registry.register(original_help_item) : registry.unregister(:help)
   end
 
-  test "the hub breadcrumb is visible" do
+  test "the hub home button is visible" do
     visit collavre.features_path
 
-    assert_selector "nav.feature-guide-breadcrumb"
-    assert_link I18n.t("collavre.features.nav.landing")
+    assert_selector ".feature-guide-back"
+    assert_link I18n.t("collavre.features.nav.back_home"), class: "landing-btn-ghost"
+  end
+
+  test "the hub offers a back button to the landing page" do
+    visit collavre.features_path
+
+    click_link I18n.t("collavre.features.nav.back_home")
+
+    assert_current_path collavre.landing_path(locale: I18n.locale)
   end
 
   test "a guide breadcrumb is visible and walks back to the hub" do
