@@ -105,7 +105,11 @@ module Collavre
     end
 
     def validate_destination_topic!(locked_topics, topic_id, target_origin)
-      return if locked_topics[topic_id]&.creative_id == target_origin.id
+      topic = locked_topics[topic_id]
+      if topic&.history?
+        raise MoveError, I18n.t("collavre.creative_history.read_only")
+      end
+      return if topic&.creative_id == target_origin.id
 
       raise MoveError, I18n.t("collavre.comments.move_invalid_topic", default: "Invalid topic")
     end

@@ -2,7 +2,7 @@ require "test_helper"
 
 module Collavre
   class CommentMoveServiceTest < ActiveSupport::TestCase
-    setup do
+  setup do
       @user = users(:one)
       @creative = creatives(:tshirt)
       Current.user = @user
@@ -170,6 +170,21 @@ module Collavre
       assert_equal source_topic.id, comment.topic_id
       assert_equal destination_creative.id, source_topic.reload.creative_id
       assert_equal @creative.id, target_topic.reload.creative_id
+    end
+
+    test "rejects moving comments into the read-only History topic" do
+      comment = @creative.comments.create!(content: "keep", user: @user)
+      original_topic_id = comment.topic_id
+      history = @creative.history_topic
+
+      error = assert_raises(CommentMoveService::MoveError) do
+        CommentMoveService.new(creative: @creative, user: @user).call(
+          comment_ids: [ comment.id ], target_topic_id: history.id
+        )
+      end
+
+      assert_equal I18n.t("collavre.creative_history.read_only"), error.message
+      assert_equal original_topic_id, comment.reload.topic_id
     end
   end
 end

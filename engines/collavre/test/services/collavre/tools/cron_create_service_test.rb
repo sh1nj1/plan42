@@ -127,6 +127,37 @@ module Collavre
         assert_match(/Topic 'Nonexistent Topic' not found/, result[:error])
       end
 
+      test "rejects the read-only History topic" do
+        history = @creative.history_topic
+
+        result = CronCreateService.new.call(
+          creative_id: @creative.id,
+          topic_name: history.name,
+          schedule: "0 9 * * *",
+          message: "Hidden history message"
+        )
+
+        assert_equal I18n.t("collavre.creative_history.read_only"), result[:error]
+        assert_empty SolidQueue::RecurringTask.where(static: false)
+      end
+
+      test "rechecks History status while creating the recurring task" do
+        history = @creative.history_topic
+        service = CronCreateService.new
+
+        result = service.stub(:resolve_topic, history) do
+          service.call(
+            creative_id: @creative.id,
+            topic_name: history.name,
+            schedule: "0 9 * * *",
+            message: "Racing history message"
+          )
+        end
+
+        assert_equal I18n.t("collavre.creative_history.read_only"), result[:error]
+        assert_empty SolidQueue::RecurringTask.where(static: false)
+      end
+
       test "generates unique keys" do
         result1 = CronCreateService.new.call(
           creative_id: @creative.id,

@@ -10,6 +10,8 @@ module Collavre
     before_action :require_creative_admin!, only: %i[update destroy move reorder]
     before_action :require_creative_write!, only: %i[create archive unarchive set_primary_agent]
 
+    include Collavre::Topics::ReservedTopicGuard
+
     def index
       is_owner = @creative.user == Current.user
       can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
@@ -115,10 +117,6 @@ module Collavre
 
     def destroy
       topic = @creative.topics.find(params[:id])
-
-      if topic.name == Creative::MAIN_TOPIC_NAME
-        render json: { error: I18n.t("collavre.topics.cannot_delete_main") }, status: :unprocessable_entity and return
-      end
 
       topic_id, topic_name = Topics::TopicDestroy.new(
         topic: topic, source_creative: @creative

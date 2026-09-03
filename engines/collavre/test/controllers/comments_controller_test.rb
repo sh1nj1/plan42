@@ -24,6 +24,128 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "History topic renders change sets and rejects comments" do
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: @creative, anchor_source: :explicit) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert", count: 1
+
+    assert_no_difference("Comment.count") do
+      post creative_comments_path(@creative),
+           params: { comment: { topic_id: history_topic.id, content: "not allowed" } }, as: :json
+    end
+    assert_response :forbidden
+    assert_equal I18n.t("collavre.creative_history.read_only"), response.parsed_body["error"]
+  end
+
+  test "linked Creatives use the origin History topic while preserving the linked history scope" do
+    linked = Collavre::Creative.create!(user: @user, origin: @creative)
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: linked, anchor_source: :explicit) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+
+    assert_equal history_topic, linked.history_topic
+    assert_nil linked.topics.find_by(name: Collavre::Creative::HISTORY_TOPIC_NAME)
+
+    get creative_comments_path(linked), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+  end
+
+  test "History rejects a foreign private linked placement whose origin is readable" do
+    foreign_parent = Collavre::Creative.create!(description: "Private", user: users(:two))
+    linked = Collavre::Creative.create!(user: users(:two), parent: foreign_parent, origin: @creative)
+    history_topic = @creative.history_topic
+
+    get creative_comments_path(linked), params: { topic_id: history_topic.id }
+
+    assert_response :forbidden
+  end
+
+  test "hard deletion is recorded without offering a lossy restore" do
+    child = Collavre::Creative.create!(description: "Disposable", user: @user, parent: @creative)
+    Collavre::Creatives::History.track(actor: @user, origin: :editor, anchor: @creative) { child.destroy! }
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert", count: 0
+    assert_select ".creative-history-state", text: I18n.t("collavre.creative_history.irreversible")
+  end
+
+  test "History topic paginates beyond the newest twenty change sets" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    sets = 21.times.map do |index|
+      change_set = Collavre::CreativeChangeSet.create!(
+        anchor_creative: @creative, anchor_source: "explicit", user: @user,
+        actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+      )
+      change_set.creative_changes.create!(
+        creative: @creative, operation: "update", before: snapshot,
+        after: snapshot.merge("description" => "Version #{index}"), position: 0
+      )
+      change_set
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+    assert_response :success
+    assert_select ".creative-history-item", count: 20
+    oldest_visible_id = sets.second.id
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id, before_id: oldest_visible_id }
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-list", count: 0
+    assert_select ".creative-history-item[data-change-set-id='#{sets.first.id}']", count: 1
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id, after_id: sets.last.id }
+    assert_response :success
+    assert_select ".creative-history-item", count: 0
+  end
+
+  test "History pagination scans past an invisible page" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    visible = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "explicit", user: @user,
+      actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+    )
+    visible.creative_changes.create!(
+      creative: @creative, operation: "update", before: snapshot,
+      after: snapshot.merge("description" => "Visible history"), position: 0
+    )
+    foreign = Collavre::Creative.create!(description: "Foreign", user: users(:two))
+    foreign_snapshot = Collavre::Creatives::History.snapshot(foreign)
+    20.times do |index|
+      hidden = Collavre::CreativeChangeSet.create!(
+        anchor_creative: @creative, anchor_source: "explicit", user: users(:two),
+        actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+      )
+      hidden.creative_changes.create!(
+        creative: @creative, operation: "update", before: snapshot,
+        after: snapshot, position: 0
+      ).update_columns(creative_id: foreign.id, previous_parent_id: @creative.id)
+      hidden.update_column(:summary, "Hidden #{index}")
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-item[data-change-set-id='#{visible.id}']", count: 1
+  end
+
   test "merge rejects comments from different topics" do
     first_topic = @creative.topics.create!(name: "First merge topic", user: @user)
     second_topic = @creative.topics.create!(name: "Second merge topic", user: @user)

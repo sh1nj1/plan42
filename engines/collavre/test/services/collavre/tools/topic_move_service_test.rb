@@ -229,6 +229,22 @@ module Collavre
         assert_equal @source.id, ordinary_system.reload.creative_id
       end
 
+      test "protects the system History topic while an ordinary History topic remains movable" do
+        ordinary = @source.topics.create!(name: Creative::HISTORY_TOPIC_NAME, user: @owner)
+        history = @source.history_topic
+
+        error = assert_raises(ArgumentError) do
+          TopicMoveService.new.call(topic_id: history.id, creative_id: @target.id)
+        end
+        assert_equal I18n.t("collavre.tools.topic_move.errors.reserved_topic"), error.message
+
+        result = TopicMoveService.new.call(topic_id: ordinary.id, creative_id: @target.id)
+
+        assert_equal @target.id, result[:creative_id]
+        assert_equal @target.id, ordinary.reload.creative_id
+        assert_equal @source.id, history.reload.creative_id
+      end
+
       test "rejects a live agent session topic" do
         @topic.update!(session_id: "session-1")
 

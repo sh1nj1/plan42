@@ -15,6 +15,7 @@ en:
       default_name_prefix: "Topic"
       branch_prefix: "Branch"
       main_name: "Main"
+      history_name: "History"
       cannot_delete_main: "Cannot delete the Main topic."
       reserved_name: "This topic name is reserved and cannot be assigned."
       orphaned_cron_notice: "[System] The topic '%{topic_name}' was deleted, but a recurring cron job (%{cron_key}) still targets it and will silently do nothing on each run. Original message: \"%{message}\". Re-point it to another topic or cancel it with cron_cancel."

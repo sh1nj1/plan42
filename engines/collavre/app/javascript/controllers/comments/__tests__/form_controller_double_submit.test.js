@@ -156,4 +156,18 @@ describe('FormController - double submit on slow API', () => {
     pressEnter(controller.textareaTarget)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
+
+  test('hides the composer while a read-only History topic is selected', () => {
+    controller.canComment = true
+    controller.readOnlyTopic = false
+    controller.updateFormVisibility()
+    expect(controller.formTarget.style.display).toBe('')
+
+    controller.handleTopicChange({
+      detail: { topicId: '99', readOnly: true, isInbox: false },
+    })
+
+    expect(controller.formTarget.style.display).toBe('none')
+    expect(controller.shouldAutoFocusOnOpen()).toBe(false)
+  })
 })

@@ -293,9 +293,11 @@ export default class extends Controller {
       this._awaitingEffectiveDraftKeyFor = null
     }
     this.currentTopicId = event.detail.topicId
+    this.readOnlyTopic = event.detail.readOnly || false
     this._isInbox = event.detail.isInbox || false
     this._systemTopicId = event.detail.systemTopicId || null
     this._mainTopicId = event.detail.mainTopicId || null
+    this.updateFormVisibility()
     this._updateInboxReplyMode()
   }
 
@@ -351,7 +353,8 @@ export default class extends Controller {
     // controller BEFORE topics loadTopics() dispatches comments--topics:change,
     // so by the time we get here, currentTopicId already reflects the new
     // creative's restored topic. Do not re-clear it.
-    this.formTarget.style.display = canComment ? '' : 'none'
+    this.canComment = canComment
+    this.updateFormVisibility()
     // Capture input entered while topics were loading before reset clears it.
     // Without a pending input timer, a blank textarea must not erase a draft
     // that is waiting in storage to be restored below.
@@ -414,7 +417,8 @@ export default class extends Controller {
   }
 
   setCommentPermission(canComment) {
-    this.formTarget.style.display = canComment ? '' : 'none'
+    this.canComment = canComment
+    this.updateFormVisibility()
 
     if (!canComment) {
       this._flushDraftSave()
@@ -436,8 +440,13 @@ export default class extends Controller {
   }
 
   shouldAutoFocusOnOpen() {
+    if (this.readOnlyTopic) return false
     if (window.innerWidth <= 768) return false
     return this.element.dataset.autoFocusOnOpen !== 'false'
+  }
+
+  updateFormVisibility() {
+    this.formTarget.style.display = this.canComment && !this.readOnlyTopic ? '' : 'none'
   }
 
   focusTextarea() {

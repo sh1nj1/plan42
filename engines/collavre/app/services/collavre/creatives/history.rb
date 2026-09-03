@@ -46,14 +46,16 @@ module Collavre
       end
 
       def record_bulk(creatives, operation:)
-        records = creatives.to_a
-        before = records.to_h { |creative| [ creative.id, locked_snapshot(creative) ] }
-        result = yield
-        records.each do |creative|
-          creative.reload
-          record(creative, operation: operation, before: before.fetch(creative.id), after: snapshot(creative))
+        records = creatives.to_a.sort_by(&:id)
+        Creative.transaction do
+          before = records.to_h { |creative| [ creative.id, locked_snapshot(creative) ] }
+          result = yield
+          records.each do |creative|
+            creative.reload
+            record(creative, operation: operation, before: before.fetch(creative.id), after: snapshot(creative))
+          end
+          result
         end
-        result
       end
 
       def record(creative, operation:, before:, after:)
@@ -72,19 +74,64 @@ module Collavre
         if change.new_record?
           change.before = before
           change.position = next_position(change_set)
-          change.previous_parent_id = before["parent_id"] if operation.to_s == "destroy"
+        end
+        if operation.to_s.in?(%w[destroy move])
+          change.previous_parent_id ||= change.before["parent_id"] || before["parent_id"]
         end
         change.after = after
         if change.persisted? && change.before == after
+          stale_blob_ids = change.history_file_attachments.pluck(:blob_id)
           change.destroy!
+          schedule_blob_purge_rechecks(stale_blob_ids)
           change_set.touch
           return
         end
         change.operation = merged_operation(change.operation, operation.to_s)
         change.conflict ||= {}
         change.save!
+        retain_snapshot_files!(change)
         change_set.touch
         change
+      end
+
+      def retain_snapshot_files!(change)
+        blobs = snapshot_signed_ids(change).filter_map do |signed_id|
+          ActiveStorage::Blob.find_signed(signed_id)
+        rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+          nil
+        end.uniq(&:id)
+        retained_ids = change.history_file_attachments.pluck(:blob_id)
+        stale_attachments = change.history_file_attachments.where.not(blob_id: blobs.map(&:id))
+        stale_blob_ids = stale_attachments.pluck(:blob_id)
+        stale_attachments.delete_all
+        schedule_blob_purge_rechecks(stale_blob_ids)
+        blobs.reject { |blob| retained_ids.include?(blob.id) }.each do |blob|
+          change.history_file_attachments.create!(name: "history_files", blob: blob)
+        end
+      end
+
+      def schedule_blob_purge_rechecks(blob_ids)
+        return if blob_ids.empty?
+
+        ActiveRecord.after_all_transactions_commit do
+          blob_ids.each { |blob_id| PurgeUnreferencedBlobJob.perform_later(blob_id) }
+        end
+      end
+
+      def snapshot_signed_ids(change)
+        [ change.before, change.after ].flat_map do |snapshot|
+          [ snapshot["description"], snapshot["markdown_source"] ].flat_map do |markup|
+            extract_signed_ids(markup)
+          end
+        end.uniq
+      end
+
+      def extract_signed_ids(markup)
+        return [] if markup.blank?
+
+        markup.to_s.scan(%r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/?#]+)}).flatten +
+          markup.to_s.scan(%r{/rails/active_storage/blobs/([^/?#]+)}).flatten +
+          markup.to_s.scan(%r{/public-assets/blobs/([^/?#]+)}).flatten
       end
 
       def snapshot(creative, persisted: false)

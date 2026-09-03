@@ -475,7 +475,7 @@ export default class extends Controller {
 
         const renderTopic = (topic) => {
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
-            const draggable = canManage ? 'draggable="true"' : ''
+            const draggable = canManage && !topic.read_only ? 'draggable="true"' : ''
             // agent_locked marks a live agent session topic, whose primary agent is
             // session identity rather than a routing pin — the server refuses to
             // change it, so the avatar must not offer to release it.
@@ -488,11 +488,12 @@ export default class extends Controller {
                 ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
                 : ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
+            const interactionActions = topic.read_only ? '' : `${dropActions} ${dragActions} ${topicDropActions}`
             let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
-                          data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}"
+                          data-action="click->comments--topics#select ${interactionActions}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
-                        ${agentAvatar}${branchIcon}#${topic.name}${unreadBadge}`
-            if (canManage && !isMainTopic) {
+                        ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${unreadBadge}`
+            if (canManage && !isMainTopic && !topic.read_only) {
                 s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
                 s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
@@ -1124,7 +1125,9 @@ export default class extends Controller {
         const id = event.currentTarget.dataset.id
 
         // If clicking on already active topic (not Main), show edit mode
-        if (id && String(this.currentTopicId) === String(id) && this.canManageTopics) {
+        const selectedTopic = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
+            .find(topic => String(topic.id) === String(id))
+        if (id && String(this.currentTopicId) === String(id) && this.canManageTopics && !selectedTopic?.read_only) {
             this.showEditInput(event.currentTarget, id)
             return
         }
@@ -1145,7 +1148,17 @@ export default class extends Controller {
             this.clearNewMessageBadge(id)
         }
         // Dispatch event
-        this.dispatch("change", { detail: { topicId: id, isInbox: this.isInbox, systemTopicId: this.systemTopicId, mainTopicId: this.mainTopicId } })
+        const topic = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
+            .find(candidate => String(candidate.id) === String(id))
+        this.dispatch("change", {
+            detail: {
+                topicId: id,
+                isInbox: this.isInbox,
+                systemTopicId: this.systemTopicId,
+                mainTopicId: this.mainTopicId,
+                readOnly: topic?.read_only || false,
+            },
+        })
     }
 
     showEditInput(topicEl, topicId) {

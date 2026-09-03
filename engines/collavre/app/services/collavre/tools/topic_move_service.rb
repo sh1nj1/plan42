@@ -83,8 +83,8 @@ module Tools
     end
 
     def reserved?(topic, target)
-      Topics::ReservedName.reserved?(topic.creative, topic.name) ||
-        Topics::ReservedName.reserved?(target, topic.name)
+      Topics::ReservedName.reserved_topic?(topic.creative, topic) ||
+        (target.inbox? && topic.name == Creative::SYSTEM_TOPIC_NAME)
     end
 
     def released_agent_payload(agent, reason, target)

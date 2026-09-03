@@ -128,6 +128,21 @@ describe('TopicsController create-button placement', () => {
     expect(document.querySelector('.add-topic-btn')).not.toBeNull()
   })
 
+  test('publishes the read-only state with History topic selection', () => {
+    const history = { id: 99, name: 'History', read_only: true }
+    controller.topics = [history]
+    controller.renderTopics([history], true, true)
+    const listener = jest.fn()
+    controller.element.addEventListener('comments--topics:change', listener)
+
+    controller.selectTopic(history.id)
+
+    expect(listener.mock.calls[0][0].detail).toMatchObject({
+      topicId: history.id,
+      readOnly: true,
+    })
+  })
+
   // Alt+Left/Right chat navigation switches creatives without blurring the input,
   // so a preserved draft would otherwise be posted to the wrong creative.
   test('drops an in-progress topic name when the creative changes', () => {

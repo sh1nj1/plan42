@@ -1,0 +1,88 @@
+<% unless pagination %><div class="creative-history-list" data-controller="creative-history"><% end %>
+  <% if change_sets.empty? && !pagination %>
+    <p class="creative-history-empty"><%= t("collavre.creative_history.empty") %></p>
+  <% end %>
+
+  <% change_sets.each do |change_set| %>
+    <% diff = Collavre::Creatives::ChangeSetDiff.new(change_set, user: Current.user) %>
+    <% groups = diff.groups %>
+    <% next if groups.empty? %>
+    <% additions = groups.sum { |group| group[:additions] } %>
+    <% deletions = groups.sum { |group| group[:deletions] } %>
+    <article class="creative-history-item" data-change-set-id="<%= change_set.id %>" data-controller="creative-history">
+      <header class="creative-history-header">
+        <%= render Collavre::AvatarComponent.new(user: change_set.user, size: 20, classes: "avatar") %>
+        <strong><%= change_set.user&.display_name || t("collavre.comments.system_user") %></strong>
+        <time title="<%= l(change_set.created_at.in_time_zone, format: :chat_timestamp) %>"
+              datetime="<%= change_set.created_at.iso8601 %>">
+          · <%= t("datetime.ago", time: time_ago_in_words(change_set.created_at)) %>
+        </time>
+      </header>
+
+      <p class="creative-history-summary">
+        <%= (diff.fully_visible? ? change_set.summary : nil).presence || t("collavre.creative_history.default_summary") %>
+      </p>
+      <p class="creative-history-stats">
+        <%= t("collavre.creative_history.changed_count", count: diff.change_count) %>
+        · <ins>+<%= additions %></ins> <del>−<%= deletions %></del>
+      </p>
+
+      <% groups.each do |group| %>
+        <details class="creative-history-diff">
+          <summary>
+            <%= group[:label] %>
+            <% if group[:moved] %><span class="creative-history-moved"><%= t("collavre.creative_history.moved") %></span><% end %>
+            <span>+<%= group[:additions] %> −<%= group[:deletions] %></span>
+          </summary>
+          <div class="creative-history-diff-modes">
+            <details open>
+              <summary><%= t("collavre.creative_history.inline") %></summary>
+              <pre class="creative-history-inline"><%= sanitize(group[:inline_html], tags: %w[ins del]) %></pre>
+            </details>
+            <details>
+              <summary><%= t("collavre.creative_history.split") %></summary>
+              <table class="creative-history-split">
+                <tbody>
+                  <% group[:split_rows].each do |row| %>
+                    <tr class="diff-<%= row[:action] == "=" ? "same" : "changed" %>">
+                      <td><%= row[:before] %></td>
+                      <td><%= row[:after] %></td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </details>
+          </div>
+        </details>
+      <% end %>
+
+      <% if change_set.status == "applied" && diff.revertible? %>
+        <button type="button"
+                class="creative-history-revert"
+                data-action="creative-history#revert"
+                data-url="<%= creative_apply_change_set_path(creative, change_set) %>"
+                data-mode="revert"
+                data-confirm="<%= t("collavre.creative_history.revert_confirm") %>"
+                data-conflict="<%= t("collavre.creative_history.conflict_choice") %>"
+                data-force="<%= t("collavre.creative_history.force") %>"
+                data-skip="<%= t("collavre.creative_history.skip") %>">
+          <%= t("collavre.creative_history.revert") %>
+        </button>
+      <% elsif change_set.status == "reverted" %>
+        <span class="creative-history-state"><%= t("collavre.creative_history.reverted") %></span>
+      <% elsif !diff.revertible? %>
+        <span class="creative-history-state"><%= t("collavre.creative_history.irreversible") %></span>
+      <% end %>
+      <% if diff.revertible? && change_set.status.in?(%w[applied reverted]) %>
+        <button type="button"
+                class="creative-history-restore"
+                data-action="creative-history#revert"
+                data-url="<%= creative_apply_change_set_path(creative, change_set) %>"
+                data-mode="restore"
+                data-confirm="<%= t("collavre.creative_history.restore_confirm") %>">
+          <%= t("collavre.creative_history.restore") %>
+        </button>
+      <% end %>
+    </article>
+  <% end %>
+<% unless pagination %></div><% end %>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_03_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_03_190000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -964,11 +964,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_180000) do
     t.integer "primary_agent_id"
     t.string "session_id"
     t.integer "source_topic_id"
+    t.string "system_kind"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["archived_at"], name: "index_topics_on_archived_at", where: "archived_at IS NOT NULL"
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
     t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
+    t.index ["creative_id", "system_kind"], name: "index_topics_on_creative_id_and_system_kind", unique: true
     t.index ["creative_id"], name: "index_topics_on_creative_id"
     t.index ["primary_agent_id", "session_id"], name: "index_topics_on_primary_agent_and_session"
     t.index ["primary_agent_id"], name: "index_topics_on_primary_agent_id"

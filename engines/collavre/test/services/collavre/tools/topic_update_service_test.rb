@@ -106,6 +106,22 @@ module Collavre
         assert system_named.archived?
       end
 
+      test "protects the system History topic while an ordinary History topic remains mutable" do
+        ordinary = @creative.topics.create!(name: Creative::HISTORY_TOPIC_NAME, user: @user)
+        history = @creative.history_topic
+
+        assert_raises(ArgumentError) do
+          TopicUpdateService.new.call(topic_id: history.id, archived: true)
+        end
+
+        result = TopicUpdateService.new.call(topic_id: ordinary.id, name: "Project history", archived: true)
+
+        assert_equal %w[name archived], result[:changed]
+        assert_equal "Project history", ordinary.reload.name
+        assert ordinary.archived?
+        assert_not history.reload.archived?
+      end
+
       test "an archived topic keeps its messages and stays readable" do
         Comment.create!(creative: @creative, topic: @topic, user: @user, content: "kept",
                         skip_default_user: true, skip_dispatch: true)

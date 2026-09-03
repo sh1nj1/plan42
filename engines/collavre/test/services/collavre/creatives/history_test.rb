@@ -5,6 +5,7 @@ require "test_helper"
 module Collavre
   module Creatives
     class HistoryTest < ActiveSupport::TestCase
+      include ActiveJob::TestHelper
       include ActiveSupport::Testing::TimeHelpers
 
       setup do
@@ -189,6 +190,129 @@ module Collavre
         assert_equal({}, change.after)
       end
 
+      test "retains blobs referenced by a historical snapshot" do
+        blob = ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new("historical file"),
+          filename: "history.txt",
+          content_type: "text/plain"
+        )
+        path = Rails.application.routes.url_helpers.rails_blob_path(blob, only_path: true)
+        @child.update!(description: %(<a href="#{path}">History file</a>))
+        CreativeChangeSet.delete_all
+
+        perform_enqueued_jobs do
+          History.track(actor: @user, origin: :editor, anchor: @root) do
+            @child.update!(description: "Removed attachment")
+          end
+        end
+
+        change = CreativeChange.sole
+        assert ActiveStorage::Blob.exists?(blob.id)
+        assert_equal [ blob.id ], change.history_file_attachments.pluck(:blob_id)
+
+        result = ChangeSetRevertService.new(change_set: change.change_set, user: @user).call
+        assert_equal :applied, result.status
+        assert_includes @child.reload.description, blob.signed_id
+        assert_includes @child.files.blobs, blob
+      end
+
+      test "rechecks blobs dropped from merged snapshot retention after commit" do
+        first_blob = create_blob("first.txt")
+        second_blob = create_blob("second.txt")
+        callbacks = []
+        capture_callback = ->(&callback) { callbacks << callback }
+
+        ActiveRecord.stub(:after_all_transactions_commit, capture_callback) do
+          History.track(actor: @user, origin: :editor, anchor: @root) do
+            @child.update!(description: blob_link(first_blob))
+            @child.update!(description: blob_link(second_blob))
+          end
+        end
+
+        assert_equal [ second_blob.id ], CreativeChange.sole.history_file_attachments.pluck(:blob_id)
+        assert_equal 1, callbacks.size
+        scheduled_blob_ids = []
+        PurgeUnreferencedBlobJob.stub(:perform_later, ->(blob_id) { scheduled_blob_ids << blob_id }) do
+          callbacks.sole.call
+        end
+        assert_equal [ first_blob.id ], scheduled_blob_ids
+      end
+
+      test "rechecks retained blobs when a merged change returns to its initial state" do
+        blob = create_blob("cancelled.txt")
+        callbacks = []
+        capture_callback = ->(&callback) { callbacks << callback }
+
+        ActiveRecord.stub(:after_all_transactions_commit, capture_callback) do
+          History.track(actor: @user, origin: :editor, anchor: @root) do
+            @child.update!(description: blob_link(blob))
+            @child.update!(description: "Child")
+          end
+        end
+
+        assert_empty CreativeChangeSet.all
+        assert_equal 1, callbacks.size
+        scheduled_blob_ids = []
+        PurgeUnreferencedBlobJob.stub(:perform_later, ->(blob_id) { scheduled_blob_ids << blob_id }) do
+          callbacks.sole.call
+        end
+        assert_equal [ blob.id ], scheduled_blob_ids
+      end
+
+      test "ignores invalid signed blob references in snapshots" do
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          @child.update!(description: '<a href="/public-assets/blobs/invalid/file.txt">Invalid</a>')
+        end
+
+        assert_empty CreativeChange.sole.history_file_attachments
+      end
+
+      test "keeps bulk snapshots and writes in one transaction" do
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          History.record_bulk([ @child ], operation: "reorder") do
+            assert Creative.connection.transaction_open?
+            @child.update_column(:sequence, 7)
+            raise ActiveRecord::Rollback
+          end
+        end
+
+        assert_not_equal 7, @child.reload.sequence
+        assert_empty CreativeChangeSet.all
+      end
+
+      test "retains the former parent when an existing change becomes a destroy" do
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          @child.update!(description: "Updated before deletion")
+          @child.destroy!
+        end
+
+        change = CreativeChange.sole
+        assert_equal "destroy", change.operation
+        assert_equal @root.id, change.previous_parent_id
+        assert_equal [ change.change_set ], CreativeChangeSet.for_creative_scope(@root).to_a
+      end
+
+      test "retains the former parent when a Creative moves to another tree" do
+        destination = Creative.create!(description: "Destination", user: @user)
+
+        History.track(actor: @user, origin: :editor, anchor: @root) do
+          @child.update!(parent: destination)
+        end
+
+        change = CreativeChange.find_by!(creative_id: @child.id)
+        assert_equal "move", change.operation
+        assert_equal @root.id, change.previous_parent_id
+        assert_includes CreativeChangeSet.for_creative_scope(@root), change.change_set
+      end
+
+      test "does not create a History topic when the deleted Creative was its own anchor" do
+        root = Creative.create!(description: "Deleted root", user: @user)
+
+        History.track(actor: @user, origin: :editor, anchor: root) { root.destroy! }
+
+        assert_nil Topic.find_by(creative_id: root.id, name: Creative::HISTORY_TOPIC_NAME)
+      end
+
       test "discards a change that returns to its initial state" do
         History.track(actor: @user, origin: :editor, anchor: @root) do
           @child.update!(description: "Temporary")
@@ -369,6 +493,17 @@ module Collavre
       end
 
       private
+
+      def create_blob(filename)
+        ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new(filename), filename: filename, content_type: "text/plain"
+        )
+      end
+
+      def blob_link(blob)
+        path = Rails.application.routes.url_helpers.rails_blob_path(blob, only_path: true)
+        %(<a href="#{path}">#{blob.filename}</a>)
+      end
 
       def track_editor_change(token, &block)
         History.track(

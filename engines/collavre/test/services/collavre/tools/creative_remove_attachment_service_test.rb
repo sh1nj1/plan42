@@ -17,12 +17,14 @@ module Collavre
       teardown { Current.user = nil }
 
       test "removes the attachment by signed_id" do
+        blob_id = @attachment.blob_id
         result = CreativeRemoveAttachmentService.new.call(
           creative_id: @creative.id,
           signed_id: @signed_id
         )
         assert result[:success]
         assert_equal 0, @creative.reload.files.count
+        assert_not ActiveStorage::Blob.exists?(blob_id)
       end
 
       test "strips the embedded node from the description and detaches" do

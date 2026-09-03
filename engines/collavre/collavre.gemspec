@@ -33,6 +33,7 @@ Gem::Specification.new do |spec|
 
   # Markdown rendering
   spec.add_dependency "commonmarker"           # GitHub-flavored Markdown to HTML
+  spec.add_dependency "diff-lcs"               # Word and line diffs for Creative history
 
   # Integrations
   spec.add_dependency "httparty"               # HTTP client for link previews and APIs
