@@ -115,7 +115,7 @@ module Collavre
           self.content_type_input = "html" if data&.dig("content_type") == "markdown"
           update!(description: stripped)
         else
-          detach_and_maybe_purge(attachment)
+          detach_and_maybe_purge(attachment, schedule_during_history: true)
         end
         true
       end
@@ -302,7 +302,7 @@ module Collavre
       # references it — a shared blob (description copied between creatives)
       # would otherwise be deleted out from under the others, 404-ing their
       # descriptions.
-      def detach_and_maybe_purge(attachment)
+      def detach_and_maybe_purge(attachment, schedule_during_history: false)
         blob = attachment.blob
         attachment.delete
         return if blob.nil?
@@ -313,9 +313,9 @@ module Collavre
                                    .exists?
         return if still_referenced
         return if ActiveStorage::Attachment.where(blob_id: blob.id).exists?
-        return if Creatives::History.recordable?
+        return if Creatives::History.recordable? && !schedule_during_history
 
-        PurgeUnreferencedBlobJob.perform_later(blob.id)
+        Creatives::History.schedule_blob_purge_rechecks([ blob.id ])
       end
 
       def purge_description_attachments
