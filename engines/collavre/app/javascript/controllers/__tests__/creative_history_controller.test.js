@@ -75,6 +75,16 @@ describe('CreativeHistoryController', () => {
     expect(button.disabled).toBe(false)
   })
 
+  test('applies a toast undo immediately when confirmation is omitted', async () => {
+    delete button.dataset.confirm
+    csrfFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: 'applied' }) })
+
+    await controller.revert({ currentTarget: button })
+
+    expect(confirmDialog).not.toHaveBeenCalled()
+    expect(csrfFetch).toHaveBeenCalled()
+  })
+
   test('shows an error and re-enables the button when the request fails', async () => {
     confirmDialog.mockResolvedValue(true)
     csrfFetch.mockResolvedValue({ ok: false, status: 422, json: async () => ({ message: 'Not allowed' }) })

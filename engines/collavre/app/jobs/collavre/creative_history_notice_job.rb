@@ -11,7 +11,7 @@ module Collavre
 
       diff = Creatives::ChangeSetDiff.new(change_set, user: user)
       creative = notice_creative(diff)
-      return unless creative && diff.revertible?
+      return unless creative && diff.revertible? && writable_change?(change_set, user)
 
       I18n.with_locale(user.locale.presence || I18n.default_locale) do
         apply_url = Engine.routes.url_helpers.creative_apply_change_set_path(creative, change_set)
@@ -29,6 +29,12 @@ module Collavre
     def notice_creative(diff)
       root_id = diff.groups.first&.fetch(:root_id)
       Creative.find_by(id: root_id) if root_id
+    end
+
+    def writable_change?(change_set, user)
+      ids = change_set.creative_changes.pluck(:creative_id)
+      writable_ids = Creatives::PermissionFilter.new(user: user).readable_ids(ids, min_permission: :write)
+      Creative.where(id: writable_ids).any? { |creative| !creative.read_only_source? }
     end
   end
 end

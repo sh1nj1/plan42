@@ -5,7 +5,7 @@ import { alertDialog, confirmDialog } from '../lib/utils/dialog'
 export default class extends Controller {
   async revert(event) {
     const button = event.currentTarget
-    if (!await confirmDialog(button.dataset.confirm, { danger: true })) return
+    if (button.dataset.confirm && !await confirmDialog(button.dataset.confirm, { danger: true })) return
 
     button.disabled = true
     try {

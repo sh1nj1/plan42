@@ -37,6 +37,20 @@ module Collavre
       assert true
     end
 
+    test "does not offer undo to a read-only viewer" do
+      owner = users(:one)
+      reader = users(:two)
+      agent = users(:ai_bot)
+      creative = Creative.create!(description: "Before", user: owner)
+      CreativeShare.create!(creative: creative, user: reader, shared_by: owner, permission: :read)
+      Current.set(user: agent) { creative.update!(description: "After") }
+
+      Turbo::StreamsChannel.stub(:broadcast_append_to, ->(*) { flunk "read-only viewers must not receive undo" }) do
+        CreativeHistoryNoticeJob.perform_now(CreativeChangeSet.sole.id, reader.id)
+      end
+      assert true
+    end
+
     test "renders an actionable undo toast" do
       user = users(:one)
       agent = users(:ai_bot)
