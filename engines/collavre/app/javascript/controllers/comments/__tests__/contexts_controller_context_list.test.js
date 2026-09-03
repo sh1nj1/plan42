@@ -275,6 +275,24 @@ describe('CommentsContextsController — pinned add/list buttons', () => {
         expect(controller.listButtonTarget.getAttribute('aria-expanded')).toBe('false')
     })
 
+    test('preparing a creative switch clears stale contexts without starting the next load', async () => {
+	controller._activeCreativeId = '42'
+	controller.contexts = [{ id: 1, description: 'Old context', disabled: false, inherited: false }]
+	controller.canManage = true
+	controller.renderContexts()
+	controller.openContextListPopup(anchorEvent())
+	await new Promise((resolve) => setTimeout(resolve, 0))
+	const loadContexts = jest.spyOn(controller, 'loadContexts')
+
+	controller.onChatWillOpen({ creativeId: '77' })
+
+	expect(controller._activeCreativeId).toBe('77')
+	expect(document.getElementById('context-list-modal')).toBeNull()
+	expect(controller.contexts).toEqual([])
+	expect(controller.canManage).toBe(false)
+	expect(loadContexts).not.toHaveBeenCalled()
+    })
+
     test('closing the chat clears context state and invalidates pending loads', () => {
         controller._activeCreativeId = '42'
         controller.contexts = [{ id: 1, description: 'Old context' }]

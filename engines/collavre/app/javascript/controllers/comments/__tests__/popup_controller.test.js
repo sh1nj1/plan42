@@ -829,6 +829,35 @@ describe('CommentsPopupController', () => {
         })
     })
 
+    test('clears stale contexts before awaiting topics and loads them after topics resolve', async () => {
+	let finishTopicsLoad
+	const topicsController = {
+	    clearOverrideTopicId: jest.fn(),
+	    currentTopicId: 'new-topic',
+	    onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+	}
+	const contextsController = {
+	    onChatWillOpen: jest.fn(),
+	    onPopupOpened: jest.fn(),
+	}
+	Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+	Object.defineProperty(controller, 'contextsController', { configurable: true, value: contextsController })
+
+	controller.openGeneration = 1
+	const pendingOpen = controller.notifyChildControllers({
+	    creativeId: '456', canComment: true, openGeneration: 1,
+	})
+	await Promise.resolve()
+
+	expect(contextsController.onChatWillOpen).toHaveBeenCalledWith({ creativeId: '456' })
+	expect(contextsController.onPopupOpened).not.toHaveBeenCalled()
+
+	finishTopicsLoad()
+	await pendingOpen
+
+	expect(contextsController.onPopupOpened).toHaveBeenCalledWith({ creativeId: '456' })
+    })
+
     test('logout submit clears popup size and chat drafts from localStorage', () => {
         window.localStorage.setItem('commentsPopupSize', '{"w":300}')
         window.localStorage.setItem('collavre_chat_drafts_9', '{"77":{"text":"x","updatedAt":1}}')

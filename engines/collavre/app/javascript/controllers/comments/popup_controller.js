@@ -430,6 +430,10 @@ export default class extends Controller {
       this.formController.currentTopicId = ''
       this.formController._mainTopicId = null
     }
+    // Switching creatives reuses the context controller. Clear its previous
+    // creative synchronously so a slow topic load cannot leave stale context
+    // controls interactive under the new creative title.
+    this.contextsController?.onChatWillOpen?.({ creativeId })
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID

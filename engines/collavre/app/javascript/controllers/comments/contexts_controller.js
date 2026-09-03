@@ -34,11 +34,15 @@ export default class extends Controller {
         return this.element.closest('#comments-popup')?.dataset?.creativeId
     }
 
-    async onPopupOpened({ creativeId }) {
+    onChatWillOpen({ creativeId }) {
         if (String(creativeId) !== String(this._activeCreativeId)) {
             this._resetContextState()
             this._activeCreativeId = creativeId
         }
+    }
+
+    async onPopupOpened({ creativeId }) {
+	this.onChatWillOpen({ creativeId })
         this._hasBeenManuallyToggled = false
         this.listVisible = false
         this._updateListVisibility()
