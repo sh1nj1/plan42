@@ -80,7 +80,9 @@ module Collavre
         end
         change.after = after
         if change.persisted? && change.before == after
+          stale_blob_ids = change.history_file_attachments.pluck(:blob_id)
           change.destroy!
+          schedule_blob_purge_rechecks(stale_blob_ids)
           change_set.touch
           return
         end

@@ -238,6 +238,27 @@ module Collavre
         assert_equal [ first_blob.id ], scheduled_blob_ids
       end
 
+      test "rechecks retained blobs when a merged change returns to its initial state" do
+        blob = create_blob("cancelled.txt")
+        callbacks = []
+        capture_callback = ->(&callback) { callbacks << callback }
+
+        ActiveRecord.stub(:after_all_transactions_commit, capture_callback) do
+          History.track(actor: @user, origin: :editor, anchor: @root) do
+            @child.update!(description: blob_link(blob))
+            @child.update!(description: "Child")
+          end
+        end
+
+        assert_empty CreativeChangeSet.all
+        assert_equal 1, callbacks.size
+        scheduled_blob_ids = []
+        PurgeUnreferencedBlobJob.stub(:perform_later, ->(blob_id) { scheduled_blob_ids << blob_id }) do
+          callbacks.sole.call
+        end
+        assert_equal [ blob.id ], scheduled_blob_ids
+      end
+
       test "ignores invalid signed blob references in snapshots" do
         History.track(actor: @user, origin: :editor, anchor: @root) do
           @child.update!(description: '<a href="/public-assets/blobs/invalid/file.txt">Invalid</a>')
