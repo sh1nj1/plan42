@@ -224,7 +224,9 @@ release_notes() {
     if release_is_unsigned; then
       printf '## Installation notice\n\n'
       printf 'This developer build is not code signed or notarized. '
-      printf 'On first launch, right-click the app and choose Open.\n\n'
+      printf 'On macOS 15 or later, first try to open the app, then go to '
+      printf 'System Settings > Privacy & Security and choose Open Anyway. '
+      printf 'On earlier macOS versions, right-click the app and choose Open.\n\n'
     fi
     printf '## Changes\n\n'
     git log --format='- %s (%h)' "$range"
@@ -455,6 +457,7 @@ publish_release() {
       # A failed upload can leave a draft with only one stale asset. Replace
       # both artifacts from this build before publishing so the checksum and
       # DMG always describe the same release output.
+      remove_opposite_mode_assets "$tag" "$version"
       gh release upload "$tag" "$artifact" "$checksum" --clobber
       publish_draft_release "$tag" "$version"
     fi
@@ -466,6 +469,23 @@ publish_release() {
   gh "${create_args[@]}"
   gh release upload "$tag" "$artifact" "$checksum" --clobber
   publish_draft_release "$tag" "$version"
+}
+
+remove_opposite_mode_assets() {
+  local tag="$1"
+  local version="$2"
+  local opposite_artifact assets asset
+
+  if release_is_unsigned; then
+    opposite_artifact="Collavre-Desktop_${version}_aarch64.dmg"
+  else
+    opposite_artifact="Collavre-Desktop_${version}_aarch64-unsigned.dmg"
+  fi
+  assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+  for asset in "$opposite_artifact" "${opposite_artifact}.sha256"; do
+    grep -Fqx -- "$asset" <<< "$assets" || continue
+    gh release delete-asset "$tag" "$asset" --yes
+  done
 }
 
 publish_draft_release() {

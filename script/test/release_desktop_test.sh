@@ -327,7 +327,7 @@ mkdir -p "$unsigned_notes_dir"
   UNSIGNED_RELEASE=1
   release_notes HEAD 2.3.4
 )
-grep -Fqx "This developer build is not code signed or notarized. On first launch, right-click the app and choose Open." \
+grep -Fqx "This developer build is not code signed or notarized. On macOS 15 or later, first try to open the app, then go to System Settings > Privacy & Security and choose Open Anyway. On earlier macOS versions, right-click the app and choose Open." \
   "$unsigned_notes_dir/release-notes.md"
 
 unsigned_desktop_dir="$fixture_dir/unsigned-desktop"
@@ -361,18 +361,36 @@ assert_equal "$unsigned_artifact_dir/Collavre-Desktop_2.3.4_aarch64-unsigned.dmg
 ARTIFACT_DIR="$artifact_dir"
 
 gh_log="$fixture_dir/gh.log"
+release_assets="$(printf '%s\n' \
+  'Collavre-Desktop_2.3.4_aarch64-unsigned.dmg' \
+  'Collavre-Desktop_2.3.4_aarch64-unsigned.dmg.sha256' \
+  'unrelated.txt')"
 gh() {
   printf '%s\n' "$*" >> "$gh_log"
   if [[ "$1 $2 $3" == "release view desktop-v2.3.4" ]]; then
-    if [[ "${4:-}" == "--json" ]]; then
+    if [[ "${5:-}" == "isDraft" ]]; then
       printf 'true\n'
+    elif [[ "${5:-}" == "assets" ]]; then
+      printf '%s\n' "$release_assets"
     fi
     return 0
   fi
 }
 publish_release "desktop-v2.3.4" "2.3.4" "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg"
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64-unsigned.dmg --yes" "$gh_log"
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64-unsigned.dmg.sha256 --yes" "$gh_log"
 grep -Fqx "release upload desktop-v2.3.4 $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256 --clobber" "$gh_log"
 grep -Fqx "release edit desktop-v2.3.4 --draft=false --title Collavre Desktop 2.3.4 --notes-file $artifact_dir/release-notes.md" "$gh_log"
+
+: > "$gh_log"
+release_assets="$(printf '%s\n' \
+  'Collavre-Desktop_2.3.4_aarch64.dmg' \
+  'Collavre-Desktop_2.3.4_aarch64.dmg.sha256')"
+UNSIGNED_RELEASE=1
+remove_opposite_mode_assets "desktop-v2.3.4" "2.3.4"
+UNSIGNED_RELEASE=0
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64.dmg --yes" "$gh_log"
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64.dmg.sha256 --yes" "$gh_log"
 
 ci_log="$fixture_dir/ci.log"
 gh() {

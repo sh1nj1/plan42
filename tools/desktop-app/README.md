@@ -217,8 +217,10 @@ script/release-desktop.sh --unsigned
 
 The unsigned asset is named
 `Collavre-Desktop_<version>_aarch64-unsigned.dmg`. Its release notes warn that
-macOS Gatekeeper will require the developer to right-click the app and choose
-Open on first launch. Resume an interrupted unsigned release with
+macOS Gatekeeper requires an explicit override. On macOS 15 or later, first
+attempt to open the app, then go to System Settings > Privacy & Security and
+choose Open Anyway. On earlier macOS versions, right-click the app and choose
+Open. Resume an interrupted unsigned release with
 `script/release-desktop.sh --unsigned --resume <version>`.
 
 The release script defaults to a pinned, verified official Apple-Silicon Node
