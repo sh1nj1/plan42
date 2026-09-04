@@ -126,8 +126,11 @@ export default class extends CommonPopupController {
             this.close()
             return
         }
-        if (this.handleKey(event)) return
-        if (event.key === 'Escape') this.close()
+	if (event.key === 'Escape') {
+	    this.close()
+	    return
+	}
+	this.handleKey(event)
     }
 
     select(item) {
