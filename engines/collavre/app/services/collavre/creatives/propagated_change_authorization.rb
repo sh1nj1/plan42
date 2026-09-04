@@ -3,6 +3,8 @@
 module Collavre
   module Creatives
     class PropagatedChangeAuthorization
+      ARCHIVE_ATTRIBUTES = %w[archived_at progress].freeze
+
       def initialize(changes:, records:, writable_source_ids:)
         @changes = changes
         @records = records
@@ -20,6 +22,7 @@ module Collavre
 
       def archive_attributes
         attributes = {}
+        visited_change_ids = Set.new
         source_ids = changes.filter_map do |change|
           change.creative_id if writable_source_ids.include?(change.creative_id) &&
             archive_transition?(change)
@@ -27,24 +30,32 @@ module Collavre
         family_ids = source_ids | source_ids.filter_map { |id| records[id]&.origin_id }.to_set
         loop do
           additions = changes.select do |change|
-            !attributes.key?(change.id) && archive_family_addition?(change, family_ids)
+            !visited_change_ids.include?(change.id) && archive_family_addition?(change, family_ids)
           end
           break if additions.empty?
 
           additions.each do |change|
-            attributes[change.id] = "archived_at"
+            visited_change_ids << change.id
             family_ids << change.creative_id
+            apply_attributes = archive_apply_attributes(change, source_ids)
+            attributes[change.id] = apply_attributes if apply_attributes
           end
         end
         attributes
       end
 
       def archive_family_addition?(change, family_ids)
-        return false unless transition_only?(change, "archived_at", %w[archive unarchive])
+        return false unless archive_transition?(change)
 
         creative = records[change.creative_id]
         family_ids.include?(change.creative_id) || family_ids.include?(creative&.origin_id) ||
           snapshot_parent_ids(change).any? { |parent_id| family_ids.include?(parent_id) }
+      end
+
+      def archive_apply_attributes(change, source_ids)
+        return if source_ids.include?(change.creative_id) && !change.archive_propagation_only?
+
+        ARCHIVE_ATTRIBUTES.select { |attribute| change.before[attribute] != change.after[attribute] }
       end
 
       def archive_transition?(change)

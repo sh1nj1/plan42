@@ -5,6 +5,7 @@ module Collavre
     self.table_name = "creative_changes"
 
     OPERATIONS = %w[create update move reorder archive unarchive destroy].freeze
+    ARCHIVE_PROPAGATION_KEYS = %w[archived_at progress].freeze
 
     belongs_to :change_set, class_name: "Collavre::CreativeChangeSet",
                             foreign_key: :creative_change_set_id,
@@ -23,9 +24,9 @@ module Collavre
     validates :operation, inclusion: { in: OPERATIONS }
     validates :creative_id, uniqueness: { scope: :creative_change_set_id }
 
-    def archival_only?
+    def archive_propagation_only?
       operation.in?(%w[archive unarchive]) && before["archived_at"] != after["archived_at"] &&
-        before.except("archived_at") == after.except("archived_at")
+        before.except(*ARCHIVE_PROPAGATION_KEYS) == after.except(*ARCHIVE_PROPAGATION_KEYS)
     end
 
     after_create_commit :ensure_history_topic

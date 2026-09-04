@@ -527,6 +527,50 @@ module Collavre
         assert hidden.reload.archived?
       end
 
+      test "merged archive and progress parent traverses to hidden descendants" do
+        source, hidden_parent, draft = hidden_descendant_archive_draft(nested_hidden: true)
+        hidden_child = hidden_parent.children.sole
+        parent_change = draft.creative_changes.find_by!(creative_id: hidden_parent.id)
+
+        assert_not_equal parent_change.before["progress"], parent_change.after["progress"]
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert source.reload.archived?
+        assert hidden_parent.reload.archived?
+        assert_equal 0.0, hidden_parent.progress
+        assert hidden_child.reload.archived?
+      end
+
+      test "force approval applies merged progress and archive to a changed read-only source" do
+        source_type = "review_archive_progress_test"
+        Creative.register_read_only_source(source_type)
+        child = Creative.create!(
+          description: "Synced child", user: @user, parent: @root, progress: 0,
+          data: { "source" => { "type" => source_type }, "ai_write_policy" => "review" }
+        )
+        task, agent = agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => child.id, "progress" => 1.0 },
+            { "action" => "delete", "id" => child.id }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        child.update_column(:description, "Newly synced content")
+
+        applied = Creatives::ChangeSetApplyService.new(
+          source: draft, user: @user, mode: :draft, resolutions: { child.id => "force" }
+        ).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert child.reload.archived?
+        assert_equal 1.0, child.progress
+        assert_equal "Newly synced content", child.description
+      ensure
+        Creative.read_only_source_types.delete(source_type) if source_type
+      end
+
       test "skipping a progress conflict also skips linked parent rollups" do
         child, linked = create_private_linked_pair(progress: 0)
         task, agent = review_agent_turn
@@ -859,13 +903,16 @@ module Collavre
         [ child, linked ]
       end
 
-      def hidden_descendant_archive_draft(update_before_delete: false)
+      def hidden_descendant_archive_draft(update_before_delete: false, nested_hidden: false)
         owner = users(:two)
         source = Creative.create!(
           description: "Shared source", user: owner,
           data: { "ai_write_policy" => "review" }
         )
-        hidden = Creative.create!(description: "Hidden descendant", user: owner, parent: source)
+        hidden = Creative.create!(
+          description: "Hidden descendant", user: owner, parent: source, progress: nested_hidden ? 1 : 0
+        )
+        Creative.create!(description: "Hidden leaf", user: owner, parent: hidden, progress: 1) if nested_hidden
         CreativeShare.create!(creative: source, user: @user, shared_by: owner, permission: :write)
         CreativeShare.create!(creative: hidden, user: @user, shared_by: owner, permission: :no_access)
         agent = users(:ai_bot)

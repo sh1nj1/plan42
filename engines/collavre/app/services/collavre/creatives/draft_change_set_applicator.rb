@@ -46,7 +46,7 @@ module Collavre
       def apply(creative, snapshot, attribute, change)
         remapped = remap_snapshot(snapshot)
         return apply_creation(remapped, change) unless creative
-        return creative.update!(attribute => remapped[attribute]) if attribute
+        return creative.update!(remapped.slice(*Array(attribute))) if attribute
 
         SnapshotAssignment.call(creative, remapped)
         creative.save!

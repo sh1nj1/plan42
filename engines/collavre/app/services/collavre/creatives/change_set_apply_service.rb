@@ -127,19 +127,19 @@ module Collavre
       end
 
       def classify_propagated_target(change, creative, snapshot, plan)
-        attribute = @propagated_attributes.fetch(change.id)
-        current_value = History.snapshot(creative)[attribute] if creative
-        return @resolved_change_ids << change.id if current_value == snapshot[attribute]
-        unless creative && current_value == change.public_send(source_snapshot_side)[attribute]
+        attributes = Array(@propagated_attributes.fetch(change.id))
+        current_values = History.snapshot(creative).slice(*attributes) if creative
+        return @resolved_change_ids << change.id if current_values == snapshot.slice(*attributes)
+        unless creative && current_values == change.public_send(source_snapshot_side).slice(*attributes)
           @complete = false unless @authorization_only
           return
         end
 
-        plan << [ creative, snapshot, attribute, change ]
+        plan << [ creative, snapshot, attributes, change ]
       end
 
       def target_writable?(creative, snapshot, records, writable_ids, change)
-        creative && (!creative.read_only_source? || change.archival_only?) && writable_ids.include?(creative.id) &&
+        creative && (!creative.read_only_source? || change.archive_propagation_only?) && writable_ids.include?(creative.id) &&
           (@authorization_only || target_parent_writable?(creative, snapshot, records, writable_ids))
       end
 
@@ -238,7 +238,7 @@ module Collavre
 
       def apply_snapshot(creative, snapshot, propagated_attribute: nil)
         return creative.update!(archived_at: Time.current) if snapshot.empty?
-        return creative.update!(propagated_attribute => snapshot[propagated_attribute]) if propagated_attribute
+        return creative.update!(snapshot.slice(*Array(propagated_attribute))) if propagated_attribute
 
         SnapshotAssignment.call(creative, snapshot)
         creative.save!
