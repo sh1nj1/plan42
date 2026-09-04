@@ -77,13 +77,20 @@ module Tools
           message: message, description: description
         )
       rescue StandardError => e
-        topic.destroy! if topic_created && !Crons::RecurringTopicTasks.new(topic.id).any?
+        topic.destroy! if topic_created && !recurring_topic_adopted?(topic)
         creation_error = e
         nil
       end
       raise creation_error if creation_error
 
       task
+    end
+
+    def recurring_topic_adopted?(topic)
+      Crons::RecurringTopicTasks.new(topic.id).any?
+    rescue StandardError => e
+      Rails.logger.warn("[CronCreateService] Failed to check topic #{topic.id} adoption: #{e.message}")
+      false
     end
 
     def persist_task(topic:, creative_id:, key:, schedule:, message:, description:)

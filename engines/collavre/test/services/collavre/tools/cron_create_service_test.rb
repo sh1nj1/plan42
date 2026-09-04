@@ -224,6 +224,31 @@ module Collavre
         assert_equal topic.id, adopted_task.arguments.first[:topic_id]
       end
 
+      test "removes a new topic and preserves the original error when the adoption check fails" do
+        checker = Object.new
+        checker.define_singleton_method(:any?) { raise "queue still unavailable" }
+        warning = nil
+
+        error = Rails.logger.stub(:warn, ->(message) { warning = message }) do
+          Crons::RecurringTopicTasks.stub(:new, checker) do
+            SolidQueue::RecurringTask.stub(:create!, ->(**) { raise "queue unavailable" }) do
+              assert_raises(RuntimeError) do
+                CronCreateService.new.call(
+                  creative_id: @creative.id,
+                  topic_name: "Unavailable Queue Topic",
+                  schedule: "0 9 * * *",
+                  message: "test"
+                )
+              end
+            end
+          end
+        end
+
+        assert_equal "queue unavailable", error.message
+        assert_nil @creative.topics.find_by(name: "Unavailable Queue Topic")
+        assert_match(/Failed to check topic .* adoption: queue still unavailable/, warning)
+      end
+
       test "rejects a missing reserved topic name" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,
