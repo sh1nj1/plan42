@@ -104,6 +104,26 @@ class CreativeHistoryPruneJobTest < ActiveJob::TestCase
     assert Collavre::CreativeChangeSet.exists?(candidate.id)
   end
 
+  test "limits locked candidate retention reranking to touched Creatives" do
+    candidate = create_change_set(creatives: [ @first ], created_at: 200.days.ago)
+    10.times { |index| create_change_set(creatives: [ @first ], created_at: (100 + index).days.ago) }
+    10.times { |index| create_change_set(creatives: [ @second ], created_at: (100 + index).days.ago) }
+    ranking_queries = []
+    callback = lambda do |_name, _start, _finish, _id, payload|
+      ranking_queries << payload if payload[:sql].include?("ROW_NUMBER() OVER")
+    end
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      Collavre::CreativeHistoryPruneJob.new.send(:still_prunable?, candidate)
+    end
+
+    query = ranking_queries.sole
+    bind_values = query.fetch(:binds).map { |bind| bind.value_for_database if bind.respond_to?(:value_for_database) }
+    assert_match(/creative_changes.*creative_id.*=/, query.fetch(:sql))
+    assert_includes bind_values, @first.id
+    refute_includes bind_values, @second.id
+  end
+
   test "is scheduled daily in every queue environment" do
     schedules = YAML.load_file(Rails.root.join("config/recurring.yml"), aliases: true)
 

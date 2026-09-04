@@ -31,10 +31,14 @@ module Collavre
     end
 
     def still_prunable?(change_set)
-      change_set.status == "applied" && change_set.origin != "revert" &&
-        (change_set.applied_at || change_set.created_at) < SystemSetting.creative_history_retention_days.days.ago &&
-        !CreativeChangeSet.exists?(reverts_id: change_set.id) &&
-        !CreativeChangeSet.where(id: retained_change_set_ids).exists?(id: change_set.id)
+      return false unless change_set.status == "applied" && change_set.origin != "revert"
+      return false unless (change_set.applied_at || change_set.created_at) < retention_cutoff
+      return false if CreativeChangeSet.exists?(reverts_id: change_set.id)
+
+      creative_ids = change_set.creative_changes.distinct.pluck(:creative_id)
+      scoped_retained_ids = retained_change_set_ids(creative_ids: creative_ids)
+
+      !CreativeChangeSet.where(id: scoped_retained_ids).exists?(id: change_set.id)
     end
 
     def prunable_change_sets
@@ -53,11 +57,17 @@ module Collavre
       CreativeChangeSet.where.not(reverts_id: nil).select(:reverts_id)
     end
 
-    def retained_change_set_ids
-      ranked = CreativeChange
+    def retention_cutoff
+      SystemSetting.creative_history_retention_days.days.ago
+    end
+
+    def retained_change_set_ids(creative_ids: nil)
+      changes = CreativeChange
         .joins(:change_set)
         .where(creative_change_sets: { status: "applied" })
         .where.not(creative_change_sets: { origin: "revert" })
+      changes = changes.where(creative_id: creative_ids) if creative_ids
+      ranked = changes
         .select(
           "creative_changes.creative_change_set_id, " \
           "ROW_NUMBER() OVER (" \
