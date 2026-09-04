@@ -115,16 +115,154 @@ module Collavre
         assert_equal "Creative not found", result[:error]
       end
 
-      test "rejects when topic_name not found" do
+      test "creates a missing topic and targets it" do
+        broadcast = nil
+
+        TopicsChannel.stub(:broadcast_to, ->(*args) { broadcast = args }) do
+          result = CronCreateService.new.call(
+            creative_id: @creative.id,
+            topic_name: "New Cron Topic",
+            schedule: "0 9 * * *",
+            message: "test"
+          )
+
+          assert result[:success]
+          task = SolidQueue::RecurringTask.find_by!(key: result[:key])
+          topic = @creative.topics.find_by!(name: "New Cron Topic")
+          assert_equal @user, topic.user
+          assert_equal topic.id, task.arguments.first[:topic_id]
+          assert_equal [ @creative, { action: "created", topic: topic.slice(:id, :name), user_id: @user.id } ], broadcast
+        end
+      end
+
+      test "does not create a missing topic for an invalid schedule" do
+        assert_no_difference -> { @creative.topics.count } do
+          result = CronCreateService.new.call(
+            creative_id: @creative.id,
+            topic_name: "Invalid Schedule Topic",
+            schedule: "not a valid schedule",
+            message: "test"
+          )
+
+          assert_match(/Invalid cron schedule/, result[:error])
+        end
+      end
+
+      test "keeps the cron successful when broadcasting a created topic fails" do
+        warning = nil
+        result = Rails.logger.stub(:warn, ->(message) { warning = message }) do
+          TopicsChannel.stub(:broadcast_to, ->(*) { raise "cable unavailable" }) do
+            CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: "Broadcast Failure Topic",
+              schedule: "0 9 * * *",
+              message: "test"
+            )
+          end
+        end
+
+        assert result[:success]
+        topic = @creative.topics.find_by!(name: "Broadcast Failure Topic")
+        task = SolidQueue::RecurringTask.find_by!(key: result[:key])
+        assert_equal topic.id, task.arguments.first[:topic_id]
+        assert_match(/Failed to broadcast created topic #{topic.id}: cable unavailable/, warning)
+      end
+
+      test "removes a newly created topic when recurring task creation fails" do
+        error = SolidQueue::RecurringTask.stub(:create!, ->(**) { raise "queue unavailable" }) do
+          assert_raises(RuntimeError) do
+            CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: "Task Failure Topic",
+              schedule: "0 9 * * *",
+              message: "test"
+            )
+          end
+        end
+
+        assert_equal "queue unavailable", error.message
+        assert_nil @creative.topics.find_by(name: "Task Failure Topic")
+      end
+
+      test "keeps an existing topic when recurring task creation fails" do
+        error = SolidQueue::RecurringTask.stub(:create!, ->(**) { raise "queue unavailable" }) do
+          assert_raises(RuntimeError) do
+            CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: @topic.name,
+              schedule: "0 9 * * *",
+              message: "test"
+            )
+          end
+        end
+
+        assert_equal "queue unavailable", error.message
+        assert @topic.reload
+      end
+
+      test "keeps a newly created topic adopted by a concurrent recurring task" do
+        original_create = SolidQueue::RecurringTask.method(:create!)
+        adopted_task = nil
+        broadcast = nil
+        failing_create = lambda do |**attributes|
+          adopted_task = original_create.call(**attributes.merge(key: "#{attributes[:key]}_adopted"))
+          raise "queue unavailable"
+        end
+
+        error = TopicsChannel.stub(:broadcast_to, ->(*args) { broadcast = args }) do
+          SolidQueue::RecurringTask.stub(:create!, failing_create) do
+            assert_raises(RuntimeError) do
+              CronCreateService.new.call(
+                creative_id: @creative.id,
+                topic_name: "Adopted Topic",
+                schedule: "0 9 * * *",
+                message: "test"
+              )
+            end
+          end
+        end
+
+        topic = @creative.topics.find_by!(name: "Adopted Topic")
+        assert_equal "queue unavailable", error.message
+        assert_equal topic.id, adopted_task.arguments.first[:topic_id]
+        assert_equal [ @creative, { action: "created", topic: topic.slice(:id, :name), user_id: @user.id } ], broadcast
+      end
+
+      test "removes a new topic and preserves the original error when the adoption check fails" do
+        checker = Object.new
+        checker.define_singleton_method(:any?) { raise "queue still unavailable" }
+        warning = nil
+
+        error = Rails.logger.stub(:warn, ->(message) { warning = message }) do
+          Crons::RecurringTopicTasks.stub(:new, checker) do
+            SolidQueue::RecurringTask.stub(:create!, ->(**) { raise "queue unavailable" }) do
+              assert_raises(RuntimeError) do
+                CronCreateService.new.call(
+                  creative_id: @creative.id,
+                  topic_name: "Unavailable Queue Topic",
+                  schedule: "0 9 * * *",
+                  message: "test"
+                )
+              end
+            end
+          end
+        end
+
+        assert_equal "queue unavailable", error.message
+        assert_nil @creative.topics.find_by(name: "Unavailable Queue Topic")
+        assert_match(/Failed to check topic .* adoption: queue still unavailable/, warning)
+      end
+
+      test "rejects a missing reserved topic name" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,
-          topic_name: "Nonexistent Topic",
+          topic_name: Creative::HISTORY_TOPIC_NAME,
           schedule: "0 9 * * *",
           message: "test"
         )
 
-        assert result[:error]
-        assert_match(/Topic 'Nonexistent Topic' not found/, result[:error])
+        assert_equal I18n.t("collavre.topics.reserved_name"), result[:error]
+        assert_nil @creative.topics.find_by(name: Creative::HISTORY_TOPIC_NAME)
       end
 
       test "rejects the read-only History topic" do
