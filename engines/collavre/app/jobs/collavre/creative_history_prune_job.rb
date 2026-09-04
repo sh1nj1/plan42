@@ -7,7 +7,7 @@ module Collavre
     def perform
       deleted = 0
       prunable_change_sets.find_each do |change_set|
-        change_set.destroy!
+        destroy_change_set(change_set)
         deleted += 1
       end
 
@@ -16,6 +16,15 @@ module Collavre
     end
 
     private
+
+    def destroy_change_set(change_set)
+      blob_ids = ActiveStorage::Attachment
+        .where(record: change_set.creative_changes, name: "history_files")
+        .distinct
+        .pluck(:blob_id)
+      change_set.destroy!
+      Creatives::History.schedule_blob_purge_rechecks(blob_ids)
+    end
 
     def prunable_change_sets
       CreativeChangeSet

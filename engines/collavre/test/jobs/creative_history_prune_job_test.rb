@@ -63,6 +63,29 @@ class CreativeHistoryPruneJobTest < ActiveJob::TestCase
     assert Collavre::CreativeChangeSet.exists?(revert.id)
   end
 
+  test "rechecks blobs retained only by pruned snapshots" do
+    prunable = create_change_set(creatives: [ @first ], created_at: 200.days.ago)
+    10.times { |index| create_change_set(creatives: [ @first ], created_at: (100 + index).days.ago) }
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("retained history file"),
+      filename: "history.txt",
+      content_type: "text/plain"
+    )
+    prunable.creative_changes.sole.history_file_attachments.create!(name: "history_files", blob: blob)
+    callbacks = []
+
+    ActiveRecord.stub(:after_all_transactions_commit, ->(&callback) { callbacks << callback }) do
+      assert_equal 1, perform_with_retention(count: 10, days: 7)
+    end
+
+    assert_empty ActiveStorage::Attachment.where(blob: blob)
+    scheduled_blob_ids = []
+    Collavre::PurgeUnreferencedBlobJob.stub(:perform_later, ->(blob_id) { scheduled_blob_ids << blob_id }) do
+      callbacks.sole.call
+    end
+    assert_equal [ blob.id ], scheduled_blob_ids
+  end
+
   test "is scheduled daily in every queue environment" do
     schedules = YAML.load_file(Rails.root.join("config/recurring.yml"), aliases: true)
 
