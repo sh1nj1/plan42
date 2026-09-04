@@ -25,6 +25,7 @@ module Collavre
         # LLM settings
         @llm_request_timeout_seconds = SystemSetting.llm_request_timeout_seconds
         @ai_agent_turn_deadline_seconds = SystemSetting.ai_agent_turn_deadline_seconds
+        load_creative_history_settings
 
         # Rate limiting settings
         @password_reset_rate_limit = SystemSetting.password_reset_rate_limit
@@ -95,26 +96,61 @@ module Collavre
         redirect_to collavre.admin_settings_path, notice: t("admin.settings.updated")
       rescue ActiveRecord::RecordInvalid => e
         flash.now[:alert] = e.record.errors.full_messages.join(", ")
+        restore_form_state
+        render :index, status: :unprocessable_entity
+      end
+
+      private
+
+      def restore_form_state
+        restore_access_form_state
+        restore_security_form_state
+        restore_rate_limit_form_state
+        restore_llm_form_state
+      end
+
+      def restore_access_form_state
         @help_link = params[:help_link]
         @mcp_tool_approval = params[:mcp_tool_approval] == "1"
         @creatives_login_required = params[:creatives_login_required] == "1"
         @home_page_path = params[:home_page_path]
         @home_page_path_authenticated = params[:home_page_path_authenticated]
+        @enabled_auth_providers = params[:auth_providers] || []
+      end
+
+      def restore_security_form_state
         @max_login_attempts = params[:max_login_attempts].to_i.positive? ? params[:max_login_attempts].to_i : SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS
         @lockout_duration_minutes = params[:lockout_duration_minutes].to_i.positive? ? params[:lockout_duration_minutes].to_i : SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES
         @password_min_length = [ [ params[:password_min_length].to_i, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max, 72 ].min
         @session_timeout_minutes = [ params[:session_timeout_minutes].to_i, 0 ].max
+      end
+
+      def restore_rate_limit_form_state
         @password_reset_rate_limit = params[:password_reset_rate_limit].to_i.positive? ? params[:password_reset_rate_limit].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_LIMIT
         @password_reset_rate_period_minutes = params[:password_reset_rate_period_minutes].to_i.positive? ? params[:password_reset_rate_period_minutes].to_i : SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES
         @api_rate_limit = params[:api_rate_limit].to_i.positive? ? params[:api_rate_limit].to_i : SystemSetting::DEFAULT_API_RATE_LIMIT
         @api_rate_period_minutes = params[:api_rate_period_minutes].to_i.positive? ? params[:api_rate_period_minutes].to_i : SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES
-        @llm_request_timeout_seconds = params[:llm_request_timeout_seconds].to_i.positive? ? params[:llm_request_timeout_seconds].to_i : SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
-        @ai_agent_turn_deadline_seconds = params[:ai_agent_turn_deadline_seconds].to_i.positive? ? params[:ai_agent_turn_deadline_seconds].to_i : SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS
-        @enabled_auth_providers = params[:auth_providers] || []
-        render :index, status: :unprocessable_entity
       end
 
-      private
+      def restore_llm_form_state
+        @llm_request_timeout_seconds = params[:llm_request_timeout_seconds].to_i.positive? ? params[:llm_request_timeout_seconds].to_i : SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
+        @ai_agent_turn_deadline_seconds = params[:ai_agent_turn_deadline_seconds].to_i.positive? ? params[:ai_agent_turn_deadline_seconds].to_i : SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS
+        @creative_history_retention_count = int_setting_value(
+          :creative_history_retention_count,
+          SystemSetting::DEFAULT_CREATIVE_HISTORY_RETENTION_COUNT,
+          min: SystemSetting::MIN_CREATIVE_HISTORY_RETENTION_COUNT
+        )
+        @creative_history_retention_days = int_setting_value(
+          :creative_history_retention_days,
+          SystemSetting::DEFAULT_CREATIVE_HISTORY_RETENTION_DAYS,
+          min: SystemSetting::MIN_CREATIVE_HISTORY_RETENTION_DAYS
+        )
+      end
+
+      def load_creative_history_settings
+        @creative_history_retention_count = SystemSetting.creative_history_retention_count
+        @creative_history_retention_days = SystemSetting.creative_history_retention_days
+      end
 
       # Maps each SystemSetting key to its normalized string value derived from
       # the request params. Collapses the previously repetitive per-setting
@@ -133,7 +169,17 @@ module Collavre
           "api_rate_limit" => int_setting(:api_rate_limit, SystemSetting::DEFAULT_API_RATE_LIMIT),
           "api_rate_period_minutes" => int_setting(:api_rate_period_minutes, SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES),
           "llm_request_timeout_seconds" => int_setting(:llm_request_timeout_seconds, SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS, min: 30),
-          "ai_agent_turn_deadline_seconds" => int_setting(:ai_agent_turn_deadline_seconds, SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS, min: 60)
+          "ai_agent_turn_deadline_seconds" => int_setting(:ai_agent_turn_deadline_seconds, SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS, min: 60),
+          "creative_history_retention_count" => int_setting(
+            :creative_history_retention_count,
+            SystemSetting::DEFAULT_CREATIVE_HISTORY_RETENTION_COUNT,
+            min: SystemSetting::MIN_CREATIVE_HISTORY_RETENTION_COUNT
+          ),
+          "creative_history_retention_days" => int_setting(
+            :creative_history_retention_days,
+            SystemSetting::DEFAULT_CREATIVE_HISTORY_RETENTION_DAYS,
+            min: SystemSetting::MIN_CREATIVE_HISTORY_RETENTION_DAYS
+          )
         }
       end
 
@@ -144,9 +190,13 @@ module Collavre
 
       # Integer param that falls back to a default when below the minimum floor.
       def int_setting(param_key, default, min: 1)
+        int_setting_value(param_key, default, min: min).to_s
+      end
+
+      def int_setting_value(param_key, default, min: 1)
         value = params[param_key].to_i
         value = default if value < min
-        value.to_s
+        value
       end
 
       def save_auth_providers!

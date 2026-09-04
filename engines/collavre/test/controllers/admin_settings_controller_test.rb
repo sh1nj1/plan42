@@ -82,6 +82,42 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
                  "below-floor values fall back to the default"
   end
 
+  test "creative history retention settings persist and enforce minimums" do
+    sign_in_as(@admin, password: "password")
+
+    patch collavre.admin_settings_path, params: {
+      creative_history_retention_count: 25,
+      creative_history_retention_days: 45,
+      auth_providers: [ "email" ]
+    }
+    assert_redirected_to collavre.admin_settings_path
+    Rails.cache.clear
+    assert_equal 25, SystemSetting.creative_history_retention_count
+    assert_equal 45, SystemSetting.creative_history_retention_days
+
+    patch collavre.admin_settings_path, params: {
+      creative_history_retention_count: 9,
+      creative_history_retention_days: 6,
+      auth_providers: [ "email" ]
+    }
+    assert_redirected_to collavre.admin_settings_path
+    Rails.cache.clear
+    assert_equal SystemSetting::DEFAULT_CREATIVE_HISTORY_RETENTION_COUNT,
+                 SystemSetting.creative_history_retention_count
+    assert_equal SystemSetting::DEFAULT_CREATIVE_HISTORY_RETENTION_DAYS,
+                 SystemSetting.creative_history_retention_days
+  end
+
+  test "creative history retention fields expose their minimums" do
+    sign_in_as(@admin, password: "password")
+
+    get collavre.admin_settings_path
+
+    assert_response :success
+    assert_select "input[name='creative_history_retention_count'][min='10'][value='50']"
+    assert_select "input[name='creative_history_retention_days'][min='7'][value='90']"
+  end
+
   test "update saves both home_page_path and home_page_path_authenticated" do
     sign_in_as(@admin, password: "password")
 
