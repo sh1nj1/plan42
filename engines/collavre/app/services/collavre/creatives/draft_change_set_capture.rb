@@ -79,8 +79,20 @@ module Collavre
 
         changes = change_set.creative_changes.order(:position).to_a
         payload[:change_set] = change_set.attributes.slice(*CHANGE_SET_KEYS)
-        payload[:changes] = changes.map { |change| change.attributes.slice(*CHANGE_KEYS) }
+        payload[:changes] = changes.map { |change| serialized_change(change) }
         payload[:blobs] = added_snapshot_blobs(changes)
+      end
+
+      def serialized_change(change)
+        attributes = change.attributes.slice(*CHANGE_KEYS)
+        return attributes if change.before.empty? || change.before["progress"] == change.after["progress"]
+
+        creative = Creative.unscoped.find_by(id: change.creative_id)
+        return attributes unless creative
+
+        target_ids = ProgressPropagationTargets.new(creative.effective_origin).call.map(&:id)
+        attributes["conflict"] = attributes.fetch("conflict", {}).merge("progress_target_ids" => target_ids)
+        attributes
       end
 
       def added_snapshot_blobs(changes)
@@ -146,6 +158,8 @@ module Collavre
         end
         previous_parent_id = attributes["previous_parent_id"]
         attributes["previous_parent_id"] = id_map.fetch(previous_parent_id, previous_parent_id) if previous_parent_id
+        target_ids = attributes.dig("conflict", "progress_target_ids")
+        attributes["conflict"]["progress_target_ids"] = target_ids.map { |id| id_map.fetch(id, id) } if target_ids
       end
 
       def rewrite_snapshot_strings!(changes, replacements)

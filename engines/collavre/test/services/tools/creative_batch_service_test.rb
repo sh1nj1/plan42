@@ -400,6 +400,70 @@ module Collavre
         assert_equal "rejected", draft.reload.status
       end
 
+      test "draft rejection preserves captured linked parents after a placement moves" do
+        child, linked = create_private_linked_pair(progress: 0)
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => child.id, "progress" => 1.0 }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        new_parent = Creative.create!(description: "New private parent", user: users(:two))
+        linked.update_column(:parent_id, new_parent.id)
+
+        rejected = Creatives::DraftChangeSetRejectService.new(
+          change_set: draft, user: @user, scope_creative: @root
+        ).call
+
+        assert_equal :rejected, rejected.status, rejected.skipped.inspect
+        assert_equal "rejected", draft.reload.status
+      end
+
+      test "skipping a conflicted move also skips both parent progress chains" do
+        @root.update!(data: @root.data.merge("ai_write_policy" => "review"))
+        source = Creative.create!(description: "Source", user: @user, parent: @root)
+        destination = Creative.create!(description: "Destination", user: @user, parent: @root)
+        moved = Creative.create!(description: "Moved", user: @user, parent: source, progress: 1)
+        task, agent = agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => moved.id, "parent_id" => destination.id }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        moved.update!(description: "Later human edit")
+
+        applied = Creatives::ChangeSetApplyService.new(
+          source: draft, user: @user, mode: :draft, resolutions: { moved.id => "skip" }
+        ).call
+
+        assert_equal :rejected, applied.status, applied.skipped.inspect
+        assert_equal 1.0, source.reload.progress
+        assert_equal 0.0, destination.reload.progress
+      end
+
+      test "approves archive-only changes for a read-only source" do
+        source_type = "review_archive_test"
+        Creative.register_read_only_source(source_type)
+        child = Creative.create!(
+          description: "Synced child", user: @user, parent: @root,
+          data: { "source" => { "type" => source_type }, "ai_write_policy" => "review" }
+        )
+        task, agent = agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert child.reload.archived?
+      ensure
+        Creative.read_only_source_types.delete(source_type) if source_type
+      end
+
       test "skipping a progress conflict also skips linked parent rollups" do
         child, linked = create_private_linked_pair(progress: 0)
         task, agent = review_agent_turn

@@ -78,10 +78,10 @@ module Collavre
         plan, conflicts, skipped = buckets
         creative = records[change.creative_id]
         return classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped) if draft_creation?(change, creative)
-        if propagated_target?(change) && !target_writable?(creative, snapshot, records, writable_ids)
+        if propagated_target?(change) && !target_writable?(creative, snapshot, records, writable_ids, change)
           return classify_propagated_target(change, creative, snapshot, plan)
         end
-        return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids)
+        return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids, change)
         return @resolved_change_ids << change.id if History.snapshot(creative) == snapshot
 
         if current_conflict?(creative, change) && resolution(change) != "force"
@@ -115,7 +115,7 @@ module Collavre
           next unless archival_transition?(change) || progress_transition?(change)
 
           creative = records[change.creative_id]
-          creative&.id if target_writable?(creative, @targets.fetch(change), records, writable_ids)
+          creative&.id if target_writable?(creative, @targets.fetch(change), records, writable_ids, change)
         end.to_set
         @propagated_attributes = PropagatedChangeAuthorization.new(
           changes: @targets.keys,
@@ -138,8 +138,8 @@ module Collavre
         plan << [ creative, snapshot, attribute, change ]
       end
 
-      def target_writable?(creative, snapshot, records, writable_ids)
-        creative && !creative.read_only_source? && writable_ids.include?(creative.id) &&
+      def target_writable?(creative, snapshot, records, writable_ids, change)
+        creative && (!creative.read_only_source? || change.archival_only?) && writable_ids.include?(creative.id) &&
           (@authorization_only || target_parent_writable?(creative, snapshot, records, writable_ids))
       end
 

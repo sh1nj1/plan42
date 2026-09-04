@@ -23,6 +23,11 @@ module Collavre
     validates :operation, inclusion: { in: OPERATIONS }
     validates :creative_id, uniqueness: { scope: :creative_change_set_id }
 
+    def archival_only?
+      operation.in?(%w[archive unarchive]) && before["archived_at"] != after["archived_at"] &&
+        before.except("archived_at") == after.except("archived_at")
+    end
+
     after_create_commit :ensure_history_topic
 
     private

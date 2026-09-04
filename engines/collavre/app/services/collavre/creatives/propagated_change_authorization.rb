@@ -43,7 +43,8 @@ module Collavre
           change.creative_id if writable_source_ids.include?(change.creative_id) &&
             change.before["progress"] != change.after["progress"]
         end.to_set
-        parent_ids = direct_parent_ids(source_ids) | linked_parent_ids(source_ids)
+        parent_ids = direct_parent_ids(source_ids) | linked_parent_ids(source_ids) |
+          captured_progress_target_ids(source_ids)
         loop do
           additions = parent_progress_additions(parent_ids, attributes)
           break if additions.empty?
@@ -63,6 +64,14 @@ module Collavre
 
           snapshot_parent_ids(change)
         end.compact.to_set
+      end
+
+      def captured_progress_target_ids(source_ids)
+        changes.flat_map do |change|
+          next [] unless source_ids.include?(change.creative_id)
+
+          Array(change.conflict&.fetch("progress_target_ids", nil))
+        end.to_set
       end
 
       def parent_progress_additions(parent_ids, attributes)

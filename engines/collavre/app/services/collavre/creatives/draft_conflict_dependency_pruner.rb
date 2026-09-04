@@ -72,9 +72,20 @@ module Collavre
       end
 
       def propagation_parent_ids(source_ids)
-        direct_ids = source_ids.filter_map { |id| records[id]&.parent_id }
+        direct_ids = source_ids.flat_map { |id| snapshot_parent_ids(changes_by_creative_id[id]) }
         linked_ids = Creative.where(origin_id: source_ids).where.not(parent_id: nil).distinct.pluck(:parent_id)
-        [ *direct_ids, *linked_ids ].to_set
+        captured_ids = source_ids.flat_map { |id| captured_progress_target_ids(changes_by_creative_id[id]) }
+        [ *direct_ids, *linked_ids, *captured_ids ].to_set
+      end
+
+      def snapshot_parent_ids(change)
+        return [] unless change
+
+        [ change.before["parent_id"], change.after["parent_id"] ].compact
+      end
+
+      def captured_progress_target_ids(change)
+        Array(change&.conflict&.fetch("progress_target_ids", nil))
       end
 
       def archival_transition?(change)
@@ -89,6 +100,10 @@ module Collavre
 
       def changes_by_id
         @changes_by_id ||= changes.index_by(&:id)
+      end
+
+      def changes_by_creative_id
+        @changes_by_creative_id ||= changes.index_by(&:creative_id)
       end
     end
   end
