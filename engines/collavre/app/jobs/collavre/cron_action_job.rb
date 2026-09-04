@@ -22,10 +22,7 @@ module Collavre
       end
 
       topic = topic_id.present? ? Topic.find_by(id: topic_id) : creative.main_topic(fallback_user: agent)
-      unless topic
-        Rails.logger.warn("[CronActionJob] Skipping: topic=#{topic_id} not found")
-        return
-      end
+      return unless usable_topic?(topic, topic_id)
 
       comment = create_comment(creative, topic, agent, message)
       return unless comment
@@ -65,6 +62,14 @@ module Collavre
     end
 
     private
+
+    def usable_topic?(topic, topic_id)
+      reason = topic ? "is read-only History" : "not found"
+      return true if topic && !topic.history?
+
+      Rails.logger.warn("[CronActionJob] Skipping: topic=#{topic&.id || topic_id} #{reason}")
+      false
+    end
 
     def create_comment(creative, topic, agent, message)
       comment = nil

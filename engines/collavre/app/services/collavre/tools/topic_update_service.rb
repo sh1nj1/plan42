@@ -122,7 +122,7 @@ module Tools
     end
 
     def reserved_topic?(topic)
-      Topics::ReservedName.reserved?(topic.creative, topic.name)
+      Topics::ReservedName.reserved_topic?(topic.creative, topic)
     end
 
     def set_archived(topic, archived)

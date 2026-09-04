@@ -59,6 +59,22 @@ module CollavreLinear
       assert applied, "job must call apply! on the InboundApplier"
     end
 
+    test "records actorless inbound writes as hidden sync history" do
+      creative = creatives(:tshirt)
+      applier = Object.new
+      applier.define_singleton_method(:apply!) { creative.update!(description: "Linear update") }
+
+      CollavreLinear::InboundApplier.stub(:new, ->(*) { applier }) do
+        CollavreLinear::InboundApplyJob.perform_now({ "action" => "update" })
+      end
+
+      change_set = Collavre::CreativeChangeSet.sole
+      assert_equal "sync", change_set.origin
+      assert_equal "sync", change_set.actor_kind
+      assert_nil change_set.anchor_creative_id
+      assert_empty Collavre::CreativeChangeSet.visible_by_default
+    end
+
     test "a transient ActiveRecord::Deadlocked re-enqueues (retry) instead of dropping the event" do
       # WebhooksController acks Linear (200) before this job runs, so a dropped
       # apply is never re-delivered. A transient deadlock must retry, not park.

@@ -17,6 +17,7 @@
     shell (_workspace_tree) so center-frame swaps never drop the subscription %>
 <% if authenticated? && !creative_workspace? %>
   <%= turbo_stream_from Current.user, :creative_tree %>
+  <div id="creative-history-toast-container" class="creative-history-toast-container"></div>
 <% end %>
 <% if @auto_fullscreen %>
   <% content_for :comments_popup_auto_fullscreen, "true" %>

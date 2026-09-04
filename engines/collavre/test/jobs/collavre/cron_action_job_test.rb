@@ -69,6 +69,19 @@ module Collavre
       end
     end
 
+    test "drops a persisted cron action targeting the read-only History topic" do
+      history = @creative.history_topic
+
+      assert_no_difference("Comment.count") do
+        CronActionJob.perform_now(
+          creative_id: @creative.id,
+          topic_id: history.id,
+          agent_id: @agent.id,
+          message: "Hidden scheduled message"
+        )
+      end
+    end
+
     test "drops an enqueued cron action whose topic moved" do
       destination = Creative.create!(description: "Cron destination", user: @user)
       Collavre::Topics::TopicMove.new(topic: @topic, target_creative: destination).call

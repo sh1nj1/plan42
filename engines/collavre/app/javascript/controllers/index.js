@@ -46,6 +46,8 @@ import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
 import AgentVendorController from "./agent_vendor_controller"
 import DesktopProxySetupController from "./desktop_proxy_setup_controller"
+import CreativeHistoryController from "./creative_history_controller"
+import CreativeHistoryUndoController from "./creative_history_undo_controller"
 
 // Export all controllers
 export {
@@ -90,7 +92,9 @@ export {
   GatewayCheckController,
   AgentConnectionController,
   AgentVendorController,
-  DesktopProxySetupController
+  DesktopProxySetupController,
+  CreativeHistoryController,
+  CreativeHistoryUndoController
 }
 
 // Registration function for use with a Stimulus application
@@ -141,4 +145,6 @@ export function registerControllers(application) {
   application.register("agent-connection", AgentConnectionController)
   application.register("agent-vendor", AgentVendorController)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
+  application.register("creative-history", CreativeHistoryController)
+  application.register("creative-history-undo", CreativeHistoryUndoController)
 }

@@ -21,6 +21,7 @@ module Collavre
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
+    include Collavre::Concerns::CreativeHistoryTrackable
 
     def index
       respond_to do |format|
@@ -301,15 +302,11 @@ module Collavre
         # Because if @creative is Linked, params might include origin_id.
         # Passing origin_id to the Origin creative causes it to fail validation (cannot changes if has origin)
         # or creates a self-cycle.
-        permitted.delete("origin_id")
-        permitted.delete(:origin_id)
+        permitted.except!("origin_id", :origin_id)
 
         success &&= base.update(permitted)
         if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
-          if base.children.exists?
-            base.self_and_descendants.where(origin_id: nil)
-              .update_all(progress: 1.0, updated_at: Time.current)
-          end
+          base.complete_self_and_descendants! if base.children.exists?
         end
 
         if success

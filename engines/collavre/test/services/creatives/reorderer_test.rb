@@ -65,6 +65,26 @@ module Creatives
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
+    test "records bulk sequence changes in one change set" do
+      Collavre::Creatives::History.track(
+        actor: @user,
+        origin: :editor,
+        anchor: @root,
+        anchor_source: :view_root
+      ) do
+        @reorderer.reorder(
+          dragged_id: @child_c.id,
+          target_id: @child_a.id,
+          direction: "up"
+        )
+      end
+
+      change_set = Collavre::CreativeChangeSet.sole
+      assert_equal [ @child_a.id, @child_b.id, @child_c.id ].sort,
+                   change_set.creative_changes.pluck(:creative_id).sort
+      assert change_set.creative_changes.all? { |change| change.operation == "reorder" }
+    end
+
     test "reorder_multiple raises when selection contains duplicate ids" do
       assert_raises(Reorderer::Error) do
         @reorderer.reorder_multiple(

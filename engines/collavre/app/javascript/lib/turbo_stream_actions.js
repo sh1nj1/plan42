@@ -1,6 +1,7 @@
 import { Turbo } from "@hotwired/turbo-rails"
 import { createRow, applyRowProperties, replaceProgressControl, updateProgressHtml } from "../creatives/tree_renderer"
 import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
+import { invalidateCreativeTree } from "./creative_tree_invalidation"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
 function registerStreamAction(name, handler) {
@@ -50,6 +51,10 @@ registerStreamAction("refresh_creative_tree", function () {
     // Update ancestor progress for all actions
     updateAncestorProgress(creative.ancestors)
     document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+})
+
+registerStreamAction("invalidate_creative_tree", function () {
+    invalidateCreativeTree()
 })
 
 function handleCreated(creative) {

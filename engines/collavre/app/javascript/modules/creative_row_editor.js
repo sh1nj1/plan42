@@ -196,6 +196,8 @@ function setupEditorSession() {
     const afterInput = document.getElementById('inline-after-id');
     const childInput = document.getElementById('inline-child-id');
     const originIdInput = document.getElementById('inline-origin-id');
+    const historyAnchorInput = document.getElementById('inline-history-anchor-id');
+    const changeGroupTokenInput = document.getElementById('inline-change-group-token');
     const metadataBtn = document.getElementById('inline-metadata-btn');
     const metadataPopup = document.getElementById('metadata-popup');
     const metadataEditor = document.getElementById('metadata-yaml-editor');
@@ -1203,6 +1205,8 @@ function setupEditorSession() {
 
       // Always include parent_id, even if empty (for moving to root)
       body['creative[parent_id]'] = currentParentId;
+      if (historyAnchorInput?.value) body.history_anchor_id = historyAnchorInput.value;
+      if (changeGroupTokenInput?.value) body.change_group_token = changeGroupTokenInput.value;
 
       if (currentBeforeId) {
         body['before_id'] = currentBeforeId;  // Top-level, not creative[before_id]

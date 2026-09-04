@@ -115,7 +115,7 @@ module Collavre
           self.content_type_input = "html" if data&.dig("content_type") == "markdown"
           update!(description: stripped)
         else
-          detach_and_maybe_purge(attachment)
+          detach_and_maybe_purge(attachment, schedule_during_history: true)
         end
         true
       end
@@ -302,7 +302,7 @@ module Collavre
       # references it — a shared blob (description copied between creatives)
       # would otherwise be deleted out from under the others, 404-ing their
       # descriptions.
-      def detach_and_maybe_purge(attachment)
+      def detach_and_maybe_purge(attachment, schedule_during_history: false)
         blob = attachment.blob
         attachment.delete
         return if blob.nil?
@@ -313,8 +313,9 @@ module Collavre
                                    .exists?
         return if still_referenced
         return if ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+        return if Creatives::History.recordable? && !schedule_during_history
 
-        blob.purge_later
+        Creatives::History.schedule_blob_purge_rechecks([ blob.id ])
       end
 
       def purge_description_attachments
@@ -332,7 +333,7 @@ module Collavre
                             .where("description LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%")
                             .exists?
 
-            blob.purge
+            PurgeUnreferencedBlobJob.perform_later(blob.id)
           rescue ActiveRecord::RecordNotFound, ActiveSupport::MessageVerifier::InvalidSignature
             Rails.logger.warn("Creative##{id}: could not find blob for signed_id=#{signed_id}")
           rescue StandardError => e

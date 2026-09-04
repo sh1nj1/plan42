@@ -15,6 +15,57 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  test "History topic is read-only, reserved, and kept last" do
+    history = @creative.history_topic
+    other = @creative.topics.create!(name: "Later", user: @user)
+    assert_equal history, @creative.topics.active.last
+
+    get collavre.creative_topics_url(@creative), as: :json
+    assert response.parsed_body["topics"].find { |topic| topic["id"] == history.id }["read_only"]
+
+    post collavre.creative_topics_url(@creative), params: { topic: { name: "History" } }, as: :json
+    assert_response :unprocessable_entity
+
+    patch collavre.creative_topic_url(@creative, history), params: { topic: { name: "Renamed" } }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "History", history.reload.name
+
+    delete collavre.creative_topic_url(@creative, history), as: :json
+    assert_response :unprocessable_entity
+    assert history.reload.persisted?
+
+    post collavre.reorder_creative_topics_url(@creative),
+         params: { topic_ids: [ history.id, other.id, @topic.id ] }, as: :json
+    assert_response :success
+    assert_operator history.reload.position, :>, other.reload.position
+    assert_operator history.position, :>, @topic.reload.position
+  end
+
+  test "an existing ordinary History topic remains a normal conversation" do
+    legacy = @creative.topics.create!(name: "History", user: @user)
+    @creative.topics.create!(name: Collavre::Creative::HISTORY_TOPIC_INTERNAL_NAME, user: @user)
+    comment = @creative.comments.create!(topic: legacy, user: @user, content: "Existing history discussion")
+    history = @creative.history_topic
+
+    assert_not_equal legacy, history
+    assert legacy.reload.system_kind.nil?
+    assert history.history?
+    assert_equal "#{Collavre::Creative::HISTORY_TOPIC_INTERNAL_NAME}_2", history.name
+
+    get collavre.creative_topics_url(@creative), as: :json
+    topics = response.parsed_body["topics"].index_by { |topic| topic["id"] }
+    assert_not topics.fetch(legacy.id)["read_only"]
+    assert topics.fetch(history.id)["read_only"]
+
+    get collavre.creative_comments_url(@creative), params: { topic_id: legacy.id }
+    assert_response :success
+    assert_includes response.body, comment.content
+
+    patch collavre.creative_topic_url(@creative, legacy), params: { topic: { name: "History notes" } }, as: :json
+    assert_response :success
+    assert_equal "History notes", legacy.reload.name
+  end
+
   test "index returns the last topic revision" do
     preference = Collavre::UserCreativePreference.create!(
       creative: @creative,
@@ -66,10 +117,13 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
   test "index returns effective_creative_id for linked creative (origin id)" do
     linked = Collavre::Creative.create!(user: @user, description: "linked wrapper", origin: @creative)
+    history = linked.history_topic
     get collavre.creative_topics_url(linked), as: :json
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal @creative.id, json["effective_creative_id"]
+    assert_includes json["topics"].pluck("id"), history.id
+    assert_equal @creative, history.creative
   end
 
   # set_primary_agent is guarded by require_creative_write!, so the client needs a

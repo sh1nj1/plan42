@@ -15,6 +15,10 @@ production: &production
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day
 
 desktop:
   stuck_detector:
@@ -33,6 +37,10 @@ desktop:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day
 
 development:
   stuck_detector:
@@ -51,3 +59,7 @@ development:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day

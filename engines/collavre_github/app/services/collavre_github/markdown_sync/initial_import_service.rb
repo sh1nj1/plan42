@@ -148,8 +148,10 @@ module CollavreGithub
               is_dir = path.end_with?("/") || path == ""
               [ is_dir ? 0 : 1, c.description.to_s.downcase ]
             end
-            sorted.each_with_index do |c, idx|
-              c.update_column(:sequence, idx)
+            Collavre::Creatives::History.record_bulk(sorted, operation: "reorder") do
+              sorted.each_with_index do |creative, index|
+                creative.update_column(:sequence, index)
+              end
             end
           end
         end

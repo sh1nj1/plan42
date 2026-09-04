@@ -65,6 +65,7 @@ module Tools
 
     def create_task(topic:, creative:, creative_id:, key:, schedule:, message:, description:)
       topic.with_lock do
+        return { error: I18n.t("collavre.creative_history.read_only") } if topic.history?
         unless topic.creative_id == creative.effective_origin.id
           return { error: I18n.t("collavre.comments.invalid_topic") }
         end
@@ -93,6 +94,7 @@ module Tools
       else
         topic = Topic.find_by(name: topic_name, creative_id: origin.id)
         return { error: "Topic '#{topic_name}' not found for this creative" } unless topic
+        return { error: I18n.t("collavre.creative_history.read_only") } if topic.history?
 
         topic
       end

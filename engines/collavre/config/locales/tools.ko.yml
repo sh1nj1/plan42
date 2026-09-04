@@ -1,12 +1,20 @@
 ko:
   collavre:
     tools:
+      creative_remove_attachment:
+        errors:
+          current_user_required: Current.user가 필요합니다.
+          creative_not_found: 크리에이티브를 찾을 수 없습니다.
+          write_permission: 크리에이티브에 대한 쓰기 권한이 없습니다.
+          unembedded_review: 삽입되지 않은 기존 첨부 파일은 검토 변경안으로 만들 수 없습니다.
+          attachment_not_found: 이 크리에이티브에서 첨부 파일을 찾을 수 없습니다.
       topic_message_create:
         errors:
           current_user_required: Current.user가 필요합니다.
           archived_creative: 보관된 크리에이티브에는 토픽 메시지를 작성할 수 없습니다.
           archived_topic: 보관된 토픽에는 메시지를 작성할 수 없습니다.
           system_topic: 받은 편지함의 System 토픽에는 사용자가 메시지를 작성할 수 없습니다.
+          history_topic: History 토픽은 읽기 전용입니다.
           current_topic: 에이전트는 현재 처리 중인 토픽에 토픽 메시지를 전달할 수 없습니다.
           self_route: 에이전트는 고정되지 않은 토픽 메시지를 자신에게 다시 라우팅할 수 없습니다.
       topic_move:

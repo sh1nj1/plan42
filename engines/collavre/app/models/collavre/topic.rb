@@ -26,10 +26,13 @@ module Collavre
     # --- Archive scopes ---
     scope :active, -> { where(archived_at: nil) }
     scope :archived, -> { where.not(archived_at: nil) }
+    scope :history, -> { where(system_kind: "history") }
 
     validates :name, presence: true, uniqueness: { scope: :creative_id }
+    validates :system_kind, inclusion: { in: %w[history] }, allow_nil: true
 
     before_create :set_default_position
+    after_create :keep_history_topic_last
 
     default_scope { order(:position) }
 
@@ -92,6 +95,10 @@ module Collavre
       update!(archived_at: nil)
     end
 
+    def history?
+      system_kind == "history"
+    end
+
     private
 
     def advance_last_topic_preference_revisions
@@ -102,6 +109,13 @@ module Collavre
       return if position_changed? && position != 0
 
       self.position = (Topic.unscoped.where(creative_id: creative_id).maximum(:position) || -1) + 1
+    end
+
+    def keep_history_topic_last
+      return if history?
+
+      history = Topic.unscoped.find_by(creative_id: creative_id, system_kind: "history")
+      history&.update_column(:position, position + 1) if history&.position.to_i <= position
     end
   end
 end

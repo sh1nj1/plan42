@@ -460,18 +460,23 @@ export default class extends Controller {
 
   getMinId() {
     // Standard: First element is oldest
-    const items = this.listTarget.querySelectorAll('.comment-item')
+    const items = this.paginationItems()
     if (items.length === 0) return null
     const first = items[0]
-    return parseInt(first.dataset.commentId)
+    return parseInt(first.dataset.commentId || first.dataset.changeSetId)
   }
 
   getMaxId() {
     // Standard: Last element is newest
-    const items = this.listTarget.querySelectorAll('.comment-item')
+    const items = this.paginationItems()
     if (items.length === 0) return null
     const last = items[items.length - 1]
-    return parseInt(last.dataset.commentId)
+    return parseInt(last.dataset.commentId || last.dataset.changeSetId)
+  }
+
+  paginationItems() {
+    const comments = this.listTarget.querySelectorAll('.comment-item')
+    return comments.length > 0 ? comments : this.listTarget.querySelectorAll('.creative-history-item')
   }
 
   // Public seam for sibling controllers that scroll the list on their own

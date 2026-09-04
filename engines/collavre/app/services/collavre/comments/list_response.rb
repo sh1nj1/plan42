@@ -6,12 +6,15 @@ module Collavre
       LIMIT = 20
       LEGACY_TOPIC_WATERMARK_KEY = "_legacy"
 
-      def initialize(controller:, creative:)
+      def initialize(controller:, creative:, history_scope_creative: creative)
         @controller = controller
         @creative = creative
+        @history_scope_creative = history_scope_creative
       end
 
       def render
+        return render_history if history_topic?
+
         comments, topic_id, all_messages = load_comments
         write_rendered_topic_headers(comments) if all_messages
         controller.render(**render_options(comments, topic_id))
@@ -22,6 +25,30 @@ module Collavre
       attr_reader :controller, :creative
 
       delegate :params, :response, to: :controller
+
+      def history_topic?
+        params[:topic_id].present? &&
+          creative.topics.history.exists?(id: params[:topic_id])
+      end
+
+      def render_history
+        change_sets = CreativeChangeSet.for_creative_scope(@history_scope_creative)
+          .visible_by_default.includes(:creative_changes, :user)
+        change_sets = Creatives::HistoryPage.new(
+          scope: change_sets,
+          user: Current.user,
+          before_id: params[:before_id],
+          after_id: params[:after_id],
+          limit: LIMIT
+        ).call
+        response.headers["X-Topic-Id"] = params[:topic_id].to_s
+        controller.render partial: "collavre/creative_change_sets/list",
+                          locals: {
+                            creative: @history_scope_creative,
+                            change_sets: change_sets,
+                            pagination: params[:before_id].present? || params[:after_id].present?
+                          }
+      end
 
       def load_comments
         visible_scope = creative.comments.visible_to(Current.user)

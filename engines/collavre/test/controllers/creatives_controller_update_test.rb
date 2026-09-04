@@ -38,6 +38,83 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal 0.5, @b1_origin.reload.progress
   end
 
+  test "records the viewing anchor and merges autosaves by change group token" do
+    2.times do |index|
+      patch creative_url(@b1_origin), params: {
+        history_anchor_id: @b.id,
+        change_group_token: "browser-edit-session",
+        creative: { description: "Edit #{index}" }
+      }
+      assert_response :redirect
+    end
+
+    change_set = Collavre::CreativeChangeSet.sole
+    change = change_set.creative_changes.sole
+    assert_equal @b.id, change_set.anchor_creative_id
+    assert_equal "view_root", change_set.anchor_source
+    assert_equal "browser-edit-session", change_set.change_group_token
+    assert_equal "B1 Origin", change.before.fetch("description")
+    assert_equal "Edit 1", change.after.fetch("description")
+  end
+
+  test "renders a page-scoped autosave token and history anchor" do
+    get creatives_url(id: @b.id)
+
+    assert_response :success
+    assert_select "input[name='history_anchor_id'][value='#{@b.id}']", count: 1
+    assert_select "input[name='change_group_token'][value]", count: 1
+  end
+
+  test "does not accept an unreadable history anchor" do
+    unreadable = Creative.create!(description: "Private", user: users(:two))
+
+    patch creative_url(@b1_origin), params: {
+      history_anchor_id: unreadable.id,
+      creative: { description: "Safe anchor" }
+    }
+
+    assert_response :redirect
+    assert_equal @b1_origin.id, Collavre::CreativeChangeSet.sole.anchor_creative_id
+  end
+
+  test "records every descendant completed by the progress cascade" do
+    child = Creative.create!(description: "Child", user: @user, parent: @b1_origin)
+    grandchild = Creative.create!(description: "Grandchild", user: @user, parent: child)
+
+    patch creative_url(@b1_origin), params: {
+      history_anchor_id: @b.id,
+      change_group_token: "completion-session",
+      creative: { progress: 1.0 }
+    }
+
+    assert_response :redirect
+    change_set = Collavre::CreativeChangeSet.sole
+    assert_equal [ @a.id, @b.id, @b1_origin.id, child.id, grandchild.id ].sort,
+                 change_set.creative_changes.pluck(:creative_id).sort
+    assert_equal [ 1, 1, 1 ], [ @b1_origin, child, grandchild ].map { |creative| creative.reload.revision }
+  end
+
+  test "records sibling resequencing when creating at a requested position" do
+    parent = Creative.create!(description: "Parent", user: @user)
+    first = Creative.create!(description: "First", user: @user, parent: parent, sequence: 0)
+    second = Creative.create!(description: "Second", user: @user, parent: parent, sequence: 1)
+
+    post creatives_url, params: {
+      before_id: second.id,
+      history_anchor_id: parent.id,
+      creative: { description: "Inserted", parent_id: parent.id }
+    }
+
+    assert_response :success
+    created = Creative.find(JSON.parse(response.body).fetch("id"))
+    changes = Collavre::CreativeChangeSet.sole.creative_changes.index_by(&:creative_id)
+    assert_equal [ created.id, second.id ].sort, changes.keys.sort
+    assert_equal "create", changes.fetch(created.id).operation
+    assert_equal 1, changes.fetch(created.id).after.fetch("sequence")
+    assert_equal [ 2, 1 ], [ created, second ].map { |creative| creative.reload.revision }
+    assert_equal 0, first.reload.revision
+  end
+
   test "update_metadata posts drop trigger warning when enabling without write-permission AI agent" do
     creative = Creative.create!(description: "Documentation", user: @user, data: {})
     feedback_ai = users(:ai_bot)

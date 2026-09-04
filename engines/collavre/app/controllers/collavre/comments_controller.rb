@@ -9,6 +9,8 @@ module Collavre
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
 
+    include Collavre::Comments::HistoryTopicGuard
+
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.
       # This way the creative list loads behind the popup, so exiting fullscreen
@@ -26,7 +28,11 @@ module Collavre
     end
 
     def index
-      Collavre::Comments::ListResponse.new(controller: self, creative: @creative).render
+      Collavre::Comments::ListResponse.new(
+        controller: self,
+        creative: @creative,
+        history_scope_creative: @requested_creative
+      ).render
     end
 
     def create

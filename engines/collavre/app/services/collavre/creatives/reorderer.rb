@@ -186,8 +186,10 @@ module Creatives
         cases.when(creative.id).then(index)
       end
 
-      Creative.where(id: creatives.map(&:id))
-        .update_all(sequence: cases)
+      relation = Creative.where(id: creatives.map(&:id))
+      Creatives::History.record_bulk(relation, operation: "reorder") do
+        relation.update_all(sequence: cases)
+      end
 
       creatives.each_with_index do |creative, index|
         creative.write_attribute(:sequence, index)

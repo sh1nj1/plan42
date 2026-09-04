@@ -26,6 +26,15 @@ module Collavre
         file = params[:file]
         return render(json: { error: "No file provided" }, status: :unprocessable_entity) unless file.respond_to?(:read)
 
+        result = Collavre::Creatives::AiWritePolicy.capture(
+          creatives: [ creative, creative.effective_origin ], anchor: creative, external_request: true
+        ) { attach_file(creative, file) }
+        render json: result
+      end
+
+      private
+
+      def attach_file(creative, file)
         io = file.to_io
         content_type = resolved_content_type(file, io)
         io.rewind
@@ -37,7 +46,8 @@ module Collavre
 
         creative.embed_attachment_blob!(blob)
 
-        render json: {
+        {
+          success: true,
           signed_id: blob.signed_id,
           filename: blob.filename.to_s,
           content_type: blob.content_type,
@@ -45,8 +55,6 @@ module Collavre
           url: public_asset_url(blob)
         }
       end
-
-      private
 
       # The bundled `collavre` CLI sends application/octet-stream for every part,
       # so treat octet-stream (and blank) as "unknown" and sniff via Marcel —

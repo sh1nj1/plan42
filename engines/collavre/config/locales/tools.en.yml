@@ -1,12 +1,20 @@
 en:
   collavre:
     tools:
+      creative_remove_attachment:
+        errors:
+          current_user_required: Current.user is required.
+          creative_not_found: Creative not found.
+          write_permission: No write permission on Creative.
+          unembedded_review: An unembedded legacy attachment cannot be proposed for review.
+          attachment_not_found: Attachment not found on this Creative.
       topic_message_create:
         errors:
           current_user_required: Current.user is required.
           archived_creative: Archived creatives do not accept topic messages.
           archived_topic: Archived topics do not accept messages.
           system_topic: The inbox System topic does not accept user-authored messages.
+          history_topic: History topics are read-only.
           current_topic: An agent cannot dispatch a topic message to its own current topic.
           self_route: An agent cannot route an unpinned topic message back to itself.
       topic_move:
