@@ -86,6 +86,24 @@ class CreativeHistoryPruneJobTest < ActiveJob::TestCase
     assert_equal [ blob.id ], scheduled_blob_ids
   end
 
+  test "revalidates a materialized candidate after locking it" do
+    candidate = create_change_set(creatives: [ @first ], created_at: 200.days.ago)
+    10.times { |index| create_change_set(creatives: [ @first ], created_at: (100 + index).days.ago) }
+    stale_candidates = Struct.new(:candidate) do
+      def find_each
+        yield candidate
+      end
+    end.new(candidate)
+    create_change_set(creatives: [ @second ], created_at: 1.day.ago, origin: "revert", reverts: candidate)
+
+    job = Collavre::CreativeHistoryPruneJob.new
+    job.stub(:prunable_change_sets, stale_candidates) do
+      assert_equal 0, job.perform
+    end
+
+    assert Collavre::CreativeChangeSet.exists?(candidate.id)
+  end
+
   test "is scheduled daily in every queue environment" do
     schedules = YAML.load_file(Rails.root.join("config/recurring.yml"), aliases: true)
 

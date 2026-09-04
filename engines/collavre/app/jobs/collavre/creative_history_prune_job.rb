@@ -7,8 +7,7 @@ module Collavre
     def perform
       deleted = 0
       prunable_change_sets.find_each do |change_set|
-        destroy_change_set(change_set)
-        deleted += 1
+        deleted += 1 if destroy_change_set(change_set)
       end
 
       Rails.logger.info("[Collavre::CreativeHistoryPruneJob] pruned #{deleted} change sets") if deleted.positive?
@@ -18,12 +17,24 @@ module Collavre
     private
 
     def destroy_change_set(change_set)
-      blob_ids = ActiveStorage::Attachment
-        .where(record: change_set.creative_changes, name: "history_files")
-        .distinct
-        .pluck(:blob_id)
-      change_set.destroy!
-      Creatives::History.schedule_blob_purge_rechecks(blob_ids)
+      change_set.with_lock do
+        next false unless still_prunable?(change_set)
+
+        blob_ids = ActiveStorage::Attachment
+          .where(record: change_set.creative_changes, name: "history_files")
+          .distinct
+          .pluck(:blob_id)
+        change_set.destroy!
+        Creatives::History.schedule_blob_purge_rechecks(blob_ids)
+        true
+      end
+    end
+
+    def still_prunable?(change_set)
+      change_set.status == "applied" && change_set.origin != "revert" &&
+        (change_set.applied_at || change_set.created_at) < SystemSetting.creative_history_retention_days.days.ago &&
+        !CreativeChangeSet.exists?(reverts_id: change_set.id) &&
+        !CreativeChangeSet.where(id: retained_change_set_ids).exists?(id: change_set.id)
     end
 
     def prunable_change_sets
