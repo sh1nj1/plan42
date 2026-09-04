@@ -9,9 +9,10 @@
     has_progress = url_params['min_progress'].present? || url_params['max_progress'].present?
     has_comment = url_params['comment'] == 'true'
     has_archived = url_params['show_archived'] == 'true'
+    has_cron = url_params['has_cron'] == 'true'
     has_search = url_params['search'].present?
     search_mode = url_params['search_mode'] || 'flat'
-    has_any_filter = has_progress || has_archived || has_search
+    has_any_filter = has_progress || has_archived || has_cron || has_search
 
     progress_state = if url_params['min_progress'] == '1' && url_params['max_progress'] == '1'
                        :complete
@@ -79,6 +80,10 @@
                   class="search-popup-filter-btn<%= ' active' if has_comment %>"
                   data-filter-state="comment"
                   data-action="click->search-popup#applyCommentFilter"><%= t('app.filter_comments') %></button>
+          <button type="button"
+                  class="search-popup-filter-btn<%= ' active' if has_cron %>"
+                  data-filter-state="cron"
+                  data-action="click->search-popup#applyCronFilter"><%= t('collavre.search_popup.has_cron') %></button>
           <% if authenticated? %>
             <%# Both labels ship up front so a frame-only navigation can swap them without a round trip. %>
             <button type="button"

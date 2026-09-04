@@ -36,7 +36,7 @@ module Collavre
     # creatives at once (the browse tree) resolve them in batch and hand them in.
     # Left nil, each is resolved for this creative alone — correct, but a query
     # per node. Single-creative call sites take that path.
-    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil)
+    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [])
       progress_value = if params[:tags].present?
         tag_ids = Array(params[:tags]).map(&:to_s)
         creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
@@ -47,43 +47,7 @@ module Collavre
       can_feedback = creative.has_permission?(Current.user, :feedback) if can_feedback.nil?
 
       content_tag(:div, class: "creative-row-end") do
-        comment_part = if creative.archived?
-          safe_join([])
-        elsif can_feedback
-          origin = creative.effective_origin
-          comments_count = origin.comments_count
-          # A batched count already has presence suppression applied by
-          # CommentBadgeIndex; re-checking here would be one cache read per node,
-          # which is exactly what the batch exists to avoid.
-          if unread_count.nil?
-            badge_index = Creatives::CommentBadgeIndex.new(user: Current.user)
-            badge_index.index([ origin ])
-            unread_count = badge_index.unread_count_for(origin)
-          end
-          classes = [ "comments-btn", "creative-action-btn" ]
-          classes << "no-comments" if comments_count.zero?
-          comment_icon = svg_tag(
-            "comment.svg",
-            class: "comment-icon"
-          )
-          badge_id = "comment-badge-#{origin.id}"
-          stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
-          badge = render(
-            Inbox::BadgeComponent.new(
-              count: unread_count,
-              badge_id: badge_id,
-              show_zero: comments_count.positive?
-            )
-          )
-          stream + button_tag(
-            comment_icon + badge,
-            name: "show-comments-btn",
-            data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
-            class: classes.join(" ")
-          )
-        else
-          safe_join([])
-        end
+        comment_part = render_creative_comment_action(creative, can_feedback, unread_count)
         is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
         can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
         progress_part = render_progress_control(
@@ -93,14 +57,69 @@ module Collavre
           can_write: can_write,
           select_mode: select_mode
         )
+        cron_part = cron_tasks.any? ? render_cron_badge(cron_tasks) : safe_join([])
 
         safe_join([
           progress_part,
+          cron_part,
           comment_part,
           tag.br,
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
       end
+    end
+
+    def render_creative_comment_action(creative, can_feedback, unread_count)
+      return safe_join([]) if creative.archived? || !can_feedback
+
+      origin = creative.effective_origin
+      comments_count = origin.comments_count
+      if unread_count.nil?
+        badge_index = Creatives::CommentBadgeIndex.new(user: Current.user)
+        badge_index.index([ origin ])
+        unread_count = badge_index.unread_count_for(origin)
+      end
+      classes = [ "comments-btn", "creative-action-btn" ]
+      classes << "no-comments" if comments_count.zero?
+      comment_icon = svg_tag("comment.svg", class: "comment-icon")
+      badge_id = "comment-badge-#{origin.id}"
+      stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
+      badge = render_comment_badge(unread_count, badge_id, comments_count)
+      stream + button_tag(
+        comment_icon + badge,
+        name: "show-comments-btn",
+        data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet },
+        class: classes.join(" ")
+      )
+    end
+
+    def render_comment_badge(unread_count, badge_id, comments_count)
+      render(
+        Inbox::BadgeComponent.new(
+          count: unread_count,
+          badge_id: badge_id,
+          show_zero: comments_count.positive?
+        )
+      )
+    end
+
+    def render_cron_badge(tasks)
+      details = tasks.map do |task|
+        t(
+          "collavre.creatives.index.cron_schedule",
+          schedule: task.schedule,
+          next_run: l(task.next_time, format: :short)
+        )
+      end
+      label = t("collavre.creatives.index.cron_count", count: tasks.size)
+
+      content_tag(
+        :span,
+        safe_join([ tag.span("⏰", aria: { hidden: true }), tag.span(tasks.size) ], " "),
+        class: "creative-cron-badge",
+        title: details.join("\n"),
+        aria: { label: "#{label}. #{details.join('. ')}" }
+      )
     end
 
     def render_progress_control(creative, value, has_children:, can_write:, select_mode: false)

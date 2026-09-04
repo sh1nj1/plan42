@@ -9,8 +9,8 @@ module Creatives
         "<iframe></iframe>"
       end
 
-      def render_creative_progress(_creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil)
-        "<progress data-select='#{select_mode}'></progress>"
+      def render_creative_progress(_creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [])
+        "<progress data-select='#{select_mode}'></progress><cron-badge count='#{cron_tasks.size}'></cron-badge>"
       end
 
       def svg_tag(name, className: nil, width: nil, height: nil)
@@ -89,6 +89,23 @@ module Creatives
       assert_equal creative.effective_description, payload[:description_raw_html]
       assert_in_delta creative.progress, payload[:progress]
       assert_nil payload[:origin_id]
+    end
+
+    test "includes cron badge details when the cron filter is active" do
+      creative = Creative.create!(user: @user, progress: 0, description: "Scheduled")
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_#{SecureRandom.hex(4)}",
+        class_name: "Collavre::CronActionJob",
+        schedule: "0 9 * * *",
+        static: false,
+        arguments: []
+      )
+
+      nodes = build_tree_builder(params: { has_cron: "true" }).build([ creative ])
+
+      assert_includes nodes.first.dig(:templates, :progress_html), "<cron-badge count='1'>"
+    ensure
+      task&.destroy!
     end
 
     private
