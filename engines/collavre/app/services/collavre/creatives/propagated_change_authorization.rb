@@ -29,7 +29,7 @@ module Collavre
       end
 
       def add_parent_progress_attributes(attributes)
-        parent_ids = attributes.keys.filter_map { |id| records[change_by_id.fetch(id).creative_id]&.parent_id }.to_set
+        parent_ids = attributes.keys.flat_map { |id| snapshot_parent_ids(change_by_id.fetch(id)) }.to_set
         loop do
           additions = parent_progress_additions(parent_ids, attributes)
           break if additions.empty?
@@ -58,7 +58,11 @@ module Collavre
       end
 
       def direct_parent_ids(source_ids)
-        source_ids.filter_map { |source_id| records[source_id]&.parent_id }.to_set
+        changes.flat_map do |change|
+          next unless source_ids.include?(change.creative_id)
+
+          snapshot_parent_ids(change)
+        end.compact.to_set
       end
 
       def parent_progress_additions(parent_ids, attributes)
@@ -72,8 +76,12 @@ module Collavre
       def register_parent_progress(additions, attributes, parent_ids)
         additions.each do |change|
           attributes[change.id] = "progress"
-          parent_ids << records.fetch(change.creative_id).parent_id
+          parent_ids.merge(snapshot_parent_ids(change))
         end
+      end
+
+      def snapshot_parent_ids(change)
+        [ change.before["parent_id"], change.after["parent_id"] ].compact
       end
 
       def transition_only?(change, attribute, operations)

@@ -140,7 +140,7 @@ module Collavre
 
       def target_writable?(creative, snapshot, records, writable_ids)
         creative && !creative.read_only_source? && writable_ids.include?(creative.id) &&
-          target_parent_writable?(creative, snapshot, records, writable_ids)
+          (@authorization_only || target_parent_writable?(creative, snapshot, records, writable_ids))
       end
 
       def revertible?(source)

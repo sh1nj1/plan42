@@ -88,6 +88,7 @@ module Collavre
         end.to_set
         archive_targets = creatives.select { |creative| delete_ids.include?(creative.id) }
           .flat_map { |creative| creative.archive_family.to_a }
+        archive_targets.concat(moved_families_before_delete(operations, creatives))
         progress_targets = propagation_targets(progress_sources(operations, creatives))
         archive_progress_targets = propagation_targets(archive_targets)
         structural_progress_sources = structural_progress_sources(operations, creatives)
@@ -127,6 +128,18 @@ module Collavre
         return [] unless operation["parent_id"].present? && operation["parent_id"].to_i.positive?
 
         [ records[operation["id"].to_i]&.parent, records[operation["parent_id"].to_i] ].compact
+      end
+
+      def moved_families_before_delete(operations, creatives)
+        records = creatives.index_by(&:id)
+        delete_indexes = operations.each_index.select { |index| operations[index].stringify_keys["action"] == "delete" }
+        operations.each_with_index.flat_map do |operation, index|
+          operation = operation.stringify_keys
+          next [] unless operation["action"] == "update" && delete_indexes.any? { |delete_index| delete_index > index }
+          next [] unless operation["parent_id"].present? && operation["parent_id"].to_i.positive?
+
+          records[operation["id"].to_i]&.archive_family&.to_a || []
+        end
       end
 
       def reorder_targets(operations)

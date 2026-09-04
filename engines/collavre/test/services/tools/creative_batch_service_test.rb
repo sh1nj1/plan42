@@ -150,6 +150,34 @@ module Collavre
         assert_equal source.id, moved.reload.parent_id
       end
 
+      test "reviews a moved subtree before a later delete archives it" do
+        target = Creative.create!(
+          description: "Delete target", user: @user, parent: @root,
+          data: { "ai_write_policy" => "auto" }
+        )
+        moved = Creative.create!(
+          description: "Moved subtree", user: @user, parent: @root,
+          data: { "ai_write_policy" => "auto" }
+        )
+        protected_child = Creative.create!(
+          description: "Protected child", user: @user, parent: moved,
+          data: { "ai_write_policy" => "review" }
+        )
+        task, agent = agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => moved.id, "parent_id" => target.id },
+            { "action" => "delete", "id" => target.id }
+          ])
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_equal @root.id, moved.reload.parent_id
+        assert_not target.reload.archived?
+        assert_not protected_child.reload.archived?
+      end
+
       test "keeps a parentless create on the default auto policy" do
         task, agent = review_agent_turn
 
@@ -343,6 +371,33 @@ module Collavre
         assert_equal :applied, applied.status, applied.skipped.inspect
         assert_equal 1.0, child.reload.progress
         assert_in_delta 0.5, foreign_parent.reload.progress, 0.01
+      end
+
+      test "draft rejection uses the captured parent when the source moves later" do
+        foreign_parent = Creative.create!(description: "Captured private parent", user: users(:two), progress: 0)
+        Creative.create!(description: "Incomplete", user: users(:two), parent: foreign_parent, progress: 0)
+        child = Creative.create!(
+          description: "Owned child", user: @user, parent: foreign_parent, progress: 0,
+          data: { "ai_write_policy" => "review" }
+        )
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: child, user: agent, shared_by: @user, permission: :write)
+        topic = Topic.create!(creative: child, user: @user, name: "Captured parent review")
+        task = Task.create!(agent: agent, creative: child, topic_id: topic.id, name: "Review", status: "running")
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => child.id, "progress" => 1.0 }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        child.update_column(:parent_id, @root.id)
+
+        rejected = Creatives::DraftChangeSetRejectService.new(
+          change_set: draft, user: @user, scope_creative: child
+        ).call
+
+        assert_equal :rejected, rejected.status, rejected.skipped.inspect
+        assert_equal "rejected", draft.reload.status
       end
 
       test "skipping a progress conflict also skips linked parent rollups" do
