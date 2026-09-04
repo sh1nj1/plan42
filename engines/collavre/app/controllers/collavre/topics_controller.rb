@@ -122,8 +122,8 @@ module Collavre
         topic: topic, source_creative: @creative
       ).call
 
-      # Best-effort orphaned-cron notice. Must never break the core deletion:
-      # if it raises, swallow + log so broadcast/head still run.
+      # Best-effort recurring-cron cleanup and notice. Must never break the
+      # core deletion: if it raises, swallow + log so broadcast/head still run.
       begin
         Collavre::Topics::OrphanedCronNotifier.new(
           topic_id: topic_id,
