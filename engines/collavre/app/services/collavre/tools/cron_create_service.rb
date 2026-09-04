@@ -66,6 +66,7 @@ module Tools
 
     def create_task(topic:, creative:, creative_id:, key:, schedule:, message:, description:, topic_created:)
       creation_error = nil
+      retained_created_topic = false
       task = topic.with_lock do
         return { error: I18n.t("collavre.creative_history.read_only") } if topic.history?
         unless topic.creative_id == creative.effective_origin.id
@@ -77,13 +78,21 @@ module Tools
           message: message, description: description
         )
       rescue StandardError => e
-        topic.destroy! if topic_created && !recurring_topic_adopted?(topic)
+        retained_created_topic = clean_up_failed_topic_creation(topic) if topic_created
         creation_error = e
         nil
       end
+      broadcast_topic_created(topic) if retained_created_topic
       raise creation_error if creation_error
 
       task
+    end
+
+    def clean_up_failed_topic_creation(topic)
+      return true if recurring_topic_adopted?(topic)
+
+      topic.destroy!
+      false
     end
 
     def recurring_topic_adopted?(topic)
