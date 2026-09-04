@@ -32,7 +32,7 @@ module Tools
       end
 
       Creatives::AiWritePolicy.capture(
-        creatives: [ parent, parent&.effective_origin ], anchor: parent
+        creatives: review_targets(parent, before_id, after_id), anchor: parent
       ) do
         perform_create(
           description: description, parent: parent, progress: progress,
@@ -42,6 +42,13 @@ module Tools
     end
 
     private
+
+    def review_targets(parent, before_id, after_id)
+      targets = [ parent, parent&.effective_origin ]
+      return targets unless before_id.present? || after_id.present?
+
+      targets.concat(parent ? parent.children.to_a : Creative.roots.to_a)
+    end
 
     def perform_create(description:, parent:, progress:, after_id:, before_id:)
       # Build the creative. The description is authored as Markdown: store it as

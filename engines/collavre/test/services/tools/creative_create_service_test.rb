@@ -50,6 +50,24 @@ module Collavre
         assert CreativeChangeSet.find(result[:change_set_id]).creative_changes.where("creative_id < 0").exists?
       end
 
+      test "stores sibling resequencing as a draft when the sibling requires review" do
+        sibling = Creative.create!(
+          description: "Protected sibling", user: @user, parent: @parent_creative,
+          data: { "ai_write_policy" => "review" }
+        )
+        task, agent = agent_turn(@parent_creative)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeCreateService.new.call(
+            parent_id: @parent_creative.id, description: "Before sibling", before_id: sibling.id
+          )
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_not @parent_creative.children.where("description LIKE ?", "%Before sibling%").exists?
+        assert_equal 0, sibling.reload.sequence
+      end
+
       test "stores the description as Markdown-canonical" do
         service = CreativeCreateService.new
 
@@ -238,6 +256,10 @@ module Collavre
 
       def review_agent_turn(creative)
         creative.update!(data: creative.data.merge("ai_write_policy" => "review"))
+        agent_turn(creative)
+      end
+
+      def agent_turn(creative)
         agent = users(:ai_bot)
         perform_enqueued_jobs(only: PermissionCacheJob) do
           CreativeShare.create!(creative: creative, user: agent, shared_by: @user, permission: :write)

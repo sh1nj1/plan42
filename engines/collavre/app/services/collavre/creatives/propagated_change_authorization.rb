@@ -43,7 +43,7 @@ module Collavre
           change.creative_id if writable_source_ids.include?(change.creative_id) &&
             change.before["progress"] != change.after["progress"]
         end.to_set
-        parent_ids = linked_parent_ids(source_ids)
+        parent_ids = direct_parent_ids(source_ids) | linked_parent_ids(source_ids)
         loop do
           additions = parent_progress_additions(parent_ids, attributes)
           break if additions.empty?
@@ -55,6 +55,10 @@ module Collavre
 
       def linked_parent_ids(source_ids)
         Creative.where(origin_id: source_ids).where.not(parent_id: nil).distinct.pluck(:parent_id).to_set
+      end
+
+      def direct_parent_ids(source_ids)
+        source_ids.filter_map { |source_id| records[source_id]&.parent_id }.to_set
       end
 
       def parent_progress_additions(parent_ids, attributes)

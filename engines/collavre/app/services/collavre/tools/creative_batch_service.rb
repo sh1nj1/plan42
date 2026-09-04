@@ -79,7 +79,7 @@ module Collavre
       def review_targets(operations)
         ids = operations.flat_map do |operation|
           operation = operation.stringify_keys
-          [ operation["id"], operation["parent_id"] ]
+          [ operation["id"], operation["parent_id"], operation["before_id"], operation["after_id"] ]
         end.compact.map(&:to_i).select(&:positive?)
         creatives = Creative.where(id: ids).to_a
         delete_ids = operations.filter_map do |operation|
@@ -88,9 +88,9 @@ module Collavre
         end.to_set
         archive_targets = creatives.select { |creative| delete_ids.include?(creative.id) }
           .flat_map { |creative| creative.archive_family.to_a }
-        progress_targets = progress_sources(operations, creatives)
-          .flat_map { |creative| Creatives::ProgressPropagationTargets.new(creative.effective_origin).call }
-        [ *creatives, *archive_targets, *progress_targets ]
+        progress_targets = propagation_targets(progress_sources(operations, creatives))
+        archive_progress_targets = propagation_targets(archive_targets)
+        [ *creatives, *archive_targets, *progress_targets, *archive_progress_targets, *reorder_targets(operations) ]
       end
 
       def progress_sources(operations, creatives)
@@ -99,6 +99,20 @@ module Collavre
           operation["id"].to_i if operation["action"] == "update" && operation["progress"].present?
         end.to_set
         creatives.select { |creative| progress_ids.include?(creative.id) }
+      end
+
+      def propagation_targets(creatives)
+        creatives.flat_map { |creative| Creatives::ProgressPropagationTargets.new(creative.effective_origin).call }
+      end
+
+      def reorder_targets(operations)
+        operations.flat_map do |operation|
+          operation = operation.stringify_keys
+          next [] unless operation["action"] == "create" && (operation["before_id"].present? || operation["after_id"].present?)
+
+          parent_id = operation["parent_id"].to_i
+          parent_id.positive? ? Creative.where(parent_id: parent_id).to_a : Creative.roots.to_a
+        end
       end
 
       def execute_create(op)

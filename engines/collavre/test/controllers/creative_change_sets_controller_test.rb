@@ -23,6 +23,7 @@ module Collavre
 
       assert_response :success
       assert_equal "applied", response.parsed_body["status"]
+      assert_equal "The change was reverted.", response.parsed_body["message"]
       assert_equal @before, Creatives::History.snapshot(@creative.reload)
       assert_equal "reverted", @change_set.reload.status
     end
@@ -130,6 +131,7 @@ module Collavre
 
       assert_response :success
       assert_equal "applied", response.parsed_body["status"]
+      assert_equal "The proposed change was applied.", response.parsed_body["message"]
       assert_equal "applied", draft.reload.status
       assert draft.applied_at
       refute draft.creative_changes.exists?(creative_id: temporary_id)

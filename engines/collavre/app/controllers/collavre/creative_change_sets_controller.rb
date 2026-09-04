@@ -55,8 +55,14 @@ module Collavre
         change_set_id: result.change_set&.id,
         conflicts: result.conflicts,
         skipped: result.skipped,
-        message: I18n.t("collavre.creative_history.results.#{result.status}")
+        message: I18n.t("collavre.creative_history.results.#{result_message_key(result)}")
       }
+    end
+
+    def result_message_key(result)
+      return :approved if result.status == :applied && params[:mode] == "approve"
+
+      result.status
     end
 
     def response_status(result)

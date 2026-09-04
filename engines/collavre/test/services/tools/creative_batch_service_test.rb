@@ -94,6 +94,39 @@ module Collavre
         assert_not child.reload.archived?
       end
 
+      test "reviews an archive when its progress parent requires review" do
+        @root.update!(data: @root.data.merge("ai_write_policy" => "review"))
+        child = Creative.create!(
+          description: "Explicit auto child", user: @user, parent: @root,
+          data: { "ai_write_policy" => "auto" }
+        )
+        task, agent = agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_not child.reload.archived?
+      end
+
+      test "reviews batch create resequencing when a sibling requires review" do
+        sibling = Creative.create!(
+          description: "Protected sibling", user: @user, parent: @root,
+          data: { "ai_write_policy" => "review" }
+        )
+        task, agent = agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "create", "parent_id" => @root.id, "description" => "Before", "before_id" => sibling.id }
+          ])
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_not @root.children.where("description LIKE ?", "%Before%").exists?
+      end
+
       test "keeps a parentless create on the default auto policy" do
         task, agent = review_agent_turn
 
@@ -262,6 +295,31 @@ module Collavre
         assert result[:pending_review]
         assert_equal 0.0, child.reload.progress
         assert_in_delta 0.0, linked.parent.reload.progress, 0.01
+      end
+
+      test "draft approval authorizes a hidden direct parent progress rollup" do
+        foreign_parent = Creative.create!(description: "Private parent", user: users(:two), progress: 0)
+        Creative.create!(description: "Incomplete", user: users(:two), parent: foreign_parent, progress: 0)
+        child = Creative.create!(
+          description: "Owned child", user: @user, parent: foreign_parent, progress: 0,
+          data: { "ai_write_policy" => "review" }
+        )
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: child, user: agent, shared_by: @user, permission: :write)
+        topic = Topic.create!(creative: child, user: @user, name: "Hidden parent review")
+        task = Task.create!(agent: agent, creative: child, topic_id: topic.id, name: "Review", status: "running")
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => child.id, "progress" => 1.0 }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+
+        assert_not_includes Creatives::PermissionFilter.new(user: @user).readable_ids([ foreign_parent.id ]), foreign_parent.id
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert_equal 1.0, child.reload.progress
+        assert_in_delta 0.5, foreign_parent.reload.progress, 0.01
       end
 
       test "skipping a progress conflict also skips linked parent rollups" do
