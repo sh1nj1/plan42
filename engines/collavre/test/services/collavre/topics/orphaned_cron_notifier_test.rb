@@ -19,14 +19,14 @@ module Collavre
         @topic = @creative.topics.create!(name: "Counseling", user: @user)
       end
 
-      def create_cron(creative_id:, topic_id:, message: "@Ming: do the thing")
+      def create_cron(creative_id:, topic_id:, message: "@Ming: do the thing", description: nil)
         SolidQueue::RecurringTask.create!(
           key: "cron_#{creative_id}_#{SecureRandom.hex(4)}",
           class_name: "Collavre::CronActionJob",
           schedule: "0 10 * * *",
           queue_name: "default",
           static: false,
-          description: "Cron job for creative #{creative_id}",
+          description: description || "Cron job for creative #{creative_id}",
           arguments: [ {
             creative_id: creative_id,
             topic_id: topic_id,
@@ -36,8 +36,14 @@ module Collavre
         )
       end
 
-      test "posts a system comment to the creative's main topic when a cron targets the deleted topic" do
-        cron = create_cron(creative_id: @creative.id, topic_id: @topic.id)
+      test "deletes a matching cron and posts a recreation command to the creative's main topic" do
+        message = "Ask \"Ming\" to do the thing\nand follow up"
+        cron = create_cron(
+          creative_id: @creative.id,
+          topic_id: @topic.id,
+          message: message,
+          description: "Daily follow-up"
+        )
         deleted_name = @topic.name
         deleted_id = @topic.id
         @topic.destroy!
@@ -50,27 +56,47 @@ module Collavre
         assert_equal @creative.main_topic.id, notice.topic_id
         assert_includes notice.content, cron.key
         assert_includes notice.content, "Counseling"
-      end
+        assert_not SolidQueue::RecurringTask.exists?(key: cron.key)
 
-      test "leaves the recurring task in place (notify only)" do
-        cron = create_cron(creative_id: @creative.id, topic_id: @topic.id)
-        deleted_id = @topic.id
-        @topic.destroy!
-
-        OrphanedCronNotifier.new(topic_id: deleted_id, topic_name: "Counseling").call
-
-        assert SolidQueue::RecurringTask.exists?(key: cron.key), "cron must NOT be cancelled"
+        command = notice.content.lines.find { |line| line.start_with?("/cron_create ") }
+        assert_not_nil command
+        payload = JSON.parse(command.delete_prefix("/cron_create "))
+        assert_equal(
+          {
+            "creative_id" => @creative.id,
+            "topic_name" => "Counseling",
+            "schedule" => "0 10 * * *",
+            "message" => message,
+            "description" => "Daily follow-up"
+          },
+          payload
+        )
       end
 
       test "does nothing for crons targeting a different topic" do
         other = @creative.topics.create!(name: "Other", user: @user)
-        create_cron(creative_id: @creative.id, topic_id: other.id)
+        cron = create_cron(creative_id: @creative.id, topic_id: other.id)
         deleted_id = @topic.id
         @topic.destroy!
 
         assert_no_difference -> { Collavre::Comment.where(user_id: nil).count } do
           OrphanedCronNotifier.new(topic_id: deleted_id, topic_name: "Counseling").call
         end
+        assert SolidQueue::RecurringTask.exists?(key: cron.key)
+      end
+
+      test "deletes every matching cron before posting notices" do
+        crons = 2.times.map { create_cron(creative_id: @creative.id, topic_id: @topic.id) }
+        deleted_id = @topic.id
+        @topic.destroy!
+
+        Collavre::Comment.stub(:create!, ->(*) { raise "notice failed" }) do
+          assert_raises(RuntimeError) do
+            OrphanedCronNotifier.new(topic_id: deleted_id, topic_name: "Counseling").call
+          end
+        end
+
+        assert_empty SolidQueue::RecurringTask.where(key: crons.map(&:key))
       end
 
       test "keeps the notice as a system message even when a deleter is Current.user" do
@@ -103,7 +129,7 @@ module Collavre
         )
         linked = Collavre::Creative.create!(origin_id: @creative.id, user: other_user)
 
-        create_cron(creative_id: linked.id, topic_id: @topic.id)
+        cron = create_cron(creative_id: linked.id, topic_id: @topic.id)
         deleted_id = @topic.id
         @topic.destroy!
 
@@ -114,16 +140,22 @@ module Collavre
         assert_equal @creative.main_topic.id, notice.topic_id
         # Topic and (origin-rewritten) creative must be consistent — no orphaned topic.
         assert_equal notice.creative_id, notice.topic.creative_id
+        assert_not SolidQueue::RecurringTask.exists?(key: cron.key)
+
+        command = notice.content.lines.find { |line| line.start_with?("/cron_create ") }
+        payload = JSON.parse(command.delete_prefix("/cron_create "))
+        assert_equal linked.id, payload.fetch("creative_id")
       end
 
       test "ignores crons whose topic_id is nil (main-topic crons)" do
-        create_cron(creative_id: @creative.id, topic_id: nil)
+        cron = create_cron(creative_id: @creative.id, topic_id: nil)
         deleted_id = @topic.id
         @topic.destroy!
 
         assert_no_difference -> { Collavre::Comment.where(user_id: nil).count } do
           OrphanedCronNotifier.new(topic_id: deleted_id, topic_name: "Counseling").call
         end
+        assert SolidQueue::RecurringTask.exists?(key: cron.key)
       end
     end
   end
