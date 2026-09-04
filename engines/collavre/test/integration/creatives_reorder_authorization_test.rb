@@ -79,6 +79,42 @@ class CreativesReorderAuthorizationTest < ActionDispatch::IntegrationTest
     assert_equal [ @owner_a.id, @owner_b.id ], @owner_root.children.order(:sequence).pluck(:id)
   end
 
+  test "reorder cannot move a link shell from another user's private placement" do
+    share!(@owner_root, @collaborator, :write)
+    foreign_shell = Creative.create!(
+      user: @stranger,
+      parent: @stranger_root,
+      origin_id: @owner_a.id,
+      sequence: 1
+    )
+    sign_in_as(@collaborator)
+
+    post reorder_creatives_path, params: {
+      dragged_id: foreign_shell.id, target_id: @collaborator_root.id, direction: "child"
+    }, as: :json
+
+    assert_response :forbidden
+    assert_equal @stranger_root.id, foreign_shell.reload.parent_id
+  end
+
+  test "reorder cannot insert into another user's private link shell" do
+    share!(@owner_root, @collaborator, :write)
+    foreign_shell = Creative.create!(
+      user: @stranger,
+      parent: @stranger_root,
+      origin_id: @owner_a.id,
+      sequence: 1
+    )
+    sign_in_as(@collaborator)
+
+    post reorder_creatives_path, params: {
+      dragged_id: @collaborator_root.id, target_id: foreign_shell.id, direction: "child"
+    }, as: :json
+
+    assert_response :forbidden
+    assert_nil @collaborator_root.reload.parent_id
+  end
+
   # --- reorder: authorized ---------------------------------------------------
 
   test "owner can reorder their own creatives" do
@@ -162,6 +198,24 @@ class CreativesReorderAuthorizationTest < ActionDispatch::IntegrationTest
       post link_drop_creatives_path, params: {
         dragged_id: @stranger_a.id, target_id: @owner_a.id, direction: "child"
       }, as: :json
+    end
+
+    assert_response :forbidden
+  end
+
+  test "link_drop cannot insert into another user's private link shell" do
+    share!(@owner_root, @collaborator, :write)
+    foreign_shell = Creative.create!(
+      user: @stranger,
+      parent: @stranger_root,
+      origin_id: @owner_a.id,
+      sequence: 1
+    )
+    sign_in_as(@collaborator)
+
+    assert_no_difference -> { Creative.count } do
+      params = { dragged_id: @owner_b.id, target_id: foreign_shell.id, direction: "child" }
+      post link_drop_creatives_path, params: params, as: :json
     end
 
     assert_response :forbidden

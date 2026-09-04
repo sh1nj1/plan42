@@ -92,25 +92,28 @@ module Creatives
     def authorize_move!(dragged_creatives, target, direction)
       new_parent = direction == "child" ? target : target.parent
       subjects = dragged_creatives + [ target, new_parent ].compact
-      subjects.uniq(&:id).each { |creative| require_write!(creative) }
+      require_permissions!(subjects, :write)
     end
 
     # A link drop never mutates the dragged creative - it creates a new shell
     # pointing at the same origin - so :read on the source is enough. The
     # container that receives the shell still needs :write.
     def authorize_link_drop!(dragged, target, direction)
-      require_permission!(dragged, :read)
+      require_permissions!([ dragged ], :read)
 
       new_parent = direction == "child" ? target : target.parent
-      [ target, new_parent ].compact.uniq(&:id).each { |creative| require_write!(creative) }
+      require_permissions!([ target, new_parent ].compact, :write)
     end
 
-    def require_write!(creative)
-      require_permission!(creative, :write)
-    end
-
-    def require_permission!(creative, level)
-      return if creative.has_permission?(user, level)
+    # PermissionChecker resolves a link shell to its origin, which is correct
+    # for content access but insufficient for a tree mutation: write access to
+    # an origin must not authorize moving somebody else's private shell or
+    # inserting below it. PermissionFilter applies both origin access and the
+    # shell-placement gate, and batches the subjects for multi-drag.
+    def require_permissions!(creatives, level)
+      ids = creatives.uniq(&:id).map(&:id)
+      allowed_ids = Collavre::Creatives::PermissionFilter.new(user: user).readable_ids(ids, min_permission: level)
+      return if allowed_ids.size == ids.size
 
       raise PermissionError, "Permission denied"
     end
