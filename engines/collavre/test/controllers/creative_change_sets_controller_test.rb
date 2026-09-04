@@ -241,6 +241,28 @@ module Collavre
       assert_includes @creative.reload.description, "Later human edit"
     end
 
+    test "finalizes a draft with skipped conflicts and already-current proposals" do
+      child = Creative.create!(description: "Child", user: @user, parent: @creative)
+      draft = build_review_draft([
+        { "action" => "update", "id" => @creative.id, "description" => "Proposed parent" },
+        { "action" => "update", "id" => child.id, "description" => "Proposed child" }
+      ])
+      @creative.update!(description: "Later human edit")
+      child_change = draft.creative_changes.find_by!(creative_id: child.id)
+      Creatives::SnapshotAssignment.call(child, child_change.after)
+      child.save!
+
+      post creative_apply_change_set_path(@creative, draft),
+           params: { mode: "approve", resolutions: { @creative.id => "skip" } }, as: :json
+
+      assert_response :success
+      assert_equal "partial", response.parsed_body["status"]
+      assert_equal "applied", draft.reload.status
+      refute draft.creative_changes.exists?(creative_id: @creative.id)
+      assert draft.creative_changes.exists?(creative_id: child.id)
+      assert_includes child.reload.description, "Proposed child"
+    end
+
     test "does not approve a draft without an explicit mode" do
       draft = build_review_draft([
         { "action" => "update", "id" => @creative.id, "description" => "Proposed" }

@@ -3,15 +3,16 @@
 module Collavre
   module Creatives
     class PropagatedChangeAuthorization
-      def initialize(changes:, records:, writable_origin_ids:)
+      def initialize(changes:, records:, writable_source_ids:)
         @changes = changes
         @records = records
-        @writable_origin_ids = writable_origin_ids
+        @writable_source_ids = writable_source_ids
       end
 
       def call
         attributes = linked_archive_attributes
         add_parent_progress_attributes(attributes)
+        add_linked_progress_attributes(attributes)
         attributes
       end
 
@@ -20,7 +21,7 @@ module Collavre
       def linked_archive_attributes
         changes.each_with_object({}) do |change, attributes|
           creative = records[change.creative_id]
-          next unless creative&.origin_id.in?(writable_origin_ids)
+          next unless creative&.origin_id.in?(writable_source_ids)
           next unless transition_only?(change, "archived_at", %w[archive unarchive])
 
           attributes[change.id] = "archived_at"
@@ -35,6 +36,25 @@ module Collavre
 
           register_parent_progress(additions, attributes, parent_ids)
         end
+      end
+
+      def add_linked_progress_attributes(attributes)
+        source_ids = changes.filter_map do |change|
+          change.creative_id if writable_source_ids.include?(change.creative_id) &&
+            change.before["progress"] != change.after["progress"]
+        end.to_set
+        parent_ids = linked_parent_ids(source_ids)
+        loop do
+          additions = parent_progress_additions(parent_ids, attributes)
+          break if additions.empty?
+
+          register_parent_progress(additions, attributes, parent_ids)
+          parent_ids.merge(linked_parent_ids(additions.map(&:creative_id)))
+        end
+      end
+
+      def linked_parent_ids(source_ids)
+        Creative.where(origin_id: source_ids).where.not(parent_id: nil).distinct.pluck(:parent_id).to_set
       end
 
       def parent_progress_additions(parent_ids, attributes)
@@ -61,7 +81,7 @@ module Collavre
         @change_by_id ||= changes.index_by(&:id)
       end
 
-      attr_reader :changes, :records, :writable_origin_ids
+      attr_reader :changes, :records, :writable_source_ids
     end
   end
 end

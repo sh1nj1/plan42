@@ -43,7 +43,7 @@ module Collavre
       def capture
         payload = { result: nil, change_set: nil, changes: nil, blobs: [] }
         ApplicationRecord.transaction(requires_new: true) do
-          Current.set(user: @actor, agent_turn: nil, change_set: nil, creative_history_context: nil) do
+          Current.set(user: @actor, agent_turn: nil, mcp_request: nil, change_set: nil, creative_history_context: nil) do
             History.track(**history_context) do
               payload[:result] = yield
               serialize_capture(payload) if payload[:result]&.dig(:success)
@@ -59,12 +59,18 @@ module Collavre
           actor: @actor,
           origin: @origin,
           anchor: @anchor,
-          anchor_source: @origin == "import" ? :import_target : :agent_topic,
+          anchor_source: anchor_source,
           task: current_task,
           topic: current_task&.topic_id ? Topic.find_by(id: current_task.topic_id) : nil,
           summary: @summary,
           status: "draft"
         }
+      end
+
+      def anchor_source
+        return :import_target if @origin == "import"
+
+        current_task ? :agent_topic : :explicit
       end
 
       def serialize_capture(payload)

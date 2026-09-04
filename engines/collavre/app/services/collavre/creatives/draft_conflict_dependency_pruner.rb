@@ -50,10 +50,8 @@ module Collavre
       end
 
       def collect_progress_chain
-        parent_ids = discard_change_ids.filter_map do |change_id|
-          change = changes_by_id[change_id]
-          records[change&.creative_id]&.parent_id
-        end.to_set
+        source_ids = discard_change_ids.filter_map { |change_id| changes_by_id[change_id]&.creative_id }.to_set
+        parent_ids = propagation_parent_ids(source_ids)
         loop do
           additions = changes.select do |change|
             !discard_change_ids.include?(change.id) && parent_ids.include?(change.creative_id) && progress_only?(change)
@@ -62,9 +60,15 @@ module Collavre
 
           additions.each do |change|
             discard_change_ids << change.id
-            parent_ids << records[change.creative_id]&.parent_id
           end
+          parent_ids.merge(propagation_parent_ids(additions.map(&:creative_id)))
         end
+      end
+
+      def propagation_parent_ids(source_ids)
+        direct_ids = source_ids.filter_map { |id| records[id]&.parent_id }
+        linked_ids = Creative.where(origin_id: source_ids).where.not(parent_id: nil).distinct.pluck(:parent_id)
+        [ *direct_ids, *linked_ids ].to_set
       end
 
       def archival_transition?(change)

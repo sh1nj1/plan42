@@ -82,7 +82,13 @@ module Collavre
           [ operation["id"], operation["parent_id"] ]
         end.compact.map(&:to_i).select(&:positive?)
         creatives = Creative.where(id: ids).to_a
-        [ *creatives, *creatives.map(&:effective_origin) ]
+        delete_ids = operations.filter_map do |operation|
+          operation = operation.stringify_keys
+          operation["id"].to_i if operation["action"] == "delete"
+        end.to_set
+        archive_targets = creatives.select { |creative| delete_ids.include?(creative.id) }
+          .flat_map { |creative| creative.archive_family.to_a }
+        [ *creatives, *archive_targets ]
       end
 
       def execute_create(op)

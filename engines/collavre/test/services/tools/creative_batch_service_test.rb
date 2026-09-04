@@ -57,6 +57,43 @@ module Collavre
         assert @root.children.where("description LIKE ?", "%Immediate%").exists?
       end
 
+      test "stores a taskless MCP write as a draft under review policy" do
+        @root.update!(data: @root.data.merge("ai_write_policy" => "review"))
+
+        result = Current.set(user: @user, mcp_request: true) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => @root.id, "description" => "MCP proposal" }
+          ])
+        end
+
+        assert result[:pending_review]
+        refute_includes @root.reload.description, "MCP proposal"
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        assert_equal "mcp", draft.origin
+        assert_equal @root.id, draft.anchor_creative_id
+        assert_equal "explicit", draft.anchor_source
+      end
+
+      test "reviews an archive when a descendant locally requires review" do
+        task, agent = agent_turn
+        parent = Creative.create!(
+          description: "Auto parent", user: @user, parent: @root,
+          data: { "ai_write_policy" => "auto" }
+        )
+        child = Creative.create!(
+          description: "Protected child", user: @user, parent: parent,
+          data: { "ai_write_policy" => "review" }
+        )
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => parent.id } ])
+        end
+
+        assert result[:pending_review]
+        assert_not parent.reload.archived?
+        assert_not child.reload.archived?
+      end
+
       test "keeps a parentless create on the default auto policy" do
         task, agent = review_agent_turn
 
@@ -172,6 +209,24 @@ module Collavre
         assert_equal :applied, applied.status
         assert child.reload.archived?
         assert linked.reload.archived?
+        assert_equal "applied", draft.reload.status
+      end
+
+      test "draft approval applies linked parent progress rollups" do
+        child, linked = create_private_linked_pair(progress: 0)
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => child.id, "progress" => 1.0 }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert_equal 1.0, child.reload.progress
+        assert_in_delta 0.5, linked.parent.reload.progress, 0.01
         assert_equal "applied", draft.reload.status
       end
 
@@ -435,8 +490,8 @@ module Collavre
         [ task, agent ]
       end
 
-      def create_private_linked_pair
-        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root, progress: 1)
+      def create_private_linked_pair(progress: 1)
+        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root, progress: progress)
         foreign_user = users(:two)
         foreign_root = Creative.create!(description: "<p>Private tree</p>", user: foreign_user)
         Creative.create!(description: "<p>Incomplete</p>", user: foreign_user, parent: foreign_root, progress: 0)

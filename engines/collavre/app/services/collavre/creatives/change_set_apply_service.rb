@@ -56,6 +56,7 @@ module Collavre
         writable_ids = writable_ids_for(records.keys)
         retain_authorized_targets(records, writable_ids)
         @conflict_skipped_change_ids = Set.new
+        @resolved_change_ids = Set.new
         buckets = @targets.each_with_object([ [], [], [] ]) do |(change, snapshot), result|
           classify_target(change, snapshot, records, writable_ids, result)
         end
@@ -76,7 +77,7 @@ module Collavre
         return classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped) if draft_creation?(change, creative)
         return classify_propagated_target(change, creative, snapshot, plan) if propagated_target?(change)
         return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids)
-        return if History.snapshot(creative) == snapshot
+        return @resolved_change_ids << change.id if History.snapshot(creative) == snapshot
 
         if current_conflict?(creative, change) && resolution(change) != "force"
           if resolution(change) == "skip"
@@ -104,8 +105,9 @@ module Collavre
       end
 
       def retain_authorized_targets(records, writable_ids)
-        visible_origins = @targets.keys.filter_map do |change|
-          next unless @visible_change_ids.include?(change.id) && change.operation.in?(%w[archive unarchive])
+        writable_sources = @targets.keys.filter_map do |change|
+          next unless @visible_change_ids.include?(change.id)
+          next unless archival_transition?(change) || progress_transition?(change)
 
           creative = records[change.creative_id]
           creative&.id if target_writable?(creative, @targets.fetch(change), records, writable_ids)
@@ -113,7 +115,7 @@ module Collavre
         @propagated_attributes = PropagatedChangeAuthorization.new(
           changes: @targets.keys,
           records: records,
-          writable_origin_ids: visible_origins
+          writable_source_ids: writable_sources
         ).call
         @targets.select! { |change, _snapshot| @visible_change_ids.include?(change.id) || propagated_target?(change) }
         @complete = @targets.size == @all_changes.size
@@ -122,7 +124,7 @@ module Collavre
       def classify_propagated_target(change, creative, snapshot, plan)
         attribute = @propagated_attributes.fetch(change.id)
         current_value = History.snapshot(creative)[attribute] if creative
-        return if current_value == snapshot[attribute]
+        return @resolved_change_ids << change.id if current_value == snapshot[attribute]
         unless creative && current_value == change.public_send(source_snapshot_side)[attribute]
           @complete = false
           return
@@ -208,6 +210,7 @@ module Collavre
 
       def complete_noop(source, skipped)
         return reject_fully_skipped_draft(source, skipped) if fully_skipped_draft?(skipped)
+        return apply_draft(source, [], skipped) if resolved_skipped_draft?(skipped)
         return result(:skipped, skipped: skipped) unless skipped.empty? && @complete
 
         if @mode == :revert
@@ -245,6 +248,10 @@ module Collavre
           change.before["archived_at"] != change.after["archived_at"]
       end
 
+      def progress_transition?(change)
+        change.before["progress"] != change.after["progress"]
+      end
+
       def propagated_candidate?(change)
         archival_transition?(change) || change.operation == "update"
       end
@@ -270,6 +277,12 @@ module Collavre
       def fully_skipped_draft?(skipped)
         @mode == :draft && @complete && skipped.present? && only_conflicts_skipped?(skipped) &&
           @draft_discard_change_ids.size == @all_changes.size
+      end
+
+      def resolved_skipped_draft?(skipped)
+        return false unless @mode == :draft && @complete && skipped.present? && only_conflicts_skipped?(skipped)
+
+        (@draft_discard_change_ids | @resolved_change_ids).size == @all_changes.size
       end
 
       def reject_fully_skipped_draft(source, skipped)

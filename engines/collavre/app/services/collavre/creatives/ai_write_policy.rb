@@ -4,7 +4,7 @@ module Collavre
   module Creatives
     class AiWritePolicy
       def self.review_required?(creatives)
-        return false unless Current.agent_turn&.dig(:task)
+        return false unless Current.agent_turn&.dig(:task) || Current.mcp_request
 
         Array(creatives).compact.uniq(&:id).any?(&:ai_write_review?)
       end
@@ -17,7 +17,11 @@ module Collavre
       def self.capture(creatives:, anchor:, origin: :tool)
         return yield unless review_required?(creatives)
 
-        DraftChangeSetCapture.new(anchor: anchor || agent_anchor, origin: origin).call { yield }
+        effective_origin = Current.mcp_request ? :mcp : origin
+        DraftChangeSetCapture.new(
+          anchor: anchor || agent_anchor || Array(creatives).compact.first,
+          origin: effective_origin
+        ).call { yield }
       end
     end
   end
