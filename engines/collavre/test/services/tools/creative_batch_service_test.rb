@@ -513,6 +513,20 @@ module Collavre
         assert_not hidden.reload.archived?
       end
 
+      test "merged update and archive seeds the hidden descendant family" do
+        source, hidden, draft = hidden_descendant_archive_draft(update_before_delete: true)
+        source_change = draft.creative_changes.find_by!(creative_id: source.id)
+
+        assert_equal "archive", source_change.operation
+        assert_not_equal source_change.before["markdown_source"], source_change.after["markdown_source"]
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert source.reload.archived?
+        assert_includes source.description, "Updated before archive"
+        assert hidden.reload.archived?
+      end
+
       test "skipping a progress conflict also skips linked parent rollups" do
         child, linked = create_private_linked_pair(progress: 0)
         task, agent = review_agent_turn
@@ -845,7 +859,7 @@ module Collavre
         [ child, linked ]
       end
 
-      def hidden_descendant_archive_draft
+      def hidden_descendant_archive_draft(update_before_delete: false)
         owner = users(:two)
         source = Creative.create!(
           description: "Shared source", user: owner,
@@ -858,8 +872,13 @@ module Collavre
         CreativeShare.create!(creative: source, user: agent, shared_by: owner, permission: :write)
         topic = Topic.create!(creative: source, user: @user, name: "Hidden descendant #{SecureRandom.hex(3)}")
         task = Task.create!(agent: agent, creative: source, topic_id: topic.id, name: "Review", status: "running")
+        operations = []
+        if update_before_delete
+          operations << { "action" => "update", "id" => source.id, "description" => "Updated before archive" }
+        end
+        operations << { "action" => "delete", "id" => source.id }
         result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
-          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => source.id } ])
+          CreativeBatchService.new.call(operations: operations)
         end
         [ source, hidden, CreativeChangeSet.find(result[:change_set_id]) ]
       end

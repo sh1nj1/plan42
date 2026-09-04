@@ -22,7 +22,7 @@ module Collavre
         attributes = {}
         source_ids = changes.filter_map do |change|
           change.creative_id if writable_source_ids.include?(change.creative_id) &&
-            transition_only?(change, "archived_at", %w[archive unarchive])
+            archive_transition?(change)
         end.to_set
         family_ids = source_ids | source_ids.filter_map { |id| records[id]&.origin_id }.to_set
         loop do
@@ -45,6 +45,10 @@ module Collavre
         creative = records[change.creative_id]
         family_ids.include?(change.creative_id) || family_ids.include?(creative&.origin_id) ||
           snapshot_parent_ids(change).any? { |parent_id| family_ids.include?(parent_id) }
+      end
+
+      def archive_transition?(change)
+        change.operation.in?(%w[archive unarchive]) && change.before["archived_at"] != change.after["archived_at"]
       end
 
       def add_parent_progress_attributes(attributes)
