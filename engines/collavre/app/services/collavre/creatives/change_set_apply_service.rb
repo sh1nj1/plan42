@@ -32,6 +32,7 @@ module Collavre
       private
 
       def build_targets(source)
+        @source_record = source
         @all_changes = source.creative_changes.order(@mode == :revert ? { position: :desc } : { position: :asc }).to_a
         visible_changes = ChangeSetVisibility.new(user: @user).changes(@all_changes)
         @visible_change_ids = visible_changes.map(&:id).to_set
@@ -51,7 +52,8 @@ module Collavre
       def locked_records
         target_ids = @targets.keys.map(&:creative_id)
         parent_ids = @targets.values.filter_map { |snapshot| snapshot["parent_id"] }
-        Creative.unscoped.where(id: [ *target_ids, *parent_ids ]).order(:id).lock.index_by(&:id)
+        anchor_ids = @mode == :draft ? [ @source_record.anchor_creative_id ] : []
+        Creative.unscoped.where(id: [ *target_ids, *parent_ids, *anchor_ids ]).order(:id).lock.index_by(&:id)
       end
 
       def classify_target(change, snapshot, records, writable_ids, buckets)
@@ -71,7 +73,9 @@ module Collavre
 
       def classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped)
         parent_id = snapshot["parent_id"]
-        writable = if parent_id&.negative?
+        writable = if parent_id.nil?
+                     writable_parent?(records[@source_record.anchor_creative_id], writable_ids)
+        elsif parent_id.negative?
                      virtual_creation_ids.include?(parent_id)
         else
                      parent = records[parent_id]
@@ -195,10 +199,11 @@ module Collavre
       end
 
       def apply_draft(source, plan, skipped)
-        return result(:skipped, skipped: skipped) unless skipped.empty? && @complete
+        return result(:skipped, skipped: skipped) unless @complete && explicitly_skipped?(skipped)
 
-        DraftChangeSetApplicator.new(change_set: source, user: @user, plan: plan).call
-        result(:applied, change_set: source)
+        DraftChangeSetApplicator.new(change_set: source, user: @user, plan: plan, skipped_ids: skipped).call
+        status = skipped.empty? ? :applied : :partial
+        result(status, change_set: source, skipped: skipped)
       end
 
       def apply_snapshot(creative, snapshot, propagated_attribute: nil)
@@ -232,6 +237,10 @@ module Collavre
 
       def virtual_creation_ids
         @virtual_creation_ids ||= @targets.keys.select { |change| change.before.empty? }.map(&:creative_id).to_set
+      end
+
+      def explicitly_skipped?(ids)
+        ids.all? { |id| @resolutions[id.to_s] == "skip" }
       end
 
       def result(status, change_set: nil, conflicts: [], skipped: [])

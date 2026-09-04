@@ -71,6 +71,25 @@ module Collavre
         assert Creative.where(parent_id: nil).where("description LIKE ?", "%Independent root%").exists?
       end
 
+      test "approves a parentless create captured with a review-policy batch" do
+        task, agent = review_agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "create", "parent_id" => @root.id, "description" => "Reviewed child" },
+            { "action" => "create", "description" => "Reviewed root" }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        root_change = draft.creative_changes.find { |change| change.after["parent_id"].nil? }
+
+        assert_equal @root.id, root_change.previous_parent_id
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert @root.children.where("description LIKE ?", "%Reviewed child%").exists?
+        assert Creative.roots.where("description LIKE ?", "%Reviewed root%").exists?
+      end
+
       test "returns the existing pending draft for another write in the same turn" do
         task, agent = review_agent_turn
 

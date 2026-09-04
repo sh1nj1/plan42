@@ -125,7 +125,9 @@ module Collavre
         changes.map do |attributes|
           attributes = attributes.deep_dup
           attributes["creative_id"] = id_map.fetch(attributes["creative_id"], attributes["creative_id"])
-          attributes["previous_parent_id"] ||= attributes.dig("after", "parent_id") if attributes["before"].empty?
+          if attributes["before"].empty?
+            attributes["previous_parent_id"] ||= attributes.dig("after", "parent_id") || @anchor&.id
+          end
           rewrite_parent_ids!(attributes, id_map)
           attributes
         end
