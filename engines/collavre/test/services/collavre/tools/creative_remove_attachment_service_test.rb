@@ -60,6 +60,19 @@ module Collavre
         assert_not CreativeChangeSet.where(task_id: task.id, status: "draft").exists?
       end
 
+      test "localizes an unembedded legacy removal error" do
+        task, agent = review_agent_turn(@creative)
+
+        result = I18n.with_locale(:ko) do
+          Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+            CreativeRemoveAttachmentService.new.call(creative_id: @creative.id, signed_id: @signed_id)
+          end
+        end
+
+        assert_equal I18n.t("collavre.tools.creative_remove_attachment.errors.unembedded_review", locale: :ko),
+                     result[:error]
+      end
+
       test "strips the embedded node from the description and detaches" do
         # HTML is the source of truth: an attachment embedded in the description
         # must have its node removed, otherwise the next save reconciles the

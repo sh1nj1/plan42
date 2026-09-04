@@ -3,7 +3,10 @@
 module Collavre
   module Creatives
     class ChangeSetVisibility
+      attr_reader :user
+
       def initialize(user:)
+        @user = user
         @user_id = user&.id
         @permission_filter = PermissionFilter.new(user: user)
       end

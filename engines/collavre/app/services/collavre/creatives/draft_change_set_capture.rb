@@ -25,7 +25,7 @@ module Collavre
       private
 
       def capture_and_persist
-        return pending_result(existing_draft) if existing_draft
+        return blocked_result(existing_draft) if existing_draft
 
         payload = capture { yield }
         return payload.fetch(:result) unless payload[:change_set]
@@ -184,6 +184,13 @@ module Collavre
           pending_review: true,
           change_set_id: draft.id
         }
+      end
+
+      def blocked_result(draft)
+        pending_result(draft).merge(
+          success: false,
+          error: I18n.t("collavre.creative_history.pending_write_blocked")
+        )
       end
     end
   end

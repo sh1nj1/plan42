@@ -12,6 +12,8 @@ module Collavre
         @visibility = ChangeSetVisibility.new(user: user)
         @changes = @visibility.changes(change_set.creative_changes.order(:position))
         @changes_by_id = @changes.index_by(&:creative_id)
+        @candidate_nodes = nil
+        @parent_ids = {}
       end
 
       def groups
@@ -22,7 +24,12 @@ module Collavre
 
       def fully_visible? = change_count == @change_set.creative_changes.size
 
-      def revertible? = @change_set.origin != "sync" && @changes.none? { |change| change.operation == "destroy" }
+      def revertible? = @change_set.origin != "sync" && actionable_changes.none? { |change| change.operation == "destroy" }
+
+      def writable?
+        @writable ||= PermissionFilter.new(user: @visibility.user)
+          .readable_ids(actionable_changes.map(&:creative_id), min_permission: :write).any?
+      end
 
       private
 
@@ -62,7 +69,9 @@ module Collavre
         change = @changes_by_id[creative_id]
         return (change.after.presence || change.before)["parent_id"] if change
 
-        Creative.unscoped.where(id: creative_id).pick(:parent_id)
+        return @parent_ids[creative_id] if @parent_ids.key?(creative_id)
+
+        @parent_ids[creative_id] = Creative.unscoped.where(id: creative_id).pick(:parent_id)
       end
 
       def build_group(root_id)
@@ -97,10 +106,16 @@ module Collavre
         ordered_node_ids(root_id, nodes).filter_map { |id| markdown_for(nodes[id]) }.join(BLOCK_SEPARATOR)
       end
 
-      def candidate_nodes(root_id)
-        roots = Creative.unscoped.where(id: [ root_id, *@changes_by_id.keys ])
-        candidates = roots.flat_map { |creative| creative.self_and_descendants.to_a }.uniq(&:id)
-        @visibility.nodes(candidates)
+      def candidate_nodes(_root_id)
+        @candidate_nodes ||= begin
+          root_ids = [ @change_set.anchor_creative_id, *@changes_by_id.keys ].compact.select(&:positive?)
+          descendant_ids = CreativeHierarchy.where(ancestor_id: root_ids).pluck(:descendant_id)
+          @visibility.nodes(Creative.unscoped.where(id: descendant_ids).to_a)
+        end
+      end
+
+      def actionable_changes
+        @actionable_changes ||= @changes.reject(&:review_skipped?)
       end
 
       def ordered_node_ids(root_id, nodes)

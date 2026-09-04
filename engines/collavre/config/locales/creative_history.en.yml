@@ -10,6 +10,8 @@ en:
         other: "%{count} creatives"
       inline: Inline diff
       split: Split diff
+      before: Before
+      after: After
       moved: Moved
       revert: Revert change
       restore: Restore this version
@@ -22,6 +24,7 @@ en:
       reject_confirm: Reject this proposed change?
       rejected: Rejected
       pending_review: Awaiting approval
+      pending_write_blocked: This turn already has a proposal awaiting review. Wait for it to be approved or rejected before writing again.
       irreversible: Cannot be restored
       undo_notice:
         one: AI updated 1 creative.
@@ -36,8 +39,13 @@ en:
       results:
         applied: The change was reverted.
         approved: The proposed change was applied.
+        invalid_action: This action is no longer available for this change.
         rejected: The proposed change was rejected.
         partial: The writable changes were applied. You can retry the remaining changes after permissions change.
         conflict: Resolve each conflict before reverting.
         skipped: No writable creatives remained to revert.
         not_revertible: This change cannot be reverted.
+        restore_applied: This version was restored.
+        restore_partial: The writable creatives were restored. You can retry the remaining creatives after permissions change.
+        restore_skipped: No writable creatives remained to restore.
+        restore_not_revertible: This version cannot be restored.

@@ -42,6 +42,12 @@
             <details>
               <summary><%= t("collavre.creative_history.split") %></summary>
               <table class="creative-history-split">
+                <thead>
+                  <tr>
+                    <th scope="col"><%= t("collavre.creative_history.before") %></th>
+                    <th scope="col"><%= t("collavre.creative_history.after") %></th>
+                  </tr>
+                </thead>
                 <tbody>
                   <% group[:split_rows].each do |row| %>
                     <tr class="diff-<%= row[:action] == "=" ? "same" : "changed" %>">
@@ -78,7 +84,7 @@
         </button>
       <% elsif change_set.status == "draft" %>
         <span class="creative-history-state"><%= t("collavre.creative_history.pending_review") %></span>
-      <% elsif change_set.status == "applied" && diff.revertible? %>
+      <% elsif change_set.status == "applied" && diff.revertible? && diff.writable? %>
         <button type="button"
                 class="creative-history-revert"
                 data-action="creative-history#revert"
@@ -97,7 +103,7 @@
       <% elsif !diff.revertible? %>
         <span class="creative-history-state"><%= t("collavre.creative_history.irreversible") %></span>
       <% end %>
-      <% if diff.revertible? && change_set.status.in?(%w[applied reverted]) %>
+      <% if diff.revertible? && diff.writable? && change_set.status.in?(%w[applied reverted]) %>
         <button type="button"
                 class="creative-history-restore"
                 data-action="creative-history#revert"

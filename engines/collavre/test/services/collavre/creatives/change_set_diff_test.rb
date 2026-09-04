@@ -84,6 +84,35 @@ module Collavre
         assert group.fetch(:split_rows).any? { |row| row.fetch(:action) != "=" }
       end
 
+      test "bulk loads candidate descendants once for both document states" do
+        3.times do |index|
+          child = Creative.create!(description: "Child #{index}", user: @user, parent: @root)
+          @change_set.creative_changes.create!(
+            creative: child, operation: "update",
+            before: History.snapshot(child).merge("description" => "Before #{index}"),
+            after: History.snapshot(child), position: index + 1
+          )
+        end
+        outside = Creative.create!(description: "Outside", user: @user)
+        @change_set.creative_changes.create!(
+          creative: outside, operation: "update",
+          before: History.snapshot(outside).merge("description" => "Earlier outside"),
+          after: History.snapshot(outside), position: 4
+        )
+        descendant_queries = []
+        callback = lambda do |_name, _start, _finish, _id, payload|
+          sql = payload[:sql].to_s
+          descendant_queries << sql if sql.include?("creative_hierarchies") && sql.include?("ancestor_id")
+        end
+
+        ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+          ChangeSetDiff.new(@change_set, user: @user).groups
+        end
+
+        bulk_queries = descendant_queries.select { |sql| sql.match?(/ancestor_id.*IN/i) }
+        assert_equal 1, bulk_queries.size, descendant_queries.join("\n")
+      end
+
       test "filters changes outside the viewer's permission boundary" do
         foreign = Creative.create!(description: "Foreign secret", user: users(:two))
         @change_set.creative_changes.create!(

@@ -12,7 +12,7 @@ module Collavre
       end
 
       def call
-        discard_skipped_changes
+        preserve_skipped_changes
         History.track(**history_context) do
           Current.change_set = @change_set
           @plan.each { |creative, snapshot, attribute, change| apply(creative, snapshot, attribute, change) }
@@ -23,11 +23,10 @@ module Collavre
 
       private
 
-      def discard_skipped_changes
-        changes = @change_set.creative_changes.where(id: @skipped_change_ids)
-        stale_blob_ids = ActiveStorage::Attachment.where(record: changes, name: "history_files").pluck(:blob_id)
-        changes.destroy_all
-        History.schedule_blob_purge_rechecks(stale_blob_ids)
+      def preserve_skipped_changes
+        @change_set.creative_changes.where(id: @skipped_change_ids).find_each do |change|
+          change.update!(conflict: change.conflict.merge("disposition" => "skipped"))
+        end
       end
 
       def history_context

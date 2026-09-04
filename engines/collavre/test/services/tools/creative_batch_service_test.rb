@@ -212,7 +212,7 @@ module Collavre
         assert_equal agent, reviewed_root.user
       end
 
-      test "returns the existing pending draft for another write in the same turn" do
+      test "rejects another write while the same turn has a pending draft" do
         task, agent = review_agent_turn
 
         results = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
@@ -225,9 +225,16 @@ module Collavre
           [ first, second ]
         end
 
+        assert results.first[:success]
+        assert_not results.second[:success]
+        assert results.second[:pending_review]
         assert_equal results.first[:change_set_id], results.second[:change_set_id]
+        assert_equal I18n.t("collavre.creative_history.pending_write_blocked"), results.second[:error]
         assert_equal 1, CreativeChangeSet.where(task_id: task.id, status: "draft").count
         assert_equal "<p>Root</p>", @root.reload.description
+        proposed_snapshot = CreativeChangeSet.find(results.first[:change_set_id]).creative_changes.sole.after.to_json
+        assert_includes proposed_snapshot, "First"
+        refute_includes proposed_snapshot, "Second"
       end
 
       test "retains a newly uploaded draft image and applies it without re-uploading" do

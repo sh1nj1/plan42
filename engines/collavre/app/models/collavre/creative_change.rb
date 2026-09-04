@@ -29,6 +29,10 @@ module Collavre
         before.except(*ARCHIVE_PROPAGATION_KEYS) == after.except(*ARCHIVE_PROPAGATION_KEYS)
     end
 
+    def review_skipped?
+      conflict["disposition"] == "skipped"
+    end
+
     after_create_commit :ensure_history_topic
 
     private

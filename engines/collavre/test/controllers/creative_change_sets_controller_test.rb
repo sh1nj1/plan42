@@ -94,6 +94,38 @@ module Collavre
       assert_response :success
       assert_equal 0.75, @creative.reload.progress
       assert_equal "applied", @change_set.reload.status
+      assert_equal "This version was restored.", response.parsed_body["message"]
+    end
+
+    test "restore reports a restore-specific message when nothing is writable" do
+      viewer = users(:two)
+      viewer.update!(email_verified_at: Time.current)
+      CreativeShare.create!(creative: @creative, user: viewer, shared_by: @user, permission: :read)
+      delete session_path
+      post session_path, params: { email: viewer.email, password: "password" }
+
+      post creative_apply_change_set_path(@creative, @change_set), params: { mode: "restore" }, as: :json
+
+      assert_response :unprocessable_entity
+      assert_equal "skipped", response.parsed_body["status"]
+      assert_equal "No writable creatives remained to restore.", response.parsed_body["message"]
+    end
+
+    test "a retried approval cannot revert the applied proposal" do
+      draft = build_review_draft([
+        { "action" => "update", "id" => @creative.id, "description" => "Proposed" }
+      ])
+      post creative_apply_change_set_path(@creative, draft), params: { mode: "approve" }, as: :json
+      applied_snapshot = Creatives::History.snapshot(@creative.reload)
+
+      assert_no_difference("CreativeChangeSet.count") do
+        post creative_apply_change_set_path(@creative, draft), params: { mode: "approve" }, as: :json
+      end
+
+      assert_response :unprocessable_entity
+      assert_equal "invalid_action", response.parsed_body["status"]
+      assert_equal applied_snapshot, Creatives::History.snapshot(@creative.reload)
+      assert_equal "applied", draft.reload.status
     end
 
     test "revert resolves a change set through a linked Creative scope" do
@@ -193,8 +225,13 @@ module Collavre
       assert_equal [ @creative.id ], response.parsed_body["skipped"]
       assert_includes @creative.reload.description, "Later human edit"
       assert_includes child.reload.description, "Proposed child"
-      refute draft.creative_changes.exists?(creative_id: @creative.id)
+      assert draft.creative_changes.find_by!(creative_id: @creative.id).review_skipped?
       assert_equal "applied", draft.reload.status
+
+      post creative_apply_change_set_path(@creative, draft), params: { mode: "revert" }, as: :json
+      assert_response :success
+      assert_includes @creative.reload.description, "Later human edit"
+      refute_includes child.reload.description, "Proposed child"
     end
 
     test "does not treat a requested skip as authority over an unwritable draft target" do
@@ -260,7 +297,7 @@ module Collavre
       assert_response :success
       assert_equal "partial", response.parsed_body["status"]
       assert_equal "applied", draft.reload.status
-      refute draft.creative_changes.exists?(creative_id: @creative.id)
+      assert draft.creative_changes.find_by!(creative_id: @creative.id).review_skipped?
       assert draft.creative_changes.exists?(creative_id: child.id)
       assert_includes child.reload.description, "Proposed child"
     end
@@ -273,7 +310,7 @@ module Collavre
       post creative_apply_change_set_path(@creative, draft), as: :json
 
       assert_response :unprocessable_entity
-      assert_equal "not_revertible", response.parsed_body["status"]
+      assert_equal "invalid_action", response.parsed_body["status"]
       assert_equal "draft", draft.reload.status
       refute_includes @creative.reload.description, "Proposed"
     end

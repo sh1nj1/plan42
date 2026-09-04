@@ -46,6 +46,12 @@ module Collavre
     end
     private_class_method :scope_condition
 
+    def changes_for(mode)
+      direction = mode == :revert ? :desc : :asc
+      changes = creative_changes.order(position: direction).to_a
+      mode == :draft ? changes : changes.reject(&:review_skipped?)
+    end
+
     private
 
     def clear_current_reference

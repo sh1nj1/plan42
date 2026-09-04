@@ -47,7 +47,7 @@ module Collavre
 
       def build_targets(source)
         @source_record = source
-        @all_changes = source.creative_changes.order(@mode == :revert ? { position: :desc } : { position: :asc }).to_a
+        @all_changes = source.changes_for(@mode)
         visible_changes = ChangeSetVisibility.new(user: @user).changes(@all_changes)
         @visible_change_ids = visible_changes.map(&:id).to_set
         candidates = (visible_changes + @all_changes.select { |change| propagated_candidate?(change) }).uniq

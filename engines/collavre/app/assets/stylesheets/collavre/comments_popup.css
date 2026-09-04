@@ -1691,12 +1691,19 @@ body.chat-fullscreen {
   width: 100%;
 }
 
-.creative-history-split td {
+.creative-history-split :is(th, td) {
   overflow-wrap: anywhere;
   padding: 2px 6px;
+  text-align: left;
   vertical-align: top;
   white-space: pre-wrap;
   width: 50%;
+}
+
+.creative-history-split th {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .creative-history-split .diff-changed td:first-child {

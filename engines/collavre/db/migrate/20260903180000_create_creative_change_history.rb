@@ -23,6 +23,7 @@ class CreateCreativeChangeHistory < ActiveRecord::Migration[8.0]
       t.index %i[anchor_creative_id created_at]
       t.index :status
       t.index :task_id
+      t.index :reverts_id
       t.index %i[change_group_token user_id]
     end
 

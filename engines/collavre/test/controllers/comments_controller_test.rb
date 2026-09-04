@@ -35,6 +35,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".creative-history-item", count: 1
     assert_select ".creative-history-revert", count: 1
+    assert_select ".creative-history-split th[scope='col']", text: I18n.t("collavre.creative_history.before")
+    assert_select ".creative-history-split th[scope='col']", text: I18n.t("collavre.creative_history.after")
 
     assert_no_difference("Comment.count") do
       post creative_comments_path(@creative),
@@ -42,6 +44,24 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_response :forbidden
     assert_equal I18n.t("collavre.creative_history.read_only"), response.parsed_body["error"]
+  end
+
+  test "History hides revert and restore controls from a read-only viewer" do
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: @creative) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+    viewer = users(:two)
+    grant_read_access_to_other_user(@creative, user: viewer)
+    delete session_path
+    post session_path, params: { email: viewer.email, password: "password" }
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert", count: 0
+    assert_select ".creative-history-restore", count: 0
   end
 
   test "History renders approval and rejection controls for a draft" do

@@ -280,6 +280,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_190000) do
     t.integer "user_id"
     t.index ["anchor_creative_id", "created_at"], name: "idx_on_anchor_creative_id_created_at_15aafa2718"
     t.index ["change_group_token", "user_id"], name: "index_creative_change_sets_on_change_group_token_and_user_id"
+    t.index ["reverts_id"], name: "index_creative_change_sets_on_reverts_id"
     t.index ["status"], name: "index_creative_change_sets_on_status"
     t.index ["task_id"], name: "index_creative_change_sets_on_task_id"
   end

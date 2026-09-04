@@ -14,18 +14,18 @@ module Tools
 
     sig { params(creative_id: Integer, signed_id: String).returns(T::Hash[Symbol, T.untyped]) }
     def call(creative_id:, signed_id:)
-      raise "Current.user is required" unless Current.user
+      raise I18n.t("collavre.tools.creative_remove_attachment.errors.current_user_required") unless Current.user
 
       creative = Creative.find_by(id: creative_id)
-      return { error: "Creative not found", id: creative_id } unless creative
+      return error(:creative_not_found, id: creative_id) unless creative
 
       unless creative.has_permission?(Current.user, :write)
-        return { error: "No write permission on Creative", id: creative_id }
+        return error(:write_permission, id: creative_id)
       end
 
       targets = [ creative, creative.effective_origin ]
       if Creatives::AiWritePolicy.review_required?(targets) && unembedded_attachment?(creative, signed_id)
-        return { error: "An unembedded legacy attachment cannot be proposed for review" }
+        return error(:unembedded_review)
       end
 
       Creatives::AiWritePolicy.capture(
@@ -49,9 +49,13 @@ module Tools
       # ActiveStorage attachment would leave a dangling node in the description
       # (broken asset, or reconciled back into creative.files on the next save).
       removed = creative.remove_attachment!(signed_id)
-      return { error: "Attachment not found on this Creative" } unless removed
+      return error(:attachment_not_found) unless removed
 
       { success: true, creative_id: creative.id, removed_signed_id: signed_id }
+    end
+
+    def error(key, **attributes)
+      { error: I18n.t("collavre.tools.creative_remove_attachment.errors.#{key}"), **attributes }
     end
   end
 end
