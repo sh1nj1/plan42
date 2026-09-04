@@ -27,6 +27,11 @@ module Collavre
         mutate_archive_family(archived_at: Time.current, operation: "archive")
       end
 
+      def archive_placement_subtree!
+        targets = self_and_descendants.where(archived_at: nil)
+        mutate_archive_targets(targets, archived_at: Time.current, operation: "archive")
+      end
+
       def unarchive!
         mutate_archive_family(archived_at: nil, operation: "unarchive")
       end
@@ -38,9 +43,12 @@ module Collavre
       private
 
       def mutate_archive_family(archived_at:, operation:)
+        mutate_archive_targets(archive_targets(archived_at), archived_at: archived_at, operation: operation)
+      end
+
+      def mutate_archive_targets(targets, archived_at:, operation:)
         affected_ids = []
         self.class.transaction do
-          targets = archive_targets(archived_at)
           affected_ids = targets.pluck(:id)
           parent_ids = targets.where.not(parent_id: nil).distinct.pluck(:parent_id)
           Creatives::History.record_bulk(targets, operation: operation) do

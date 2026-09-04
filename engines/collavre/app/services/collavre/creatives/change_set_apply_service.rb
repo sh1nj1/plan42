@@ -48,6 +48,7 @@ module Collavre
       def build_targets(source)
         @source_record = source
         @all_changes = source.changes_for(@mode)
+        @creation_revert_policy = CreationRevertPolicy.new(changes: @all_changes)
         visible_changes = ChangeSetVisibility.new(user: @user).changes(@all_changes)
         @visible_change_ids = visible_changes.map(&:id).to_set
         candidates = (visible_changes + @all_changes.select { |change| propagated_candidate?(change) }).uniq
@@ -130,7 +131,8 @@ module Collavre
         attributes = Array(@propagated_attributes.fetch(change.id))
         current_values = History.snapshot(creative).slice(*attributes) if creative
         return @resolved_change_ids << change.id if current_values == snapshot.slice(*attributes)
-        unless creative && current_values == change.public_send(source_snapshot_side).slice(*attributes)
+        source_side = @mode == :revert ? :after : :before
+        unless creative && current_values == change.public_send(source_side).slice(*attributes)
           @complete = false unless @authorization_only
           return
         end
@@ -171,6 +173,7 @@ module Collavre
       def current_conflict?(creative, change)
         return History.snapshot(creative) != change.before if @mode == :draft
         return false if @mode == :restore
+        return true if change.before.empty? && @creation_revert_policy.conflict?(creative)
 
         History.snapshot(creative) != change.after
       end
@@ -237,7 +240,7 @@ module Collavre
       end
 
       def apply_snapshot(creative, snapshot, propagated_attribute: nil)
-        return creative.update!(archived_at: Time.current) if snapshot.empty?
+        return @creation_revert_policy.archive!(creative) if snapshot.empty?
         return creative.update!(snapshot.slice(*Array(propagated_attribute))) if propagated_attribute
 
         SnapshotAssignment.call(creative, snapshot)
@@ -259,10 +262,6 @@ module Collavre
 
       def propagated_candidate?(change)
         archival_transition?(change) || change.operation == "update"
-      end
-
-      def source_snapshot_side
-        @mode == :revert ? :after : :before
       end
 
       def draft_creation?(change, creative)

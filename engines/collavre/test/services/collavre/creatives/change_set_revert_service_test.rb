@@ -232,6 +232,53 @@ module Collavre
         assert created.reload.archived?
       end
 
+      test "reports a conflict when a created Creative gained a later child" do
+        created, creation = recorded_creation
+        later_child = Creative.create!(description: "Later child", user: @user, parent: created)
+        Current.reset
+
+        result = ChangeSetRevertService.new(change_set: creation, user: @user).call
+
+        assert_equal :conflict, result.status
+        assert_equal [ created.id ], result.conflicts.pluck(:creative_id)
+        assert_not created.reload.archived?
+        assert_not later_child.reload.archived?
+      end
+
+      test "force archives a created Creative and its later subtree" do
+        created, creation = recorded_creation
+        later_child = Creative.create!(description: "Later child", user: @user, parent: created)
+        Current.reset
+
+        result = ChangeSetRevertService.new(
+          change_set: creation, user: @user, resolutions: { created.id => "force" }
+        ).call
+
+        assert_equal :applied, result.status
+        assert created.reload.archived?
+        assert later_child.reload.archived?
+        assert_equal [ created.id, later_child.id ].sort,
+                     result.change_set.creative_changes.pluck(:creative_id).sort
+      end
+
+      test "reverts Creatives created together without treating their hierarchy as later" do
+        created_parent = nil
+        created_child = nil
+        creation = nil
+        History.track(actor: @user, origin: :tool, anchor: @root) do
+          created_parent = Creative.create!(description: "Created parent", user: @user, parent: @root)
+          created_child = Creative.create!(description: "Created child", user: @user, parent: created_parent)
+          creation = Current.change_set
+        end
+        Current.reset
+
+        result = ChangeSetRevertService.new(change_set: creation, user: @user).call
+
+        assert_equal :applied, result.status
+        assert created_parent.reload.archived?
+        assert created_child.reload.archived?
+      end
+
       test "reverting creation of a linked shell does not archive its existing origin" do
         linked = nil
         creation = nil
@@ -245,6 +292,26 @@ module Collavre
 
         assert_equal :applied, result.status
         assert linked.reload.archived?
+        assert_not @child.reload.archived?
+      end
+
+      test "reverting a linked shell keeps children normalized onto its existing origin" do
+        linked = nil
+        creation = nil
+        History.track(actor: @user, origin: :tool, anchor: @root) do
+          linked = Creative.create!(user: @user, origin: @child)
+          creation = Current.change_set
+        end
+        Current.reset
+        later_child = Creative.create!(description: "Later child", user: @user, parent: linked)
+        Current.reset
+
+        result = ChangeSetRevertService.new(change_set: creation, user: @user).call
+
+        assert_equal :applied, result.status
+        assert linked.reload.archived?
+        assert_equal @child.id, later_child.reload.parent_id
+        assert_not later_child.archived?
         assert_not @child.reload.archived?
       end
 
@@ -264,6 +331,17 @@ module Collavre
       end
 
       private
+
+      def recorded_creation
+        created = nil
+        creation = nil
+        History.track(actor: @user, origin: :tool, anchor: @root) do
+          created = Creative.create!(description: "Created", user: @user, parent: @root)
+          creation = Current.change_set
+        end
+        Current.reset
+        [ created, creation ]
+      end
 
       def recorded_update
         change_set = nil
