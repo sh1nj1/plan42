@@ -362,6 +362,7 @@ export default class extends Controller {
       this.currentPresentIds = data.ids.map((id) => parseInt(id, 10))
       this.renderParticipants(this.currentPresentIds)
       this.updateReadReceiptPresence(this.currentPresentIds)
+      this.dispatchPresenceChanged(this.currentPresentIds)
     }
     if (data.typing) {
       const { id, name, topic_id: topicId } = data.typing
@@ -1053,6 +1054,12 @@ export default class extends Controller {
         avatar.classList.add('inactive')
       }
     })
+  }
+
+  dispatchPresenceChanged(presentIds = []) {
+    this.element.dispatchEvent(new CustomEvent('comments--presence:changed', {
+      detail: { presentIds },
+    }))
   }
 
   // ── Agent touch drag-and-drop (mobile) ─────────────────

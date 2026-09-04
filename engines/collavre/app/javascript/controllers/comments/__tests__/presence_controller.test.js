@@ -154,6 +154,17 @@ describe('CommentsPresenceController', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  test('broadcasts current presence for message author menus', () => {
+    const listener = jest.fn()
+    controller.element.addEventListener('comments--presence:changed', listener)
+
+    controller.handlePresenceMessage({ ids: ['7', '9'] })
+
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: { presentIds: [7, 9] },
+    }))
+  })
+
   test('bootstraps the selected and main topics when the popup opens', () => {
     const refreshChannelChips = jest.spyOn(controller, 'refreshChannelChips').mockImplementation(() => {})
     jest.spyOn(application, 'getControllerForElementAndIdentifier').mockReturnValue({

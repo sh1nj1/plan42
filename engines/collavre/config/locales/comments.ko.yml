@@ -167,6 +167,11 @@ ko:
       participant_search_placeholder: 사용자 검색...
       participant_online: 온라인
       participant_offline: 오프라인
+      user_menu:
+        open: "%{name} 프로필 메뉴 열기"
+        view_profile: 프로필 보기
+        mention: 멘션
+        agent_drag_guide: 이 아바타를 토픽 또는 토픽 추가 버튼으로 드래그하면 해당 에이전트가 Primary AI Agent가 됩니다.
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.
