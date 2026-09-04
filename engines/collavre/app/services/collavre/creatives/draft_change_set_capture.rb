@@ -133,7 +133,9 @@ module Collavre
 
       def restore_blob_rows(blobs)
         blobs.to_h do |blob_data|
-          blob = ActiveStorage::Blob.create!(blob_data.fetch(:attributes))
+          attributes = blob_data.fetch(:attributes)
+          blob = ActiveStorage::Blob.find_by(key: attributes.fetch("key")) ||
+                 ActiveStorage::Blob.create!(attributes)
           [ blob_data.fetch(:old_signed_id), blob.signed_id ]
         end
       end

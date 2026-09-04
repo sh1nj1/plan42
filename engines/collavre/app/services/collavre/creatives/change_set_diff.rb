@@ -22,7 +22,9 @@ module Collavre
 
       def change_count = @changes.size
 
-      def fully_visible? = change_count == @change_set.creative_changes.size
+      def fully_visible?
+        change_count == @change_set.creative_changes.size && redacted_group_root_ids.empty?
+      end
 
       def revertible? = @change_set.origin != "sync" && actionable_changes.none? { |change| change.operation == "destroy" }
 
@@ -75,7 +77,11 @@ module Collavre
       end
 
       def build_group(root_id)
-        before = document(root_id, :before)
+        before = if redacted_group_root_ids.include?(root_id)
+                   I18n.t("collavre.creative_history.before_hidden")
+        else
+                   document(root_id, :before)
+        end
         after = document(root_id, :after)
         additions, deletions = line_counts(before, after)
         {
@@ -89,6 +95,16 @@ module Collavre
           inline_html: inline_html(before, after),
           split_rows: split_rows(before, after)
         }
+      end
+
+      def redacted_group_root_ids
+        @redacted_group_root_ids ||= group_root_ids.reject do |root_id|
+          @visibility.historical_before_visible?(changes_in_group(root_id))
+        end.to_set
+      end
+
+      def changes_in_group(root_id)
+        @changes.select { |change| descendant_of?(change.creative_id, root_id) }
       end
 
       def moved_in_group?(root_id)

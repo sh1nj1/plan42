@@ -295,6 +295,25 @@ module Collavre
         assert_not @child.reload.archived?
       end
 
+      test "treats a forced revert of an already archived creation as a no-op" do
+        created, creation = recorded_creation
+        Current.reset
+        created.archive!
+
+        result = nil
+        assert_no_difference("CreativeChangeSet.count") do
+          result = ChangeSetRevertService.new(
+            change_set: creation, user: @user, resolutions: { created.id => "force" }
+          ).call
+        end
+
+        assert_equal :applied, result.status
+        assert_nil result.change_set
+        assert_equal "reverted", creation.reload.status
+        assert_nil creation.reverted_by
+        assert created.reload.archived?
+      end
+
       test "reverting a linked shell keeps children normalized onto its existing origin" do
         linked = nil
         creation = nil

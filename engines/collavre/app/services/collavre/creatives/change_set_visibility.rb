@@ -9,6 +9,7 @@ module Collavre
         @user = user
         @user_id = user&.id
         @permission_filter = PermissionFilter.new(user: user)
+        @historical_authorization = HistoricalSnapshotAuthorization.new(user: user)
       end
 
       def changes(changes)
@@ -31,6 +32,10 @@ module Collavre
 
       def visible_id?(id)
         readable_ids([ id ]).include?(id)
+      end
+
+      def historical_before_visible?(changes)
+        @historical_authorization.before_visible?(changes)
       end
 
       private

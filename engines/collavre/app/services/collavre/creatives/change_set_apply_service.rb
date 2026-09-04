@@ -83,7 +83,7 @@ module Collavre
           return classify_propagated_target(change, creative, snapshot, plan)
         end
         return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids, change)
-        return @resolved_change_ids << change.id if History.snapshot(creative) == snapshot
+        return @resolved_change_ids << change.id if @creation_revert_policy.resolved?(creative, snapshot)
 
         if current_conflict?(creative, change) && resolution(change) != "force"
           if resolution(change) == "skip"

@@ -189,6 +189,34 @@ module Collavre
         assert_empty diff.groups
         assert_equal 0, diff.change_count
       end
+
+      test "redacts the former side after private content moves into a readable tree" do
+        reader = users(:two)
+        public_root = Creative.create!(description: "Public", user: @user)
+        public_share = CreativeShare.create!(
+          creative: public_root, user: reader, shared_by: @user, permission: :read
+        )
+        PermissionCacheBuilder.propagate_share(public_share)
+        moved = Creative.create!(description: "Private secret", user: @user, parent: @root)
+        change_set = nil
+        History.track(actor: @user, origin: :editor, anchor: moved) do
+          moved.update!(parent: public_root, description: "Public replacement")
+          change_set = Current.change_set
+        end
+        PermissionCacheBuilder.rebuild_for_creative(moved)
+
+        reader_diff = ChangeSetDiff.new(change_set, user: reader)
+        rendered = reader_diff.groups.to_json
+
+        assert_includes rendered, I18n.t("collavre.creative_history.before_hidden")
+        assert_includes rendered, "Public replacement"
+        assert_not_includes rendered, "Private secret"
+        assert_not reader_diff.fully_visible?
+
+        owner_diff = ChangeSetDiff.new(change_set, user: @user)
+        assert_includes owner_diff.groups.to_json, "Private secret"
+        assert owner_diff.fully_visible?
+      end
     end
   end
 end

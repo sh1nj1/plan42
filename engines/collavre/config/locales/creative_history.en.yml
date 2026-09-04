@@ -12,6 +12,7 @@ en:
       split: Split diff
       before: Before
       after: After
+      before_hidden: Previous content hidden because its former permission boundary cannot be verified.
       moved: Moved
       revert: Revert change
       restore: Restore this version

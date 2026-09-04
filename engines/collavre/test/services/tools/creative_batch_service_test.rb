@@ -289,6 +289,31 @@ module Collavre
         assert_equal retained_blob.id, created.files.blobs.sole.id
       end
 
+      test "reuses a preexisting blob referenced by a reviewed proposal" do
+        task, agent = review_agent_turn
+        blob = ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new("existing"), filename: "existing.txt", content_type: "text/plain"
+        )
+        source = Creative.create!(description: "Source", user: @user)
+        source.files.attach(blob)
+        signed_id = blob.signed_id
+        description = "[Existing file](/public-assets/blobs/#{signed_id}/existing.txt)"
+
+        result = nil
+        assert_no_difference("ActiveStorage::Blob.count") do
+          result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+            CreativeBatchService.new.call(operations: [
+              { "action" => "update", "id" => @root.id, "description" => description }
+            ])
+          end
+        end
+
+        assert result[:pending_review], result.inspect
+        change = CreativeChangeSet.find(result[:change_set_id]).creative_changes.sole
+        assert_equal blob.id, change.history_file_attachments.sole.blob_id
+        assert_includes change.after["markdown_source"], signed_id
+      end
+
       test "approves a draft update using its canonical markdown snapshot" do
         @root.update!(
           data: @root.data.merge(

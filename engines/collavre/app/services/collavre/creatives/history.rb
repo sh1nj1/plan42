@@ -88,8 +88,7 @@ module Collavre
       def persist_change(change_set, creative, operation, before, after)
         change = change_set.creative_changes.find_or_initialize_by(creative_id: creative.id)
         if change.new_record?
-          change.before = before
-          change.position = next_position(change_set)
+          change.assign_attributes(HistoricalSnapshotAuthorization.initial_attributes(creative, before, next_position(change_set)))
         end
         if operation.to_s.in?(%w[destroy move])
           change.previous_parent_id ||= change.before["parent_id"] || before["parent_id"]
