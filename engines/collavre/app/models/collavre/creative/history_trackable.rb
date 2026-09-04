@@ -31,6 +31,10 @@ module Collavre
         mutate_archive_family(archived_at: nil, operation: "unarchive")
       end
 
+      def archive_family
+        self.class.where(id: archive_family_ids)
+      end
+
       private
 
       def mutate_archive_family(archived_at:, operation:)
@@ -48,7 +52,7 @@ module Collavre
       end
 
       def archive_targets(archived_at)
-        scope = self.class.where(id: archive_family_ids)
+        scope = archive_family
         archived_at ? scope.where(archived_at: nil) : scope.where.not(archived_at: nil)
       end
 

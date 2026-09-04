@@ -95,8 +95,49 @@ module Collavre
         assert_equal @parent.id, result[:tree].first[:parent_id]
       end
 
-      test "requires approval" do
-        assert CreativeImportService.requires_approval?
+      test "does not use the opaque pre-execution approval gate" do
+        assert_not CreativeImportService.requires_approval?
+      end
+
+      test "stores an inherited review-policy import as a draft without creating rows" do
+        @parent.update!(data: @parent.data.merge("ai_write_policy" => "review"))
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @parent, user: agent, shared_by: @user, permission: :write)
+        topic = Topic.create!(creative: @parent, user: @user, name: "Review import")
+        task = Task.create!(agent: agent, creative: @parent, topic_id: topic.id, name: "Import", status: "running")
+        initial_count = Creative.count
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          @service.call(markdown: "# Project\n## Child", parent_id: @parent.id)
+        end
+
+        assert result[:pending_review]
+        assert_equal initial_count, Creative.count
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        assert_equal "draft", draft.status
+        assert_equal 2, draft.creative_changes.where("creative_id < 0").count
+        root, child = draft.creative_changes.order(:position).to_a
+        assert_equal root.creative_id, child.after["parent_id"]
+      end
+
+      test "stores import progress propagation as a draft when an ancestor requires review" do
+        review_root = Creative.create!(
+          description: "Review root", user: @user,
+          data: { "ai_write_policy" => "review" }
+        )
+        @parent.update!(parent: review_root, data: @parent.data.merge("ai_write_policy" => "auto"))
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: review_root, user: agent, shared_by: @user, permission: :write)
+        topic = Topic.create!(creative: review_root, user: @user, name: "Review import propagation")
+        task = Task.create!(agent: agent, creative: review_root, topic_id: topic.id, name: "Import", status: "running")
+        initial_count = Creative.count
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          @service.call(markdown: "# Proposed", parent_id: @parent.id)
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_equal initial_count, Creative.count
       end
     end
   end

@@ -14,6 +14,20 @@ module Collavre
     private
 
     def apply_service(change_set)
+      if change_set.status == "draft"
+        return Creatives::DraftChangeSetRejectService.new(
+          change_set: change_set, user: Current.user, scope_creative: @requested_creative
+        ) if params[:mode] == "reject"
+
+        mode = params[:mode] == "approve" ? :draft : :invalid
+        return Creatives::ChangeSetApplyService.new(
+          source: change_set,
+          user: Current.user,
+          resolutions: resolutions,
+          mode: mode
+        )
+      end
+
       return Creatives::ChangeSetRestoreService.new(change_set: change_set, user: Current.user) if params[:mode] == "restore"
 
       Creatives::ChangeSetRevertService.new(
@@ -41,13 +55,19 @@ module Collavre
         change_set_id: result.change_set&.id,
         conflicts: result.conflicts,
         skipped: result.skipped,
-        message: I18n.t("collavre.creative_history.results.#{result.status}")
+        message: I18n.t("collavre.creative_history.results.#{result_message_key(result)}")
       }
+    end
+
+    def result_message_key(result)
+      return :approved if result.status == :applied && params[:mode] == "approve"
+
+      result.status
     end
 
     def response_status(result)
       return :conflict if result.status == :conflict
-      return :unprocessable_entity unless result.status.in?(%i[applied partial])
+      return :unprocessable_entity unless result.status.in?(%i[applied partial rejected])
 
       :ok
     end
