@@ -68,6 +68,38 @@ module Collavre
         assert_equal "Serialized", change_set.creative_changes.sole.after.fetch("description")
       end
 
+      test "locks the change set before the Creative snapshot" do
+        change_set = CreativeChangeSet.create!(
+          actor_kind: "human",
+          origin: "editor",
+          status: "applied",
+          user: @user,
+          applied_at: Time.current
+        )
+        lock_order = []
+        change_set_lock = lambda do |&block|
+          lock_order << :change_set
+          block.call
+        end
+        creative_snapshot = lambda do |creative|
+          lock_order << :creative
+          History.snapshot(creative, persisted: true)
+        end
+
+        change_set.stub(:with_lock, change_set_lock) do
+          History.stub(:current_change_set, change_set) do
+            History.stub(:locked_snapshot, creative_snapshot) do
+              History.track(actor: @user, origin: :editor) do
+                @child.update!(description: "Ordered locks")
+              end
+            end
+          end
+        end
+
+        assert_equal [ :change_set, :creative ], lock_order.first(2)
+        assert_equal "Ordered locks", change_set.creative_changes.sole.after.fetch("description")
+      end
+
       test "stores canonical markdown without its generated HTML" do
         History.track(actor: @user, origin: :editor, anchor: @root) do
           @child.content_type_input = "markdown"
@@ -277,6 +309,17 @@ module Collavre
         end
 
         assert_not_equal 7, @child.reload.sequence
+        assert_empty CreativeChangeSet.all
+      end
+
+      test "keeps unrecorded bulk writes in one transaction" do
+        History.record_bulk([ @child ], operation: "reorder") do
+          assert Creative.connection.transaction_open?
+          @child.update_column(:sequence, 8)
+          raise ActiveRecord::Rollback
+        end
+
+        assert_not_equal 8, @child.reload.sequence
         assert_empty CreativeChangeSet.all
       end
 

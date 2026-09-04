@@ -35,24 +35,30 @@ module Collavre
       end
 
       def capture(creative)
-        was_new = creative.new_record?
-        before = was_new ? {} : locked_snapshot(creative)
-        result = yield
-        return result unless result && creative.persisted?
+        return yield unless recordable?
 
-        after = snapshot(creative)
-        record(creative, operation: operation_for(was_new, before, after), before: before, after: after)
-        result
+        with_locked_change_set(creative) do |change_set|
+          was_new = creative.new_record?
+          before = was_new ? {} : locked_snapshot(creative)
+          result = yield
+          next result unless result && creative.persisted?
+
+          after = snapshot(creative)
+          record_locked(change_set, creative, operation_for(was_new, before, after), before, after)
+          result
+        end
       end
 
       def record_bulk(creatives, operation:)
         records = creatives.to_a.sort_by(&:id)
-        Creative.transaction do
+        return Creative.transaction { yield } if records.empty? || !recordable?
+
+        with_locked_change_set(records.first) do |change_set|
           before = records.to_h { |creative| [ creative.id, locked_snapshot(creative) ] }
           result = yield
           records.each do |creative|
             creative.reload
-            record(creative, operation: operation, before: before.fetch(creative.id), after: snapshot(creative))
+            record_locked(change_set, creative, operation, before.fetch(creative.id), snapshot(creative))
           end
           result
         end
@@ -61,10 +67,20 @@ module Collavre
       def record(creative, operation:, before:, after:)
         return if before == after || !recordable?
 
-        change_set = current_change_set(creative)
-        change = change_set.with_lock do
-          persist_change(change_set, creative, operation, before, after)
+        with_locked_change_set(creative) do |change_set|
+          record_locked(change_set, creative, operation, before, after)
         end
+      end
+
+      def with_locked_change_set(creative)
+        change_set = current_change_set(creative)
+        change_set.with_lock { yield change_set }
+      end
+
+      def record_locked(change_set, creative, operation, before, after)
+        return if before == after
+
+        change = persist_change(change_set, creative, operation, before, after)
         bump_revision!(creative)
         change
       end
