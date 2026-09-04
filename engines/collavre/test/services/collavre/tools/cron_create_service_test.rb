@@ -148,6 +148,26 @@ module Collavre
         end
       end
 
+      test "keeps the cron successful when broadcasting a created topic fails" do
+        warning = nil
+        result = Rails.logger.stub(:warn, ->(message) { warning = message }) do
+          TopicsChannel.stub(:broadcast_to, ->(*) { raise "cable unavailable" }) do
+            CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: "Broadcast Failure Topic",
+              schedule: "0 9 * * *",
+              message: "test"
+            )
+          end
+        end
+
+        assert result[:success]
+        topic = @creative.topics.find_by!(name: "Broadcast Failure Topic")
+        task = SolidQueue::RecurringTask.find_by!(key: result[:key])
+        assert_equal topic.id, task.arguments.first[:topic_id]
+        assert_match(/Failed to broadcast created topic #{topic.id}: cable unavailable/, warning)
+      end
+
       test "rejects a missing reserved topic name" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,

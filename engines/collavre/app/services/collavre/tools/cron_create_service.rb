@@ -108,6 +108,8 @@ module Tools
         topic.creative,
         { action: "created", topic: topic.slice(:id, :name), user_id: Current.user.id }
       )
+    rescue StandardError => e
+      Rails.logger.warn("[CronCreateService] Failed to broadcast created topic #{topic.id}: #{e.message}")
     end
   end
 end
