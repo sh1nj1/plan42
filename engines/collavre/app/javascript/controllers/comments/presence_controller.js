@@ -361,7 +361,7 @@ export default class extends Controller {
   handlePresenceMessage(data) {
     if (data.ids) {
       this.currentPresentIds = data.ids.map((id) => parseInt(id, 10))
-      this.renderParticipants(this.currentPresentIds)
+      this.renderParticipants(this.currentPresentIds, { preserveMenus: true })
       this.updateReadReceiptPresence(this.currentPresentIds)
       this.dispatchPresenceChanged(this.currentPresentIds)
     }
@@ -471,10 +471,15 @@ export default class extends Controller {
     }
   }
 
-  renderParticipants(presentIds) {
+  renderParticipants(presentIds, { preserveMenus = false } = {}) {
     if (!this.hasParticipantsTarget || !this.participantsData) {
       if (this.hasParticipantsTarget) this.participantsTarget.innerHTML = ''
       this.updateParticipantActionButtons(presentIds)
+      return
+    }
+    if (preserveMenus && this.updateRenderedParticipantPresence(presentIds)) {
+      this.updateParticipantActionButtons(presentIds)
+      this.updateReadReceiptPresence(presentIds)
       return
     }
     this.participantsTarget.innerHTML = ''
@@ -519,6 +524,27 @@ export default class extends Controller {
 
     this.updateParticipantActionButtons(presentIds)
     this.updateReadReceiptPresence(presentIds)
+  }
+
+  updateRenderedParticipantPresence(presentIds) {
+    const menus = Array.from(this.participantsTarget.querySelectorAll('.comment-user-menu'))
+    const matchesParticipants = menus.length === this.participantsData.length && menus.every((menu, index) => (
+      menu.dataset.commentUserMenuUserIdValue === String(this.participantsData[index].id)
+    ))
+    if (!matchesParticipants) return false
+
+    const present = new Set(presentIds.map(String))
+    menus.forEach((menu) => {
+      const online = present.has(menu.dataset.commentUserMenuUserIdValue)
+      menu.querySelector('.comment-presence-avatar')?.classList.toggle('inactive', !online)
+      const status = menu.querySelector('.comment-user-popup-status')
+      status?.classList.toggle('is-online', online)
+      const statusLabel = menu.querySelector('[data-comment-user-menu-target="statusLabel"]')
+      if (status && statusLabel) {
+        statusLabel.textContent = online ? status.dataset.onlineText : status.dataset.offlineText
+      }
+    })
+    return true
   }
 
   get participantUserMenuLabels() {
@@ -1057,15 +1083,19 @@ export default class extends Controller {
 
   _addAgentTouchDrag(wrapper, user) {
     if (!('ontouchstart' in window)) return
+    const trigger = wrapper.querySelector('.comment-user-menu-trigger')
+    if (!trigger) return
 
     const handler = new TouchDragHandler({
-      container: wrapper,
+      container: trigger,
       singleElement: true,
       dropTargetSelector: '.topic-tag.topic-drop-target, .topic-creation-container',
       draggingClass: 'dragging',
 
       proxyContent: () =>
         `<span class="touch-drag-proxy-badge">${user.name}</span>`,
+
+      onTap: () => trigger.click(),
 
       onDrop: (targetEl) => {
         const agentData = { id: user.id, name: user.name, avatar_url: user.avatar_url }
