@@ -1362,7 +1362,9 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, data["can_comment"]
     assert_equal true, data["has_access"]
     assert_kind_of Array, data["users"]
-    assert data["users"].any? { |u| u["id"] == @user.id }
+    participant = data["users"].find { |u| u["id"] == @user.id }
+    assert_not_nil participant
+    assert_equal user_path(@user), participant["profile_url"]
   end
 
   test "participants returns correct permission flags for non-admin shared user" do

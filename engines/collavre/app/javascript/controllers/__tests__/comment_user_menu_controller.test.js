@@ -17,10 +17,7 @@ describe('CommentUserMenuController', () => {
     popup.innerHTML = `
       <div data-controller="comment-user-menu"
            data-comment-user-menu-user-id-value="9"
-           data-comment-user-menu-user-name-value="Agent One"
-           data-comment-user-menu-avatar-url-value="/agent.png"
-           data-comment-user-menu-ai-user-value="true">
-        <button data-comment-user-menu-target="trigger"></button>
+           data-comment-user-menu-user-name-value="Agent One">
         <span data-comment-user-menu-target="status"
               data-online-text="Online"
               data-offline-text="Offline">
@@ -80,29 +77,21 @@ describe('CommentUserMenuController', () => {
     expect(() => controller.mention()).not.toThrow()
   })
 
-  test('writes the agent payload during desktop drag', () => {
-    const dataTransfer = { setData: jest.fn(), effectAllowed: '' }
+  test('removes the presence listener when disconnected', () => {
+    const removeEventListener = jest.spyOn(popup, 'removeEventListener')
 
-    controller.dragStart({ dataTransfer })
+    controller.disconnect()
 
-    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-agent-drop', JSON.stringify({
-      id: 9,
-      name: 'Agent One',
-      avatar_url: '/agent.png',
-    }))
-    expect(dataTransfer.effectAllowed).toBe('copy')
-    expect(controller.triggerTarget.classList.contains('dragging')).toBe(true)
-
-    controller.dragEnd()
-    expect(controller.triggerTarget.classList.contains('dragging')).toBe(false)
+    expect(removeEventListener).toHaveBeenCalledWith(
+      'comments--presence:changed',
+      controller.handlePresenceChanged
+    )
   })
 
-  test('ignores desktop drag for a human user', () => {
-    controller.aiUserValue = false
-    const dataTransfer = { setData: jest.fn() }
+  test('ignores presence updates when status targets are absent', async () => {
+    controller.element.querySelector('[data-comment-user-menu-target="status"]').remove()
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    controller.dragStart({ dataTransfer })
-
-    expect(dataTransfer.setData).not.toHaveBeenCalled()
+    expect(() => controller.updatePresence([9])).not.toThrow()
   })
 })

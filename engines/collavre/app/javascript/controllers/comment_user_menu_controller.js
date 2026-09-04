@@ -1,12 +1,10 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['trigger', 'status', 'statusLabel']
+  static targets = ['status', 'statusLabel']
   static values = {
     userId: Number,
     userName: String,
-    avatarUrl: String,
-    aiUser: Boolean,
   }
 
   connect() {
@@ -31,18 +29,6 @@ export default class extends Controller {
     mentionMenu.textareaTarget?.focus()
   }
 
-  dragStart(event) {
-    if (!this.aiUserValue || !event.dataTransfer) return
-
-    event.dataTransfer.setData('application/x-agent-drop', JSON.stringify(this.agentData))
-    event.dataTransfer.effectAllowed = 'copy'
-    this.triggerTarget.classList.add('dragging')
-  }
-
-  dragEnd() {
-    this.triggerTarget.classList.remove('dragging')
-  }
-
   handlePresenceChanged(event) {
     this.updatePresence(event.detail?.presentIds || [])
   }
@@ -63,13 +49,5 @@ export default class extends Controller {
     this.statusLabelTarget.textContent = online
       ? this.statusTarget.dataset.onlineText
       : this.statusTarget.dataset.offlineText
-  }
-
-  get agentData() {
-    return {
-      id: this.userIdValue,
-      name: this.userNameValue,
-      avatar_url: this.avatarUrlValue,
-    }
   }
 }

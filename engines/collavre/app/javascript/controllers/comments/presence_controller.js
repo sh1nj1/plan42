@@ -5,6 +5,7 @@ import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 import { elementAnchor } from '../../lib/common_popup'
+import { createUserMenu } from '../../comments/user_menu'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
@@ -478,25 +479,14 @@ export default class extends Controller {
     }
     this.participantsTarget.innerHTML = ''
     this.participantsData.forEach((user) => {
-      const wrapper = document.createElement('div')
-      wrapper.className = 'avatar-wrapper'
-      wrapper.style.width = '20px'
-      wrapper.style.height = '20px'
-
-      const img = document.createElement('img')
-      img.src = user.avatar_url
-      img.alt = ''
-      img.width = 20
-      img.height = 20
-      img.className = 'avatar comment-presence-avatar'
-      if (presentIds.indexOf(user.id) === -1) {
-        img.classList.add('inactive')
-      }
-      img.title = user.name
-      img.style.borderRadius = '50%'
-      if (user.email) img.dataset.email = user.email
-      img.dataset.userId = user.id
-      img.dataset.userName = user.name
+      const online = presentIds.indexOf(user.id) !== -1
+      const wrapper = createUserMenu({
+        user,
+        online,
+        labels: this.participantUserMenuLabels,
+        menuId: `participant-user-menu-${user.id}`,
+        draggable: Boolean(user.ai_user)
+      })
 
       // AI agents are draggable to topic tabs
       if (user.ai_user) {
@@ -524,21 +514,22 @@ export default class extends Controller {
         this._addAgentTouchDrag(wrapper, user)
       }
 
-      wrapper.appendChild(img)
-
-      if (user.default_avatar) {
-        const span = document.createElement('span')
-        span.className = 'avatar-initial'
-        span.textContent = user.initial
-        span.style.fontSize = `${Math.round(20 / 2)}px`
-        wrapper.appendChild(span)
-      }
-
       this.participantsTarget.appendChild(wrapper)
     })
 
     this.updateParticipantActionButtons(presentIds)
     this.updateReadReceiptPresence(presentIds)
+  }
+
+  get participantUserMenuLabels() {
+    return {
+      open: this.element.dataset.userMenuOpenText || 'Open %{name}\'s profile menu',
+      viewProfile: this.element.dataset.userMenuViewProfileText || 'View profile',
+      mention: this.element.dataset.userMenuMentionText || 'Mention',
+      dragGuide: this.element.dataset.userMenuAgentDragGuideText || '',
+      online: this.element.dataset.participantOnlineText || 'Online',
+      offline: this.element.dataset.participantOfflineText || 'Offline'
+    }
   }
 
   // The add and list buttons are pinned outside the horizontally scrolling avatar
@@ -658,16 +649,16 @@ export default class extends Controller {
     }))
   }
 
-  // Selecting mirrors clicking the avatar: it mentions the user in the composer.
+  // Selecting from the searchable list opens the same profile menu as the avatar strip.
   selectParticipantListItem(item) {
-    const user = (this.participantsData || []).find((u) => String(u.id) === String(item.id))
-    if (!user) return
+    const menu = Array.from(this.participantsTarget.querySelectorAll('[data-comment-user-menu-user-id-value]'))
+      .find((element) => element.dataset.commentUserMenuUserIdValue === String(item.id))
+    if (!menu) return
 
-    const mentionMenu = this.application.getControllerForElementAndIdentifier(this.element, 'comments--mention-menu')
-    if (!mentionMenu) return
-
-    mentionMenu.insertMention({ id: user.id, name: user.name })
-    this.textareaTarget?.focus()
+    const popupMenu = this.application.getControllerForElementAndIdentifier(menu, 'popup-menu')
+    // Let the list-item click finish bubbling before popup-menu installs its
+    // document click listener; otherwise that same click immediately hides it.
+    requestAnimationFrame(() => popupMenu?.show())
   }
 
   refreshOpenParticipantListPopup(presentIds = this.currentPresentIds) {

@@ -19,15 +19,15 @@ class CommentUserMenuComponentTest < ViewComponent::TestCase
     assert_no_selector ".comment-user-popup-guide"
   end
 
-  test "makes an AI agent avatar draggable and explains the topic assignment" do
+  test "does not make a message avatar draggable or show the drag guide for an AI agent" do
     agent = users(:ai_bot)
 
     render_inline(Collavre::CommentUserMenuComponent.new(user: agent, menu_id: "comment-agent-menu-1"))
 
-    assert_selector "button.comment-user-menu-trigger.ai-agent-draggable[draggable='true']"
-    assert_selector "button[data-action*='dragstart->comment-user-menu#dragStart']"
-    assert_selector ".comment-user-popup-guide",
-      text: I18n.t("collavre.comments.user_menu.agent_drag_guide")
+    assert_selector "button.comment-user-menu-trigger[data-action='click->popup-menu#toggle']"
+    assert_no_selector ".ai-agent-draggable"
+    assert_no_selector "[draggable='true']"
+    assert_no_selector ".comment-user-popup-guide"
   end
 
   test "uses the supplied menu id" do
