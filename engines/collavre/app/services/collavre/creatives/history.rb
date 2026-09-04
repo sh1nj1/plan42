@@ -93,7 +93,7 @@ module Collavre
         if operation.to_s.in?(%w[destroy move])
           change.previous_parent_id ||= change.before["parent_id"] || before["parent_id"]
         end
-        change.after = after
+        change.assign_attributes(HistoricalSnapshotAuthorization.after_attributes(change, creative, after))
         if change.persisted? && change.before == after
           stale_blob_ids = change.history_file_attachments.pluck(:blob_id)
           change.destroy!

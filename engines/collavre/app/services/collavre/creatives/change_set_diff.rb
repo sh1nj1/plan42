@@ -23,7 +23,7 @@ module Collavre
       def change_count = @changes.size
 
       def fully_visible?
-        change_count == @change_set.creative_changes.size && redacted_group_root_ids.empty?
+        change_count == @change_set.creative_changes.size && redacted_group_states.empty?
       end
 
       def revertible? = @change_set.origin != "sync" && actionable_changes.none? { |change| change.operation == "destroy" }
@@ -77,12 +77,8 @@ module Collavre
       end
 
       def build_group(root_id)
-        before = if redacted_group_root_ids.include?(root_id)
-                   I18n.t("collavre.creative_history.before_hidden")
-        else
-                   document(root_id, :before)
-        end
-        after = document(root_id, :after)
+        before = visible_document(root_id, :before)
+        after = visible_document(root_id, :after)
         additions, deletions = line_counts(before, after)
         {
           root_id: root_id,
@@ -97,9 +93,15 @@ module Collavre
         }
       end
 
-      def redacted_group_root_ids
-        @redacted_group_root_ids ||= group_root_ids.reject do |root_id|
-          @visibility.historical_before_visible?(changes_in_group(root_id))
+      def visible_document(root_id, state)
+        return I18n.t("collavre.creative_history.snapshot_hidden") if redacted_group_states.include?([ root_id, state ])
+
+        document(root_id, state)
+      end
+
+      def redacted_group_states
+        @redacted_group_states ||= group_root_ids.product(%i[before after]).reject do |root_id, state|
+          @visibility.historical_snapshots_visible?(changes_in_group(root_id), state)
         end.to_set
       end
 
@@ -152,9 +154,10 @@ module Collavre
       end
 
       def label_for(root_id)
-        snapshot = @changes_by_id[root_id]&.after.presence ||
-                   @changes_by_id[root_id]&.before.presence ||
-                   Creative.unscoped.find_by(id: root_id)&.then { |creative| History.snapshot(creative) }
+        change = @changes_by_id[root_id]
+        snapshot = change&.after.presence unless redacted_group_states.include?([ root_id, :after ])
+        snapshot ||= change&.before.presence unless redacted_group_states.include?([ root_id, :before ])
+        snapshot ||= Creative.unscoped.find_by(id: root_id)&.then { |creative| History.snapshot(creative) }
         markdown_for(snapshot || {}).lines.first.to_s.sub(/\A#+\s*/, "").strip.presence || "##{root_id}"
       end
 

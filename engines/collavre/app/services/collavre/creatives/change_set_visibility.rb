@@ -34,8 +34,8 @@ module Collavre
         readable_ids([ id ]).include?(id)
       end
 
-      def historical_before_visible?(changes)
-        @historical_authorization.before_visible?(changes)
+      def historical_snapshots_visible?(changes, state)
+        @historical_authorization.snapshots_visible?(changes, state)
       end
 
       private

@@ -10,7 +10,7 @@ ko:
       split: 분할 diff
       before: 이전
       after: 이후
-      before_hidden: 이전 권한 경계를 확인할 수 없어 이전 내용을 숨겼습니다.
+      snapshot_hidden: 이전 권한 경계를 확인할 수 없어 과거 내용을 숨겼습니다.
       moved: 이동됨
       revert: 변경 되돌리기
       restore: 이 버전으로 복원

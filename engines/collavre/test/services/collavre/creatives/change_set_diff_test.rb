@@ -208,7 +208,7 @@ module Collavre
         reader_diff = ChangeSetDiff.new(change_set, user: reader)
         rendered = reader_diff.groups.to_json
 
-        assert_includes rendered, I18n.t("collavre.creative_history.before_hidden")
+        assert_includes rendered, I18n.t("collavre.creative_history.snapshot_hidden")
         assert_includes rendered, "Public replacement"
         assert_not_includes rendered, "Private secret"
         assert_not reader_diff.fully_visible?
@@ -216,6 +216,57 @@ module Collavre
         owner_diff = ChangeSetDiff.new(change_set, user: @user)
         assert_includes owner_diff.groups.to_json, "Private secret"
         assert owner_diff.fully_visible?
+      end
+
+      test "redacts content history that predates a later move into a readable tree" do
+        reader = users(:two)
+        moved = Creative.create!(description: "Initial private", user: @user, parent: @root)
+        private_edit = nil
+        History.track(actor: @user, origin: :editor, anchor: moved) do
+          moved.update!(description: "Edited private secret")
+          private_edit = Current.change_set
+        end
+        public_root = Creative.create!(description: "Public", user: @user)
+        public_share = CreativeShare.create!(
+          creative: public_root, user: reader, shared_by: @user, permission: :read
+        )
+        PermissionCacheBuilder.propagate_share(public_share)
+        History.track(actor: @user, origin: :editor, anchor: moved) do
+          moved.update!(parent: public_root, description: "Public replacement")
+        end
+        PermissionCacheBuilder.rebuild_for_creative(moved)
+
+        reader_diff = ChangeSetDiff.new(private_edit, user: reader)
+        rendered = reader_diff.groups.to_json
+
+        assert_includes rendered, I18n.t("collavre.creative_history.snapshot_hidden")
+        assert_not_includes rendered, "Initial private"
+        assert_not_includes rendered, "Edited private secret"
+        assert_not reader_diff.fully_visible?
+
+        owner_diff = ChangeSetDiff.new(private_edit, user: @user)
+        assert_includes owner_diff.groups.to_json, "Initial private"
+        assert_includes owner_diff.groups.to_json, "Edited private secret"
+      end
+
+      test "shows recorded history to a reader who can still read its historical boundary" do
+        reader = users(:two)
+        share = CreativeShare.create!(
+          creative: @root, user: reader, shared_by: @user, permission: :read
+        )
+        PermissionCacheBuilder.propagate_share(share)
+        change_set = nil
+        History.track(actor: @user, origin: :editor, anchor: @child) do
+          @child.update!(description: "Shared update")
+          change_set = Current.change_set
+        end
+
+        diff = ChangeSetDiff.new(change_set, user: reader)
+        group = diff.groups.sole
+
+        assert_includes group.fetch(:before), "New &lt;value&gt;"
+        assert_includes group.fetch(:after), "Shared update"
+        assert diff.fully_visible?
       end
     end
   end
