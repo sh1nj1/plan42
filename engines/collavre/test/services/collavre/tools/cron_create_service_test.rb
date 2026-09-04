@@ -200,6 +200,30 @@ module Collavre
         assert @topic.reload
       end
 
+      test "keeps a newly created topic adopted by a concurrent recurring task" do
+        original_create = SolidQueue::RecurringTask.method(:create!)
+        adopted_task = nil
+        failing_create = lambda do |**attributes|
+          adopted_task = original_create.call(**attributes.merge(key: "#{attributes[:key]}_adopted"))
+          raise "queue unavailable"
+        end
+
+        error = SolidQueue::RecurringTask.stub(:create!, failing_create) do
+          assert_raises(RuntimeError) do
+            CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: "Adopted Topic",
+              schedule: "0 9 * * *",
+              message: "test"
+            )
+          end
+        end
+
+        topic = @creative.topics.find_by!(name: "Adopted Topic")
+        assert_equal "queue unavailable", error.message
+        assert_equal topic.id, adopted_task.arguments.first[:topic_id]
+      end
+
       test "rejects a missing reserved topic name" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,

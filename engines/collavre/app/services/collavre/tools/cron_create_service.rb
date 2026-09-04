@@ -77,7 +77,7 @@ module Tools
           message: message, description: description
         )
       rescue StandardError => e
-        topic.destroy! if topic_created
+        topic.destroy! if topic_created && !Crons::RecurringTopicTasks.new(topic.id).any?
         creation_error = e
         nil
       end
