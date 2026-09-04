@@ -45,6 +45,16 @@ module Collavre
           assert_equal [ @with_cron.id ], result
         end
 
+        test "matches the effective origin when a cron key references a linked creative" do
+          origin = Creative.create!(user: @user, description: "Shared scheduled creative")
+          linked = Creative.create!(user: @user, origin: origin)
+          create_task(key: "cron_#{linked.id}_#{SecureRandom.hex(4)}")
+
+          result = CronFilter.new(params: { has_cron: "true" }, scope: Creative.where(id: origin.id)).match
+
+          assert_equal [ origin.id ], result
+        end
+
         private
 
         def create_task(key:, static: false)

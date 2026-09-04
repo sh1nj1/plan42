@@ -23,9 +23,20 @@ module Collavre
       attr_reader :scope
 
       def tasks_by_creative_id
-        @tasks_by_creative_id ||= scope.select(:key, :schedule).order(:key).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |task, index|
+        @tasks_by_creative_id ||= begin
+          tasks = parsed_tasks
+          effective_ids = Creatives::EffectiveCreativeResolution.effective_creative_ids(tasks.map(&:last))
+
+          tasks.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(task, creative_id), index|
+            index[effective_ids.fetch(creative_id)] << task
+          end
+        end
+      end
+
+      def parsed_tasks
+        scope.select(:key, :schedule).order(:key).filter_map do |task|
           creative_id = task.key.match(KEY_PATTERN)&.[](1)&.to_i
-          index[creative_id] << task if creative_id
+          [ task, creative_id ] if creative_id
         end
       end
     end

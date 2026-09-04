@@ -205,7 +205,7 @@ module Creatives
     def template_payload_for(creative, has_children: nil, can_write: nil)
       description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
       can_feedback = can_feedback?(creative)
-      cron_tasks = cron_filter_active? ? cron_task_index.tasks_for(creative.id) : []
+      cron_tasks = cron_filter_active? ? cron_task_index.tasks_for(creative.effective_origin.id) : []
       progress_options = {
         select_mode: !!select_mode,
         has_children: has_children,

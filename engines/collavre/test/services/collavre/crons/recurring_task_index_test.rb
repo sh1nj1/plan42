@@ -34,16 +34,30 @@ module Collavre
         assert_empty RecurringTaskIndex.new.creative_ids
       end
 
+      test "groups a linked creative cron under its effective origin" do
+        linked = Creative.create!(user: users(:two), origin: @creative)
+        task = create_task(key: "cron_#{linked.id}_#{SecureRandom.hex(4)}")
+
+        index = RecurringTaskIndex.new
+
+        assert_includes index.creative_ids, @creative.id
+        refute_includes index.creative_ids, linked.id
+        assert_equal [ task.key ], index.tasks_for(@creative.id).map(&:key)
+        assert_empty index.tasks_for(linked.id)
+      end
+
       private
 
       def create_task(key:, static: false)
-        @tasks << SolidQueue::RecurringTask.create!(
+        task = SolidQueue::RecurringTask.create!(
           key: key,
           class_name: "Collavre::CronActionJob",
           schedule: "0 9 * * *",
           static: static,
           arguments: []
         )
+        @tasks << task
+        task
       end
     end
   end
