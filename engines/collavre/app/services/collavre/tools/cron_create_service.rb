@@ -7,10 +7,10 @@ module Tools
     extend ToolMeta
 
     tool_name "cron_create"
-    tool_description "Create a new recurring scheduled job. The job will periodically post a message to a creative's topic, triggering agent orchestration. Schedule uses cron syntax (e.g., '*/5 * * * *' for every 5 minutes, '0 9 * * *' for daily at 9am)."
+    tool_description "Create a new recurring scheduled job. The job will periodically post a message to a creative's topic, creating the named topic when it does not exist, and triggering agent orchestration. Schedule uses cron syntax (e.g., '*/5 * * * *' for every 5 minutes, '0 9 * * *' for daily at 9am)."
 
     tool_param :creative_id, description: "The creative ID to post recurring messages to.", required: true
-    tool_param :topic_name, description: "The topic name within the creative to post to. Use 'Main' for the default main topic.", required: true
+    tool_param :topic_name, description: "The topic name within the creative to post to. Missing topics are created automatically. Use 'Main' for the default main topic.", required: true
     tool_param :schedule, description: "Cron schedule expression (e.g., '0 9 * * *' for daily at 9am, '*/30 * * * *' for every 30 minutes).", required: true
     tool_param :message, description: "The message content to post on each execution. This triggers the agent orchestration pipeline.", required: true
     tool_param :description, description: "Human-readable description of what this cron job does.", required: false
@@ -33,13 +33,12 @@ module Tools
         return { error: "No write permission on this Creative", id: creative_id }
       end
 
-      topic = resolve_topic(creative, topic_name)
-      return topic if topic.is_a?(Hash) && topic[:error]
-
-      parsed = Fugit.parse(schedule)
-      unless parsed.is_a?(Fugit::Cron)
+      unless Fugit.parse(schedule).is_a?(Fugit::Cron)
         return { error: "Invalid cron schedule: #{schedule}. Use cron syntax like '0 9 * * *'." }
       end
+
+      topic, topic_created = resolve_topic(creative, topic_name)
+      return topic if topic.is_a?(Hash) && topic[:error]
 
       suffix = SecureRandom.hex(4)
       key = "cron_#{creative_id}_#{suffix}"
@@ -49,6 +48,8 @@ module Tools
         key: key, schedule: schedule, message: message, description: description
       )
       return task if task.is_a?(Hash) && task[:error]
+
+      broadcast_topic_created(topic) if topic_created
 
       {
         success: true,
@@ -90,14 +91,23 @@ module Tools
     def resolve_topic(creative, topic_name)
       origin = creative.effective_origin
       if topic_name.casecmp(Creative::MAIN_TOPIC_NAME).zero?
-        origin.main_topic(fallback_user: Current.user)
-      else
-        topic = Topic.find_by(name: topic_name, creative_id: origin.id)
-        return { error: "Topic '#{topic_name}' not found for this creative" } unless topic
-        return { error: I18n.t("collavre.creative_history.read_only") } if topic.history?
-
-        topic
+        return [ origin.main_topic(fallback_user: Current.user), false ]
       end
+
+      topic = origin.topics.find_by(name: topic_name)
+      return [ { error: I18n.t("collavre.creative_history.read_only") }, false ] if topic&.history?
+      return [ topic, false ] if topic
+      return [ { error: I18n.t("collavre.topics.reserved_name") }, false ] if Topics::ReservedName.reserved?(origin, topic_name)
+
+      topic = origin.topics.find_or_create_by!(name: topic_name) { |created| created.user = Current.user }
+      [ topic, topic.previously_new_record? ]
+    end
+
+    def broadcast_topic_created(topic)
+      TopicsChannel.broadcast_to(
+        topic.creative,
+        { action: "created", topic: topic.slice(:id, :name), user_id: Current.user.id }
+      )
     end
   end
 end

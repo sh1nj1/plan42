@@ -115,16 +115,49 @@ module Collavre
         assert_equal "Creative not found", result[:error]
       end
 
-      test "rejects when topic_name not found" do
+      test "creates a missing topic and targets it" do
+        broadcast = nil
+
+        TopicsChannel.stub(:broadcast_to, ->(*args) { broadcast = args }) do
+          result = CronCreateService.new.call(
+            creative_id: @creative.id,
+            topic_name: "New Cron Topic",
+            schedule: "0 9 * * *",
+            message: "test"
+          )
+
+          assert result[:success]
+          task = SolidQueue::RecurringTask.find_by!(key: result[:key])
+          topic = @creative.topics.find_by!(name: "New Cron Topic")
+          assert_equal @user, topic.user
+          assert_equal topic.id, task.arguments.first[:topic_id]
+          assert_equal [ @creative, { action: "created", topic: topic.slice(:id, :name), user_id: @user.id } ], broadcast
+        end
+      end
+
+      test "does not create a missing topic for an invalid schedule" do
+        assert_no_difference -> { @creative.topics.count } do
+          result = CronCreateService.new.call(
+            creative_id: @creative.id,
+            topic_name: "Invalid Schedule Topic",
+            schedule: "not a valid schedule",
+            message: "test"
+          )
+
+          assert_match(/Invalid cron schedule/, result[:error])
+        end
+      end
+
+      test "rejects a missing reserved topic name" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,
-          topic_name: "Nonexistent Topic",
+          topic_name: Creative::HISTORY_TOPIC_NAME,
           schedule: "0 9 * * *",
           message: "test"
         )
 
-        assert result[:error]
-        assert_match(/Topic 'Nonexistent Topic' not found/, result[:error])
+        assert_equal I18n.t("collavre.topics.reserved_name"), result[:error]
+        assert_nil @creative.topics.find_by(name: Creative::HISTORY_TOPIC_NAME)
       end
 
       test "rejects the read-only History topic" do
