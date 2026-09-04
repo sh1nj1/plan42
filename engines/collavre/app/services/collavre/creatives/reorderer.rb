@@ -2,6 +2,10 @@ module Collavre
 module Creatives
   class Reorderer
     class Error < StandardError; end
+    # Raised when the acting user lacks the permission required to perform the
+    # move. Subclasses Error so existing `rescue Reorderer::Error` call sites
+    # keep failing closed; controllers rescue it first to answer 403 vs 422.
+    class PermissionError < Error; end
 
     LinkDropResult = Struct.new(:new_creative, :parent, :direction, keyword_init: true)
 
@@ -13,6 +17,8 @@ module Creatives
       dragged, target = fetch_creatives(dragged_id, target_id)
       validate_direction!(direction)
       raise Error, "Invalid creatives" unless dragged && target
+
+      authorize_move!([ dragged ], target, direction)
 
       if direction == "child"
         reorder_as_child(dragged, target)
@@ -39,6 +45,10 @@ module Creatives
         raise Error, "Invalid creatives"
       end
 
+      # Every dragged creative is checked before any mutation runs, so a single
+      # unauthorized id rejects the whole batch and leaves the DB untouched.
+      authorize_move!(ordered_dragged, target, direction)
+
       target_ancestor_ids = target.ancestors.pluck(:id)
       if ordered_dragged.any? { |creative| target_ancestor_ids.include?(creative.id) }
         raise Error, "Invalid creatives"
@@ -59,6 +69,8 @@ module Creatives
       dragged, target = fetch_creatives(dragged_id, target_id)
       validate_direction!(direction)
       raise Error, "Invalid creatives" unless dragged && target
+
+      authorize_link_drop!(dragged, target, direction)
 
       origin = dragged.effective_origin
       new_parent = direction == "child" ? target : target.parent
@@ -113,6 +125,36 @@ module Creatives
 
     def validate_direction!(direction)
       raise Error, "Invalid direction" unless %w[up down child].include?(direction)
+    end
+
+    # A move rewrites the dragged creatives themselves and the child ordering of
+    # the container they land in, so both need :write. For "child" the container
+    # is the target; for "up"/"down" it is the target's parent (nil at root, in
+    # which case the target itself is the only anchor we can check).
+    def authorize_move!(dragged_creatives, target, direction)
+      new_parent = direction == "child" ? target : target.parent
+      subjects = dragged_creatives + [ target, new_parent ].compact
+      subjects.uniq(&:id).each { |creative| require_write!(creative) }
+    end
+
+    # A link drop never mutates the dragged creative - it creates a new shell
+    # pointing at the same origin - so :read on the source is enough. The
+    # container that receives the shell still needs :write.
+    def authorize_link_drop!(dragged, target, direction)
+      require_permission!(dragged, :read)
+
+      new_parent = direction == "child" ? target : target.parent
+      [ target, new_parent ].compact.uniq(&:id).each { |creative| require_write!(creative) }
+    end
+
+    def require_write!(creative)
+      require_permission!(creative, :write)
+    end
+
+    def require_permission!(creative, level)
+      return if creative.has_permission?(user, level)
+
+      raise PermissionError, "Permission denied"
     end
 
     def reorder_as_child(dragged, target)
