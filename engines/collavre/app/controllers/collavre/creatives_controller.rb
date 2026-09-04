@@ -691,7 +691,7 @@ module Collavre
       # query layer while preserving every filter the index endpoint supports.
       def index_query_params
         params.permit(
-          :id, :simple, :search, :search_mode, :comment, :has_comments,
+          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron,
           :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
           :assignee_id, :unassigned, :show_archived, :page, :per_page,
           tags: []
@@ -708,18 +708,7 @@ module Collavre
       helper_method :any_filter_active?
 
       def any_filter_active?
-        params[:tags].present? ||
-          params[:min_progress].present? ||
-          params[:max_progress].present? ||
-          params[:search].present? ||
-          params[:comment] == "true" ||
-          params[:has_comments].present? ||
-          params[:due_before].present? ||
-          params[:due_after].present? ||
-          params[:has_due_date].present? ||
-          params[:assignee_id].present? ||
-          params[:unassigned].present? ||
-          params[:show_archived].present?
+        Creatives::FilterState.new(params, include_archived: true).active?
       end
 
       # Thin delegator to Creatives::CreativeTreeSerializer. Kept as a controller

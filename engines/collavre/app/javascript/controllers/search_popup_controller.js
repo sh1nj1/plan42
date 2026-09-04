@@ -112,6 +112,12 @@ export default class extends Controller {
     this._navigate((params) => applyFilterParam(params, 'comment'))
   }
 
+  // Apply recurring cron filter
+  applyCronFilter(event) {
+    event.preventDefault()
+    this._navigate((params) => applyFilterParam(params, 'cron'))
+  }
+
   // Toggle search mode (flat/tree)
   applySearchMode(event) {
     event.preventDefault()

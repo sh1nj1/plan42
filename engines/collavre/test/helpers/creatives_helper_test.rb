@@ -2,6 +2,23 @@ require "test_helper"
 
 class CreativesHelperTest < ActionView::TestCase
   include Collavre::CreativesHelper
+
+  test "render_cron_badge shows the count, schedules, and next run times" do
+    first = Struct.new(:schedule, :next_time).new("0 9 * * *", Time.zone.parse("2026-09-05 09:00"))
+    second = Struct.new(:schedule, :next_time).new("0 18 * * *", Time.zone.parse("2026-09-05 18:00"))
+
+    I18n.with_locale(:en) do
+      html = render_cron_badge([ first, second ])
+
+      assert_includes html, "creative-cron-badge"
+      assert_includes html, "⏰"
+      assert_includes html, ">2</span>"
+      assert_includes html, "2 scheduled jobs"
+      assert_includes html, "0 9 * * *"
+      assert_includes html, I18n.l(first.next_time, format: :short)
+    end
+  end
+
   test "markdown_links_to_html converts markdown link to HTML" do
     input = "Check [link](https://example.com)"
     result = markdown_links_to_html(input)

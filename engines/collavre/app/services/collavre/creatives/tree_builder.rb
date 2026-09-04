@@ -100,6 +100,14 @@ module Creatives
       comment_badge_index.index(visible.map(&:effective_origin), include_visible_counts: false)
     end
 
+    def cron_task_index
+      @cron_task_index ||= Collavre::Crons::RecurringTaskIndex.new
+    end
+
+    def cron_filter_active?
+      raw_params["has_cron"].present?
+    end
+
     def build_nodes(creatives, level:)
       return [] if level > max_level
       return [] if creatives.empty?
@@ -197,14 +205,16 @@ module Creatives
     def template_payload_for(creative, has_children: nil, can_write: nil)
       description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
       can_feedback = can_feedback?(creative)
-      progress_html = view_context.render_creative_progress(
-        creative,
+      cron_tasks = cron_filter_active? ? cron_task_index.tasks_for(creative.effective_origin.id) : []
+      progress_options = {
         select_mode: !!select_mode,
         has_children: has_children,
         can_write: can_write,
         can_feedback: can_feedback,
         unread_count: can_feedback ? comment_badge_index.unread_count_for(creative.effective_origin) : nil
-      )
+      }
+      progress_options[:cron_tasks] = cron_tasks if cron_tasks.any?
+      progress_html = view_context.render_creative_progress(creative, **progress_options)
 
       {
         description_html: description_html,

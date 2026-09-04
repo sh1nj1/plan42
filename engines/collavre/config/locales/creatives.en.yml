@@ -26,6 +26,10 @@ en:
         unarchive: Restore
         show_archived: Show archived
         hide_archived: Hide archived
+        cron_count:
+          one: "%{count} scheduled job"
+          other: "%{count} scheduled jobs"
+        cron_schedule: "%{schedule} · next %{next_run}"
         delete_only_this: Delete only this Creative
         delete_with_children: Delete this Creative and all its children
         are_you_sure: Are you sure?

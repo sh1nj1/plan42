@@ -8,5 +8,6 @@ ko:
       flat_view: "플랫"
       tree_view: "트리"
       other_filters: "필터"
+      has_cron: "예약 작업"
       to_search: "검색"
       to_close: "닫기"

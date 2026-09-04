@@ -27,8 +27,17 @@ export function buildFilterUrl({ indexPath, onIndex }, mutate) {
   return url
 }
 
-// Shared by the GNB component and the search popup's progress/comment buttons.
+// Shared by the GNB component and the search popup's filter buttons.
 export function applyFilterParam(params, filter) {
+  if (filter === 'cron') {
+    if (params.get('has_cron') === 'true') {
+      params.delete('has_cron')
+    } else {
+      params.set('has_cron', 'true')
+    }
+    return
+  }
+
   if (filter === 'comment') {
     if (params.get('comment') === 'true') {
       params.delete('comment')
@@ -80,12 +89,14 @@ export function syncFilterButtons(url) {
   const params = url.searchParams
   const hasProgress = Boolean(params.get('min_progress') || params.get('max_progress'))
   const hasArchived = params.get('show_archived') === 'true'
+  const hasCron = params.get('has_cron') === 'true'
   const hasSearch = Boolean(params.get('search')?.trim())
   const active = {
     [`progress:${progressState(params)}`]: true,
     comment: params.get('comment') === 'true',
+    cron: hasCron,
     archived: hasArchived,
-    'any-filter': hasProgress || hasArchived || hasSearch
+    'any-filter': hasProgress || hasArchived || hasCron || hasSearch
   }
 
   document.querySelectorAll('[data-filter-state]').forEach((element) => {

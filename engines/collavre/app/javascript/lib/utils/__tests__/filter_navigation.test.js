@@ -75,6 +75,15 @@ describe('applyFilterParam', () => {
     expect(params.has('comment')).toBe(false)
   })
 
+  test('toggles the cron filter', () => {
+    const params = new URLSearchParams()
+    applyFilterParam(params, 'cron')
+    expect(params.get('has_cron')).toBe('true')
+
+    applyFilterParam(params, 'cron')
+    expect(params.has('has_cron')).toBe(false)
+  })
+
   test('sets the complete progress range', () => {
     const params = new URLSearchParams()
     applyFilterParam(params, 'complete')
@@ -147,6 +156,7 @@ describe('syncFilterButtons', () => {
       <button data-filter-state="progress:incomplete" class="active"></button>
       <button data-filter-state="progress:complete"></button>
       <button data-filter-state="comment"></button>
+      <button data-filter-state="cron"></button>
       <button data-filter-state="archived" data-label-on="Hide archived" data-label-off="Show archived">Show archived</button>
     `
   })
@@ -184,6 +194,12 @@ describe('syncFilterButtons', () => {
 
     syncFilterButtons(new URL('http://localhost/creatives?search=abc'))
     expect(activeStates()).toContain('any-filter')
+  })
+
+  test('activates cron management filtering and the search trigger', () => {
+    syncFilterButtons(new URL('http://localhost/creatives?has_cron=true'))
+
+    expect(activeStates().sort()).toEqual(['any-filter', 'cron', 'progress:all'])
   })
 
   test('ignores blank and whitespace-only filter values, matching server-side .present?', () => {

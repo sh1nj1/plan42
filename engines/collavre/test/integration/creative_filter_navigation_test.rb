@@ -65,6 +65,7 @@ class CreativeFilterNavigationTest < ActionDispatch::IntegrationTest
     assert_select "[data-filter-state='progress:incomplete']"
     assert_select "[data-filter-state='progress:complete']"
     assert_select "[data-filter-state='comment']"
+    assert_select "[data-filter-state='cron']"
     assert_select "[data-filter-state='archived'][data-label-on][data-label-off]"
   end
 
