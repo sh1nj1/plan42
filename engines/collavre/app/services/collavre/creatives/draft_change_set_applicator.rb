@@ -3,11 +3,11 @@
 module Collavre
   module Creatives
     class DraftChangeSetApplicator
-      def initialize(change_set:, user:, plan:, skipped_ids: [])
+      def initialize(change_set:, user:, plan:, skipped_change_ids: [])
         @change_set = change_set
         @user = user
         @plan = plan
-        @skipped_ids = skipped_ids
+        @skipped_change_ids = skipped_change_ids
         @id_map = {}
       end
 
@@ -24,7 +24,7 @@ module Collavre
       private
 
       def discard_skipped_changes
-        changes = @change_set.creative_changes.where(creative_id: @skipped_ids)
+        changes = @change_set.creative_changes.where(id: @skipped_change_ids)
         stale_blob_ids = ActiveStorage::Attachment.where(record: changes, name: "history_files").pluck(:blob_id)
         changes.destroy_all
         History.schedule_blob_purge_rechecks(stale_blob_ids)

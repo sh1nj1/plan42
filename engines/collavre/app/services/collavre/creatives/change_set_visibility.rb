@@ -55,7 +55,9 @@ module Collavre
       # the actor who performed that explicit deletion may inspect its snapshot.
       # AI deletes are archival and keep their live permission rows.
       def historical_snapshot_visible?(change)
-        return true if change.change_set.status == "draft" && historical_parent_id(change)
+        if change.change_set.status == "draft" && change.creative_id.negative? && change.before.empty?
+          return historical_parent_id(change).present?
+        end
 
         @user_id && change.change_set.user_id == @user_id
       end

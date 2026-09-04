@@ -16,6 +16,9 @@ module Collavre
           unless @scope_creative.has_permission?(@user, :write)
             next result(:skipped, skipped: [ @scope_creative.id ])
           end
+          unless ChangeSetApplyService.new(source: source, user: @user, mode: :draft).fully_authorized?
+            next result(:skipped, skipped: [ @scope_creative.id ])
+          end
 
           source.update!(status: "rejected")
           result(:rejected, change_set: source)

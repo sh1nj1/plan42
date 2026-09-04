@@ -139,6 +139,27 @@ module Collavre
         assert_empty diff.groups
         assert_equal 0, diff.change_count
       end
+
+      test "does not expose a deleted existing draft target through its former parent" do
+        reader = users(:two)
+        root_share = CreativeShare.create!(
+          creative: @root, user: reader, shared_by: @user, permission: :read
+        )
+        deny = CreativeShare.create!(
+          creative: @child, user: reader, shared_by: @user, permission: :no_access
+        )
+        PermissionCacheBuilder.propagate_share(root_share)
+        PermissionCacheBuilder.propagate_share(deny)
+        @change_set.update!(status: "draft", user: users(:ai_bot), actor_kind: "agent", origin: "tool")
+        change = @change_set.creative_changes.sole
+        change.update!(previous_parent_id: @root.id)
+        @child.destroy!
+
+        diff = ChangeSetDiff.new(@change_set, user: reader)
+
+        assert_empty diff.groups
+        assert_equal 0, diff.change_count
+      end
     end
   end
 end

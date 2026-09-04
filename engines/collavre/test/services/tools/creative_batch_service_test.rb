@@ -175,6 +175,31 @@ module Collavre
         assert_equal "applied", draft.reload.status
       end
 
+      test "skipping an archive conflict also skips its propagated family" do
+        child, linked = create_private_linked_pair
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        expected_root_progress = @root.reload.progress
+        expected_foreign_progress = linked.parent.reload.progress
+        child.update!(description: "Later human edit")
+
+        applied = Creatives::ChangeSetApplyService.new(
+          source: draft, user: @user, mode: :draft, resolutions: { child.id => "skip" }
+        ).call
+
+        assert_equal :rejected, applied.status
+        assert_equal "rejected", draft.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+        assert_includes child.description, "Later human edit"
+        assert_in_delta expected_root_progress, @root.reload.progress, 0.01
+        assert_in_delta expected_foreign_progress, linked.parent.reload.progress, 0.01
+        assert_operator draft.creative_changes.count, :>, 1
+      end
+
       test "creates a creative via batch" do
         service = CreativeBatchService.new
         result = service.call(operations: [

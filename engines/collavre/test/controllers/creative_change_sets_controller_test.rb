@@ -195,6 +195,52 @@ module Collavre
       assert_equal "applied", draft.reload.status
     end
 
+    test "does not treat a requested skip as authority over an unwritable draft target" do
+      draft = build_review_draft([
+        { "action" => "update", "id" => @creative.id, "description" => "Authorized proposal" }
+      ])
+      foreign = append_unwritable_draft_change(draft)
+
+      post creative_apply_change_set_path(@creative, draft),
+           params: { mode: "approve", resolutions: { foreign.id => "skip" } }, as: :json
+
+      assert_response :unprocessable_entity
+      assert_equal "skipped", response.parsed_body["status"]
+      assert_equal "draft", draft.reload.status
+      assert draft.creative_changes.exists?(creative_id: foreign.id)
+      refute_includes @creative.reload.description, "Authorized proposal"
+    end
+
+    test "rejects only when the reviewer can write every draft target" do
+      draft = build_review_draft([
+        { "action" => "update", "id" => @creative.id, "description" => "Authorized proposal" }
+      ])
+      foreign = append_unwritable_draft_change(draft)
+
+      post creative_apply_change_set_path(@creative, draft), params: { mode: "reject" }, as: :json
+
+      assert_response :unprocessable_entity
+      assert_equal "skipped", response.parsed_body["status"]
+      assert_equal "draft", draft.reload.status
+      assert draft.creative_changes.exists?(creative_id: foreign.id)
+    end
+
+    test "rejects a draft when every actual conflict is skipped" do
+      draft = build_review_draft([
+        { "action" => "update", "id" => @creative.id, "description" => "Proposed" }
+      ])
+      @creative.update!(description: "Later human edit")
+
+      post creative_apply_change_set_path(@creative, draft),
+           params: { mode: "approve", resolutions: { @creative.id => "skip" } }, as: :json
+
+      assert_response :success
+      assert_equal "rejected", response.parsed_body["status"]
+      assert_equal "rejected", draft.reload.status
+      assert draft.creative_changes.exists?(creative_id: @creative.id)
+      assert_includes @creative.reload.description, "Later human edit"
+    end
+
     test "does not approve a draft without an explicit mode" do
       draft = build_review_draft([
         { "action" => "update", "id" => @creative.id, "description" => "Proposed" }
@@ -277,6 +323,19 @@ module Collavre
       topic = Topic.create!(creative: @creative, user: @user, name: "Draft #{SecureRandom.hex(3)}")
       task = Task.create!(agent: agent, creative: @creative, topic_id: topic.id, name: "Draft", status: "running")
       [ agent, task ]
+    end
+
+    def append_unwritable_draft_change(draft)
+      foreign = Creative.create!(description: "Foreign", user: users(:two))
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: foreign, user: @user, shared_by: users(:two), permission: :read)
+      end
+      snapshot = Creatives::History.snapshot(foreign)
+      draft.creative_changes.create!(
+        creative: foreign, operation: "update", before: snapshot,
+        after: snapshot.merge("description" => "Unauthorized proposal"), position: 1
+      )
+      foreign
     end
   end
 end

@@ -29,6 +29,17 @@ module Collavre
         end
       end
 
+      def fully_authorized?
+        CreativeChangeSet.transaction do
+          source = CreativeChangeSet.lock.find(@source.id)
+          build_targets(source)
+          next false unless revertible?(source)
+
+          _plan, _conflicts, skipped = build_plan
+          skipped.empty? && @complete
+        end
+      end
+
       private
 
       def build_targets(source)
@@ -44,9 +55,12 @@ module Collavre
         records = locked_records
         writable_ids = writable_ids_for(records.keys)
         retain_authorized_targets(records, writable_ids)
-        @targets.each_with_object([ [], [], [] ]) do |(change, snapshot), buckets|
-          classify_target(change, snapshot, records, writable_ids, buckets)
+        @conflict_skipped_change_ids = Set.new
+        buckets = @targets.each_with_object([ [], [], [] ]) do |(change, snapshot), result|
+          classify_target(change, snapshot, records, writable_ids, result)
         end
+        prune_skipped_dependencies(buckets.first, records) if @mode == :draft
+        buckets
       end
 
       def locked_records
@@ -65,7 +79,12 @@ module Collavre
         return if History.snapshot(creative) == snapshot
 
         if current_conflict?(creative, change) && resolution(change) != "force"
-          resolution(change) == "skip" ? skipped << change.creative_id : conflicts << conflict_for(creative, change)
+          if resolution(change) == "skip"
+            @conflict_skipped_change_ids << change.id
+            skipped << change.creative_id
+          else
+            conflicts << conflict_for(creative, change)
+          end
         else
           plan << [ creative, snapshot, nil, change ]
         end
@@ -188,6 +207,7 @@ module Collavre
       end
 
       def complete_noop(source, skipped)
+        return reject_fully_skipped_draft(source, skipped) if fully_skipped_draft?(skipped)
         return result(:skipped, skipped: skipped) unless skipped.empty? && @complete
 
         if @mode == :revert
@@ -199,9 +219,11 @@ module Collavre
       end
 
       def apply_draft(source, plan, skipped)
-        return result(:skipped, skipped: skipped) unless @complete && explicitly_skipped?(skipped)
+        return result(:skipped, skipped: skipped) unless @complete && only_conflicts_skipped?(skipped)
 
-        DraftChangeSetApplicator.new(change_set: source, user: @user, plan: plan, skipped_ids: skipped).call
+        DraftChangeSetApplicator.new(
+          change_set: source, user: @user, plan: plan, skipped_change_ids: @draft_discard_change_ids
+        ).call
         status = skipped.empty? ? :applied : :partial
         result(status, change_set: source, skipped: skipped)
       end
@@ -239,8 +261,26 @@ module Collavre
         @virtual_creation_ids ||= @targets.keys.select { |change| change.before.empty? }.map(&:creative_id).to_set
       end
 
-      def explicitly_skipped?(ids)
-        ids.all? { |id| @resolutions[id.to_s] == "skip" }
+      def only_conflicts_skipped?(ids)
+        conflict_ids = @all_changes.select { |change| @conflict_skipped_change_ids.include?(change.id) }
+          .map(&:creative_id).to_set
+        ids.to_set == conflict_ids
+      end
+
+      def fully_skipped_draft?(skipped)
+        @mode == :draft && @complete && skipped.present? && only_conflicts_skipped?(skipped) &&
+          @draft_discard_change_ids.size == @all_changes.size
+      end
+
+      def reject_fully_skipped_draft(source, skipped)
+        source.update!(status: "rejected")
+        result(:rejected, change_set: source, skipped: skipped)
+      end
+
+      def prune_skipped_dependencies(plan, records)
+        @draft_discard_change_ids = DraftConflictDependencyPruner.new(
+          changes: @all_changes, records: records, skipped_change_ids: @conflict_skipped_change_ids
+        ).call(plan)
       end
 
       def result(status, change_set: nil, conflicts: [], skipped: [])
