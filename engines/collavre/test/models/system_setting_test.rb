@@ -83,4 +83,34 @@ class SystemSettingTest < ActiveSupport::TestCase
     setting.update!(value: "900")
     assert_equal 900, SystemSetting.ai_agent_turn_deadline_seconds
   end
+
+  test "creative history retention settings use defaults, floors, and overrides" do
+    SystemSetting.destroy_all
+    Rails.cache.clear
+
+    assert_equal 50, SystemSetting.creative_history_retention_count
+    assert_equal 90, SystemSetting.creative_history_retention_days
+
+    count = SystemSetting.create!(key: "creative_history_retention_count", value: "9")
+    days = SystemSetting.create!(key: "creative_history_retention_days", value: "6")
+    assert_equal 50, SystemSetting.creative_history_retention_count
+    assert_equal 90, SystemSetting.creative_history_retention_days
+
+    count.update!(value: "25")
+    days.update!(value: "45")
+    assert_equal 25, SystemSetting.creative_history_retention_count
+    assert_equal 45, SystemSetting.creative_history_retention_days
+  end
+
+  test "clear_all_cache clears creative history retention settings" do
+    SystemSetting.create!(key: "creative_history_retention_count", value: "25")
+    SystemSetting.create!(key: "creative_history_retention_days", value: "45")
+    SystemSetting.creative_history_retention_count
+    SystemSetting.creative_history_retention_days
+
+    SystemSetting.clear_all_cache
+
+    assert_nil Rails.cache.read("system_setting:creative_history_retention_count")
+    assert_nil Rails.cache.read("system_setting:creative_history_retention_days")
+  end
 end
