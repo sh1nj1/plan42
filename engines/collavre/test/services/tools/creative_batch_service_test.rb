@@ -124,7 +124,8 @@ module Collavre
         applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
         assert_equal :applied, applied.status, applied.skipped.inspect
         assert @root.children.where("description LIKE ?", "%Reviewed child%").exists?
-        assert Creative.roots.where("description LIKE ?", "%Reviewed root%").exists?
+        reviewed_root = Creative.roots.where("description LIKE ?", "%Reviewed root%").sole
+        assert_equal agent, reviewed_root.user
       end
 
       test "returns the existing pending draft for another write in the same turn" do
@@ -230,6 +231,27 @@ module Collavre
         assert_equal "applied", draft.reload.status
       end
 
+      test "skipping a progress conflict also skips linked parent rollups" do
+        child, linked = create_private_linked_pair(progress: 0)
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => child.id, "progress" => 1.0 }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        child.update!(description: "Later human edit")
+
+        applied = Creatives::ChangeSetApplyService.new(
+          source: draft, user: @user, mode: :draft, resolutions: { child.id => "skip" }
+        ).call
+
+        assert_equal :rejected, applied.status
+        assert_equal "rejected", draft.reload.status
+        assert_equal 0.0, child.reload.progress
+        assert_in_delta 0.0, linked.parent.reload.progress, 0.01
+      end
+
       test "skipping an archive conflict also skips its propagated family" do
         child, linked = create_private_linked_pair
         task, agent = review_agent_turn
@@ -253,6 +275,29 @@ module Collavre
         assert_in_delta expected_root_progress, @root.reload.progress, 0.01
         assert_in_delta expected_foreign_progress, linked.parent.reload.progress, 0.01
         assert_operator draft.creative_changes.count, :>, 1
+      end
+
+      test "skipping a linked archive conflict also skips its origin family" do
+        child = Creative.create!(description: "Source", user: @user, parent: @root)
+        linked_parent = Creative.create!(description: "Placement", user: @user)
+        linked = Creative.create!(origin: child, user: @user, parent: linked_parent)
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => linked.id } ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        linked.update!(sequence: linked.sequence + 1)
+        linked_change = draft.creative_changes.find_by!(creative_id: linked.id)
+        assert_not_equal linked_change.before, Creatives::History.snapshot(linked)
+
+        applied = Creatives::ChangeSetApplyService.new(
+          source: draft, user: @user, mode: :draft, resolutions: { linked.id => "skip" }
+        ).call
+
+        assert_equal :rejected, applied.status
+        assert_equal "rejected", draft.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
       end
 
       test "creates a creative via batch" do

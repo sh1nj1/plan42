@@ -54,7 +54,7 @@ module Collavre
 
       def apply_creation(snapshot, virtual_change)
         parent = Creative.find_by(id: snapshot["parent_id"])
-        creative = Creative.new(user: parent&.user || @user, parent: parent)
+        creative = Creative.new(user: parent&.user || @change_set.user || @user, parent: parent)
         SnapshotAssignment.call(creative, snapshot)
         creative.save!
         remap_virtual_change!(virtual_change, creative)

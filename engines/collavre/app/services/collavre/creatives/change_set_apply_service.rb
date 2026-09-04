@@ -75,7 +75,9 @@ module Collavre
         plan, conflicts, skipped = buckets
         creative = records[change.creative_id]
         return classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped) if draft_creation?(change, creative)
-        return classify_propagated_target(change, creative, snapshot, plan) if propagated_target?(change)
+        if propagated_target?(change) && !target_writable?(creative, snapshot, records, writable_ids)
+          return classify_propagated_target(change, creative, snapshot, plan)
+        end
         return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids)
         return @resolved_change_ids << change.id if History.snapshot(creative) == snapshot
 

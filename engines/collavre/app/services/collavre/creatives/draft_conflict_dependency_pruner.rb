@@ -10,10 +10,7 @@ module Collavre
       end
 
       def call(plan)
-        source_ids = skipped_archive_changes.map(&:creative_id).to_set
-        return discard_change_ids if source_ids.empty?
-
-        collect_archive_family(source_ids)
+        collect_archive_family(skipped_archive_family_ids)
         collect_progress_chain
         plan.reject! { |_creative, _snapshot, _attribute, change| discard_change_ids.include?(change.id) }
         discard_change_ids
@@ -27,7 +24,16 @@ module Collavre
         changes.select { |change| discard_change_ids.include?(change.id) && archival_transition?(change) }
       end
 
+      def skipped_archive_family_ids
+        skipped_archive_changes.flat_map do |change|
+          creative = records[change.creative_id]
+          [ change.creative_id, creative&.origin_id ]
+        end.compact.to_set
+      end
+
       def collect_archive_family(family_ids)
+        return if family_ids.empty?
+
         loop do
           additions = changes.select do |change|
             archive_family_addition?(change, family_ids)
@@ -42,11 +48,11 @@ module Collavre
       end
 
       def archive_family_addition?(change, family_ids)
-        return false unless archival_transition?(change) && !family_ids.include?(change.creative_id)
+        return false unless archival_transition?(change) && !discard_change_ids.include?(change.id)
 
         creative = records[change.creative_id]
         parent_id = change.before["parent_id"] || change.after["parent_id"]
-        family_ids.include?(parent_id) || family_ids.include?(creative&.origin_id)
+        family_ids.include?(change.creative_id) || family_ids.include?(parent_id) || family_ids.include?(creative&.origin_id)
       end
 
       def collect_progress_chain
