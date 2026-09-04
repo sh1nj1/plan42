@@ -168,6 +168,38 @@ module Collavre
         assert_match(/Failed to broadcast created topic #{topic.id}: cable unavailable/, warning)
       end
 
+      test "removes a newly created topic when recurring task creation fails" do
+        error = SolidQueue::RecurringTask.stub(:create!, ->(**) { raise "queue unavailable" }) do
+          assert_raises(RuntimeError) do
+            CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: "Task Failure Topic",
+              schedule: "0 9 * * *",
+              message: "test"
+            )
+          end
+        end
+
+        assert_equal "queue unavailable", error.message
+        assert_nil @creative.topics.find_by(name: "Task Failure Topic")
+      end
+
+      test "keeps an existing topic when recurring task creation fails" do
+        error = SolidQueue::RecurringTask.stub(:create!, ->(**) { raise "queue unavailable" }) do
+          assert_raises(RuntimeError) do
+            CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: @topic.name,
+              schedule: "0 9 * * *",
+              message: "test"
+            )
+          end
+        end
+
+        assert_equal "queue unavailable", error.message
+        assert @topic.reload
+      end
+
       test "rejects a missing reserved topic name" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,

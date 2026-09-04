@@ -44,7 +44,7 @@ module Tools
       key = "cron_#{creative_id}_#{suffix}"
 
       task = create_task(
-        topic: topic, creative: creative, creative_id: creative_id,
+        topic: topic, creative: creative, creative_id: creative_id, topic_created: topic_created,
         key: key, schedule: schedule, message: message, description: description
       )
       return task if task.is_a?(Hash) && task[:error]
@@ -64,28 +64,43 @@ module Tools
 
     private
 
-    def create_task(topic:, creative:, creative_id:, key:, schedule:, message:, description:)
-      topic.with_lock do
+    def create_task(topic:, creative:, creative_id:, key:, schedule:, message:, description:, topic_created:)
+      creation_error = nil
+      task = topic.with_lock do
         return { error: I18n.t("collavre.creative_history.read_only") } if topic.history?
         unless topic.creative_id == creative.effective_origin.id
           return { error: I18n.t("collavre.comments.invalid_topic") }
         end
 
-        SolidQueue::RecurringTask.create!(
-          key: key,
-          class_name: "Collavre::CronActionJob",
-          schedule: schedule,
-          queue_name: "default",
-          static: false,
-          description: description || "Cron job for creative #{creative_id}",
-          arguments: [ {
-            creative_id: creative_id,
-            topic_id: topic.id,
-            agent_id: Current.user.id,
-            message: message
-          } ]
+        persist_task(
+          topic: topic, creative_id: creative_id, key: key, schedule: schedule,
+          message: message, description: description
         )
+      rescue StandardError => e
+        topic.destroy! if topic_created
+        creation_error = e
+        nil
       end
+      raise creation_error if creation_error
+
+      task
+    end
+
+    def persist_task(topic:, creative_id:, key:, schedule:, message:, description:)
+      SolidQueue::RecurringTask.create!(
+        key: key,
+        class_name: "Collavre::CronActionJob",
+        schedule: schedule,
+        queue_name: "default",
+        static: false,
+        description: description || "Cron job for creative #{creative_id}",
+        arguments: [ {
+          creative_id: creative_id,
+          topic_id: topic.id,
+          agent_id: Current.user.id,
+          message: message
+        } ]
+      )
     end
 
     def resolve_topic(creative, topic_name)
