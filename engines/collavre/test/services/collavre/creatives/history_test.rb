@@ -378,6 +378,39 @@ module Collavre
         assert_equal [ @child.id, sibling.id ].sort, change_set.creative_changes.pluck(:creative_id).sort
       end
 
+      test "finishes an agent turn with one undo notice" do
+        agent = users(:ai_bot)
+        topic = Topic.create!(creative: @root, user: @user, name: "Agent notice")
+        task = Task.create!(agent: agent, creative: @root, topic_id: topic.id, name: "Edit", status: "running")
+
+        Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          @child.update!(description: "Notify once")
+          change_set = Current.change_set
+          notices = []
+
+          CreativeHistoryNoticeJob.stub(:perform_later, ->(*args) { notices << args }) do
+            History.finish_agent_turn
+          end
+          assert_equal [ [ change_set.id, @user.id ] ], notices
+          assert_nil Current.change_set
+        end
+      end
+
+      test "finishing an empty agent turn removes its empty change set" do
+        agent = users(:ai_bot)
+        topic = Topic.create!(creative: @root, user: @user, name: "Empty agent turn")
+        task = Task.create!(agent: agent, creative: @root, topic_id: topic.id, name: "Edit", status: "running")
+        empty_set = CreativeChangeSet.create!(
+          user: agent, actor_kind: "agent", origin: "tool", status: "applied", task: task, applied_at: Time.current
+        )
+
+        Current.set(user: agent, agent_turn: { user: @user, task: task }, change_set: empty_set) do
+          History.finish_agent_turn
+          assert_not CreativeChangeSet.exists?(empty_set.id)
+          assert_nil Current.change_set
+        end
+      end
+
       test "keeps nested import tracking in the enclosing agent turn" do
         agent = users(:ai_bot)
         topic = Topic.create!(creative: @root, user: @user, name: "Agent import")

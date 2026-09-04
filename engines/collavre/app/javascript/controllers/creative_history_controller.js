@@ -1,11 +1,12 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../lib/utils/dialog'
+import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 
 export default class extends Controller {
   async revert(event) {
     const button = event.currentTarget
-    if (!await confirmDialog(button.dataset.confirm, { danger: true })) return
+    if (button.dataset.confirm && !await confirmDialog(button.dataset.confirm, { danger: true })) return
 
     button.disabled = true
     try {
@@ -18,8 +19,9 @@ export default class extends Controller {
       if (!response.ok) throw new Error(body.message)
       if (body.status === 'partial') await alertDialog(body.message)
 
+      this.dispatch('applied', { detail: body })
       this.listController?.loadInitialComments()
-      window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete'))
+      invalidateCreativeTree()
     } catch (error) {
       await alertDialog(error.message)
       button.disabled = false

@@ -22,7 +22,7 @@ module Collavre
           if conflicts.any?
             result(:conflict, conflicts: conflicts, skipped: skipped)
           elsif plan.empty?
-            result(:skipped, skipped: skipped)
+            complete_noop(source, skipped)
           else
             apply(source, plan, skipped)
           end
@@ -32,15 +32,17 @@ module Collavre
       private
 
       def build_targets(source)
-        all_changes = source.creative_changes.order(@mode == :revert ? { position: :desc } : { position: :asc })
-        changes = ChangeSetVisibility.new(user: @user).changes(all_changes)
-        @targets = changes.to_h { |change| [ change, @mode == :revert ? change.before : change.after ] }
-        @complete = changes.size == all_changes.size
+        @all_changes = source.creative_changes.order(@mode == :revert ? { position: :desc } : { position: :asc }).to_a
+        visible_changes = ChangeSetVisibility.new(user: @user).changes(@all_changes)
+        @visible_change_ids = visible_changes.map(&:id).to_set
+        candidates = (visible_changes + @all_changes.select { |change| propagated_candidate?(change) }).uniq
+        @targets = candidates.to_h { |change| [ change, @mode == :revert ? change.before : change.after ] }
       end
 
       def build_plan
         records = locked_records
         writable_ids = writable_ids_for(records.keys)
+        retain_authorized_targets(records, writable_ids)
         @targets.each_with_object([ [], [], [] ]) do |(change, snapshot), buckets|
           classify_target(change, snapshot, records, writable_ids, buckets)
         end
@@ -55,6 +57,7 @@ module Collavre
       def classify_target(change, snapshot, records, writable_ids, buckets)
         plan, conflicts, skipped = buckets
         creative = records[change.creative_id]
+        return classify_propagated_target(change, creative, snapshot, plan) if propagated_target?(change)
         return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids)
         return if History.snapshot(creative) == snapshot
 
@@ -63,6 +66,34 @@ module Collavre
         else
           plan << [ creative, snapshot ]
         end
+      end
+
+      def retain_authorized_targets(records, writable_ids)
+        visible_origins = @targets.keys.filter_map do |change|
+          next unless @visible_change_ids.include?(change.id) && change.operation.in?(%w[archive unarchive])
+
+          creative = records[change.creative_id]
+          creative&.id if target_writable?(creative, @targets.fetch(change), records, writable_ids)
+        end.to_set
+        @propagated_attributes = PropagatedChangeAuthorization.new(
+          changes: @targets.keys,
+          records: records,
+          writable_origin_ids: visible_origins
+        ).call
+        @targets.select! { |change, _snapshot| @visible_change_ids.include?(change.id) || propagated_target?(change) }
+        @complete = @targets.size == @all_changes.size
+      end
+
+      def classify_propagated_target(change, creative, snapshot, plan)
+        attribute = @propagated_attributes.fetch(change.id)
+        current_value = History.snapshot(creative)[attribute] if creative
+        return if current_value == snapshot[attribute]
+        unless creative && current_value == change.public_send(source_snapshot_side)[attribute]
+          @complete = false
+          return
+        end
+
+        plan << [ creative, snapshot, attribute ]
       end
 
       def target_writable?(creative, snapshot, records, writable_ids)
@@ -115,7 +146,7 @@ module Collavre
         reverse = create_reverse_set(source)
         History.track(actor: @user, origin: :revert, anchor: source.anchor_creative, anchor_source: :explicit) do
           Current.change_set = reverse
-          plan.each { |creative, snapshot| apply_snapshot(creative, snapshot) }
+          plan.each { |creative, snapshot, propagated_attribute| apply_snapshot(creative, snapshot, propagated_attribute:) }
         end
         source.update!(status: "reverted", reverted_by: reverse) if @mode == :revert && skipped.empty? && @complete
         status = skipped.empty? && @complete ? :applied : :partial
@@ -135,11 +166,36 @@ module Collavre
         )
       end
 
-      def apply_snapshot(creative, snapshot)
+      def complete_noop(source, skipped)
+        return result(:skipped, skipped: skipped) unless skipped.empty? && @complete
+
+        source.update!(status: "reverted") if @mode == :revert
+        result(:applied)
+      end
+
+      def apply_snapshot(creative, snapshot, propagated_attribute: nil)
         return creative.update!(archived_at: Time.current) if snapshot.empty?
+        return creative.update!(propagated_attribute => snapshot[propagated_attribute]) if propagated_attribute
 
         creative.assign_attributes(snapshot_attributes(creative, snapshot))
         creative.save!
+      end
+
+      def propagated_target?(change)
+        @propagated_attributes&.key?(change.id)
+      end
+
+      def archival_transition?(change)
+        change.operation.in?(%w[archive unarchive]) &&
+          change.before["archived_at"] != change.after["archived_at"]
+      end
+
+      def propagated_candidate?(change)
+        archival_transition?(change) || change.operation == "update"
+      end
+
+      def source_snapshot_side
+        @mode == :revert ? :after : :before
       end
 
       def snapshot_attributes(creative, snapshot)

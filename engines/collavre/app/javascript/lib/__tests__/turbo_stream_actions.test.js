@@ -46,6 +46,18 @@ function dispatchCreativeTreeStream(payload) {
   })
 }
 
+test('generic tree invalidation refreshes both tree implementations', () => {
+  const legacyRefresh = jest.fn()
+  const workspaceRefresh = jest.fn()
+  document.addEventListener('creative-sync:refetch', legacyRefresh, { once: true })
+  document.addEventListener('workspace-tree:invalidate', workspaceRefresh, { once: true })
+
+  fakeTurbo.StreamActions.invalidate_creative_tree.call({})
+
+  expect(legacyRefresh).toHaveBeenCalled()
+  expect(workspaceRefresh).toHaveBeenCalled()
+})
+
 afterEach(() => {
   document.body.innerHTML = ''
   jest.restoreAllMocks()

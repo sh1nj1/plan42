@@ -52,6 +52,8 @@ describe('CreativeHistoryController', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'applied' }) })
     const reload = jest.fn()
     jest.spyOn(controller, 'listController', 'get').mockReturnValue({ loadInitialComments: reload })
+    const applied = jest.fn()
+    controller.element.addEventListener('creative-history:applied', applied)
 
     await controller.revert({ currentTarget: button })
 
@@ -60,6 +62,7 @@ describe('CreativeHistoryController', () => {
       12: 'skip',
     })
     expect(reload).toHaveBeenCalled()
+    expect(applied).toHaveBeenCalled()
     expect(alertDialog).not.toHaveBeenCalled()
   })
 
@@ -70,6 +73,22 @@ describe('CreativeHistoryController', () => {
 
     expect(csrfFetch).not.toHaveBeenCalled()
     expect(button.disabled).toBe(false)
+  })
+
+  test('applies a toast undo immediately when confirmation is omitted', async () => {
+    delete button.dataset.confirm
+    csrfFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: 'applied' }) })
+    const legacyRefresh = jest.fn()
+    const workspaceRefresh = jest.fn()
+    document.addEventListener('creative-sync:refetch', legacyRefresh, { once: true })
+    document.addEventListener('workspace-tree:invalidate', workspaceRefresh, { once: true })
+
+    await controller.revert({ currentTarget: button })
+
+    expect(confirmDialog).not.toHaveBeenCalled()
+    expect(csrfFetch).toHaveBeenCalled()
+    expect(legacyRefresh).toHaveBeenCalled()
+    expect(workspaceRefresh).toHaveBeenCalled()
   })
 
   test('shows an error and re-enables the button when the request fails', async () => {

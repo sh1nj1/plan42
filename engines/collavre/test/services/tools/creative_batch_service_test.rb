@@ -44,8 +44,10 @@ module Collavre
         assert_equal 1.0, result[:results][0][:progress]
       end
 
-      test "deletes a creative via batch" do
-        child = Creative.create!(description: "<p>To delete</p>", user: @user, parent: @root)
+      test "archives a creative subtree via batch" do
+        child = Creative.create!(description: "<p>To archive</p>", user: @user, parent: @root)
+        grandchild = Creative.create!(description: "<p>Nested</p>", user: @user, parent: child)
+        Current.change_set = nil
 
         service = CreativeBatchService.new
         result = service.call(operations: [
@@ -53,8 +55,110 @@ module Collavre
         ])
 
         assert result[:success]
-        assert result[:results][0][:deleted]
-        assert_nil Creative.find_by(id: child.id)
+        assert result[:results][0][:archived]
+        assert child.reload.archived?
+        assert grandchild.reload.archived?
+        change_set = CreativeChangeSet.newest_first.first
+        assert_equal %w[archive archive], change_set.creative_changes.order(:creative_id).pluck(:operation)
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+        assert_equal :applied, revert.status
+        assert_not child.reload.archived?
+        assert_not grandchild.reload.archived?
+      end
+
+      test "undo restores linked shells propagated into a private tree" do
+        child, linked = create_private_linked_pair
+
+        result = CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+
+        assert result[:success]
+        assert linked.reload.archived?
+        assert_in_delta 0, linked.parent.reload.progress, 0.01
+        assert_not_includes Creatives::PermissionFilter.new(user: @user).readable_ids([ linked.id ]), linked.id
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_equal "reverted", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+        assert_in_delta 0.5, linked.parent.reload.progress, 0.01
+        assert_includes revert.change_set.creative_changes.pluck(:creative_id), linked.id
+
+        restore = Creatives::ChangeSetRestoreService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, restore.status
+        assert child.reload.archived?
+        assert linked.reload.archived?
+      end
+
+      test "undo restores a linked placement the actor can read but not write" do
+        child, linked = create_private_linked_pair
+        CreativeSharesCache.create!(creative: linked, user: @user, permission: :read)
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        filter = Creatives::PermissionFilter.new(user: @user)
+        assert_includes filter.readable_ids([ linked.id ]), linked.id
+        assert_not_includes filter.readable_ids([ linked.id ], min_permission: :write), linked.id
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+        assert_in_delta 0.5, linked.parent.reload.progress, 0.01
+      end
+
+      test "undo treats an independently restored hidden shell as complete" do
+        child, linked = create_private_linked_pair
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        linked.update_column(:archived_at, nil)
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_equal "reverted", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+      end
+
+      test "undo succeeds when the entire propagated family was already restored" do
+        child, linked = create_private_linked_pair
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        Current.change_set = nil
+        child.unarchive!
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :applied, revert.status
+        assert_nil revert.change_set
+        assert_equal "reverted", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+      end
+
+      test "undo does not overwrite or expose an independently rearchived hidden shell" do
+        child, linked = create_private_linked_pair
+
+        CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        change_set = CreativeChangeSet.newest_first.first
+        later_archive = 1.hour.from_now
+        linked.update_column(:archived_at, later_archive)
+
+        revert = Creatives::ChangeSetRevertService.new(change_set: change_set, user: @user).call
+
+        assert_equal :partial, revert.status
+        assert_equal "applied", change_set.reload.status
+        assert_not child.reload.archived?
+        assert_in_delta later_archive, linked.reload.archived_at, 0.001
+        assert_not_includes revert.skipped, linked.id
       end
 
       test "mixed operations in a single batch" do
@@ -137,6 +241,18 @@ module Collavre
 
         assert_not result[:success]
         assert_equal initial_count, Creative.count
+      end
+
+      private
+
+      def create_private_linked_pair
+        child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root, progress: 1)
+        foreign_user = users(:two)
+        foreign_root = Creative.create!(description: "<p>Private tree</p>", user: foreign_user)
+        Creative.create!(description: "<p>Incomplete</p>", user: foreign_user, parent: foreign_root, progress: 0)
+        linked = Creative.create!(origin: child, user: foreign_user, parent: foreign_root)
+        Current.change_set = nil
+        [ child, linked ]
       end
     end
   end

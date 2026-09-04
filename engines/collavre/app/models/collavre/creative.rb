@@ -296,39 +296,6 @@ module Collavre
       end
     end
 
-    # --- Archive ---
-    def archived?
-      archived_at.present?
-    end
-
-    def archive!
-      now = Time.current
-      self.class.transaction do
-        targets = self.class.where(id: archive_family_ids).where(archived_at: nil)
-        Creatives::History.record_bulk(targets, operation: "archive") do
-          targets.update_all(archived_at: now)
-        end
-
-        reload
-        parent&.reload
-        Collavre::Creatives::ProgressService.new(parent).update_progress_from_children! if parent
-      end
-    end
-
-    def unarchive!
-      self.class.transaction do
-        targets = self.class.where(id: archive_family_ids).where.not(archived_at: nil)
-        Creatives::History.record_bulk(targets, operation: "unarchive") do
-          targets.update_all(archived_at: nil)
-        end
-
-        reload
-        parent&.reload
-        Collavre::Creatives::ProgressService.new(parent).update_progress_from_children! if parent
-      end
-    end
-
-
     private
 
     def assign_default_user

@@ -169,6 +169,22 @@ module Collavre
         Current.creative_history_context.present? || Current.user.present?
       end
 
+      def finish_agent_turn
+        change_set = Current.change_set
+        return unless change_set&.persisted? && Current.agent_turn&.dig(:task)
+
+        if change_set.creative_changes.exists?
+          workspace_user = Current.agent_turn[:user]
+          if workspace_user && change_set.status == "applied" && change_set.actor_kind == "agent"
+            CreativeHistoryNoticeJob.perform_later(change_set.id, workspace_user.id)
+          end
+        else
+          change_set.destroy!
+        end
+      ensure
+        Current.change_set = nil
+      end
+
       def current_change_set(creative)
         Current.creative_history_context ||= inferred_context(creative)
         Current.change_set ||= find_or_create_change_set(Current.creative_history_context)

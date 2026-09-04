@@ -10,6 +10,7 @@ module Collavre
       tool_name "creative_batch_service"
       tool_description "Execute multiple Creative operations (create, update, delete) in a single batch call. " \
                        "All operations run inside a transaction — if any operation fails, the entire batch is rolled back.\n\n" \
+                       "Delete operations archive Creatives so they remain recoverable from History.\n\n" \
                        "This tool requires approval before execution.\n\n" \
                        "Each operation is a hash with an 'action' key ('create', 'update', or 'delete') plus action-specific fields."
 
@@ -20,7 +21,7 @@ module Collavre
       tool_param :operations, description: "Array of operation objects. Each object must have an 'action' key.\n\n" \
                  "For 'create': { action: 'create', parent_id: <int>, description: <markdown string>, progress: <float>, after_id: <int>, before_id: <int> }\n" \
                  "For 'update': { action: 'update', id: <int>, description: <markdown string>, progress: 1.0, parent_id: <int> } — progress only accepts 1.0 (complete) and only on leaf Creatives\n" \
-                 "For 'delete': { action: 'delete', id: <int> }\n\n" \
+                 "For 'delete': { action: 'delete', id: <int> } — archives the Creative and its propagated family\n\n" \
                  "The 'description' field is written as Markdown (GitHub-Flavored).\n" \
                  "Fields other than 'action' and 'id'/'parent_id' are optional.", required: true
 
@@ -100,12 +101,8 @@ module Collavre
         return { error: "Creative not found", id: id } unless creative
         return { error: "No write permission on this Creative", id: id } unless creative.has_permission?(Current.user, :write)
 
-        result = Creatives::DestroyService.new(
-          creative: creative,
-          user: Current.user
-        ).call
-        return { error: "Failed to destroy creative", id: id } unless result
-        { success: true, id: id, deleted: true }
+        creative.archive!
+        { success: true, id: id, archived: true }
       end
     end
   end
