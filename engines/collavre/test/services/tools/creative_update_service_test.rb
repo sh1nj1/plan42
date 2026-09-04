@@ -30,6 +30,33 @@ module Collavre
         assert_equal "<p>Updated <em>content</em></p>", @creative.description
       end
 
+      test "stores a direct agent update as a draft under review policy" do
+        task, agent = review_agent_turn(@creative)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeUpdateService.new.call(id: @creative.id, description: "Proposed")
+        end
+
+        assert result[:pending_review]
+        assert_equal "<p>Original</p>", @creative.reload.description
+        assert_equal "draft", CreativeChangeSet.find(result[:change_set_id]).status
+      end
+
+      test "stores a move into a review-policy parent as a draft" do
+        destination = Creative.create!(description: "Destination", user: @user)
+        task, agent = review_agent_turn(destination)
+        CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :write)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeUpdateService.new.call(id: @creative.id, parent_id: destination.id)
+        end
+
+        assert result[:pending_review]
+        assert_nil @creative.reload.parent_id
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        assert_equal destination.id, draft.creative_changes.find_by!(creative_id: @creative.id).after["parent_id"]
+      end
+
       test "updates description with plain text" do
         service = CreativeUpdateService.new
 
@@ -149,6 +176,28 @@ module Collavre
         assert result[:success]
         @creative.reload
         assert_equal new_parent.id, @creative.parent_id
+      end
+
+      test "rejects a destination parent without write permission" do
+        other_user = User.create!(name: "Other Parent", email: "other_parent@example.com", password: "password123")
+        new_parent = Creative.create!(description: "<p>Private parent</p>", user: other_user)
+
+        result = CreativeUpdateService.new.call(id: @creative.id, parent_id: new_parent.id)
+
+        assert_match(/permission/i, result[:error])
+        assert_nil @creative.reload.parent_id
+      end
+
+      test "returns validation failures from the update" do
+        service = CreativeUpdateService.new
+
+        result = Creative.stub(:find_by, @creative) do
+          @creative.stub(:save, false) do
+            service.call(id: @creative.id, description: "Rejected by model")
+          end
+        end
+
+        assert_match(/failed to update/i, result[:error])
       end
 
       test "returns error when creative not found" do
@@ -277,6 +326,17 @@ module Collavre
         assert_raises(RuntimeError) do
           service.call(id: @creative.id, description: "No user")
         end
+      end
+
+      private
+
+      def review_agent_turn(creative)
+        creative.update!(data: creative.data.merge("ai_write_policy" => "review"))
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: creative, user: agent, shared_by: @user, permission: :write)
+        topic = Topic.create!(creative: creative, user: @user, name: "Review update")
+        task = Task.create!(agent: agent, creative: creative, topic_id: topic.id, name: "Review", status: "running")
+        [ task, agent ]
       end
     end
   end

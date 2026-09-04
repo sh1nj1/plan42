@@ -9,7 +9,10 @@ module Collavre
     belongs_to :change_set, class_name: "Collavre::CreativeChangeSet",
                             foreign_key: :creative_change_set_id,
                             inverse_of: :creative_changes
-    belongs_to :creative, class_name: "Collavre::Creative"
+    # Draft create operations use a negative temporary id until approval creates
+    # the real row and remaps the change. Applied history still points at a live
+    # Creative, while the optional association lets the draft diff exist first.
+    belongs_to :creative, class_name: "Collavre::Creative", optional: true
     has_many :history_file_attachments,
              -> { where(name: "history_files") },
              as: :record,

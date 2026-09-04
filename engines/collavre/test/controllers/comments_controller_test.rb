@@ -44,6 +44,50 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("collavre.creative_history.read_only"), response.parsed_body["error"]
   end
 
+  test "History renders approval and rejection controls for a draft" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    draft = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "agent_topic", user: users(:ai_bot),
+      actor_kind: "agent", origin: "tool", status: "draft"
+    )
+    draft.creative_changes.create!(
+      creative: @creative, operation: "update", before: snapshot,
+      after: snapshot.merge("description" => "Proposed"), position: 0
+    )
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".approve-comment-btn[data-mode='approve']", text: I18n.t("collavre.creative_history.approve")
+    assert_select ".deny-comment-btn[data-mode='reject']", text: I18n.t("collavre.creative_history.reject")
+    assert_select ".creative-history-revert", count: 0
+  end
+
+  test "History hides draft actions from a read-only viewer" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    draft = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "agent_topic", user: users(:ai_bot),
+      actor_kind: "agent", origin: "tool", status: "draft"
+    )
+    draft.creative_changes.create!(
+      creative: @creative, operation: "update", before: snapshot,
+      after: snapshot.merge("description" => "Proposed"), position: 0
+    )
+    history_topic = @creative.reload.history_topic
+    viewer = users(:two)
+    grant_read_access_to_other_user(@creative, user: viewer)
+    delete session_path
+    post session_path, params: { email: viewer.email, password: "password" }
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".approve-comment-btn", count: 0
+    assert_select ".deny-comment-btn", count: 0
+    assert_select ".creative-history-state", text: I18n.t("collavre.creative_history.pending_review")
+  end
+
   test "linked Creatives use the origin History topic while preserving the linked history scope" do
     linked = Collavre::Creative.create!(user: @user, origin: @creative)
     Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: linked, anchor_source: :explicit) do

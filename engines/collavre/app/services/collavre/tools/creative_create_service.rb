@@ -7,7 +7,7 @@ module Tools
     extend ToolMeta
 
     tool_name "creative_create_service"
-    tool_description "Create a new Creative (task/content block) in the hierarchical structure. Creatives function like tasks in a tree structure, with automatic progress calculation.\n\nUse this to:\n- Create new tasks under a parent Creative\n- Add sub-items to organize work\n- Build hierarchical project structures\n\nNote: The description field is written as Markdown."
+    tool_description "Create a new Creative (task/content block) in the hierarchical structure. Creatives function like tasks in a tree structure, with automatic progress calculation.\n\nUse this to:\n- Create new tasks under a parent Creative\n- Add sub-items to organize work\n- Build hierarchical project structures\n\nNote: The description field is written as Markdown. A parent with inherited ai_write_policy=review stores a draft in History for approval."
 
     tool_param :description, description: "The content/title of the Creative, written in Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Plain text is stored as-is. Example: '# Title\\n\\n- item one\\n- item two'.", required: true
     tool_param :parent_id, description: "ID of the parent Creative. Required to create under a specific parent. If omitted, creates a root Creative.", required: false
@@ -31,6 +31,19 @@ module Tools
         end
       end
 
+      Creatives::AiWritePolicy.capture(
+        creatives: [ parent, parent&.effective_origin ], anchor: parent
+      ) do
+        perform_create(
+          description: description, parent: parent, progress: progress,
+          after_id: after_id, before_id: before_id
+        )
+      end
+    end
+
+    private
+
+    def perform_create(description:, parent:, progress:, after_id:, before_id:)
       # Build the creative. The description is authored as Markdown: store it as
       # the canonical markdown_source and let Describable#convert_markdown_to_html
       # render it to the HTML description (markdown_editor defaults to the
@@ -64,8 +77,6 @@ module Tools
         progress: creative.progress
       }
     end
-
-    private
 
     def handle_ordering(creative, before_id:, after_id:)
       return unless before_id.present? || after_id.present?

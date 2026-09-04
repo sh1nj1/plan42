@@ -36,6 +36,29 @@ module Collavre
         end
       end
 
+      test "stores a direct agent attachment as a draft under review policy" do
+        task, agent = review_agent_turn(@creative)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeAttachFilesService.new.call(
+            creative_id: @creative.id,
+            files: [ { "filename" => "proposal.txt", "content" => "draft" } ]
+          )
+        end
+
+        assert result[:pending_review]
+        assert_equal 0, @creative.reload.files.count
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        change = draft.creative_changes.sole
+        retained_blob = change.history_file_attachments.sole.blob
+
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status
+        assert_equal retained_blob.id, @creative.reload.files.blobs.sole.id
+        assert_includes @creative.description, retained_blob.signed_id
+      end
+
       test "rejects when user lacks write permission" do
         Current.user = users(:two)
         # creative owned by users(:one); users(:two) is non-admin with no share
@@ -128,6 +151,18 @@ module Collavre
           assert_match(/filename/i, result[:error])
         end
         assert_not_includes @creative.reload.description.to_s, "notes.md"
+      end
+
+      private
+
+      def review_agent_turn(creative)
+        creative.update!(data: creative.data.merge("ai_write_policy" => "review"))
+        agent = users(:ai_bot)
+        share = CreativeShare.find_or_initialize_by(creative: creative, user: agent)
+        share.update!(shared_by: @user, permission: :write)
+        topic = Topic.create!(creative: creative, user: @user, name: "Review attachment")
+        task = Task.create!(agent: agent, creative: creative, topic_id: topic.id, name: "Review", status: "running")
+        [ task, agent ]
       end
     end
   end

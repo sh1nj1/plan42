@@ -19,8 +19,141 @@ module Collavre
         Current.user = nil
       end
 
-      test "requires_approval? returns true" do
-        assert CreativeBatchService.requires_approval?
+      test "does not use the opaque pre-execution approval gate" do
+        assert_not CreativeBatchService.requires_approval?
+      end
+
+      test "stores an agent batch as a draft under the inherited review policy" do
+        task, agent = review_agent_turn
+        initial_count = Creative.count
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "create", "parent_id" => @root.id, "description" => "Review me" },
+            { "action" => "update", "id" => @root.id, "description" => "Reviewed root" }
+          ])
+        end
+
+        assert result[:pending_review]
+        assert_equal initial_count, Creative.count
+        assert_equal "<p>Root</p>", @root.reload.description
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        assert_equal "draft", draft.status
+        assert_equal task.id, draft.task_id
+        assert draft.creative_changes.where("creative_id < 0").exists?
+      end
+
+      test "keeps auto policy agent batches immediate" do
+        task, agent = agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "create", "parent_id" => @root.id, "description" => "Immediate" }
+          ])
+        end
+
+        assert result[:success]
+        assert_not result[:pending_review]
+        assert @root.children.where("description LIKE ?", "%Immediate%").exists?
+      end
+
+      test "keeps a parentless create on the default auto policy" do
+        task, agent = review_agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "create", "description" => "Independent root" }
+          ])
+        end
+
+        assert result[:success]
+        assert_not result[:pending_review]
+        assert Creative.where(parent_id: nil).where("description LIKE ?", "%Independent root%").exists?
+      end
+
+      test "returns the existing pending draft for another write in the same turn" do
+        task, agent = review_agent_turn
+
+        results = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          first = CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => @root.id, "description" => "First" }
+          ])
+          second = CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => @root.id, "description" => "Second" }
+          ])
+          [ first, second ]
+        end
+
+        assert_equal results.first[:change_set_id], results.second[:change_set_id]
+        assert_equal 1, CreativeChangeSet.where(task_id: task.id, status: "draft").count
+        assert_equal "<p>Root</p>", @root.reload.description
+      end
+
+      test "retains a newly uploaded draft image and applies it without re-uploading" do
+        task, agent = review_agent_turn
+        data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "create", "parent_id" => @root.id, "description" => "![pixel](#{data_uri})" }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        change = draft.creative_changes.find_by!(operation: "create")
+        signed_id = Creatives::History.extract_signed_ids(change.after["markdown_source"]).find do |candidate|
+          ActiveStorage::Blob.find_signed(candidate)
+        end
+        retained_blob = ActiveStorage::Blob.find_signed!(signed_id)
+
+        assert_equal 1, change.history_file_attachments.count
+        assert_no_difference("ActiveStorage::Blob.count") do
+          applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+          assert_equal :applied, applied.status, applied.skipped.inspect
+        end
+        created = @root.children.where("description LIKE ?", "%pixel%").sole
+        assert_includes created.data["markdown_source"], signed_id
+        assert_equal retained_blob.id, created.files.blobs.sole.id
+      end
+
+      test "approves a draft update using its canonical markdown snapshot" do
+        @root.update!(
+          data: @root.data.merge(
+            "ai_write_policy" => "review",
+            "content_type" => "markdown",
+            "markdown_source" => "Original"
+          )
+        )
+        task, agent = agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => @root.id, "description" => "**Approved**" }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status
+        assert_equal "**Approved**", @root.reload.data["markdown_source"]
+        assert_includes @root.description, "<strong>Approved</strong>"
+      end
+
+      test "draft approval applies the propagated linked archive family" do
+        child, linked = create_private_linked_pair
+        task, agent = review_agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+
+        assert_not child.reload.archived?
+        assert_not linked.reload.archived?
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+        assert_equal :applied, applied.status
+        assert child.reload.archived?
+        assert linked.reload.archived?
+        assert_equal "applied", draft.reload.status
       end
 
       test "creates a creative via batch" do
@@ -244,6 +377,19 @@ module Collavre
       end
 
       private
+
+      def review_agent_turn
+        @root.update!(data: @root.data.merge("ai_write_policy" => "review"))
+        agent_turn
+      end
+
+      def agent_turn
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @root, user: agent, shared_by: @user, permission: :write)
+        topic = Topic.create!(creative: @root, user: @user, name: "Review #{SecureRandom.hex(3)}")
+        task = Task.create!(agent: agent, creative: @root, topic_id: topic.id, name: "Review", status: "running")
+        [ task, agent ]
+      end
 
       def create_private_linked_pair
         child = Creative.create!(description: "<p>Shared source</p>", user: @user, parent: @root, progress: 1)

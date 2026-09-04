@@ -11,11 +11,11 @@ module Collavre
       tool_description "Execute multiple Creative operations (create, update, delete) in a single batch call. " \
                        "All operations run inside a transaction — if any operation fails, the entire batch is rolled back.\n\n" \
                        "Delete operations archive Creatives so they remain recoverable from History.\n\n" \
-                       "This tool requires approval before execution.\n\n" \
+                       "A Creative with inherited ai_write_policy=review stores a draft in History for approval instead of applying immediately.\n\n" \
                        "Each operation is a hash with an 'action' key ('create', 'update', or 'delete') plus action-specific fields."
 
       def self.requires_approval?
-        true
+        false
       end
 
       tool_param :operations, description: "Array of operation objects. Each object must have an 'action' key.\n\n" \
@@ -38,6 +38,15 @@ module Collavre
       def call(operations:)
         raise "Current.user is required" unless Current.user
 
+        Creatives::AiWritePolicy.capture(
+          creatives: review_targets(operations),
+          anchor: Creatives::AiWritePolicy.agent_anchor
+        ) { perform_operations(operations) }
+      end
+
+      private
+
+      def perform_operations(operations)
         results = []
 
         ApplicationRecord.transaction do
@@ -67,7 +76,14 @@ module Collavre
         { success: false, error: "Operation #{failed[:index]} (#{failed[:action]}) failed: #{failed[:error]}", results: e.results }
       end
 
-      private
+      def review_targets(operations)
+        ids = operations.flat_map do |operation|
+          operation = operation.stringify_keys
+          [ operation["id"], operation["parent_id"] ]
+        end.compact.map(&:to_i).select(&:positive?)
+        creatives = Creative.where(id: ids).to_a
+        [ *creatives, *creatives.map(&:effective_origin) ]
+      end
 
       def execute_create(op)
         service = CreativeCreateService.new

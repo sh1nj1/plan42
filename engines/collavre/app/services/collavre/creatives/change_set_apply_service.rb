@@ -57,6 +57,7 @@ module Collavre
       def classify_target(change, snapshot, records, writable_ids, buckets)
         plan, conflicts, skipped = buckets
         creative = records[change.creative_id]
+        return classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped) if draft_creation?(change, creative)
         return classify_propagated_target(change, creative, snapshot, plan) if propagated_target?(change)
         return skipped << change.creative_id unless target_writable?(creative, snapshot, records, writable_ids)
         return if History.snapshot(creative) == snapshot
@@ -64,8 +65,19 @@ module Collavre
         if current_conflict?(creative, change) && resolution(change) != "force"
           resolution(change) == "skip" ? skipped << change.creative_id : conflicts << conflict_for(creative, change)
         else
-          plan << [ creative, snapshot ]
+          plan << [ creative, snapshot, nil, change ]
         end
+      end
+
+      def classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped)
+        parent_id = snapshot["parent_id"]
+        writable = if parent_id&.negative?
+                     virtual_creation_ids.include?(parent_id)
+        else
+                     parent = records[parent_id]
+                     parent && writable_parent?(parent, writable_ids)
+        end
+        writable ? plan << [ nil, snapshot, nil, change ] : skipped << change.creative_id
       end
 
       def retain_authorized_targets(records, writable_ids)
@@ -93,7 +105,7 @@ module Collavre
           return
         end
 
-        plan << [ creative, snapshot, attribute ]
+        plan << [ creative, snapshot, attribute, change ]
       end
 
       def target_writable?(creative, snapshot, records, writable_ids)
@@ -103,6 +115,8 @@ module Collavre
 
       def revertible?(source)
         return false if source.origin == "sync" || @targets.keys.any? { |change| change.operation == "destroy" }
+
+        return source.status == "draft" if @mode == :draft
 
         @mode == :restore ? source.status.in?(%w[applied reverted]) : source.status == "applied"
       end
@@ -125,6 +139,7 @@ module Collavre
       end
 
       def current_conflict?(creative, change)
+        return History.snapshot(creative) != change.before if @mode == :draft
         return false if @mode == :restore
 
         History.snapshot(creative) != change.after
@@ -143,10 +158,12 @@ module Collavre
       end
 
       def apply(source, plan, skipped)
+        return apply_draft(source, plan, skipped) if @mode == :draft
+
         reverse = create_reverse_set(source)
         History.track(actor: @user, origin: :revert, anchor: source.anchor_creative, anchor_source: :explicit) do
           Current.change_set = reverse
-          plan.each { |creative, snapshot, propagated_attribute| apply_snapshot(creative, snapshot, propagated_attribute:) }
+          plan.each { |creative, snapshot, propagated_attribute, _change| apply_snapshot(creative, snapshot, propagated_attribute:) }
         end
         source.update!(status: "reverted", reverted_by: reverse) if @mode == :revert && skipped.empty? && @complete
         status = skipped.empty? && @complete ? :applied : :partial
@@ -169,15 +186,26 @@ module Collavre
       def complete_noop(source, skipped)
         return result(:skipped, skipped: skipped) unless skipped.empty? && @complete
 
-        source.update!(status: "reverted") if @mode == :revert
+        if @mode == :revert
+          source.update!(status: "reverted")
+        elsif @mode == :draft
+          source.update!(status: "applied", applied_at: Time.current)
+        end
         result(:applied)
+      end
+
+      def apply_draft(source, plan, skipped)
+        return result(:skipped, skipped: skipped) unless skipped.empty? && @complete
+
+        DraftChangeSetApplicator.new(change_set: source, user: @user, plan: plan).call
+        result(:applied, change_set: source)
       end
 
       def apply_snapshot(creative, snapshot, propagated_attribute: nil)
         return creative.update!(archived_at: Time.current) if snapshot.empty?
         return creative.update!(propagated_attribute => snapshot[propagated_attribute]) if propagated_attribute
 
-        creative.assign_attributes(snapshot_attributes(creative, snapshot))
+        SnapshotAssignment.call(creative, snapshot)
         creative.save!
       end
 
@@ -198,20 +226,12 @@ module Collavre
         @mode == :revert ? :after : :before
       end
 
-      def snapshot_attributes(creative, snapshot)
-        data = (creative.data || {}).deep_dup
-        data["content_type"] = snapshot["content_type"]
-        data["editor"] = snapshot["editor"]
-        data["markdown_source"] = snapshot["markdown_source"]
-        {
-          data: data,
-          description: snapshot["content_type"] == "markdown" ?
-            MarkdownConverter.markdown_to_html(snapshot["markdown_source"].to_s) : snapshot["description"],
-          parent_id: snapshot["parent_id"],
-          sequence: snapshot["sequence"],
-          progress: snapshot["progress"],
-          archived_at: snapshot["archived_at"]
-        }
+      def draft_creation?(change, creative)
+        @mode == :draft && creative.nil? && change.before.empty?
+      end
+
+      def virtual_creation_ids
+        @virtual_creation_ids ||= @targets.keys.select { |change| change.before.empty? }.map(&:creative_id).to_set
       end
 
       def result(status, change_set: nil, conflicts: [], skipped: [])
