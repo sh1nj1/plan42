@@ -15,13 +15,13 @@ module Collavre
       end
 
       def self.capture(creatives:, anchor:, origin: :tool, external_request: false)
-        return yield unless review_required?(creatives, external_request: external_request)
-
         effective_origin = Current.mcp_request || external_request ? :mcp : origin
         DraftChangeSetCapture.new(
           anchor: anchor || agent_anchor || Array(creatives).compact.first,
           origin: effective_origin
-        ).call { yield }
+        ).call(
+          capture_required: review_required?(creatives, external_request: external_request)
+        ) { yield }
       end
     end
   end

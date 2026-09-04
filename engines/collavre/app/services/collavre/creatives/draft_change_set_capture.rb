@@ -15,18 +15,21 @@ module Collavre
         @agent_turn = Current.agent_turn
       end
 
-      def call(&operation)
+      def call(capture_required: true, &operation)
         task = current_task
-        return capture_and_persist(&operation) unless task
+        return capture_required ? capture_and_persist(&operation) : operation.call unless task
 
-        task.with_lock { capture_and_persist(&operation) }
+        task.with_lock do
+          draft = existing_draft
+          return blocked_result(draft) if draft
+
+          capture_required ? capture_and_persist(&operation) : operation.call
+        end
       end
 
       private
 
       def capture_and_persist
-        return blocked_result(existing_draft) if existing_draft
-
         payload = capture { yield }
         return payload.fetch(:result) unless payload[:change_set]
 

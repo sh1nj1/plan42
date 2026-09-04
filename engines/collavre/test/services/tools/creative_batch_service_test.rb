@@ -237,6 +237,32 @@ module Collavre
         refute_includes proposed_snapshot, "Second"
       end
 
+      test "rejects an auto-policy write while the same turn has a pending review draft" do
+        task, agent = review_agent_turn
+        auto_root = Creative.create!(
+          description: "Auto root", user: @user,
+          data: { "ai_write_policy" => "auto" }
+        )
+        CreativeShare.create!(creative: auto_root, user: agent, shared_by: @user, permission: :write)
+
+        results = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          first = CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => @root.id, "description" => "Review proposal" }
+          ])
+          second = CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => auto_root.id, "description" => "Immediate write" }
+          ])
+          [ first, second ]
+        end
+
+        assert results.first[:pending_review]
+        assert_not results.second[:success]
+        assert results.second[:pending_review]
+        assert_equal results.first[:change_set_id], results.second[:change_set_id]
+        assert_equal I18n.t("collavre.creative_history.pending_write_blocked"), results.second[:error]
+        assert_equal "Auto root", auto_root.reload.description
+      end
+
       test "retains a newly uploaded draft image and applies it without re-uploading" do
         task, agent = review_agent_turn
         data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
