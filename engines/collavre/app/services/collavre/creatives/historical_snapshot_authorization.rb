@@ -3,6 +3,8 @@
 module Collavre
   module Creatives
     class HistoricalSnapshotAuthorization
+      PERMISSION_KEYS = %w[before_permission after_permission].freeze
+
       def self.initial_attributes(creative, before, position)
         {
           before: before,
@@ -16,14 +18,23 @@ module Collavre
         { after: after, conflict: change.conflict.merge("after_permission" => permission) }
       end
 
+      def self.merge_actual_metadata(actual, captured)
+        captured.merge(actual.slice(*PERMISSION_KEYS))
+      end
+
       def self.metadata_for(creative, snapshot)
         effective = creative.effective_origin(Set.new)
-        path_ids = if effective != creative
-                     hierarchy_path(effective.id)
+        placement = permission_requirement(creative.user_id, creative.id, snapshot["parent_id"])
+        requirements = if effective != creative
+                         [ permission_requirement(effective.user_id, effective.id, effective.parent_id), placement ]
         else
-                     [ creative.id, *hierarchy_path(snapshot["parent_id"]) ]
+                         [ placement ]
         end
-        { "owner_id" => effective.user_id, "path_ids" => path_ids }
+        { "requirements" => requirements }
+      end
+
+      def self.permission_requirement(owner_id, creative_id, parent_id)
+        { "owner_id" => owner_id, "path_ids" => [ creative_id, *hierarchy_path(parent_id) ] }
       end
 
       def self.hierarchy_path(descendant_id)
@@ -31,7 +42,7 @@ module Collavre
 
         CreativeHierarchy.where(descendant_id: descendant_id).order(:generations).pluck(:ancestor_id)
       end
-      private_class_method :metadata_for, :hierarchy_path
+      private_class_method :metadata_for, :permission_requirement, :hierarchy_path
 
       def initialize(user:)
         @user_id = user&.id
@@ -51,9 +62,15 @@ module Collavre
       def snapshot_visible?(change, state)
         permission = change.conflict["#{state}_permission"]
         return change.change_set.user_id == @user_id unless permission
-        return true if permission["owner_id"] == @user_id
 
-        permission_granted?(permission.fetch("path_ids"))
+        requirements_for(permission).all? do |requirement|
+          (@user_id && requirement["owner_id"] == @user_id) ||
+            permission_granted?(requirement.fetch("path_ids"))
+        end
+      end
+
+      def requirements_for(permission)
+        permission["requirements"] || [ permission ]
       end
 
       def permission_granted?(path_ids)

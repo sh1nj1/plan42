@@ -268,6 +268,35 @@ module Collavre
         assert_includes group.fetch(:after), "Shared update"
         assert diff.fully_visible?
       end
+
+      test "requires the historical placement path for a moved linked shell" do
+        reader = users(:two)
+        origin = Creative.create!(description: "Readable origin", user: @user)
+        origin_share = CreativeShare.create!(
+          creative: origin, user: reader, shared_by: @user, permission: :read
+        )
+        private_parent = Creative.create!(description: "Private placement", user: @user)
+        public_parent = Creative.create!(description: "Public placement", user: @user)
+        placement_share = CreativeShare.create!(
+          creative: public_parent, user: reader, shared_by: @user, permission: :read
+        )
+        PermissionCacheBuilder.propagate_share(origin_share)
+        PermissionCacheBuilder.propagate_share(placement_share)
+        linked = Creative.create!(origin: origin, user: @user, parent: private_parent)
+        change_set = nil
+        History.track(actor: @user, origin: :editor, anchor: linked) do
+          linked.update!(parent: public_parent)
+          change_set = Current.change_set
+        end
+        PermissionCacheBuilder.rebuild_for_creative(linked)
+
+        diff = ChangeSetDiff.new(change_set, user: reader)
+        group = diff.groups.sole
+
+        assert_equal I18n.t("collavre.creative_history.snapshot_hidden"), group.fetch(:before)
+        assert_not_equal I18n.t("collavre.creative_history.snapshot_hidden"), group.fetch(:after)
+        assert_not diff.fully_visible?
+      end
     end
   end
 end

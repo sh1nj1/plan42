@@ -70,7 +70,8 @@ module Collavre
         virtual_id = virtual_change.creative_id
         @id_map[virtual_id] = creative.id
         actual_change = @change_set.creative_changes.find_by!(creative_id: creative.id)
-        actual_change.update!(position: virtual_change.position, conflict: virtual_change.conflict)
+        conflict = HistoricalSnapshotAuthorization.merge_actual_metadata(actual_change.conflict, virtual_change.conflict)
+        actual_change.update!(position: virtual_change.position, conflict: conflict)
         virtual_change.destroy!
         remap_pending_references!(virtual_id, creative.id)
       end

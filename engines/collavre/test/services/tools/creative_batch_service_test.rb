@@ -212,6 +212,32 @@ module Collavre
         assert_equal agent, reviewed_root.user
       end
 
+      test "keeps permanent permission paths when approving a draft creation" do
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "create", "parent_id" => @root.id, "description" => "Reviewed child" }
+          ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+        assert_equal :applied, applied.status
+        created = @root.children.where("description LIKE ?", "%Reviewed child%").sole
+        reader = users(:two)
+        share = CreativeShare.create!(creative: @root, user: reader, shared_by: @user, permission: :read)
+        Creatives::PermissionCacheBuilder.propagate_share(share)
+
+        diff = Creatives::ChangeSetDiff.new(draft, user: reader)
+        group = diff.groups.find { |entry| entry.fetch(:after).include?("Reviewed child") }
+
+        assert group
+        assert_includes group.fetch(:after), "Reviewed child"
+        assert diff.fully_visible?
+        permissions = draft.creative_changes.find_by!(creative_id: created.id)
+          .conflict.fetch("after_permission").fetch("requirements")
+        assert_equal created.id, permissions.sole.fetch("path_ids").first
+      end
+
       test "rejects another write while the same turn has a pending draft" do
         task, agent = review_agent_turn
 
