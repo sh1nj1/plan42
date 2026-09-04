@@ -30,6 +30,7 @@ module Collavre
       end
 
       def fully_authorized?
+        @authorization_only = true
         CreativeChangeSet.transaction do
           source = CreativeChangeSet.lock.find(@source.id)
           build_targets(source)
@@ -38,6 +39,8 @@ module Collavre
           _plan, _conflicts, skipped = build_plan
           skipped.empty? && @complete
         end
+      ensure
+        @authorization_only = false
       end
 
       private
@@ -89,7 +92,7 @@ module Collavre
             conflicts << conflict_for(creative, change)
           end
         else
-          plan << [ creative, snapshot, nil, change ]
+          plan << [ creative, snapshot, @propagated_attributes[change.id], change ]
         end
       end
 
@@ -128,7 +131,7 @@ module Collavre
         current_value = History.snapshot(creative)[attribute] if creative
         return @resolved_change_ids << change.id if current_value == snapshot[attribute]
         unless creative && current_value == change.public_send(source_snapshot_side)[attribute]
-          @complete = false
+          @complete = false unless @authorization_only
           return
         end
 

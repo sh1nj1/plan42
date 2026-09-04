@@ -213,6 +213,23 @@ module Collavre
         assert_equal "applied", draft.reload.status
       end
 
+      test "draft approval archives a writable linked shell with nonzero origin progress" do
+        child = Creative.create!(description: "Source", user: @user, parent: @root, progress: 1)
+        linked_parent = Creative.create!(description: "Placement", user: @user)
+        linked = Creative.create!(origin: child, user: @user, parent: linked_parent)
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => linked.id } ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert child.reload.archived?
+        assert linked.reload.archived?
+      end
+
       test "draft approval applies linked parent progress rollups" do
         child, linked = create_private_linked_pair(progress: 0)
         task, agent = review_agent_turn
@@ -229,6 +246,22 @@ module Collavre
         assert_equal 1.0, child.reload.progress
         assert_in_delta 0.5, linked.parent.reload.progress, 0.01
         assert_equal "applied", draft.reload.status
+      end
+
+      test "review policy includes linked parent progress targets" do
+        child, linked = create_private_linked_pair(progress: 0)
+        linked.parent.update!(data: linked.parent.data.merge("ai_write_policy" => "review"))
+        task, agent = agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => child.id, "progress" => 1.0 }
+          ])
+        end
+
+        assert result[:pending_review]
+        assert_equal 0.0, child.reload.progress
+        assert_in_delta 0.0, linked.parent.reload.progress, 0.01
       end
 
       test "skipping a progress conflict also skips linked parent rollups" do
@@ -298,6 +331,24 @@ module Collavre
         assert_equal "rejected", draft.reload.status
         assert_not child.reload.archived?
         assert_not linked.reload.archived?
+      end
+
+      test "rejects an archive draft despite hidden propagated state drift" do
+        child, linked = create_private_linked_pair
+        task, agent = review_agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        linked.update_column(:archived_at, 1.day.from_now)
+
+        rejected = Creatives::DraftChangeSetRejectService.new(
+          change_set: draft, user: @user, scope_creative: @root
+        ).call
+
+        assert_equal :rejected, rejected.status
+        assert_equal "rejected", draft.reload.status
+        assert_not child.reload.archived?
       end
 
       test "creates a creative via batch" do

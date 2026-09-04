@@ -88,7 +88,17 @@ module Collavre
         end.to_set
         archive_targets = creatives.select { |creative| delete_ids.include?(creative.id) }
           .flat_map { |creative| creative.archive_family.to_a }
-        [ *creatives, *archive_targets ]
+        progress_targets = progress_sources(operations, creatives)
+          .flat_map { |creative| Creatives::ProgressPropagationTargets.new(creative.effective_origin).call }
+        [ *creatives, *archive_targets, *progress_targets ]
+      end
+
+      def progress_sources(operations, creatives)
+        progress_ids = operations.filter_map do |operation|
+          operation = operation.stringify_keys
+          operation["id"].to_i if operation["action"] == "update" && operation["progress"].present?
+        end.to_set
+        creatives.select { |creative| progress_ids.include?(creative.id) }
       end
 
       def execute_create(op)
