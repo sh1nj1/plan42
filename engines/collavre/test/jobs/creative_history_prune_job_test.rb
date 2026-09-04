@@ -42,6 +42,18 @@ class CreativeHistoryPruneJobTest < ActiveJob::TestCase
     assert Collavre::CreativeChangeSet.exists?(shared.id)
   end
 
+  test "does not let hidden sync history consume visible retention slots" do
+    visible = create_change_set(creatives: [ @first ], created_at: 200.days.ago)
+    9.times { |index| create_change_set(creatives: [ @first ], created_at: (100 + index).days.ago) }
+    sync_sets = 10.times.map do |index|
+      create_change_set(creatives: [ @first ], created_at: (80 + index).days.ago, origin: "sync")
+    end
+
+    assert_equal sync_sets.size, perform_with_retention(count: 10, days: 7)
+    assert Collavre::CreativeChangeSet.exists?(visible.id)
+    assert_empty Collavre::CreativeChangeSet.where(id: sync_sets)
+  end
+
   test "never prunes drafts, reverts, referenced sets, or non-applied audit rows" do
     referenced = create_change_set(creatives: [ @first ], created_at: 300.days.ago)
     draft = create_change_set(creatives: [ @first ], created_at: 299.days.ago, status: "draft")

@@ -66,6 +66,7 @@ module Collavre
         .joins(:change_set)
         .where(creative_change_sets: { status: "applied" })
         .where.not(creative_change_sets: { origin: "revert" })
+      changes = changes.where.not(creative_change_sets: { origin: "sync" })
       changes = changes.where(creative_id: creative_ids) if creative_ids
       ranked = changes
         .select(
