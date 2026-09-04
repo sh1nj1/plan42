@@ -464,6 +464,55 @@ module Collavre
         Creative.read_only_source_types.delete(source_type) if source_type
       end
 
+      test "force approval archives a changed read-only source without overwriting synced content" do
+        source_type = "review_archive_force_test"
+        Creative.register_read_only_source(source_type)
+        child = Creative.create!(
+          description: "Synced child", user: @user, parent: @root,
+          data: { "source" => { "type" => source_type }, "ai_write_policy" => "review" }
+        )
+        task, agent = agent_turn
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => child.id } ])
+        end
+        draft = CreativeChangeSet.find(result[:change_set_id])
+        child.update_column(:description, "Newly synced content")
+
+        applied = Creatives::ChangeSetApplyService.new(
+          source: draft, user: @user, mode: :draft, resolutions: { child.id => "force" }
+        ).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert child.reload.archived?
+        assert_equal "Newly synced content", child.description
+      ensure
+        Creative.read_only_source_types.delete(source_type) if source_type
+      end
+
+      test "draft approval archives a hidden descendant in the captured family" do
+        source, hidden, draft = hidden_descendant_archive_draft
+
+        assert_not_includes Creatives::PermissionFilter.new(user: @user).readable_ids([ hidden.id ]), hidden.id
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+
+        assert_equal :applied, applied.status, applied.skipped.inspect
+        assert source.reload.archived?
+        assert hidden.reload.archived?
+      end
+
+      test "draft rejection accepts a hidden descendant in the captured family" do
+        source, hidden, draft = hidden_descendant_archive_draft
+
+        rejected = Creatives::DraftChangeSetRejectService.new(
+          change_set: draft, user: @user, scope_creative: source
+        ).call
+
+        assert_equal :rejected, rejected.status, rejected.skipped.inspect
+        assert_equal "rejected", draft.reload.status
+        assert_not source.reload.archived?
+        assert_not hidden.reload.archived?
+      end
+
       test "skipping a progress conflict also skips linked parent rollups" do
         child, linked = create_private_linked_pair(progress: 0)
         task, agent = review_agent_turn
@@ -794,6 +843,25 @@ module Collavre
         linked = Creative.create!(origin: child, user: foreign_user, parent: foreign_root)
         Current.change_set = nil
         [ child, linked ]
+      end
+
+      def hidden_descendant_archive_draft
+        owner = users(:two)
+        source = Creative.create!(
+          description: "Shared source", user: owner,
+          data: { "ai_write_policy" => "review" }
+        )
+        hidden = Creative.create!(description: "Hidden descendant", user: owner, parent: source)
+        CreativeShare.create!(creative: source, user: @user, shared_by: owner, permission: :write)
+        CreativeShare.create!(creative: hidden, user: @user, shared_by: owner, permission: :no_access)
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: source, user: agent, shared_by: owner, permission: :write)
+        topic = Topic.create!(creative: source, user: @user, name: "Hidden descendant #{SecureRandom.hex(3)}")
+        task = Task.create!(agent: agent, creative: source, topic_id: topic.id, name: "Review", status: "running")
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [ { "action" => "delete", "id" => source.id } ])
+        end
+        [ source, hidden, CreativeChangeSet.find(result[:change_set_id]) ]
       end
     end
   end

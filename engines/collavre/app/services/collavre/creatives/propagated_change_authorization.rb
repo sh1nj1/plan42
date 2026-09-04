@@ -10,7 +10,7 @@ module Collavre
       end
 
       def call
-        attributes = linked_archive_attributes
+        attributes = archive_attributes
         add_parent_progress_attributes(attributes)
         add_linked_progress_attributes(attributes)
         attributes
@@ -18,14 +18,33 @@ module Collavre
 
       private
 
-      def linked_archive_attributes
-        changes.each_with_object({}) do |change, attributes|
-          creative = records[change.creative_id]
-          next unless creative&.origin_id.in?(writable_source_ids)
-          next unless transition_only?(change, "archived_at", %w[archive unarchive])
+      def archive_attributes
+        attributes = {}
+        source_ids = changes.filter_map do |change|
+          change.creative_id if writable_source_ids.include?(change.creative_id) &&
+            transition_only?(change, "archived_at", %w[archive unarchive])
+        end.to_set
+        family_ids = source_ids | source_ids.filter_map { |id| records[id]&.origin_id }.to_set
+        loop do
+          additions = changes.select do |change|
+            !attributes.key?(change.id) && archive_family_addition?(change, family_ids)
+          end
+          break if additions.empty?
 
-          attributes[change.id] = "archived_at"
+          additions.each do |change|
+            attributes[change.id] = "archived_at"
+            family_ids << change.creative_id
+          end
         end
+        attributes
+      end
+
+      def archive_family_addition?(change, family_ids)
+        return false unless transition_only?(change, "archived_at", %w[archive unarchive])
+
+        creative = records[change.creative_id]
+        family_ids.include?(change.creative_id) || family_ids.include?(creative&.origin_id) ||
+          snapshot_parent_ids(change).any? { |parent_id| family_ids.include?(parent_id) }
       end
 
       def add_parent_progress_attributes(attributes)
