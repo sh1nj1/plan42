@@ -90,7 +90,12 @@ module Collavre
           .flat_map { |creative| creative.archive_family.to_a }
         progress_targets = propagation_targets(progress_sources(operations, creatives))
         archive_progress_targets = propagation_targets(archive_targets)
-        [ *creatives, *archive_targets, *progress_targets, *archive_progress_targets, *reorder_targets(operations) ]
+        structural_progress_sources = structural_progress_sources(operations, creatives)
+        structural_progress_targets = propagation_targets(structural_progress_sources)
+        [
+          *creatives, *archive_targets, *progress_targets, *archive_progress_targets,
+          *structural_progress_sources, *structural_progress_targets, *reorder_targets(operations)
+        ]
       end
 
       def progress_sources(operations, creatives)
@@ -103,6 +108,25 @@ module Collavre
 
       def propagation_targets(creatives)
         creatives.flat_map { |creative| Creatives::ProgressPropagationTargets.new(creative.effective_origin).call }
+      end
+
+      def structural_progress_sources(operations, creatives)
+        records = creatives.index_by(&:id)
+        operations.flat_map do |operation|
+          operation = operation.stringify_keys
+          case operation["action"]
+          when "create"
+            records[operation["parent_id"].to_i]
+          when "update"
+            move_progress_sources(operation, records)
+          end
+        end.compact
+      end
+
+      def move_progress_sources(operation, records)
+        return [] unless operation["parent_id"].present? && operation["parent_id"].to_i.positive?
+
+        [ records[operation["id"].to_i]&.parent, records[operation["parent_id"].to_i] ].compact
       end
 
       def reorder_targets(operations)

@@ -32,7 +32,7 @@ module Tools
       destination = Creative.find_by(id: parent_id) if parent_id.present? && parent_id != 0
 
       Creatives::AiWritePolicy.capture(
-        creatives: review_targets(creative, base, destination, progress),
+        creatives: review_targets(creative, base, destination, progress, parent_id),
         anchor: Creatives::AiWritePolicy.agent_anchor || creative
       ) do
         perform_update(
@@ -44,10 +44,16 @@ module Tools
 
     private
 
-    def review_targets(creative, base, destination, progress)
+    def review_targets(creative, base, destination, progress, parent_id)
       targets = [ creative, base, destination ]
       targets.concat(Creatives::ProgressPropagationTargets.new(base).call) if progress.present?
+      targets.concat(move_progress_targets(creative, destination)) if parent_id.present? && parent_id != 0
       targets
+    end
+
+    def move_progress_targets(creative, destination)
+      sources = [ creative.parent, destination ].compact
+      [ *sources, *sources.flat_map { |source| Creatives::ProgressPropagationTargets.new(source.effective_origin).call } ]
     end
 
     def perform_update(creative:, base:, description:, progress:, parent_id:)

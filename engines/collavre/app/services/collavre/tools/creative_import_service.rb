@@ -33,11 +33,19 @@ module Collavre
         return { error: "No write permission on parent Creative", id: parent_id } unless parent.has_permission?(Current.user, :write)
 
         Creatives::AiWritePolicy.capture(
-          creatives: [ parent, parent.effective_origin ], anchor: parent, origin: :import
+          creatives: review_targets(parent), anchor: parent, origin: :import
         ) { perform_import(markdown, parent, parent_id) }
       end
 
       private
+
+      def review_targets(parent)
+        [
+          parent,
+          parent.effective_origin,
+          *Creatives::ProgressPropagationTargets.new(parent.effective_origin).call
+        ]
+      end
 
       def perform_import(markdown, parent, parent_id)
         created = Creatives::History.track(

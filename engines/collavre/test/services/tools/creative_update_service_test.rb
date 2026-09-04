@@ -57,6 +57,26 @@ module Collavre
         assert_equal destination.id, draft.creative_changes.find_by!(creative_id: @creative.id).after["parent_id"]
       end
 
+      test "stores move progress propagation as a draft when a destination ancestor requires review" do
+        review_root = Creative.create!(
+          description: "Review root", user: @user,
+          data: { "ai_write_policy" => "review" }
+        )
+        destination = Creative.create!(
+          description: "Auto destination", user: @user, parent: review_root,
+          data: { "ai_write_policy" => "auto" }
+        )
+        task, agent = review_agent_turn(review_root)
+        CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :write)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeUpdateService.new.call(id: @creative.id, parent_id: destination.id)
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_nil @creative.reload.parent_id
+      end
+
       test "updates description with plain text" do
         service = CreativeUpdateService.new
 

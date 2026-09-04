@@ -127,6 +127,29 @@ module Collavre
         assert_not @root.children.where("description LIKE ?", "%Before%").exists?
       end
 
+      test "reviews batch move progress propagation when an ancestor requires review" do
+        @root.update!(data: @root.data.merge("ai_write_policy" => "review"))
+        source = Creative.create!(
+          description: "Auto source", user: @user, parent: @root,
+          data: { "ai_write_policy" => "auto" }
+        )
+        destination = Creative.create!(
+          description: "Auto destination", user: @user, parent: @root,
+          data: { "ai_write_policy" => "auto" }
+        )
+        moved = Creative.create!(description: "Moved", user: @user, parent: source)
+        task, agent = agent_turn
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => moved.id, "parent_id" => destination.id }
+          ])
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_equal source.id, moved.reload.parent_id
+      end
+
       test "keeps a parentless create on the default auto policy" do
         task, agent = review_agent_turn
 

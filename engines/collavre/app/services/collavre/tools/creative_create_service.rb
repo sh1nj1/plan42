@@ -45,6 +45,7 @@ module Tools
 
     def review_targets(parent, before_id, after_id)
       targets = [ parent, parent&.effective_origin ]
+      targets.concat(Creatives::ProgressPropagationTargets.new(parent.effective_origin).call) if parent
       return targets unless before_id.present? || after_id.present?
 
       targets.concat(parent ? parent.children.to_a : Creative.roots.to_a)

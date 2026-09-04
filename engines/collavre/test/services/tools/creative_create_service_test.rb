@@ -68,6 +68,25 @@ module Collavre
         assert_equal 0, sibling.reload.sequence
       end
 
+      test "stores parent progress propagation as a draft when an ancestor requires review" do
+        review_root = Creative.create!(
+          description: "Review root", user: @user,
+          data: { "ai_write_policy" => "review" }
+        )
+        @parent_creative.update!(
+          parent: review_root,
+          data: @parent_creative.data.merge("ai_write_policy" => "auto")
+        )
+        task, agent = agent_turn(review_root)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeCreateService.new.call(parent_id: @parent_creative.id, description: "Proposed child")
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_not @parent_creative.children.where("description LIKE ?", "%Proposed child%").exists?
+      end
+
       test "stores the description as Markdown-canonical" do
         service = CreativeCreateService.new
 
