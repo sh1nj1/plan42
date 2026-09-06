@@ -51,9 +51,9 @@ module Tools
 
       task.description = description if description.present?
 
-      unless task.save
-        return { error: "Failed to update cron job", details: task.errors.full_messages }
-      end
+      return { error: "Failed to update cron job", details: task.errors.full_messages } unless task.save
+
+      Crons::ChangeBroadcaster.call(creative)
 
       {
         success: true,

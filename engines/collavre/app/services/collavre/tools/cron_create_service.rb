@@ -40,8 +40,7 @@ module Tools
       topic, topic_created = resolve_topic(creative, topic_name)
       return topic if topic.is_a?(Hash) && topic[:error]
 
-      suffix = SecureRandom.hex(4)
-      key = "cron_#{creative_id}_#{suffix}"
+      key = "cron_#{creative_id}_#{SecureRandom.hex(4)}"
 
       task = create_task(
         topic: topic, creative: creative, creative_id: creative_id, topic_created: topic_created,
@@ -49,7 +48,7 @@ module Tools
       )
       return task if task.is_a?(Hash) && task[:error]
 
-      broadcast_topic_created(topic) if topic_created
+      topic_created ? broadcast_topic_created(topic) : Crons::ChangeBroadcaster.call(creative)
 
       {
         success: true,
@@ -137,7 +136,7 @@ module Tools
     def broadcast_topic_created(topic)
       TopicsChannel.broadcast_to(
         topic.creative,
-        { action: "created", topic: topic.slice(:id, :name), user_id: Current.user.id }
+        { action: "created", topic: topic.slice(:id, :name), user_id: Current.user.id, cron_changed: true }
       )
     rescue StandardError => e
       Rails.logger.warn("[CronCreateService] Failed to broadcast created topic #{topic.id}: #{e.message}")

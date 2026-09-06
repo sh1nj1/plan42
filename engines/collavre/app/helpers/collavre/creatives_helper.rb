@@ -57,7 +57,7 @@ module Collavre
           can_write: can_write,
           select_mode: select_mode
         )
-        cron_part = cron_tasks.any? ? render_cron_badge(cron_tasks) : safe_join([])
+        cron_part = render_cron_badge_for_creative(creative, cron_tasks, can_delete: can_write)
 
         safe_join([
           progress_part,
@@ -103,23 +103,20 @@ module Collavre
       )
     end
 
-    def render_cron_badge(tasks)
-      details = tasks.map do |task|
-        t(
-          "collavre.creatives.index.cron_schedule",
-          schedule: task.schedule,
-          next_run: l(task.next_time, format: :short)
+    def render_cron_badge(tasks, creative_id:, can_delete: false)
+      render(
+        Collavre::CronBadgeComponent.new(
+          tasks: tasks,
+          creative_id: creative_id,
+          can_delete: can_delete
         )
-      end
-      label = t("collavre.creatives.index.cron_count", count: tasks.size)
-
-      content_tag(
-        :span,
-        safe_join([ tag.span("⏰", aria: { hidden: true }), tag.span(tasks.size) ], " "),
-        class: "creative-cron-badge",
-        title: details.join("\n"),
-        aria: { label: "#{label}. #{details.join('. ')}" }
       )
+    end
+
+    def render_cron_badge_for_creative(creative, tasks, can_delete: false)
+      return safe_join([]) if tasks.empty?
+
+      render_cron_badge(tasks, creative_id: creative.effective_origin.id, can_delete: can_delete)
     end
 
     def render_progress_control(creative, value, has_children:, can_write:, select_mode: false)

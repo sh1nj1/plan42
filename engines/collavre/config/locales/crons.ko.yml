@@ -1,0 +1,14 @@
+---
+ko:
+  collavre:
+    crons:
+      title: 예약 작업
+      count_one: "예약 작업 __count__개"
+      count_other: "예약 작업 __count__개"
+      schedule: 스케줄 수식
+      message: 메시지
+      next_run: 다음 스케줄 시간
+      delete: 예약 작업 삭제
+      delete_confirm: 이 예약 작업을 삭제하시겠습니까?
+      delete_error: 예약 작업을 삭제하지 못했습니다. 다시 시도해 주세요.
+      not_available: 정보 없음

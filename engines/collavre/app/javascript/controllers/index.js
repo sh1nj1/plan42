@@ -48,6 +48,7 @@ import AgentVendorController from "./agent_vendor_controller"
 import DesktopProxySetupController from "./desktop_proxy_setup_controller"
 import CreativeHistoryController from "./creative_history_controller"
 import CreativeHistoryUndoController from "./creative_history_undo_controller"
+import CronBadgeController from "./cron_badge_controller"
 
 // Export all controllers
 export {
@@ -94,7 +95,8 @@ export {
   AgentVendorController,
   DesktopProxySetupController,
   CreativeHistoryController,
-  CreativeHistoryUndoController
+  CreativeHistoryUndoController,
+  CronBadgeController
 }
 
 // Registration function for use with a Stimulus application
@@ -147,4 +149,5 @@ export function registerControllers(application) {
   application.register("desktop-proxy-setup", DesktopProxySetupController)
   application.register("creative-history", CreativeHistoryController)
   application.register("creative-history-undo", CreativeHistoryUndoController)
+  application.register("cron-badge", CronBadgeController)
 }

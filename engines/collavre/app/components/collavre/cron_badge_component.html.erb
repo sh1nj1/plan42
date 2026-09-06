@@ -1,0 +1,56 @@
+<span class="cron-badge-wrapper"
+      data-controller="popup-menu cron-badge"
+      data-cron-badge-delete-confirm-value="<%= t('collavre.crons.delete_confirm') %>"
+      data-cron-badge-delete-error-value="<%= t('collavre.crons.delete_error') %>"
+      data-cron-badge-count-one-value="<%= t('collavre.crons.count_one') %>"
+      data-cron-badge-count-other-value="<%= t('collavre.crons.count_other') %>">
+  <button type="button"
+          class="creative-cron-badge popup-menu-toggle"
+          title="<%= count_label %>"
+          aria-label="<%= count_label %>"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          data-popup-menu-target="button"
+          data-cron-badge-target="badge"
+          data-action="click->popup-menu#toggle">
+    <span aria-hidden="true">⏰</span>
+    <span data-cron-badge-target="count"><%= tasks.size %></span>
+  </button>
+  <span id="<%= menu_id %>"
+        class="popup-menu cron-badge-popup"
+        role="dialog"
+        aria-label="<%= t('collavre.crons.title') %>"
+        data-popup-menu-target="menu"
+        data-action="click->popup-menu#menuClick click->cron-badge#stopPropagation">
+    <strong class="cron-badge-popup-title"><%= t('collavre.crons.title') %></strong>
+    <% tasks.each do |task| %>
+      <% task_next_run = next_run(task) %>
+      <span class="cron-task" data-cron-badge-target="task" data-cron-key="<%= task.key %>">
+        <span class="cron-task-field">
+          <span class="cron-task-label"><%= t('collavre.crons.schedule') %></span>
+          <code><%= task.schedule %></code>
+        </span>
+        <span class="cron-task-field">
+          <span class="cron-task-label"><%= t('collavre.crons.message') %></span>
+          <span class="cron-task-message"><%= task_message(task) %></span>
+        </span>
+        <span class="cron-task-field">
+          <span class="cron-task-label"><%= t('collavre.crons.next_run') %></span>
+          <% if task_next_run %>
+            <time datetime="<%= task_next_run.iso8601 %>"><%= next_run_label(task_next_run) %></time>
+          <% else %>
+            <span><%= next_run_label(task_next_run) %></span>
+          <% end %>
+        </span>
+        <% if can_delete? %>
+          <button type="button"
+                  class="cron-task-delete"
+                  data-action="click->cron-badge#destroy"
+                  data-cron-delete-url="<%= destroy_path(task) %>">
+            <%= t('collavre.crons.delete') %>
+          </button>
+        <% end %>
+      </span>
+    <% end %>
+  </span>
+</span>

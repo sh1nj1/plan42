@@ -487,12 +487,13 @@ export default class extends Controller {
             const unreadBadge = topic.unread_count > 0
                 ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
                 : ''
+            const cronBadge = topic.cron_badge_html || ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
             const interactionActions = topic.read_only ? '' : `${dropActions} ${dragActions} ${topicDropActions}`
             let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${interactionActions}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
-                        ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${unreadBadge}`
+                        ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${cronBadge}${unreadBadge}`
             if (canManage && !isMainTopic && !topic.read_only) {
                 s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
                 s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
@@ -523,10 +524,11 @@ export default class extends Controller {
                     const unreadBadge = topic.unread_count > 0
                         ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
                         : ''
+                    const cronBadge = topic.cron_badge_html || ''
                     html += `<span class="topic-tag topic-archived${isActive}${hasNew}"
                                    data-action="click->comments--topics#select"
                                    data-id="${topic.id}">
-                              #${topic.name}${unreadBadge}
+                              #${topic.name}${cronBadge}${unreadBadge}
                               ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
                              </span>`
                 })
@@ -1110,6 +1112,7 @@ export default class extends Controller {
     select(event) {
         // Ignore if clicking on delete button (though stopPropagation should handle it)
         if (event.target.closest('.delete-topic-btn')) return
+        if (event.target.closest('.cron-badge-wrapper')) return
         // Ignore if clicking on edit input
         if (event.target.closest('.topic-edit-input')) return
 
@@ -2360,6 +2363,11 @@ export default class extends Controller {
 
         const action = data.action || "created"
 
+        if (action === "cron_changed") {
+            this.loadTopics()
+            return
+        }
+
         if (action === "last_topic_changed") {
             // Broadcast is already scoped to the current user via user-specific channel
             const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
@@ -2484,6 +2492,7 @@ export default class extends Controller {
         } else {
             this.restoreSelection()
         }
+        if (data.cron_changed) this.loadTopics()
     }
 
     reorderTopicsFromServer(topicIds) {

@@ -15,6 +15,55 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  test "index adds the shared cron popup badge to the scheduled topic" do
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob",
+      schedule: "0 9 * * *",
+      static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id, message: "Daily summary" } ]
+    )
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    topic = response.parsed_body["topics"].find { |candidate| candidate["id"] == @topic.id }
+    badge = topic.fetch("cron_badge_html")
+    assert_includes badge, "creative-cron-badge"
+    assert_includes badge, "Daily summary"
+    assert_includes badge, "cron-task-delete"
+  ensure
+    task&.destroy! if task&.persisted?
+  end
+
+  test "index hides cron deletion from a read-only collaborator" do
+    collaborator = users(:two)
+    Collavre::CreativeShare.create!(
+      creative: @creative,
+      user: collaborator,
+      shared_by: @user,
+      permission: :read
+    )
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob",
+      schedule: "0 9 * * *",
+      static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id, message: "Daily summary" } ]
+    )
+    sign_in_as collaborator, password: "password"
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    topic = response.parsed_body["topics"].find { |candidate| candidate["id"] == @topic.id }
+    badge = topic.fetch("cron_badge_html")
+    assert_includes badge, "Daily summary"
+    assert_not_includes badge, "cron-task-delete"
+  ensure
+    task&.destroy! if task&.persisted?
+  end
+
   test "History topic is read-only, reserved, and kept last" do
     history = @creative.history_topic
     other = @creative.topics.create!(name: "Later", user: @user)

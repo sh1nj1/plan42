@@ -27,6 +27,7 @@ module Tools
       end
 
       task.destroy!
+      Crons::ChangeBroadcaster.call(creative)
 
       { success: true, key: key, message: "Cron job cancelled successfully" }
     end

@@ -46,15 +46,41 @@ module Collavre
         assert_empty index.tasks_for(linked.id)
       end
 
+      test "groups cron tasks by topic and treats a missing topic as Main" do
+        main_topic = @creative.main_topic(fallback_user: users(:one))
+        other_topic = @creative.topics.create!(name: "Scheduled topic", user: users(:one))
+        main_task = create_task(
+          key: "cron_#{@creative.id}_main_#{SecureRandom.hex(4)}",
+          arguments: [ { creative_id: @creative.id } ]
+        )
+        other_task = create_task(
+          key: "cron_#{@creative.id}_topic_#{SecureRandom.hex(4)}",
+          arguments: [ { creative_id: @creative.id, topic_id: other_topic.id } ]
+        )
+
+        index = RecurringTaskIndex.new
+
+        assert_equal [ main_task.key ], index.tasks_for_topic(
+          @creative.id,
+          main_topic.id,
+          main_topic_id: main_topic.id
+        ).map(&:key)
+        assert_equal [ other_task.key ], index.tasks_for_topic(
+          @creative.id,
+          other_topic.id,
+          main_topic_id: main_topic.id
+        ).map(&:key)
+      end
+
       private
 
-      def create_task(key:, static: false)
+      def create_task(key:, static: false, arguments: [])
         task = SolidQueue::RecurringTask.create!(
           key: key,
           class_name: "Collavre::CronActionJob",
           schedule: "0 9 * * *",
           static: static,
-          arguments: []
+          arguments: arguments
         )
         @tasks << task
         task

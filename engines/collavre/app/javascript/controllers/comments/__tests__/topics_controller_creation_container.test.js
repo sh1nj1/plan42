@@ -143,6 +143,43 @@ describe('TopicsController create-button placement', () => {
     })
   })
 
+  test('renders the server-provided shared cron badge inside a topic', () => {
+    const cronBadge = '<span class="cron-badge-wrapper"><button class="creative-cron-badge">1</button></span>'
+
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge }], true, true)
+
+    expect(controller.listTarget.querySelector('.topic-tag[data-id="1"] .creative-cron-badge')).not.toBeNull()
+  })
+
+  test('reloads topics when a cron change is broadcast', () => {
+    controller.handleTopicMessage({ action: 'cron_changed' })
+
+    expect(controller.loadTopics).toHaveBeenCalled()
+  })
+
+  test('reloads a newly created cron topic to render its badge', () => {
+    controller.handleTopicMessage({
+      action: 'created',
+      topic: { id: 2, name: 'Scheduled topic' },
+      cron_changed: true,
+    })
+
+    expect(controller.loadTopics).toHaveBeenCalled()
+  })
+
+  test('does not select or edit a topic when its cron badge is clicked', () => {
+    controller.currentTopicId = '1'
+    const selectTopic = jest.spyOn(controller, 'selectTopic')
+    const wrapper = document.createElement('span')
+    wrapper.className = 'cron-badge-wrapper'
+    const button = document.createElement('button')
+    wrapper.appendChild(button)
+
+    controller.select({ target: button, currentTarget: { dataset: { id: '1' } } })
+
+    expect(selectTopic).not.toHaveBeenCalled()
+  })
+
   // Alt+Left/Right chat navigation switches creatives without blurring the input,
   // so a preserved draft would otherwise be posted to the wrong creative.
   test('drops an in-progress topic name when the creative changes', () => {

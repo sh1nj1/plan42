@@ -131,7 +131,10 @@ module Collavre
           topic = @creative.topics.find_by!(name: "New Cron Topic")
           assert_equal @user, topic.user
           assert_equal topic.id, task.arguments.first[:topic_id]
-          assert_equal [ @creative, { action: "created", topic: topic.slice(:id, :name), user_id: @user.id } ], broadcast
+          assert_equal [
+            @creative,
+            { action: "created", topic: topic.slice(:id, :name), user_id: @user.id, cron_changed: true }
+          ], broadcast
         end
       end
 
@@ -225,7 +228,10 @@ module Collavre
         topic = @creative.topics.find_by!(name: "Adopted Topic")
         assert_equal "queue unavailable", error.message
         assert_equal topic.id, adopted_task.arguments.first[:topic_id]
-        assert_equal [ @creative, { action: "created", topic: topic.slice(:id, :name), user_id: @user.id } ], broadcast
+        assert_equal [
+          @creative,
+          { action: "created", topic: topic.slice(:id, :name), user_id: @user.id, cron_changed: true }
+        ], broadcast
       end
 
       test "removes a new topic and preserves the original error when the adoption check fails" do
