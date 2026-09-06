@@ -59,6 +59,45 @@ module Collavre
         assert_equal [ origin_task.key, linked_task.key ].sort, index.tasks_for(@creative.id).map(&:key)
       end
 
+      test "scopes details for multiple visible creative families" do
+        other = creatives(:root_parent)
+        unrelated = Creative.create!(user: @creative.user, description: "Unrelated")
+        included_task = create_task(key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}")
+        other_task = create_task(key: "cron_#{other.id}_#{SecureRandom.hex(4)}")
+        create_task(key: "cron_#{unrelated.id}_#{SecureRandom.hex(4)}")
+
+        index = RecurringTaskIndex.for_creatives([ @creative, other ])
+
+        assert_equal [ included_task.key ], index.tasks_for(@creative.id).map(&:key)
+        assert_equal [ other_task.key ], index.tasks_for(other.id).map(&:key)
+      end
+
+      test "returns an empty index for no visible creatives" do
+        index = RecurringTaskIndex.for_creatives([])
+
+        assert_empty index.creative_ids
+        assert_empty index.tasks_for(@creative.id)
+      end
+
+      test "loads only keys for creative id filtering and defers task details" do
+        create_task(
+          key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+          arguments: [ { message: "large payload" } ]
+        )
+        queries = []
+        subscriber = lambda do |_name, _started, _finished, _unique_id, payload|
+          queries << payload[:sql] if payload[:sql].include?("solid_queue_recurring_tasks")
+        end
+        index = RecurringTaskIndex.new
+
+        ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+          assert_includes index.creative_ids, @creative.id
+        end
+
+        assert queries.any?
+        assert queries.none? { |sql| sql.include?("arguments") }
+      end
+
       test "groups cron tasks by topic and treats a missing topic as Main" do
         main_topic = @creative.main_topic(fallback_user: users(:one))
         other_topic = @creative.topics.create!(name: "Scheduled topic", user: users(:one))

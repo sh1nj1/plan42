@@ -5,28 +5,36 @@ require "test_helper"
 module Collavre
   module Crons
     class ChangeBroadcasterTest < ActiveSupport::TestCase
-      test "broadcasts a cron change to the creative" do
+      test "broadcasts a cron change to the creative and its readable tree streams" do
         creative = creatives(:tshirt)
         broadcast = nil
+        invalidations = []
 
-        TopicsChannel.stub(:broadcast_to, ->(*args) { broadcast = args }) do
-          ChangeBroadcaster.call(creative)
+        CreativeTreeInvalidationJob.stub(:perform_later, ->(ids) { invalidations << ids }) do
+          TopicsChannel.stub(:broadcast_to, ->(*args) { broadcast = args }) do
+            ChangeBroadcaster.call(creative)
+          end
         end
 
         assert_equal [ creative, { action: "cron_changed" } ], broadcast
+        assert_equal [ [ creative.id ] ], invalidations
       end
 
       test "does not fail the completed mutation when broadcasting fails" do
         creative = creatives(:tshirt)
         warning = nil
+        invalidations = []
 
         Rails.logger.stub(:warn, ->(message) { warning = message }) do
-          TopicsChannel.stub(:broadcast_to, ->(*) { raise "cable unavailable" }) do
-            ChangeBroadcaster.call(creative)
+          CreativeTreeInvalidationJob.stub(:perform_later, ->(ids) { invalidations << ids }) do
+            TopicsChannel.stub(:broadcast_to, ->(*) { raise "cable unavailable" }) do
+              ChangeBroadcaster.call(creative)
+            end
           end
         end
 
         assert_match(/Broadcast failed for creative #{creative.id}: cable unavailable/, warning)
+        assert_equal [ [ creative.id ] ], invalidations
       end
     end
   end
