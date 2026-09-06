@@ -1,0 +1,46 @@
+<div class="popup-menu-wrapper comment-user-menu"
+     data-controller="popup-menu comment-user-menu"
+     data-comment-user-menu-user-id-value="<%= user.id %>"
+     data-comment-user-menu-user-name-value="<%= user.display_name %>">
+  <button type="button"
+          class="popup-menu-toggle comment-user-menu-trigger"
+          data-popup-menu-target="button"
+          data-action="click->popup-menu#toggle"
+          aria-label="<%= t('collavre.comments.user_menu.open', name: user.display_name) %>"
+          aria-haspopup="menu"
+          aria-expanded="false">
+    <%= render Collavre::AvatarComponent.new(user: user, size: 20, classes: 'avatar comment-avatar') %>
+  </button>
+
+  <div id="<%= menu_id %>"
+       class="popup-menu comment-user-popup"
+       data-popup-menu-target="menu"
+       data-action="click->popup-menu#menuClick"
+       role="menu">
+    <div class="comment-user-popup-header">
+      <%= render Collavre::AvatarComponent.new(user: user, size: 36, classes: 'avatar') %>
+      <div class="comment-user-popup-identity">
+        <strong><%= user.display_name %></strong>
+        <span class="comment-user-popup-email"><%= user.email %></span>
+        <span class="comment-user-popup-status"
+              data-comment-user-menu-target="status"
+              data-online-text="<%= t('collavre.comments.participant_online') %>"
+              data-offline-text="<%= t('collavre.comments.participant_offline') %>">
+          <span class="comment-user-popup-status-dot" aria-hidden="true"></span>
+          <span data-comment-user-menu-target="statusLabel"><%= t('collavre.comments.participant_offline') %></span>
+        </span>
+      </div>
+    </div>
+
+    <a href="<%= profile_path %>" class="popup-menu-item" role="menuitem">
+      <%= t('collavre.comments.user_menu.view_profile') %>
+    </a>
+    <button type="button"
+            class="popup-menu-item"
+            data-action="click->comment-user-menu#mention"
+            role="menuitem">
+      <%= t('collavre.comments.user_menu.mention') %>
+    </button>
+
+  </div>
+</div>

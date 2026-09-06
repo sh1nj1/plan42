@@ -10,7 +10,11 @@
            aria-label="<%= t('collavre.comments.select_label') %>" />
   </div>
   <div>
-    <%= render Collavre::AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
+    <% if comment.user.present? %>
+      <%= render Collavre::CommentUserMenuComponent.new(user: comment.user, menu_id: dom_id(comment, :user_menu)) %>
+    <% else %>
+      <%= render Collavre::AvatarComponent.new(user: nil, size: 20, classes: 'avatar comment-avatar') %>
+    <% end %>
     <% display_name =
          if comment.user.present?
            comment.user.display_name
