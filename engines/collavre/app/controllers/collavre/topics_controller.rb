@@ -6,7 +6,7 @@ module Collavre
     include Collavre::CreativePermissionGuard
 
     before_action :set_creative
-    before_action :require_creative_read!, only: %i[next_name channel_chips]
+    before_action :require_creative_read!, only: %i[index next_name channel_chips]
     before_action :require_creative_admin!, only: %i[update destroy move reorder]
     before_action :require_creative_write!, only: %i[create archive unarchive set_primary_agent]
 

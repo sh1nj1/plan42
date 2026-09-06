@@ -64,6 +64,24 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     task&.destroy! if task&.persisted?
   end
 
+  test "index rejects users without read access before exposing cron details" do
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob",
+      schedule: "0 9 * * *",
+      static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id, message: "Private schedule details" } ]
+    )
+    sign_in_as users(:two), password: "password"
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :forbidden
+    assert_not_includes response.body, "Private schedule details"
+  ensure
+    task&.destroy! if task&.persisted?
+  end
+
   test "History topic is read-only, reserved, and kept last" do
     history = @creative.history_topic
     other = @creative.topics.create!(name: "Later", user: @user)

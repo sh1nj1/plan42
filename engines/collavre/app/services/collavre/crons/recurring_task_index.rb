@@ -8,6 +8,16 @@ module Collavre
       KEY_PATTERN = /\Acron_(\d+)_/.freeze
       EMPTY_TASKS = [].freeze
 
+      def self.for_creative_family(creative)
+        creative_ids = [ creative.id, *creative.linked_creative_ids ]
+        patterns = creative_ids.map do |creative_id|
+          "#{SolidQueue::RecurringTask.sanitize_sql_like("cron_#{creative_id}_")}%"
+        end
+        key_matches = SolidQueue::RecurringTask.arel_table[:key].matches_any(patterns, "\\")
+
+        new(scope: SolidQueue::RecurringTask.dynamic.where(key_matches))
+      end
+
       def initialize(scope: SolidQueue::RecurringTask.dynamic)
         @scope = scope
       end

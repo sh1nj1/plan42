@@ -8,7 +8,7 @@ module Collavre
         @main_topic_id = main_topic_id
         @can_delete = can_delete
         @view_context = view_context
-        @task_index = Crons::RecurringTaskIndex.new
+        @task_index = Crons::RecurringTaskIndex.for_creative_family(creative)
       end
 
       def call(payload, topic)
