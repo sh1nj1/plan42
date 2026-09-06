@@ -159,6 +159,8 @@ describe('TopicsController create-button placement', () => {
 
   test('reloads a cached newly created cron topic to render its badge', () => {
     controller.topics = [{ id: 2, name: 'Scheduled topic' }]
+    controller.loadTopics.mockImplementation(() => { controller.topics = [] })
+    const renderTopics = jest.spyOn(controller, 'renderTopics')
 
     controller.handleTopicMessage({
       action: 'created',
@@ -167,6 +169,7 @@ describe('TopicsController create-button placement', () => {
     })
 
     expect(controller.loadTopics).toHaveBeenCalled()
+    expect(renderTopics).not.toHaveBeenCalled()
   })
 
   test('does not select or edit a topic when its cron badge is clicked', () => {

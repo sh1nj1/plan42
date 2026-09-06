@@ -1060,7 +1060,7 @@ creative-tree-row.is-being-edited .creative-tree {
     background: var(--surface-hover);
 }
 
-.cron-badge-popup {
+.popup-menu.cron-badge-popup {
     width: min(360px, calc(100vw - 8px));
     max-height: min(480px, calc(100vh - 8px));
     padding: var(--space-3);
