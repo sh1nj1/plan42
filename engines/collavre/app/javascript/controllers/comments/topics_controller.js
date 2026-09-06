@@ -2,6 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
 import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
 import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
+import { invalidateCreativeTree } from '../../lib/creative_tree_invalidation'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
@@ -2363,7 +2364,8 @@ export default class extends Controller {
 
         const action = data.action || "created"
 
-        if (action === "cron_changed") {
+	if (action === "cron_changed" || data.cron_changed) {
+	    invalidateCreativeTree()
             this.loadTopics()
             return
         }
@@ -2464,12 +2466,6 @@ export default class extends Controller {
         }
 
         if (!data.topic) return
-
-	// A topic can already be cached when cron creation broadcasts its
-	// `created` event: the topic row commits before the recurring task.
-	// Keep the current DOM until this authoritative reload completes instead
-	// of rendering the sparse broadcast payload after loadTopics clears state.
-	if (data.cron_changed) return this.loadTopics()
 
         const topics = this.topics || []
         const existsById = topics.some((topic) => String(topic.id) === String(data.topic.id))

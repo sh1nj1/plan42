@@ -152,9 +152,18 @@ describe('TopicsController create-button placement', () => {
   })
 
   test('reloads topics when a cron change is broadcast', () => {
+    const refetch = jest.fn()
+    const invalidate = jest.fn()
+    document.addEventListener('creative-sync:refetch', refetch)
+    document.addEventListener('workspace-tree:invalidate', invalidate)
+
     controller.handleTopicMessage({ action: 'cron_changed' })
 
     expect(controller.loadTopics).toHaveBeenCalled()
+    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    document.removeEventListener('creative-sync:refetch', refetch)
+    document.removeEventListener('workspace-tree:invalidate', invalidate)
   })
 
   test('reloads a cached newly created cron topic to render its badge', () => {
