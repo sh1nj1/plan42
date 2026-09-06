@@ -6,7 +6,7 @@ module Collavre
     include Collavre::CreativePermissionGuard
 
     before_action :set_creative
-    before_action :require_creative_read!, only: %i[next_name channel_chips]
+    before_action :require_creative_read!, only: %i[index next_name channel_chips]
     before_action :require_creative_admin!, only: %i[update destroy move reorder]
     before_action :require_creative_write!, only: %i[create archive unarchive set_primary_agent]
 
@@ -29,13 +29,13 @@ module Collavre
       main_topic = @creative.main_topic(fallback_user: Current.user)
       system_topic = @creative.inbox? ? @creative.system_topic(fallback_user: Current.user) : nil
 
-      active_topics = @creative.topics.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at).to_a
-      archived_topics = @creative.topics.archived.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at).to_a
+      active_topics = @creative.topics.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at)
+      archived_topics = @creative.topics.archived.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at)
       unread_counts_by_topic = Creatives::CommentBadgeIndex.new(user: Current.user)
         .unread_counts_by_topic(@creative)
 
-      system_topic_id = system_topic&.id
       main_topic_id = main_topic.id
+      @cron_badge_decorator = Topics::CronBadgeDecorator.new(@creative, main_topic_id, can_write, view_context)
 
       render json: {
         topics: active_topics.map { |t| topic_json(t, unread_count: unread_counts_by_topic.fetch(t.id, 0)) },
@@ -45,7 +45,7 @@ module Collavre
         can_set_primary_agent: can_write,
         **Topics::LastTopicPreferencePayload.new(creative: @creative, user: Current.user).call,
         is_inbox: @creative.inbox?,
-        system_topic_id: system_topic_id,
+        system_topic_id: system_topic&.id,
         main_topic_id: main_topic_id,
         effective_creative_id: @creative.id
       }
@@ -354,7 +354,8 @@ module Collavre
     # same events from outside a request, cannot describe a topic differently
     # from this controller.
     def topic_json(topic, unread_count: nil)
-      Topics::Serializer.call(topic, unread_count: unread_count)
+      data = Topics::Serializer.call(topic, unread_count: unread_count)
+      @cron_badge_decorator ? @cron_badge_decorator.call(data, topic) : data
     end
 
     # Always carries a :primary_agent key, explicitly nil when cleared. The client

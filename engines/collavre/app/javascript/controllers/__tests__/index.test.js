@@ -38,5 +38,9 @@ describe('registerControllers', () => {
       'last-visited-creative',
       LastVisitedCreativeController,
     )
+    expect(application.register).toHaveBeenCalledWith(
+      'cron-badge',
+      expect.any(Function),
+    )
   })
 })

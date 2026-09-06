@@ -1,0 +1,14 @@
+---
+en:
+  collavre:
+    crons:
+      title: Scheduled jobs
+      count_one: "__count__ scheduled job"
+      count_other: "__count__ scheduled jobs"
+      schedule: Schedule
+      message: Message
+      next_run: Next run
+      delete: Delete scheduled job
+      delete_confirm: Delete this scheduled job?
+      delete_error: Could not delete the scheduled job. Please try again.
+      not_available: Not available

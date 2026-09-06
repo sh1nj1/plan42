@@ -2,6 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
 import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
 import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
+import { invalidateCreativeTree } from '../../lib/creative_tree_invalidation'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
@@ -487,12 +488,13 @@ export default class extends Controller {
             const unreadBadge = topic.unread_count > 0
                 ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
                 : ''
+            const cronBadge = topic.cron_badge_html || ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
             const interactionActions = topic.read_only ? '' : `${dropActions} ${dragActions} ${topicDropActions}`
             let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
                           data-action="click->comments--topics#select ${interactionActions}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
-                        ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${unreadBadge}`
+                        ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${cronBadge}${unreadBadge}`
             if (canManage && !isMainTopic && !topic.read_only) {
                 s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
                 s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
@@ -523,10 +525,11 @@ export default class extends Controller {
                     const unreadBadge = topic.unread_count > 0
                         ? `<span class="topic-unread-badge">${topic.unread_count}</span>`
                         : ''
+                    const cronBadge = topic.cron_badge_html || ''
                     html += `<span class="topic-tag topic-archived${isActive}${hasNew}"
                                    data-action="click->comments--topics#select"
                                    data-id="${topic.id}">
-                              #${topic.name}${unreadBadge}
+                              #${topic.name}${cronBadge}${unreadBadge}
                               ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
                              </span>`
                 })
@@ -1110,6 +1113,7 @@ export default class extends Controller {
     select(event) {
         // Ignore if clicking on delete button (though stopPropagation should handle it)
         if (event.target.closest('.delete-topic-btn')) return
+        if (event.target.closest('.cron-badge-wrapper')) return
         // Ignore if clicking on edit input
         if (event.target.closest('.topic-edit-input')) return
 
@@ -2359,6 +2363,12 @@ export default class extends Controller {
         if (!data) return
 
         const action = data.action || "created"
+
+	if (action === "cron_changed" || data.cron_changed) {
+	    invalidateCreativeTree()
+            this.loadTopics()
+            return
+        }
 
         if (action === "last_topic_changed") {
             // Broadcast is already scoped to the current user via user-specific channel

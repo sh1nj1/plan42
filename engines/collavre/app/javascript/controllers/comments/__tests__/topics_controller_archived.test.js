@@ -82,6 +82,19 @@ describe('TopicsController archived topic messages', () => {
       expect(controller.listTarget.querySelector('.topic-archived[data-id="3"] .topic-unread-badge').textContent).toBe('4')
     })
 
+    test('renders the shared cron badge on an archived topic', () => {
+      controller.archivedTopics = [{
+        id: 3,
+        name: 'Zeta',
+        cron_badge_html: '<span class="cron-badge-wrapper"><button class="creative-cron-badge">1</button></span>',
+      }]
+      controller.showingArchived = true
+
+      render()
+
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="3"] .creative-cron-badge')).not.toBeNull()
+    })
+
     test('archived chips carry the select action so clicking one opens it', () => {
       controller.showingArchived = true
       render()

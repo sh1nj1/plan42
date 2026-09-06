@@ -117,22 +117,30 @@ module Collavre
 
       test "creates a missing topic and targets it" do
         broadcast = nil
+        invalidated = nil
 
-        TopicsChannel.stub(:broadcast_to, ->(*args) { broadcast = args }) do
-          result = CronCreateService.new.call(
-            creative_id: @creative.id,
-            topic_name: "New Cron Topic",
-            schedule: "0 9 * * *",
-            message: "test"
-          )
+        Crons::ChangeBroadcaster.stub(:tree_only, ->(creative) { invalidated = creative }) do
+          TopicsChannel.stub(:broadcast_to, ->(*args) { broadcast = args }) do
+            result = CronCreateService.new.call(
+              creative_id: @creative.id,
+              topic_name: "New Cron Topic",
+              schedule: "0 9 * * *",
+              message: "test"
+            )
 
-          assert result[:success]
-          task = SolidQueue::RecurringTask.find_by!(key: result[:key])
-          topic = @creative.topics.find_by!(name: "New Cron Topic")
-          assert_equal @user, topic.user
-          assert_equal topic.id, task.arguments.first[:topic_id]
-          assert_equal [ @creative, { action: "created", topic: topic.slice(:id, :name), user_id: @user.id } ], broadcast
+            assert result[:success]
+            task = SolidQueue::RecurringTask.find_by!(key: result[:key])
+            topic = @creative.topics.find_by!(name: "New Cron Topic")
+            assert_equal @user, topic.user
+            assert_equal topic.id, task.arguments.first[:topic_id]
+            assert_equal [
+              @creative,
+              { action: "created", topic: topic.slice(:id, :name), user_id: @user.id, cron_changed: true }
+            ], broadcast
+          end
         end
+
+        assert_equal @creative, invalidated
       end
 
       test "does not create a missing topic for an invalid schedule" do
@@ -150,14 +158,17 @@ module Collavre
 
       test "keeps the cron successful when broadcasting a created topic fails" do
         warning = nil
-        result = Rails.logger.stub(:warn, ->(message) { warning = message }) do
-          TopicsChannel.stub(:broadcast_to, ->(*) { raise "cable unavailable" }) do
-            CronCreateService.new.call(
-              creative_id: @creative.id,
-              topic_name: "Broadcast Failure Topic",
-              schedule: "0 9 * * *",
-              message: "test"
-            )
+        invalidated = nil
+        result = Crons::ChangeBroadcaster.stub(:tree_only, ->(creative) { invalidated = creative }) do
+          Rails.logger.stub(:warn, ->(message) { warning = message }) do
+            TopicsChannel.stub(:broadcast_to, ->(*) { raise "cable unavailable" }) do
+              CronCreateService.new.call(
+                creative_id: @creative.id,
+                topic_name: "Broadcast Failure Topic",
+                schedule: "0 9 * * *",
+                message: "test"
+              )
+            end
           end
         end
 
@@ -166,6 +177,7 @@ module Collavre
         task = SolidQueue::RecurringTask.find_by!(key: result[:key])
         assert_equal topic.id, task.arguments.first[:topic_id]
         assert_match(/Failed to broadcast created topic #{topic.id}: cable unavailable/, warning)
+        assert_equal @creative, invalidated
       end
 
       test "removes a newly created topic when recurring task creation fails" do
@@ -225,7 +237,10 @@ module Collavre
         topic = @creative.topics.find_by!(name: "Adopted Topic")
         assert_equal "queue unavailable", error.message
         assert_equal topic.id, adopted_task.arguments.first[:topic_id]
-        assert_equal [ @creative, { action: "created", topic: topic.slice(:id, :name), user_id: @user.id } ], broadcast
+        assert_equal [
+          @creative,
+          { action: "created", topic: topic.slice(:id, :name), user_id: @user.id, cron_changed: true }
+        ], broadcast
       end
 
       test "removes a new topic and preserves the original error when the adoption check fails" do

@@ -9,8 +9,8 @@ module Creatives
         "<iframe></iframe>"
       end
 
-      def render_creative_progress(_creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [])
-        "<progress data-select='#{select_mode}'></progress><cron-badge count='#{cron_tasks.size}'></cron-badge>"
+      def render_creative_progress(_creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [], can_delete_cron: nil)
+        "<progress data-select='#{select_mode}'></progress><cron-badge count='#{cron_tasks.size}' can-delete='#{can_delete_cron}'></cron-badge>"
       end
 
       def svg_tag(name, className: nil, width: nil, height: nil)
@@ -103,9 +103,37 @@ module Creatives
 
       nodes = build_tree_builder(params: { has_cron: "true" }).build([ creative ])
 
-      assert_includes nodes.first.dig(:templates, :progress_html), "<cron-badge count='1'>"
+      assert_includes nodes.first.dig(:templates, :progress_html), "<cron-badge count='1'"
     ensure
       task&.destroy!
+    end
+
+    test "allows cron deletion for a writer when source content is read-only" do
+      source_type = "tree_builder_read_only_source"
+      Creative.register_read_only_source(source_type)
+      owner = users(:two)
+      creative = Creative.create!(
+        user: owner,
+        progress: 0,
+        description: "Read-only scheduled",
+        data: { "source" => { "type" => source_type } }
+      )
+      CreativeShare.create!(creative: creative, user: @user, shared_by: owner, permission: :write)
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_#{SecureRandom.hex(4)}",
+        class_name: "Collavre::CronActionJob",
+        schedule: "0 9 * * *",
+        static: false,
+        arguments: []
+      )
+
+      node = build_tree_builder(params: { has_cron: "true" }).build([ creative ]).first
+
+      assert_equal false, node[:can_write]
+      assert_includes node.dig(:templates, :progress_html), "can-delete='true'"
+    ensure
+      task&.destroy!
+      Creative.read_only_source_types.delete(source_type) if source_type
     end
 
     private
