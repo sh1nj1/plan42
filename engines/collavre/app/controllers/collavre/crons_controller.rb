@@ -23,7 +23,7 @@ module Collavre
     end
 
     def recurring_tasks
-      Crons::RecurringTaskIndex.new.tasks_for(@creative.id)
+      Crons::RecurringTaskIndex.for_creative_family(@creative).tasks_for(@creative.id)
     end
   end
 end

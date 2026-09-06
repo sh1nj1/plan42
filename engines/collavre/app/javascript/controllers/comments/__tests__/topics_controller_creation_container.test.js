@@ -157,7 +157,9 @@ describe('TopicsController create-button placement', () => {
     expect(controller.loadTopics).toHaveBeenCalled()
   })
 
-  test('reloads a newly created cron topic to render its badge', () => {
+  test('reloads a cached newly created cron topic to render its badge', () => {
+    controller.topics = [{ id: 2, name: 'Scheduled topic' }]
+
     controller.handleTopicMessage({
       action: 'created',
       topic: { id: 2, name: 'Scheduled topic' },

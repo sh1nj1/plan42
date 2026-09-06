@@ -43,6 +43,22 @@ class CronsControllerTest < ActionDispatch::IntegrationTest
     assert @task.class.exists?(@task.id)
   end
 
+  test "scopes recurring task lookup to the writable creative family" do
+    index = Minitest::Mock.new
+    index.expect(:tasks_for, [ @task ], [ @creative.id ])
+    scope = lambda do |creative|
+      assert_equal @creative, creative
+      index
+    end
+
+    Collavre::Crons::RecurringTaskIndex.stub(:for_creative_family, scope) do
+      delete collavre.creative_cron_url(@creative, @task.key), as: :json
+    end
+
+    assert_response :no_content
+    assert_mock index
+  end
+
   private
 
   def create_task(creative, topic)
