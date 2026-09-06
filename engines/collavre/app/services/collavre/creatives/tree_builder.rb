@@ -213,7 +213,10 @@ module Creatives
         can_feedback: can_feedback,
         unread_count: can_feedback ? comment_badge_index.unread_count_for(creative.effective_origin) : nil
       }
-      progress_options[:cron_tasks] = cron_tasks if cron_tasks.any?
+      if cron_tasks.any?
+        progress_options[:cron_tasks] = cron_tasks
+        progress_options[:can_delete_cron] = allowed?(creative, :write)
+      end
       progress_html = view_context.render_creative_progress(creative, **progress_options)
 
       {

@@ -36,7 +36,7 @@ module Collavre
     # creatives at once (the browse tree) resolve them in batch and hand them in.
     # Left nil, each is resolved for this creative alone — correct, but a query
     # per node. Single-creative call sites take that path.
-    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [])
+    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [], can_delete_cron: nil)
       progress_value = if params[:tags].present?
         tag_ids = Array(params[:tags]).map(&:to_s)
         creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
@@ -57,7 +57,7 @@ module Collavre
           can_write: can_write,
           select_mode: select_mode
         )
-        cron_part = render_cron_badge_for_creative(creative, cron_tasks, can_delete: can_write)
+        cron_part = render_cron_badge_for_creative(creative, cron_tasks, can_delete: can_delete_cron)
 
         safe_join([
           progress_part,
@@ -116,6 +116,7 @@ module Collavre
     def render_cron_badge_for_creative(creative, tasks, can_delete: false)
       return safe_join([]) if tasks.empty?
 
+      can_delete = creative.has_permission?(Current.user, :write) if can_delete.nil?
       render_cron_badge(tasks, creative_id: creative.effective_origin.id, can_delete: can_delete)
     end
 
