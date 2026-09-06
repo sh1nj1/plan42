@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { alertDialog, confirmDialog } from '../lib/utils/dialog'
+import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 
 export default class extends Controller {
   static targets = ['badge', 'count', 'task']
@@ -32,6 +33,7 @@ export default class extends Controller {
 
       button.closest('[data-cron-badge-target="task"]')?.remove()
       this.refreshCount()
+      invalidateCreativeTree()
     } catch (error) {
       console.error(error)
       button.disabled = false

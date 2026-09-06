@@ -2465,11 +2465,11 @@ export default class extends Controller {
 
         if (!data.topic) return
 
-		// A topic can already be cached when cron creation broadcasts its
-		// `created` event: the topic row commits before the recurring task.
-		// Refresh before the duplicate guards so that cached topic still gets
-		// its newly persisted cron badge.
-		if (data.cron_changed) this.loadTopics()
+	// A topic can already be cached when cron creation broadcasts its
+	// `created` event: the topic row commits before the recurring task.
+	// Refresh before the duplicate guards so that cached topic still gets
+	// its newly persisted cron badge.
+	if (data.cron_changed) this.loadTopics()
 
         const topics = this.topics || []
         const existsById = topics.some((topic) => String(topic.id) === String(data.topic.id))

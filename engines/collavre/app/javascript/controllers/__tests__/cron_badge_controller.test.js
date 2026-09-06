@@ -85,6 +85,23 @@ describe('CronBadgeController', () => {
     expect(document.body.contains(element)).toBe(false)
   })
 
+  test('refreshes creative trees after deleting a task', async () => {
+    const refetch = jest.fn()
+    const invalidate = jest.fn()
+    document.addEventListener('creative-sync:refetch', refetch)
+    document.addEventListener('workspace-tree:invalidate', invalidate)
+    confirmDialog.mockResolvedValue(true)
+    fetch.mockResolvedValue({ ok: true, status: 204 })
+
+    element.querySelector('[data-cron-delete-url$="/one"]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    document.removeEventListener('creative-sync:refetch', refetch)
+    document.removeEventListener('workspace-tree:invalidate', invalidate)
+  })
+
   test('does not request deletion when confirmation is cancelled', async () => {
     confirmDialog.mockResolvedValue(false)
 
