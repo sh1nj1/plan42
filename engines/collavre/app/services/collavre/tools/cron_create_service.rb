@@ -140,6 +140,8 @@ module Tools
       )
     rescue StandardError => e
       Rails.logger.warn("[CronCreateService] Failed to broadcast created topic #{topic.id}: #{e.message}")
+    ensure
+      Crons::ChangeBroadcaster.tree_only(topic.creative)
     end
   end
 end

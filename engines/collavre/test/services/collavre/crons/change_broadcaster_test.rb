@@ -36,6 +36,19 @@ module Collavre
         assert_match(/Broadcast failed for creative #{creative.id}: cable unavailable/, warning)
         assert_equal [ [ creative.id ] ], invalidations
       end
+
+      test "broadcasts only the tree change when requested" do
+        creative = creatives(:tshirt)
+        invalidations = []
+
+        TopicsChannel.stub(:broadcast_to, ->(*) { flunk "tree-only changes must not broadcast a topic event" }) do
+          CreativeTreeInvalidationJob.stub(:perform_later, ->(ids) { invalidations << ids }) do
+            ChangeBroadcaster.tree_only(creative)
+          end
+        end
+
+        assert_equal [ [ creative.id ] ], invalidations
+      end
     end
   end
 end

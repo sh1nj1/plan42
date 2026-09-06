@@ -9,6 +9,10 @@ module Collavre
         broadcast_tree_change(origin)
       end
 
+      def self.tree_only(creative)
+        broadcast_tree_change(creative.effective_origin)
+      end
+
       def self.broadcast_topic_change(origin)
         TopicsChannel.broadcast_to(origin, action: "cron_changed")
       rescue StandardError => e
