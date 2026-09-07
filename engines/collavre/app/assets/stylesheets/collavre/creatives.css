@@ -1046,7 +1046,7 @@ creative-tree-row.is-being-edited .creative-tree {
     margin-left: var(--space-1);
     padding: 0 var(--space-2);
     border-radius: var(--radius-round, 9999px);
-    background: var(--surface-input, var(--color-bg));
+    background: transparent;
     color: var(--text-secondary);
     font-size: var(--text-0);
     white-space: nowrap;
