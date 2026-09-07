@@ -37,6 +37,7 @@ export default class TouchDragHandler {
     this.onDragStart = opts.onDragStart
     this.onDrop = opts.onDrop
     this.onCancel = opts.onCancel
+    this.onTap = opts.onTap
     this.proxyContent = opts.proxyContent
 
     // State
@@ -132,6 +133,7 @@ export default class TouchDragHandler {
   _handleTouchEnd(e) {
     if (this._timer) {
       this._cancelLongPress()
+      this.onTap?.(e)
       return
     }
 

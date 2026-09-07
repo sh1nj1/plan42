@@ -322,6 +322,78 @@ body.chat-fullscreen {
     user-select: none;
 }
 
+.comment-user-menu {
+    vertical-align: middle;
+}
+
+.comment-user-menu-trigger {
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.comment-user-menu-trigger:focus-visible {
+    outline: 2px solid var(--color-active);
+    outline-offset: 2px;
+}
+
+.comment-user-popup {
+    min-width: 240px;
+    padding: var(--space-2);
+}
+
+.comment-user-popup-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2) var(--space-2);
+}
+
+.comment-user-popup-identity {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.comment-user-popup-email {
+    overflow: hidden;
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
+    text-overflow: ellipsis;
+}
+
+.comment-user-popup-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
+}
+
+.comment-user-popup-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-text-muted);
+}
+
+.comment-user-popup-status.is-online .comment-user-popup-status-dot {
+    background: var(--color-success);
+}
+
+.comment-user-popup-guide {
+    margin: var(--space-2) var(--space-2) var(--space-1);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
+    line-height: 1.4;
+}
+
 .comment-select {
     position: absolute;
     top: 0.4em;

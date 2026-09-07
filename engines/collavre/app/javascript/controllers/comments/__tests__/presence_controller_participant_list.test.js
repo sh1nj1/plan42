@@ -10,8 +10,14 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
     let application, controller
 
     const USERS = [
-        { id: 1, name: 'Ada', avatar_url: '/avatars/1.png' },
-        { id: 2, name: 'Grace', avatar_url: '/avatars/2.png' }
+        {
+            id: 1, name: 'Ada', email: 'ada@example.com', avatar_url: '/avatars/1.png',
+            profile_url: '/users/1', ai_user: false, default_avatar: false, initial: 'A'
+        },
+        {
+            id: 2, name: 'Grace', email: 'grace@example.com', avatar_url: '/avatars/2.png',
+            profile_url: '/users/2', ai_user: true, default_avatar: false, initial: 'G'
+        }
     ]
 
     beforeEach(async () => {
@@ -23,7 +29,11 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
                data-close-label="Close"
                data-participant-online-text="Online"
                data-participant-offline-text="Offline"
-               data-participant-search-placeholder-text="Search users...">
+               data-participant-search-placeholder-text="Search users..."
+               data-user-menu-open-text="Open %{name}'s profile menu"
+               data-user-menu-view-profile-text="View profile"
+               data-user-menu-mention-text="Mention"
+               data-user-menu-agent-drag-guide-text="Drag this avatar to a topic.">
             <div data-comments--presence-target="participants"></div>
             <button class="add-participant-btn" data-comments--presence-target="addParticipantButton" style="display:none;">+</button>
             <button class="bar-list-btn" data-comments--presence-target="participantListButton"
@@ -58,6 +68,68 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         controller.renderParticipants([1])
 
         expect(controller.participantsTarget.querySelector('.add-participant-btn')).toBeNull()
+    })
+
+    test('renders the same profile menu for participant avatars', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([1])
+
+        const menus = controller.participantsTarget.querySelectorAll('.comment-user-menu')
+        const humanMenu = menus[0]
+        const agentMenu = menus[1]
+        expect(menus).toHaveLength(2)
+        expect(humanMenu.querySelector('.comment-user-popup-email').textContent).toBe('ada@example.com')
+        expect(humanMenu.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(true)
+        expect(humanMenu.querySelector('a.popup-menu-item').getAttribute('href')).toBe('/users/1')
+        expect(humanMenu.querySelector('.comment-user-popup-guide')).toBeNull()
+        expect(agentMenu.classList.contains('ai-agent-draggable')).toBe(true)
+        expect(agentMenu.draggable).toBe(true)
+        expect(agentMenu.querySelector('.comment-user-popup-guide').textContent)
+            .toBe('Drag this avatar to a topic.')
+    })
+
+    test('preserves an open participant menu while presence changes', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([1])
+        const root = controller.participantsTarget.querySelector('[data-comment-user-menu-user-id-value="1"]')
+        const popup = root.querySelector('.comment-user-popup')
+        popup.style.display = 'block'
+
+        controller.handlePresenceMessage({ ids: ['2'] })
+
+        expect(root.isConnected).toBe(true)
+        expect(popup.style.display).toBe('block')
+        expect(root.querySelector('.comment-presence-avatar').classList.contains('inactive')).toBe(true)
+        expect(root.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(false)
+    })
+
+    test('rebuilds participant menus when the rendered roster is stale', () => {
+        controller.participantsData = USERS
+        controller.participantsTarget.innerHTML = '<div class="comment-user-menu"></div>'
+
+        controller.renderParticipants([1], { preserveMenus: true })
+
+        expect(controller.participantsTarget.querySelectorAll('.comment-user-menu')).toHaveLength(2)
+    })
+
+    test('tapping an AI participant avatar opens its menu without intercepting menu controls', () => {
+        window.ontouchstart = null
+        controller.participantsData = [USERS[1]]
+        controller.renderParticipants([])
+        const trigger = controller.participantsTarget.querySelector('.comment-user-menu-trigger')
+        const click = jest.spyOn(trigger, 'click')
+        const handler = controller._agentTouchDragHandlers.at(-1)
+
+        handler._handleTouchStart({
+            touches: [{ clientX: 10, clientY: 10 }],
+            preventDefault: jest.fn()
+        })
+        handler._handleTouchEnd({})
+
+        expect(handler.container).toBe(trigger)
+        expect(click).toHaveBeenCalled()
+        handler.destroy()
+        delete window.ontouchstart
     })
 
     test('shows the pinned add button only when the user can share', () => {
@@ -244,25 +316,26 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(popup.close).toHaveBeenCalled()
     })
 
-    test('selecting a user mentions them in the composer, like clicking the avatar', () => {
+    test('selecting a user opens the same profile menu as the avatar strip', () => {
         controller.participantsData = USERS
-        const insertMention = jest.fn()
-        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue({ insertMention })
+        controller.renderParticipants([])
+        const show = jest.fn()
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue({ show })
 
         controller.selectParticipantListItem({ id: 2 })
 
-        expect(insertMention).toHaveBeenCalledWith({ id: 2, name: 'Grace' })
-        expect(document.activeElement).toBe(controller.textareaTarget)
+        expect(show).toHaveBeenCalled()
     })
 
     test('selecting a user who is no longer listed is a no-op', () => {
         controller.participantsData = USERS
-        const insertMention = jest.fn()
-        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue({ insertMention })
+        controller.renderParticipants([])
+        const show = jest.fn()
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue({ show })
 
         controller.selectParticipantListItem({ id: 99 })
 
-        expect(insertMention).not.toHaveBeenCalled()
+        expect(show).not.toHaveBeenCalled()
     })
 
     test('passes a live list-button anchor to the popup', () => {

@@ -1,30 +1,11 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['textarea', 'participants']
-
-  connect() {
-    this.handleParticipantsClick = this.handleParticipantsClick.bind(this)
-    this.participantsTarget?.addEventListener('click', this.handleParticipantsClick)
-  }
-
-  disconnect() {
-    this.participantsTarget?.removeEventListener('click', this.handleParticipantsClick)
-  }
+  static targets = ['textarea']
 
   onPopupOpened() {}
 
   onPopupClosed() {}
-
-  handleParticipantsClick(event) {
-    const avatar = event.target.closest('.comment-presence-avatar')
-    if (!avatar) return
-    const userId = avatar.dataset.userId
-    const userName = avatar.dataset.userName
-    if (!userId || !userName) return
-    this.insertMention({ id: userId, name: userName })
-    this.textareaTarget.focus()
-  }
 
   insertMention(user) {
     const textarea = this.textareaTarget

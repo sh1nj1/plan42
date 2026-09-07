@@ -57,6 +57,10 @@
      data-participant-search-placeholder-text="<%= t('collavre.comments.participant_search_placeholder') %>"
      data-participant-online-text="<%= t('collavre.comments.participant_online') %>"
      data-participant-offline-text="<%= t('collavre.comments.participant_offline') %>"
+     data-user-menu-open-text="<%= t('collavre.comments.user_menu.open', name: '%{name}') %>"
+     data-user-menu-view-profile-text="<%= t('collavre.comments.user_menu.view_profile') %>"
+     data-user-menu-mention-text="<%= t('collavre.comments.user_menu.mention') %>"
+     data-user-menu-agent-drag-guide-text="<%= t('collavre.comments.user_menu.agent_drag_guide') %>"
      data-context-search-placeholder-text="<%= t('collavre.contexts.search_placeholder') %>"
      data-context-enabled-text="<%= t('collavre.contexts.enabled') %>"
      data-context-disabled-text="<%= t('collavre.contexts.disabled') %>"
@@ -156,7 +160,7 @@
   </div>
   <div data-share-modal-target="container"></div>
   <div class="comment-participants-bar">
-    <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
+    <div id="comment-participants" data-comments--presence-target="participants"></div>
     <button type="button" class="add-participant-btn"
             data-comments--presence-target="addParticipantButton"
             data-action="click->share-modal#open"

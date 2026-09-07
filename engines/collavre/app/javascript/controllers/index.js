@@ -29,6 +29,7 @@ import TopicListController from "./topic_list_controller"
 import EntityListController from "./entity_list_controller"
 import CommonPopupController from "./common_popup_controller"
 import CommentController from "./comment_controller"
+import CommentUserMenuController from "./comment_user_menu_controller"
 import ReactionPickerController from "./reaction_picker_controller"
 import ShareInviteController from "./share_invite_controller"
 import ShareUserSearchController from "./share_user_search_controller"
@@ -76,6 +77,7 @@ export {
   EntityListController,
   CommonPopupController,
   CommentController,
+  CommentUserMenuController,
   ReactionPickerController,
   ShareInviteController,
   ShareUserSearchController,
@@ -128,6 +130,7 @@ export function registerControllers(application) {
   application.register("entity-list", EntityListController)
   application.register("common-popup", CommonPopupController)
   application.register("comment", CommentController)
+  application.register("comment-user-menu", CommentUserMenuController)
   application.register("reaction-picker", ReactionPickerController)
   application.register("share-invite", ShareInviteController)
   application.register("share-user-search", ShareUserSearchController)

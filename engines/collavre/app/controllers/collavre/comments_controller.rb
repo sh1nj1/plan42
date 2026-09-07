@@ -144,7 +144,9 @@ module Collavre
     def participants
       users = [ @creative.user ].compact + @creative.all_shared_users(:feedback).map(&:user)
       users = users.uniq
-      user_data = users.map { |u| view_context.user_json(u, email: true, ai_user: true) }
+      user_data = users.map do |user|
+        view_context.user_json(user, email: true, ai_user: true).merge(profile_url: user_path(user))
+      end
       response.headers["Cache-Control"] = "no-store"
       response.headers["Pragma"] = "no-cache"
       response.headers["Expires"] = "0"

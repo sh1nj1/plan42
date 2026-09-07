@@ -83,7 +83,7 @@ class ChatBarListPopupTest < ApplicationSystemTestCase
     assert_no_selector "#comment-contexts .add-context-btn"
   end
 
-  test "user list button opens a searchable popup and mentions the picked user" do
+  test "user list button opens a searchable popup and the picked user's profile menu" do
     open_comments_popup
     assert_selector "#comment-participants .comment-presence-avatar", wait: 10
 
@@ -96,6 +96,13 @@ class ChatBarListPopupTest < ApplicationSystemTestCase
     end
 
     assert_no_selector "#participant-list-modal", visible: :visible
+    assert_selector "#participant-user-menu-#{@user.id}", visible: :visible
+    within "#participant-user-menu-#{@user.id}" do
+      assert_text @user.email
+      assert_link I18n.t("collavre.comments.user_menu.view_profile"),
+        href: Collavre::Engine.routes.url_helpers.user_path(@user)
+      click_button I18n.t("collavre.comments.user_menu.mention")
+    end
     assert_equal "@#{@user.name}: ", find("#new-comment-form textarea").value
   end
 
