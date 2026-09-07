@@ -344,7 +344,7 @@ creative-tree-row.show-edit .creative-row {
     align-items: center;
     justify-items: center;
     min-width: 1.5em;
-    padding-top: 4px;
+    padding-top: var(--space-1);
 }
 
 .progress-toggle-wrap > * {
@@ -1037,6 +1037,10 @@ creative-tree-row.is-being-edited .creative-tree {
 .cron-badge-wrapper {
     display: inline-flex;
     position: relative;
+}
+
+.creative-row-end > .cron-badge-wrapper {
+    margin-top: var(--space-1);
 }
 
 .creative-cron-badge {
