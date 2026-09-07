@@ -7,10 +7,16 @@ import { Application } from '@hotwired/stimulus'
 
 const confirmDialog = jest.fn()
 const alertDialog = jest.fn()
+const csrfFetch = jest.fn()
+const refreshCsrfToken = jest.fn()
 
 jest.unstable_mockModule('../../lib/utils/dialog', () => ({
   confirmDialog,
   alertDialog,
+}))
+jest.unstable_mockModule('../../lib/api/csrf_fetch', () => ({
+  default: csrfFetch,
+  refreshCsrfToken,
 }))
 
 const { default: CronBadgeController } = await import('../cron_badge_controller')
@@ -46,7 +52,8 @@ describe('CronBadgeController', () => {
     controller = application.getControllerForElementAndIdentifier(element, 'cron-badge')
     confirmDialog.mockReset()
     alertDialog.mockReset()
-    global.fetch = jest.fn()
+    csrfFetch.mockReset()
+    refreshCsrfToken.mockReset()
   })
 
   afterEach(() => {
@@ -58,16 +65,13 @@ describe('CronBadgeController', () => {
 
   test('deletes a task and updates the count', async () => {
     confirmDialog.mockResolvedValue(true)
-    fetch.mockResolvedValue({ ok: true, status: 204 })
+    csrfFetch.mockResolvedValue({ ok: true, status: 204 })
 
     element.querySelector('[data-cron-delete-url$="/one"]').click()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(confirmDialog).toHaveBeenCalledWith('Delete it?', { danger: true })
-    expect(fetch).toHaveBeenCalledWith('/creatives/42/crons/one', {
-      method: 'DELETE',
-      headers: { 'X-CSRF-Token': 'token' },
-    })
+    expect(csrfFetch).toHaveBeenCalledWith('/creatives/42/crons/one', { method: 'DELETE' })
     expect(controller.taskTargets).toHaveLength(1)
     expect(controller.countTarget.textContent).toBe('1')
     expect(controller.badgeTarget.title).toBe('1 scheduled job')
@@ -77,7 +81,7 @@ describe('CronBadgeController', () => {
   test('removes the badge after deleting its last task', async () => {
     element.querySelectorAll('[data-cron-badge-target="task"]')[1].remove()
     confirmDialog.mockResolvedValue(true)
-    fetch.mockResolvedValue({ ok: true, status: 204 })
+    csrfFetch.mockResolvedValue({ ok: true, status: 204 })
 
     element.querySelector('[data-cron-delete-url$="/one"]').click()
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -91,7 +95,7 @@ describe('CronBadgeController', () => {
     document.addEventListener('creative-sync:refetch', refetch)
     document.addEventListener('workspace-tree:invalidate', invalidate)
     confirmDialog.mockResolvedValue(true)
-    fetch.mockResolvedValue({ ok: true, status: 204 })
+    csrfFetch.mockResolvedValue({ ok: true, status: 204 })
 
     element.querySelector('[data-cron-delete-url$="/one"]').click()
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -108,13 +112,13 @@ describe('CronBadgeController', () => {
     element.querySelector('[data-cron-delete-url$="/one"]').click()
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(fetch).not.toHaveBeenCalled()
+    expect(csrfFetch).not.toHaveBeenCalled()
     expect(controller.taskTargets).toHaveLength(2)
   })
 
   test('reports a failed deletion and restores the button', async () => {
     confirmDialog.mockResolvedValue(true)
-    fetch.mockResolvedValue({ ok: false, status: 500 })
+    csrfFetch.mockResolvedValue({ ok: false, status: 500 })
     alertDialog.mockResolvedValue(undefined)
     const button = element.querySelector('[data-cron-delete-url$="/one"]')
 
@@ -124,6 +128,21 @@ describe('CronBadgeController', () => {
     expect(alertDialog).toHaveBeenCalledWith('Delete failed')
     expect(button.disabled).toBe(false)
     expect(controller.taskTargets).toHaveLength(2)
+  })
+
+  test('refreshes the CSRF token and retries once after a 422 response', async () => {
+    confirmDialog.mockResolvedValue(true)
+    csrfFetch
+      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValueOnce({ ok: true, status: 204 })
+
+    element.querySelector('[data-cron-delete-url$="/one"]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(refreshCsrfToken).toHaveBeenCalledTimes(1)
+    expect(csrfFetch).toHaveBeenCalledTimes(2)
+    expect(csrfFetch).toHaveBeenNthCalledWith(2, '/creatives/42/crons/one', { method: 'DELETE' })
+    expect(controller.taskTargets).toHaveLength(1)
   })
 
   test('stops popup clicks from selecting the parent topic', () => {

@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { alertDialog, confirmDialog } from '../lib/utils/dialog'
 import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
+import csrfFetch, { refreshCsrfToken } from '../lib/api/csrf_fetch'
 
 export default class extends Controller {
   static targets = ['badge', 'count', 'task']
@@ -25,10 +26,7 @@ export default class extends Controller {
     button.disabled = true
 
     try {
-      const response = await fetch(button.dataset.cronDeleteUrl, {
-        method: 'DELETE',
-        headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '' },
-      })
+      const response = await this.deleteCron(button.dataset.cronDeleteUrl)
       if (!response.ok) throw new Error(`Cron delete failed (${response.status})`)
 
       button.closest('[data-cron-badge-target="task"]')?.remove()
@@ -39,6 +37,16 @@ export default class extends Controller {
       button.disabled = false
       await alertDialog(this.deleteErrorValue)
     }
+  }
+
+  async deleteCron(url) {
+    const options = { method: 'DELETE' }
+    let response = await csrfFetch(url, options)
+    if (response.status !== 422) return response
+
+    await refreshCsrfToken()
+    response = await csrfFetch(url, options)
+    return response
   }
 
   refreshCount() {

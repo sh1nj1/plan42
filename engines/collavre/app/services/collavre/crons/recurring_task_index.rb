@@ -41,11 +41,7 @@ module Collavre
       end
 
       def tasks_for_topic(creative_id, topic_id, main_topic_id: nil)
-        tasks_for(creative_id).select do |task|
-          scheduled_topic_id = parse_arguments(task)["topic_id"]&.to_i
-          scheduled_topic_id == topic_id.to_i ||
-            (scheduled_topic_id.nil? && main_topic_id.to_i == topic_id.to_i)
-        end
+        tasks_by_topic_id(creative_id, main_topic_id).fetch(topic_id.to_i, EMPTY_TASKS)
       end
 
       private
@@ -67,6 +63,14 @@ module Collavre
         scope.select(:id, :key, :schedule, :arguments).order(:key).filter_map do |task|
           creative_id = task.key.match(KEY_PATTERN)&.[](1)&.to_i
           [ task, creative_id ] if creative_id
+        end
+      end
+
+      def tasks_by_topic_id(creative_id, main_topic_id)
+        @tasks_by_topic_id ||= {}
+        cache_key = [ creative_id.to_i, main_topic_id.to_i ]
+        @tasks_by_topic_id[cache_key] ||= tasks_for(creative_id).group_by do |task|
+          parse_arguments(task)["topic_id"]&.to_i || main_topic_id.to_i
         end
       end
     end

@@ -124,6 +124,31 @@ module Collavre
         ).map(&:key)
       end
 
+      test "indexes task arguments once across topic lookups" do
+        main_topic = @creative.main_topic(fallback_user: users(:one))
+        other_topic = @creative.topics.create!(name: "Indexed topic", user: users(:one))
+        create_task(
+          key: "cron_#{@creative.id}_main_#{SecureRandom.hex(4)}",
+          arguments: [ { creative_id: @creative.id } ]
+        )
+        create_task(
+          key: "cron_#{@creative.id}_topic_#{SecureRandom.hex(4)}",
+          arguments: [ { creative_id: @creative.id, topic_id: other_topic.id } ]
+        )
+        index = RecurringTaskIndex.new
+        parse_count = 0
+        original_parser = index.method(:parse_arguments)
+        index.define_singleton_method(:parse_arguments) do |task|
+          parse_count += 1
+          original_parser.call(task)
+        end
+
+        index.tasks_for_topic(@creative.id, main_topic.id, main_topic_id: main_topic.id)
+        index.tasks_for_topic(@creative.id, other_topic.id, main_topic_id: main_topic.id)
+
+        assert_equal 2, parse_count
+      end
+
       private
 
       def create_task(key:, static: false, arguments: [])
