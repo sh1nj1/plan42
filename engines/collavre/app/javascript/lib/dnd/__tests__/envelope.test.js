@@ -1,6 +1,5 @@
 import { jest } from '@jest/globals';
 import {
-  DND_MIME_TYPE,
   LEGACY_MIME_TYPES,
   getDragKind,
   readDragData,
@@ -36,7 +35,7 @@ beforeEach(() => {
   resetDragSessionCache();
 });
 
-test('writes the v1 creative envelope and legacy MIME data together', () => {
+test('writes creative data using the existing MIME boundary', () => {
   const transfer = new FakeDataTransfer();
 
   expect(writeDragData(transfer, {
@@ -51,22 +50,18 @@ test('writes the v1 creative envelope and legacy MIME data together', () => {
     },
   })).toBe(true);
 
-  const envelope = JSON.parse(transfer.getData(DND_MIME_TYPE));
   const legacy = JSON.parse(transfer.getData(LEGACY_MIME_TYPES.creative));
 
-  expect(envelope).toMatchObject({
-    v: 1,
-    kind: 'creative',
-    ids: ['7', '8'],
-    token: window.localStorage.getItem(DRAG_TOKEN_STORAGE_KEY),
-    sourceWindowId: window.sessionStorage.getItem(WINDOW_ID_SESSION_KEY),
-  });
+  expect(transfer.types).toEqual([
+    LEGACY_MIME_TYPES.creative,
+    'text/plain',
+  ]);
   expect(legacy).toMatchObject({
     creativeId: '7',
     treeId: 'creative-7',
     selectedCreativeIds: ['7', '8'],
-    token: envelope.token,
-    sourceWindowId: envelope.sourceWindowId,
+    token: window.localStorage.getItem(DRAG_TOKEN_STORAGE_KEY),
+    sourceWindowId: window.sessionStorage.getItem(WINDOW_ID_SESSION_KEY),
   });
   expect(transfer.getData('text/plain')).toBe(transfer.getData(LEGACY_MIME_TYPES.creative));
   expect(getDragKind(transfer)).toBe('creative');
@@ -76,7 +71,7 @@ test('writes the v1 creative envelope and legacy MIME data together', () => {
     payload: expect.objectContaining({
       creativeId: '7',
       treeId: 'creative-7',
-      sourceWindowId: envelope.sourceWindowId,
+      sourceWindowId: legacy.sourceWindowId,
     }),
   });
 });
@@ -98,7 +93,7 @@ test.each([
   });
 });
 
-test('normalizes each legacy MIME without requiring the common envelope', () => {
+test('normalizes each existing MIME into the shared data shape', () => {
   window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'token');
   resetDragSessionCache();
 
@@ -161,51 +156,13 @@ test('detects topic-id legacy data and never reads payload during kind detection
   expect(getDragKind(null)).toBeNull();
 });
 
-test('prefers a valid common envelope and falls back from an invalid one', () => {
-  window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'token');
-  resetDragSessionCache();
-
-  const common = new FakeDataTransfer({
-    [DND_MIME_TYPE]: JSON.stringify({
-      v: 1,
-      kind: 'agent',
-      ids: [9],
-      payload: { name: 'Common' },
-      token: 'token',
-      sourceWindowId: 'window',
-    }),
-    [LEGACY_MIME_TYPES.context]: '10',
-  });
-  expect(readDragData(common)).toEqual({
-    kind: 'agent',
-    ids: ['9'],
-    payload: { name: 'Common', sourceWindowId: 'window' },
-  });
-
-  common.setData(DND_MIME_TYPE, '{bad json');
-  expect(readDragData(common)).toEqual({ kind: 'context', ids: ['10'], payload: {} });
-});
-
 test('rejects malformed, empty, and untrusted data', () => {
   const error = jest.spyOn(console, 'error').mockImplementation(() => {});
   window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'expected');
   resetDragSessionCache();
 
-  const invalidCommonValues = [
-    null,
-    { v: 2, kind: 'creative', ids: ['1'], payload: {}, token: 'expected' },
-    { v: 1, kind: 'unknown', ids: ['1'], payload: {}, token: 'expected' },
-    { v: 1, kind: 'creative', ids: '1', payload: {}, token: 'expected' },
-    { v: 1, kind: 'creative', ids: [], payload: {}, token: 'expected' },
-    { v: 1, kind: 'creative', ids: ['1'], payload: [], token: 'expected' },
-    { v: 1, kind: 'creative', ids: ['1'], payload: {}, token: 'wrong' },
-  ];
-  invalidCommonValues.forEach((value) => {
-    const transfer = new FakeDataTransfer({ [DND_MIME_TYPE]: JSON.stringify(value) });
-    expect(readDragData(transfer)).toBeNull();
-  });
-
   const invalidLegacyValues = [
+    new FakeDataTransfer({ [LEGACY_MIME_TYPES.creative]: '{bad json' }),
     new FakeDataTransfer({
       [LEGACY_MIME_TYPES.creative]: JSON.stringify({
         creativeId: 1,

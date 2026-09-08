@@ -4,7 +4,6 @@ import {
   readDragSessionToken,
 } from './session';
 
-export const DND_MIME_TYPE = 'application/x-collavre-dnd';
 export const LEGACY_MIME_TYPES = Object.freeze({
   creative: 'application/x-collavre-creative',
   topic: 'application/x-topic-move',
@@ -41,26 +40,6 @@ function normalizedIds(ids) {
 
 function isPayload(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function normalizeCommonEnvelope(envelope) {
-  if (!isPayload(envelope) || envelope.v !== 1) return null;
-  if (!SUPPORTED_KINDS.includes(envelope.kind)) return null;
-
-  const ids = normalizedIds(envelope.ids);
-  if (!ids || !isPayload(envelope.payload)) return null;
-
-  const expectedToken = readDragSessionToken();
-  if (!expectedToken || envelope.token !== expectedToken) return null;
-
-  return {
-    kind: envelope.kind,
-    ids,
-    payload: {
-      ...envelope.payload,
-      sourceWindowId: envelope.sourceWindowId || envelope.payload.sourceWindowId || null,
-    },
-  };
 }
 
 function safeParse(data) {
@@ -154,12 +133,6 @@ const LEGACY_READERS = {
 };
 
 export function readDragData(dataTransfer) {
-  const commonData = readTransferData(dataTransfer, DND_MIME_TYPE);
-  if (commonData) {
-    const normalized = normalizeCommonEnvelope(safeParse(commonData));
-    if (normalized) return normalized;
-  }
-
   const legacyKind = probeLegacyKind(dataTransfer);
   return legacyKind ? LEGACY_READERS[legacyKind](dataTransfer) : null;
 }
@@ -204,21 +177,15 @@ export function writeDragData(dataTransfer, data) {
   const ids = normalizedIds(data.ids);
   if (!ids) return false;
 
-  const token = ensureDragSessionToken();
+  const token = data.kind === 'creative' ? ensureDragSessionToken() : null;
   if (data.kind === 'creative' && !token) return false;
 
   const payload = data.payload;
-  const sourceWindowId = payload.sourceWindowId || ensureDragWindowId();
+  const sourceWindowId = data.kind === 'creative'
+    ? payload.sourceWindowId || ensureDragWindowId()
+    : payload.sourceWindowId || null;
   const normalized = { kind: data.kind, ids, payload };
 
-  if (token) {
-    dataTransfer.setData(DND_MIME_TYPE, JSON.stringify({
-      v: 1,
-      ...normalized,
-      token,
-      sourceWindowId,
-    }));
-  }
   writeLegacyData(dataTransfer, normalized, token, sourceWindowId);
   return true;
 }

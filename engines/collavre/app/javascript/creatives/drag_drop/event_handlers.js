@@ -23,6 +23,7 @@ import {
   getLastDragOverRow,
   hasDraggedState,
 } from './state';
+import * as dragState from './state';
 import { createMoveContext, applyMove, revertMove } from './operations';
 import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
@@ -335,6 +336,7 @@ export function handleDragOver(event) {
   const lastRow = getLastDragOverRow();
   if (lastRow && lastRow !== tree) {
     clearDragHighlight(lastRow);
+    setLastDragOverRow(null);
   }
   if (!tree || tree.draggable === false) return;
 
@@ -346,7 +348,7 @@ export function handleDragOver(event) {
     event.dataTransfer.dropEffect = 'move';
     tree.classList.add('drag-over', 'drag-over-child', 'child-drop-indicator-active');
     tree.classList.remove('drag-over-top', 'drag-over-bottom');
-    setLastDragOverRow(tree);
+    setLastDragOverRow(tree, 'child');
     return;
   }
 
@@ -355,10 +357,9 @@ export function handleDragOver(event) {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
 
-  let previousPosition = null;
-  if (tree.classList.contains('drag-over-top')) previousPosition = 'up';
-  else if (tree.classList.contains('drag-over-child')) previousPosition = 'child';
-  else if (tree.classList.contains('drag-over-bottom')) previousPosition = 'down';
+  const previousPosition = getLastDragOverRow() === tree
+    ? dragState.getLastDragOverPosition?.() || null
+    : null;
 
   const position = getVerticalDropPosition({
     clientY: event.clientY,
@@ -383,7 +384,7 @@ export function handleDragOver(event) {
     hideLinkHover();
   }
 
-  setLastDragOverRow(tree);
+  setLastDragOverRow(tree, position);
 }
 
 function resetDrag() {
@@ -401,6 +402,7 @@ export function handleDrop(event) {
     event.preventDefault();
     clearDragHighlight(targetTree);
     clearDragHighlight(getLastDragOverRow());
+    setLastDragOverRow(null);
 
     try {
       const topicId = dragData.ids[0];
@@ -443,10 +445,9 @@ export function handleDrop(event) {
     return;
   }
 
-  // Capture visual state before clearing highlights to ensure WYSIWYG
-  const isVisualTop = targetTree && targetTree.classList.contains('drag-over-top');
-  const isVisualBottom = targetTree && targetTree.classList.contains('drag-over-bottom');
-  const isVisualChild = targetTree && targetTree.classList.contains('drag-over-child');
+  const previewedDirection = targetTree && getLastDragOverRow() === targetTree
+    ? dragState.getLastDragOverPosition?.() || null
+    : null;
 
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
@@ -521,14 +522,8 @@ export function handleDrop(event) {
     }
   }
 
-  let direction;
-  if (isVisualTop) {
-    direction = 'up';
-  } else if (isVisualBottom) {
-    direction = 'down';
-  } else if (isVisualChild) {
-    direction = 'child';
-  } else {
+  let direction = previewedDirection;
+  if (!direction) {
     // Fallback calculation
     direction = getVerticalDropPosition({
       clientY: event.clientY,
@@ -655,6 +650,7 @@ export function handleDragLeave(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   if (!tree || tree.draggable === false) return;
   clearDragHighlight(tree);
+  if (getLastDragOverRow() === tree) setLastDragOverRow(null);
   hideLinkHover();
 }
 

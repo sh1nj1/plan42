@@ -2,8 +2,14 @@
  * @jest-environment jsdom
  */
 import { jest } from '@jest/globals';
-import { handleDragOver } from '../event_handlers';
-import { resetDraggedState } from '../state';
+import { handleDragOver, handleDrop } from '../event_handlers';
+import {
+  getLastDragOverPosition,
+  resetDraggedState,
+  setDraggedState,
+  setLastDragOverRow,
+} from '../state';
+import { writeDragData } from '../../../lib/dnd/envelope';
 
 function mountTarget() {
   document.body.innerHTML = `
@@ -53,6 +59,7 @@ test('uses the shared boundary and hysteresis result for creative drags', () => 
   expect(boundary.preventDefault).toHaveBeenCalled();
   expect(boundary.dataTransfer.dropEffect).toBe('move');
   expect(tree.classList.contains('drag-over-child')).toBe(true);
+  expect(getLastDragOverPosition()).toBe('child');
 
   const outsideChildHysteresis = dragEvent(
     target,
@@ -61,6 +68,7 @@ test('uses the shared boundary and hysteresis result for creative drags', () => 
   );
   handleDragOver(outsideChildHysteresis);
   expect(tree.classList.contains('drag-over-top')).toBe(true);
+  expect(getLastDragOverPosition()).toBe('up');
 });
 
 test('keeps topic moves as child drops', () => {
@@ -71,4 +79,75 @@ test('keeps topic moves as child drops', () => {
 
   expect(event.preventDefault).toHaveBeenCalled();
   expect(tree.classList.contains('drag-over-child')).toBe(true);
+});
+
+test('drops with the stored intent without reading preview CSS classes', async () => {
+  document.body.innerHTML = `
+    <div id="creatives">
+      <creative-tree-row creative-id="1" level="1" is-root>
+        <div class="creative-tree" id="creative-1" draggable="true"></div>
+      </creative-tree-row>
+      <creative-tree-row creative-id="2" level="1" is-root>
+        <div class="creative-tree" id="creative-2" draggable="true">
+          <span id="drop-target"></span>
+        </div>
+      </creative-tree-row>
+    </div>
+  `;
+  const sourceTree = document.getElementById('creative-1');
+  const sourceRow = sourceTree.closest('creative-tree-row');
+  const targetTree = document.getElementById('creative-2');
+  const transfer = new Map();
+  const dataTransfer = {
+    types: [],
+    setData(type, value) {
+      transfer.set(type, value);
+      this.types = [...transfer.keys()];
+    },
+    getData: (type) => transfer.get(type) || '',
+  };
+  writeDragData(dataTransfer, {
+    kind: 'creative',
+    ids: ['1'],
+    payload: {
+      creativeId: '1',
+      treeId: 'creative-1',
+      level: 1,
+      isRoot: true,
+    },
+  });
+  setDraggedState({
+    tree: sourceTree,
+    row: sourceRow,
+    treeId: 'creative-1',
+    creativeId: '1',
+    parentId: null,
+    level: 1,
+    isRoot: true,
+    selectedCreativeIds: ['1'],
+  });
+  setLastDragOverRow(targetTree, 'up');
+  expect(targetTree.className).toBe('creative-tree');
+
+  const fetchMock = jest.fn().mockResolvedValue({
+    ok: true,
+    headers: { get: () => null },
+  });
+  globalThis.fetch = fetchMock;
+  handleDrop({
+    target: document.getElementById('drop-target'),
+    clientY: 150,
+    shiftKey: false,
+    preventDefault: jest.fn(),
+    dataTransfer,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const options = fetchMock.mock.calls[0][1];
+  expect(JSON.parse(options.body)).toMatchObject({
+    dragged_id: '1',
+    target_id: '2',
+    direction: 'up',
+  });
+  delete globalThis.fetch;
 });
