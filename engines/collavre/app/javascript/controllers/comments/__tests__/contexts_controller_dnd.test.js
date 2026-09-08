@@ -22,7 +22,7 @@ function creativeValues(ids) {
 }
 beforeEach(async () => {
   global.requestAnimationFrame = fn => { fn(); return 0 }
-  document.body.innerHTML = `<div id="comments-popup" data-controller="comments--contexts" data-creative-id="42">
+  document.body.innerHTML = `<div id="comments-popup" data-controller="comments--contexts" data-creative-id="42" data-context-update-error-text="Could not update contexts">
     <button data-comments--contexts-target="toggleButton"></button>
     <div data-comments--contexts-target="bar"><div data-comments--contexts-target="list"></div></div>
     <form id="new-comment-form"></form></div>`
@@ -34,7 +34,7 @@ beforeEach(async () => {
   controller.canManage = true
   controller.contexts = [{ id: 10 }, { id: 20 }, { id: 99, inherited: true }]
   controller._updateContextIds = jest.fn().mockResolvedValue()
-  controller.loadContexts = jest.fn().mockResolvedValue()
+  controller.loadContexts = jest.fn().mockImplementation(async () => { controller._contextDropNeedsRefresh = false; return true })
   controller.renderContexts()
   controller._bindPopupDragDetection()
 })
@@ -44,15 +44,15 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-test('creative drop delegates to the existing context command and clears preview', async () => {
-  const values = creativeValues(['30'])
+test('creative bundle is added in one command, excluding inherited and existing contexts', async () => {
+  const values = creativeValues(['10', '30', '40', '99', '30'])
   const over = drag('dragover', controller.listTarget, values)
   expect(over.defaultPrevented).toBe(true)
   expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(true)
   drag('drop', controller.listTarget, values)
   await Promise.resolve()
   expect(controller._updateContextIds).toHaveBeenCalledTimes(1)
-  expect(controller._updateContextIds).toHaveBeenCalledWith([10, 20, 30])
+  expect(controller._updateContextIds).toHaveBeenCalledWith([10, 20, 30, 40])
   expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(false)
 })
 
@@ -86,4 +86,163 @@ test('leaving an empty popup restores hidden context list', () => {
   expect(controller.listVisible).toBe(true)
   drag('dragleave', popup, values)
   expect(controller.listVisible).toBe(false)
+})
+
+
+test('rejected bundle keeps the existing view and reports the failure', async () => {
+  controller._updateContextIds.mockResolvedValue(false)
+  await controller._addDroppedContexts(['30', '40'])
+  expect(controller.contexts.map(context => context.id)).toEqual([10, 20, 99])
+  expect(controller.loadContexts).not.toHaveBeenCalled()
+  expect(document.querySelector('[role="alertdialog"]').textContent).toContain('Could not update contexts')
+  document.querySelector('[role="alertdialog"] button').click()
+})
+
+test('duplicate-only and invalid IDs never write', async () => {
+  await controller._addDroppedContexts(['10', '99', '42', '0', '-1', '1.5', 'NaN'])
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+test('successive bundles preserve the preceding successful additions', async () => {
+  controller.loadContexts.mockImplementation(async () => {
+    controller.contexts = [{ id: 10 }, { id: 20 }, { id: 30 }]
+    controller._contextDropNeedsRefresh = false
+    return true
+  })
+  const first = controller._addDroppedContexts(['30'])
+  const second = controller._addDroppedContexts(['40'])
+  await Promise.all([first, second])
+  expect(controller._updateContextIds.mock.calls).toEqual([[[10, 20, 30]], [[10, 20, 30, 40]]])
+})
+
+test('queued bundle is cancelled when the popup switches creative', async () => {
+  const pending = controller._addDroppedContexts(['30'])
+  popup.dataset.creativeId = '77'
+  await pending
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+
+test.each([
+  { ok: false, status: 403 },
+  { ok: true, redirected: true },
+  { ok: true, headers: { get: () => 'text/html' } },
+])('context patch rejects failed or login responses: %j', async response => {
+  const originalFetch = global.fetch
+  global.fetch = jest.fn().mockResolvedValue(response)
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(false)
+  } finally {
+    global.fetch = originalFetch
+    error.mockRestore()
+  }
+})
+
+test('context patch reports network uncertainty and successful writes distinctly', async () => {
+  const originalFetch = global.fetch
+  global.fetch = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ ok: true })
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(false)
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(true)
+  } finally {
+    global.fetch = originalFetch
+    error.mockRestore()
+  }
+})
+
+
+test('failed reload blocks a later bundle from overwriting a successful addition', async () => {
+  controller.loadContexts.mockResolvedValue(false)
+  await controller._addDroppedContexts(['30'])
+  document.querySelector('[role="alertdialog"] button').click()
+  await controller._addDroppedContexts(['40'])
+  expect(controller._updateContextIds.mock.calls).toEqual([[[10, 20, 30]]])
+  document.querySelector('[role="alertdialog"] button').click()
+})
+
+test('permission revocation while a queued bundle refreshes cancels its write', async () => {
+  controller._contextDropNeedsRefresh = true
+  controller.loadContexts.mockImplementation(async () => {
+    controller.canManage = false
+    return true
+  })
+  await controller._addDroppedContexts(['30'])
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+test('a popup switch during refresh cancels the queued bundle', async () => {
+  controller._contextDropNeedsRefresh = true
+  controller.loadContexts.mockImplementation(async () => {
+    popup.dataset.creativeId = '77'
+    return true
+  })
+  await controller._addDroppedContexts(['30'])
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+test('a popup switch during save does not reload the new creative as the old result', async () => {
+  controller._updateContextIds.mockImplementation(async () => {
+    popup.dataset.creativeId = '77'
+    return true
+  })
+  await controller._addDroppedContexts(['30'])
+  expect(controller.loadContexts).not.toHaveBeenCalled()
+})
+
+test('refresh after an uncertain write preserves server additions before retrying', async () => {
+  controller._contextDropNeedsRefresh = true
+  controller.loadContexts.mockImplementation(async () => {
+    controller.contexts = [{ id: 10 }, { id: 20 }, { id: 30 }]
+    controller._contextDropNeedsRefresh = false
+    return true
+  })
+  await controller._addDroppedContexts(['30', '40', '9007199254740992'])
+  expect(controller._updateContextIds).toHaveBeenCalledWith([10, 20, 30, 40])
+})
+
+test('context drag cancelled before its animation frame does not restore stale feedback', () => {
+  let frame
+  global.requestAnimationFrame = fn => { frame = fn; return 0 }
+  const source = popup.querySelector('[data-context-id="10"]')
+  drag('dragstart', source, {})
+  drag('dragend', source, {})
+  frame()
+  expect(source.classList.contains('context-dragging')).toBe(false)
+})
+
+test('reordering before a context preserves inherited items and ignores missing IDs', async () => {
+  const target = popup.querySelector('[data-context-id="10"]')
+  await controller.handleReorderDrop({ el: target, ids: ['20'], hit: 'left' })
+  expect(controller._updateContextIds).toHaveBeenCalledWith([20, 10])
+  controller._updateContextIds.mockClear()
+  for (const id of ['0', '10', '99', '123']) {
+    await controller.handleReorderDrop({ el: target, ids: [id], hit: 'left' })
+  }
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+test('disconnect removes the popup drop zone and its preview', () => {
+  const values = creativeValues(['30'])
+  drag('dragover', controller.listTarget, values)
+  controller.disconnect()
+  expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(false)
+  expect(drag('drop', controller.listTarget, values).defaultPrevented).toBe(false)
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+test('context bundle propagates the real PATCH outcome instead of assuming success', async () => {
+  const originalFetch = global.fetch
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: { get: () => 'application/json' } })
+  controller._updateContextIds = ContextsController.prototype._updateContextIds
+  try {
+    await controller._addDroppedContexts(['30', '40'])
+    expect(global.fetch).toHaveBeenCalledWith('/creatives/42/update_contexts', expect.objectContaining({
+      method: 'PATCH', body: JSON.stringify({ context_ids: [10, 20, 30, 40] })
+    }))
+    expect(controller.loadContexts).toHaveBeenCalledTimes(1)
+  } finally {
+    global.fetch = originalFetch
+  }
 })

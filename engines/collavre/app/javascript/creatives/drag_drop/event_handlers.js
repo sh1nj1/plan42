@@ -323,7 +323,7 @@ function notifyInvalidDrop() {
   alertDialog(INVALID_DROP_MESSAGE);
 }
 
-import { attachBundleDragImage } from '../../utils/drag_bundle_image.js';
+import { attachBundleDragImage } from '../../lib/dnd/bundle_image.js';
 
 function getCreativeText(id) {
   if (typeof document === 'undefined') return '';
