@@ -49,6 +49,7 @@ jest.unstable_mockModule('../../tree_renderer', () => ({
 
 const {
   addGlobalListeners,
+  handleDragLeave,
   handleDragOver,
   handleDragStart,
   handleDrop,
@@ -475,6 +476,66 @@ describe('right creative tree drag feedback', () => {
     expect(container.dataset.loaded).toBe('true')
     expect(tree('1').closest('creative-tree-row').hasAttribute('has-children')).toBe(true)
     expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+  })
+
+  test('does not apply an in-flight hover response after the drop starts', async () => {
+    let resolveChildren
+    document.body.innerHTML = `
+<div id="creatives">
+${row('1', { isRoot: true })}
+<creative-tree-row creative-id="2" level="1" has-children>
+<div class="creative-tree" id="creative-2" draggable="true"></div>
+</creative-tree-row>
+<div class="creative-children" id="creative-children-2" style="display:none"
+data-loaded="false" data-load-url="/creatives/2/children.json"></div>
+</div>
+`
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    tree('2').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockImplementation(() => new Promise((resolve) => { resolveChildren = resolve }))
+    runMoveWithDomRecovery.mockResolvedValue({ status: 'success' })
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+    handleDragOver(dragEvent(tree('2'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    handleDrop(dragEvent(tree('2'), dataTransfer, { clientY: 50 }))
+    resolveChildren({ creatives: [{ id: 3 }] })
+    await Promise.resolve()
+
+    expect(runMoveWithDomRecovery).toHaveBeenCalled()
+    expect(renderCreativeTree).not.toHaveBeenCalled()
+    expect(document.getElementById('creative-children-2').dataset.loaded).toBe('false')
+  })
+
+  test('does not apply an in-flight hover response after leaving the target', async () => {
+    let resolveChildren
+    document.body.innerHTML = `
+<creative-tree-row creative-id="1" level="1" has-children>
+<div class="creative-tree" id="creative-1" draggable="true"></div>
+</creative-tree-row>
+<div class="creative-children" id="creative-children-1" style="display:none"
+data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+`
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockImplementation(() => new Promise((resolve) => { resolveChildren = resolve }))
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    handleDragLeave(dragEvent(tree('1'), dataTransfer))
+    resolveChildren({ creatives: [{ id: 2 }] })
+    await Promise.resolve()
+
+    expect(renderCreativeTree).not.toHaveBeenCalled()
+    expect(document.getElementById('creative-children-1').dataset.loaded).toBe('false')
+  })
+
+  test('allows dragleave cleanup when no hover expansion is pending', () => {
+    const dataTransfer = transfer()
+
+    expect(() => handleDragLeave(dragEvent(tree('1'), dataTransfer))).not.toThrow()
   })
 
   test('settles a branch the server reports as empty', async () => {

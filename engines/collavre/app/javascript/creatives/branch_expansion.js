@@ -6,7 +6,7 @@ import { renderCreativeTree, dispatchCreativeTreeUpdated } from './tree_renderer
 // its container on its own shows nothing. Fill it the way a click-driven
 // expansion does (expansion_controller#ensureLoaded) before expanding, or the
 // branch looks open but blank — and, mid-drag, offers no rows to drop onto.
-export function expandBranchWithChildren(row, container) {
+export function expandBranchWithChildren(row, container, { isCurrent = () => true } = {}) {
   if (!container) return Promise.resolve(false)
 
   const loadUrl = container.dataset.loadUrl
@@ -17,6 +17,7 @@ export function expandBranchWithChildren(row, container) {
 
   return loadChildren(loadUrl)
     .then((data) => {
+      if (!isCurrent()) return false
       const nodes = Array.isArray(data?.creatives) ? data.creatives : []
       renderCreativeTree(container, nodes)
       container.dataset.loaded = 'true'

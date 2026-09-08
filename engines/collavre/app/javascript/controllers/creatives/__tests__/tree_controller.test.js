@@ -911,4 +911,36 @@ describe('CreativesTreeController requestReload', () => {
 
     application.stop()
   })
+
+  test('keeps captured view state when a preserved load supersedes an in-flight load', async () => {
+    jest.useRealTimers()
+    global.fetch = jest.fn(() => new Promise(() => {}))
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
+    container.dataset.loaded = 'true'
+    container.innerHTML = `
+<creative-tree-row creative-id="1" expanded>
+<button id="focused-control">Creative 1</button>
+</creative-tree-row>
+`
+    document.body.appendChild(container)
+    document.getElementById('focused-control').focus()
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+
+    controller.load({ preserveView: true })
+    const capturedState = controller._pendingViewState
+    controller.load({ preserveView: true })
+
+    expect(controller._pendingViewState).toBe(capturedState)
+    expect(capturedState.expansion).toEqual([{ creativeId: '1', expanded: true }])
+    expect(capturedState.focus).toEqual(expect.objectContaining({ creativeId: '1' }))
+
+    controller.stopAnimation()
+    application.stop()
+  })
 })

@@ -214,7 +214,12 @@ export default class extends Controller {
   load({ preserveView = false } = {}) {
     if (!this.hasUrlValue) return
 
-    this._pendingViewState = preserveView ? captureCreativeTreeViewState(this.element) : null
+    // A superseding preserved load starts after the first load replaced the tree
+    // with its loading placeholder. Keep the state captured from the real rows;
+    // capturing the placeholder would overwrite it with empty expansion/focus.
+    this._pendingViewState = preserveView
+      ? (this._pendingViewState || captureCreativeTreeViewState(this.element))
+      : null
 
     // A fresh load replaces the whole list (filter change, archive toggle, sync
     // refetch), so any active load-more session is stale — tear it down before

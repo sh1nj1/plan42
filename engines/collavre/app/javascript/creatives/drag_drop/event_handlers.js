@@ -54,12 +54,14 @@ export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
 
 let hoverExpandTimer = null;
 let hoverExpandTree = null;
+let hoverExpansionVersion = 0;
 const hoverExpandingTrees = new WeakSet();
 
 function clearHoverExpand() {
   if (hoverExpandTimer) clearTimeout(hoverExpandTimer);
   hoverExpandTimer = null;
   hoverExpandTree = null;
+  hoverExpansionVersion += 1;
 }
 
 function scheduleHoverExpand(tree, position) {
@@ -76,13 +78,16 @@ function scheduleHoverExpand(tree, position) {
   if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) return;
 
   clearHoverExpand();
+  const expansionVersion = hoverExpansionVersion;
   hoverExpandTree = tree;
   hoverExpandTimer = setTimeout(() => {
     hoverExpandTimer = null;
+    hoverExpandTree = null;
     hoverExpandingTrees.add(tree);
-    expandBranchWithChildren(row, getChildrenContainer(row))
+    expandBranchWithChildren(row, getChildrenContainer(row), {
+      isCurrent: () => expansionVersion === hoverExpansionVersion,
+    })
       .finally(() => hoverExpandingTrees.delete(tree));
-    clearHoverExpand();
   }, CREATIVE_TREE_EXPAND_DELAY_MS);
 }
 
@@ -671,7 +676,7 @@ export function handleDragLeave(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   if (!tree || tree.draggable === false) return;
   clearDragHighlight(tree);
-  if (hoverExpandTree === tree) clearHoverExpand();
+  if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) clearHoverExpand();
   hideLinkHover();
 }
 
