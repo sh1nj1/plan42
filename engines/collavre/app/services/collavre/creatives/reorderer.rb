@@ -19,6 +19,13 @@ module Creatives
       raise Error, "Invalid creatives" unless dragged && target
 
       authorize_move!([ dragged ], target, direction)
+      # Same cycle guard the multi-drag path already runs. Without it the drop
+      # reaches closure_tree's own validation, which raises RecordInvalid - not
+      # a Reorderer::Error - so it misses the controller's rescue and leaves as
+      # an unhandled exception. rescue_responses still maps that to 422, but the
+      # request is logged as an error and a JSON client is answered with the
+      # exception page instead of an empty body.
+      validate_not_target_ancestors!([ dragged ], target)
 
       if direction == "child"
         reorder_as_child(dragged, target)
@@ -27,6 +34,8 @@ module Creatives
       end
 
       true
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => e
+      raise Error, e.message
     end
 
     def reorder_multiple(dragged_ids:, target_id:, direction:)
