@@ -130,6 +130,198 @@ describe('workspace tree drag and drop adapter', () => {
     expect(execute).not.toHaveBeenCalled()
   })
 
+  test('ignores a drag that starts on a row outside the tree structure', () => {
+    const orphan = document.createElement('div')
+    orphan.className = 'creative-workspace-tree-row'
+    orphan.dataset.creativeId = '99'
+    orphan.draggable = true
+    root.appendChild(orphan)
+    const transfer = dataTransfer()
+
+    event('dragstart', orphan, transfer)
+
+    expect(transfer.types).toEqual([])
+    expect(orphan.classList.contains('is-dragging')).toBe(false)
+  })
+
+  test('clears the dragging marker when the drag ends', () => {
+    const source = document.getElementById('workspace-creative-1')
+    const transfer = dataTransfer()
+
+    event('dragstart', source, transfer)
+    expect(source.classList.contains('is-dragging')).toBe(true)
+
+    event('dragend', source, transfer)
+    expect(source.classList.contains('is-dragging')).toBe(false)
+  })
+
+  test('links a multi-selection with shift instead of moving it optimistically', async () => {
+    const transfer = dataTransfer()
+    writeDragData(transfer, {
+      kind: 'creative', ids: ['8', '9'], payload: { creativeId: '8', treeId: 'creative-8' },
+    })
+    const target = document.getElementById('workspace-creative-2')
+
+    const over = event('dragover', target, transfer, { shiftKey: true })
+    event('drop', target, transfer, { shiftKey: true })
+    await flush()
+
+    expect(over.dataTransfer.dropEffect).toBe('copy')
+    expect(execute).toHaveBeenCalledWith({ ids: ['8', '9'], targetId: '2', direction: 'child', mode: 'link' })
+    expect(document.querySelector('[data-creative-id="2"] > ul')).toBeNull()
+  })
+
+  test('restores an optimistic move and reports when the request itself fails', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    execute.mockRejectedValue(new Error('network down'))
+    const transfer = dataTransfer()
+
+    event('dragstart', document.getElementById('workspace-creative-1'), transfer)
+    event('dragover', document.getElementById('workspace-creative-3'), transfer)
+    event('drop', document.getElementById('workspace-creative-3'), transfer)
+    await flush()
+
+    expect([...root.querySelector('ul').children].map((entry) => entry.dataset.creativeId)).toEqual(['1', '2', '3'])
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to execute workspace tree drop',
+      expect.objectContaining({ message: 'network down' })
+    )
+    consoleError.mockRestore()
+  })
+
+  test('reports a registry failure without leaving a stale preview', () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const target = document.getElementById('workspace-creative-3')
+    target.getBoundingClientRect = () => { throw new Error('layout unavailable') }
+    const transfer = dataTransfer()
+    writeDragData(transfer, {
+      kind: 'creative', ids: ['9'], payload: { creativeId: '9', treeId: 'creative-9' },
+    })
+
+    const over = event('dragover', target, transfer)
+
+    expect(over.defaultPrevented).toBe(false)
+    expect(consoleError).toHaveBeenCalledWith(
+      'Workspace tree drag and drop failed',
+      expect.objectContaining({ message: 'layout unavailable' })
+    )
+    consoleError.mockRestore()
+  })
+
+  test('carries a defaulted level and a payload-less envelope through a drop', async () => {
+    const bare = document.createElement('li')
+    bare.className = 'creative-workspace-tree-item'
+    bare.dataset.creativeId = '5'
+    bare.innerHTML = `
+      <div id="workspace-creative-5" class="creative-workspace-tree-row"
+           data-creative-id="5" draggable="true"></div>
+    `
+    root.querySelector('ul').appendChild(bare)
+    const source = document.getElementById('workspace-creative-5')
+    source.getBoundingClientRect = () => ({ top: 0, height: 100 })
+
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    const transfer = dataTransfer()
+    event('dragstart', source, transfer)
+    const target = document.getElementById('workspace-creative-1')
+    event('dragover', target, transfer, { clientY: 90 })
+    event('drop', target, transfer, { clientY: 90 })
+    await flush()
+
+    expect(execute).toHaveBeenCalledWith({ ids: ['5'], targetId: '1', direction: 'down', mode: 'move' })
+    expect(completion).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ treeId: 'workspace-creative-5', sourceWindowId: expect.any(String) }),
+    }))
+  })
+
+  test('falls back to the document root and the shared defaults', () => {
+    const defaulted = createWorkspaceTreeDragDrop()
+    try {
+      expect(typeof defaulted.destroy).toBe('function')
+    } finally {
+      defaulted.destroy()
+    }
+  })
+
+  test('reports a failed cross-tree drop that had nothing to roll back', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    execute.mockRejectedValue(new Error('server down'))
+    const transfer = dataTransfer()
+    writeDragData(transfer, {
+      kind: 'creative', ids: ['8', '9'], payload: { creativeId: '8', treeId: 'creative-8' },
+    })
+    const target = document.getElementById('workspace-creative-2')
+
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    await flush()
+
+    expect([...root.querySelector('ul').children].map((entry) => entry.dataset.creativeId)).toEqual(['1', '2', '3'])
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to execute workspace tree drop',
+      expect.objectContaining({ message: 'server down' })
+    )
+    consoleError.mockRestore()
+  })
+
+  test('leaves the tree untouched when a cross-tree move is rejected', async () => {
+    execute.mockResolvedValue({ status: 'failure' })
+    const transfer = dataTransfer()
+    writeDragData(transfer, {
+      kind: 'creative', ids: ['8', '9'], payload: { creativeId: '8', treeId: 'creative-8' },
+    })
+    const target = document.getElementById('workspace-creative-2')
+
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    await flush()
+
+    expect([...root.querySelector('ul').children].map((entry) => entry.dataset.creativeId)).toEqual(['1', '2', '3'])
+  })
+
+  test('completes a drop whose envelope carries no originating tree', async () => {
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    const transfer = dataTransfer()
+    writeDragData(transfer, { kind: 'creative', ids: ['9'], payload: { creativeId: '9' } })
+    const target = document.getElementById('workspace-creative-2')
+
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    await flush()
+
+    expect(completion).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ treeId: null, targetCreativeId: '2' }),
+    }))
+  })
+
+  // A tab still running the pre-envelope build writes only the legacy payload and
+  // never names its window, so there is nobody to signal back to.
+  test('completes a legacy drop that names no originating window', async () => {
+    window.localStorage.setItem('collavre.dragToken', 'token-under-test')
+    resetDragSessionCache()
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    const transfer = dataTransfer()
+    transfer.setData('application/x-collavre-creative', JSON.stringify({
+      creativeId: '9',
+      treeId: 'creative-9',
+      token: 'token-under-test',
+      selectedCreativeIds: [],
+    }))
+    const target = document.getElementById('workspace-creative-2')
+
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    await flush()
+
+    expect(completion).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ sourceWindowId: null }),
+    }))
+    expect(window.localStorage.getItem('collavre.dragDropSignal')).toBeNull()
+  })
+
   test('expands a collapsed child target after 600ms and cancels when leaving', () => {
     jest.useFakeTimers()
     const target = document.getElementById('workspace-creative-2')
