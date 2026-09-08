@@ -22,7 +22,7 @@ function creativeValues(ids) {
 }
 beforeEach(async () => {
   global.requestAnimationFrame = fn => { fn(); return 0 }
-  document.body.innerHTML = `<div id="comments-popup" data-controller="comments--contexts" data-creative-id="42">
+  document.body.innerHTML = `<div id="comments-popup" data-controller="comments--contexts" data-creative-id="42" data-context-update-error-text="Could not update contexts">
     <button data-comments--contexts-target="toggleButton"></button>
     <div data-comments--contexts-target="bar"><div data-comments--contexts-target="list"></div></div>
     <form id="new-comment-form"></form></div>`
@@ -34,7 +34,7 @@ beforeEach(async () => {
   controller.canManage = true
   controller.contexts = [{ id: 10 }, { id: 20 }, { id: 99, inherited: true }]
   controller._updateContextIds = jest.fn().mockResolvedValue()
-  controller.loadContexts = jest.fn().mockResolvedValue()
+  controller.loadContexts = jest.fn().mockImplementation(async () => { controller._contextDropNeedsRefresh = false; return true })
   controller.renderContexts()
   controller._bindPopupDragDetection()
 })
@@ -86,4 +86,78 @@ test('leaving an empty popup restores hidden context list', () => {
   expect(controller.listVisible).toBe(true)
   drag('dragleave', popup, values)
   expect(controller.listVisible).toBe(false)
+})
+
+
+test('rejected bundle keeps the existing view and reports the failure', async () => {
+  controller._updateContextIds.mockResolvedValue(false)
+  await controller._addDroppedContexts(['30', '40'])
+  expect(controller.contexts.map(context => context.id)).toEqual([10, 20, 99])
+  expect(controller.loadContexts).not.toHaveBeenCalled()
+  expect(document.querySelector('[role="alertdialog"]').textContent).toContain('Could not update contexts')
+  document.querySelector('[role="alertdialog"] button').click()
+})
+
+test('duplicate-only and invalid IDs never write', async () => {
+  await controller._addDroppedContexts(['10', '99', '42', '0', '-1', '1.5', 'NaN'])
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+test('successive bundles preserve the preceding successful additions', async () => {
+  controller.loadContexts.mockImplementation(async () => {
+    controller.contexts = [{ id: 10 }, { id: 20 }, { id: 30 }]
+    controller._contextDropNeedsRefresh = false
+    return true
+  })
+  const first = controller._addDroppedContexts(['30'])
+  const second = controller._addDroppedContexts(['40'])
+  await Promise.all([first, second])
+  expect(controller._updateContextIds.mock.calls).toEqual([[[10, 20, 30]], [[10, 20, 30, 40]]])
+})
+
+test('queued bundle is cancelled when the popup switches creative', async () => {
+  const pending = controller._addDroppedContexts(['30'])
+  popup.dataset.creativeId = '77'
+  await pending
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+
+test.each([
+  { ok: false, status: 403 },
+  { ok: true, redirected: true },
+  { ok: true, headers: { get: () => 'text/html' } },
+])('context patch rejects failed or login responses: %j', async response => {
+  const originalFetch = global.fetch
+  global.fetch = jest.fn().mockResolvedValue(response)
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(false)
+  } finally {
+    global.fetch = originalFetch
+    error.mockRestore()
+  }
+})
+
+test('context patch reports network uncertainty and successful writes distinctly', async () => {
+  const originalFetch = global.fetch
+  global.fetch = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ ok: true })
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(false)
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(true)
+  } finally {
+    global.fetch = originalFetch
+    error.mockRestore()
+  }
+})
+
+
+test('failed reload blocks a later bundle from overwriting a successful addition', async () => {
+  controller.loadContexts.mockResolvedValue(false)
+  await controller._addDroppedContexts(['30'])
+  document.querySelector('[role="alertdialog"] button').click()
+  await controller._addDroppedContexts(['40'])
+  expect(controller._updateContextIds.mock.calls).toEqual([[[10, 20, 30]]])
+  document.querySelector('[role="alertdialog"] button').click()
 })

@@ -1,6 +1,7 @@
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
+import { alertDialog } from '../../lib/utils/dialog'
 import { Controller } from "@hotwired/stimulus"
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 import { elementAnchor } from '../../lib/common_popup'
@@ -89,11 +90,14 @@ export default class extends Controller {
                 this.canManage = data.can_manage || false
                 this._selfContextDisabled = data.disabled_self_context || false
                 this.renderContexts()
+                this._contextDropNeedsRefresh = false
+                return true
             }
         } catch (e) {
             if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
             console.error("Failed to load contexts", e)
         }
+        return false
     }
 
     _isCurrentContextLoad(loadVersion, creativeId) {
@@ -488,7 +492,7 @@ export default class extends Controller {
 
     // --- API calls ---
     async _updateContextIds(ids) {
-        await this._patchContexts({ context_ids: ids })
+        return this._patchContexts({ context_ids: ids })
     }
 
     async _saveDisabledState() {
@@ -516,11 +520,14 @@ export default class extends Controller {
                 body: JSON.stringify(params)
             })
 
-            if (!response.ok) {
+            if (!response.ok || response.redirected || response.headers?.get('content-type')?.includes('text/html')) {
                 console.error('Failed to update contexts', params)
+                return false
             }
+            return true
         } catch (e) {
             console.error('Error updating contexts', e)
+            return false
         }
     }
 
@@ -544,14 +551,37 @@ export default class extends Controller {
                     }
                 }
             },
-            onDrop: async ({ ids, event }) => {
+            onDrop: ({ ids, event }) => {
                 event.stopPropagation()
-                const ownIds = this.contexts.filter(context => !context.inherited).map(context => context.id)
-                const addedIds = ids.map(Number).filter(id => id && !this.contexts.some(context => Number(context.id) === id))
-                if (!addedIds.length) return
-                await this._updateContextIds([...new Set([...ownIds, ...addedIds])])
-                await this.loadContexts()
+                return this._addDroppedContexts(ids)
             } })
+    }
+
+    _addDroppedContexts(ids) {
+        const creativeId = this.creativeId
+        const add = async () => {
+            if (this.creativeId !== creativeId || !this.canManage) return
+            if (this._contextDropNeedsRefresh && await this.loadContexts() !== true) {
+                alertDialog(this.element.dataset.contextUpdateErrorText)
+                return
+            }
+            if (this.creativeId !== creativeId || !this.canManage) return
+            const ownIds = this.contexts.filter(context => !context.inherited).map(context => Number(context.id))
+            const addedIds = ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0 && id !== Number(creativeId) &&
+                !this.contexts.some(context => Number(context.id) === id))
+            if (!addedIds.length) return
+            const saved = await this._updateContextIds([...new Set([...ownIds, ...addedIds])])
+            this._contextDropNeedsRefresh = true
+            if (saved === false) {
+                alertDialog(this.element.dataset.contextUpdateErrorText)
+                return
+            }
+            if (this.creativeId === creativeId && await this.loadContexts() !== true) {
+                alertDialog(this.element.dataset.contextUpdateErrorText)
+            }
+        }
+        this._contextDropChain = (this._contextDropChain || Promise.resolve()).then(add, add)
+        return this._contextDropChain
     }
 
     _unbindPopupDragDetection() {

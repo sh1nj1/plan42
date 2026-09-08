@@ -44,7 +44,7 @@ export default class extends Controller {
       preview: previewDrop, dropEffect: 'copy',
       onDrop: ({ ids, event }) => {
         event.stopPropagation()
-        for (const id of ids) this.insertCreativeLink({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })
+        this.insertCreativeLinks(ids.map(id => ({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })))
       } })
     this.creativeId = null
     this.editingId ??= null
@@ -1351,7 +1351,11 @@ export default class extends Controller {
   }
 
   insertCreativeLink({ id, label }) {
-    const link = `[${label}](/creatives/${id})`
+    this.insertCreativeLinks([{ id, label }])
+  }
+
+  insertCreativeLinks(creatives) {
+    const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
     const textarea = this.textareaTarget
     const pos = textarea.selectionStart
     const before = textarea.value.substring(0, pos)

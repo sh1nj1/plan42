@@ -2076,12 +2076,15 @@ describe('FormController - draft persistence', () => {
     const values = {}
     const dataTransfer = { types: [], files: [], getData: type => values[type] || '',
       setData: (type, value) => { values[type] = value; dataTransfer.types = Object.keys(values) } }
-    writeDragData(dataTransfer, { kind: 'creative', ids: ['10', '20'], payload: { treeId: 'tree' } })
+    writeDragData(dataTransfer, { kind: 'creative', ids: ['10', '20', '10'], payload: { treeId: 'tree' } })
+    const input = jest.fn()
+    textarea.addEventListener('input', input)
     Object.assign(event, { dataTransfer })
     textarea.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
     expect(textarea.value).toBe('Before [Creative #10](/creatives/10) [Creative #20](/creatives/20)after')
     expect(textarea.selectionStart).toBe(textarea.value.indexOf('after'))
+    expect(input).toHaveBeenCalledTimes(1)
   })
 
 })
