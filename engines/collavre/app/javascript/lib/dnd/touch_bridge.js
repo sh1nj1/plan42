@@ -135,7 +135,7 @@ export function createTouchBridge({ root, registry }) {
         return source
       },
       getDropTargets() {
-        return registries.values().next().value?.getDropTargets() || []
+        return registries.values().next().value.getDropTargets()
       },
     } })
     shared = { registries, bridge }
