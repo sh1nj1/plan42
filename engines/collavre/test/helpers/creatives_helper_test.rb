@@ -4,11 +4,22 @@ class CreativesHelperTest < ActionView::TestCase
   include Collavre::CreativesHelper
 
   test "render_cron_badge shows the count, schedules, and next run times" do
-    first = Struct.new(:schedule, :next_time).new("0 9 * * *", Time.zone.parse("2026-09-05 09:00"))
-    second = Struct.new(:schedule, :next_time).new("0 18 * * *", Time.zone.parse("2026-09-05 18:00"))
+    task = Struct.new(:key, :schedule, :next_time, :arguments)
+    first = task.new(
+      "cron_1_first",
+      "0 9 * * *",
+      Time.zone.parse("2026-09-05 09:00"),
+      [ { message: "Morning check-in" } ]
+    )
+    second = task.new(
+      "cron_1_second",
+      "0 18 * * *",
+      Time.zone.parse("2026-09-05 18:00"),
+      [ { message: "Evening check-in" } ]
+    )
 
     I18n.with_locale(:en) do
-      html = render_cron_badge([ first, second ])
+      html = render_cron_badge([ first, second ], creative_id: 1)
 
       assert_includes html, "creative-cron-badge"
       assert_includes html, "⏰"
@@ -16,6 +27,8 @@ class CreativesHelperTest < ActionView::TestCase
       assert_includes html, "2 scheduled jobs"
       assert_includes html, "0 9 * * *"
       assert_includes html, I18n.l(first.next_time, format: :short)
+      assert_includes html, "Morning check-in"
+      assert_includes html, "click->popup-menu#toggle"
     end
   end
 

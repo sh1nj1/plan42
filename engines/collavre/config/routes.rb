@@ -6,8 +6,7 @@ Collavre::Engine.routes.draw do
   # cards. Keys come from Collavre::FeatureCardRegistry, which rejects a key this
   # constraint could not route, so the two cannot drift apart.
   get "features", to: "features#index", as: :features
-  get "features/:key", to: "features#show", as: :feature,
-      constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
+  get "features/:key", to: "features#show", as: :feature, constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
 
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
@@ -95,6 +94,7 @@ Collavre::Engine.routes.draw do
     end
   end
   resources :creatives do
+    resources :crons, only: [ :destroy ], param: :key
     post "history/:id/apply", to: "creative_change_sets#apply", as: :apply_change_set
     resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]

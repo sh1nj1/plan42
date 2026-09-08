@@ -48,6 +48,7 @@ module Creatives
 
       preload_permissions(creatives)
       preload_comment_badges(creatives)
+      preload_cron_tasks(creatives)
 
       return if children_suppressed?
 
@@ -100,12 +101,22 @@ module Creatives
       comment_badge_index.index(visible.map(&:effective_origin), include_visible_counts: false)
     end
 
-    def cron_task_index
-      @cron_task_index ||= Collavre::Crons::RecurringTaskIndex.new
-    end
-
     def cron_filter_active?
       raw_params["has_cron"].present?
+    end
+
+    def preload_cron_tasks(creatives)
+      return unless cron_filter_active?
+
+      index = Collavre::Crons::RecurringTaskIndex.for_creatives(creatives)
+      creatives.each do |creative|
+        origin_id = creative.effective_origin.id
+        cron_tasks_by_creative_id[origin_id] = index.tasks_for(origin_id)
+      end
+    end
+
+    def cron_tasks_by_creative_id
+      @cron_tasks_by_creative_id ||= {}
     end
 
     def build_nodes(creatives, level:)
@@ -205,7 +216,7 @@ module Creatives
     def template_payload_for(creative, has_children: nil, can_write: nil)
       description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
       can_feedback = can_feedback?(creative)
-      cron_tasks = cron_filter_active? ? cron_task_index.tasks_for(creative.effective_origin.id) : []
+      cron_tasks = cron_filter_active? ? cron_tasks_by_creative_id.fetch(creative.effective_origin.id, []) : []
       progress_options = {
         select_mode: !!select_mode,
         has_children: has_children,
@@ -213,7 +224,10 @@ module Creatives
         can_feedback: can_feedback,
         unread_count: can_feedback ? comment_badge_index.unread_count_for(creative.effective_origin) : nil
       }
-      progress_options[:cron_tasks] = cron_tasks if cron_tasks.any?
+      if cron_tasks.any?
+        progress_options[:cron_tasks] = cron_tasks
+        progress_options[:can_delete_cron] = allowed?(creative, :write)
+      end
       progress_html = view_context.render_creative_progress(creative, **progress_options)
 
       {
