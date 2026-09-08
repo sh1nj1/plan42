@@ -23,7 +23,12 @@ test('relays the rejection the server phrased for the rows that failed', () => {
   const reported = reportPartialMove({
     status: 'partial',
     failedIds: ['3'],
-    failures: [{ id: '3', reason: 'permission_denied', message: '이동 권한이 없습니다.' }],
+    failures: [{
+      id: '3',
+      reason: 'permission_denied',
+      message: 'HTTP 403: Forbidden',
+      serverMessage: '이동 권한이 없습니다.',
+    }],
   })
 
   expect(reported).toBe(true)
@@ -46,6 +51,23 @@ test('logs without a dialog when the server explained nothing', () => {
   expect(reported).toBe(true)
   expect(alertDialog).not.toHaveBeenCalled()
   expect(consoleError).toHaveBeenCalled()
+})
+
+test('uses translated page copy instead of an HTTP status fallback', () => {
+  reportPartialMove({
+    status: 'partial',
+    failedIds: ['3'],
+    failures: [{
+      id: '3',
+      reason: 'permission_denied',
+      message: 'HTTP 403: Forbidden',
+      serverMessage: '',
+    }],
+  }, '일부 크리에이티브를 링크하지 못했습니다. 다시 시도해 주세요.')
+
+  expect(alertDialog).toHaveBeenCalledWith(
+    '일부 크리에이티브를 링크하지 못했습니다. 다시 시도해 주세요.'
+  )
 })
 
 test('stays out of the way for any other outcome', () => {

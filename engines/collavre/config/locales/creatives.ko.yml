@@ -2,6 +2,8 @@
 ko:
   collavre:
     creatives:
+      drag_drop:
+        partial_failure: 일부 크리에이티브를 링크하지 못했습니다. 다시 시도해 주세요.
       workspace:
         tree_title: 크리에이티브 트리
         tree_label: 크리에이티브 탐색 트리

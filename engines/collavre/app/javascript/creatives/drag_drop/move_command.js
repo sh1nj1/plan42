@@ -45,6 +45,7 @@
  */
 
 import { sendNewOrder, sendLinkedCreative } from '../../lib/api/drag_drop';
+import { serverErrorMessage } from '../../lib/api/api_error';
 
 export const MOVE_MODES = Object.freeze({
   MOVE: 'move',
@@ -140,6 +141,7 @@ function failureFromError(id, error) {
     status,
     reason: classifyStatus(status),
     message: error?.message || '',
+    serverMessage: serverErrorMessage(error) || '',
   };
 }
 

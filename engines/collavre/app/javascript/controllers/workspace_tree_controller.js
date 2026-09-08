@@ -29,6 +29,7 @@ export default class extends Controller {
     loadingText: String,
     emptyText: String,
     errorText: String,
+    partialFailureText: String,
   }
 
   connect() {
@@ -64,6 +65,7 @@ export default class extends Controller {
     this.dragDropRegistry = createWorkspaceTreeDragDrop({
       root: this.treeTarget,
       controller: this,
+      partialFailureMessage: this.partialFailureTextValue,
     })
     this.observeWorkspaceFrame()
     // A restore render may reconnect this controller after turbo:render has

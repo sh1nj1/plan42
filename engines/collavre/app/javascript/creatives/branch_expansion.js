@@ -1,4 +1,4 @@
-import { setExpanded } from './drag_drop/dom'
+import { setExpanded, setHasChildren } from './drag_drop/dom'
 import { loadChildren } from '../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from './tree_renderer'
 
@@ -17,8 +17,16 @@ export function expandBranchWithChildren(row, container) {
 
   return loadChildren(loadUrl)
     .then((data) => {
-      renderCreativeTree(container, Array.isArray(data?.creatives) ? data.creatives : [])
+      const nodes = Array.isArray(data?.creatives) ? data.creatives : []
+      renderCreativeTree(container, nodes)
       container.dataset.loaded = 'true'
+      const hasChildren = !!container.querySelector('creative-tree-row')
+      setHasChildren(row, hasChildren)
+      if (!hasChildren) {
+        setExpanded(row, false, container)
+        dispatchCreativeTreeUpdated(container)
+        return false
+      }
       dispatchCreativeTreeUpdated(container)
       setExpanded(row, true, container)
       return true

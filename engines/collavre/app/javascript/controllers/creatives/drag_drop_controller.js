@@ -12,6 +12,8 @@ import {
 let connectionCount = 0
 
 export default class extends Controller {
+  static values = { partialFailureText: String }
+
   connect() {
     if (connectionCount === 0) {
       initIndicator()
@@ -36,7 +38,7 @@ export default class extends Controller {
   }
 
   drop(event) {
-    handleDrop(event)
+    handleDrop(event, { partialFailureMessage: this.partialFailureTextValue })
   }
 
   leave(event) {

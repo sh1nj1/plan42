@@ -54,6 +54,7 @@ export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
 
 let hoverExpandTimer = null;
 let hoverExpandTree = null;
+const hoverExpandingTrees = new WeakSet();
 
 function clearHoverExpand() {
   if (hoverExpandTimer) clearTimeout(hoverExpandTimer);
@@ -72,12 +73,15 @@ function scheduleHoverExpand(tree, position) {
     clearHoverExpand();
     return;
   }
-  if (hoverExpandTree === tree) return;
+  if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) return;
 
   clearHoverExpand();
   hoverExpandTree = tree;
   hoverExpandTimer = setTimeout(() => {
-    expandBranchWithChildren(row, getChildrenContainer(row));
+    hoverExpandTimer = null;
+    hoverExpandingTrees.add(tree);
+    expandBranchWithChildren(row, getChildrenContainer(row))
+      .finally(() => hoverExpandingTrees.delete(tree));
     clearHoverExpand();
   }, CREATIVE_TREE_EXPAND_DELAY_MS);
 }
@@ -436,7 +440,7 @@ function resetDrag() {
   hideLinkHover();
 }
 
-export function handleDrop(event) {
+export function handleDrop(event, { partialFailureMessage = '' } = {}) {
   clearHoverExpand();
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
@@ -638,7 +642,7 @@ export function handleDrop(event) {
   runMoveWithDomRecovery({ command, moveContext, attemptedParentId: newParentId })
     .then((result) => {
       if (![MOVE_STATUSES.SUCCESS, MOVE_STATUSES.PARTIAL].includes(result.status)) return;
-      reportPartialMove(result);
+      reportPartialMove(result, partialFailureMessage);
       if (mode === 'move' && dropSignalDetails.sourceWindowId) emitDropSignal(dropSignalDetails);
       dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
     })

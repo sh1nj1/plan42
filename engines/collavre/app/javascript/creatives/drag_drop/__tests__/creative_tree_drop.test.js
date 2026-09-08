@@ -238,7 +238,12 @@ describe('right creative tree drop wiring', () => {
     runMoveWithDomRecovery.mockResolvedValue({
       status: 'partial',
       failedIds: ['2'],
-      failures: [{ id: '2', reason: 'permission_denied', message: 'Not allowed' }],
+      failures: [{
+        id: '2',
+        reason: 'permission_denied',
+        message: 'HTTP 403: Forbidden',
+        serverMessage: 'Not allowed',
+      }],
     })
     const completion = jest.fn()
     window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
@@ -456,6 +461,9 @@ describe('right creative tree drag feedback', () => {
     tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
     loadChildren.mockResolvedValue({ creatives: [{ id: 2 }] })
     const container = document.getElementById('creative-children-1')
+    renderCreativeTree.mockImplementationOnce((target) => {
+      target.innerHTML = row('2', { parentId: '1', level: 2 })
+    })
     const dataTransfer = transfer()
     handleDragStart(dragEvent(tree('1'), dataTransfer))
 
@@ -465,7 +473,7 @@ describe('right creative tree drag feedback', () => {
     expect(loadChildren).toHaveBeenCalledWith('/creatives/1/children.json')
     expect(renderCreativeTree).toHaveBeenCalledWith(container, [{ id: 2 }])
     expect(container.dataset.loaded).toBe('true')
-    expect(container.dataset.loaded).toBe('true')
+    expect(tree('1').closest('creative-tree-row').hasAttribute('has-children')).toBe(true)
     expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
   })
 
@@ -490,6 +498,9 @@ describe('right creative tree drag feedback', () => {
 
     expect(renderCreativeTree).toHaveBeenCalledWith(container, [])
     expect(container.dataset.loaded).toBe('true')
+    expect(tree('1').closest('creative-tree-row').hasAttribute('has-children')).toBe(false)
+    expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(false)
+    expect(container.style.display).toBe('none')
   })
 
   test('leaves the branch collapsed when its children cannot be loaded', async () => {

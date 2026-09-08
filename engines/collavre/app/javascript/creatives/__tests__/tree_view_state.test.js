@@ -23,7 +23,15 @@ function row(id, expanded = false) {
 }
 
 describe('creative tree view state', () => {
-  test('restores expansion, focus, and the workspace main scroll position', () => {
+  beforeEach(() => {
+    loadChildren.mockReset()
+    renderCreativeTree.mockReset()
+    renderCreativeTree.mockImplementation((container, nodes) => {
+      container.innerHTML = nodes.map((node) => row(String(node.id))).join('')
+    })
+  })
+
+  test('restores expansion, focus, and the workspace main scroll position', async () => {
     document.body.innerHTML = `<main><div id="creatives">${row('1', true)}${row('2')}</div></main>`
     const main = document.querySelector('main')
     const tree = document.getElementById('creatives')
@@ -33,7 +41,7 @@ describe('creative tree view state', () => {
 
     tree.innerHTML = `${row('1')}${row('2', true)}`
     main.scrollTop = 0
-    restoreCreativeTreeViewState(tree, state)
+    await restoreCreativeTreeViewState(tree, state)
 
     expect(tree.querySelector('creative-tree-row[creative-id="1"]').hasAttribute('expanded')).toBe(true)
     expect(tree.querySelector('creative-tree-row[creative-id="2"]').hasAttribute('expanded')).toBe(false)
@@ -59,9 +67,7 @@ describe('creative tree view state', () => {
     const container = document.getElementById('creative-children-1')
     loadChildren.mockResolvedValue({ creatives: [{ id: 2 }] })
 
-    restoreCreativeTreeViewState(tree, state)
-    await Promise.resolve()
-    await Promise.resolve()
+    await restoreCreativeTreeViewState(tree, state)
 
     expect(loadChildren).toHaveBeenCalledWith('/creatives/1/children.json')
     expect(renderCreativeTree).toHaveBeenCalledWith(container, [{ id: 2 }])
@@ -70,7 +76,76 @@ describe('creative tree view state', () => {
     expect(tree.querySelector('creative-tree-row[creative-id="1"]').hasAttribute('expanded')).toBe(true)
   })
 
-  test('leaves an expanded row alone when its children container is gone', () => {
+  test('restores nested expansion and focus after loading each ancestor', async () => {
+    document.body.innerHTML = `
+      <main><div id="creatives">
+        <creative-tree-row creative-id="1" expanded>
+          <div><button id="toggle-1">Toggle</button></div>
+        </creative-tree-row>
+        <div id="creative-children-1" data-loaded="true">
+          <creative-tree-row creative-id="2" expanded>
+            <div><button id="toggle-2">Toggle</button></div>
+          </creative-tree-row>
+          <div id="creative-children-2" data-loaded="true"></div>
+        </div>
+      </div></main>
+    `
+    const tree = document.getElementById('creatives')
+    document.getElementById('toggle-2').focus()
+    const state = captureCreativeTreeViewState(tree)
+
+    tree.innerHTML = `
+      <creative-tree-row creative-id="1" has-children>
+        <div><button id="toggle-1">Toggle</button></div>
+      </creative-tree-row>
+      <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+    `
+    loadChildren
+      .mockResolvedValueOnce({ creatives: [{ id: 2 }] })
+      .mockResolvedValueOnce({ creatives: [{ id: 3 }] })
+    renderCreativeTree
+      .mockImplementationOnce((container) => {
+        container.innerHTML = `
+          <creative-tree-row creative-id="2" has-children>
+            <div><button id="toggle-2">Toggle</button></div>
+          </creative-tree-row>
+          <div id="creative-children-2" data-loaded="false" data-load-url="/children/2"></div>
+        `
+      })
+      .mockImplementationOnce((container) => {
+        container.innerHTML = row('3')
+      })
+
+    await restoreCreativeTreeViewState(tree, state)
+
+    expect(loadChildren.mock.calls.map(([url]) => url)).toEqual(['/children/1', '/children/2'])
+    expect(tree.querySelector('[creative-id="1"]').hasAttribute('expanded')).toBe(true)
+    expect(tree.querySelector('[creative-id="2"]').hasAttribute('expanded')).toBe(true)
+    expect(document.activeElement.id).toBe('toggle-2')
+  })
+
+  test('collapses a stale branch when lazy loading finds no children', async () => {
+    document.body.innerHTML = `<main><div id="creatives">${row('1', true)}</div></main>`
+    const tree = document.getElementById('creatives')
+    const state = captureCreativeTreeViewState(tree)
+
+    tree.innerHTML = `
+      <creative-tree-row creative-id="1" has-children expanded></creative-tree-row>
+      <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+    `
+    loadChildren.mockResolvedValue({ creatives: [] })
+
+    await restoreCreativeTreeViewState(tree, state)
+
+    const restoredRow = tree.querySelector('[creative-id="1"]')
+    const container = document.getElementById('creative-children-1')
+    expect(restoredRow.hasAttribute('has-children')).toBe(false)
+    expect(restoredRow.hasAttribute('expanded')).toBe(false)
+    expect(container.dataset.loaded).toBe('true')
+    expect(container.style.display).toBe('none')
+  })
+
+  test('leaves an expanded row alone when its children container is gone', async () => {
     document.body.innerHTML = `<main><div id="creatives">${row('1', true)}</div></main>`
     const tree = document.getElementById('creatives')
     const state = captureCreativeTreeViewState(tree)
@@ -78,12 +153,12 @@ describe('creative tree view state', () => {
     tree.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
     loadChildren.mockClear()
 
-    restoreCreativeTreeViewState(tree, state)
+    await restoreCreativeTreeViewState(tree, state)
 
     expect(loadChildren).not.toHaveBeenCalled()
   })
 
-  test('ignores rows and controls that disappear during reload', () => {
+  test('ignores rows and controls that disappear during reload', async () => {
     document.body.innerHTML = `<main><div id="creatives">${row('1', true)}</div></main>`
     const tree = document.getElementById('creatives')
     document.getElementById('toggle-1').focus()
@@ -91,6 +166,6 @@ describe('creative tree view state', () => {
 
     tree.replaceChildren()
 
-    expect(() => restoreCreativeTreeViewState(tree, state)).not.toThrow()
+    await expect(restoreCreativeTreeViewState(tree, state)).resolves.toBeUndefined()
   })
 })

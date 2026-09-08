@@ -99,7 +99,16 @@ function notifyMoveCompletion(ids, payload, targetId, direction, mode) {
   if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail)
 }
 
-async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, payload }) {
+async function performWorkspaceDrop({
+  root,
+  execute,
+  partialFailureMessage,
+  el: row,
+  event,
+  hit,
+  ids,
+  payload,
+}) {
   const targetItem = workspaceItemFromRow(row)
   if (!targetItem || hasKnownWorkspaceCycle({ root, ids, targetItem, direction: hit })) return
 
@@ -122,7 +131,7 @@ async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, p
     return
   }
 
-  reportPartialMove(result)
+  reportPartialMove(result, partialFailureMessage)
   notifyMoveCompletion(ids, payload, targetItem.dataset.creativeId, hit, mode)
 }
 
@@ -131,6 +140,7 @@ export function createWorkspaceTreeDragDrop({
   controller,
   execute = executeMoveCommand,
   expandDelay = WORKSPACE_TREE_EXPAND_DELAY_MS,
+  partialFailureMessage = '',
 } = {}) {
   const registry = createDragDropRegistry({
     root,
@@ -149,7 +159,7 @@ export function createWorkspaceTreeDragDrop({
     accepts: 'creative',
     hitTest: hitWorkspaceRow,
     preview: (details) => previewWorkspaceRow(controller, expandDelay, details),
-    onDrop: (details) => performWorkspaceDrop({ root, execute, ...details }),
+    onDrop: (details) => performWorkspaceDrop({ root, execute, partialFailureMessage, ...details }),
     dropEffect: ({ event }) => event.shiftKey ? 'copy' : 'move',
   })
 

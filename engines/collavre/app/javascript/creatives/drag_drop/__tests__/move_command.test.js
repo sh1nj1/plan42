@@ -267,7 +267,9 @@ describe('executeMoveCommand — link mode', () => {
   })
 
   test('classifies a 403 link failure as a permission failure', async () => {
-    const sendLinkedCreative = jest.fn().mockRejectedValue(httpError(403))
+    const error = httpError(403, 'HTTP 403: Forbidden')
+    error.errors = ['You do not have permission to link this creative.']
+    const sendLinkedCreative = jest.fn().mockRejectedValue(error)
 
     const result = await executeMoveCommand(
       createMoveCommand({ ids: ['3'], targetId: '9', direction: 'child', mode: 'link' }),
@@ -275,6 +277,9 @@ describe('executeMoveCommand — link mode', () => {
     )
 
     expect(result.failures[0].reason).toBe(MOVE_FAILURE_REASONS.PERMISSION_DENIED)
+    expect(result.failures[0].message).toBe('HTTP 403: Forbidden')
+    expect(result.failures[0].serverMessage)
+      .toBe('You do not have permission to link this creative.')
   })
 
   test('classifies a status-less link failure as a transport failure', async () => {
