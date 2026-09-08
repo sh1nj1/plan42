@@ -450,7 +450,31 @@ describe('right creative tree drag feedback', () => {
     expect(loadChildren).toHaveBeenCalledWith('/creatives/1/children.json')
     expect(renderCreativeTree).toHaveBeenCalledWith(container, [{ id: 2 }])
     expect(container.dataset.loaded).toBe('true')
+    expect(container.dataset.loaded).toBe('true')
     expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+  })
+
+  test('settles a branch the server reports as empty', async () => {
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockResolvedValue({})
+    const container = document.getElementById('creative-children-1')
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    expect(renderCreativeTree).toHaveBeenCalledWith(container, [])
+    expect(container.dataset.loaded).toBe('true')
   })
 
   test('leaves the branch collapsed when its children cannot be loaded', async () => {
