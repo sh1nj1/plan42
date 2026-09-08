@@ -308,7 +308,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
   })
 
   describe('a persisted All Messages selection', () => {
-    const loadEmptyPreference = (revision) => {
+    const loadEmptyPreference = ({ revision = 2, allMessages = true } = {}) => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -318,6 +318,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
           can_manage: true,
           main_topic_id: 1,
           last_topic_id: null,
+          last_topic_all_messages: allMessages,
           last_topic_revision: [5, revision],
         }),
       })
@@ -338,8 +339,8 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       expect(changeEvents.at(-1).topicId).toBe('')
     })
 
-    test('is restored from a cleared preference revision', async () => {
-      await loadEmptyPreference(2)
+    test('is restored from an explicit server preference', async () => {
+      await loadEmptyPreference()
 
       expect(controller.currentTopicId).toBe('')
       expect(controller.listTarget.querySelector('.topic-all-messages').classList)
@@ -349,19 +350,41 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
 
     test('outranks the legacy localStorage migration', async () => {
       localStorage.setItem('collavre_creative_42_last_topic', '2')
-      await loadEmptyPreference(2)
+      await loadEmptyPreference()
 
       expect(controller.currentTopicId).toBe('')
       expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
       expect(localStorage.getItem('collavre_creative_42_last_topic')).toBeNull()
     })
 
-    test('an untouched preference still defaults to Main', async () => {
-      await loadEmptyPreference(0)
+    test('a deletion or move tombstone still defaults to Main', async () => {
+      await loadEmptyPreference({ allMessages: false })
 
       expect(controller.currentTopicId).toBe('1')
       expect(controller.listTarget.querySelector('.topic-tag[data-id="1"]').classList)
         .toContain('active')
+    })
+
+    test('does not write a deep link over the stored All Messages preference', async () => {
+      window.history.replaceState({}, '', '/creatives/42?topic_id=3')
+      const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+      await loadEmptyPreference()
+
+      expect(controller.currentTopicId).toBe('3')
+      expect(saveSpy).not.toHaveBeenCalled()
+      expect(controller._explicitAllMessagesSelection).toBe(true)
+    })
+
+    test('does not rewrite the preference for an empty deep-link override', async () => {
+      controller.setOverrideTopicId('')
+      const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+      await loadEmptyPreference()
+
+      expect(controller.currentTopicId).toBe('')
+      expect(saveSpy).not.toHaveBeenCalled()
+      expect(controller._explicitAllMessagesSelection).toBe(true)
     })
   })
 

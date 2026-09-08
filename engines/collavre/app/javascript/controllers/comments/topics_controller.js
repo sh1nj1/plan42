@@ -45,6 +45,7 @@ export default class extends Controller {
         this._topicScrollFrame = null
         this._topicScrollInterrupted = false
         this._topicScrollInterruptionVersion ||= 0
+        this._explicitAllMessagesSelection ??= false
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
@@ -274,6 +275,7 @@ export default class extends Controller {
                     : String(this.creativeId)
                 this.knownEffectiveCreativeIds.set(String(creativeId), effectiveCreativeId)
                 const snapshotTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                const snapshotAllMessages = data.last_topic_all_messages === true
                 const snapshotTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
                 this.element.dataset.effectiveCreativeId = effectiveCreativeId
                 this.remapPendingSelfEchoesForCreative(creativeId, effectiveCreativeId)
@@ -346,14 +348,12 @@ export default class extends Controller {
                     )
                     if (pendingTopicId === undefined) {
                         this.serverLastTopicId = snapshotTopicId
-                        // A positive revision with no topic is not a missing
-                        // preference: it is the ordering tombstone written when
-                        // All Messages was selected. Revision zero belongs to a
-                        // row created only for expansion state, so it keeps the
-                        // first-visit Main fallback.
+                        // An empty id is also written when a selected topic is
+                        // deleted or moved. Only the explicit server flag can
+                        // distinguish that tombstone from All Messages.
                         keepEmptySelection = this.isPersistedAllMessagesSelection(
                             snapshotTopicId,
-                            snapshotTopicRevision
+                            snapshotAllMessages
                         )
                         // A retained claim proves this response was an older view of
                         // the preference. Do not let that stale snapshot roll back
@@ -407,7 +407,7 @@ export default class extends Controller {
 
     // keepEmptySelection: the caller established that All Messages is an
     // intentional selection, either from a pick that outran this load or from
-    // a cleared server preference with a positive revision. It names no topic,
+    // the explicit All Messages server preference. It names no topic,
     // so it cannot be restored from a topic list and must be reapplied. Without
     // this the Main fallback below treats it as "nothing selected", navigates
     // away from it and persists Main. A prior interim restore may also have
@@ -419,7 +419,7 @@ export default class extends Controller {
         // for the saved preference. Replaying the linked selection after a
         // preference broadcast must therefore update the UI without writing the
         // link back over that newer server value.
-        const preservePreference = this.hasDeepLinkSelection && !keepEmptySelection
+        const preservePreference = this.hasDeepLinkSelection
         // archiveTopic() switched away from this topic on purpose. The server
         // preference still names it until the debounced save lands, so accept
         // the local intent over the stale server answer for that window.
@@ -443,7 +443,7 @@ export default class extends Controller {
         }
 
         if (keepEmptySelection && !lastTopicId) {
-            this.selectTopic("", { pick: false })
+            this.selectTopic("", { pick: false, persist: !preservePreference })
             return
         }
 
@@ -2033,8 +2033,8 @@ export default class extends Controller {
         return revision.every(Number.isSafeInteger) ? revision : null
     }
 
-    isPersistedAllMessagesSelection(topicId, revision) {
-        return !topicId && Boolean(revision && revision[1] > 0)
+    isPersistedAllMessagesSelection(topicId, allMessages) {
+        return !topicId && allMessages === true
     }
 
     compareLastTopicRevisions(left, right) {
@@ -2387,6 +2387,7 @@ export default class extends Controller {
         if (action === "last_topic_changed") {
             // Broadcast is already scoped to the current user via user-specific channel
             const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+            const allMessages = data.last_topic_all_messages === true
             const lastTopicRevision = this.normalizeLastTopicRevision(data.last_topic_revision)
             // A retired ambiguous save remains non-actionable, but it can still have
             // committed after the request failed. Its revision must advance this
@@ -2422,7 +2423,9 @@ export default class extends Controller {
             // session still established that preference, so the queued one-shot link
             // must not write itself back over it.
             if (this.hasDeepLinkSelection) this.cancelPendingSaveLastTopic()
-            if (newTopicId !== this.serverLastTopicId) {
+            const explicitSelectionChanged = allMessages !== this._explicitAllMessagesSelection
+            this._explicitAllMessagesSelection = allMessages
+            if (newTopicId !== this.serverLastTopicId || explicitSelectionChanged) {
                 this.serverLastTopicId = newTopicId
                 // Another session moved the preference; nobody clicked in this
                 // popup. A deep link outranks the preference in the getter, so

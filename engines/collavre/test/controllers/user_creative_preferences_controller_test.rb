@@ -142,21 +142,36 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     record = Collavre::UserCreativePreference.find_by(creative_id: @creative.id, user_id: @user.id)
     assert_equal topic.id, record.last_topic_id
+    assert_not record.last_topic_all_messages?
     assert_equal [ record.id, 1 ], response.parsed_body["last_topic_revision"]
+    assert_equal false, response.parsed_body["last_topic_all_messages"]
   end
 
   test "update_last_topic clears topic selection" do
     topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Test Topic")
-    Collavre::UserCreativePreference.create!(
+    preference = Collavre::UserCreativePreference.create!(
       creative_id: @creative.id, user_id: @user.id,
       expanded_status: { "1" => true }, last_topic_id: topic.id
     )
-    patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
-          params: { last_topic_id: nil },
-          as: :json
+    stream = Collavre::TopicsChannel.broadcasting_for("user_#{@user.id}_creative_#{@creative.id}")
+
+    assert_broadcast_on(
+      stream,
+      {
+        action: "last_topic_changed", last_topic_id: nil, last_topic_all_messages: true,
+        last_topic_revision: [ preference.id, 1 ], client_id: nil
+      }
+    ) do
+      patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
+            params: { last_topic_id: nil },
+            as: :json
+    end
+
     assert_response :success
-    record = Collavre::UserCreativePreference.find_by(creative_id: @creative.id, user_id: @user.id)
+    record = preference.reload
     assert_nil record.last_topic_id
+    assert record.last_topic_all_messages?
+    assert_equal true, response.parsed_body["last_topic_all_messages"]
   end
 
   test "clearing a last topic preserves its ordering tombstone" do
@@ -173,6 +188,7 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
 
     preference.reload
     assert_nil preference.last_topic_id
+    assert preference.last_topic_all_messages?
     assert_equal 2, preference.last_topic_revision
 
     post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id, expanded: false }
@@ -193,7 +209,10 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
 
     assert_broadcast_on(
       stream,
-      { action: "last_topic_changed", last_topic_id: topic.id, last_topic_revision: [ preference.id, 1 ], client_id: "save-abc" }
+      {
+        action: "last_topic_changed", last_topic_id: topic.id, last_topic_all_messages: false,
+        last_topic_revision: [ preference.id, 1 ], client_id: "save-abc"
+      }
     ) do
       patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
             params: { last_topic_id: topic.id, client_id: "save-abc" },
@@ -210,7 +229,10 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
 
     assert_broadcast_on(
       stream,
-      { action: "last_topic_changed", last_topic_id: topic.id, last_topic_revision: [ preference.id, 1 ], client_id: nil }
+      {
+        action: "last_topic_changed", last_topic_id: topic.id, last_topic_all_messages: false,
+        last_topic_revision: [ preference.id, 1 ], client_id: nil
+      }
     ) do
       patch "/creatives/#{@creative.id}/user_creative_preferences/update_last_topic",
             params: { last_topic_id: topic.id },
