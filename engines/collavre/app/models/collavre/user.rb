@@ -224,10 +224,17 @@ module Collavre
 
     scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }
 
+    # No DISTINCT here on purpose. `or` merges two predicates over the same
+    # single table, so a row can match both branches but is still returned once.
+    # DISTINCT would only add a Postgres-only failure: `users` carries `json`
+    # columns (`tools`, `dismissed_notices`) and Postgres has no equality
+    # operator for `json`, so `SELECT DISTINCT users.*` raises
+    # PG::UndefinedFunction. Dev and test run SQLite, which accepts it, so the
+    # crash surfaces only in the deployed environment.
     def self.accessible_ai_agents_for(user)
       owned = ai_agents.where(created_by_id: user.id)
       searchable = ai_agents.where(searchable: true)
-      owned.or(searchable).distinct.order(:name)
+      owned.or(searchable).order(:name)
     end
 
     def self.mentionable_for(creative)
