@@ -1452,6 +1452,10 @@ export default class extends Controller {
     // reload is still pending, because the server records blank saves as an
     // explicit All Messages choice.
     fallbackFromRemovedTopic(topicId) {
+        // A removal broadcast does not start a replacement load. Invalidate any
+        // older response so it cannot reintroduce the removed topic and restore
+        // its stale preference after this fallback.
+        this._loadTopicsVersion += 1
         this.cancelPendingSaveLastTopic()
         if (String(this._pendingPick?.topicId) === String(topicId)) this._pendingPick = null
         this.releaseDeepLinkSelection(topicId)
@@ -2567,12 +2571,14 @@ export default class extends Controller {
         // from here would keep an openable chip and, through pruneArchivedBadges
         // never running, a lit toggle for a conversation that no longer exists.
         const nextArchivedTopics = archivedTopics.filter((topic) => String(topic.id) !== String(topicId))
-        if (nextTopics.length === topics.length && nextArchivedTopics.length === archivedTopics.length) return
+        const removedCurrentSelection = String(this.currentTopicId) === String(topicId)
+        if (nextTopics.length === topics.length && nextArchivedTopics.length === archivedTopics.length &&
+            !removedCurrentSelection) return
 
         this.topics = nextTopics
         this.archivedTopics = nextArchivedTopics
         this.pruneArchivedBadges()
-        if (String(this.currentTopicId) === String(topicId)) {
+        if (removedCurrentSelection) {
             this.fallbackFromRemovedTopic(topicId)
             this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }
