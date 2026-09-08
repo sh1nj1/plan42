@@ -23,8 +23,14 @@ import {
   getLastDragOverRow,
   hasDraggedState,
 } from './state';
-import { createMoveContext, applyMove, revertMove } from './operations';
-import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/drag_drop';
+import {
+  createMoveContext,
+  applyMove,
+  revertMove,
+  runMoveWithDomRecovery,
+} from './operations';
+import { MOVE_STATUSES } from './move_command';
+import { sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
@@ -41,6 +47,38 @@ import {
 } from '../../lib/dnd/session';
 
 const coordPrecision = 5;
+export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
+
+let hoverExpandTimer = null;
+let hoverExpandTree = null;
+
+function clearHoverExpand() {
+  if (hoverExpandTimer) clearTimeout(hoverExpandTimer);
+  hoverExpandTimer = null;
+  hoverExpandTree = null;
+}
+
+function scheduleHoverExpand(tree, position) {
+  if (position !== 'child') {
+    clearHoverExpand();
+    return;
+  }
+
+  const row = asTreeRow(tree);
+  if (!row?.hasAttribute('has-children') || row.hasAttribute('expanded')) {
+    clearHoverExpand();
+    return;
+  }
+  if (hoverExpandTree === tree) return;
+
+  clearHoverExpand();
+  hoverExpandTree = tree;
+  hoverExpandTimer = setTimeout(() => {
+    const container = getChildrenContainer(row);
+    if (container) setExpanded(row, true, container);
+    clearHoverExpand();
+  }, CREATIVE_TREE_EXPAND_DELAY_MS);
+}
 
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
@@ -335,6 +373,7 @@ export function handleDragOver(event) {
   const lastRow = getLastDragOverRow();
   if (lastRow && lastRow !== tree) {
     clearDragHighlight(lastRow);
+    clearHoverExpand();
   }
   if (!tree || tree.draggable === false) return;
 
@@ -376,6 +415,7 @@ export function handleDragOver(event) {
     tree.classList.add('drag-over', 'drag-over-child', 'child-drop-indicator-active');
     tree.classList.remove('drag-over-top', 'drag-over-bottom');
   }
+  scheduleHoverExpand(tree, position);
 
   if (event.shiftKey) {
     showLinkHover(event.clientX, event.clientY);
@@ -392,6 +432,7 @@ function resetDrag() {
 }
 
 export function handleDrop(event) {
+  clearHoverExpand();
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
 
@@ -540,41 +581,19 @@ export function handleDrop(event) {
     }
   }
 
-  if (event.shiftKey) {
-    const snapshot = { ...draggedState };
+  const targetCreativeId = targetId.replace('creative-', '');
+  if (hasKnownCreativeTreeCycle(draggedIds, targetRow, direction)) {
     resetDrag();
-
-    if (isMultiDrag) {
-      // Handle multiple linked creatives
-      const promises = draggedIds.map(draggedId =>
-        sendLinkedCreative({
-          draggedId,
-          targetId: targetId.replace('creative-', ''),
-          direction,
-        })
-      );
-
-      Promise.all(promises)
-        .then(() => window.location.reload())
-        .catch((error) => console.error('Failed to create linked creatives', error));
-    } else {
-      // Handle single linked creative
-      sendLinkedCreative({
-        draggedId: snapshot.creativeId,
-        targetId: targetId.replace('creative-', ''),
-        direction,
-      })
-        .then(() => window.location.reload())
-        .catch((error) => console.error('Failed to create linked creative', error));
-    }
     return;
   }
+
+  const mode = event.shiftKey ? 'link' : 'move';
 
   let moveContext = null;
   let newParentId = null;
   let draggedChildren = null;
 
-  if (draggedRow && !isMultiDrag) {
+  if (mode === 'move' && draggedRow && !isMultiDrag) {
     draggedChildren = getChildrenContainer(draggedRow);
     moveContext = createMoveContext(
       resolvedDraggedState,
@@ -592,73 +611,62 @@ export function handleDrop(event) {
   }
 
   const draggedNumericId = draggedState.creativeId;
-  const dropSignalDetails = isMultiDrag
-    ? null
-    : {
+  const dropSignalDetails = {
       creativeId: draggedNumericId,
+      creativeIds: draggedIds,
       treeId: draggedState.treeId,
       sourceWindowId: draggedState.sourceWindowId,
       targetTreeId: targetId,
+      targetCreativeId,
       direction,
     };
 
   resetDrag();
 
-  const shouldReloadOnFinalize = isExternal && !moveContext;
-
-  const finalizeDrop = () => {
-    if (shouldReloadOnFinalize) {
-      window.location.reload();
-    }
-  };
-
-  const reorderPayload = {
-    targetId: targetId.replace('creative-', ''),
+  const command = {
+    ids: draggedIds,
+    targetId: targetCreativeId,
     direction,
+    mode,
   };
 
-  if (isMultiDrag) {
-    reorderPayload.draggedIds = draggedIds;
-  } else {
-    reorderPayload.draggedId = draggedNumericId;
-  }
-
-  sendNewOrder(reorderPayload)
-    .then((response) => {
-      if (!response.ok) {
-        if (moveContext) {
-          revertMove(moveContext, newParentId);
-        }
-        return;
-      }
-
-      if (isMultiDrag) {
-        window.location.reload();
-        return;
-      }
-
-      if (dropSignalDetails?.sourceWindowId) {
-        emitDropSignal(dropSignalDetails);
-        dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
-      }
+  runMoveWithDomRecovery({ command, moveContext, attemptedParentId: newParentId })
+    .then((result) => {
+      if (![MOVE_STATUSES.SUCCESS, MOVE_STATUSES.PARTIAL].includes(result.status)) return;
+      if (mode === 'move' && dropSignalDetails.sourceWindowId) emitDropSignal(dropSignalDetails);
+      dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
     })
     .catch((error) => {
       console.error('Failed to update order', error);
-      if (moveContext) {
-        revertMove(moveContext, newParentId);
-      }
-    })
-    .finally(finalizeDrop);
+    });
+}
+
+function hasKnownCreativeTreeCycle(ids, targetRow, direction) {
+  const movingIds = new Set(ids.map(String));
+  const targetId = targetRow.getAttribute('creative-id');
+  if (!targetId || movingIds.has(String(targetId))) return true;
+
+  let parentId = direction === 'child' ? targetId : targetRow.getAttribute('parent-id');
+  const visited = new Set();
+  while (parentId && !visited.has(String(parentId))) {
+    const normalizedId = String(parentId);
+    if (movingIds.has(normalizedId)) return true;
+    visited.add(normalizedId);
+    parentId = getRowByCreativeId(normalizedId)?.getAttribute('parent-id') || null;
+  }
+  return false;
 }
 
 export function handleDragLeave(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   if (!tree || tree.draggable === false) return;
   clearDragHighlight(tree);
+  if (hoverExpandTree === tree) clearHoverExpand();
   hideLinkHover();
 }
 
 function handleDragEnd() {
+  clearHoverExpand();
   resetDrag();
 }
 

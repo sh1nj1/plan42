@@ -6,6 +6,10 @@ import {
   restoreTreeEmptyState,
   PAGINATION_PENDING_ATTRIBUTE,
 } from '../../modules/creative_tree_empty_state'
+import {
+  captureCreativeTreeViewState,
+  restoreCreativeTreeViewState,
+} from '../../creatives/tree_view_state'
 
 const TREE_RETRY_DELAYS_MS = [200, 600]
 
@@ -35,6 +39,7 @@ export default class extends Controller {
     this._loadingMore = false
     this._loadMoreAbort = null
     this._loadMoreIndicator = null
+    this._pendingViewState = null
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
     this._handleEditStart = () => { this._editing = true }
@@ -55,6 +60,8 @@ export default class extends Controller {
     document.addEventListener('creative-editing:stop', this._handleEditStop)
     this._handleSyncRefetch = () => this.requestReload()
     document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
+    this._handleCreativeDrop = () => this.requestReload()
+    window.addEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
     this._setupArchiveToggle()
   }
 
@@ -72,6 +79,7 @@ export default class extends Controller {
     document.removeEventListener('creative-editing:start', this._handleEditStart)
     document.removeEventListener('creative-editing:stop', this._handleEditStop)
     document.removeEventListener('creative-sync:refetch', this._handleSyncRefetch)
+    window.removeEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
     this._teardownPagination()
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
@@ -145,8 +153,9 @@ export default class extends Controller {
     })
   }
 
-  debouncedLoad() {
+  debouncedLoad({ preserveView = false } = {}) {
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
+    this._debouncedPreserveView = this._debouncedPreserveView || preserveView
     this._debouncedLoadTimer = setTimeout(() => {
       // Re-check rather than trusting the check requestReload() already made.
       // Switching rows is a `creative-editing:stop` immediately followed by a
@@ -159,7 +168,9 @@ export default class extends Controller {
         this._pendingRefetch = true
         return
       }
-      this.load()
+      const shouldPreserveView = this._debouncedPreserveView
+      this._debouncedPreserveView = false
+      this.load({ preserveView: shouldPreserveView })
     }, 300)
   }
 
@@ -179,7 +190,7 @@ export default class extends Controller {
       this._pendingRefetch = true
       return
     }
-    this.debouncedLoad()
+    this.debouncedLoad({ preserveView: true })
   }
 
   // Keep editing-aware reloads pending while an operation is between its local
@@ -197,11 +208,13 @@ export default class extends Controller {
   _drainPendingReload() {
     if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0) return
     this._pendingRefetch = false
-    this.debouncedLoad()
+    this.debouncedLoad({ preserveView: true })
   }
 
-  load() {
+  load({ preserveView = false } = {}) {
     if (!this.hasUrlValue) return
+
+    this._pendingViewState = preserveView ? captureCreativeTreeViewState(this.element) : null
 
     // A fresh load replaces the whole list (filter change, archive toggle, sync
     // refetch), so any active load-more session is stale — tear it down before
@@ -257,6 +270,8 @@ export default class extends Controller {
     if (nodes.length === 0) {
       this.showEmptyState()
       dispatchCreativeTreeUpdated(this.element)
+      restoreCreativeTreeViewState(this.element, this._pendingViewState)
+      this._pendingViewState = null
       return
     }
 
@@ -265,6 +280,8 @@ export default class extends Controller {
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
     this._setupPagination(data?.pagination)
+    restoreCreativeTreeViewState(this.element, this._pendingViewState)
+    this._pendingViewState = null
   }
 
   // --- Load-more (paginated "Chats" feed) -------------------------------------

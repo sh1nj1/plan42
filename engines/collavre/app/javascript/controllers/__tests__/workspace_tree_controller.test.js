@@ -102,6 +102,35 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
   })
 
+  test('renders rows as creative drag handles without native link dragging', () => {
+    const rootItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    const childItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="2"]')
+    const childRow = childItem.querySelector(':scope > .creative-workspace-tree-row')
+    const childLink = childRow.querySelector('.creative-workspace-tree-link')
+
+    expect(rootItem.dataset.level).toBe('1')
+    expect(childItem.dataset.parentId).toBe('1')
+    expect(childItem.dataset.level).toBe('2')
+    expect(childRow.draggable).toBe(true)
+    expect(childRow.dataset.parentId).toBe('1')
+    expect(childLink.draggable).toBe(false)
+  })
+
+  test('expands a drag target without replacing the hovered row', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    const hoveredRow = item.querySelector(':scope > .creative-workspace-tree-row')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+
+    await controller.expandBranchForDrag('1')
+
+    expect(document.getElementById('workspace-creative-1')).toBe(hoveredRow)
+    expect(item.dataset.expanded).toBe('true')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).not.toBeNull()
+  })
+
   test('records the visible creative after a cached Turbo history restore', async () => {
     document.head.innerHTML = '<meta name="csrf-token" content="token">'
     document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))

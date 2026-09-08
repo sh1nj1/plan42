@@ -38,6 +38,7 @@ jest.unstable_mockModule('../operations', () => ({
   createMoveContext: jest.fn(),
   applyMove: jest.fn(),
   revertMove: jest.fn(),
+  runMoveWithDomRecovery: jest.fn(),
 }))
 jest.unstable_mockModule('../../../lib/api/drag_drop', () => ({
   sendNewOrder: jest.fn(),
