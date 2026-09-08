@@ -131,7 +131,9 @@ describe('right creative tree drop wiring', () => {
 
     handleDragStart(dragEvent(tree('1'), dataTransfer))
 
-    expect(dataTransfer.effectAllowed).toBe('move')
+    // A shift-drag links, and a link target answers 'copy'. Advertising 'move'
+    // alone makes the browser negotiate that pair down to no drag operation.
+    expect(dataTransfer.effectAllowed).toBe('copyMove')
     expect(readDragData(dataTransfer)).toEqual({
       kind: 'creative',
       ids: ['1'],
@@ -143,6 +145,19 @@ describe('right creative tree drop wiring', () => {
         sourceWindowId: expect.any(String),
       }),
     })
+  })
+
+  // The workspace tree answers a shift-drag with dropEffect 'copy'. Reporting
+  // 'move' here would leave the two trees advertising incompatible effects.
+  test('answers a shift-drag with the copy effect', () => {
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('2'), dataTransfer, { shiftKey: true }))
+    expect(dataTransfer.dropEffect).toBe('copy')
+
+    handleDragOver(dragEvent(tree('2'), dataTransfer))
+    expect(dataTransfer.dropEffect).toBe('move')
   })
 
   test('carries a multi-selection into the envelope and the command', async () => {
@@ -498,7 +513,7 @@ describe('right creative tree drag feedback', () => {
 
     expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(false)
     expect(consoleError).toHaveBeenCalledWith(
-      'Failed to load children for drag expansion',
+      'Failed to load children for branch expansion',
       expect.objectContaining({ message: 'offline' })
     )
     consoleError.mockRestore()

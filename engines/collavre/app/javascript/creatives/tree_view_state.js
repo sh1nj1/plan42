@@ -1,4 +1,5 @@
 import { getChildrenContainer, setExpanded } from './drag_drop/dom'
+import { expandBranchWithChildren } from './branch_expansion'
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -51,7 +52,14 @@ export function captureCreativeTreeViewState(element) {
 function restoreExpansion(element, expansion) {
   expansion.forEach(({ creativeId, expanded }) => {
     const row = findRow(element, creativeId)
-    if (row) setExpanded(row, expanded, getChildrenContainer(row))
+    if (!row) return
+
+    const container = getChildrenContainer(row)
+    // A hover expansion is never persisted, so the reloaded payload can render
+    // that branch collapsed and unloaded. Expanding the empty container alone
+    // would leave the row looking open but blank until the user re-toggles it.
+    if (expanded) expandBranchWithChildren(row, container)
+    else setExpanded(row, false, container)
   })
 }
 

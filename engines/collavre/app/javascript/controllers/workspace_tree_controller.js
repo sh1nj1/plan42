@@ -108,6 +108,9 @@ export default class extends Controller {
   async load({ showLoading = true, syncChat = true, preserveView = false, focusCreativeId } = {}) {
     this.loadAbortController?.abort()
     this.loadAbortController = new AbortController()
+    // A full load re-renders the whole tree from an authoritative payload, so
+    // any hover expansion still in flight is stale the moment it starts.
+    this.dragExpandAbortController?.abort()
     if (this.pendingRevealPath) this.addExpandedPath(this.pendingRevealPath)
     const requestId = (this.loadRequestId || 0) + 1
     this.loadRequestId = requestId
@@ -257,13 +260,18 @@ export default class extends Controller {
 
   async expandBranchForDrag(creativeId) {
     const id = String(creativeId)
-    if (this.expandedCreativeIds.has(id)) return
+    // Hovering a second branch aborts the first request but leaves its id in
+    // `expandedCreativeIds`, so only the rendered row can say whether a branch
+    // is actually open — otherwise the aborted one can never be retried.
+    const hoveredItem = this.findWorkspaceItem(id)
+    if (!hoveredItem || hoveredItem.dataset.expanded === 'true') return
 
     this.expandedCreativeIds.add(id)
     this.trimExpandedCreativeIds()
     const requestedExpandedIds = new Set(this.expandedCreativeIds)
     this.dragExpandAbortController?.abort()
     this.dragExpandAbortController = new AbortController()
+    const loadGeneration = this.loadRequestId
 
     try {
       const requestOptions = { headers: { Accept: 'application/json' } }
@@ -271,21 +279,34 @@ export default class extends Controller {
       const response = await fetch(this.workspaceTreeUrl(requestedExpandedIds), requestOptions)
       if (!response.ok) throw new Error(`Failed to expand workspace tree branch: ${response.status}`)
       const data = await response.json()
+      // A load that started after this request owns the tree. Splicing these
+      // children in would overwrite `nodesData` with the pre-move placement.
+      if (this.loadRequestId !== loadGeneration) return
+
       const nodes = Array.isArray(data.creatives) ? data.creatives : []
       this.renderExpandedBranch(id, nodes)
       this.nodesData = nodes
       this.committedExpandedCreativeIds = new Set(requestedExpandedIds)
     } catch (error) {
-      if (error.name === 'AbortError') return
+      if (error.name === 'AbortError') {
+        // The branch was never rendered, so it must not survive as expanded
+        // state that a later load would replay.
+        if (!this.committedExpandedCreativeIds.has(id)) this.expandedCreativeIds.delete(id)
+        return
+      }
       this.expandedCreativeIds = new Set(this.committedExpandedCreativeIds)
       console.error(error)
     }
   }
 
+  findWorkspaceItem(creativeId) {
+    return [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
+      .find((candidate) => candidate.dataset.creativeId === String(creativeId)) || null
+  }
+
   renderExpandedBranch(creativeId, nodes) {
     const node = this.findNode(nodes, creativeId)
-    const item = [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
-      .find((candidate) => candidate.dataset.creativeId === String(creativeId))
+    const item = this.findWorkspaceItem(creativeId)
     if (!node || !item) return
 
     const existingList = [...item.children]

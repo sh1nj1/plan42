@@ -163,8 +163,18 @@ describe('WorkspaceTreeController', () => {
 
   // A hover expansion that fails must not leave the pointer over a row the
   // controller believes is open — the next re-render would drop the children.
+  test('ignores a hover expansion for a row that is not rendered', async () => {
+    fetchMock.mockClear()
+
+    await controller.expandBranchForDrag('999')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   test('rolls the expansion back when the branch request fails', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
     controller.expandedCreativeIds.delete('1')
     controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
     fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
@@ -180,6 +190,8 @@ describe('WorkspaceTreeController', () => {
 
   test('stays quiet when a newer hover supersedes an in-flight branch request', async () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
     controller.expandedCreativeIds.delete('1')
     controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
     fetchMock.mockRejectedValueOnce(
@@ -189,8 +201,80 @@ describe('WorkspaceTreeController', () => {
     await controller.expandBranchForDrag('1')
 
     expect(consoleError).not.toHaveBeenCalled()
-    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    // The branch never rendered, so it must not linger as expanded state that a
+    // later load would replay onto a row the user only passed over.
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
     consoleError.mockRestore()
+  })
+
+  // Hovering a second branch aborts the first request. The abandoned id used to
+  // stay in `expandedCreativeIds`, so coming back to the still-collapsed branch
+  // short-circuited and it could never be expanded again.
+  test('retries a hover expansion whose earlier request was aborted', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockRejectedValueOnce(
+      Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' })
+    )
+
+    await controller.expandBranchForDrag('1')
+    expect(item.dataset.expanded).toBe('false')
+
+    fetchMock.mockClear()
+    await controller.expandBranchForDrag('1')
+
+    expect(fetchMock).toHaveBeenCalled()
+    expect(item.dataset.expanded).toBe('true')
+    consoleError.mockRestore()
+  })
+
+  // A hover response that outlives the reload triggered by a completed drop
+  // would splice the pre-move children back in and overwrite `nodesData`.
+  test('discards a hover expansion answered after a full reload started', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+
+    let releaseHover
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseHover = () => resolve({
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({ creatives: [{ id: 1, label: 'Stale', url: '/creatives?id=1', children: [] }] }),
+      })
+    }))
+
+    const hover = controller.expandBranchForDrag('1')
+    await controller.load({ showLoading: false, syncChat: false })
+    const reloadedNodes = controller.nodesData
+    releaseHover()
+    await hover
+
+    expect(controller.nodesData).toBe(reloadedNodes)
+  })
+
+  test('aborts an in-flight hover expansion when a full load starts', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    let signal
+    fetchMock.mockImplementationOnce((_url, options) => {
+      signal = options.signal
+      return new Promise(() => {})
+    })
+
+    controller.expandBranchForDrag('1')
+    expect(signal.aborted).toBe(false)
+
+    await controller.load({ showLoading: false, syncChat: false })
+
+    expect(signal.aborted).toBe(true)
   })
 
   test('nests a branch under a row that never declared its depth', async () => {

@@ -32,8 +32,8 @@ import {
 import { MOVE_STATUSES } from './move_command';
 import { reportPartialMove } from './move_feedback';
 import { sendTopicMove } from '../../lib/api/drag_drop';
-import { loadChildren } from '../../lib/api/creatives';
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../tree_renderer';
+import { expandBranchWithChildren } from '../branch_expansion';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
@@ -77,30 +77,9 @@ function scheduleHoverExpand(tree, position) {
   clearHoverExpand();
   hoverExpandTree = tree;
   hoverExpandTimer = setTimeout(() => {
-    const container = getChildrenContainer(row);
-    if (container) expandBranchForHover(row, container);
+    expandBranchWithChildren(row, getChildrenContainer(row));
     clearHoverExpand();
   }, CREATIVE_TREE_EXPAND_DELAY_MS);
-}
-
-// A collapsed branch is rendered empty with `data-loaded="false"`, so revealing
-// the container on its own exposes no rows to drop onto. Fill it first, the way
-// a click-driven expansion does, or the hover expansion shows an empty branch.
-function expandBranchForHover(row, container) {
-  const loadUrl = container.dataset.loadUrl;
-  if (container.dataset.loaded === 'true' || !loadUrl) {
-    setExpanded(row, true, container);
-    return;
-  }
-
-  loadChildren(loadUrl)
-    .then((data) => {
-      renderCreativeTree(container, Array.isArray(data?.creatives) ? data.creatives : []);
-      container.dataset.loaded = 'true';
-      dispatchCreativeTreeUpdated(container);
-      setExpanded(row, true, container);
-    })
-    .catch((error) => console.error('Failed to load children for drag expansion', error));
 }
 
 const INVALID_DROP_MESSAGE =
@@ -368,7 +347,10 @@ export function handleDragStart(event) {
     sourceWindowId: windowId,
     selectedCreativeIds,
   });
-  event.dataTransfer.effectAllowed = 'move';
+  // A shift-drag links instead of moving, and a link target answers with
+  // dropEffect 'copy'. Advertising 'move' alone makes the browser negotiate
+  // that pair down to no drag operation, so the drop event never fires.
+  event.dataTransfer.effectAllowed = 'copyMove';
 
   // Custom bundle drag image for multi-select
   if (selectedCreativeIds.length > 1) {
@@ -415,7 +397,7 @@ export function handleDragOver(event) {
   if (dragKind !== 'creative') return;
 
   event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
+  event.dataTransfer.dropEffect = event.shiftKey ? 'copy' : 'move';
 
   let previousPosition = null;
   if (tree.classList.contains('drag-over-top')) previousPosition = 'up';
