@@ -30,7 +30,22 @@ jest.unstable_mockModule('../indicator', () => ({
 jest.unstable_mockModule('../../topic_move_members_popup', () => ({
   showMissingMembersPopup: jest.fn(),
 }))
-jest.unstable_mockModule('../../../lib/utils/dialog', () => ({ alertDialog: jest.fn() }))
+const alertDialog = jest.fn()
+jest.unstable_mockModule('../../../lib/utils/dialog', () => ({ alertDialog }))
+
+const loadChildren = jest.fn()
+jest.unstable_mockModule('../../../lib/api/creatives', () => ({
+  loadChildren,
+  default: { loadChildren },
+}))
+
+const renderCreativeTree = jest.fn()
+jest.unstable_mockModule('../../tree_renderer', () => ({
+  renderCreativeTree,
+  appendCreativeNodes: jest.fn(),
+  dispatchCreativeTreeUpdated: jest.fn(),
+  applyRowProperties: jest.fn(),
+}))
 
 const {
   addGlobalListeners,
@@ -202,6 +217,25 @@ describe('right creative tree drop wiring', () => {
     await flush()
 
     expect(completion).not.toHaveBeenCalled()
+  })
+
+  test('surfaces a partial move instead of reporting a clean success', async () => {
+    runMoveWithDomRecovery.mockResolvedValue({
+      status: 'partial',
+      failedIds: ['2'],
+      failures: [{ id: '2', reason: 'permission_denied', message: 'Not allowed' }],
+    })
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    const dataTransfer = transfer()
+
+    handleDragStart(dragEvent(tree('2'), dataTransfer))
+    handleDrop(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await flush()
+
+    expect(alertDialog).toHaveBeenCalledWith('Not allowed')
+    // The rows that did move still need both trees to refresh.
+    expect(completion).toHaveBeenCalled()
   })
 
   test('reports a command that rejects outright', async () => {
@@ -390,6 +424,60 @@ describe('right creative tree drag feedback', () => {
     // The second dragover must not restart the timer, or a hovering pointer
     // would never reach the 600ms threshold.
     expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+  })
+
+  // A collapsed branch renders empty with data-loaded="false", so revealing the
+  // container alone would advertise an expansion with nothing to drop onto.
+  test('fills a lazily loaded branch before revealing it', async () => {
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockResolvedValue({ creatives: [{ id: 2 }] })
+    const container = document.getElementById('creative-children-1')
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    expect(loadChildren).toHaveBeenCalledWith('/creatives/1/children.json')
+    expect(renderCreativeTree).toHaveBeenCalledWith(container, [{ id: 2 }])
+    expect(container.dataset.loaded).toBe('true')
+    expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+  })
+
+  test('leaves the branch collapsed when its children cannot be loaded', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockRejectedValue(new Error('offline'))
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(false)
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to load children for drag expansion',
+      expect.objectContaining({ message: 'offline' })
+    )
+    consoleError.mockRestore()
   })
 
   test('cancels a pending expansion when the drag ends', () => {

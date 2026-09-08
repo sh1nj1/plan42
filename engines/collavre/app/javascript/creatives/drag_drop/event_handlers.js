@@ -30,7 +30,10 @@ import {
   runMoveWithDomRecovery,
 } from './operations';
 import { MOVE_STATUSES } from './move_command';
+import { reportPartialMove } from './move_feedback';
 import { sendTopicMove } from '../../lib/api/drag_drop';
+import { loadChildren } from '../../lib/api/creatives';
+import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../tree_renderer';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
@@ -75,9 +78,29 @@ function scheduleHoverExpand(tree, position) {
   hoverExpandTree = tree;
   hoverExpandTimer = setTimeout(() => {
     const container = getChildrenContainer(row);
-    if (container) setExpanded(row, true, container);
+    if (container) expandBranchForHover(row, container);
     clearHoverExpand();
   }, CREATIVE_TREE_EXPAND_DELAY_MS);
+}
+
+// A collapsed branch is rendered empty with `data-loaded="false"`, so revealing
+// the container on its own exposes no rows to drop onto. Fill it first, the way
+// a click-driven expansion does, or the hover expansion shows an empty branch.
+function expandBranchForHover(row, container) {
+  const loadUrl = container.dataset.loadUrl;
+  if (container.dataset.loaded === 'true' || !loadUrl) {
+    setExpanded(row, true, container);
+    return;
+  }
+
+  loadChildren(loadUrl)
+    .then((data) => {
+      renderCreativeTree(container, Array.isArray(data?.creatives) ? data.creatives : []);
+      container.dataset.loaded = 'true';
+      dispatchCreativeTreeUpdated(container);
+      setExpanded(row, true, container);
+    })
+    .catch((error) => console.error('Failed to load children for drag expansion', error));
 }
 
 const INVALID_DROP_MESSAGE =
@@ -633,6 +656,7 @@ export function handleDrop(event) {
   runMoveWithDomRecovery({ command, moveContext, attemptedParentId: newParentId })
     .then((result) => {
       if (![MOVE_STATUSES.SUCCESS, MOVE_STATUSES.PARTIAL].includes(result.status)) return;
+      reportPartialMove(result);
       if (mode === 'move' && dropSignalDetails.sourceWindowId) emitDropSignal(dropSignalDetails);
       dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
     })

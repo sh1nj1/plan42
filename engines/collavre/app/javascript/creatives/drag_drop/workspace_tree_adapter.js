@@ -7,6 +7,7 @@ import {
 } from '../../lib/dnd/session'
 import { getVerticalDropPosition } from '../../lib/dnd/hit_test'
 import { executeMoveCommand, MOVE_STATUSES } from './move_command'
+import { reportPartialMove } from './move_feedback'
 import {
   applyWorkspaceMove,
   captureWorkspaceMove,
@@ -90,10 +91,12 @@ function completionDetail(ids, payload, targetId, direction) {
   }
 }
 
-function notifyMoveCompletion(ids, payload, targetId, direction) {
+function notifyMoveCompletion(ids, payload, targetId, direction, mode) {
   const detail = completionDetail(ids, payload, targetId, direction)
   dispatchDropCompletion(detail)
-  if (detail.sourceWindowId) emitDropSignal(detail)
+  // The source window reacts to this signal by removing the row it dragged.
+  // A link leaves the original where it is, so only a move may broadcast.
+  if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail)
 }
 
 async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, payload }) {
@@ -119,7 +122,8 @@ async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, p
     return
   }
 
-  notifyMoveCompletion(ids, payload, targetItem.dataset.creativeId, hit)
+  reportPartialMove(result)
+  notifyMoveCompletion(ids, payload, targetItem.dataset.creativeId, hit, mode)
 }
 
 export function createWorkspaceTreeDragDrop({
