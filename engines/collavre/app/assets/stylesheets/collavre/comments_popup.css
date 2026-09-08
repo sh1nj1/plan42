@@ -1149,7 +1149,9 @@ body.chat-fullscreen {
     justify-content: center;
 }
 
-.add-participant-btn {
+.add-participant-btn,
+.add-context-btn,
+.add-topic-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1166,7 +1168,9 @@ body.chat-fullscreen {
     flex-shrink: 0;
 }
 
-.add-participant-btn:hover {
+.add-participant-btn:hover,
+.add-context-btn:hover,
+.add-topic-btn:hover {
     background: var(--color-section-bg);
     color: var(--color-text);
 }
@@ -1481,27 +1485,6 @@ body.chat-fullscreen {
 
 .delete-context-btn:hover {
     color: var(--color-danger);
-}
-
-.add-context-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--color-secondary-background);
-    border: 1px dashed var(--color-border);
-    color: var(--color-text-muted);
-    font-size: 0.85em;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.add-context-btn:hover {
-    background: var(--color-border);
-    color: var(--color-text);
 }
 
 /* Context toggle button in header */
@@ -1861,28 +1844,6 @@ body.chat-fullscreen {
 .topic-creation-container[hidden] {
     display: none;
 }
-
-.add-topic-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 1px solid var(--color-border);
-    background: transparent;
-    cursor: pointer;
-    color: var(--color-muted);
-    font-size: 1.2em;
-    line-height: 1;
-    padding: 0;
-}
-
-.add-topic-btn:hover {
-    background: var(--color-section-bg);
-    color: var(--color-text);
-}
-
 
 .topic-input {
     display: inline-block;

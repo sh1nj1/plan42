@@ -75,12 +75,24 @@ class ChatBarListPopupTest < ApplicationSystemTestCase
     assert_selector "#comment-contexts .context-chip.context-disabled", text: "Context One", wait: 5
   end
 
-  test "the context add button sits outside the scrolling chip strip" do
+  test "the context add button sits outside the scrolling chip strip and matches the other add buttons" do
     open_comments_popup
     assert_selector "#comment-contexts .context-chip", text: "Context One", wait: 10
 
     assert_selector "#comments-popup .comment-contexts-bar > .add-context-btn"
     assert_no_selector "#comment-contexts .add-context-btn"
+
+    properties = %w[
+      width height border-radius border-style border-width
+      background-color color font-size line-height padding
+    ]
+    style_value_script = "getComputedStyle(document.querySelector(arguments[0])).getPropertyValue(arguments[1])"
+    styles = %w[.add-context-btn .add-participant-btn].to_h do |selector|
+      values = properties.to_h { |property| [ property, evaluate_script(style_value_script, selector, property) ] }
+      [ selector, values ]
+    end
+
+    assert_equal styles.fetch(".add-participant-btn"), styles.fetch(".add-context-btn")
   end
 
   test "user list button opens a searchable popup and the picked user's profile menu" do
