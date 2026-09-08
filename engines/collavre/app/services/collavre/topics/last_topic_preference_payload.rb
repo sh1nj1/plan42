@@ -10,6 +10,7 @@ module Collavre
         preference = UserCreativePreference.find_by(user_id: @user&.id, creative_id: @creative.id)
         {
           last_topic_id: preference&.last_topic_id,
+          last_topic_all_messages: preference&.last_topic_all_messages? || false,
           last_topic_revision: preference && [ preference.id, preference.last_topic_revision ]
         }
       end

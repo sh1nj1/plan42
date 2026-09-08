@@ -752,6 +752,16 @@ describe('TopicsController archived topic messages', () => {
         expect(controller.currentTopicId).toBe('1')
       })
 
+      test('does not expose a saved preference naming the same deleted topic', () => {
+        controller.serverLastTopicId = '3'
+        controller.setOverrideTopicId('3')
+
+        deleteBroadcast(3)
+
+        expect(controller.currentTopicId).toBe('1')
+        expect(controller.serverLastTopicId).toBe('1')
+      })
+
       test('drops a ?topic_id= naming it', () => {
         window.history.replaceState({}, '', '/?topic_id=3')
 

@@ -13,6 +13,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal @creative.id, json["effective_creative_id"]
+    assert_equal false, json["last_topic_all_messages"]
   end
 
   test "History topic is read-only, reserved, and kept last" do
@@ -92,6 +93,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal @topic.id, json["last_topic_id"]
+    assert_equal false, json["last_topic_all_messages"]
     assert_equal [ preference.id, 7 ], json["last_topic_revision"]
   end
 
@@ -100,6 +102,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
       creative: @creative,
       user: @user,
       expanded_status: {},
+      last_topic_all_messages: true,
       last_topic_revision: 2
     )
 
@@ -108,6 +111,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     json = JSON.parse(response.body)
     assert_nil json["last_topic_id"]
+    assert_equal true, json["last_topic_all_messages"]
     assert_equal [ preference.id, 2 ], json["last_topic_revision"]
   end
 
@@ -221,6 +225,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
     preference.reload
     assert_nil preference.last_topic_id
+    assert_not preference.last_topic_all_messages?
     assert_equal 5, preference.last_topic_revision
   end
 

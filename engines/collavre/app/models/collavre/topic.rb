@@ -102,7 +102,9 @@ module Collavre
     private
 
     def advance_last_topic_preference_revisions
-      user_creative_preferences_as_last_topic.update_all("last_topic_revision = last_topic_revision + 1")
+      user_creative_preferences_as_last_topic.update_all(
+        "last_topic_all_messages = FALSE, last_topic_revision = last_topic_revision + 1"
+      )
     end
 
     def set_default_position

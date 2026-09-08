@@ -7,7 +7,8 @@ module Collavre
     belongs_to :last_topic, class_name: "Collavre::Topic", optional: true
 
     validates :expanded_status, presence: true, unless: -> {
-      last_topic_id? || last_topic_revision.to_i.positive? || last_topic_save_fence_issued.to_i.positive?
+      last_topic_id? || last_topic_all_messages? || last_topic_revision.to_i.positive? ||
+        last_topic_save_fence_issued.to_i.positive?
     }
     validates :creative_id, uniqueness: { scope: :user_id }, allow_nil: true
   end

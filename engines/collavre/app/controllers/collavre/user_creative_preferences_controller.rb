@@ -46,7 +46,8 @@ module Collavre
       render json: {
         success: saved,
         stale_last_topic_save: !saved,
-        last_topic_revision: [ record.id, record.last_topic_revision ]
+        last_topic_revision: [ record.id, record.last_topic_revision ],
+        last_topic_all_messages: record.last_topic_all_messages?
       }
     end
 
@@ -78,7 +79,8 @@ module Collavre
     end
 
     def empty_preference?(record, state)
-      state.empty? && record.last_topic_id.nil? && record.last_topic_revision.to_i.zero? &&
+      state.empty? && record.last_topic_id.nil? && !record.last_topic_all_messages? &&
+        record.last_topic_revision.to_i.zero? &&
         record.last_topic_save_fence_issued.to_i.zero? && record.last_topic_save_fence_applied.to_i.zero?
     end
 
@@ -102,11 +104,11 @@ module Collavre
 
         record.expanded_status ||= {}
         record.last_topic_id = params[:last_topic_id].presence
+        record.last_topic_all_messages = params[:last_topic_id].blank?
         record.last_topic_revision = record.last_topic_revision.to_i + 1
         assign_last_topic_save_order(record)
-        # Retain a cleared preference after it has participated in last-topic
-        # ordering. Its revision lets a reopened client distinguish a newer
-        # Main selection from the empty snapshot that preceded an in-flight save.
+        # Retain All Messages as an explicit preference even though it has no
+        # topic id. The marker distinguishes it from deletion and move tombstones.
         if empty_preference?(record, record.expanded_status)
           record.destroy!
         else
@@ -227,6 +229,7 @@ module Collavre
       payload = {
         action: "last_topic_changed",
         last_topic_id: record.last_topic_id,
+        last_topic_all_messages: record.last_topic_all_messages?,
         last_topic_revision: [ record.id, record.last_topic_revision ],
         client_id: params[:client_id].presence
       }

@@ -202,6 +202,7 @@ module Collavre
 
         preference.reload
         assert_nil preference.last_topic_id
+        assert_not preference.last_topic_all_messages?
         assert_equal 5, preference.last_topic_revision
       end
 
