@@ -38,11 +38,13 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
     visit collavre.creatives_path(id: @left_root.id)
     assert_workspace_and_center_rows(@right_root, @left_child)
 
+    # The workspace rows are compact, so the child band is only a few pixels
+    # tall — aim at the exact centre rather than an offset from it.
     html5_drag_by_offset(
       find("#creative-#{@left_child.id}"),
       find("#workspace-creative-#{@right_root.id}"),
       0,
-      5,
+      0,
     )
 
     assert_selector "#workspace-creative-#{@left_child.id}[data-parent-id='#{@right_root.id}']", wait: 10
@@ -57,7 +59,7 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
       find("#workspace-creative-#{@left_root.id}"),
       find("#workspace-creative-#{@right_root.id}"),
       0,
-      5,
+      0,
     )
 
     assert_selector "#workspace-creative-#{@left_root.id}[data-parent-id='#{@right_root.id}']", wait: 10

@@ -33,6 +33,7 @@ export default class extends Controller {
 
   connect() {
     this.expandedCreativeIds = new Set()
+    this.pendingDropDestinationIds = new Set()
     this.addExpandedPath(this.currentPathValue)
     this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
     this.invalidatedCreativeIds = new Set()
@@ -130,8 +131,12 @@ export default class extends Controller {
 
       const nodes = Array.isArray(data.creatives) ? data.creatives : []
       if (invalidationGeneration === this.invalidationGeneration) this.restoreReadableCreativeIds(nodes)
-      this.expandedCreativeIds = new Set(requestedExpandedIds)
-      this.committedExpandedCreativeIds = new Set(requestedExpandedIds)
+      // A drop can reveal a branch while this response is still in flight, and
+      // that reveal has not been rendered yet — carry it into the next request
+      // instead of letting an older answer erase it.
+      this.expandedCreativeIds = new Set([...requestedExpandedIds, ...this.pendingDropDestinationIds])
+      this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
+      requestedExpandedIds.forEach((id) => this.pendingDropDestinationIds.delete(id))
       if (requestedRevealPath && this.samePath(requestedRevealPath, this.pendingRevealPath || [])) {
         this.pendingRevealPath = null
       }
@@ -453,11 +458,23 @@ export default class extends Controller {
 
   queueRefresh(event) {
     this.rememberInvalidatedCreativeIds(event)
+    this.revealDropDestination(event)
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     this.refreshTimeout = window.setTimeout(() => {
       this.refreshTimeout = null
       this.load({ showLoading: false, syncChat: false, preserveView: true })
     }, 100)
+  }
+
+  // A row dropped into a collapsed branch would simply disappear from this
+  // partial view, so the destination is opened before the tree is fetched again.
+  revealDropDestination(event) {
+    const { direction, targetCreativeId } = event?.detail || {}
+    if (direction !== 'child' || !targetCreativeId) return
+
+    this.pendingDropDestinationIds.add(String(targetCreativeId))
+    this.expandedCreativeIds.add(String(targetCreativeId))
+    this.trimExpandedCreativeIds()
   }
 
   syncFromWorkspaceFrame(

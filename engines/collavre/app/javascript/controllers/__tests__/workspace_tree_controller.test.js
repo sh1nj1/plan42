@@ -141,6 +141,54 @@ describe('WorkspaceTreeController', () => {
     expect(item.querySelector(':scope > .creative-workspace-tree-list')).not.toBeNull()
   })
 
+  // Nesting a row under a collapsed branch would drop it out of this partial
+  // view entirely, leaving the user with no sign the move landed.
+  test('opens the destination branch before refreshing after a nesting drop', () => {
+    controller.expandedCreativeIds.delete('1')
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '1', direction: 'child' },
+    }))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+  })
+
+  // The centre pane reloads its own tree on a drop, so a request that started
+  // before the drop can answer after it — and it must not close the branch the
+  // drop just revealed.
+  test('keeps the destination open when an older tree response lands after the drop', async () => {
+    let answerInFlight
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      answerInFlight = () => resolve({ ok: true, headers: new Headers(), json: async () => ({ creatives: [] }) })
+    }))
+    const inFlight = controller.load({ showLoading: false })
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '7', direction: 'child' },
+    }))
+    answerInFlight()
+    await inFlight
+
+    expect(controller.expandedCreativeIds.has('7')).toBe(true)
+
+    fetchMock.mockClear()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    const [requestedUrl] = fetchMock.mock.calls.find(([url]) => url.includes('workspace_tree=1'))
+    expect(requestedUrl).toContain('expand%5B%5D=7')
+  })
+
+  test('leaves the expansion set alone for a sibling drop', () => {
+    controller.expandedCreativeIds.delete('1')
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '1', direction: 'down' },
+    }))
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', { detail: {} }))
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+  })
+
   test('skips a branch request for a target that is already open', async () => {
     fetchMock.mockClear()
 
