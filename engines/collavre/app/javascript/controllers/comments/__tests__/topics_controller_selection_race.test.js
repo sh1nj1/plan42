@@ -307,6 +307,64 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     })
   })
 
+  describe('a persisted All Messages selection', () => {
+    const loadEmptyPreference = (revision) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          topics: TOPICS,
+          archived_topics: [],
+          can_manage: true,
+          main_topic_id: 1,
+          last_topic_id: null,
+          last_topic_revision: [5, revision],
+        }),
+      })
+      return controller.loadTopics()
+    }
+
+    afterEach(() => localStorage.clear())
+
+    test('survives a later topic re-render', () => {
+      controller.selectTopic('')
+      controller._pendingPick = null
+
+      controller.handleTopicMessage({ action: 'updated', topic: { id: 1, name: 'Renamed Main' } })
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller.listTarget.querySelector('.topic-all-messages').classList)
+        .toContain('active')
+      expect(changeEvents.at(-1).topicId).toBe('')
+    })
+
+    test('is restored from a cleared preference revision', async () => {
+      await loadEmptyPreference(2)
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller.listTarget.querySelector('.topic-all-messages').classList)
+        .toContain('active')
+      expect(changeEvents.at(-1).topicId).toBe('')
+    })
+
+    test('outranks the legacy localStorage migration', async () => {
+      localStorage.setItem('collavre_creative_42_last_topic', '2')
+      await loadEmptyPreference(2)
+
+      expect(controller.currentTopicId).toBe('')
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
+      expect(localStorage.getItem('collavre_creative_42_last_topic')).toBeNull()
+    })
+
+    test('an untouched preference still defaults to Main', async () => {
+      await loadEmptyPreference(0)
+
+      expect(controller.currentTopicId).toBe('1')
+      expect(controller.listTarget.querySelector('.topic-tag[data-id="1"]').classList)
+        .toContain('active')
+    })
+  })
+
   // A pick can only outrank the response if it was made against the strip of
   // the creative the response describes. Switching creatives leaves the
   // previous creative's chips on screen until the new strip lands, so a click
@@ -499,14 +557,14 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
     })
 
-    test('re-dispatches a picked All Messages after an interim restore', async () => {
+    test('keeps a picked All Messages through an interim restore', async () => {
       let resolveFetch
       global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
 
       const loading = controller.loadTopics()
       controller.selectTopic('')
       broadcastCreate()
-      expect(changeEvents.at(-1).topicId).toBe('1')
+      expect(changeEvents.at(-1).topicId).toBe('')
 
       respond(resolveFetch)
       await loading

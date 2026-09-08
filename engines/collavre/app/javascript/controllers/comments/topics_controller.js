@@ -98,6 +98,7 @@ export default class extends Controller {
         // transient — loadTopics() cannot rebuild them.
         if (String(previousCreativeId || '') !== String(creativeId || '')) {
             this.archivedWithNewMessages.clear()
+            this._explicitAllMessagesSelection = false
             // Scoped to the creative it was archived in; a topic id from another
             // creative must not veto this one's restored selection.
             this.archivedAwayTopicId = null
@@ -128,6 +129,7 @@ export default class extends Controller {
         this.creativeIdValue = null
         this.topics = []
         this.mainTopicId = null
+        this._explicitAllMessagesSelection = false
         this.archivedWithNewMessages.clear()
         this.archivedAwayTopicId = null
         delete this.element.dataset.effectiveCreativeId
@@ -312,6 +314,7 @@ export default class extends Controller {
                     snapshotTopicId,
                     snapshotTopicRevision
                 ) && this.pickOutranks(selectionEpoch, creativeId, topics, this.archivedTopics)
+                let keepEmptySelection = false
                 if (skipLastTopicReconciliation) {
                     // The GET has a server ordering token, but this save has neither
                     // its response revision nor its echo yet. Its predecessor topic is
@@ -325,6 +328,7 @@ export default class extends Controller {
                     // belongs to the actual pick, so restore that picked value
                     // rather than treating the derived fallback as its value.
                     this.serverLastTopicId = this._pickTopicId
+                    keepEmptySelection = !this._pickTopicId
                     // The picked value has not necessarily reached the server yet.
                     // Keep the snapshot as the first known remote baseline so a
                     // claim created after this load records what its pending save
@@ -342,13 +346,26 @@ export default class extends Controller {
                     )
                     if (pendingTopicId === undefined) {
                         this.serverLastTopicId = snapshotTopicId
+                        // A positive revision with no topic is not a missing
+                        // preference: it is the ordering tombstone written when
+                        // All Messages was selected. Revision zero belongs to a
+                        // row created only for expansion state, so it keeps the
+                        // first-visit Main fallback.
+                        keepEmptySelection = this.isPersistedAllMessagesSelection(
+                            snapshotTopicId,
+                            snapshotTopicRevision
+                        )
                         // A retained claim proves this response was an older view of
                         // the preference. Do not let that stale snapshot roll back
                         // the baseline used by the next save's closed-reopen check.
                         this.setLastKnownRemoteTopicId(effectiveCreativeId, snapshotTopicId)
                     } else {
                         this.serverLastTopicId = pendingTopicId
+                        keepEmptySelection = !pendingTopicId
                     }
+                }
+                if (!skipLastTopicReconciliation) {
+                    this._explicitAllMessagesSelection = keepEmptySelection
                 }
                 // The archive guard only has to outlive the sources that still
                 // name the topic. Test the effective selection, not just the
@@ -369,13 +386,13 @@ export default class extends Controller {
                 // unresolved revisioned save must not turn its retained local
                 // selection into another PATCH while reconciliation is deferred.
                 if (!skipLastTopicReconciliation) {
-                    this.migrateLocalStorage({ keepEmptyPick: pickWon })
+                    this.migrateLocalStorage({ keepEmptySelection })
                 }
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent, creativeId)
                 if (this.currentTopicId) this.clearNewMessageBadge(this.currentTopicId)
                 if (!skipLastTopicReconciliation) {
-                    this.restoreSelection({ keepEmptyPick: pickWon })
+                    this.restoreSelection({ keepEmptySelection })
                 }
                 this.refreshOpenTopicListPopup()
             }
@@ -388,21 +405,21 @@ export default class extends Controller {
         }
     }
 
-    // keepEmptyPick: the caller established that the user picked All Messages
-    // after this render was set in motion. That pick names no topic, so it
-    // cannot be restored from a topic list — it must be reapplied. Without
-    // this the Main fallback below would treat it as "nothing selected",
-    // navigate away from it and persist Main, which is the same revert a chip
-    // click suffers. A prior interim restore may also have dispatched Main, so
-    // reapplying sends the authoritative empty selection to downstream
-    // controllers again.
-    restoreSelection({ keepEmptyPick = false } = {}) {
+    // keepEmptySelection: the caller established that All Messages is an
+    // intentional selection, either from a pick that outran this load or from
+    // a cleared server preference with a positive revision. It names no topic,
+    // so it cannot be restored from a topic list and must be reapplied. Without
+    // this the Main fallback below treats it as "nothing selected", navigates
+    // away from it and persists Main. A prior interim restore may also have
+    // dispatched Main, so reapplying sends the authoritative empty selection
+    // to downstream controllers again.
+    restoreSelection({ keepEmptySelection = this._explicitAllMessagesSelection } = {}) {
         const lastTopicId = this.currentTopicId
         // A deep link controls this popup's view, but it is not a replacement
         // for the saved preference. Replaying the linked selection after a
         // preference broadcast must therefore update the UI without writing the
         // link back over that newer server value.
-        const preservePreference = this.hasDeepLinkSelection && !keepEmptyPick
+        const preservePreference = this.hasDeepLinkSelection && !keepEmptySelection
         // archiveTopic() switched away from this topic on purpose. The server
         // preference still names it until the debounced save lands, so accept
         // the local intent over the stale server answer for that window.
@@ -425,7 +442,7 @@ export default class extends Controller {
             }
         }
 
-        if (keepEmptyPick && !lastTopicId) {
+        if (keepEmptySelection && !lastTopicId) {
             this.selectTopic("", { pick: false })
             return
         }
@@ -1464,6 +1481,10 @@ export default class extends Controller {
     applySelection(id, { pick = true, persist = true, pending = false } = {}) {
         if (persist) this.serverLastTopicId = id ? String(id) : ""
         if (pick) {
+            // selectTopic marks picks as pending; a blank direct setter is a
+            // programmatic fallback after deletion/archive and should retain
+            // the established Main fallback instead of becoming All Messages.
+            if (id || pending) this._explicitAllMessagesSelection = !id
             // Writing only the preference leaves the two sources that outrank it
             // in the getter still naming the topic being left, so the getter
             // keeps answering with it: the next renderTopics() lights the old
@@ -2012,6 +2033,10 @@ export default class extends Controller {
         return revision.every(Number.isSafeInteger) ? revision : null
     }
 
+    isPersistedAllMessagesSelection(topicId, revision) {
+        return !topicId && Boolean(revision && revision[1] > 0)
+    }
+
     compareLastTopicRevisions(left, right) {
         if (!left || !right) return null
         return left[0] === right[0] ? left[1] - right[1] : left[0] - right[0]
@@ -2237,18 +2262,17 @@ export default class extends Controller {
     }
 
     // The legacy key is adopted only as a stand-in for a preference the server
-    // does not hold yet. A winning empty pick is a preference — it just names no
-    // topic, so it is indistinguishable here from "server holds nothing", and
-    // adopting the legacy value would hand the user back a topic they did not
-    // ask for and persist it. The caller knows which of the two it is.
+    // does not hold yet. A winning empty pick or a revisioned cleared preference
+    // is an All Messages selection — it just names no topic, so adopting the
+    // legacy value would hand the user back a topic they did not ask for and
+    // persist it. The caller knows whether the empty value is intentional.
     //
-    // The key still goes, either way: the pick supersedes it, and its own save
-    // is already on the way, so leaving it behind would only re-apply a value
-    // the user has moved off on the next load.
-    migrateLocalStorage({ keepEmptyPick = false } = {}) {
+    // The key still goes either way: an intentional empty selection supersedes
+    // it, so leaving it behind would only re-apply a value the user moved off.
+    migrateLocalStorage({ keepEmptySelection = false } = {}) {
         const key = `collavre_creative_${this.creativeId}_last_topic`
         const localValue = localStorage.getItem(key)
-        if (localValue && !this.serverLastTopicId && !keepEmptyPick) {
+        if (localValue && !this.serverLastTopicId && !keepEmptySelection) {
             this.serverLastTopicId = localValue
             // The migration is a save like any other. Giving it a client id
             // prevents its broadcast from being mistaken for another session's
