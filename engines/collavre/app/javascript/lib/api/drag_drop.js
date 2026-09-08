@@ -1,4 +1,5 @@
 import csrfFetch from './csrf_fetch';
+import { apiErrorFromResponse } from './api_error';
 
 export function sendNewOrder({ draggedId, draggedIds, targetId, direction }) {
   const payload = { target_id: targetId, direction };
@@ -42,7 +43,10 @@ export function sendLinkedCreative({ draggedId, targetId, direction }) {
     },
     body: JSON.stringify({ dragged_id: draggedId, target_id: targetId, direction }),
   }).then((response) => {
-    if (!response.ok) throw new Error('Failed to create linked creative');
+    // An ApiError keeps the HTTP status attached: link_drop answers 403 for a
+    // permission failure and 422 for a domain rejection, and a multi-link drop
+    // has to report which of the two happened per creative.
+    if (!response.ok) return apiErrorFromResponse(response).then((error) => { throw error; });
     return response.json();
   });
 }
