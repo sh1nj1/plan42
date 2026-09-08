@@ -32,6 +32,7 @@ import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
 import { restoreTreeEmptyState } from '../../modules/creative_tree_empty_state';
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope';
+import { createDragDropRegistry } from '../../lib/dnd/registry';
 import { getVerticalDropPosition } from '../../lib/dnd/hit_test';
 import {
   DROP_COMPLETED_EVENT,
@@ -367,7 +368,7 @@ export function handleDragStart(event) {
   });
 }
 
-export function handleDragOver(event) {
+export function handleDragOver(event, intent = null) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   const lastRow = getLastDragOverRow();
   if (lastRow && lastRow !== tree) {
@@ -396,7 +397,7 @@ export function handleDragOver(event) {
 
   const previousPosition = getLastDragOverRow() === tree ? dragState.getLastDragOverPosition() : null;
 
-  const position = getVerticalDropPosition({
+  const position = intent || getVerticalDropPosition({
     clientY: event.clientY,
     rect: tree.getBoundingClientRect(),
     previousPosition,
@@ -436,7 +437,7 @@ function resetDrag() {
   hideLinkHover();
 }
 
-export function handleDrop(event) {
+export function handleDrop(event, intent = null) {
   clearHoverExpand();
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
@@ -490,8 +491,8 @@ export function handleDrop(event) {
     return;
   }
 
-  const previewedDirection = getLastDragOverRow() === targetTree
-    ? dragState.getLastDragOverPosition() : null;
+  const previewedDirection = intent || (getLastDragOverRow() === targetTree
+    ? dragState.getLastDragOverPosition() : null);
 
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
@@ -682,4 +683,42 @@ export function registerGlobalHandlers() {
 
 export function hasActiveDrag() {
   return hasDraggedState();
+}
+
+// Keep domain commands and DOM recovery in this adapter. Native and touch
+// gestures share the registry's source, hit intent and cleanup lifecycle.
+export function createCreativeTreeDragDrop() {
+  const registry = createDragDropRegistry();
+  registry.registerDragSource({
+    selector: DRAGGABLE_SELECTOR,
+    onDragStart: ({ event }) => handleDragStart(event),
+    onDragEnd: () => {
+      clearDragHighlight(getLastDragOverRow());
+      resetDrag();
+    },
+  });
+  registry.registerDropZone({
+    selector: DRAGGABLE_SELECTOR,
+    accepts: ['creative', 'topic'],
+    hitTest: ({ el, event, kind, previousHit }) => {
+      if (el.draggable === false) return null;
+      if (kind === 'topic') return 'child';
+      return getVerticalDropPosition({
+        clientY: event.clientY,
+        rect: el.getBoundingClientRect(),
+        previousPosition: previousHit,
+      });
+    },
+    preview: ({ event, hit }) => {
+      handleDragOver(event, hit);
+      return () => handleDragLeave(event);
+    },
+    dropEffect: ({ event }) => {
+      if (event.shiftKey) showLinkHover(event.clientX, event.clientY);
+      else hideLinkHover();
+      return event.shiftKey ? 'copy' : 'move';
+    },
+    onDrop: ({ event, hit }) => handleDrop(event, hit),
+  });
+  return registry;
 }

@@ -1,4 +1,7 @@
 import { getDragKind, readDragData } from './envelope'
+import { createTouchBridge } from './touch_bridge'
+
+const liveRegistries = new Set()
 
 function matchingElement(root, event, selector) {
   const element = event.target?.closest?.(selector)
@@ -31,6 +34,7 @@ function samePreview(left, right) {
 
 export function createDragDropRegistry({
   root = document,
+  touch = true,
   getKind = getDragKind,
   readData = readDragData,
   onError = (error) => console.error(error),
@@ -56,7 +60,7 @@ export function createDragDropRegistry({
     activePreview = null
   }
 
-  const resolveZone = (event, usePreview = false) => {
+  const matchZone = (event) => {
     const kind = getKind(event.dataTransfer)
     let match = null
     for (const zone of zones) {
@@ -64,9 +68,19 @@ export function createDragDropRegistry({
       if (!element || !acceptsKind(zone.accepts, kind, event)) continue
       if (!match || match.element.contains(element)) match = { zone, element }
     }
-    if (!match) return null
+    return match ? { ...match, kind } : null
+  }
 
-    const { zone, element } = match
+  const resolveZone = (event, usePreview = false) => {
+    let owner = null
+    for (const candidate of liveRegistries) {
+      const match = candidate.matchDrop(event)
+      if (match && (!owner || (owner.match.element !== match.element && owner.match.element.contains(match.element)))) {
+        owner = { registry: candidate, match }
+      }
+    }
+    if (owner?.registry !== registry) return null
+    const { zone, element, kind } = owner.match
     const previousHit = activeDrop?.zone === zone && activeDrop.element === element
       ? activeDrop.hit : null
     const hit = usePreview && previousHit
@@ -75,14 +89,22 @@ export function createDragDropRegistry({
   }
 
   const handleDragStart = (event) => {
+    let owner = null
+    for (const candidate of liveRegistries) {
+      const element = candidate.getDragSource(event.target)
+      if (element && (!owner || (owner.element !== element && owner.element.contains(element)))) {
+        owner = { registry: candidate, element }
+      }
+    }
+    if (owner?.registry !== registry) return
     const source = sources.find((candidate) => matchingElement(root, event, candidate.selector))
-    if (!source) return
-
     const element = matchingElement(root, event, source.selector)
     activeSource = { source, element }
     try {
-      source.onDragStart({ el: element, event })
+      if (source.onDragStart({ el: element, event }) === false) event.preventDefault()
+      event.stopPropagation()
     } catch (error) {
+      event.preventDefault()
       activeSource = null
       reportError(onError, error)
     }
@@ -120,6 +142,7 @@ export function createDragDropRegistry({
     }
 
     event.preventDefault()
+    event.stopPropagation()
     const { zone, element, hit, kind } = resolved
     event.dataTransfer.dropEffect = typeof zone.dropEffect === 'function'
       ? zone.dropEffect({ el: element, event, hit, kind })
@@ -154,6 +177,7 @@ export function createDragDropRegistry({
       if (!data || data.kind !== resolved.kind) return
 
       event.preventDefault()
+      event.stopPropagation()
       Promise.resolve(resolved.zone.onDrop({
         el: resolved.element,
         event,
@@ -163,18 +187,60 @@ export function createDragDropRegistry({
     } catch (error) {
       reportError(onError, error)
     } finally {
-      clearPreview()
-      activeDrop = null
+      if (resolved) {
+        for (const candidate of liveRegistries) candidate.finishDrag(event)
+      } else {
+        clearPreview()
+        activeDrop = null
+      }
     }
   }
 
+  const ownerDocument = root.ownerDocument || root
+  const handleKeyDown = (event) => {
+    if (event.key !== 'Escape') return
+    bridge?.cancel()
+    handleDragEnd(event)
+  }
+  ownerDocument.addEventListener('keydown', handleKeyDown)
+  if (root !== ownerDocument) ownerDocument.addEventListener('dragend', handleDragEnd)
   root.addEventListener('dragstart', handleDragStart)
   root.addEventListener('dragend', handleDragEnd)
   root.addEventListener('dragover', handleDragOver)
   root.addEventListener('dragleave', handleDragLeave)
   root.addEventListener('drop', handleDrop)
 
-  return {
+  const registry = {
+    finishDrag: handleDragEnd,
+    matchDrop: matchZone,
+    getDragSource(target) {
+      for (const source of sources) {
+        const element = matchingElement(root, { target }, source.selector)
+        if (element) return element
+      }
+      return null
+    },
+
+    localDropTargets() {
+      const selector = zones.map(zone => zone.selector).join(',')
+      return selector ? [...(root.matches?.(selector) ? [root] : []), ...root.querySelectorAll(selector)] : []
+    },
+
+    getDropTargets() {
+      const targets = new Set()
+      for (const candidate of liveRegistries) {
+        for (const target of candidate.localDropTargets()) {
+          if (target.ownerDocument === (root.ownerDocument || root)) targets.add(target)
+        }
+      }
+      const depth = element => {
+        let count = 0
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) count += 1
+        return count
+      }
+      return [...targets].sort((left, right) => depth(right) - depth(left))
+    },
+
     registerDragSource(source) {
       if (!source?.selector || typeof source.onDragStart !== 'function') {
         throw new TypeError('A drag source requires selector and onDragStart')
@@ -202,7 +268,11 @@ export function createDragDropRegistry({
     },
 
     destroy() {
+      bridge?.destroy()
+      liveRegistries.delete(registry)
       handleDragEnd({ type: 'destroy' })
+      ownerDocument.removeEventListener('keydown', handleKeyDown)
+      if (root !== ownerDocument) ownerDocument.removeEventListener('dragend', handleDragEnd)
       root.removeEventListener('dragstart', handleDragStart)
       root.removeEventListener('dragend', handleDragEnd)
       root.removeEventListener('dragover', handleDragOver)
@@ -214,4 +284,7 @@ export function createDragDropRegistry({
       activeDrop = null
     },
   }
+  liveRegistries.add(registry)
+  const bridge = touch ? createTouchBridge({ root, registry }) : null
+  return registry
 }
