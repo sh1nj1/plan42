@@ -206,3 +206,19 @@ test('a command runner that throws synchronously still triggers recovery', async
   expect(topLevelRowIds()).toEqual(['3', '9'])
   expect(draggedRow.getAttribute('parent-id')).toBe('1')
 })
+
+test('a move swallowed by the login redirect reverts the optimistic DOM', async () => {
+  const { draggedRow, moveContext, newParentId } = optimisticallyDropAsChild()
+  const sendNewOrder = jest.fn().mockResolvedValue({ ok: true, status: 200, redirected: true })
+
+  const result = await runMoveWithDomRecovery({
+    command: COMMAND(),
+    moveContext,
+    attemptedParentId: newParentId,
+    api: { sendNewOrder },
+  })
+
+  expect(result.failures[0].reason).toBe('authentication_required')
+  expect(topLevelRowIds()).toEqual(['3', '9'])
+  expect(draggedRow.getAttribute('parent-id')).toBe('1')
+})

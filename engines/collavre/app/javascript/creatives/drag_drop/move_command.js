@@ -40,11 +40,20 @@
  *      forwards would leave them ordered 5,4,3. `succeededIds` and `payloads`
  *      are still reported in selection order, so callers never see the reversal.
  *
+ * ## Expired sessions
+ *
+ * `Authentication#request_authentication` redirects *any* request without a
+ * live session to the login page, POSTs included, and fetch follows that
+ * redirect and returns an `ok` HTML response. A redirected response is
+ * therefore reported as `authentication_required`, never as a move that
+ * landed — otherwise the adapter would keep an optimistic DOM the database
+ * disagrees with until the next reload.
+ *
  * `executeMoveCommand` resolves for every transport and server outcome. The
  * only rejection path is an invalid command, which is a programming error.
  */
 
-import { sendNewOrder, sendLinkedCreative } from '../../lib/api/drag_drop';
+import { sendNewOrder, sendLinkedCreative, isAuthenticationRedirect } from '../../lib/api/drag_drop';
 
 export const MOVE_MODES = Object.freeze({
   MOVE: 'move',
@@ -60,6 +69,7 @@ export const MOVE_STATUSES = Object.freeze({
 });
 
 export const MOVE_FAILURE_REASONS = Object.freeze({
+  AUTHENTICATION_REQUIRED: 'authentication_required',
   PERMISSION_DENIED: 'permission_denied',
   REJECTED: 'rejected',
   SERVER_ERROR: 'server_error',
@@ -127,7 +137,10 @@ export function createMoveCommand({ ids, targetId, direction, mode = MOVE_MODES.
 }
 
 function classifyStatus(status) {
-  if (status === 401 || status === 403) return MOVE_FAILURE_REASONS.PERMISSION_DENIED;
+  // 401 is "sign in again", 403 is "you may not do that" — different messages,
+  // so they get different reasons.
+  if (status === 401) return MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED;
+  if (status === 403) return MOVE_FAILURE_REASONS.PERMISSION_DENIED;
   if (typeof status !== 'number') return MOVE_FAILURE_REASONS.NETWORK_ERROR;
   if (status >= 500) return MOVE_FAILURE_REASONS.SERVER_ERROR;
   return MOVE_FAILURE_REASONS.REJECTED;
@@ -138,7 +151,9 @@ function failureFromError(id, error) {
   return {
     id,
     status,
-    reason: classifyStatus(status),
+    reason: error?.authenticationRequired
+      ? MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED
+      : classifyStatus(status),
     message: error?.message || '',
   };
 }
@@ -182,7 +197,11 @@ async function executeReorder(command, api) {
     });
   }
 
-  if (response && response.ok) {
+  // An expired session redirects the POST to the login page and fetch follows
+  // it, so a redirected response is `ok` without the reorder ever running.
+  const unauthenticated = isAuthenticationRedirect(response);
+
+  if (response && response.ok && !unauthenticated) {
     return buildResult(command, { succeeded: new Set(ids), failures: [] });
   }
 
@@ -192,7 +211,9 @@ async function executeReorder(command, api) {
     failures: ids.map((id) => ({
       id,
       status,
-      reason: classifyStatus(status),
+      reason: unauthenticated
+        ? MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED
+        : classifyStatus(status),
       message: '',
     })),
   });

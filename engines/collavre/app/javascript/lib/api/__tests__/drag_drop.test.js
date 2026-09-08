@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import { jest } from '@jest/globals'
-import { sendNewOrder, sendLinkedCreative } from '../drag_drop'
+import { sendNewOrder, sendLinkedCreative, isAuthenticationRedirect } from '../drag_drop'
 import { ApiError } from '../api_error'
 
 function stubFetch({ status = 200, statusText = 'OK', body = '' } = {}) {
@@ -96,5 +96,41 @@ describe('sendLinkedCreative', () => {
       .catch((caught) => caught)
 
     expect(error.message).toBe('HTTP 500: Internal Server Error')
+  })
+})
+
+describe('expired session', () => {
+  test('a link_drop followed to the login page is rejected, not parsed as a node', async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      redirected: true,
+      headers: new Headers(),
+      json: async () => { throw new SyntaxError('Unexpected token <') },
+      text: async () => '<!DOCTYPE html>',
+    }
+    global.fetch = jest.fn().mockResolvedValue(response)
+
+    const error = await sendLinkedCreative({ draggedId: '3', targetId: '9', direction: 'child' })
+      .catch((caught) => caught)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.authenticationRequired).toBe(true)
+  })
+
+  test('a reorder followed to the login page is flagged on the response', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      redirected: true,
+      headers: new Headers(),
+    })
+
+    const response = await sendNewOrder({ draggedId: '3', targetId: '9', direction: 'up' })
+
+    expect(isAuthenticationRedirect(response)).toBe(true)
   })
 })

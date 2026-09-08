@@ -414,3 +414,53 @@ describe('executeMoveCommand — defensive paths', () => {
     delete global.fetch
   })
 })
+
+// An expired session sends *any* request to the login page
+// (Authentication#request_authentication redirects unconditionally), and fetch
+// follows that redirect and hands back a perfectly ok HTML response. Trusting
+// `response.ok` alone would report a move that never reached the endpoint as
+// applied, and the adapter would keep an optimistic DOM the database disagrees
+// with until the next reload.
+describe('executeMoveCommand — expired session', () => {
+  test('a reorder answered by the login redirect is not a success', async () => {
+    const sendNewOrder = jest.fn().mockResolvedValue({ ok: true, status: 200, redirected: true })
+
+    const result = await executeMoveCommand(
+      createMoveCommand({ ids: ['3', '4'], targetId: '9', direction: 'child' }),
+      { api: { sendNewOrder } }
+    )
+
+    expect(result.status).toBe('failure')
+    expect(result.succeededIds).toEqual([])
+    expect(result.failures.map((failure) => failure.reason))
+      .toEqual([
+        MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED,
+        MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED,
+      ])
+  })
+
+  test('a 401 asks for a new session rather than blaming permissions', async () => {
+    const sendNewOrder = jest.fn().mockResolvedValue(failedResponse(401))
+
+    const result = await executeMoveCommand(
+      createMoveCommand({ ids: ['3'], targetId: '9', direction: 'up' }),
+      { api: { sendNewOrder } }
+    )
+
+    expect(result.failures[0].reason).toBe(MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED)
+  })
+
+  test('a link rejected as unauthenticated is reported as such', async () => {
+    const error = new Error('Authentication required')
+    error.status = 200
+    error.authenticationRequired = true
+    const sendLinkedCreative = jest.fn().mockRejectedValue(error)
+
+    const result = await executeMoveCommand(
+      createMoveCommand({ ids: ['3'], targetId: '9', direction: 'child', mode: 'link' }),
+      { api: { sendLinkedCreative } }
+    )
+
+    expect(result.failures[0].reason).toBe(MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED)
+  })
+})
