@@ -34,11 +34,12 @@ export default class extends CommonPopupController {
         super.disconnect()
     }
 
-    open(anchor, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
+    open(anchor, onSelectCallback, onCloseCallback, { allowCreate = false, selectOrigin = true } = {}) {
         this._openGeneration++
         this.onSelectCallback = onSelectCallback
         this.onCloseCallback = onCloseCallback
         this._allowCreate = allowCreate
+        this._selectOrigin = selectOrigin
         this._creating = false
         this._mode = 'tree'
         this._rootNodes = null
@@ -496,7 +497,9 @@ export default class extends CommonPopupController {
         // PermissionChecker treat the shell as the permission base. Flat search
         // rows already carry the origin creative's id, so they pass through.
         const item = row.closest('.link-tree-item')
-        const id = Number((item && item.dataset.originId) || row.dataset.id)
+        // Placement commands target the chosen shell, while link creation
+        // continues to resolve its effective origin by default.
+        const id = Number((this._selectOrigin && item?.dataset.originId) || row.dataset.id)
         const labelEl = row.querySelector('.link-tree-label, .link-result-label')
         const label = labelEl ? labelEl.textContent : ''
         this.select({ id, label })

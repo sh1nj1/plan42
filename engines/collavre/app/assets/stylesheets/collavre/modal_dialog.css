@@ -19,7 +19,6 @@
   z-index: calc(var(--layer-modal, 1000) + 1);
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   animation: modal-dialog-fade-in 0.15s var(--ease-out-3, ease-out);
 }
 
@@ -40,7 +39,6 @@
 dialog.modal-dialog::backdrop {
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 /* ── Panel ── */
@@ -67,7 +65,8 @@ dialog.modal-dialog::backdrop {
   animation: modal-dialog-slide-up 0.2s var(--ease-out-3, ease-out);
 }
 
-.modal-dialog.open {
+.modal-dialog.open,
+dialog.modal-dialog[open] {
   display: block;
 }
 

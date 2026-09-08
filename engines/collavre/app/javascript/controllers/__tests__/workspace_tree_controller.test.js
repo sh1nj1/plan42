@@ -12,6 +12,16 @@ describe('WorkspaceTreeController', () => {
   let fetchMock
   let preventNavigation
 
+  test('offers a native move button for each workspace row without navigating', () => {
+    const button = controller.element.querySelector('[data-creative-move-id="1"]')
+    expect(button.type).toBe('button')
+    expect(button.textContent).toBe('Move…')
+    expect(button.getAttribute('aria-haspopup')).toBe('dialog')
+    const requests = fetchMock.mock.calls.length
+    button.click()
+    expect(fetchMock).toHaveBeenCalledTimes(requests)
+  })
+
   beforeEach(async () => {
     window.localStorage.clear()
     fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
@@ -54,6 +64,7 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="Move…"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
@@ -289,6 +300,7 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="Move…"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
