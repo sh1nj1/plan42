@@ -248,7 +248,9 @@ function getDraggedContext(event) {
   const transfer = event.dataTransfer;
   const hasTrustedPayload = getDragKind(transfer) === 'creative';
   const data = readDragData(transfer);
-  const parsed = data?.kind === 'creative' ? data.payload : null;
+  const parsed = data?.kind === 'creative'
+    ? { ...data.payload, selectedCreativeIds: data.ids }
+    : null;
   const wasRejectedPayload = hasTrustedPayload && !parsed;
 
   if (existing) {
