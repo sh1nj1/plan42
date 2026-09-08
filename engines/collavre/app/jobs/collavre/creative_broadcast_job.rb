@@ -87,13 +87,7 @@ module Collavre
         end
 
         # Remap ancestor IDs
-        if user_data[:ancestors].present?
-          user_data[:ancestors] = user_data[:ancestors].map do |anc|
-            origin_id = anc[:origin_id] || anc[:id]
-            mapped_id = user_map[origin_id]
-            mapped_id ? anc.merge(id: mapped_id, origin_id: origin_id) : anc
-          end
-        end
+        user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], user_map) if user_data[:ancestors].present?
 
         # Per-user can_write permission
         user_data[:can_write] = creative.has_permission?(target_user, :write) && !creative.effective_origin.read_only_source?
@@ -158,13 +152,7 @@ module Collavre
         user_data[:linked_id] = linked_map[target_user.id] if linked_map[target_user.id]
         user_data[:parent_id] = user_map[user_data[:parent_id]] || user_data[:parent_id] if user_data[:parent_id]
 
-        if user_data[:ancestors].present?
-          user_data[:ancestors] = user_data[:ancestors].map do |anc|
-            origin_id = anc[:origin_id] || anc[:id]
-            mapped_id = user_map[origin_id]
-            mapped_id ? anc.merge(id: mapped_id, origin_id: origin_id) : anc
-          end
-        end
+        user_data[:ancestors] = remap_ancestor_ids(user_data[:ancestors], user_map) if user_data[:ancestors].present?
         add_ancestor_progress_controls!(user_data[:ancestors], target_user, ancestor_progress_controls)
 
         json_payload = { action: "destroyed", creative: user_data }.to_json
@@ -177,17 +165,29 @@ module Collavre
       end
     end
 
+    def remap_ancestor_ids(ancestors, user_map)
+      ancestors.map do |ancestor|
+        origin_id = ancestor[:origin_id] || ancestor[:id]
+        mapped_id = user_map[origin_id]
+        mapped_id ? ancestor.merge(id: mapped_id, origin_id: origin_id) : ancestor
+      end
+    end
+
     # Build progress HTML for a newly created creative.
     # New creatives always have 0 comments and initial progress, so we can
     # construct the HTML directly without a full view render.
     # Includes:
+    # - the move action, so a row that arrives over the wire keeps the same
+    #   click/keyboard move path a server-rendered row has
     # - turbo-cable-stream-source (per-user subscription for badge updates)
     # - comment button (hidden via no-comments class — 0 comments initially)
     # - the same progress control used by normal server rendering
     def render_progress_html(creative, user, skip_permission_check: false)
       I18n.with_locale(user.locale.presence || I18n.default_locale) do
         origin = creative.effective_origin
-        progress_part = render_progress_control_html(creative, user)
+        can_write = creative.has_permission?(user, :write) && !origin.read_only_source?
+        move_part = Collavre::ApplicationController.helpers.render_creative_move_action(creative, can_write)
+        progress_part = render_progress_control_html(creative, user, effective: origin, can_write: can_write)
 
         # Comment part — only render if user has feedback permission (matching helper behavior)
         # When skip_permission_check is true, the user was already verified by find_broadcast_users
@@ -215,8 +215,8 @@ module Collavre
           comment_part = "#{stream_tag}#{comment_btn}"
         end
 
-        # Wrap in creative-row-end div — order: progress, then comment (matching helper)
-        %(<div class="creative-row-end">#{progress_part}#{comment_part}</div>)
+        # Wrap in creative-row-end div — order: move, progress, then comment (matching helper)
+        %(<div class="creative-row-end">#{move_part}#{progress_part}#{comment_part}</div>)
       end
     rescue StandardError => e
       Rails.logger.warn "[CreativeBroadcastJob] render_progress_html failed for creative##{creative.id} user##{user.id}: #{e.message}"

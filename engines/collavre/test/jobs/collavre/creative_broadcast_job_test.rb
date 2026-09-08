@@ -286,6 +286,26 @@ module Collavre
       assert_includes html, "creative-row-end"
     end
 
+    # A row that arrives over the wire is the only row a user never reloads the
+    # page for, so losing the move button here loses the whole non-drag path
+    # for freshly created creatives.
+    test "render_progress_html keeps the move action for a writer" do
+      job = CreativeBroadcastJob.new
+      html = job.send(:render_progress_html, @child, @shared_user, skip_permission_check: true)
+
+      assert_includes html, %(data-creative-move-id="#{@child.id}")
+    end
+
+    test "render_progress_html omits the move action without write permission" do
+      reader = users(:three)
+      perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: reader, permission: :read) }
+
+      job = CreativeBroadcastJob.new
+      html = job.send(:render_progress_html, @child, reader, skip_permission_check: true)
+
+      assert_not_includes html, "data-creative-move-id"
+    end
+
     test "render_progress_html includes progress percentage" do
       # Use a leaf creative (no children) so progress stays as set
       leaf = nil

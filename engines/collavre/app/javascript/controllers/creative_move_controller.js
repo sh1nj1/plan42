@@ -28,6 +28,7 @@ export default class extends Controller {
     this.focusObserver?.disconnect()
     this.trigger = button
     const id = button.dataset.creativeMoveId
+    this.triggerId = id
     const selected = [...document.querySelectorAll('.select-creative-checkbox:checked')].map(el => el.value)
     this.ids = selected.includes(id) ? [...new Set(selected)] : [id]
     this.targetId = null
@@ -127,7 +128,15 @@ export default class extends Controller {
   }
 
   restoreFocus() {
-    if (this.trigger?.isConnected) this.trigger.focus()
-    else document.querySelector('[data-creative-move-id]')?.focus()
+    if (this.trigger?.isConnected) return this.trigger.focus()
+    // A refresh replaces the trigger rather than moving it, so recover the
+    // button for the same creative first: falling straight through to the
+    // first button in the document would drop the user at the top of a tree
+    // they did not act on. The creative can also be gone from both trees --
+    // moved under a collapsed branch -- and only then is any button better
+    // than none.
+    const buttons = [...document.querySelectorAll('[data-creative-move-id]')]
+    const sameCreative = buttons.find(el => el.dataset.creativeMoveId === this.triggerId)
+    ;(sameCreative || buttons[0])?.focus()
   }
 }

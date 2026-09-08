@@ -1,5 +1,15 @@
 import TouchDragHandler from '../touch_drag'
 
+function sourceLabel(source) {
+  const document = source.ownerDocument
+  const labelledBy = (source.getAttribute('aria-labelledby') || '').split(/\s+/)
+    .map(id => document.getElementById(id)?.textContent || '').join(' ')
+  const image = source.matches('img') ? source : source.querySelector('img[alt]')
+  return [labelledBy, source.getAttribute('aria-label'), source.getAttribute('title'),
+    image?.getAttribute('alt'), source.innerText ?? source.textContent]
+    .map(value => (value || '').replace(/\s+/g, ' ').trim()).find(Boolean)
+}
+
 // Feed touch input through the same DOM events as native dragging so source
 // serialization, target policy, previews and business commands have one owner.
 function attachTouchBridge({ root, registry }) {
@@ -10,9 +20,9 @@ function attachTouchBridge({ root, registry }) {
   let lastTarget = null
   let dragImage = null
 
-  function dispatch(type, target, point = {}) {
+  function dispatch(type, target, point = {}, relatedTarget = null) {
     const event = new Event(type, { bubbles: true, cancelable: true })
-    Object.assign(event, { dataTransfer, clientX: point.clientX ?? 0,
+    Object.assign(event, { dataTransfer, relatedTarget, clientX: point.clientX ?? 0,
       clientY: point.clientY ?? 0, shiftKey: false })
     target.dispatchEvent(event)
     return event
@@ -46,7 +56,12 @@ function attachTouchBridge({ root, registry }) {
       return true
     },
     getDropTargets: () => registry.getDropTargets(),
-    proxyContent: () => dragImage,
+    proxyContent() {
+      if (dragImage) return dragImage
+      const label = sourceLabel(source)
+      // A text node preserves literal labels without cloning controllers or IDs.
+      return label ? document.createTextNode(label) : null
+    },
     autoScroll: true,
     scrollContainer(point, target) {
       let el = target || document.elementFromPoint?.(point.clientX, point.clientY)
@@ -84,7 +99,9 @@ function attachTouchBridge({ root, registry }) {
     hitTest(el, point) {
       const target = targetAtPoint(el, point)
       if (!target) return null
-      if (lastTarget && lastTarget !== target) dispatch('dragleave', lastTarget, point)
+      // Carry relatedTarget like a native dragleave so a zone can tell a move
+      // between its own descendants from a real departure and keep its preview.
+      if (lastTarget && lastTarget !== target) dispatch('dragleave', lastTarget, point, target)
       lastTarget = target
       return dispatch('dragover', target, point).defaultPrevented ? 'into' : null
     },

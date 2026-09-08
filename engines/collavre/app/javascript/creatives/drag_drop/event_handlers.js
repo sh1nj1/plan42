@@ -209,7 +209,7 @@ function removeDroppedCreative({ creativeId, treeId }) {
   restoreTreeEmptyState();
 }
 
-function syncSourceWindowDrop(detail) {
+function syncSourceWindowCreative(detail) {
   const { creativeId, treeId = null, direction, targetTreeId = null } = detail;
   if (!creativeId || !direction || !targetTreeId) {
     removeDroppedCreative({ creativeId, treeId });
@@ -256,12 +256,35 @@ function syncSourceWindowDrop(detail) {
   }
 }
 
+function completedCreativeIds(detail) {
+  const ids = Array.isArray(detail.creativeIds) ? detail.creativeIds : [];
+  const normalized = [...new Set(ids
+    .filter(id => id !== null && id !== undefined && String(id) !== '')
+    .map(String))];
+  if (normalized.length) return normalized;
+  return detail.creativeId == null || String(detail.creativeId) === '' ? [] : [String(detail.creativeId)];
+}
+
+function syncSourceWindowDrop(detail) {
+  if (detail.mode === 'link') return;
+  const ids = completedCreativeIds(detail);
+  // Each 'down' insertion is immediately after the target, so replay backwards
+  // to retain the server's selection order. Child inserts append in forward order.
+  if (detail.direction === 'down') ids.reverse();
+  for (const creativeId of ids) {
+    syncSourceWindowCreative({
+      ...detail,
+      creativeId,
+      treeId: creativeId === String(detail.creativeId) ? detail.treeId : null,
+    });
+  }
+}
+
 function handleStorageChange(event) {
   const payload = readDropSignal(event);
   if (!payload) return;
 
-  const { creativeId } = payload;
-  if (!creativeId) return;
+  if (!completedCreativeIds(payload).length) return;
 
   dispatchDropCompletion({
     ...payload,
@@ -273,8 +296,8 @@ function handleDropCompletionEvent(event) {
   if (!event || !event.detail) return;
 
   const detail = event.detail;
-  const { creativeId, treeId = null, sourceWindowId = null, context } = detail;
-  if (!creativeId || !context) return;
+  const { sourceWindowId = null, context } = detail;
+  if (!completedCreativeIds(detail).length || !context) return;
 
   const windowId = readDragWindowId();
   if (!windowId || sourceWindowId !== windowId) {

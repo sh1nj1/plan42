@@ -15,7 +15,7 @@ commands and DOM recovery belong to their adapters.
 - Workspace placement waits for server success, then refreshes both views while
   preserving view state. A child destination is revealed after success.
 
-## Context additions
+## Context list mutations
 
 - A bundle is deduplicated against direct and inherited contexts and submitted
   as one `update_contexts` PATCH containing the complete direct-context ID list.
@@ -24,9 +24,11 @@ commands and DOM recovery belong to their adapters.
 - Non-positive, fractional and unsafe numeric IDs are ignored. Duplicate-only
   bundles make no request. Direct-context order and incoming selection order
   are retained.
-- Drops are serialized through server save and reload so a second bundle keeps
-  additions from the first. A queued drop is cancelled if the popup switches
-  creative before it starts.
+- All whole-list writes (bundle drops, picker additions, removals and reorders)
+  compute their payload inside one queue through server save and reload, retaining
+  earlier outcomes. Queued writes are cancelled on disconnect or chat lifetime
+  changes, including switching away and back to the same creative. An already
+  sent request may finish, but its completion cannot change the new chat state.
 - HTTP failures, login redirects, HTML responses and network failures do not
   update the local context list or report success. A localized dialog asks the
   user to refresh before retrying: a network failure can leave the server result

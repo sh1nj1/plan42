@@ -139,6 +139,19 @@ test.each([
   }
 })
 
+test('context patch requests a JSON response', async () => {
+  const originalFetch = global.fetch
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: { get: () => 'application/json' } })
+  try {
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(true)
+    expect(global.fetch).toHaveBeenCalledWith('/creatives/42/update_contexts', expect.objectContaining({
+      headers: expect.objectContaining({ Accept: 'application/json' }),
+    }))
+  } finally {
+    global.fetch = originalFetch
+  }
+})
+
 test('context patch reports network uncertainty and successful writes distinctly', async () => {
   const originalFetch = global.fetch
   global.fetch = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ ok: true })
@@ -202,6 +215,14 @@ test('refresh after an uncertain write preserves server additions before retryin
   expect(controller._updateContextIds).toHaveBeenCalledWith([10, 20, 30, 40])
 })
 
+test('a failed write reports the supplied localized message', async () => {
+  popup.dataset.contextUpdateErrorText = '컨텍스트를 업데이트하지 못했습니다.'
+  controller._updateContextIds.mockResolvedValue(false)
+  await controller._addDroppedContexts(['30'])
+  expect(document.querySelector('[role="alertdialog"]').textContent).toContain('컨텍스트를 업데이트하지 못했습니다.')
+  document.querySelector('[role="alertdialog"] button').click()
+})
+
 test('context drag cancelled before its animation frame does not restore stale feedback', () => {
   let frame
   global.requestAnimationFrame = fn => { frame = fn; return 0 }
@@ -255,4 +276,169 @@ test('disconnect clears popup preview and removes delegated drop listeners', () 
   expect(drag('dragover', controller.listTarget, values).defaultPrevented).toBe(false)
   drag('drop', controller.listTarget, values)
   expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
+
+
+
+describe('serialized context writes against a fake server', () => {
+  let serverIds, pendingPatches, pendingLoads, originalFetch, errorSpy
+
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+  const contextsBody = () => ({ ok: true, json: async () => ({
+    contexts: [...serverIds.map(id => ({ id })), { id: 99, inherited: true }], can_manage: true
+  }) })
+  const patchOk = () => ({ ok: true, headers: { get: () => 'application/json' } })
+  const removalEvent = id => ({ stopPropagation() {}, currentTarget: { dataset: { contextId: String(id) } } })
+
+  beforeEach(() => {
+    serverIds = [10, 20]
+    pendingPatches = []
+    pendingLoads = []
+    originalFetch = global.fetch
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    delete controller.loadContexts
+    delete controller._updateContextIds
+    global.fetch = jest.fn((url, options) => {
+      if (options?.method === 'PATCH') {
+        const ids = JSON.parse(options.body).context_ids
+        return new Promise(resolve => pendingPatches.push(() => { if (ids) serverIds = ids; resolve(patchOk()) }))
+      }
+      return new Promise(resolve => pendingLoads.push(resolve))
+    })
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    errorSpy.mockRestore()
+    document.querySelectorAll('[role="alertdialog"] button').forEach(button => button.click())
+  })
+
+  const settle = async () => {
+    for (let i = 0; i < 12; i += 1) {
+      pendingPatches.splice(0).forEach(release => release())
+      pendingLoads.splice(0).forEach(resolve => resolve(contextsBody()))
+      await flush()
+    }
+  }
+
+  test.each(['disconnect', 'reopen'])('queued writes expire after %s even when creative ID is unchanged', async (transition) => {
+    const first = controller._addDroppedContexts(['30'])
+    await flush()
+    const queued = controller._addContextId('40')
+    if (transition === 'disconnect') controller.disconnect()
+    else {
+      controller.onChatWillOpen({ creativeId: '77' })
+      controller.onChatWillOpen({ creativeId: '42' })
+      controller.contexts = [{ id: 10 }, { id: 20 }]
+      controller.canManage = true
+    }
+    await settle()
+    await Promise.all([first, queued])
+    expect(serverIds).toEqual([10, 20, 30])
+    expect(global.fetch.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(1)
+    expect(pendingLoads).toHaveLength(0)
+  })
+
+  test('old completion cannot dirty refresh state after reconnect and a fresh addition succeeds', async () => {
+    const first = controller._addDroppedContexts(['30'])
+    await flush()
+    controller.disconnect()
+    controller.connect()
+    controller.canManage = true
+    controller.contexts = [{ id: 10 }, { id: 20 }, { id: 30 }]
+    pendingPatches.splice(0).forEach(release => release())
+    await first
+    expect(controller._contextDropNeedsRefresh).toBe(false)
+    const added = controller._addContextId('40')
+    await flush()
+    expect(pendingLoads).toHaveLength(0)
+    expect(pendingPatches).toHaveLength(1)
+    await settle()
+    await added
+    expect(serverIds).toEqual([10, 20, 30, 40])
+  })
+
+  test('a whole-list patch waiting behind another PATCH expires before transmission', async () => {
+    const disabled = controller._patchContexts({ disabled_context_ids: [10] })
+    await flush()
+    const drop = controller._addDroppedContexts(['30'])
+    await flush()
+    controller.disconnect()
+    await settle()
+    await Promise.all([disabled, drop])
+    expect(global.fetch.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(1)
+    expect(serverIds).toEqual([10, 20])
+  })
+
+  test('removing a missing or invalid context never writes the whole list', async () => {
+    await controller.removeContext(removalEvent(0))
+    await controller.removeContext(removalEvent(777))
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  test('a removal clicked while a bundle write is in flight keeps both outcomes', async () => {
+    const drop = controller._addDroppedContexts(['30', '40'])
+    await flush()
+    expect(pendingPatches.length).toBe(1)
+    const removal = controller.removeContext(removalEvent(10))
+    await settle()
+    await Promise.all([drop, removal])
+    expect(serverIds).toEqual([20, 30, 40])
+    expect(controller.contexts.filter(context => !context.inherited).map(context => context.id)).toEqual([20, 30, 40])
+  })
+
+  test('a reorder queued behind a bundle write reorders the reloaded list', async () => {
+    const drop = controller._addDroppedContexts(['30'])
+    await flush()
+    const reorder = controller.handleReorderDrop({ el: popup.querySelector('[data-context-id="10"]'), ids: ['20'], hit: 'left' })
+    await settle()
+    await Promise.all([drop, reorder])
+    expect(serverIds).toEqual([20, 10, 30])
+  })
+
+  test('a bundle dropped after a failed reload does not resurrect a removed context', async () => {
+    const removal = controller.removeContext(removalEvent(10))
+    await flush()
+    pendingPatches.splice(0).forEach(release => release())
+    await flush()
+    pendingLoads.splice(0).forEach(resolve => resolve({ ok: false }))
+    await removal
+    document.querySelectorAll('[role="alertdialog"] button').forEach(button => button.click())
+    const drop = controller._addDroppedContexts(['40'])
+    await settle()
+    await drop
+    expect(serverIds).toEqual([20, 40])
+  })
+
+  test('a modal addition queued behind a bundle write keeps the bundle', async () => {
+    const drop = controller._addDroppedContexts(['30'])
+    await flush()
+    const added = controller._addContextId('40')
+    await settle()
+    await Promise.all([drop, added])
+    expect(serverIds).toEqual([10, 20, 30, 40])
+  })
+
+  test('a modal addition of an existing or invalid creative never writes', async () => {
+    for (const id of [10, '99', 42, 0, -3, 1.5, 'nope', Number.MAX_SAFE_INTEGER + 1]) {
+      await controller._addContextId(id)
+      await settle()
+    }
+    expect(global.fetch).not.toHaveBeenCalledWith('/creatives/42/update_contexts', expect.anything())
+    expect(serverIds).toEqual([10, 20])
+  })
+
+  test('a reload superseded by a concurrent load is not reported as a failed write', async () => {
+    const drop = controller._addDroppedContexts(['30'])
+    await flush()
+    pendingPatches.splice(0).forEach(release => release())
+    await flush()
+    expect(pendingLoads.length).toBe(1)
+    const competing = controller.loadContexts()
+    expect(pendingLoads.length).toBe(2)
+    await settle()
+    await Promise.all([drop, competing])
+    expect(serverIds).toEqual([10, 20, 30])
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+  })
 })

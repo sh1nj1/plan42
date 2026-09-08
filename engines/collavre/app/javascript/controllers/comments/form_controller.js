@@ -1355,6 +1355,7 @@ export default class extends Controller {
   }
 
   insertCreativeLinks(creatives) {
+    if (!creatives.length) return
     const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
     const textarea = this.textareaTarget
     const pos = textarea.selectionStart

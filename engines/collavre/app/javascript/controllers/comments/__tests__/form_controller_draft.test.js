@@ -2110,6 +2110,16 @@ describe('FormController - draft persistence', () => {
     }
   })
 
+  test('an empty bundle leaves the draft and its dirty state untouched', () => {
+    controller.textareaTarget.value = 'See'
+    controller.textareaTarget.setSelectionRange(3, 3)
+    const input = jest.fn()
+    controller.textareaTarget.addEventListener('input', input)
+    controller.insertCreativeLinks([])
+    expect(controller.textareaTarget.value).toBe('See')
+    expect(input).not.toHaveBeenCalled()
+  })
+
   test('single-link callers preserve the shared insertion behavior', () => {
     controller.textareaTarget.value = 'See'
     controller.textareaTarget.setSelectionRange(3, 3)

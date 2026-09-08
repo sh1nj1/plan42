@@ -233,12 +233,17 @@ export function createDragDropRegistry({
           if (target.ownerDocument === (root.ownerDocument || root)) targets.add(target)
         }
       }
+      // Edge scrolling resolves targets every animation frame, so measure each
+      // ancestor chain once instead of on every comparison.
       const depth = element => {
         let count = 0
         for (let parent = element.parentElement; parent; parent = parent.parentElement) count += 1
         return count
       }
-      return [...targets].sort((left, right) => depth(right) - depth(left))
+      return [...targets]
+        .map(element => ({ element, depth: depth(element) }))
+        .sort((left, right) => right.depth - left.depth)
+        .map(({ element }) => element)
     },
 
     registerDragSource(source) {

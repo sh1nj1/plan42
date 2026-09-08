@@ -177,6 +177,35 @@ test('restores focus after asynchronous tree replacement without stealing user f
   expect(document.activeElement).toBe(input)
 })
 
+test('recovers focus onto the moved creative rather than the first row', async () => {
+  const first = document.createElement('button')
+  first.dataset.creativeMoveId = '7'
+  document.body.prepend(first)
+  destination()
+  executeMoveCommand.mockResolvedValue({ status: 'success', ok: true, succeededIds: ['1', '2'], failedIds: [] })
+  await submit()
+
+  const replacement = document.createElement('button')
+  replacement.dataset.creativeMoveId = '1'
+  document.querySelector('[data-creative-move-id="1"]').replaceWith(replacement)
+  await flush()
+
+  expect(document.activeElement).toBe(replacement)
+})
+
+test('falls back to any button when the moved creative left both trees', async () => {
+  destination()
+  executeMoveCommand.mockResolvedValue({ status: 'success', ok: true, succeededIds: ['1', '2'], failedIds: [] })
+  await submit()
+
+  const survivor = document.createElement('button')
+  survivor.dataset.creativeMoveId = '7'
+  document.querySelector('[data-creative-move-id="1"]').replaceWith(survivor)
+  await flush()
+
+  expect(document.activeElement).toBe(survivor)
+})
+
 test('does not update disconnected dialog after a command completes', async () => {
   destination()
   let resolve

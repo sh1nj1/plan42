@@ -144,6 +144,22 @@ test('moving between targets clears the former registry preview', () => {
   expect(firstCleanup).toHaveBeenCalled()
 })
 
+test('drifting between descendants of one zone keeps its preview and hover timer', () => {
+  const label = document.createElement('span')
+  const badge = document.createElement('span')
+  zone.append(label, badge)
+  document.elementFromPoint = () => label
+  touch('touchstart')
+  jest.advanceTimersByTime(450)
+  expect(previews).toHaveBeenCalledTimes(1)
+  const cleanup = previews.mock.results[0].value
+
+  document.elementFromPoint = () => badge
+  touch('touchmove')
+  expect(cleanup).not.toHaveBeenCalled()
+  expect(previews).toHaveBeenCalledTimes(1)
+})
+
 test('native source adapters can replace transfer data and set a drag image', () => {
   source.className = 'replacement'
   registry.registerDragSource({ selector: '.replacement', onDragStart: ({ event }) => {
@@ -310,6 +326,7 @@ test('the final touch coordinate is revalidated when no touchmove was delivered'
 
 test('touch preserves shared bundle artwork after the native drag image is removed', () => {
   source.className = 'bundle-source'
+  source.setAttribute('aria-label', 'Single source label must not replace bundle artwork')
   const image = document.createElement('div')
   image.className = 'drag-bundle-image'
   image.textContent = '3 selected'
@@ -431,4 +448,61 @@ test('committed long presses suppress native movement and the compatibility clic
   expect(touch('touchend').defaultPrevented).toBe(true)
   expect(click).not.toHaveBeenCalled()
   expect(drops).toHaveBeenCalledTimes(1)
+})
+
+test.each([
+  ['workspace row', '<a id="workspace-link" data-controller="row">  Workspace  one </a>', {}, 'Workspace one'],
+  ['topic chip', '<span>Visible topic</span>', { title: '  Planning topic  ' }, 'Planning topic'],
+  ['avatar', '<img id="agent-image" alt="Review agent">', {}, 'Review agent'],
+  ['accessible name', '<span>Visible label</span>', { 'aria-label': '  Accessible name  ', title: 'Title' }, 'Accessible name'],
+  ['blank name', '<span>Visible label</span>', { 'aria-label': ' ', title: 'Title fallback' }, 'Title fallback'],
+])('single %s touch proxies show a safe source label', (_kind, markup, attributes, expected) => {
+  source.innerHTML = markup
+  Object.entries(attributes).forEach(([name, value]) => source.setAttribute(name, value))
+  touch('touchstart')
+  jest.advanceTimersByTime(400)
+  const proxy = document.querySelector('.touch-drag-proxy')
+  expect(proxy.textContent).toBe(expected)
+  expect(proxy.children).toHaveLength(0)
+  expect(proxy.querySelector('[id], [data-controller]')).toBeNull()
+  touch('touchend')
+  expect(drops).toHaveBeenCalledTimes(1)
+})
+
+test('referenced accessible labels take precedence and never become HTML', () => {
+  const label = document.createElement('span')
+  label.id = 'drag-label'
+  label.textContent = '<img src=x onerror=alert(1)> & planning'
+  document.body.appendChild(label)
+  source.setAttribute('aria-labelledby', 'missing-label drag-label')
+  source.setAttribute('aria-label', 'Alternative label')
+  touch('touchstart')
+  jest.advanceTimersByTime(400)
+  const proxy = document.querySelector('.touch-drag-proxy')
+  expect(proxy.textContent).toBe(label.textContent)
+  expect(proxy.querySelector('img')).toBeNull()
+})
+
+test('an image source uses its own alt text', () => {
+  const avatar = document.createElement('img')
+  avatar.className = 'source'
+  avatar.alt = 'Agent avatar'
+  source.replaceWith(avatar)
+  source = avatar
+  touch('touchstart')
+  jest.advanceTimersByTime(400)
+  expect(document.querySelector('.touch-drag-proxy').textContent).toBe('Agent avatar')
+})
+
+test('visible text is used when available and empty labels keep the default count', () => {
+  source.textContent = 'Hidden source text'
+  Object.defineProperty(source, 'innerText', { configurable: true, value: '  Visible\n source ' })
+  touch('touchstart')
+  jest.advanceTimersByTime(400)
+  expect(document.querySelector('.touch-drag-proxy').textContent).toBe('Visible source')
+  touch('touchcancel')
+  Object.defineProperty(source, 'innerText', { value: '' })
+  touch('touchstart')
+  jest.advanceTimersByTime(400)
+  expect(document.querySelector('.touch-drag-proxy').textContent).toBe('1')
 })
