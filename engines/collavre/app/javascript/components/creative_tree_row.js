@@ -239,7 +239,6 @@ class CreativeTreeRow extends LitElement {
     const dragEnabled = !this.selectMode || this.canWrite;
     const draggableAttr = dragEnabled ? "true" : nothing;
 
-
     return html`
       <div
         class="creative-tree"

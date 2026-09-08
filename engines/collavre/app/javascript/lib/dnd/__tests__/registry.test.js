@@ -696,4 +696,53 @@ describe('createDragDropRegistry', () => {
 
     expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ kind: 'context', ids: ['7'] }))
   })
+  test('Escape cleans a native drag while other keys keep the preview', () => {
+    const cleanup = jest.fn()
+    const end = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => 'creative' })
+    registry.registerDragSource({ selector: '.source', onDragStart: jest.fn(), onDragEnd: end })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', onDrop: jest.fn(), preview: () => cleanup })
+    root.dispatchEvent(dragEvent('dragstart', root.querySelector('.source'), transfer()))
+    root.dispatchEvent(dragEvent('dragover', root.querySelector('.zone'), transfer()))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(cleanup).not.toHaveBeenCalled()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(end).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([true, false])('the nearest source and drop zone own overlapping registries (outer first: %s)', (outerFirst) => {
+    const options = { getKind: () => 'creative', readData: () => ({ kind: 'creative', ids: ['1'], payload: {} }) }
+    let outer
+    let inner
+    const makeOuter = () => { outer = createDragDropRegistry({ root: document, ...options }) }
+    const makeInner = () => { inner = createDragDropRegistry({ root, ...options }) }
+    if (outerFirst) { makeOuter(); makeInner() } else { makeInner(); makeOuter() }
+    const outerStart = jest.fn()
+    const innerStart = jest.fn()
+    const outerDrop = jest.fn()
+    const innerDrop = jest.fn()
+    outer.registerDragSource({ selector: '#root', onDragStart: outerStart })
+    outer.registerDropZone({ selector: '#root', accepts: 'creative', onDrop: outerDrop })
+    inner.registerDragSource({ selector: '.source', onDragStart: innerStart })
+    inner.registerDropZone({ selector: '.zone', accepts: 'creative', onDrop: innerDrop })
+    try {
+      root.querySelector('.source').dispatchEvent(dragEvent('dragstart', root.querySelector('.source'), transfer()))
+      root.querySelector('.zone').dispatchEvent(dragEvent('dragover', root.querySelector('.zone'), transfer()))
+      root.querySelector('.zone').dispatchEvent(dragEvent('drop', root.querySelector('.zone'), transfer()))
+      expect(innerStart).toHaveBeenCalledTimes(1)
+      expect(outerStart).not.toHaveBeenCalled()
+      expect(innerDrop).toHaveBeenCalledTimes(1)
+      expect(outerDrop).not.toHaveBeenCalled()
+    } finally { outer.destroy(); inner.destroy() }
+  })
+
+  test('a source can decline a native drag before it starts', () => {
+    registry = createDragDropRegistry({ root })
+    registry.registerDragSource({ selector: '.source', onDragStart: () => false })
+    const event = dragEvent('dragstart', root.querySelector('.source'), transfer())
+    root.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
 })

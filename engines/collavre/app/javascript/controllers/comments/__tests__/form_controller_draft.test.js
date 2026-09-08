@@ -2067,6 +2067,19 @@ describe('FormController - draft persistence', () => {
     await new Promise((resolve) => setTimeout(resolve, 600))
     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
   })
+  test.each([
+    [['application/x-collavre-creative'], [], true],
+    [['Files'], [new File(['image'], 'image.png', { type: 'image/png' })], true],
+    [['text/plain'], [], false],
+  ])('dragover accepts creative or image transfers and ignores other data (%j)', (types, files, accepted) => {
+    const event = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.assign(event, { dataTransfer: { types, files } })
+    const stop = jest.spyOn(event, 'stopPropagation')
+    controller.handleDragOver(event)
+    expect(event.defaultPrevented).toBe(accepted)
+    expect(stop).toHaveBeenCalledTimes(accepted ? 1 : 0)
+  })
+
   test('dropping a creative bundle inserts every link and preserves text after the cursor', () => {
     controller.formTarget.id = 'new-comment-form'
     const textarea = controller.textareaTarget

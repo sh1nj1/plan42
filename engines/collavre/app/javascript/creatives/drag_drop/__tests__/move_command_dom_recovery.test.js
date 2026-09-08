@@ -222,3 +222,12 @@ test('a move swallowed by the login redirect reverts the optimistic DOM', async 
   expect(topLevelRowIds()).toEqual(['3', '9'])
   expect(draggedRow.getAttribute('parent-id')).toBe('1')
 })
+
+test('an omitted move intent rejects without changing the existing tree', async () => {
+  mountTree()
+  const before = document.getElementById('creatives').innerHTML
+
+  await expect(runMoveWithDomRecovery()).rejects.toThrow(InvalidMoveCommandError)
+
+  expect(document.getElementById('creatives').innerHTML).toBe(before)
+})

@@ -246,3 +246,13 @@ test('context bundle propagates the real PATCH outcome instead of assuming succe
     global.fetch = originalFetch
   }
 })
+test('disconnect clears popup preview and removes delegated drop listeners', () => {
+  const values = creativeValues(['30'])
+  drag('dragover', controller.listTarget, values)
+  expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(true)
+  controller.disconnect()
+  expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(false)
+  expect(drag('dragover', controller.listTarget, values).defaultPrevented).toBe(false)
+  drag('drop', controller.listTarget, values)
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
+})
