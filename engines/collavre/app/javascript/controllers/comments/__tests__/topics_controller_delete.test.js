@@ -97,6 +97,7 @@ describe('TopicsController#deleteTopic', () => {
   test('allows All Messages to scroll into view after deleting the selected topic', async () => {
     controller.serverLastTopicId = '99'
     controller._topicScrollInterrupted = true
+    const saveLastTopic = jest.spyOn(controller, 'debounceSaveLastTopic')
     const interruptionStatesAtLoad = []
     controller.loadTopics = jest.fn(() => {
       interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
@@ -109,6 +110,8 @@ describe('TopicsController#deleteTopic', () => {
     await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
 
     expect(interruptionStatesAtLoad).toEqual([false])
+    expect(saveLastTopic).not.toHaveBeenCalled()
+    expect(controller._explicitAllMessagesSelection).toBe(false)
   })
 
   test('allows All Messages to scroll into view when the deleted broadcast arrives before the response', async () => {

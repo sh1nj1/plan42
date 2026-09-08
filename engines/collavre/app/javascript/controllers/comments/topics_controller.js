@@ -800,8 +800,7 @@ export default class extends Controller {
                     // Same deep-link hazard as the "deleted" broadcast: this
                     // path reaches restoreSelection through loadTopics instead
                     // of removeTopic, but the getter is the same one.
-                    this.releaseDeepLinkSelection(topicId)
-                    this.currentTopicId = "" // Switch to Main
+                    this.fallbackFromRemovedTopic(topicId)
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
                 this.loadTopics()
@@ -1333,7 +1332,7 @@ export default class extends Controller {
             // If we were viewing the moved topic, switch to Main
             if (String(this.currentTopicId) === String(topicId)) {
                 this._topicScrollInterrupted = false
-                this.currentTopicId = ""
+                this.fallbackFromRemovedTopic(topicId)
                 this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
             }
             this.loadTopics()
@@ -1446,6 +1445,18 @@ export default class extends Controller {
     releaseDeepLinkSelection(topicId) {
         this.clearOverrideTopicId()
         this.clearUrlTopicId(topicId)
+    }
+
+    // Deletion and move tombstones mean "fall back to Main", not that the user
+    // picked All Messages. Do not queue a blank preference save while the topic
+    // reload is still pending, because the server records blank saves as an
+    // explicit All Messages choice.
+    fallbackFromRemovedTopic(topicId) {
+        this.cancelPendingSaveLastTopic()
+        if (String(this._pendingPick?.topicId) === String(topicId)) this._pendingPick = null
+        this.releaseDeepLinkSelection(topicId)
+        this.serverLastTopicId = ""
+        this._explicitAllMessagesSelection = false
     }
 
     // Drop ?topic_id= when it names the topic being archived. It is a selection
@@ -2562,8 +2573,7 @@ export default class extends Controller {
         this.archivedTopics = nextArchivedTopics
         this.pruneArchivedBadges()
         if (String(this.currentTopicId) === String(topicId)) {
-            this.releaseDeepLinkSelection(topicId)
-            this.currentTopicId = ""
+            this.fallbackFromRemovedTopic(topicId)
             this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }
 
