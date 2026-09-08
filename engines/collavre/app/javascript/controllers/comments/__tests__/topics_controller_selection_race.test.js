@@ -148,6 +148,33 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
   })
 
+  test('a deletion broadcast invalidates a response already being decoded', async () => {
+    let resolveFetch
+    let resolveJson
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+    controller.serverLastTopicId = '2'
+
+    const loading = controller.loadTopics()
+    resolveFetch({
+      ok: true,
+      status: 200,
+      json: () => new Promise((resolve) => { resolveJson = resolve }),
+    })
+    await Promise.resolve()
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+    resolveJson({
+      topics: TOPICS,
+      archived_topics: [],
+      can_manage: true,
+      main_topic_id: 1,
+      last_topic_id: 2,
+    })
+    await loading
+
+    expect(controller.currentTopicId).toBe('1')
+    expect(controller.topics).not.toContainEqual(expect.objectContaining({ id: 2 }))
+  })
+
   // The strip can also be stale about its own creative: another member deletes
   // a topic while the chip for it is still on screen. The pick is about this
   // creative, but it names a topic that no longer exists, so keeping it would

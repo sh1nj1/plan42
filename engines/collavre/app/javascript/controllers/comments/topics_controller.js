@@ -252,6 +252,9 @@ export default class extends Controller {
             }
             if (response.ok) {
                 const data = await response.json()
+                // A removal or newer load can arrive while a large response is
+                // being decoded, after the pre-parse version check above.
+                if (version !== this._loadTopicsVersion) return
                 const unreadCounts = this._unreadCountsOverlay?.loadVersion === version
                     ? this._unreadCountsOverlay.counts
                     : null
