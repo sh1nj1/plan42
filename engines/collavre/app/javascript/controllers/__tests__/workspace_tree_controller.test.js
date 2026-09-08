@@ -644,6 +644,42 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-expanded')).toBe('false')
   })
 
+  test('expands a successful child drop destination during the server refresh', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 4,
+          label: 'Drop target',
+          url: '/creatives?id=4',
+          has_children: true,
+          children: [{
+            id: 9,
+            parent_id: 4,
+            label: 'Moved child',
+            url: '/creatives?id=9',
+            children: [],
+          }],
+        }],
+      }),
+    })
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: {
+        context: 'target',
+        direction: 'child',
+        targetCreativeId: '4',
+        creativeIds: ['9'],
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const requestUrl = fetchMock.mock.calls.at(-1)[0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toContain('4')
+    expect(document.querySelector("#workspace-creative-9[data-parent-id='4']")).not.toBeNull()
+  })
+
   test('loads a newly navigated frame path without reopening chat', async () => {
     const chatListener = jest.fn()
     document.addEventListener('creative-comments-click', chatListener)

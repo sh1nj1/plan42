@@ -452,12 +452,20 @@ export default class extends Controller {
   }
 
   queueRefresh(event) {
+    this.rememberDropExpansion(event)
     this.rememberInvalidatedCreativeIds(event)
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     this.refreshTimeout = window.setTimeout(() => {
       this.refreshTimeout = null
       this.load({ showLoading: false, syncChat: false, preserveView: true })
     }, 100)
+  }
+
+  rememberDropExpansion(event) {
+    const { context, direction, targetCreativeId } = event?.detail || {}
+    if (context !== 'target' || direction !== 'child' || !targetCreativeId) return
+
+    this.addExpandedPath([targetCreativeId])
   }
 
   syncFromWorkspaceFrame(
