@@ -122,15 +122,29 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     expect(controller.serverLastTopicId).toBe('3')
   })
 
+  test('an unresolved Main fallback is not saved as All Messages', () => {
+    controller.mainTopicId = null
+    controller.serverLastTopicId = ''
+    const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+    controller.restoreSelection()
+
+    expect(controller.currentTopicId).toBe('')
+    expect(saveSpy).not.toHaveBeenCalled()
+  })
+
   test('a deletion broadcast invalidates an older topic-list response', async () => {
-    let resolveFetch
-    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+    let resolveStaleFetch
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
     controller.serverLastTopicId = '2'
 
     const loading = controller.loadTopics()
     controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
 
-    resolveFetch({
+    resolveStaleFetch({
       ok: true,
       status: 200,
       json: async () => ({
@@ -142,20 +156,36 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       }),
     })
     await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: null,
+        last_topic_all_messages: false,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(controller.currentTopicId).toBe('1')
-    expect(controller.topics).not.toContainEqual(expect.objectContaining({ id: 2 }))
+    expect(controller.topics.map((topic) => topic.id)).toEqual([1, 3])
     expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
   })
 
   test('a deletion broadcast invalidates a response already being decoded', async () => {
-    let resolveFetch
+    let resolveStaleFetch
     let resolveJson
-    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
     controller.serverLastTopicId = '2'
 
     const loading = controller.loadTopics()
-    resolveFetch({
+    resolveStaleFetch({
       ok: true,
       status: 200,
       json: () => new Promise((resolve) => { resolveJson = resolve }),
@@ -170,9 +200,61 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       last_topic_id: 2,
     })
     await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: null,
+        last_topic_all_messages: false,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(controller.currentTopicId).toBe('1')
-    expect(controller.topics).not.toContainEqual(expect.objectContaining({ id: 2 }))
+    expect(controller.topics.map((topic) => topic.id)).toEqual([1, 3])
+  })
+
+  test('an inactive deletion also replaces an in-flight stale topic list', async () => {
+    let resolveStaleFetch
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
+    controller.serverLastTopicId = '1'
+
+    const loading = controller.loadTopics()
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+    resolveStaleFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 1,
+      }),
+    })
+    await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 1,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.currentTopicId).toBe('1')
+    expect(controller.topics.map((topic) => topic.id)).toEqual([1, 3])
   })
 
   // The strip can also be stale about its own creative: another member deletes

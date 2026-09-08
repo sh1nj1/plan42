@@ -460,7 +460,11 @@ export default class extends Controller {
         // re-render landing in that window resolves to Main whatever the user
         // has selected. Counting it as intent would let it outrank the answer
         // it was derived from — and drop the deep link on the way.
-        this.selectTopic(this.mainTopicId || "", { pick: false, persist: !preservePreference })
+        // Before the first topic response there is no Main id yet. The empty
+        // placeholder is not an All Messages choice, so it must not be saved as
+        // the explicit empty preference introduced for that user action.
+        const persistFallback = Boolean(this.mainTopicId) && !preservePreference
+        this.selectTopic(this.mainTopicId || "", { pick: false, persist: persistFallback })
     }
 
     // An archived topic can be opened from the topic strip, the topic-list popup,
@@ -1455,10 +1459,6 @@ export default class extends Controller {
     // reload is still pending, because the server records blank saves as an
     // explicit All Messages choice.
     fallbackFromRemovedTopic(topicId) {
-        // A removal broadcast does not start a replacement load. Invalidate any
-        // older response so it cannot reintroduce the removed topic and restore
-        // its stale preference after this fallback.
-        this._loadTopicsVersion += 1
         this.cancelPendingSaveLastTopic()
         if (String(this._pendingPick?.topicId) === String(topicId)) this._pendingPick = null
         // A link only protects a distinct saved preference behind it. If both
@@ -2572,6 +2572,11 @@ export default class extends Controller {
     removeTopic(topicId) {
         if (!topicId) return
 
+        // loadTopics clears its cache before awaiting the response. If a
+        // deletion arrives in that window, the local filter has nothing to
+        // retain and the old response must not rebuild the deleted chip. A
+        // replacement load both invalidates that response and refills the strip.
+        const topicLoadInFlight = this.activeLoadAcknowledgementVersions.has(this._loadTopicsVersion)
         const topics = this.topics || []
         const archivedTopics = this.archivedTopics || []
         const nextTopics = topics.filter((topic) => String(topic.id) !== String(topicId))
@@ -2583,7 +2588,10 @@ export default class extends Controller {
         const nextArchivedTopics = archivedTopics.filter((topic) => String(topic.id) !== String(topicId))
         const removedCurrentSelection = String(this.currentTopicId) === String(topicId)
         if (nextTopics.length === topics.length && nextArchivedTopics.length === archivedTopics.length &&
-            !removedCurrentSelection) return
+            !removedCurrentSelection) {
+            if (topicLoadInFlight) this.loadTopics()
+            return
+        }
 
         this.topics = nextTopics
         this.archivedTopics = nextArchivedTopics
@@ -2595,6 +2603,7 @@ export default class extends Controller {
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
+        if (topicLoadInFlight) this.loadTopics()
     }
 
     handleAddButtonDragOver(event) {
