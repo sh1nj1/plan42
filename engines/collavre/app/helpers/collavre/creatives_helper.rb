@@ -1,5 +1,12 @@
 module Collavre
   module CreativesHelper
+    # The host app reaches engine helpers through an explicit include list
+    # (app/helpers/application_helper.rb) because an isolated engine does not
+    # prepend its helpers_path. Pulling the move action in here keeps that
+    # list from having to grow every time a row part moves into its own
+    # module: render_creative_progress is the only caller either way.
+    include CreativeMoveHelper
+
     def render_tags(labels, class_name = nil, name_only = false)
       return "" if labels&.empty? or labels.nil?
 
@@ -37,37 +44,35 @@ module Collavre
     # Left nil, each is resolved for this creative alone — correct, but a query
     # per node. Single-creative call sites take that path.
     def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [], can_delete_cron: nil)
-      progress_value = if params[:tags].present?
-        tag_ids = Array(params[:tags]).map(&:to_s)
-        creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
-      else
-        creative.progress
-      end
-
       can_feedback = creative.has_permission?(Current.user, :feedback) if can_feedback.nil?
+      can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
+      has_children = creative.children.exists? if has_children.nil?
 
       content_tag(:div, class: "creative-row-end") do
-        comment_part = render_creative_comment_action(creative, can_feedback, unread_count)
-        is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
-        can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
-        progress_part = render_progress_control(
-          creative,
-          progress_value,
-          has_children: !is_leaf,
-          can_write: can_write,
-          select_mode: select_mode
-        )
-        cron_part = render_cron_badge_for_creative(creative, cron_tasks, can_delete: can_delete_cron)
-
         safe_join([
           render_creative_move_action(creative, can_write),
-          progress_part,
-          cron_part,
-          comment_part,
+          render_progress_control(
+            creative,
+            creative_progress_value(creative),
+            has_children: has_children,
+            can_write: can_write,
+            select_mode: select_mode
+          ),
+          render_cron_badge_for_creative(creative, cron_tasks, can_delete: can_delete_cron),
+          render_creative_comment_action(creative, can_feedback, unread_count),
           tag.br,
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
       end
+    end
+
+    # A tag filter narrows what counts toward progress, so the filtered value
+    # wins when one is applied; `filtered_progress` is the preloaded form the
+    # browse tree hands down, and progress_for_tags is the per-node fallback.
+    def creative_progress_value(creative)
+      return creative.progress if params[:tags].blank?
+
+      creative.filtered_progress || creative.progress_for_tags(Array(params[:tags]).map(&:to_s)) || 0
     end
 
     def render_creative_comment_action(creative, can_feedback, unread_count)
