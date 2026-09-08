@@ -75,6 +75,7 @@ function previewWorkspaceRow(controller, expandDelay, { el: row, hit }) {
 
   return () => {
     if (expandTimer) window.clearTimeout(expandTimer)
+    controller.cancelDragExpansion?.()
     clearHighlight()
   }
 }
@@ -101,6 +102,7 @@ function notifyMoveCompletion(ids, payload, targetId, direction, mode) {
 
 async function performWorkspaceDrop({
   root,
+  controller,
   execute,
   partialFailureMessage,
   el: row,
@@ -132,6 +134,7 @@ async function performWorkspaceDrop({
   }
 
   reportPartialMove(result, partialFailureMessage)
+  if (hit === 'child') controller.rememberDropTargetExpansion?.(targetItem.dataset.creativeId)
   notifyMoveCompletion(ids, payload, targetItem.dataset.creativeId, hit, mode)
 }
 
@@ -159,7 +162,7 @@ export function createWorkspaceTreeDragDrop({
     accepts: 'creative',
     hitTest: hitWorkspaceRow,
     preview: (details) => previewWorkspaceRow(controller, expandDelay, details),
-    onDrop: (details) => performWorkspaceDrop({ root, execute, partialFailureMessage, ...details }),
+    onDrop: (details) => performWorkspaceDrop({ root, controller, execute, partialFailureMessage, ...details }),
     dropEffect: ({ event }) => event.shiftKey ? 'copy' : 'move',
   })
 

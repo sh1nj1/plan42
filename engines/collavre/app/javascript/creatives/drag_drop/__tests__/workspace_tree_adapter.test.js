@@ -60,7 +60,11 @@ describe('workspace tree drag and drop adapter', () => {
     root.querySelectorAll('.creative-workspace-tree-row').forEach((row) => {
       row.getBoundingClientRect = () => ({ top: 0, height: 100 })
     })
-    controller = { expandBranchForDrag: jest.fn() }
+    controller = {
+      expandBranchForDrag: jest.fn(),
+      cancelDragExpansion: jest.fn(),
+      rememberDropTargetExpansion: jest.fn(),
+    }
     execute = jest.fn().mockResolvedValue({ status: 'success' })
     registry = createWorkspaceTreeDragDrop({ root, controller, execute })
   })
@@ -80,6 +84,7 @@ describe('workspace tree drag and drop adapter', () => {
     await flush()
 
     expect(execute).toHaveBeenCalledWith({ ids: ['1'], targetId: '2', direction: 'child', mode: 'move' })
+    expect(controller.rememberDropTargetExpansion).toHaveBeenCalledWith('2')
     expect(document.querySelector('[data-creative-id="2"] > ul > [data-creative-id="1"]')).not.toBeNull()
     expect(completion).toHaveBeenCalledWith(expect.objectContaining({
       detail: expect.objectContaining({ creativeIds: ['1'], targetCreativeId: '2' }),
@@ -378,7 +383,7 @@ describe('workspace tree drag and drop adapter', () => {
     consoleError.mockRestore()
   })
 
-  test('expands a collapsed child target after 600ms and cancels when leaving', () => {
+  test('expands after 600ms and invalidates the request on leave, drop, and dragend', () => {
     jest.useFakeTimers()
     const target = document.getElementById('workspace-creative-2')
     const transfer = dataTransfer()
@@ -397,5 +402,14 @@ describe('workspace tree drag and drop adapter', () => {
     event('dragleave', target, transfer)
     jest.advanceTimersByTime(600)
     expect(controller.expandBranchForDrag).not.toHaveBeenCalled()
+    expect(controller.cancelDragExpansion).toHaveBeenCalledTimes(1)
+
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    expect(controller.cancelDragExpansion).toHaveBeenCalledTimes(2)
+
+    event('dragover', target, transfer)
+    event('dragend', target, transfer)
+    expect(controller.cancelDragExpansion).toHaveBeenCalledTimes(3)
   })
 })

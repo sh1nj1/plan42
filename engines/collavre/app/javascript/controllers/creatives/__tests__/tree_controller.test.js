@@ -17,7 +17,7 @@ jest.unstable_mockModule('../../../utils/emoji_parser', () => ({
 
 const { Application } = await import('@hotwired/stimulus')
 const TreeController = (await import('../tree_controller')).default
-const { appendCreativeNodes } = await import('../../../creatives/tree_renderer')
+const { appendCreativeNodes, renderCreativeTree } = await import('../../../creatives/tree_renderer')
 const { restoreTreeEmptyState } = await import('../../../modules/creative_tree_empty_state')
 
 const TRANSIENT_RETRY_DELAYS = [200, 600]
@@ -939,6 +939,60 @@ describe('CreativesTreeController requestReload', () => {
     expect(controller._pendingViewState).toBe(capturedState)
     expect(capturedState.expansion).toEqual([{ creativeId: '1', expanded: true }])
     expect(capturedState.focus).toEqual(expect.objectContaining({ creativeId: '1' }))
+
+    controller.stopAnimation()
+    application.stop()
+  })
+
+  test('keeps pending view state when a reload supersedes asynchronous restoration', async () => {
+    jest.useRealTimers()
+    let releaseChildren
+    global.fetch = jest.fn((url) => {
+      if (url === '/children/1') {
+        return new Promise((resolve) => {
+          releaseChildren = () => resolve({
+            ok: true,
+            json: async () => ({ creatives: [{ id: 2 }] }),
+          })
+        })
+      }
+      return new Promise(() => {})
+    })
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
+    container.dataset.loaded = 'true'
+    document.body.appendChild(container)
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    const viewState = {
+      scrolling: document.documentElement,
+      scrollTop: 120,
+      focus: { creativeId: '1', controlId: 'focused-control', controlIndex: 0 },
+      expansion: [{ creativeId: '1', expanded: true }],
+    }
+    controller._pendingViewState = viewState
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = `
+        <creative-tree-row creative-id="1" has-children>
+          <button id="focused-control">Creative 1</button>
+        </creative-tree-row>
+        <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+      `
+    })
+
+    const restoration = controller.renderData({ creatives: [{ id: 1 }] })
+    expect(controller._pendingViewState).toBe(viewState)
+
+    controller.load({ preserveView: true })
+    expect(controller._pendingViewState).toBe(viewState)
+    releaseChildren()
+    await restoration
+
+    expect(controller._pendingViewState).toBe(viewState)
 
     controller.stopAnimation()
     application.stop()

@@ -40,6 +40,7 @@ export default class extends Controller {
     this._loadMoreAbort = null
     this._loadMoreIndicator = null
     this._pendingViewState = null
+    this._viewRestoreGeneration = 0
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
     this._handleEditStart = () => { this._editing = true }
@@ -66,6 +67,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this._viewRestoreGeneration += 1
     if (this.abortController) {
       this.abortController.abort()
       this.abortController = null
@@ -214,6 +216,9 @@ export default class extends Controller {
   load({ preserveView = false } = {}) {
     if (!this.hasUrlValue) return
 
+    const viewRestoreGeneration = this._viewRestoreGeneration + 1
+    this._viewRestoreGeneration = viewRestoreGeneration
+
     // A superseding preserved load starts after the first load replaced the tree
     // with its loading placeholder. Keep the state captured from the real rows;
     // capturing the placeholder would overwrite it with empty expansion/focus.
@@ -232,10 +237,12 @@ export default class extends Controller {
     this.abortController = new AbortController()
     this._retryCount = 0
     this.showLoadingIndicator()
-    this._fetchTree()
+    this._fetchTree(viewRestoreGeneration)
   }
 
-  _fetchTree() {
+  _fetchTree(viewRestoreGeneration = this._viewRestoreGeneration) {
+    if (viewRestoreGeneration !== this._viewRestoreGeneration) return
+
     fetch(this.urlValue, {
       headers: { Accept: 'application/json' },
       signal: this.abortController.signal,
@@ -245,18 +252,19 @@ export default class extends Controller {
         return response.json()
       })
       .then((data) => {
+        if (viewRestoreGeneration !== this._viewRestoreGeneration) return
         this.hideLoadingIndicator()
-        this.renderData(data)
+        return this.renderData(data, viewRestoreGeneration)
       })
       .catch((error) => {
-        if (error.name === 'AbortError') return
+        if (error.name === 'AbortError' || viewRestoreGeneration !== this._viewRestoreGeneration) return
         // Transient network failures (ERR_NETWORK_CHANGED, offline blips, VPN
         // toggles) surface as TypeError "Failed to fetch". Retry briefly so a
         // momentary network event doesn't leave the user with an empty tree.
         if (this._isTransientNetworkError(error) && this._retryCount < TREE_RETRY_DELAYS_MS.length) {
           const delay = TREE_RETRY_DELAYS_MS[this._retryCount]
           this._retryCount += 1
-          this._retryTimer = setTimeout(() => this._fetchTree(), delay)
+          this._retryTimer = setTimeout(() => this._fetchTree(viewRestoreGeneration), delay)
           return
         }
         console.error(error)
@@ -269,14 +277,16 @@ export default class extends Controller {
     return error instanceof TypeError && /fetch|network/i.test(error.message || '')
   }
 
-  renderData(data) {
+  async renderData(data, viewRestoreGeneration = this._viewRestoreGeneration) {
     const nodes = Array.isArray(data?.creatives) ? data.creatives : []
+    const viewState = this._pendingViewState
+    const isCurrent = () => viewRestoreGeneration === this._viewRestoreGeneration
 
     if (nodes.length === 0) {
       this.showEmptyState()
       dispatchCreativeTreeUpdated(this.element)
-      restoreCreativeTreeViewState(this.element, this._pendingViewState)
-      this._pendingViewState = null
+      await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
+      if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
       return
     }
 
@@ -285,8 +295,8 @@ export default class extends Controller {
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
     this._setupPagination(data?.pagination)
-    restoreCreativeTreeViewState(this.element, this._pendingViewState)
-    this._pendingViewState = null
+    await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
+    if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
   }
 
   // --- Load-more (paginated "Chats" feed) -------------------------------------

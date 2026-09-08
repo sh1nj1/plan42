@@ -39,6 +39,7 @@ export default class extends Controller {
     this.invalidatedCreativeIds = new Set()
     this.destroyedCreativeIds = new Set()
     this.invalidationGeneration = 0
+    this.dragExpandGeneration = 0
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleFrameRequest = this.handleFrameRequest.bind(this)
     this.handleFetchRequest = this.handleFetchRequest.bind(this)
@@ -86,7 +87,7 @@ export default class extends Controller {
 
   disconnect() {
     this.loadAbortController?.abort()
-    this.dragExpandAbortController?.abort()
+    this.cancelDragExpansion()
     this.frameObserver?.disconnect()
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     if (this.popStateSyncTimer) window.clearTimeout(this.popStateSyncTimer)
@@ -112,7 +113,7 @@ export default class extends Controller {
     this.loadAbortController = new AbortController()
     // A full load re-renders the whole tree from an authoritative payload, so
     // any hover expansion still in flight is stale the moment it starts.
-    this.dragExpandAbortController?.abort()
+    this.cancelDragExpansion()
     if (this.pendingRevealPath) this.addExpandedPath(this.pendingRevealPath)
     const requestId = (this.loadRequestId || 0) + 1
     this.loadRequestId = requestId
@@ -268,22 +269,25 @@ export default class extends Controller {
     const hoveredItem = this.findWorkspaceItem(id)
     if (!hoveredItem || hoveredItem.dataset.expanded === 'true') return
 
+    this.cancelDragExpansion()
     this.expandedCreativeIds.add(id)
     this.trimExpandedCreativeIds()
     const requestedExpandedIds = new Set(this.expandedCreativeIds)
-    this.dragExpandAbortController?.abort()
-    this.dragExpandAbortController = new AbortController()
+    const abortController = new AbortController()
+    this.dragExpandAbortController = abortController
+    this.dragExpandCreativeId = id
+    const expandGeneration = this.dragExpandGeneration
     const loadGeneration = this.loadRequestId
 
     try {
       const requestOptions = { headers: { Accept: 'application/json' } }
-      requestOptions.signal = this.dragExpandAbortController.signal
+      requestOptions.signal = abortController.signal
       const response = await fetch(this.workspaceTreeUrl(requestedExpandedIds), requestOptions)
       if (!response.ok) throw new Error(`Failed to expand workspace tree branch: ${response.status}`)
       const data = await response.json()
       // A load that started after this request owns the tree. Splicing these
       // children in would overwrite `nodesData` with the pre-move placement.
-      if (this.loadRequestId !== loadGeneration) return
+      if (this.loadRequestId !== loadGeneration || this.dragExpandGeneration !== expandGeneration) return
 
       const nodes = Array.isArray(data.creatives) ? data.creatives : []
       const expanded = this.renderExpandedBranch(id, nodes)
@@ -299,7 +303,28 @@ export default class extends Controller {
       }
       this.expandedCreativeIds = new Set(this.committedExpandedCreativeIds)
       console.error(error)
+    } finally {
+      if (this.dragExpandAbortController === abortController) {
+        this.dragExpandAbortController = null
+        this.dragExpandCreativeId = null
+      }
     }
+  }
+
+  cancelDragExpansion() {
+    this.dragExpandGeneration += 1
+    this.dragExpandAbortController?.abort()
+    const creativeId = this.dragExpandCreativeId
+    this.dragExpandAbortController = null
+    this.dragExpandCreativeId = null
+    if (creativeId && !this.committedExpandedCreativeIds.has(creativeId)) {
+      this.expandedCreativeIds.delete(creativeId)
+    }
+  }
+
+  rememberDropTargetExpansion(creativeId) {
+    this.expandedCreativeIds.add(String(creativeId))
+    this.trimExpandedCreativeIds()
   }
 
   findWorkspaceItem(creativeId) {

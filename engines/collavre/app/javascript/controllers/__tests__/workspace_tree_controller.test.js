@@ -300,6 +300,48 @@ describe('WorkspaceTreeController', () => {
     expect(signal.aborted).toBe(true)
   })
 
+  test('discards a hover response after the drag preview is cleared', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    const renderedNodes = controller.nodesData
+    let releaseResponse
+    let signal
+    fetchMock.mockImplementationOnce((_url, options) => {
+      signal = options.signal
+      return new Promise((resolve) => {
+        releaseResponse = () => resolve({
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            creatives: [{ id: 1, label: 'Stale', url: '/creatives?id=1', children: [{ id: 9 }] }],
+          }),
+        })
+      })
+    })
+
+    const hover = controller.expandBranchForDrag('1')
+    controller.cancelDragExpansion()
+    releaseResponse()
+    await hover
+
+    expect(signal.aborted).toBe(true)
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).toBeNull()
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.nodesData).toBe(renderedNodes)
+  })
+
+  test('keeps a successful child drop target expanded for the authoritative reload', () => {
+    controller.expandedCreativeIds.delete('2')
+
+    controller.rememberDropTargetExpansion('2')
+
+    expect(controller.expandedCreativeIds.has('2')).toBe(true)
+  })
+
   test('nests a branch under a row that never declared its depth', async () => {
     const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
     item.querySelector(':scope > .creative-workspace-tree-list').remove()

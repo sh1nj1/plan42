@@ -168,4 +168,35 @@ describe('creative tree view state', () => {
 
     await expect(restoreCreativeTreeViewState(tree, state)).resolves.toBeUndefined()
   })
+
+  test('stops an obsolete restoration before applying lazy children, scroll, or focus', async () => {
+    document.body.innerHTML = `<main><div id="creatives">${row('1', true)}</div></main>`
+    const main = document.querySelector('main')
+    const tree = document.getElementById('creatives')
+    main.scrollTop = 140
+    document.getElementById('toggle-1').focus()
+    const state = captureCreativeTreeViewState(tree)
+    tree.innerHTML = `
+      <creative-tree-row creative-id="1" has-children>
+        <div><button id="replacement-toggle">Toggle</button></div>
+      </creative-tree-row>
+      <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+    `
+    main.scrollTop = 0
+    let releaseChildren
+    loadChildren.mockReturnValue(new Promise((resolve) => {
+      releaseChildren = () => resolve({ creatives: [{ id: 2 }] })
+    }))
+    let current = true
+
+    const restoration = restoreCreativeTreeViewState(tree, state, { isCurrent: () => current })
+    current = false
+    releaseChildren()
+    await restoration
+
+    expect(renderCreativeTree).not.toHaveBeenCalled()
+    expect(tree.querySelector('[creative-id="1"]').hasAttribute('expanded')).toBe(false)
+    expect(main.scrollTop).toBe(0)
+    expect(document.activeElement.id).not.toBe('replacement-toggle')
+  })
 })

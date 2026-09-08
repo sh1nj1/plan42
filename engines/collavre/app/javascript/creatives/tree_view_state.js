@@ -49,8 +49,9 @@ export function captureCreativeTreeViewState(element) {
   }
 }
 
-async function restoreExpansion(element, expansion) {
+async function restoreExpansion(element, expansion, isCurrent) {
   for (const { creativeId, expanded } of expansion) {
+    if (!isCurrent()) return false
     const row = findRow(element, creativeId)
     if (!row) continue
 
@@ -58,9 +59,10 @@ async function restoreExpansion(element, expansion) {
     // A hover expansion is never persisted, so the reloaded payload can render
     // that branch collapsed and unloaded. Expanding the empty container alone
     // would leave the row looking open but blank until the user re-toggles it.
-    if (expanded) await expandBranchWithChildren(row, container)
+    if (expanded) await expandBranchWithChildren(row, container, { isCurrent })
     else setExpanded(row, false, container)
   }
+  return isCurrent()
 }
 
 function restoreFocus(element, focus) {
@@ -74,9 +76,10 @@ function restoreFocus(element, focus) {
   control?.focus({ preventScroll: true })
 }
 
-export async function restoreCreativeTreeViewState(element, state) {
+export async function restoreCreativeTreeViewState(element, state, { isCurrent = () => true } = {}) {
   if (!state) return
-  await restoreExpansion(element, state.expansion || [])
+  const restored = await restoreExpansion(element, state.expansion || [], isCurrent)
+  if (!restored || !isCurrent()) return
   state.scrolling.scrollTop = state.scrollTop
   restoreFocus(element, state.focus)
 }
