@@ -153,5 +153,4 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
       };
     JS
   end
-
 end
