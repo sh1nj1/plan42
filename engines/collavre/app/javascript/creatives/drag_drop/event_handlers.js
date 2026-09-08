@@ -52,6 +52,13 @@ let hoverExpandTree = null;
 let hoverExpansionVersion = 0;
 const hoverExpandingTrees = new WeakSet();
 
+function retryHoverExpand(tree) {
+  const row = asTreeRow(tree);
+  if (!tree.isConnected || !getChildrenContainer(row)) return;
+  if (getLastDragOverRow() !== tree || dragState.getLastDragOverPosition() !== 'child') return;
+  scheduleHoverExpand(tree, 'child');
+}
+
 function clearHoverExpand() {
   if (hoverExpandTimer) clearTimeout(hoverExpandTimer);
   hoverExpandTimer = null;
@@ -79,10 +86,15 @@ function scheduleHoverExpand(tree, position) {
     hoverExpandTimer = null;
     hoverExpandTree = null;
     hoverExpandingTrees.add(tree);
+    let expanded = false;
     expandBranchWithChildren(row, getChildrenContainer(row), {
       isCurrent: () => expansionVersion === hoverExpansionVersion,
     })
-      .finally(() => hoverExpandingTrees.delete(tree));
+      .then((result) => { expanded = result; })
+      .finally(() => {
+        hoverExpandingTrees.delete(tree);
+        if (!expanded) retryHoverExpand(tree);
+      });
   }, CREATIVE_TREE_EXPAND_DELAY_MS);
 }
 

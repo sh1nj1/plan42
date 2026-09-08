@@ -96,9 +96,9 @@ function tree(id) {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-function nativeDrag(type, target, dataTransfer) {
+function nativeDrag(type, target, dataTransfer, { clientY = 10 } = {}) {
   const event = new Event(type, { bubbles: true, cancelable: true })
-  Object.assign(event, { dataTransfer, clientX: 0, clientY: 10, shiftKey: false })
+  Object.assign(event, { dataTransfer, clientX: 0, clientY, shiftKey: false })
   target.dispatchEvent(event)
   return event
 }
@@ -695,6 +695,84 @@ data-loaded="false" data-load-url="/creatives/1/children.json"></div>
       expect.objectContaining({ message: 'offline' })
     )
     consoleError.mockRestore()
+  })
+
+  test('retries a failed hover load while the registry preview stays active', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ creatives: [{ id: 2 }] })
+    renderCreativeTree.mockImplementationOnce((target) => {
+      target.innerHTML = row('2', { parentId: '1', level: 2 })
+    })
+    const dataTransfer = transfer()
+    const registry = createCreativeTreeDragDrop()
+
+    try {
+      nativeDrag('dragstart', tree('1'), dataTransfer)
+      nativeDrag('dragover', tree('1'), dataTransfer, { clientY: 50 })
+      await jest.advanceTimersByTimeAsync(600)
+
+      nativeDrag('dragover', tree('1'), dataTransfer, { clientY: 50 })
+      await jest.advanceTimersByTimeAsync(600)
+
+      expect(loadChildren).toHaveBeenCalledTimes(2)
+      expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+    } finally {
+      registry.destroy()
+      consoleError.mockRestore()
+    }
+  })
+
+  test('retries when the pointer re-enters during an obsolete hover load', async () => {
+    let resolveFirstLoad
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstLoad = resolve }))
+      .mockResolvedValueOnce({ creatives: [{ id: 2 }] })
+    renderCreativeTree.mockImplementationOnce((target) => {
+      target.innerHTML = row('2', { parentId: '1', level: 2 })
+    })
+    const dataTransfer = transfer()
+    const registry = createCreativeTreeDragDrop()
+
+    try {
+      nativeDrag('dragstart', tree('1'), dataTransfer)
+      nativeDrag('dragover', tree('1'), dataTransfer, { clientY: 50 })
+      await jest.advanceTimersByTimeAsync(600)
+
+      nativeDrag('dragleave', tree('1'), dataTransfer)
+      nativeDrag('dragover', tree('1'), dataTransfer, { clientY: 50 })
+      resolveFirstLoad({ creatives: [{ id: 2 }] })
+      await jest.advanceTimersByTimeAsync(0)
+      expect(renderCreativeTree).not.toHaveBeenCalled()
+
+      await jest.advanceTimersByTimeAsync(600)
+
+      expect(loadChildren).toHaveBeenCalledTimes(2)
+      expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+    } finally {
+      registry.destroy()
+    }
   })
 
   test('cancels a pending expansion when the drag ends', () => {
