@@ -1,8 +1,10 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
+import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
 import { Controller } from "@hotwired/stimulus"
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 import { elementAnchor } from '../../lib/common_popup'
 
-const CREATIVE_MIME_TYPE = 'application/x-collavre-creative'
 const CONTEXT_LIST_MODAL_ID = 'context-list-modal'
 const SELF_CONTEXT_ID = 'self'
 
@@ -22,10 +24,12 @@ export default class extends Controller {
         this.listVisible = false
         this.handleContextListClose = this.handleContextListClose.bind(this)
         this.element.addEventListener('entity-list:close', this.handleContextListClose)
-        // External drop zone handlers are now Stimulus actions on the list target
+        this._registerDragDrop()
     }
 
     disconnect() {
+        this.dnd?.destroy()
+        this._unbindPopupDragDetection()
         this._contextLoadVersion += 1
         this._closeContextListPopup()
         this.element.removeEventListener('entity-list:close', this.handleContextListClose)
@@ -149,15 +153,6 @@ export default class extends Controller {
         if (!this.hasListTarget) return
 
         this._updateToggleButton()
-        // Drop zone is handled by Stimulus data-action on the list element
-
-        const dragActions = this.canManage
-            ? 'dragstart->comments--contexts#handleDragStart dragend->comments--contexts#handleDragEnd'
-            : ''
-        const reorderActions = this.canManage
-            ? 'dragover->comments--contexts#handleReorderDragOver dragleave->comments--contexts#handleReorderDragLeave drop->comments--contexts#handleReorderDrop'
-            : ''
-
         let html = ''
 
         // Current creative self-context toggle (always first)
@@ -176,7 +171,7 @@ export default class extends Controller {
             const draggable = this.canManage && !ctx.inherited ? 'draggable="true"' : ''
 
             html += `<span class="context-chip ${disabledClass} ${inheritedClass}" ${draggable}
-                          data-action="click->comments--contexts#toggleContext ${dragActions} ${reorderActions}"
+                          data-action="click->comments--contexts#toggleContext"
                           data-context-id="${ctx.id}"
                           title="${ctx.inherited ? this.inheritedLabel : ''}">
                         ${this.constructor.ICON_CONTEXT_LINK} ${this._escapeHtml(ctx.description)}`
@@ -449,68 +444,28 @@ export default class extends Controller {
         await this.loadContexts()
     }
 
-    // --- Drag & Drop for reordering ---
-    handleDragStart(event) {
-        const chipEl = event.currentTarget
-        const contextId = chipEl.dataset.contextId
-        if (!contextId) { event.preventDefault(); return }
-
-        this.draggingContextId = contextId
-        event.dataTransfer.setData('application/x-context-id', contextId)
-        event.dataTransfer.effectAllowed = 'move'
-
-        requestAnimationFrame(() => {
-            chipEl.classList.add('context-dragging')
-        })
+    _registerDragDrop() {
+        this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
+        const selector = '.context-chip[draggable="true"]'
+        this.dnd.registerDragSource({ selector,
+            onDragStart: ({ el, event }) => {
+                this.draggingContextId = el.dataset.contextId
+                writeDragData(event.dataTransfer, { kind: 'context', ids: [this.draggingContextId], payload: {} })
+                event.dataTransfer.effectAllowed = 'move'
+                requestAnimationFrame(() => {
+                    if (this.draggingContextId === el.dataset.contextId) el.classList.add('context-dragging')
+                })
+            },
+            onDragEnd: ({ el }) => { this.draggingContextId = null; el.classList.remove('context-dragging') } })
+        this.dnd.registerDropZone({ selector, accepts: ['context'],
+            hitTest: ({ el, event }) => this.canManage && this.draggingContextId && el.dataset.contextId !== this.draggingContextId
+                ? horizontalHit({ el, event }) : null,
+            preview: previewDrop, onDrop: this.handleReorderDrop.bind(this) })
     }
 
-    handleDragEnd(event) {
-        this.draggingContextId = null
-        event.currentTarget.classList.remove('context-dragging')
-        this.listTarget.querySelectorAll('.context-chip').forEach(el => {
-            el.classList.remove('context-drag-over-left', 'context-drag-over-right')
-        })
-    }
-
-    handleReorderDragOver(event) {
-        if (!event.dataTransfer.types.includes('application/x-context-id')) return
-        if (!this.draggingContextId) return
-
-        const targetEl = event.currentTarget
-        const targetId = targetEl.dataset.contextId
-        if (!targetId || targetId === this.draggingContextId) return
-        // Don't allow reorder onto inherited chips
-        const ctx = this.contexts.find(c => String(c.id) === targetId)
-        if (ctx?.inherited) return
-
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-
-        const rect = targetEl.getBoundingClientRect()
-        const midpoint = rect.left + rect.width / 2
-        const isLeft = event.clientX < midpoint
-
-        targetEl.classList.toggle('context-drag-over-left', isLeft)
-        targetEl.classList.toggle('context-drag-over-right', !isLeft)
-    }
-
-    handleReorderDragLeave(event) {
-        event.currentTarget.classList.remove('context-drag-over-left', 'context-drag-over-right')
-    }
-
-    async handleReorderDrop(event) {
-        const targetEl = event.currentTarget
-        targetEl.classList.remove('context-drag-over-left', 'context-drag-over-right')
-
-        // If this is a creative drag (not a context reorder), let it bubble to the list handler
-        if (!event.dataTransfer.types.includes('application/x-context-id')) return
-
-        event.preventDefault()
-        event.stopPropagation()
-
-        const draggedId = parseInt(event.dataTransfer.getData('application/x-context-id'))
-        const targetId = parseInt(targetEl.dataset.contextId)
-
+    async handleReorderDrop({ el, ids: draggedIds, hit }) {
+        const draggedId = Number(draggedIds[0])
+        const targetId = Number(el.dataset.contextId)
         if (!draggedId || !targetId || draggedId === targetId) return
 
         const ownContexts = this.contexts.filter(c => !c.inherited)
@@ -520,10 +475,7 @@ export default class extends Controller {
         const targetIndex = ids.indexOf(targetId)
         if (draggedIndex === -1 || targetIndex === -1) return
 
-        // Determine drop position
-        const rect = targetEl.getBoundingClientRect()
-        const midpoint = rect.left + rect.width / 2
-        const insertBefore = event.clientX < midpoint
+        const insertBefore = hit === 'left'
 
         ids.splice(draggedIndex, 1)
         let newIndex = ids.indexOf(targetId)
@@ -572,115 +524,35 @@ export default class extends Controller {
         }
     }
 
-    // --- Auto-show context list when dragging creative over popup ---
+    // The popup is also a drop zone; the form owns creative-link insertion.
     _bindPopupDragDetection() {
         const popup = this.element.closest('#comments-popup')
         if (!popup) return
-        // Unbind any existing handlers first to prevent accumulation across opens
         this._unbindPopupDragDetection()
-        this._popupEl = popup
-        this._boundPopupDragOver = this._handlePopupDragOver.bind(this)
-        this._boundPopupDragLeave = this._handlePopupDragLeave.bind(this)
-        this._boundPopupDrop = (event) => {
-            // Skip if dropping on the comment form — let form_controller handle it
-            if (event.target.closest('#new-comment-form')) return
-            this.handleExternalDrop(event)
-        }
-        popup.addEventListener('dragover', this._boundPopupDragOver)
-        popup.addEventListener('dragleave', this._boundPopupDragLeave)
-        popup.addEventListener('drop', this._boundPopupDrop)
+        this.popupDnd = createDragDropRegistry({ root: popup, getKind: getDragKind, readData: readDragData })
+        this.popupDnd.registerDropZone({ selector: '#comments-popup', accepts: ['creative'],
+            hitTest: ({ event }) => this.canManage && !event.target.closest('#new-comment-form') ? 'into' : null,
+            preview: () => {
+                this.listVisible = true
+                this._updateListVisibility()
+                const clear = previewDrop({ el: this.listTarget, hit: 'into' })
+                return () => {
+                    clear()
+                    if (!this._hasBeenManuallyToggled && this.contexts.length === 0) {
+                        this.listVisible = false
+                        this._updateListVisibility()
+                    }
+                }
+            },
+            onDrop: async ({ ids, event }) => {
+                event.stopPropagation()
+                await this._addContextId(Number(ids[0]))
+            } })
     }
 
     _unbindPopupDragDetection() {
-        if (!this._popupEl) return
-        this._popupEl.removeEventListener('dragover', this._boundPopupDragOver)
-        this._popupEl.removeEventListener('dragleave', this._boundPopupDragLeave)
-        this._popupEl.removeEventListener('drop', this._boundPopupDrop)
-        this._popupEl = null
-    }
-
-    _handlePopupDragOver(event) {
-        if (this._isInternalReorder(event)) return
-        if (!this._isCreativeDrag(event)) return
-        if (!this.canManage) return
-        // Skip if dragging over the comment form — let form_controller handle it
-        if (event.target.closest('#new-comment-form')) return
-
-        // Must preventDefault to allow drop on the popup
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-
-        if (!this.listVisible) {
-            // Auto-show context list when dragging a creative over the popup
-            this.listVisible = true
-            this._updateListVisibility()
-        }
-    }
-
-    _handlePopupDragLeave(event) {
-        if (!this._popupEl) return
-        // Only hide if leaving the popup entirely
-        if (this._popupEl.contains(event.relatedTarget)) return
-        if (this._hasBeenManuallyToggled) return
-
-        // Restore original state if no contexts
-        if (this.contexts.length === 0) {
-            this.listVisible = false
-            this._updateListVisibility()
-        }
-    }
-
-    // --- Drop zone for adding creatives from tree ---
-
-    _isCreativeDrag(event) {
-        return event.dataTransfer.types.includes(CREATIVE_MIME_TYPE)
-    }
-
-    _isInternalReorder(event) {
-        return event.dataTransfer.types.includes('application/x-context-id')
-    }
-
-    handleExternalDragOver(event) {
-        if (this._isInternalReorder(event)) return
-        if (!this._isCreativeDrag(event)) return
-        if (!this.canManage) return
-
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-        this.listTarget.classList.add('context-drop-active')
-    }
-
-    handleExternalDragLeave(event) {
-        // Only remove highlight if truly leaving the list area
-        if (!this.listTarget.contains(event.relatedTarget)) {
-            this.listTarget.classList.remove('context-drop-active')
-        }
-    }
-
-    async handleExternalDrop(event) {
-        if (this._isInternalReorder(event)) return
-        if (!this._isCreativeDrag(event)) return
-        if (!this.canManage) return
-
-        // Always prevent default for creative drags to avoid browser navigation
-        event.preventDefault()
-        event.stopPropagation()
-
-        this.listTarget.classList.remove('context-drop-active')
-
-        let creativeId = null
-
-        const rawData = event.dataTransfer.getData(CREATIVE_MIME_TYPE)
-        if (rawData) {
-            try {
-                const parsed = JSON.parse(rawData)
-                creativeId = parseInt(parsed.creativeId)
-            } catch (e) { /* ignore */ }
-        }
-
-        if (!creativeId) return
-
-        await this._addContextId(creativeId)
+        this.popupDnd?.destroy()
+        this.popupDnd = null
     }
 
     _escapeHtml(text) {
