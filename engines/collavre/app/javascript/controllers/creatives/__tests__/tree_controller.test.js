@@ -730,6 +730,18 @@ describe('CreativesTreeController requestReload', () => {
     jest.advanceTimersByTime(300)
 
     expect(load).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledWith({ preserveView: true })
+
+    application.stop()
+  })
+
+  test('reloads with view preservation after a creative drop completes', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller._handleCreativeDrop()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledWith({ preserveView: true })
 
     application.stop()
   })

@@ -175,3 +175,20 @@ test('invalid target geometry does not retain an actionable preview', () => {
   expect(getLastDragOverPosition()).toBeNull();
   expect(target.classList.contains('drag-over')).toBe(false);
 });
+
+test('a partially successful link bundle preserves the command outcome', async () => {
+  const dataTransfer = transfer();
+  writeDragData(dataTransfer, { kind: 'creative', ids: ['2', '3'], payload: { treeId: 'creative-2' } });
+  sendLinkedCreative.mockImplementation(async ({ draggedId }) => {
+    if (draggedId === '3') throw new Error('offline');
+    return { id: 'shell-2' };
+  });
+  const drop = event(document.getElementById('creative-9'), dataTransfer, 199);
+  drop.shiftKey = true;
+  const result = await handleDrop(drop);
+  expect(result.status).toBe('partial');
+  expect(result.succeededIds).toEqual(['2']);
+  expect(result.failedIds).toEqual(['3']);
+  expect(result.rolledBack).toBe(false);
+  expect(sendLinkedCreative).toHaveBeenCalledTimes(2);
+});

@@ -43,6 +43,40 @@ import {
 } from '../../lib/dnd/session';
 
 const coordPrecision = 5;
+export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
+
+let hoverExpandTimer = null;
+let hoverExpandTree = null;
+
+function clearHoverExpand() {
+  if (hoverExpandTimer) clearTimeout(hoverExpandTimer);
+  hoverExpandTimer = null;
+  hoverExpandTree = null;
+}
+
+function scheduleHoverExpand(tree, position) {
+  if (position !== 'child') {
+    clearHoverExpand();
+    return;
+  }
+
+  const row = asTreeRow(tree);
+  if (!row?.hasAttribute('has-children') || row.hasAttribute('expanded')) {
+    clearHoverExpand();
+    return;
+  }
+  if (hoverExpandTree === tree) return;
+
+  clearHoverExpand();
+  hoverExpandTree = tree;
+  hoverExpandTimer = setTimeout(() => {
+    const container = getChildrenContainer(row);
+    if (container) setExpanded(row, true, container);
+    clearHoverExpand();
+  }, CREATIVE_TREE_EXPAND_DELAY_MS);
+}
+
+
 
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
@@ -343,6 +377,7 @@ export function handleDragOver(event) {
   if (lastRow && lastRow !== tree) {
     clearDragHighlight(lastRow);
     setLastDragOverRow(null);
+    clearHoverExpand();
   }
   if (!tree || tree.draggable === false) return;
 
@@ -388,6 +423,8 @@ export function handleDragOver(event) {
     tree.classList.remove('drag-over-top', 'drag-over-bottom');
   }
 
+  scheduleHoverExpand(tree, position);
+
   if (event.shiftKey) {
     showLinkHover(event.clientX, event.clientY);
   } else {
@@ -398,11 +435,13 @@ export function handleDragOver(event) {
 }
 
 function resetDrag() {
+  clearHoverExpand();
   resetDraggedState();
   hideLinkHover();
 }
 
 export function handleDrop(event) {
+  clearHoverExpand();
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
 
@@ -538,6 +577,10 @@ export function handleDrop(event) {
     resetDrag();
     return;
   }
+  if (hasKnownCreativeTreeCycle(draggedIds, targetRow, direction)) {
+    resetDrag();
+    return;
+  }
   const mode = event.shiftKey ? 'link' : 'move';
 
   let moveContext = null;
@@ -561,26 +604,15 @@ export function handleDrop(event) {
     }));
   }
 
-  const draggedNumericId = draggedState.creativeId;
-  const dropSignalDetails = isMultiDrag
-    ? null
-    : {
-      creativeId: draggedNumericId,
-      treeId: draggedState.treeId,
-      sourceWindowId: draggedState.sourceWindowId,
-      targetTreeId: targetId,
-      direction,
-    };
-
-  resetDrag();
-
-  const shouldReloadOnFinalize = isExternal && !moveContext;
-
-  const finalizeDrop = () => {
-    if (shouldReloadOnFinalize) {
-      window.location.reload();
-    }
+  const dropSignalDetails = {
+    treeId: draggedState.treeId,
+    sourceWindowId: draggedState.sourceWindowId,
+    targetTreeId: targetId,
+    targetCreativeId: targetId.replace('creative-', ''),
+    direction,
+    mode,
   };
+  resetDrag();
 
   return moveOperations.runMoveWithDomRecovery({
     command: { ids: draggedIds, targetId: targetId.replace('creative-', ''), direction, mode },
@@ -591,17 +623,31 @@ export function handleDrop(event) {
       console.error('Creative move did not fully complete', result);
     }
     if (result.succeededIds.length === 0) return result;
-    if (mode === 'link' || isMultiDrag) {
-      window.location.reload();
-      return result;
-    }
-    if (dropSignalDetails?.sourceWindowId) {
-      emitDropSignal(dropSignalDetails);
-      dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
-    }
-    finalizeDrop();
+    const detail = {
+      ...dropSignalDetails,
+      creativeId: result.succeededIds[0],
+      creativeIds: result.succeededIds,
+    };
+    if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail);
+    dispatchDropCompletion({ ...detail, context: 'target' });
     return result;
   });
+}
+
+function hasKnownCreativeTreeCycle(ids, targetRow, direction) {
+  const movingIds = new Set(ids.map(String));
+  const targetId = targetRow.getAttribute('creative-id');
+  if (!targetId || movingIds.has(String(targetId))) return true;
+
+  let parentId = direction === 'child' ? targetId : targetRow.getAttribute('parent-id');
+  const visited = new Set();
+  while (parentId && !visited.has(String(parentId))) {
+    const normalizedId = String(parentId);
+    if (movingIds.has(normalizedId)) return true;
+    visited.add(normalizedId);
+    parentId = getRowByCreativeId(normalizedId)?.getAttribute('parent-id') || null;
+  }
+  return false;
 }
 
 export function handleDragLeave(event) {
@@ -609,6 +655,7 @@ export function handleDragLeave(event) {
   if (!tree || tree.draggable === false) return;
   clearDragHighlight(tree);
   if (getLastDragOverRow() === tree) setLastDragOverRow(null);
+  if (hoverExpandTree === tree) clearHoverExpand();
   hideLinkHover();
 }
 

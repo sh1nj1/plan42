@@ -43,6 +43,7 @@ module Collavre
           children = child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }
           {
             id: creative.id,
+            parent_id: creative.parent_id,
             label: Collavre::HtmlText.label(creative.effective_description),
             snippet: creative.creative_snippet,
             can_comment: allowed?(creative, :feedback),
