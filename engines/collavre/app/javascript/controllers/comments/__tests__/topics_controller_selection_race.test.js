@@ -257,6 +257,51 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     expect(controller.topics.map((topic) => topic.id)).toEqual([1, 3])
   })
 
+  test('a deleted deep link does not replace its distinct saved preference with Main', async () => {
+    let resolveStaleFetch
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
+    controller.serverLastTopicId = '3'
+    controller.setOverrideTopicId('2')
+    const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+    const loading = controller.loadTopics()
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+
+    expect(controller.currentTopicId).toBe('3')
+    expect(saveSpy).not.toHaveBeenCalled()
+
+    resolveStaleFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 3,
+      }),
+    })
+    await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 3,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.currentTopicId).toBe('3')
+    expect(saveSpy).not.toHaveBeenCalledWith('1')
+  })
+
   // The strip can also be stale about its own creative: another member deletes
   // a topic while the chip for it is still on screen. The pick is about this
   // creative, but it names a topic that no longer exists, so keeping it would

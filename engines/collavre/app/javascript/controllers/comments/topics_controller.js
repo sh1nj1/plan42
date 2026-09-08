@@ -2579,6 +2579,19 @@ export default class extends Controller {
         const topicLoadInFlight = this.activeLoadAcknowledgementVersions.has(this._loadTopicsVersion)
         const topics = this.topics || []
         const archivedTopics = this.archivedTopics || []
+        const removedCurrentSelection = String(this.currentTopicId) === String(topicId)
+        if (topicLoadInFlight) {
+            if (removedCurrentSelection) {
+                this.fallbackFromRemovedTopic(topicId)
+                this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
+            }
+            // The cache is intentionally incomplete while loadTopics awaits.
+            // Restoring against it can replace a distinct preference hidden
+            // behind the removed deep link with Main. Let the replacement
+            // response provide the authoritative list before restoring.
+            this.loadTopics()
+            return
+        }
         const nextTopics = topics.filter((topic) => String(topic.id) !== String(topicId))
         // An archived topic is deletable and now selectable, so the "deleted"
         // broadcast has to reach this cache too — nothing else does. It is the
@@ -2586,12 +2599,8 @@ export default class extends Controller {
         // from here would keep an openable chip and, through pruneArchivedBadges
         // never running, a lit toggle for a conversation that no longer exists.
         const nextArchivedTopics = archivedTopics.filter((topic) => String(topic.id) !== String(topicId))
-        const removedCurrentSelection = String(this.currentTopicId) === String(topicId)
         if (nextTopics.length === topics.length && nextArchivedTopics.length === archivedTopics.length &&
-            !removedCurrentSelection) {
-            if (topicLoadInFlight) this.loadTopics()
-            return
-        }
+            !removedCurrentSelection) return
 
         this.topics = nextTopics
         this.archivedTopics = nextArchivedTopics
@@ -2603,7 +2612,6 @@ export default class extends Controller {
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
-        if (topicLoadInFlight) this.loadTopics()
     }
 
     handleAddButtonDragOver(event) {
