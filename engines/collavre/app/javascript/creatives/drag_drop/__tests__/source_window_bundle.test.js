@@ -81,7 +81,7 @@ test('bundle children retain their order and parent metadata', () => {
   expect(children.map(row => row.getAttribute('level'))).toEqual(['2', '2'])
 })
 
-test.each([undefined, [], [null, '']])('legacy scalar completion remains valid with creativeIds=%s', creativeIds => {
+test.each([undefined, [], [null, ''], 'malformed', { id: 8 }])('legacy scalar completion remains valid with creativeIds=%s', creativeIds => {
   controller.beginReloadHold()
   signal({ creativeId: 7, creativeIds, treeId: 'creative-7' })
   expect(ids()).toEqual(['8', '9'])
@@ -104,6 +104,19 @@ test('link completion never removes or reparents source rows', () => {
 test('a completion with no usable identifiers leaves the source untouched', () => {
   signal({ creativeIds: [null, ''] })
   jest.advanceTimersByTime(400)
+  expect(ids()).toEqual(['7', '8', '9'])
+  expect(load).not.toHaveBeenCalled()
+})
+
+
+test.each([
+  { creativeId: '7', sourceWindowId: 'source-window' },
+  { creativeId: '', context: 'source', sourceWindowId: 'source-window' },
+  { creativeIds: [null, undefined, ''], context: 'source', sourceWindowId: 'source-window' },
+  { creativeIds: [7, 8], context: 'source' },
+])('an incomplete direct completion never mutates the source: %j', detail => {
+  controller.beginReloadHold()
+  window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', { detail }))
   expect(ids()).toEqual(['7', '8', '9'])
   expect(load).not.toHaveBeenCalled()
 })
