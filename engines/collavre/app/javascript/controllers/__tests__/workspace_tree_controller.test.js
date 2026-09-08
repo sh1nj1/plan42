@@ -141,6 +141,80 @@ describe('WorkspaceTreeController', () => {
     expect(item.querySelector(':scope > .creative-workspace-tree-list')).not.toBeNull()
   })
 
+  test('skips a branch request for a target that is already open', async () => {
+    fetchMock.mockClear()
+
+    await controller.expandBranchForDrag('1')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('expands a nested drag target found deeper in the payload', async () => {
+    const childItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="2"]')
+    childItem.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('2')
+
+    await controller.expandBranchForDrag('2')
+
+    expect(childItem.dataset.expanded).toBe('true')
+    expect(controller.expandedCreativeIds.has('2')).toBe(true)
+  })
+
+  test('leaves the hovered row untouched when the payload omits its branch', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({ ok: true, headers: new Headers(), json: async () => ({}) })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.expanded).toBe('false')
+  })
+
+  // A hover expansion that fails must not leave the pointer over a row the
+  // controller believes is open — the next re-render would drop the children.
+  test('rolls the expansion back when the branch request fails', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Failed to expand workspace tree branch: 500' })
+    )
+    consoleError.mockRestore()
+  })
+
+  test('stays quiet when a newer hover supersedes an in-flight branch request', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockRejectedValueOnce(
+      Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' })
+    )
+
+    await controller.expandBranchForDrag('1')
+
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    consoleError.mockRestore()
+  })
+
+  test('nests a branch under a row that never declared its depth', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    delete item.dataset.level
+    controller.expandedCreativeIds.delete('1')
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.querySelector(':scope > .creative-workspace-tree-list [data-creative-id="2"]').dataset.level).toBe('2')
+  })
+
   test('records the visible creative after a cached Turbo history restore', async () => {
     document.head.innerHTML = '<meta name="csrf-token" content="token">'
     document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))

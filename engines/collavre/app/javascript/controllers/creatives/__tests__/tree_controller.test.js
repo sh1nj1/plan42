@@ -746,6 +746,33 @@ describe('CreativesTreeController requestReload', () => {
     application.stop()
   })
 
+  // The listener has to be removed by the same reference connect() registered,
+  // or every reconnect leaves another tree reloading off a window-wide event.
+  test('stops listening for drop completions once disconnected', async () => {
+    const { application, controller } = await installConnected()
+    const removeEventListener = jest.spyOn(window, 'removeEventListener')
+
+    controller.disconnect()
+
+    expect(removeEventListener).toHaveBeenCalledWith(
+      'collavre:creative-drop-complete',
+      controller._handleCreativeDrop
+    )
+
+    application.stop()
+  })
+
+  test('replaces the view outright when the caller does not ask to preserve it', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.debouncedLoad()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledWith({ preserveView: false })
+
+    application.stop()
+  })
+
   test('defers the reload while a row is being edited', async () => {
     const { application, controller, load } = await installConnected()
 
