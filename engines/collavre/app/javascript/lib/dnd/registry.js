@@ -1,4 +1,5 @@
 import { getDragKind, readDragData } from './envelope'
+import { createTouchBridge } from './touch_bridge'
 
 const liveRegistries = new Set()
 
@@ -33,6 +34,7 @@ function samePreview(left, right) {
 
 export function createDragDropRegistry({
   root = document,
+  touch = true,
   getKind = getDragKind,
   readData = readDragData,
   onError = (error) => console.error(error),
@@ -197,6 +199,7 @@ export function createDragDropRegistry({
   const ownerDocument = root.ownerDocument || root
   const handleKeyDown = (event) => {
     if (event.key !== 'Escape') return
+    bridge?.cancel()
     handleDragEnd(event)
   }
   ownerDocument.addEventListener('keydown', handleKeyDown)
@@ -216,6 +219,26 @@ export function createDragDropRegistry({
         if (element) return element
       }
       return null
+    },
+
+    localDropTargets() {
+      const selector = zones.map(zone => zone.selector).join(',')
+      return selector ? [...(root.matches?.(selector) ? [root] : []), ...root.querySelectorAll(selector)] : []
+    },
+
+    getDropTargets() {
+      const targets = new Set()
+      for (const candidate of liveRegistries) {
+        for (const target of candidate.localDropTargets()) {
+          if (target.ownerDocument === (root.ownerDocument || root)) targets.add(target)
+        }
+      }
+      const depth = element => {
+        let count = 0
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) count += 1
+        return count
+      }
+      return [...targets].sort((left, right) => depth(right) - depth(left))
     },
 
     registerDragSource(source) {
@@ -245,6 +268,7 @@ export function createDragDropRegistry({
     },
 
     destroy() {
+      bridge?.destroy()
       liveRegistries.delete(registry)
       handleDragEnd({ type: 'destroy' })
       ownerDocument.removeEventListener('keydown', handleKeyDown)
@@ -261,5 +285,6 @@ export function createDragDropRegistry({
     },
   }
   liveRegistries.add(registry)
+  const bridge = touch ? createTouchBridge({ root, registry }) : null
   return registry
 }
