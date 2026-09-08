@@ -9,7 +9,11 @@
           data-action="cancel->creative-move#cancel">
     <h2 id="creative-move-title" class="modal-dialog-header modal-dialog-title"><%= t('collavre.dnd.move_title') %></h2>
     <form class="modal-dialog-body" data-action="submit->creative-move#submit">
-      <p><button type="button" data-creative-move-target="destination"
+      <%# Position and Operation are labelled fields; the destination has to name
+          itself too, or its accessible name becomes just the chosen creative. %>
+      <p><span id="creative-move-destination-label"><%= t('collavre.dnd.destination') %></span>
+         <button type="button" id="creative-move-destination" data-creative-move-target="destination"
+                 aria-labelledby="creative-move-destination-label creative-move-destination"
                  data-action="creative-move#chooseDestination"><%= t('collavre.dnd.choose_destination') %></button></p>
       <p><label><%= t('collavre.dnd.position') %>
         <select data-creative-move-target="direction">
