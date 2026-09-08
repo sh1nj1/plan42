@@ -60,7 +60,7 @@ describe('workspace tree drag and drop adapter', () => {
     root.querySelectorAll('.creative-workspace-tree-row').forEach((row) => {
       row.getBoundingClientRect = () => ({ top: 0, height: 100 })
     })
-    controller = { expandBranchForDrag: jest.fn() }
+    controller = { expandBranchForDrag: jest.fn(), revealBranchAfterDrop: jest.fn() }
     execute = jest.fn(async command => ({ status: 'success', succeededIds: command.ids }))
     registry = createWorkspaceTreeDragDrop({ root, controller, execute })
   })
@@ -84,6 +84,30 @@ describe('workspace tree drag and drop adapter', () => {
     expect(completion).toHaveBeenCalledWith(expect.objectContaining({
       detail: expect.objectContaining({ creativeIds: ['1'], targetCreativeId: '2' }),
     }))
+  })
+
+  // The panel only renders expanded branches, so a drop into a collapsed one
+  // used to make the row vanish with nothing to say the move had landed.
+  test('reveals the destination branch after a child drop', async () => {
+    const transfer = dataTransfer()
+    event('dragstart', document.getElementById('workspace-creative-1'), transfer)
+    event('dragover', document.getElementById('workspace-creative-2'), transfer)
+    event('drop', document.getElementById('workspace-creative-2'), transfer)
+    await flush()
+
+    expect(controller.revealBranchAfterDrop).toHaveBeenCalledWith('2')
+  })
+
+  test('leaves the expansion alone for a sibling drop', async () => {
+    const transfer = dataTransfer()
+    const row = document.getElementById('workspace-creative-2')
+    event('dragstart', document.getElementById('workspace-creative-1'), transfer)
+    event('dragover', row, transfer, { clientY: 5 })
+    event('drop', row, transfer, { clientY: 5 })
+    await flush()
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ direction: 'up' }))
+    expect(controller.revealBranchAfterDrop).not.toHaveBeenCalled()
   })
 
   test('accepts a right-tree envelope and reloads through the completion event', async () => {

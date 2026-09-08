@@ -71,6 +71,31 @@ test('uses the shared boundary and hysteresis result for creative drags', () => 
   expect(getLastDragOverPosition()).toBe('up');
 });
 
+test('still accepts a same-window drag when the transfer carries no MIME', () => {
+  // `writeDragData` writes nothing when the drag session token cannot be
+  // persisted (private mode, blocked site data, sandboxed frame). Without the
+  // in-memory fallback `dragover` never calls preventDefault, so no `drop`
+  // event is ever delivered and the tree silently refuses every drop.
+  const { tree, target } = mountTarget();
+  setDraggedState({ creativeId: '7', treeId: 'creative-7' });
+  const event = dragEvent(target, [], 150);
+
+  handleDragOver(event);
+
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(tree.classList.contains('drag-over-child')).toBe(true);
+});
+
+test('still ignores an unsupported drag when no drag is in flight', () => {
+  const { tree, target } = mountTarget();
+  const event = dragEvent(target, [], 150);
+
+  handleDragOver(event);
+
+  expect(event.preventDefault).not.toHaveBeenCalled();
+  expect(tree.classList.contains('drag-over')).toBe(false);
+});
+
 test('keeps topic moves as child drops', () => {
   const { tree, target } = mountTarget();
   const event = dragEvent(target, ['application/x-topic-move'], 101);

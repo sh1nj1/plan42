@@ -1,4 +1,15 @@
-const PREVIEW_CLASSES = ['drag-over-top', 'drag-over-bottom', 'drag-over-child']
+// The hit test speaks the move vocabulary ('up' / 'down' / 'child'); the
+// stylesheet speaks the presentation one ('top' / 'bottom' / 'child'). Keep the
+// translation in one place: building a class name from the direction produced
+// `drag-over-up` / `drag-over-down`, which no rule matches and no cleanup
+// removes.
+const PREVIEW_CLASS_BY_DIRECTION = Object.freeze({
+  up: 'drag-over-top',
+  down: 'drag-over-bottom',
+  child: 'drag-over-child',
+})
+
+const PREVIEW_CLASSES = Object.freeze(Object.values(PREVIEW_CLASS_BY_DIRECTION))
 
 export function workspaceItemFromRow(row) {
   return row?.closest?.('.creative-workspace-tree-item') || null
@@ -34,7 +45,10 @@ export function hasKnownWorkspaceCycle({ root, ids, targetItem, direction }) {
 }
 
 export function showWorkspaceDropPreview(row, direction) {
-  PREVIEW_CLASSES.forEach((className) => row.classList.remove(className))
-  row.classList.add(`drag-over-${direction}`)
-  return () => PREVIEW_CLASSES.forEach((className) => row.classList.remove(className))
+  const clear = () => PREVIEW_CLASSES.forEach((className) => row.classList.remove(className))
+
+  clear()
+  const className = PREVIEW_CLASS_BY_DIRECTION[direction]
+  if (className) row.classList.add(className)
+  return clear
 }

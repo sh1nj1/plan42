@@ -256,6 +256,16 @@ export default class extends Controller {
     })
   }
 
+  // A drop into a collapsed branch would otherwise land the row somewhere the
+  // user cannot see: the tree only renders expanded branches, so the row simply
+  // disappears from the panel with no confirmation the move happened.
+  revealBranchAfterDrop(creativeId) {
+    if (!creativeId) return
+
+    this.expandedCreativeIds.add(String(creativeId))
+    this.trimExpandedCreativeIds()
+  }
+
   async expandBranchForDrag(creativeId) {
     const id = String(creativeId)
     if (this.expandedCreativeIds.has(id)) return

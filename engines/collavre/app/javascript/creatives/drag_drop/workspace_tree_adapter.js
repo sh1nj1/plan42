@@ -8,6 +8,7 @@ import {
 import { getVerticalDropPosition } from '../../lib/dnd/hit_test'
 import { executeMoveCommand, MOVE_STATUSES } from './move_command'
 import {
+  destinationParentId,
   hasKnownWorkspaceCycle,
   showWorkspaceDropPreview,
   workspaceItemFromRow,
@@ -91,7 +92,7 @@ function notifyMoveCompletion(ids, payload, targetId, direction, mode) {
   if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail)
 }
 
-async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, payload }) {
+async function performWorkspaceDrop({ root, controller, execute, el: row, event, hit, ids, payload }) {
   const targetItem = workspaceItemFromRow(row)
   if (!targetItem || hasKnownWorkspaceCycle({ root, ids, targetItem, direction: hit })) return
 
@@ -110,6 +111,10 @@ async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, p
   }
 
   if (result.succeededIds.length > 0) {
+    // Only for 'child': a sibling drop lands next to a row that is on screen by
+    // definition, so its parent is already open. Expanding here would instead
+    // open an ancestor the panel deliberately keeps out of view.
+    if (hit === 'child') controller?.revealBranchAfterDrop?.(destinationParentId(targetItem, hit))
     notifyMoveCompletion(result.succeededIds, payload, targetItem.dataset.creativeId, hit, mode)
   }
 }
@@ -137,7 +142,7 @@ export function createWorkspaceTreeDragDrop({
     accepts: 'creative',
     hitTest: hitWorkspaceRow,
     preview: (details) => previewWorkspaceRow(controller, expandDelay, details),
-    onDrop: (details) => performWorkspaceDrop({ root, execute, ...details }),
+    onDrop: (details) => performWorkspaceDrop({ root, controller, execute, ...details }),
     dropEffect: ({ event }) => event.shiftKey ? 'copy' : 'move',
   })
 

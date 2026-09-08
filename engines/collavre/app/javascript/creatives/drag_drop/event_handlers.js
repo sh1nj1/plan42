@@ -393,7 +393,12 @@ export function handleDragOver(event) {
     return;
   }
 
-  if (dragKind !== 'creative') return;
+  // `writeDragData` sets no MIME at all when the drag session token cannot be
+  // persisted (private mode, blocked site data, sandboxed frame), so the kind
+  // is unreadable even for a drag that started in this window. Fall back to the
+  // in-memory drag state there — without `preventDefault` no drop event fires
+  // at all and the tree silently stops accepting drops.
+  if (dragKind !== 'creative' && !hasDraggedState()) return;
 
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
