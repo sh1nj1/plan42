@@ -1,0 +1,1541 @@
+From 4657887ff60bef61522e879d297c9850a1891000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Tue, 8 Sep 2026 11:31:41 +0000
+Subject: [PATCH 01/11] feat: add delegated drag and drop input registry
+
+---
+ .../lib/dnd/__tests__/registry.test.js        | 167 ++++++++++++++++++
+ .../app/javascript/lib/dnd/registry.js        | 115 ++++++++++++
+ 2 files changed, 282 insertions(+)
+ create mode 100644 engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+ create mode 100644 engines/collavre/app/javascript/lib/dnd/registry.js
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+new file mode 100644
+index 0000000..3331ecb
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+@@ -0,0 +1,167 @@
++import { jest } from '@jest/globals'
++import { createDragDropRegistry } from '../registry.js'
++
++let registry, root, readData, onError, cleanup, onDrop
++const transfer = () => ({ types: ['application/x-collavre-creative'], dropEffect: 'none' })
++function dispatch(type, el = root.querySelector('.inner'), properties = {}) {
++  const event = new window.Event(type, { bubbles: true, cancelable: true })
++  Object.assign(event, { dataTransfer: transfer(), ...properties })
++  el.dispatchEvent(event)
++  return event
++}
++function zone(options = {}) {
++  return registry.registerDropZone({ selector: '.outer', accepts: ['creative'], onDrop,
++    preview: () => cleanup, ...options })
++}
++beforeEach(() => {
++  document.body.innerHTML = '<div id="root"><div class="outer"><span class="inner">Row</span></div></div>'
++  root = document.querySelector('#root')
++  readData = jest.fn(() => ({ kind: 'creative', ids: ['1'] }))
++  onError = jest.fn()
++  cleanup = jest.fn()
++  onDrop = jest.fn()
++  registry = createDragDropRegistry({ root, readData, onError,
++    getKind: dt => dt.types.includes('application/x-collavre-creative') ? 'creative' : null })
++})
++afterEach(() => registry.destroy())
++
++test('uses visible types during dragover and reads payload only on drop', () => {
++  zone()
++  const event = dispatch('dragover')
++  expect(event.defaultPrevented).toBe(true)
++  expect(event.dataTransfer.dropEffect).toBe('move')
++  expect(readData).not.toHaveBeenCalled()
++  dispatch('drop')
++  expect(readData).toHaveBeenCalledTimes(1)
++  expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ kind: 'creative', ids: ['1'], hit: 'into' }))
++  expect(cleanup).toHaveBeenCalledTimes(1)
++})
++
++test('picks nearest supported nested zone independent of registration order', () => {
++  zone()
++  const nested = jest.fn()
++  zone({ selector: '.inner', onDrop: nested })
++  dispatch('drop')
++  expect(nested).toHaveBeenCalledTimes(1)
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('ignores unsupported types and incompatible zones', () => {
++  zone({ accepts: ['topic'] })
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  expect(dispatch('drop', undefined, { dataTransfer: { types: ['text/plain'] } }).defaultPrevented).toBe(false)
++  expect(readData).not.toHaveBeenCalled()
++})
++
++test('rejects invalid hit without falling through to ancestor zones', () => {
++  zone()
++  zone({ selector: '.inner', hitTest: () => null })
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('rejects absent or mismatched decoded payload', () => {
++  zone()
++  readData.mockReturnValueOnce(null).mockReturnValueOnce({ kind: 'topic', ids: ['1'] })
++  dispatch('drop')
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('delegation survives row replacement and accepts text node event targets', () => {
++  zone()
++  root.innerHTML = '<div class="outer">New row</div>'
++  dispatch('drop', root.firstChild.firstChild)
++  expect(onDrop).toHaveBeenCalledTimes(1)
++})
++
++test('preview persists inside zone and cleans when moving outside or changing hit', () => {
++  let hit = 'up'
++  const preview = jest.fn(() => cleanup)
++  zone({ hitTest: () => hit, preview, dropEffect: 'copy' })
++  expect(dispatch('dragover').dataTransfer.dropEffect).toBe('copy')
++  dispatch('dragover')
++  dispatch('dragleave', undefined, { relatedTarget: root.querySelector('.outer') })
++  expect(preview).toHaveBeenCalledTimes(1)
++  expect(cleanup).not.toHaveBeenCalled()
++  hit = 'child'
++  dispatch('dragover')
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  dispatch('dragover', root)
++  expect(cleanup).toHaveBeenCalledTimes(2)
++  dispatch('dragover')
++  dispatch('dragleave', undefined, { relatedTarget: null })
++  expect(cleanup).toHaveBeenCalledTimes(3)
++})
++
++test('unregistration and destruction remove previews and listeners', () => {
++  const unregister = zone()
++  dispatch('dragover')
++  unregister()
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  zone()
++  dispatch('dragover')
++  registry.destroy()
++  expect(cleanup).toHaveBeenCalledTimes(2)
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('source lifecycle handles cancellation, outside dragend and unregister', () => {
++  const onDragStart = jest.fn()
++  const onDragEnd = jest.fn()
++  const unregister = registry.registerDragSource({ selector: '.inner', onDragStart, onDragEnd })
++  zone()
++  dispatch('dragstart')
++  dispatch('dragover')
++  dispatch('keydown', document.body, { key: 'ArrowDown' })
++  expect(onDragEnd).not.toHaveBeenCalled()
++  dispatch('keydown', document.body, { key: 'Escape' })
++  expect(onDragEnd).toHaveBeenCalledTimes(1)
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  dispatch('dragstart')
++  dispatch('dragend', document.body)
++  expect(onDragEnd).toHaveBeenCalledTimes(2)
++  dispatch('dragstart')
++  unregister()
++  expect(onDragEnd).toHaveBeenCalledTimes(3)
++  dispatch('dragstart')
++  expect(onDragStart).toHaveBeenCalledTimes(3)
++})
++
++test('source can reject a start and unsupported source is ignored', () => {
++  const onDragEnd = jest.fn()
++  registry.registerDragSource({ selector: '.inner', onDragStart: () => false, onDragEnd })
++  dispatch('dragstart', root)
++  dispatch('dragstart')
++  dispatch('dragend')
++  expect(onDragEnd).not.toHaveBeenCalled()
++})
++
++test('handles async and synchronous failures and always removes preview', async () => {
++  const error = new Error('failed command')
++  zone({ onDrop: () => Promise.reject(error) })
++  dispatch('dragover')
++  dispatch('drop')
++  await Promise.resolve()
++  expect(onError).toHaveBeenCalledWith(error)
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  readData.mockImplementation(() => { throw error })
++  dispatch('dragover')
++  dispatch('drop')
++  expect(onError).toHaveBeenCalledTimes(2)
++  expect(cleanup).toHaveBeenCalledTimes(2)
++})
++
++test('document roots and optional callbacks work without a preview', () => {
++  registry.destroy()
++  registry = createDragDropRegistry({ root: document, getKind: () => 'creative', readData })
++  const unregisterSource = registry.registerDragSource({ selector: '.inner', onDragStart: () => {} })
++  const unregisterZone = registry.registerDropZone({ selector: '.outer', accepts: ['creative'], onDrop })
++  dispatch('dragstart')
++  dispatch('dragend')
++  unregisterSource()
++  unregisterZone()
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/registry.js b/engines/collavre/app/javascript/lib/dnd/registry.js
+new file mode 100644
+index 0000000..2a96c4d
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/registry.js
+@@ -0,0 +1,115 @@
++// Event delegation keeps registrations valid when a view replaces its rows.
++// Serialization and business commands belong to the caller, not this registry.
++export function createDragDropRegistry({ root, getKind, readData, onError = console.error }) {
++  const sources = new Set()
++  const zones = new Set()
++  const document = root.ownerDocument || root
++  let activeSource = null
++  let activePreview = null
++
++  function clearPreview() {
++    const previous = activePreview
++    activePreview = null
++    previous?.cleanup?.()
++  }
++
++  function finish(event) {
++    clearPreview()
++    const previous = activeSource
++    activeSource = null
++    previous?.registration.onDragEnd?.({ el: previous.el, event })
++  }
++
++  function closest(event, registrations, accepts = () => true) {
++    let el = event.target?.nodeType === 1 ? event.target : event.target?.parentElement
++    while (el && root.contains(el)) {
++      for (const registration of registrations) {
++        if (el.matches(registration.selector) && accepts(registration)) return { el, registration }
++      }
++      if (el === root) break
++      el = el.parentElement
++    }
++    return null
++  }
++
++  function target(event) {
++    const kind = getKind(event.dataTransfer)
++    if (!kind) return null
++    const match = closest(event, zones, zone => zone.accepts.includes(kind))
++    if (!match) return null
++    const hit = match.registration.hitTest
++      ? match.registration.hitTest({ el: match.el, event, kind })
++      : 'into'
++    return hit == null ? null : { ...match, kind, hit }
++  }
++
++  function dragstart(event) {
++    const match = closest(event, sources)
++    if (!match) return
++    finish(event)
++    if (match.registration.onDragStart({ el: match.el, event }) !== false) activeSource = match
++  }
++
++  function dragover(event) {
++    const match = target(event)
++    if (!match) return clearPreview()
++    event.preventDefault()
++    event.dataTransfer.dropEffect = match.registration.dropEffect || 'move'
++    if (activePreview?.el === match.el && activePreview.hit === match.hit &&
++        activePreview.registration === match.registration) return
++    clearPreview()
++    activePreview = { ...match, cleanup: match.registration.preview?.({ ...match, event }) }
++  }
++
++  function dragleave(event) {
++    if (activePreview && !activePreview.el.contains(event.relatedTarget)) clearPreview()
++  }
++
++  function drop(event) {
++    const match = target(event)
++    clearPreview()
++    if (!match) return
++    event.preventDefault()
++    const data = readData(event.dataTransfer)
++    if (!data || data.kind !== match.kind) return
++    // Catch rejected commands without tying view-specific recovery to input handling.
++    Promise.resolve(match.registration.onDrop({ ...data, el: match.el, hit: match.hit, event }))
++      .catch(onError)
++  }
++
++  const listeners = { dragstart, dragover, dragleave, drop }
++  const guarded = callback => event => {
++    try { callback(event) } catch (error) { clearPreview(); onError(error) }
++  }
++  const handlers = Object.fromEntries(Object.entries(listeners).map(([name, callback]) => [name, guarded(callback)]))
++  for (const [name, callback] of Object.entries(handlers)) root.addEventListener(name, callback)
++  const end = guarded(finish)
++  const keydown = guarded(event => { if (event.key === 'Escape') finish(event) })
++  document.addEventListener('dragend', end)
++  document.addEventListener('keydown', keydown)
++
++  return {
++    registerDragSource(registration) {
++      sources.add(registration)
++      return () => {
++        sources.delete(registration)
++        if (activeSource?.registration === registration) finish()
++      }
++    },
++    registerDropZone(registration) {
++      zones.add(registration)
++      return () => {
++        zones.delete(registration)
++        if (activePreview?.registration === registration) clearPreview()
++      }
++    },
++    destroy() {
++      for (const [name, callback] of Object.entries(handlers)) root.removeEventListener(name, callback)
++      document.removeEventListener('dragend', end)
++      document.removeEventListener('keydown', keydown)
++      finish()
++      sources.clear()
++      zones.clear()
++    }
++  }
++}
+-- 
+2.43.0
+
+
+From 9b954654fc0f15be0c0e81c35641b2c04eae1c39 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Tue, 8 Sep 2026 11:37:32 +0000
+Subject: [PATCH 02/11] feat: expose live drag targets for shared touch input
+
+---
+ .../lib/dnd/__tests__/registry.test.js        | 18 +++++++++++++++
+ .../app/javascript/lib/dnd/registry.js        | 22 ++++++++++++++++++-
+ 2 files changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+index 3331ecb..0b2cd00 100644
+--- a/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+@@ -165,3 +165,21 @@ test('document roots and optional callbacks work without a preview', () => {
+   unregisterSource()
+   unregisterZone()
+ })
++
++test('touch discovery combines live zones and tracks changing DOM and teardown', () => {
++  const other = createDragDropRegistry({ root: document, getKind: () => null, readData })
++  registry.registerDragSource({ selector: '.inner', onDragStart: () => {} })
++  expect(registry.getDragSource(root.querySelector('.inner'))).toBe(root.querySelector('.inner'))
++  expect(registry.getDragSource(root)).toBeNull()
++  expect(other.getDropTargets()).toEqual([])
++  zone()
++  other.registerDropZone({ selector: '#root', accepts: ['creative'], onDrop })
++  expect(registry.getDropTargets()).toEqual([root.querySelector('.outer'), root])
++  const unregister = registry.registerDropZone({ selector: '#root', accepts: ['creative'], onDrop })
++  expect(registry.getDropTargets()).toHaveLength(2)
++  unregister()
++  root.innerHTML = '<div class="outer">replacement</div>'
++  expect(registry.getDropTargets()[0]).toBe(root.firstChild)
++  other.destroy()
++  expect(registry.getDropTargets()).toEqual([root.firstChild])
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/registry.js b/engines/collavre/app/javascript/lib/dnd/registry.js
+index 2a96c4d..8e28207 100644
+--- a/engines/collavre/app/javascript/lib/dnd/registry.js
++++ b/engines/collavre/app/javascript/lib/dnd/registry.js
+@@ -1,3 +1,5 @@
++const liveRegistries = new Set()
++
+ // Event delegation keeps registrations valid when a view replaces its rows.
+ // Serialization and business commands belong to the caller, not this registry.
+ export function createDragDropRegistry({ root, getKind, readData, onError = console.error }) {
+@@ -88,7 +90,22 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+   document.addEventListener('dragend', end)
+   document.addEventListener('keydown', keydown)
+ 
+-  return {
++  const registry = {
++    getDragSource(target) {
++      return closest({ target }, sources)?.el || null
++    },
++    getDropTargets() {
++      const targets = new Set()
++      for (const registry of liveRegistries) {
++        for (const target of registry.localDropTargets()) targets.add(target)
++      }
++      return [...targets]
++    },
++    localDropTargets() {
++      const selectors = [...zones].map(zone => zone.selector).join(',')
++      if (!selectors) return []
++      return [...(root.matches?.(selectors) ? [root] : []), ...root.querySelectorAll(selectors)]
++    },
+     registerDragSource(registration) {
+       sources.add(registration)
+       return () => {
+@@ -104,6 +121,7 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+       }
+     },
+     destroy() {
++      liveRegistries.delete(registry)
+       for (const [name, callback] of Object.entries(handlers)) root.removeEventListener(name, callback)
+       document.removeEventListener('dragend', end)
+       document.removeEventListener('keydown', keydown)
+@@ -112,4 +130,6 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+       zones.clear()
+     }
+   }
++  liveRegistries.add(registry)
++  return registry
+ }
+-- 
+2.43.0
+
+
+From dc66e471b086262159bd7e3e88cec1685e5ddee0 Mon Sep 17 00:00:00 2001
+From: codex_cli <codex@local>
+Date: Tue, 8 Sep 2026 11:33:27 +0000
+Subject: [PATCH 03/11] Support live touch drop targets, positional hits and
+ edge scrolling
+
+---
+ .../lib/__tests__/touch_drag_targets.test.js  | 134 ++++++++++++++++++
+ .../collavre/app/javascript/lib/touch_drag.js |  89 +++++++++---
+ 2 files changed, 207 insertions(+), 16 deletions(-)
+ create mode 100644 engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+
+diff --git a/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js b/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+new file mode 100644
+index 0000000..0a9d328
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+@@ -0,0 +1,134 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import TouchDragHandler from '../touch_drag'
++
++let handler, container, onDrop, onCancel, onTargetChange
++const rect = (top = 0) => ({ left: 0, right: 200, top, bottom: top + 100, width: 200, height: 100 })
++function target(top = 0) {
++  const el = document.createElement('div')
++  el.className = 'drop-target'
++  el.getBoundingClientRect = () => rect(top)
++  document.body.appendChild(el)
++  return el
++}
++function touch(type, x = 50, y = 50) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel'
++    ? [] : [{ clientX: x, clientY: y, target: container }] })
++  container.dispatchEvent(event)
++  return event
++}
++function start(x = 50, y = 50) {
++  touch('touchstart', x, y)
++  jest.advanceTimersByTime(400)
++}
++function setup(options = {}) {
++  handler = new TouchDragHandler({ container, singleElement: true, dropTargetSelector: '.drop-target',
++    onDrop, onCancel, onTargetChange, ...options })
++}
++beforeEach(() => {
++  jest.useFakeTimers()
++  container = document.createElement('div')
++  container.getBoundingClientRect = () => rect()
++  document.body.appendChild(container)
++  onDrop = jest.fn()
++  onCancel = jest.fn()
++  onTargetChange = jest.fn()
++})
++afterEach(() => {
++  handler?.destroy()
++  document.body.innerHTML = ''
++  jest.useRealTimers()
++})
++
++test('reports hit changes inside one target and delivers position at drop', () => {
++  const el = target()
++  const hitTest = jest.fn((target, point) => point.clientY < 30 ? 'up' : 'child')
++  setup({ hitTest })
++  start(50, 20)
++  touch('touchmove', 50, 60)
++  expect(hitTest).toHaveBeenLastCalledWith(el, { clientX: 50, clientY: 60 }, 'up')
++  expect(onTargetChange).toHaveBeenLastCalledWith(el, { clientX: 50, clientY: 60, hit: 'child' })
++  touch('touchend')
++  expect(onDrop).toHaveBeenCalledWith(el, { clientX: 50, clientY: 60, hit: 'child' })
++  expect(el.classList.contains('drag-over')).toBe(false)
++})
++
++test('refresh discovers expanded targets and forgets removed targets without finger movement', () => {
++  setup()
++  start()
++  const added = target()
++  handler.refreshDropTargets()
++  expect(added.classList.contains('drag-over')).toBe(true)
++  added.remove()
++  handler.refreshDropTargets()
++  touch('touchend')
++  expect(onDrop).not.toHaveBeenCalled()
++  expect(onCancel).toHaveBeenCalledTimes(1)
++})
++
++test('rejects hidden and disallowed targets, resolving fresh candidate lists', () => {
++  const hidden = target()
++  hidden.getBoundingClientRect = () => ({ ...rect(), width: 0 })
++  const rejected = target()
++  const accepted = target()
++  const getDropTargets = jest.fn(() => [hidden, rejected, accepted])
++  setup({ getDropTargets, hitTest: el => el === rejected ? null : 'down' })
++  start()
++  touch('touchend')
++  expect(onDrop).toHaveBeenCalledWith(accepted, expect.objectContaining({ hit: 'down' }))
++})
++
++test('touchcancel never commits a drop or triggers a pending tap', () => {
++  target()
++  const onTap = jest.fn()
++  setup({ onTap })
++  touch('touchstart')
++  touch('touchcancel')
++  expect(onTap).not.toHaveBeenCalled()
++  start()
++  touch('touchcancel')
++  expect(onDrop).not.toHaveBeenCalled()
++  expect(onCancel).toHaveBeenCalledTimes(1)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('autoscroll continues while stationary and stops on cancellation', () => {
++  const el = target()
++  const scrollContainer = jest.fn(() => container)
++  setup({ autoScroll: true, scrollContainer })
++  start(50, 95)
++  jest.advanceTimersByTime(48)
++  expect(container.scrollTop).toBeGreaterThan(0)
++  expect(scrollContainer).toHaveBeenCalledWith({ clientX: 50, clientY: 95 }, el)
++  touch('touchcancel')
++  const stopped = container.scrollTop
++  jest.advanceTimersByTime(100)
++  expect(container.scrollTop).toBe(stopped)
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('autoscroll moves up near the top, stays still at the center and outside the pane', () => {
++  setup({ autoScroll: true })
++  container.scrollTop = 200
++  start(50, 5)
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBeLessThan(200)
++  touch('touchmove', 50, 50)
++  const centered = container.scrollTop
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBe(centered)
++  touch('touchmove', 250, 95)
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBe(centered)
++})
++
++test('destroy clears active highlights, proxy and animation frames', () => {
++  const el = target()
++  setup({ autoScroll: true })
++  start()
++  handler.destroy()
++  expect(el.classList.contains('drag-over')).toBe(false)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++})
+diff --git a/engines/collavre/app/javascript/lib/touch_drag.js b/engines/collavre/app/javascript/lib/touch_drag.js
+index b1efb7f..fd53dbe 100644
+--- a/engines/collavre/app/javascript/lib/touch_drag.js
++++ b/engines/collavre/app/javascript/lib/touch_drag.js
+@@ -15,8 +15,15 @@
+  *     onDrop(targetEl) {},              // called when dropped on a valid target
+  *     onCancel() {},
+  *     proxyContent(items) { return '...' }  // HTML for the drag proxy badge
++ *     getDropTargets() {},              // optional live target resolver
++ *     hitTest(el, point, previousHit) {}, // null rejects; otherwise domain hit
++ *     onTargetChange(el, { hit, clientX, clientY }) {},
++ *     autoScroll: true,                 // opt in to continuous edge scrolling
++ *     scrollContainer(point, target) {}, // element or resolver; defaults to container
+  *   })
+  *
++ *   // onDrop also receives { hit, clientX, clientY } as a second argument.
++ *   td.refreshDropTargets() // after asynchronous folder expansion
+  *   td.destroy()  // cleanup
+  */
+ 
+@@ -39,6 +46,13 @@ export default class TouchDragHandler {
+     this.onCancel = opts.onCancel
+     this.onTap = opts.onTap
+     this.proxyContent = opts.proxyContent
++    this.getDropTargets = opts.getDropTargets ?? (() => document.querySelectorAll(this.dropTargetSelector))
++    this.hitTest = opts.hitTest
++    this.onTargetChange = opts.onTargetChange
++    this.autoScroll = opts.autoScroll ?? false
++    this.scrollContainer = opts.scrollContainer ?? this.container
++    this.scrollEdge = opts.scrollEdge ?? 40
++    this.scrollSpeed = opts.scrollSpeed ?? 12
+ 
+     // State
+     this._timer = null
+@@ -47,6 +61,9 @@ export default class TouchDragHandler {
+     this._startX = 0
+     this._startY = 0
+     this._currentTarget = null
++    this._currentHit = null
++    this._point = null
++    this._frame = null
+ 
+     // Bind handlers
+     this._onTouchStart = this._handleTouchStart.bind(this)
+@@ -133,7 +150,7 @@ export default class TouchDragHandler {
+   _handleTouchEnd(e) {
+     if (this._timer) {
+       this._cancelLongPress()
+-      this.onTap?.(e)
++      if (e.type !== 'touchcancel') this.onTap?.(e)
+       return
+     }
+ 
+@@ -141,13 +158,16 @@ export default class TouchDragHandler {
+ 
+     e.preventDefault()
+ 
+-    if (this._currentTarget) {
+-      this.onDrop?.(this._currentTarget)
+-    } else {
+-      this.onCancel?.()
++    try {
++      if (e.type !== 'touchcancel') this.refreshDropTargets()
++      if (e.type !== 'touchcancel' && this._currentTarget) {
++        this.onDrop?.(this._currentTarget, { ...this._point, hit: this._currentHit })
++      } else {
++        this.onCancel?.()
++      }
++    } finally {
++      this._endDrag()
+     }
+-
+-    this._endDrag()
+   }
+ 
+   _handleContextMenu(e) {
+@@ -167,7 +187,7 @@ export default class TouchDragHandler {
+     if (!items || items.length === 0) return
+ 
+     // Let caller cancel
+-    if (this.onDragStart && this.onDragStart(items) === false) return
++    if (this.onDragStart && this.onDragStart(items, touch) === false) return
+ 
+     this._dragging = true
+ 
+@@ -185,10 +205,12 @@ export default class TouchDragHandler {
+     this._proxy.className = this.proxyClass
+     this._proxy.innerHTML = this.proxyContent?.(items) ?? `${items.length}`
+     document.body.appendChild(this._proxy)
+-    this._moveProxy(touch.clientX, touch.clientY)
++    this._moveDrag(touch)
++    if (this.autoScroll) this._scheduleScroll()
+   }
+ 
+   _moveDrag(touch) {
++    this._point = { clientX: touch.clientX, clientY: touch.clientY }
+     this._moveProxy(touch.clientX, touch.clientY)
+     this._updateDropTarget(touch.clientX, touch.clientY)
+   }
+@@ -210,31 +232,64 @@ export default class TouchDragHandler {
+     // elementFromPoint is unreliable on mobile when z-index, overlays,
+     // or reflow timing interfere with the result.
+     const PAD = 12 // extra padding for finger imprecision
+-    // Cache drop targets on first call (topic list doesn't change during drag)
+-    if (!this._cachedDropTargets) {
+-      this._cachedDropTargets = document.querySelectorAll(this.dropTargetSelector)
+-    }
+-    const targets = this._cachedDropTargets
++    // Resolve each time: expanding folders can add or remove targets mid-drag.
++    const targets = this.getDropTargets()
+     let found = null
++    let hit = null
+ 
+     for (const target of targets) {
+       const rect = target.getBoundingClientRect()
++      if (!target.isConnected || rect.width <= 0 || rect.height <= 0) continue
+       if (x >= rect.left - PAD && x <= rect.right + PAD &&
+           y >= rect.top - PAD && y <= rect.bottom + PAD) {
++        hit = this.hitTest ? this.hitTest(target, { clientX: x, clientY: y },
++          target === this._currentTarget ? this._currentHit : null) : 'into'
++        if (hit == null || hit === false) continue
+         found = target
+         break
+       }
+     }
+ 
+-    if (found !== this._currentTarget) {
++    if (found !== this._currentTarget || hit !== this._currentHit) {
+       this._currentTarget?.classList.remove(this.dragOverClass)
+       this._currentTarget = found
++      this._currentHit = found ? hit : null
+       this._currentTarget?.classList.add(this.dragOverClass)
++      this.onTargetChange?.(found, { clientX: x, clientY: y, hit: this._currentHit })
++    }
++  }
++
++  // Call after asynchronous folder expansion, even if the finger has not moved.
++  refreshDropTargets() {
++    if (this._dragging && this._point) {
++      this._updateDropTarget(this._point.clientX, this._point.clientY)
+     }
+   }
+ 
++  _scheduleScroll() {
++    this._frame = requestAnimationFrame(() => {
++      this._frame = null
++      if (!this._dragging) return
++      const container = typeof this.scrollContainer === 'function'
++        ? this.scrollContainer(this._point, this._currentTarget) : this.scrollContainer
++      if (container && this._point) {
++        const rect = container.getBoundingClientRect()
++        const { clientX: x, clientY: y } = this._point
++        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
++          const distance = y < rect.top + this.scrollEdge ? y - rect.top - this.scrollEdge
++            : y > rect.bottom - this.scrollEdge ? y - rect.bottom + this.scrollEdge : 0
++          container.scrollTop += Math.round(distance / this.scrollEdge * this.scrollSpeed)
++        }
++      }
++      this.refreshDropTargets()
++      this._scheduleScroll()
++    })
++  }
++
+   _endDrag() {
+     this._dragging = false
++    if (this._frame !== null) cancelAnimationFrame(this._frame)
++    this._frame = null
+     this._cancelLongPress()
+ 
+     document.removeEventListener('contextmenu', this._onContextMenu, { capture: true })
+@@ -244,7 +299,10 @@ export default class TouchDragHandler {
+     if (this._currentTarget) {
+       this._currentTarget.classList.remove(this.dragOverClass)
+       this._currentTarget = null
++      this.onTargetChange?.(null, { ...this._point, hit: null })
+     }
++    this._currentHit = null
++    this._point = null
+ 
+     if (this._proxy) {
+       this._proxy.remove()
+@@ -252,7 +310,6 @@ export default class TouchDragHandler {
+       this._proxyHW = undefined
+       this._proxyHH = undefined
+     }
+-    this._cachedDropTargets = null
+   }
+ 
+   _cancelLongPress() {
+-- 
+2.43.0
+
+
+From 6bb57f6c78396da68f73f13f30c067addaed0597 Mon Sep 17 00:00:00 2001
+From: codex_cli <codex@local>
+Date: Tue, 8 Sep 2026 11:39:15 +0000
+Subject: [PATCH 04/11] Bridge delegated touch gestures through shared drag and
+ drop registry
+
+---
+ .../lib/dnd/__tests__/touch_bridge.test.js    | 163 ++++++++++++++++++
+ .../app/javascript/lib/dnd/touch_bridge.js    |  84 +++++++++
+ .../collavre/app/javascript/lib/touch_drag.js |   8 +-
+ 3 files changed, 254 insertions(+), 1 deletion(-)
+ create mode 100644 engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+ create mode 100644 engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+new file mode 100644
+index 0000000..a29e51f
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+@@ -0,0 +1,163 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import { createDragDropRegistry } from '../registry'
++import { createTouchBridge } from '../touch_bridge'
++
++let registry, bridge, source, zone, drops, previews
++function touch(type, y = 50, target = source) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel' ? []
++    : [{ clientX: 50, clientY: y, target }] })
++  target.dispatchEvent(event)
++  return event
++}
++function makeZone() {
++  const el = document.createElement('div')
++  el.className = 'zone'
++  el.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100 })
++  document.body.appendChild(el)
++  return el
++}
++beforeEach(() => {
++  jest.useFakeTimers()
++  source = document.createElement('div')
++  source.className = 'source'
++  document.body.appendChild(source)
++  zone = makeZone()
++  drops = jest.fn()
++  previews = jest.fn(() => jest.fn())
++  registry = createDragDropRegistry({ root: document, touch: false, getKind: dt => dt.types.includes('test') ? 'creative' : null,
++    readData: dt => JSON.parse(dt.getData('test')) })
++  registry.registerDragSource({ selector: '.source', onDragStart: ({ event }) => {
++    event.dataTransfer.setData('test', JSON.stringify({ kind: 'creative', ids: ['1'] }))
++  } })
++  registry.registerDropZone({ selector: '.zone', accepts: ['creative'],
++    hitTest: ({ event }) => event.clientY < 30 ? 'up' : event.clientY > 70 ? 'down' : 'child',
++    preview: previews, onDrop: drops })
++  bridge = createTouchBridge({ root: document, registry })
++})
++afterEach(() => {
++  bridge.destroy()
++  registry.destroy()
++  document.body.innerHTML = ''
++  jest.useRealTimers()
++})
++
++test.each([[10, 'up'], [50, 'child'], [90, 'down']])('touch uses shared directional hit at %s', async (y, hit) => {
++  touch('touchstart', y)
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  await Promise.resolve()
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ kind: 'creative', ids: ['1'], hit, el: zone }))
++  expect(previews).toHaveBeenCalledWith(expect.objectContaining({ hit }))
++})
++
++test('ordinary touches are untouched and can scroll', () => {
++  const event = touch('touchstart', 50, zone)
++  expect(event.defaultPrevented).toBe(false)
++  jest.advanceTimersByTime(500)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('expansion replaces targets while the finger is stationary', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  zone.remove()
++  const expanded = makeZone()
++  bridge.refreshDropTargets()
++  touch('touchend')
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ el: expanded }))
++})
++
++test('cancellation and destruction clear preview, proxy and timers without drop', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchcancel')
++  expect(drops).not.toHaveBeenCalled()
++  expect(previews.mock.results[0].value).toHaveBeenCalled()
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  bridge.destroy()
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('a target registered in another controller receives the same drop', () => {
++  zone.remove()
++  const pane = document.createElement('section')
++  document.body.appendChild(pane)
++  const external = makeZone()
++  external.className = 'external'
++  pane.appendChild(external)
++  const onDrop = jest.fn()
++  const otherRegistry = createDragDropRegistry({ root: pane, touch: false,
++    getKind: dt => dt.types.includes('test') ? 'creative' : null,
++    readData: dt => JSON.parse(dt.getData('test')) })
++  otherRegistry.registerDropZone({ selector: '.external', accepts: ['creative'], onDrop })
++  try {
++    touch('touchstart')
++    jest.advanceTimersByTime(400)
++    touch('touchend')
++    expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ ids: ['1'], el: external }))
++  } finally {
++    otherRegistry.destroy()
++  }
++})
++
++test('a source rejecting dragstart does not leave a proxy or timer', () => {
++  source.className = 'rejected'
++  registry.registerDragSource({ selector: '.rejected', onDragStart: ({ event }) => {
++    event.preventDefault()
++    return false
++  } })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('edge scrolling resolves the destination pane while the finger stays still', () => {
++  const pane = document.createElement('section')
++  pane.style.overflowY = 'auto'
++  pane.getBoundingClientRect = zone.getBoundingClientRect
++  Object.defineProperties(pane, { scrollHeight: { value: 500 }, clientHeight: { value: 100 } })
++  document.body.appendChild(pane)
++  pane.appendChild(zone)
++  touch('touchstart', 95)
++  jest.advanceTimersByTime(450)
++  expect(pane.scrollTop).toBeGreaterThan(0)
++  touch('touchmove', 250)
++  jest.advanceTimersByTime(32)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('moving between targets clears the former registry preview', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(450)
++  const firstCleanup = previews.mock.results[0].value
++  zone.remove()
++  makeZone()
++  touch('touchmove')
++  expect(firstCleanup).toHaveBeenCalled()
++})
++
++test('native source adapters can replace transfer data and set a drag image', () => {
++  source.className = 'replacement'
++  registry.registerDragSource({ selector: '.replacement', onDragStart: ({ event }) => {
++    const dt = event.dataTransfer
++    dt.setData('old', 'discard')
++    dt.clearData('old')
++    expect(dt.getData('old')).toBe('')
++    dt.setData('another', 'discard')
++    dt.clearData()
++    expect(dt.types).toEqual([])
++    dt.setDragImage(source, 0, 0)
++    dt.setData('test', JSON.stringify({ kind: 'creative', ids: ['2'] }))
++  } })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ ids: ['2'] }))
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+new file mode 100644
+index 0000000..905668a
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+@@ -0,0 +1,84 @@
++import TouchDragHandler from '../touch_drag'
++
++// Feed touch input through the same DOM events as native dragging so source
++// serialization, target policy, previews and business commands have one owner.
++export function createTouchBridge({ root, registry }) {
++  const document = root.ownerDocument || root
++  const container = root.nodeType === 9 ? document.documentElement : root
++  let source = null
++  let dataTransfer = null
++  let lastTarget = null
++
++  function dispatch(type, target, point = {}) {
++    const event = new Event(type, { bubbles: true, cancelable: true })
++    Object.assign(event, { dataTransfer, clientX: point.clientX ?? 0,
++      clientY: point.clientY ?? 0, shiftKey: false })
++    target.dispatchEvent(event)
++    return event
++  }
++
++  function finish() {
++    if (source) dispatch('dragend', source)
++    source = null
++    dataTransfer = null
++    lastTarget = null
++  }
++
++  const handler = new TouchDragHandler({
++    container,
++    singleElement: true,
++    canStart: touch => !!registry.getDragSource(touch.target),
++    getDropTargets: () => registry.getDropTargets(),
++    autoScroll: true,
++    scrollContainer(point, target) {
++      let el = target || document.elementFromPoint?.(point.clientX, point.clientY)
++      while (el) {
++        const overflow = document.defaultView.getComputedStyle(el).overflowY
++        if (/(auto|scroll)/.test(overflow) && el.scrollHeight > el.clientHeight) return el
++        el = el.parentElement
++      }
++      return document.scrollingElement
++    },
++    onDragStart(_items, touch) {
++      source = registry.getDragSource(touch.target)
++      if (!source) return false
++      const values = new Map()
++      dataTransfer = {
++        effectAllowed: 'all', dropEffect: 'none',
++        get types() { return [...values.keys()] },
++        setData(type, value) { values.set(type, String(value)) },
++        getData(type) { return values.get(type) || '' },
++        clearData(type) { type ? values.delete(type) : values.clear() },
++        setDragImage() {},
++      }
++      const event = dispatch('dragstart', source, touch)
++      if (event.defaultPrevented || !dataTransfer.types.length) {
++        finish()
++        return false
++      }
++    },
++    hitTest(el, point) {
++      if (lastTarget && lastTarget !== el) dispatch('dragleave', lastTarget, point)
++      lastTarget = el
++      return dispatch('dragover', el, point).defaultPrevented ? 'into' : null
++    },
++    onTargetChange(el, point) {
++      if (!el && lastTarget) {
++        dispatch('dragleave', lastTarget, point)
++        lastTarget = null
++      }
++    },
++    onDrop(el, point) {
++      try { dispatch('drop', el, point) } finally { finish() }
++    },
++    onCancel: finish,
++  })
++
++  return {
++    refreshDropTargets: () => handler.refreshDropTargets(),
++    destroy() {
++      finish()
++      handler.destroy()
++    },
++  }
++}
+diff --git a/engines/collavre/app/javascript/lib/touch_drag.js b/engines/collavre/app/javascript/lib/touch_drag.js
+index fd53dbe..82c3158 100644
+--- a/engines/collavre/app/javascript/lib/touch_drag.js
++++ b/engines/collavre/app/javascript/lib/touch_drag.js
+@@ -45,6 +45,7 @@ export default class TouchDragHandler {
+     this.onDrop = opts.onDrop
+     this.onCancel = opts.onCancel
+     this.onTap = opts.onTap
++    this.canStart = opts.canStart
+     this.proxyContent = opts.proxyContent
+     this.getDropTargets = opts.getDropTargets ?? (() => document.querySelectorAll(this.dropTargetSelector))
+     this.hitTest = opts.hitTest
+@@ -93,6 +94,7 @@ export default class TouchDragHandler {
+ 
+     const touch = e.touches[0]
+     if (!touch) return
++    if (this.canStart && !this.canStart(touch, e)) return
+ 
+     if (this.singleElement) {
+       // In single-element mode, the container itself is the draggable
+@@ -203,6 +205,7 @@ export default class TouchDragHandler {
+     // Create floating proxy
+     this._proxy = document.createElement('div')
+     this._proxy.className = this.proxyClass
++    this._proxy.style.pointerEvents = 'none'
+     this._proxy.innerHTML = this.proxyContent?.(items) ?? `${items.length}`
+     document.body.appendChild(this._proxy)
+     this._moveDrag(touch)
+@@ -273,7 +276,10 @@ export default class TouchDragHandler {
+       const container = typeof this.scrollContainer === 'function'
+         ? this.scrollContainer(this._point, this._currentTarget) : this.scrollContainer
+       if (container && this._point) {
+-        const rect = container.getBoundingClientRect()
++        const doc = container.ownerDocument
++        const rect = container === doc.scrollingElement
++          ? { top: 0, left: 0, right: doc.defaultView.innerWidth, bottom: doc.defaultView.innerHeight }
++          : container.getBoundingClientRect()
+         const { clientX: x, clientY: y } = this._point
+         if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+           const distance = y < rect.top + this.scrollEdge ? y - rect.top - this.scrollEdge
+-- 
+2.43.0
+
+
+From ccd858379f9d48a6eef20d4c24876bf7f6510752 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Tue, 8 Sep 2026 11:43:20 +0000
+Subject: [PATCH 05/11] feat: enable shared touch input for registered drag
+ sources
+
+---
+ engines/collavre/app/javascript/lib/dnd/registry.js | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/registry.js b/engines/collavre/app/javascript/lib/dnd/registry.js
+index 8e28207..0ea5f69 100644
+--- a/engines/collavre/app/javascript/lib/dnd/registry.js
++++ b/engines/collavre/app/javascript/lib/dnd/registry.js
+@@ -1,8 +1,10 @@
++import { createTouchBridge } from './touch_bridge'
++
+ const liveRegistries = new Set()
+ 
+ // Event delegation keeps registrations valid when a view replaces its rows.
+ // Serialization and business commands belong to the caller, not this registry.
+-export function createDragDropRegistry({ root, getKind, readData, onError = console.error }) {
++export function createDragDropRegistry({ root, getKind, readData, onError = console.error, touch = true }) {
+   const sources = new Set()
+   const zones = new Set()
+   const document = root.ownerDocument || root
+@@ -99,7 +101,12 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+       for (const registry of liveRegistries) {
+         for (const target of registry.localDropTargets()) targets.add(target)
+       }
+-      return [...targets]
++      const depth = el => {
++        let value = 0
++        for (let parent = el.parentElement; parent; parent = parent.parentElement) value += 1
++        return value
++      }
++      return [...targets].sort((left, right) => depth(right) - depth(left))
+     },
+     localDropTargets() {
+       const selectors = [...zones].map(zone => zone.selector).join(',')
+@@ -121,6 +128,7 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+       }
+     },
+     destroy() {
++      bridge?.destroy()
+       liveRegistries.delete(registry)
+       for (const [name, callback] of Object.entries(handlers)) root.removeEventListener(name, callback)
+       document.removeEventListener('dragend', end)
+@@ -131,5 +139,6 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+     }
+   }
+   liveRegistries.add(registry)
++  const bridge = touch ? createTouchBridge({ root, registry }) : null
+   return registry
+ }
+-- 
+2.43.0
+
+
+From 30827c75bd47fc8d1bda5e0246d05f4a02721c9c Mon Sep 17 00:00:00 2001
+From: codex_cli <codex@local>
+Date: Tue, 8 Sep 2026 11:40:07 +0000
+Subject: [PATCH 06/11] Cover scoped touch bridges and rejected touch sources
+ and targets
+
+---
+ .../lib/dnd/__tests__/touch_bridge.test.js    | 25 +++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+index a29e51f..86b2976 100644
+--- a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+@@ -161,3 +161,28 @@ test('native source adapters can replace transfer data and set a drag image', ()
+   touch('touchend')
+   expect(drops).toHaveBeenCalledWith(expect.objectContaining({ ids: ['2'] }))
+ })
++
++test('an element-scoped bridge handles dynamically added sources', () => {
++  bridge.destroy()
++  bridge = createTouchBridge({ root: document.body, registry })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).toHaveBeenCalledTimes(1)
++})
++
++test('a source removed during long press cannot begin dragging', () => {
++  touch('touchstart')
++  source.className = ''
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('registry acceptance rules also reject touch targets', () => {
++  zone.className = 'blocked'
++  registry.registerDropZone({ selector: '.blocked', accepts: ['topic'], onDrop: drops })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
+-- 
+2.43.0
+
+
+From acb97f65c07f4f6168d5f32fd336a54e25091240 Mon Sep 17 00:00:00 2001
+From: codex_cli <codex@local>
+Date: Tue, 8 Sep 2026 11:43:04 +0000
+Subject: [PATCH 07/11] Preserve tap actions and native editing in delegated
+ touch bridge
+
+---
+ .../lib/dnd/__tests__/touch_bridge.test.js     | 18 ++++++++++++++++++
+ .../app/javascript/lib/dnd/touch_bridge.js     | 14 +++++++++++++-
+ 2 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+index 86b2976..e9d246a 100644
+--- a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+@@ -186,3 +186,21 @@ test('registry acceptance rules also reject touch targets', () => {
+   touch('touchend')
+   expect(drops).not.toHaveBeenCalled()
+ })
++
++test('a quick tap retains the original nested button action', () => {
++  const button = document.createElement('button')
++  source.appendChild(button)
++  const click = jest.fn()
++  button.addEventListener('click', click)
++  touch('touchstart', 50, button)
++  touch('touchend', 50, button)
++  expect(click).toHaveBeenCalledTimes(1)
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('editable controls retain native touch behavior', () => {
++  const input = document.createElement('input')
++  source.appendChild(input)
++  expect(touch('touchstart', 50, input).defaultPrevented).toBe(false)
++  expect(jest.getTimerCount()).toBe(0)
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+index 905668a..0acd8be 100644
+--- a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
++++ b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+@@ -8,6 +8,7 @@ export function createTouchBridge({ root, registry }) {
+   let source = null
+   let dataTransfer = null
+   let lastTarget = null
++  let tapTarget = null
+ 
+   function dispatch(type, target, point = {}) {
+     const event = new Event(type, { bubbles: true, cancelable: true })
+@@ -27,7 +28,18 @@ export function createTouchBridge({ root, registry }) {
+   const handler = new TouchDragHandler({
+     container,
+     singleElement: true,
+-    canStart: touch => !!registry.getDragSource(touch.target),
++    canStart(touch) {
++      if (!registry.getDragSource(touch.target)) return false
++      // Text editing keeps native focus/selection; other accepted sources retain
++      // their normal click when the gesture ends before the long press.
++      if (touch.target.closest('input, textarea, select, [contenteditable="true"]')) return false
++      tapTarget = touch.target
++      return true
++    },
++    onTap() {
++      if (tapTarget?.isConnected) tapTarget.click()
++      tapTarget = null
++    },
+     getDropTargets: () => registry.getDropTargets(),
+     autoScroll: true,
+     scrollContainer(point, target) {
+-- 
+2.43.0
+
+
+From 825e2d8905f18487b968bcefeb89acfe4992ad5f Mon Sep 17 00:00:00 2001
+From: codex_cli <codex@local>
+Date: Tue, 8 Sep 2026 11:43:36 +0000
+Subject: [PATCH 08/11] Resolve actual touch pointer target for nested drop
+ policies
+
+---
+ .../lib/dnd/__tests__/touch_bridge.test.js    | 19 +++++++++++++++++++
+ .../app/javascript/lib/dnd/touch_bridge.js    | 18 ++++++++++++++----
+ 2 files changed, 33 insertions(+), 4 deletions(-)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+index e9d246a..c53fcb2 100644
+--- a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+@@ -41,6 +41,7 @@ afterEach(() => {
+   registry.destroy()
+   document.body.innerHTML = ''
+   jest.useRealTimers()
++  delete document.elementFromPoint
+ })
+ 
+ test.each([[10, 'up'], [50, 'child'], [90, 'down']])('touch uses shared directional hit at %s', async (y, hit) => {
+@@ -204,3 +205,21 @@ test('editable controls retain native touch behavior', () => {
+   expect(touch('touchstart', 50, input).defaultPrevented).toBe(false)
+   expect(jest.getTimerCount()).toBe(0)
+ })
++
++test('hit tests receive the actual nested pointer target instead of its zone ancestor', () => {
++  const form = document.createElement('form')
++  zone.appendChild(form)
++  document.elementFromPoint = () => form
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops.mock.calls[0][0].event.target).toBe(form)
++})
++
++test('an overlay outside the candidate blocks an otherwise matching rectangle', () => {
++  document.elementFromPoint = () => source
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+index 0acd8be..c380e1f 100644
+--- a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
++++ b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+@@ -25,6 +25,11 @@ export function createTouchBridge({ root, registry }) {
+     lastTarget = null
+   }
+ 
++  function targetAtPoint(el, point) {
++    const actual = document.elementFromPoint?.(point.clientX, point.clientY)
++    return actual ? (el.contains(actual) ? actual : null) : el
++  }
++
+   const handler = new TouchDragHandler({
+     container,
+     singleElement: true,
+@@ -70,9 +75,11 @@ export function createTouchBridge({ root, registry }) {
+       }
+     },
+     hitTest(el, point) {
+-      if (lastTarget && lastTarget !== el) dispatch('dragleave', lastTarget, point)
+-      lastTarget = el
+-      return dispatch('dragover', el, point).defaultPrevented ? 'into' : null
++      const target = targetAtPoint(el, point)
++      if (!target) return null
++      if (lastTarget && lastTarget !== target) dispatch('dragleave', lastTarget, point)
++      lastTarget = target
++      return dispatch('dragover', target, point).defaultPrevented ? 'into' : null
+     },
+     onTargetChange(el, point) {
+       if (!el && lastTarget) {
+@@ -81,7 +88,10 @@ export function createTouchBridge({ root, registry }) {
+       }
+     },
+     onDrop(el, point) {
+-      try { dispatch('drop', el, point) } finally { finish() }
++      try {
++        const target = targetAtPoint(el, point)
++        if (target) dispatch('drop', target, point)
++      } finally { finish() }
+     },
+     onCancel: finish,
+   })
+-- 
+2.43.0
+
+
+From a152a756c893df9f5bf5e0862d62b80dbdd3b39f Mon Sep 17 00:00:00 2001
+From: codex_cli <codex@local>
+Date: Tue, 8 Sep 2026 11:43:57 +0000
+Subject: [PATCH 09/11] Preserve original touch source target for adapter drag
+ guards
+
+---
+ .../lib/dnd/__tests__/touch_bridge.test.js        | 15 +++++++++++++++
+ .../app/javascript/lib/dnd/touch_bridge.js        |  2 +-
+ 2 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+index c53fcb2..bc92eba 100644
+--- a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+@@ -223,3 +223,18 @@ test('an overlay outside the candidate blocks an otherwise matching rectangle',
+   touch('touchend')
+   expect(drops).not.toHaveBeenCalled()
+ })
++
++test('source adapters can reject long presses on nested action buttons', () => {
++  source.className = 'actions'
++  const button = document.createElement('button')
++  source.appendChild(button)
++  registry.registerDragSource({ selector: '.actions', onDragStart: ({ event }) => {
++    expect(event.target).toBe(button)
++    if (event.target.closest('button')) { event.preventDefault(); return false }
++    event.dataTransfer.setData('test', JSON.stringify({ kind: 'creative', ids: ['1'] }))
++  } })
++  touch('touchstart', 50, button)
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(drops).not.toHaveBeenCalled()
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+index c380e1f..9ccd99b 100644
+--- a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
++++ b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+@@ -68,7 +68,7 @@ export function createTouchBridge({ root, registry }) {
+         clearData(type) { type ? values.delete(type) : values.clear() },
+         setDragImage() {},
+       }
+-      const event = dispatch('dragstart', source, touch)
++      const event = dispatch('dragstart', touch.target, touch)
+       if (event.defaultPrevented || !dataTransfer.types.length) {
+         finish()
+         return false
+-- 
+2.43.0
+
+
+From 824abaf0b248d21556e6a025ed047ace995a3ad7 Mon Sep 17 00:00:00 2001
+From: codex_cli <codex@local>
+Date: Tue, 8 Sep 2026 11:45:32 +0000
+Subject: [PATCH 10/11] Ignore touch events without touch coordinates
+
+---
+ engines/collavre/app/javascript/lib/touch_drag.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/engines/collavre/app/javascript/lib/touch_drag.js b/engines/collavre/app/javascript/lib/touch_drag.js
+index 82c3158..bf43162 100644
+--- a/engines/collavre/app/javascript/lib/touch_drag.js
++++ b/engines/collavre/app/javascript/lib/touch_drag.js
+@@ -92,7 +92,7 @@ export default class TouchDragHandler {
+   _handleTouchStart(e) {
+     if (this._dragging) return
+ 
+-    const touch = e.touches[0]
++    const touch = e.touches?.[0]
+     if (!touch) return
+     if (this.canStart && !this.canStart(touch, e)) return
+ 
+@@ -124,7 +124,7 @@ export default class TouchDragHandler {
+   }
+ 
+   _handleTouchMove(e) {
+-    const touch = e.touches[0]
++    const touch = e.touches?.[0]
+     if (!touch) return
+ 
+     if (this._dragging) {
+-- 
+2.43.0
+
+
+From d4e4316d3aaa13824a77bf0fe3848388fd1d9b96 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Tue, 8 Sep 2026 11:49:30 +0000
+Subject: [PATCH 11/11] fix: arbitrate nested drop zones across registries
+
+---
+ .../lib/dnd/__tests__/registry.test.js        | 23 +++++++++
+ .../app/javascript/lib/dnd/registry.js        | 47 ++++++++++++++-----
+ 2 files changed, 57 insertions(+), 13 deletions(-)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+index 0b2cd00..69f75ef 100644
+--- a/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+@@ -183,3 +183,26 @@ test('touch discovery combines live zones and tracks changing DOM and teardown',
+   other.destroy()
+   expect(registry.getDropTargets()).toEqual([root.firstChild])
+ })
++
++test.each([true, false])('one nearest registry owns a drop with shared root=%s regardless of listener order', sharedRoot => {
++  zone()
++  const nestedDrop = jest.fn(() => root.querySelector('.inner').classList.remove('inner'))
++  const other = createDragDropRegistry({ root: sharedRoot ? root : root.querySelector('.outer'),
++    getKind: () => 'creative', readData })
++  other.registerDropZone({ selector: '.inner', accepts: ['creative'], onDrop: nestedDrop })
++  expect(dispatch('dragover').defaultPrevented).toBe(true)
++  dispatch('drop')
++  expect(nestedDrop).toHaveBeenCalledTimes(1)
++  expect(onDrop).not.toHaveBeenCalled()
++  other.destroy()
++})
++
++test('an invalid inner registry target blocks the ancestor registry', () => {
++  zone()
++  const other = createDragDropRegistry({ root, getKind: () => 'creative', readData })
++  other.registerDropZone({ selector: '.inner', accepts: ['creative'], hitTest: () => null, onDrop })
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++  other.destroy()
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/registry.js b/engines/collavre/app/javascript/lib/dnd/registry.js
+index 0ea5f69..805c0a9 100644
+--- a/engines/collavre/app/javascript/lib/dnd/registry.js
++++ b/engines/collavre/app/javascript/lib/dnd/registry.js
+@@ -1,6 +1,7 @@
+ import { createTouchBridge } from './touch_bridge'
+ 
+ const liveRegistries = new Set()
++const eventTargets = new WeakMap()
+ 
+ // Event delegation keeps registrations valid when a view replaces its rows.
+ // Serialization and business commands belong to the caller, not this registry.
+@@ -37,14 +38,23 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+   }
+ 
+   function target(event) {
+-    const kind = getKind(event.dataTransfer)
+-    if (!kind) return null
+-    const match = closest(event, zones, zone => zone.accepts.includes(kind))
+-    if (!match) return null
+-    const hit = match.registration.hitTest
+-      ? match.registration.hitTest({ el: match.el, event, kind })
+-      : 'into'
+-    return hit == null ? null : { ...match, kind, hit }
++    if (!eventTargets.has(event)) {
++      let winner = null
++      for (const owner of liveRegistries) {
++        const match = owner.matchDrop(event)
++        if (match && (!winner || (winner.el !== match.el && winner.el.contains(match.el)))) {
++          winner = { ...match, owner }
++        }
++      }
++      if (winner) {
++        const hit = winner.registration.hitTest
++          ? winner.registration.hitTest({ el: winner.el, event, kind: winner.kind }) : 'into'
++        winner = hit == null ? null : { ...winner, hit }
++      }
++      eventTargets.set(event, winner)
++    }
++    const winner = eventTargets.get(event)
++    return winner?.owner === registry ? winner : null
+   }
+ 
+   function dragstart(event) {
+@@ -74,11 +84,16 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+     clearPreview()
+     if (!match) return
+     event.preventDefault()
+-    const data = readData(event.dataTransfer)
+-    if (!data || data.kind !== match.kind) return
+-    // Catch rejected commands without tying view-specific recovery to input handling.
+-    Promise.resolve(match.registration.onDrop({ ...data, el: match.el, hit: match.hit, event }))
+-      .catch(onError)
++    try {
++      const data = readData(event.dataTransfer)
++      if (!data || data.kind !== match.kind) return
++      // Catch rejected commands without tying view-specific recovery to input handling.
++      Promise.resolve(match.registration.onDrop({ ...data, el: match.el, hit: match.hit, event }))
++        .catch(onError)
++    } finally {
++      // The command may replace its source DOM before the browser emits dragend.
++      finish(event)
++    }
+   }
+ 
+   const listeners = { dragstart, dragover, dragleave, drop }
+@@ -93,6 +108,12 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+   document.addEventListener('keydown', keydown)
+ 
+   const registry = {
++    matchDrop(event) {
++      const kind = getKind(event.dataTransfer)
++      if (!kind) return null
++      const match = closest(event, zones, zone => zone.accepts.includes(kind))
++      return match ? { ...match, kind } : null
++    },
+     getDragSource(target) {
+       return closest({ target }, sources)?.el || null
+     },
+-- 
+2.43.0
+

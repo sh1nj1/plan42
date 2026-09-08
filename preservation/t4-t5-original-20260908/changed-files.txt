@@ -1,0 +1,14 @@
+engines/collavre/app/assets/stylesheets/collavre/comments_popup.css
+engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js
+engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js
+engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_dnd.test.js
+engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js
+engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js
+engines/collavre/app/javascript/controllers/comments/contexts_controller.js
+engines/collavre/app/javascript/controllers/comments/form_controller.js
+engines/collavre/app/javascript/controllers/comments/list_controller.js
+engines/collavre/app/javascript/controllers/comments/presence_controller.js
+engines/collavre/app/javascript/controllers/comments/topics_controller.js
+engines/collavre/app/javascript/lib/dnd/__tests__/preview.test.js
+engines/collavre/app/javascript/lib/dnd/preview.js
+engines/collavre/app/views/collavre/comments/_comments_popup.html.erb

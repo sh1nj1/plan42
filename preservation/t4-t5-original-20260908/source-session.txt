@@ -1,0 +1,1 @@
+/var/lib/cli-openai-proxy/users/cap_389a002c86f94c873c08/.paperclip/instances/default/companies/local/codex-home/sessions/2026/09/08/rollout-2026-09-08T11-28-06-01a080c6-7cb1-7cf0-8610-d6b75d1925e1.jsonl

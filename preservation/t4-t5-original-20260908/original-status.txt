@@ -1,0 +1,3 @@
+?? engines/collavre/app/javascript/lib/dnd/envelope.js
+?? engines/collavre/app/javascript/lib/dnd/hit_test.js
+?? engines/collavre/app/javascript/lib/dnd/session.js

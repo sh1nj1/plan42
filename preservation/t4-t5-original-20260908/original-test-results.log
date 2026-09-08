@@ -1,0 +1,671 @@
+2026-09-08T11:30:38.189Z
+Warning: truncated output (original token count: 2641)
+Total output lines: 199
+
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+
+(node:442675) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+  ● uses visible types during dragover and reads payload only on drop
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLSpanElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:30:17)
+
+  ● picks nearest supported nested zone independent of registration order
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLSpanElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:44:3)
+
+  ● ignores unsupported types and incompatible zones
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLSpanElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:51:10)
+
+  ● rejects invalid hit without falling through to ancestor zones
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLSpanElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.te…641 tokens truncated…lavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:83:10)
+
+  ● unregistration and destruction remove previews and listeners
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLSpanElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:100:3)
+
+  ● source lifecycle handles cancellation, outside dragend and unregister
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLSpanElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:117:3)
+
+  ● source can reject a start and unsupported source is ignored
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLDivElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:137:3)
+
+  ● handles async and synchronous failures and always removes preview
+
+    TypeError: Failed to execute 'dispatchEvent' on 'EventTarget': parameter 1 is not of type 'Event'.
+
+       7 |   const event = new Event(type, { bubbles: true, cancelable: true })
+       8 |   Object.assign(event, { dataTransfer: transfer(), ...properties })
+    >  9 |   el.dispatchEvent(event)
+         |      ^
+      10 |   return event
+      11 | }
+      12 | function zone(options = {}) {
+
+      at Object.exports.convert (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/Event.js:22:9)
+      at HTMLSpanElement.dispatchEvent (../plan42-worktree1/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:236:24)
+      at dispatch (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:9:6)
+      at Object.<anonymous> (engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js:146:3)
+
+Test Suites: 1 failed, 1 total
+Tests:       11 failed, 11 total
+Snapshots:   0 total
+Time:        0.956 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js.
+
+
+2026-09-08T11:30:46.430Z
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/lib/dnd/registry.js
+
+(node:442811) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 92/92 )
+Branches     : 92.15% ( 47/51 )
+Functions    : 100% ( 20/20 )
+Lines        : 100% ( 70/70 )
+================================================================================
+-------------|---------|----------|---------|---------|-------------------
+File         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------|---------|----------|---------|---------|-------------------
+All files    |     100 |    92.15 |     100 |     100 |                   
+ registry.js |     100 |    92.15 |     100 |     100 | 3-6,96-103        
+-------------|---------|----------|---------|---------|-------------------
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        1.346 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js.
+
+
+2026-09-08T11:30:59.979Z
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/lib/dnd/registry.js
+
+(node:442940) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 92/92 )
+Branches     : 100% ( 51/51 )
+Functions    : 100% ( 20/20 )
+Lines        : 100% ( 70/70 )
+================================================================================
+-------------|---------|----------|---------|---------|-------------------
+File         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------|---------|----------|---------|---------|-------------------
+All files    |     100 |      100 |     100 |     100 |                   
+ registry.js |     100 |      100 |     100 |     100 |                   
+-------------|---------|----------|---------|---------|-------------------
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        0.978 s, estimated 2 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js.
+Author identity unknown
+
+*** Please tell me who you are.
+
+Run
+
+  git config --global user.email "you@example.com"
+  git config --global user.name "Your Name"
+
+to set your account's default identity.
+Omit --global to set the identity only in this repository.
+
+fatal: empty ident name (for <cap_389a002c86f94c873c08@collavre-dev1.tailadceed.ts.net>) not allowed
+
+
+2026-09-08T11:37:25.777Z
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/lib/dnd/registry.js
+
+(node:445430) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 107/107 )
+Branches     : 100% ( 57/57 )
+Functions    : 100% ( 24/24 )
+Lines        : 100% ( 82/82 )
+================================================================================
+-------------|---------|----------|---------|---------|-------------------
+File         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------|---------|----------|---------|---------|-------------------
+All files    |     100 |      100 |     100 |     100 |                   
+ registry.js |     100 |      100 |     100 |     100 |                   
+-------------|---------|----------|---------|---------|-------------------
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+Snapshots:   0 total
+Time:        1.376 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js.
+
+
+2026-09-08T11:40:03.925Z
+/** @jest-environment jsdom */
+import { jest } from '@jest/globals'
+import { createDragDropRegistry } from '../registry'
+import { createTouchBridge } from '../touch_bridge'
+
+let registry, bridge, source, zone, drops, previews
+function touch(type, y = 50, target = source) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel' ? []
+    : [{ clientX: 50, clientY: y, target }] })
+  target.dispatchEvent(event)
+  return event
+}
+function makeZone() {
+  const el = document.createElement('div')
+  el.className = 'zone'
+  el.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100 })
+  document.body.appendChild(el)
+  return el
+}
+beforeEach(() => {
+  jest.useFakeTimers()
+  source = document.createElement('div')
+  source.className = 'source'
+  document.body.appendChild(source)
+  zone = makeZone()
+  drops = jest.fn()
+  previews = jest.fn(() => jest.fn())
+  registry = createDragDropRegistry({ root: document, touch: false, getKind: dt => dt.types.includes('test') ? 'creative' : null,
+    readData: dt => JSON.parse(dt.getData('test')) })
+  registry.registerDragSource({ selector: '.source', onDragStart: ({ event }) => {
+    event.dataTransfer.setData('test', JSON.stringify({ kind: 'creative', ids: ['1'] }))
+  } })
+  registry.registerDropZone({ selector: '.zone', accepts: ['creative'],
+    hitTest: ({ event }) => event.clientY < 30 ? 'up' : event.clientY > 70 ? 'down' : 'child',
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/lib/dnd/__tests__ engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+
+(node:446733) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 4 passed, 4 total
+Tests:       32 passed, 32 total
+Snapshots:   0 total
+Time:        3.824 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__|engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js.
+
+
+2026-09-08T11:41:19.968Z
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+
+(node:447391) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+Snapshots:   0 total
+Time:        0.923 s, estimated 1 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js.
+
+
+2026-09-08T11:43:00.143Z
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/lib/dnd/__tests__ engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/lib/dnd/registry.js --collectCoverageFrom=engines/collavre/app/javascript/lib/dnd/preview.js
+
+(node:447989) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 122/122 )
+Branches     : 100% ( 62/62 )
+Functions    : 100% ( 29/29 )
+Lines        : 100% ( 93/93 )
+================================================================================
+-------------|---------|----------|---------|---------|-------------------
+File         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------|---------|----------|---------|---------|-------------------
+All files    |     100 |      100 |     100 |     100 |                   
+ preview.js  |     100 |      100 |     100 |     100 |                   
+ registry.js |     100 |      100 |     100 |     100 |                   
+-------------|---------|----------|---------|---------|-------------------
+
+Test Suites: 4 passed, 4 total
+Tests:       32 passed, 32 total
+Snapshots:   0 total
+Time:        2.419 s, estimated 4 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__|engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js.
+
+
+2026-09-08T11:44:36.725Z
+Warning: truncated output (original token count: 4674)
+Total output lines: 243
+
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_read_pointer.test.js
+  ● CommentsListController read pointer updates › uses an unload-safe request when disconnecting with a pending read
+
+    TypeError: Cannot read properties of undefined (reading 'destroy')
+
+      112 |     this.listTarget.removeEventListener('click', this.handleClick)
+      113 |     this.listTarget.removeEventListener('submit', this.handleSubmit)
+    > 114 |     this.dnd.destroy()
+          |              ^
+      115 |     document.removeEventListener('turbo:before-stream-render', this.handleStreamRender)
+      116 |     if (this.listObserver) {
+      117 |       this.listObserver.disconnect()
+
+      at default.disconnect (engines/collavre/app/javascript/controllers/comments/list_controller.js:114:14)
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_read_pointer.test.js:238:16)
+
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_prev_message.test.js
+  ● Console
+
+    console.error
+      Error: Uncaught [TypeError: Cannot read properties of undefined (reading '0')]
+          at reportException (/tmp/plan42-worktree1/node_modules/jest-environment-jsdom/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+          at innerInvokeEventListeners (/tmp/plan42-worktree1/node_modules/jest-environment-jsdom/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+          at invokeEventListeners (/tmp/plan42-worktree1/node_modules/jest-environment-jsdom/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+          at HTMLDivElementImpl._dispatch (/tmp/plan42-worktree1/node_modules/jest-environment-jsdom/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+          at HTMLDivElementImpl.dispatchEvent (/tmp/plan42-worktree1/node_modules/jest-environment-jsdom/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+          at HTMLDivElement.dispatchEvent (/tmp/plan42-worktree1/node_modules/jest-environment-jsdom/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+          at Object.<anonymous> (/tmp/plan42-worktree3/engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_prev_message.test.js:158:16)
+          at Promise.finally.completed (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:1561:28)
+          at new Promise (<anonymous>)
+          at callAsyncCircusFn (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:1501:10)
+          at _callCircusTest (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:1011:40)
+          at _runTest (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:951:3)
+          at /tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:853:7
+          at _runTestsForDescribeBlock (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:866:11)
+          at _runTestsForDescribeBlock (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+          at _runTestsForDescribeBlock (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+          at run (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:765:3)
+          at runAndTransformResultsToJestFormat (/tmp/plan42-worktree1/node_modules/jest-circus/build/jestAdapterInit.js:1993:21)
+          at jestAdapter (/tmp/plan42-worktree1/node_modules/jest-circus/build/runner.js:111:19)
+          at runTestInternal (/tmp/plan42-worktree1/node_modules/jest-runner/build/index.js:276:16)
+          at runTest (/tmp/plan42-worktree1/node_modules/jest-runner/build/index.js:344:7) {
+        detail: TypeError: Cannot read properties of undefined (reading '0')
+            at TouchDragHandler._handleTouchStart (/tmp/plan42-worktree3/engines/collavre/app/javascript/lib/tou…2674 tokens truncated…     if (this.canStart && !this.canStart(touch, e)) return
+      98 |
+
+      at TouchDragHandler._handleTouchStart (engines/collavre/app/javascript/lib/touch_drag.js:95:28)
+      at engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_scroll.test.js:70:18
+
+
+Summary of all failing tests
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js
+  ● CommentsPresenceController — pinned add/list buttons › tapping an AI participant avatar opens its menu without intercepting menu controls
+
+    TypeError: Cannot read properties of undefined (reading 'at')
+
+      119 |         const trigger = controller.participantsTarget.querySelector('.comment-user-menu-trigger')
+      120 |         const click = jest.spyOn(trigger, 'click')
+    > 121 |         const handler = controller._agentTouchDragHandlers.at(-1)
+          |                                                            ^
+      122 |
+      123 |         handler._handleTouchStart({
+      124 |             touches: [{ clientX: 10, clientY: 10 }],
+
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js:121:60)
+
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_read_pointer.test.js
+  ● CommentsListController read pointer updates › uses an unload-safe request when disconnecting with a pending read
+
+    TypeError: Cannot read properties of undefined (reading 'destroy')
+
+      112 |     this.listTarget.removeEventListener('click', this.handleClick)
+      113 |     this.listTarget.removeEventListener('submit', this.handleSubmit)
+    > 114 |     this.dnd.destroy()
+          |              ^
+      115 |     document.removeEventListener('turbo:before-stream-render', this.handleStreamRender)
+      116 |     if (this.listObserver) {
+      117 |       this.listObserver.disconnect()
+
+      at default.disconnect (engines/collavre/app/javascript/controllers/comments/list_controller.js:114:14)
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_read_pointer.test.js:238:16)
+
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_prev_message.test.js
+  ● list_controller previous-message navigation › user input via touchstart › drops the anchor so the next click resolves from where the user landed
+
+    TypeError: Cannot read properties of undefined (reading '0')
+
+      93 |     if (this._dragging) return
+      94 |
+    > 95 |     const touch = e.touches[0]
+         |                            ^
+      96 |     if (!touch) return
+      97 |     if (this.canStart && !this.canStart(touch, e)) return
+      98 |
+
+      at TouchDragHandler._handleTouchStart (engines/collavre/app/javascript/lib/touch_drag.js:95:28)
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_prev_message.test.js:158:16)
+
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_scroll.test.js
+  ● TopicsController topic strip scrolling › cancels a smooth active-topic scroll when the user starts a touchstart gesture
+
+    TypeError: Cannot read properties of undefined (reading '0')
+
+      93 |     if (this._dragging) return
+      94 |
+    > 95 |     const touch = e.touches[0]
+         |                            ^
+      96 |     if (!touch) return
+      97 |     if (this.canStart && !this.canStart(touch, e)) return
+      98 |
+
+      at TouchDragHandler._handleTouchStart (engines/collavre/app/javascript/lib/touch_drag.js:95:28)
+      at engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_scroll.test.js:70:18
+
+
+Test Suites: 4 failed, 34 passed, 38 total
+Tests:       4 failed, 727 passed, 731 total
+Snapshots:   0 total
+Time:        31.67 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__.
+
+
+2026-09-08T11:45:10.304Z
+(node:449045) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 2 passed, 2 total
+Tests:       43 passed, 43 total
+Snapshots:   0 total
+Time:        1.747 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js|engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_read_pointer.test.js.
+
+
+2026-09-08T11:45:54.317Z
+(node:449362) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 2 passed, 2 total
+Tests:       107 passed, 107 total
+Snapshots:   0 total
+Time:        15.187 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js|engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js.
+
+
+2026-09-08T11:46:50.872Z
+(node:449544) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 2 passed, 2 total
+Tests:       27 passed, 27 total
+Snapshots:   0 total
+Time:        1.408 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_scroll.test.js|engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_prev_message.test.js.
+
+
+2026-09-08T11:46:50.872Z
+(node:449871) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js
+  ● topic source preserves reorder and cross-creative move MIME and reorders from normalized data
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      48 |   expect(controller.saveTopicOrder).toHaveBeenCalledWith([2, 1, 3])
+      49 |   drag('dragend', source, values)
+    > 50 |   expect(source.classList.contains('topic-dragging')).toBe(false)
+         |                                                       ^
+      51 | })
+      52 |
+      53 | test('agent and comments drops retain their different commands and read-only policy', async () => {
+
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js:50:55)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        0.891 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js.
+
+
+2026-09-08T11:48:33.984Z
+(node:450124) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 4 passed, 4 total
+Tests:       35 passed, 35 total
+Snapshots:   0 total
+Time:        2.286 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js|engines/collavre/app/javascript/lib/dnd/__tests__.
+
+
+2026-09-08T11:48:33.984Z
+(node:450487) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 5 passed, 5 total
+Tests:       42 passed, 42 total
+Snapshots:   0 total
+Time:        2.305 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__|engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js|engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js.
+
+
+2026-09-08T11:49:21.072Z
+(node:450713) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 134/134 )
+Branches     : 100% ( 74/74 )
+Functions    : 100% ( 30/30 )
+Lines        : 100% ( 106/106 )
+================================================================================
+-------------|---------|----------|---------|---------|-------------------
+File         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------|---------|----------|---------|---------|-------------------
+All files    |     100 |      100 |     100 |     100 |                   
+ preview.js  |     100 |      100 |     100 |     100 |                   
+ registry.js |     100 |      100 |     100 |     100 |                   
+-------------|---------|----------|---------|---------|-------------------
+
+Test Suites: 3 passed, 3 total
+Tests:       36 passed, 36 total
+Snapshots:   0 total
+Time:        2.457 s
+Ran all test suites matching engines/collavre/app/javascript/lib/dnd/__tests__.
+
+
+2026-09-08T11:51:23.690Z
+Warning: truncated output (original token count: 1582)
+Total output lines: 136
+
+(node:451165) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js (14.712 s)
+  ● FormController - draft persistence › dropping a creative bundle inserts every link and preserves text after the cursor
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Before [Creative #10](/creatives/10) [Creative #20](/creatives/20)after"
+    Received: "Before after"
+
+      2080 |     textarea.dispatchEvent(event)
+      2081 |     expect(event.defaultPrevented).toBe(true)
+    > 2082 |     expect(textarea.value).toBe('Before [Creative #10](/creatives/10) [Creative #20](/creatives/20)after')
+           |                            ^
+      2083 |     expect(textarea.selectionStart).toBe(textarea.value.indexOf('after'))
+      2084 |   })
+      2085 |
+
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js:2082:28)
+
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js
+  ● agent and comments drops retain their different commands and read-only policy
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    - Expected
+    + Received
+
+      "2",
+      Object {
+        "avatar_url": "/agent.png",
+    -   "id": 8,
+        "name": "Agent",
+      },
+
+    Number of calls: 1
+
+      65 |   expect(drag('dragover', controller.listTarget.querySelector('[data-id="…782 tokens truncated…
+         |                                           ^
+      68 |   expect(moved.mock.calls[0][0].detail).toEqual({ targetTopicId: '2', commentIds: ['7', '9'] })
+      69 |   expect(controller.createTopicWithAgent).toHaveBeenCalledWith(agent)
+      70 |   expect(controller.createTopicAndMoveComments).toHaveBeenCalledWith(['7', '9'])
+
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js:67:43)
+
+FAIL engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js
+  ● creative bundle is added in one command, excluding inherited and existing contexts
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 1
+    Received number of calls: 0
+
+      45 |   drag('drop', controller.listTarget, values)
+      46 |   await Promise.resolve()
+    > 47 |   expect(controller._updateContextIds).toHaveBeenCalledTimes(1)
+         |                                        ^
+      48 |   expect(controller._updateContextIds).toHaveBeenCalledWith([10, 20, 30, 40])
+      49 |   expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(false)
+      50 | })
+
+      at Object.<anonymous> (engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js:47:40)
+
+
+Test Suites: 3 failed, 39 passed, 42 total
+Tests:       3 failed, 767 passed, 770 total
+Snapshots:   0 total
+Time:        34.418 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__|engines/collavre/app/javascript/lib/dnd/__tests__.
+
+
+2026-09-08T11:52:23.548Z
+(node:451783) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 42 passed, 42 total
+Tests:       770 passed, 770 total
+Snapshots:   0 total
+Time:        31.878 s, estimated 34 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__|engines/collavre/app/javascript/lib/dnd/__tests__.
+
+
+2026-09-08T11:52:23.548Z
+(node:452131) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+Test Suites: 2 passed, 2 total
+Tests:       30 passed, 30 total
+Snapshots:   0 total
+Time:        1.719 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_dnd.test.js|engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js.

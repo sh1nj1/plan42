@@ -1,0 +1,3 @@
+2d6bb8930c28c2341e80ae3b60a8195dadea13514365ae8514f07219bede54e6  engines/collavre/app/javascript/lib/dnd/envelope.js
+03998fc2cd9cac8040731f9465a1ae83928fb841c33668854c678dfb698b828b  engines/collavre/app/javascript/lib/dnd/hit_test.js
+06997a4873a3b55add68fe0865d2b9654edc6d9e6a779a1ebaec54e1780a67b6  engines/collavre/app/javascript/lib/dnd/session.js
