@@ -1,0 +1,60 @@
+import { sendNewOrder, sendLinkedCreative } from '../../lib/api/drag_drop';
+
+function normalizeId(id) {
+  if (!['string', 'number'].includes(typeof id) || !/^[1-9]\d*$/.test(String(id))) {
+    throw new TypeError('Expected a positive creative ID');
+  }
+  return String(id);
+}
+
+// This command owns persistence only. Each view owns its preview, rollback,
+// refresh, focus and completion events. Invalid arguments reject before writes;
+// request failures are returned so callers can reconcile partial link creation.
+export async function executeCreativeMove({ ids, targetId, direction, mode = 'move' }) {
+  if (!Array.isArray(ids) || !ids.length) throw new TypeError('Expected creative IDs');
+  const sourceIds = [...new Set(ids.map(normalizeId))];
+  const destinationId = normalizeId(targetId);
+  if (!['up', 'down', 'child'].includes(direction)) throw new TypeError('Invalid move direction');
+  if (!['move', 'link'].includes(mode)) throw new TypeError('Invalid move mode');
+  if (sourceIds.includes(destinationId)) throw new TypeError('Cannot drop onto the source');
+
+  const successes = new Map();
+  const errors = new Map();
+  if (mode === 'move') {
+    try {
+      const selection = sourceIds.length === 1
+        ? { draggedId: sourceIds[0] }
+        : { draggedIds: sourceIds };
+      const response = await sendNewOrder({ ...selection, targetId: destinationId, direction });
+      if (!response.ok) {
+        const error = new Error('Creative move request failed');
+        error.status = response.status;
+        throw error;
+      }
+      sourceIds.forEach(id => successes.set(id, response));
+    } catch (error) {
+      sourceIds.forEach(id => errors.set(id, error));
+    }
+  } else {
+    // The endpoint creates one shell at a time. Serialize to avoid competing
+    // resequences; reverse "down" inserts so the selected order is retained.
+    const requestIds = direction === 'down' ? [...sourceIds].reverse() : sourceIds;
+    for (const id of requestIds) {
+      try {
+        successes.set(id, await sendLinkedCreative({ draggedId: id, targetId: destinationId, direction }));
+      } catch (error) {
+        errors.set(id, error);
+      }
+    }
+  }
+
+  const succeededIds = sourceIds.filter(id => successes.has(id));
+  const failedIds = sourceIds.filter(id => errors.has(id));
+  return {
+    status: failedIds.length === 0 ? 'complete' : succeededIds.length ? 'partial' : 'failed',
+    succeededIds,
+    failedIds,
+    results: succeededIds.map(id => ({ id, result: successes.get(id) })),
+    failures: failedIds.map(id => ({ id, error: errors.get(id) })),
+  };
+}

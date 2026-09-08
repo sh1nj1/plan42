@@ -696,3 +696,25 @@ describe('LinkCreativeController picker', () => {
     })
   })
 })
+
+describe('destination picker cancellation callbacks', () => {
+  test.each(['close', 'Escape', 'outside', 'touch'])('%s closes and calls back exactly once', async method => {
+    browse.mockResolvedValue([])
+    const { application, controller, element } = await installController()
+    const onClose = jest.fn()
+    const onSelect = jest.fn()
+    controller.open(rect, onSelect, onClose, { allowCreate: false })
+    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)))
+    if (method === 'close') controller.closeTarget.click()
+    if (method === 'Escape') controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (method === 'outside') document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    if (method === 'touch') document.body.dispatchEvent(new Event('touchstart', { bubbles: true }))
+    expect(element.style.display).toBe('none')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onSelect).not.toHaveBeenCalled()
+    controller.close()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    application.stop()
+    document.body.innerHTML = ''
+  })
+})

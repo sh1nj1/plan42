@@ -1,0 +1,157 @@
+cwd: file:///tmp/plan42-worktree4
+exit_code: 0
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/controllers/creative_move_controller.js
+
+(node:444757) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 91.2% ( 83/91 )
+Branches     : 75.6% ( 31/41 )
+Functions    : 92.85% ( 13/14 )
+Lines        : 92.5% ( 74/80 )
+================================================================================
+-----------------------------|---------|----------|---------|---------|-------------------
+File                         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------------------------|---------|----------|---------|---------|-------------------
+All files                    |    91.2 |     75.6 |   92.85 |    92.5 |                   
+ creative_move_controller.js |    91.2 |     75.6 |   92.85 |    92.5 | 116-121           
+-----------------------------|---------|----------|---------|---------|-------------------
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        1.441 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js.
+
+
+
+cwd: file:///tmp/plan42-worktree4
+exit_code: 2
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/controllers/creative_move_controller.js
+
+(node:444894) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 98.9% ( 90/91 )
+Branches     : 92.68% ( 38/41 )
+Functions    : 100% ( 14/14 )
+Lines        : 98.75% ( 79/80 )
+================================================================================
+-----------------------------|---------|----------|---------|---------|-------------------
+File                         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------------------------|---------|----------|---------|---------|-------------------
+All files                    |    98.9 |    92.68 |     100 |   98.75 |                   
+ creative_move_controller.js |    98.9 |    92.68 |     100 |   98.75 | 118               
+-----------------------------|---------|----------|---------|---------|-------------------
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        1.255 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js.
+
+engines/collavre/app/assets/stylesheets/collavre/modal_dialog.css
+  22:3  ✖  Unexpected vendor-prefixed property "-webkit-backdrop-filter"  property-no-vendor-prefix
+  43:3  ✖  Unexpected vendor-prefixed property "-webkit-backdrop-filter"  property-no-vendor-prefix
+
+✖ 2 problems (2 errors, 0 warnings)
+  2 errors potentially fixable with the "--fix" option.
+
+
+
+
+cwd: file:///tmp/plan42-worktree4
+exit_code: 0
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/controllers/creative_move_controller.js
+
+(node:445139) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 91/91 )
+Branches     : 97.56% ( 40/41 )
+Functions    : 100% ( 14/14 )
+Lines        : 100% ( 80/80 )
+================================================================================
+-----------------------------|---------|----------|---------|---------|-------------------
+File                         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------------------------|---------|----------|---------|---------|-------------------
+All files                    |     100 |    97.56 |     100 |     100 |                   
+ creative_move_controller.js |     100 |    97.56 |     100 |     100 | 119               
+-----------------------------|---------|----------|---------|---------|-------------------
+Test Suites: 1 passed, 1 total
+Tests:       17 passed, 17 total
+Snapshots:   0 total
+Time:        1.07 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js.
+
+
+
+cwd: file:///tmp/plan42-worktree4
+exit_code: 0
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js engines/collavre/app/javascript/modules/__tests__/creative_link_picker.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/controllers/creative_move_controller.js
+
+(node:445491) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 91/91 )
+Branches     : 100% ( 41/41 )
+Functions    : 100% ( 14/14 )
+Lines        : 100% ( 80/80 )
+================================================================================
+-----------------------------|---------|----------|---------|---------|-------------------
+File                         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------------------------|---------|----------|---------|---------|-------------------
+All files                    |     100 |      100 |     100 |     100 |                   
+ creative_move_controller.js |     100 |      100 |     100 |     100 |                   
+-----------------------------|---------|----------|---------|---------|-------------------
+
+Test Suites: 2 passed, 2 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        1.216 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js|engines/collavre/app/javascript/modules/__tests__/creative_link_picker.test.js.
+
+  ../dnd-move-controller.js  24.2kb
+
+⚡ Done in 13ms
+
+
+
+cwd: file:///tmp/plan42-worktree1
+exit_code: 0
+
+> test
+> node --experimental-vm-modules ./node_modules/.bin/jest --runInBand engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js engines/collavre/app/javascript/controllers/__tests__/link_creative_controller.test.js engines/collavre/app/javascript/modules/__tests__/creative_link_picker.test.js --coverage --collectCoverageFrom=engines/collavre/app/javascript/controllers/creative_move_controller.js
+
+(node:455784) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 91/91 )
+Branches     : 100% ( 43/43 )
+Functions    : 100% ( 14/14 )
+Lines        : 100% ( 80/80 )
+================================================================================
+-----------------------------|---------|----------|---------|---------|-------------------
+File                         | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-----------------------------|---------|----------|---------|---------|-------------------
+All files                    |     100 |      100 |     100 |     100 |                   
+ creative_move_controller.js |     100 |      100 |     100 |     100 |                   
+-----------------------------|---------|----------|---------|---------|-------------------
+
+Test Suites: 3 passed, 3 total
+Tests:       52 passed, 52 total
+Snapshots:   0 total
+Time:        2.617 s
+Ran all test suites matching engines/collavre/app/javascript/controllers/__tests__/creative_move_controller.test.js|engines/collavre/app/javascript/controllers/__tests__/link_creative_controller.test.js|engines/collavre/app/javascript/modules/__tests__/creative_link_picker.test.js.
+
