@@ -1,0 +1,135 @@
+const liveRegistries = new Set()
+
+// Event delegation keeps registrations valid when a view replaces its rows.
+// Serialization and business commands belong to the caller, not this registry.
+export function createDragDropRegistry({ root, getKind, readData, onError = console.error }) {
+  const sources = new Set()
+  const zones = new Set()
+  const document = root.ownerDocument || root
+  let activeSource = null
+  let activePreview = null
+
+  function clearPreview() {
+    const previous = activePreview
+    activePreview = null
+    previous?.cleanup?.()
+  }
+
+  function finish(event) {
+    clearPreview()
+    const previous = activeSource
+    activeSource = null
+    previous?.registration.onDragEnd?.({ el: previous.el, event })
+  }
+
+  function closest(event, registrations, accepts = () => true) {
+    let el = event.target?.nodeType === 1 ? event.target : event.target?.parentElement
+    while (el && root.contains(el)) {
+      for (const registration of registrations) {
+        if (el.matches(registration.selector) && accepts(registration)) return { el, registration }
+      }
+      if (el === root) break
+      el = el.parentElement
+    }
+    return null
+  }
+
+  function target(event) {
+    const kind = getKind(event.dataTransfer)
+    if (!kind) return null
+    const match = closest(event, zones, zone => zone.accepts.includes(kind))
+    if (!match) return null
+    const hit = match.registration.hitTest
+      ? match.registration.hitTest({ el: match.el, event, kind })
+      : 'into'
+    return hit == null ? null : { ...match, kind, hit }
+  }
+
+  function dragstart(event) {
+    const match = closest(event, sources)
+    if (!match) return
+    finish(event)
+    if (match.registration.onDragStart({ el: match.el, event }) !== false) activeSource = match
+  }
+
+  function dragover(event) {
+    const match = target(event)
+    if (!match) return clearPreview()
+    event.preventDefault()
+    event.dataTransfer.dropEffect = match.registration.dropEffect || 'move'
+    if (activePreview?.el === match.el && activePreview.hit === match.hit &&
+        activePreview.registration === match.registration) return
+    clearPreview()
+    activePreview = { ...match, cleanup: match.registration.preview?.({ ...match, event }) }
+  }
+
+  function dragleave(event) {
+    if (activePreview && !activePreview.el.contains(event.relatedTarget)) clearPreview()
+  }
+
+  function drop(event) {
+    const match = target(event)
+    clearPreview()
+    if (!match) return
+    event.preventDefault()
+    const data = readData(event.dataTransfer)
+    if (!data || data.kind !== match.kind) return
+    // Catch rejected commands without tying view-specific recovery to input handling.
+    Promise.resolve(match.registration.onDrop({ ...data, el: match.el, hit: match.hit, event }))
+      .catch(onError)
+  }
+
+  const listeners = { dragstart, dragover, dragleave, drop }
+  const guarded = callback => event => {
+    try { callback(event) } catch (error) { clearPreview(); onError(error) }
+  }
+  const handlers = Object.fromEntries(Object.entries(listeners).map(([name, callback]) => [name, guarded(callback)]))
+  for (const [name, callback] of Object.entries(handlers)) root.addEventListener(name, callback)
+  const end = guarded(finish)
+  const keydown = guarded(event => { if (event.key === 'Escape') finish(event) })
+  document.addEventListener('dragend', end)
+  document.addEventListener('keydown', keydown)
+
+  const registry = {
+    getDragSource(target) {
+      return closest({ target }, sources)?.el || null
+    },
+    getDropTargets() {
+      const targets = new Set()
+      for (const registry of liveRegistries) {
+        for (const target of registry.localDropTargets()) targets.add(target)
+      }
+      return [...targets]
+    },
+    localDropTargets() {
+      const selectors = [...zones].map(zone => zone.selector).join(',')
+      if (!selectors) return []
+      return [...(root.matches?.(selectors) ? [root] : []), ...root.querySelectorAll(selectors)]
+    },
+    registerDragSource(registration) {
+      sources.add(registration)
+      return () => {
+        sources.delete(registration)
+        if (activeSource?.registration === registration) finish()
+      }
+    },
+    registerDropZone(registration) {
+      zones.add(registration)
+      return () => {
+        zones.delete(registration)
+        if (activePreview?.registration === registration) clearPreview()
+      }
+    },
+    destroy() {
+      liveRegistries.delete(registry)
+      for (const [name, callback] of Object.entries(handlers)) root.removeEventListener(name, callback)
+      document.removeEventListener('dragend', end)
+      document.removeEventListener('keydown', keydown)
+      finish()
+      sources.clear()
+      zones.clear()
+    }
+  }
+  liveRegistries.add(registry)
+  return registry
+}

@@ -112,23 +112,36 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(controller.participantsTarget.querySelectorAll('.comment-user-menu')).toHaveLength(2)
     })
 
+    test('delegated agent dragging retains avatar metadata and cleans feedback', () => {
+        controller.participantsData = [USERS[1]]
+        controller.renderParticipants([])
+        const wrapper = controller.participantsTarget.querySelector('.ai-agent-draggable')
+        const values = {}
+        const event = new Event('dragstart', { bubbles: true, cancelable: true })
+        Object.assign(event, { dataTransfer: { setData: (type, value) => { values[type] = value } } })
+        wrapper.dispatchEvent(event)
+        expect(JSON.parse(values['application/x-agent-drop'])).toEqual({
+            id: String(USERS[1].id), name: USERS[1].name, avatar_url: USERS[1].avatar_url
+        })
+        expect(wrapper.classList.contains('dragging')).toBe(true)
+        document.dispatchEvent(new Event('dragend'))
+        expect(wrapper.classList.contains('dragging')).toBe(false)
+    })
+
     test('tapping an AI participant avatar opens its menu without intercepting menu controls', () => {
         window.ontouchstart = null
         controller.participantsData = [USERS[1]]
         controller.renderParticipants([])
         const trigger = controller.participantsTarget.querySelector('.comment-user-menu-trigger')
         const click = jest.spyOn(trigger, 'click')
-        const handler = controller._agentTouchDragHandlers.at(-1)
+        const touchStart = new Event('touchstart', { bubbles: true, cancelable: true })
+        Object.defineProperty(touchStart, 'touches', { value: [{ clientX: 10, clientY: 10, target: trigger }] })
+        trigger.dispatchEvent(touchStart)
+        const touchEnd = new Event('touchend', { bubbles: true, cancelable: true })
+        Object.defineProperty(touchEnd, 'touches', { value: [] })
+        trigger.dispatchEvent(touchEnd)
 
-        handler._handleTouchStart({
-            touches: [{ clientX: 10, clientY: 10 }],
-            preventDefault: jest.fn()
-        })
-        handler._handleTouchEnd({})
-
-        expect(handler.container).toBe(trigger)
         expect(click).toHaveBeenCalled()
-        handler.destroy()
         delete window.ontouchstart
     })
 

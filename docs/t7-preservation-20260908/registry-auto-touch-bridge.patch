@@ -1,0 +1,57 @@
+From ccd858379f9d48a6eef20d4c24876bf7f6510752 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Tue, 8 Sep 2026 11:43:20 +0000
+Subject: [PATCH] feat: enable shared touch input for registered drag sources
+
+---
+ engines/collavre/app/javascript/lib/dnd/registry.js | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/engines/collavre/app/javascript/lib/dnd/registry.js b/engines/collavre/app/javascript/lib/dnd/registry.js
+index 8e28207..0ea5f69 100644
+--- a/engines/collavre/app/javascript/lib/dnd/registry.js
++++ b/engines/collavre/app/javascript/lib/dnd/registry.js
+@@ -1,8 +1,10 @@
++import { createTouchBridge } from './touch_bridge'
++
+ const liveRegistries = new Set()
+ 
+ // Event delegation keeps registrations valid when a view replaces its rows.
+ // Serialization and business commands belong to the caller, not this registry.
+-export function createDragDropRegistry({ root, getKind, readData, onError = console.error }) {
++export function createDragDropRegistry({ root, getKind, readData, onError = console.error, touch = true }) {
+   const sources = new Set()
+   const zones = new Set()
+   const document = root.ownerDocument || root
+@@ -99,7 +101,12 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+       for (const registry of liveRegistries) {
+         for (const target of registry.localDropTargets()) targets.add(target)
+       }
+-      return [...targets]
++      const depth = el => {
++        let value = 0
++        for (let parent = el.parentElement; parent; parent = parent.parentElement) value += 1
++        return value
++      }
++      return [...targets].sort((left, right) => depth(right) - depth(left))
+     },
+     localDropTargets() {
+       const selectors = [...zones].map(zone => zone.selector).join(',')
+@@ -121,6 +128,7 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+       }
+     },
+     destroy() {
++      bridge?.destroy()
+       liveRegistries.delete(registry)
+       for (const [name, callback] of Object.entries(handlers)) root.removeEventListener(name, callback)
+       document.removeEventListener('dragend', end)
+@@ -131,5 +139,6 @@ export function createDragDropRegistry({ root, getKind, readData, onError = cons
+     }
+   }
+   liveRegistries.add(registry)
++  const bridge = touch ? createTouchBridge({ root, registry }) : null
+   return registry
+ }
+-- 
+2.43.0
+

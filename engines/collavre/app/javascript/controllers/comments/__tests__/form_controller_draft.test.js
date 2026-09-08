@@ -6,6 +6,7 @@ import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import FormController from '../form_controller'
 import chatDrafts from '../../../lib/chat_drafts'
+import { writeDragData } from '../../../lib/dnd/envelope'
 
 describe('FormController - draft persistence', () => {
   let application
@@ -2066,4 +2067,21 @@ describe('FormController - draft persistence', () => {
     await new Promise((resolve) => setTimeout(resolve, 600))
     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
   })
+  test('dropping a creative bundle inserts every link and preserves text after the cursor', () => {
+    controller.formTarget.id = 'new-comment-form'
+    const textarea = controller.textareaTarget
+    textarea.value = 'Before after'
+    textarea.setSelectionRange(7, 7)
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    const values = {}
+    const dataTransfer = { types: [], files: [], getData: type => values[type] || '',
+      setData: (type, value) => { values[type] = value; dataTransfer.types = Object.keys(values) } }
+    writeDragData(dataTransfer, { kind: 'creative', ids: ['10', '20'], payload: { treeId: 'tree' } })
+    Object.assign(event, { dataTransfer })
+    textarea.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(textarea.value).toBe('Before [Creative #10](/creatives/10) [Creative #20](/creatives/20)after')
+    expect(textarea.selectionStart).toBe(textarea.value.indexOf('after'))
+  })
+
 })

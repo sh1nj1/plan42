@@ -1,0 +1,2365 @@
+diff --git a/engines/collavre/app/assets/stylesheets/collavre/comments_popup.css b/engines/collavre/app/assets/stylesheets/collavre/comments_popup.css
+index 4701243..0ed4fe7 100644
+--- a/engines/collavre/app/assets/stylesheets/collavre/comments_popup.css
++++ b/engines/collavre/app/assets/stylesheets/collavre/comments_popup.css
+@@ -294,7 +294,7 @@ body.chat-fullscreen {
+     /* Prevent iOS zoom on focus */
+ }
+ 
+-#new-comment-form.creative-drop-hover textarea {
++#new-comment-form.dnd-over-into textarea {
+     border-color: var(--link);
+     box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 25%, transparent);
+ }
+@@ -1433,17 +1433,19 @@ body.chat-fullscreen {
+     opacity: 0.5;
+ }
+ 
+-.context-chip.context-drag-over-left {
++.context-chip.dnd-over-left,
++.topic-tag.dnd-over-left {
+     border-left: 3px solid var(--color-active);
+     margin-left: -1px;
+ }
+ 
+-.context-chip.context-drag-over-right {
++.context-chip.dnd-over-right,
++.topic-tag.dnd-over-right {
+     border-right: 3px solid var(--color-active);
+     margin-right: -1px;
+ }
+ 
+-.comment-contexts-list.context-drop-active {
++.comment-contexts-list.dnd-over-into {
+     outline: 2px dashed var(--color-link);
+     outline-offset: -2px;
+     background-color: color-mix(in srgb, var(--color-link) 8%, transparent);
+@@ -1593,7 +1595,7 @@ body.chat-fullscreen {
+     opacity: 0.5;
+ }
+ 
+-.topic-creation-container.drag-over {
++.topic-creation-container.dnd-over-into {
+     background: var(--color-active);
+     border-radius: 12px;
+     opacity: 0.8;
+@@ -1643,7 +1645,7 @@ body.chat-fullscreen {
+ }
+ 
+ /* Drag and drop styles for moving comments to topics */
+-.topic-tag.drag-over {
++.topic-tag.dnd-over-into {
+     background-color: var(--color-active);
+     color: var(--color-badge-text);
+     border-color: var(--color-active);
+@@ -1668,16 +1670,6 @@ body.chat-fullscreen {
+     opacity: 0.5;
+ }
+ 
+-.topic-tag.topic-drag-over-left {
+-    border-left: 3px solid var(--color-active);
+-    margin-left: -1px;
+-}
+-
+-.topic-tag.topic-drag-over-right {
+-    border-right: 3px solid var(--color-active);
+-    margin-right: -1px;
+-}
+-
+ .creative-history-list {
+   --creative-history-addition-bg: color-mix(in srgb, var(--color-success) 18%, var(--surface-section));
+   --creative-history-addition-text: color-mix(in srgb, var(--color-success) 65%, var(--text-primary));
+diff --git a/engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js b/engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js
+new file mode 100644
+index 0000000..3b24a99
+--- /dev/null
++++ b/engines/collavre/app/javascript/controllers/comments/__tests__/contexts_controller_dnd.test.js
+@@ -0,0 +1,89 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import { Application } from '@hotwired/stimulus'
++import ContextsController from '../contexts_controller'
++import { writeDragData } from '../../../lib/dnd/envelope'
++
++let application, controller, popup
++function drag(type, target, values = {}, x = 0) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.assign(event, { clientX: x, dataTransfer: {
++    get types() { return Object.keys(values) },
++    getData: type => values[type] || '', setData: (type, value) => { values[type] = value }
++  } })
++  target.dispatchEvent(event)
++  return event
++}
++function creativeValues(ids) {
++  const values = {}
++  writeDragData({ setData: (type, value) => { values[type] = value } },
++    { kind: 'creative', ids, payload: { creativeId: ids[0], treeId: 'tree' } })
++  return values
++}
++beforeEach(async () => {
++  global.requestAnimationFrame = fn => { fn(); return 0 }
++  document.body.innerHTML = `<div id="comments-popup" data-controller="comments--contexts" data-creative-id="42">
++    <button data-comments--contexts-target="toggleButton"></button>
++    <div data-comments--contexts-target="bar"><div data-comments--contexts-target="list"></div></div>
++    <form id="new-comment-form"></form></div>`
++  popup = document.getElementById('comments-popup')
++  application = Application.start()
++  application.register('comments--contexts', ContextsController)
++  await new Promise(resolve => setTimeout(resolve, 0))
++  controller = application.getControllerForElementAndIdentifier(popup, 'comments--contexts')
++  controller.canManage = true
++  controller.contexts = [{ id: 10 }, { id: 20 }, { id: 99, inherited: true }]
++  controller._updateContextIds = jest.fn().mockResolvedValue()
++  controller.loadContexts = jest.fn().mockResolvedValue()
++  controller.renderContexts()
++  controller._bindPopupDragDetection()
++})
++afterEach(() => {
++  controller.disconnect()
++  application.stop()
++  document.body.innerHTML = ''
++})
++
++test('creative bundle is added in one command, excluding inherited and existing contexts', async () => {
++  const values = creativeValues(['10', '30', '40', '99', '30'])
++  const over = drag('dragover', controller.listTarget, values)
++  expect(over.defaultPrevented).toBe(true)
++  expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(true)
++  drag('drop', controller.listTarget, values)
++  await Promise.resolve()
++  expect(controller._updateContextIds).toHaveBeenCalledTimes(1)
++  expect(controller._updateContextIds).toHaveBeenCalledWith([10, 20, 30, 40])
++  expect(controller.listTarget.classList.contains('dnd-over-into')).toBe(false)
++})
++
++test('form and unauthorized drops never add contexts', () => {
++  const values = creativeValues(['30'])
++  drag('drop', document.querySelector('form'), values)
++  controller.canManage = false
++  drag('drop', controller.listTarget, values)
++  expect(controller._updateContextIds).not.toHaveBeenCalled()
++})
++
++test('context reorder uses delegated rows after rendering and rejects self and inherited destinations', async () => {
++  const values = {}
++  const source = popup.querySelector('[data-context-id="10"]')
++  const target = popup.querySelector('[data-context-id="20"]')
++  drag('dragstart', source, values)
++  expect(values['application/x-context-id']).toBe('10')
++  expect(drag('dragover', source, values).defaultPrevented).toBe(false)
++  expect(drag('dragover', popup.querySelector('[data-context-id="99"]'), values).defaultPrevented).toBe(false)
++  drag('drop', target, values, 10)
++  await Promise.resolve()
++  expect(controller._updateContextIds).toHaveBeenCalledWith([20, 10])
++  drag('dragend', source, values)
++  expect(source.classList.contains('context-dragging')).toBe(false)
++})
++
++test('leaving an empty popup restores hidden context list', () => {
++  controller.contexts = []
++  const values = creativeValues(['30'])
++  drag('dragover', popup, values)
++  expect(controller.listVisible).toBe(true)
++  drag('dragleave', popup, values)
++  expect(controller.listVisible).toBe(false)
++})
+diff --git a/engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js b/engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js
+index 9e1ce9a..bfdb642 100644
+--- a/engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js
++++ b/engines/collavre/app/javascript/controllers/comments/__tests__/form_controller_draft.test.js
+@@ -6,6 +6,7 @@ import { jest } from '@jest/globals'
+ import { Application } from '@hotwired/stimulus'
+ import FormController from '../form_controller'
+ import chatDrafts from '../../../lib/chat_drafts'
++import { writeDragData } from '../../../lib/dnd/envelope'
+ 
+ describe('FormController - draft persistence', () => {
+   let application
+@@ -2066,4 +2067,21 @@ describe('FormController - draft persistence', () => {
+     await new Promise((resolve) => setTimeout(resolve, 600))
+     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
+   })
++  test('dropping a creative bundle inserts every link and preserves text after the cursor', () => {
++    controller.formTarget.id = 'new-comment-form'
++    const textarea = controller.textareaTarget
++    textarea.value = 'Before after'
++    textarea.setSelectionRange(7, 7)
++    const event = new Event('drop', { bubbles: true, cancelable: true })
++    const values = {}
++    const dataTransfer = { types: [], files: [], getData: type => values[type] || '',
++      setData: (type, value) => { values[type] = value; dataTransfer.types = Object.keys(values) } }
++    writeDragData(dataTransfer, { kind: 'creative', ids: ['10', '20'], payload: { treeId: 'tree' } })
++    Object.assign(event, { dataTransfer })
++    textarea.dispatchEvent(event)
++    expect(event.defaultPrevented).toBe(true)
++    expect(textarea.value).toBe('Before [Creative #10](/creatives/10) [Creative #20](/creatives/20)after')
++    expect(textarea.selectionStart).toBe(textarea.value.indexOf('after'))
++  })
++
+ })
+diff --git a/engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_dnd.test.js b/engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_dnd.test.js
+new file mode 100644
+index 0000000..9af1506
+--- /dev/null
++++ b/engines/collavre/app/javascript/controllers/comments/__tests__/list_controller_dnd.test.js
+@@ -0,0 +1,26 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import ListController from '../list_controller'
++import { readDragData } from '../../../lib/dnd/envelope'
++
++test('delegated selected comments preserve bundle IDs and release feedback on cancellation', () => {
++  document.body.innerHTML = '<div id="popup"><div id="list"><div class="comment-item" draggable="true"><span class="comment-body">Message</span></div></div></div>'
++  const controller = Object.create(ListController.prototype)
++  Object.defineProperty(controller, 'element', { value: document.querySelector('#popup') })
++  Object.defineProperty(controller, 'listTarget', { value: document.querySelector('#list') })
++  controller.connect()
++  controller.selection = new Set(['7', '9'])
++  const values = {}
++  const dataTransfer = { get types() { return Object.keys(values) }, getData: type => values[type] || '',
++    setData: (type, value) => { values[type] = value }, setDragImage: jest.fn() }
++  const event = new Event('dragstart', { bubbles: true, cancelable: true })
++  Object.assign(event, { dataTransfer })
++  controller.listTarget.querySelector('.comment-body').dispatchEvent(event)
++  expect(readDragData(dataTransfer)).toEqual(expect.objectContaining({ kind: 'comments', ids: ['7', '9'] }))
++  expect(JSON.parse(values['application/x-comment-ids'])).toEqual(['7', '9'])
++  expect(controller.listTarget.classList.contains('dragging-comments')).toBe(true)
++  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
++  expect(controller.listTarget.classList.contains('dragging-comments')).toBe(false)
++  controller.disconnect()
++  document.body.innerHTML = ''
++})
+diff --git a/engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js b/engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js
+index c38f2fd..b6a5191 100644
+--- a/engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js
++++ b/engines/collavre/app/javascript/controllers/comments/__tests__/presence_controller_participant_list.test.js
+@@ -112,23 +112,36 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
+         expect(controller.participantsTarget.querySelectorAll('.comment-user-menu')).toHaveLength(2)
+     })
+ 
++    test('delegated agent dragging retains avatar metadata and cleans feedback', () => {
++        controller.participantsData = [USERS[1]]
++        controller.renderParticipants([])
++        const wrapper = controller.participantsTarget.querySelector('.ai-agent-draggable')
++        const values = {}
++        const event = new Event('dragstart', { bubbles: true, cancelable: true })
++        Object.assign(event, { dataTransfer: { setData: (type, value) => { values[type] = value } } })
++        wrapper.dispatchEvent(event)
++        expect(JSON.parse(values['application/x-agent-drop'])).toEqual({
++            id: String(USERS[1].id), name: USERS[1].name, avatar_url: USERS[1].avatar_url
++        })
++        expect(wrapper.classList.contains('dragging')).toBe(true)
++        document.dispatchEvent(new Event('dragend'))
++        expect(wrapper.classList.contains('dragging')).toBe(false)
++    })
++
+     test('tapping an AI participant avatar opens its menu without intercepting menu controls', () => {
+         window.ontouchstart = null
+         controller.participantsData = [USERS[1]]
+         controller.renderParticipants([])
+         const trigger = controller.participantsTarget.querySelector('.comment-user-menu-trigger')
+         const click = jest.spyOn(trigger, 'click')
+-        const handler = controller._agentTouchDragHandlers.at(-1)
+-
+-        handler._handleTouchStart({
+-            touches: [{ clientX: 10, clientY: 10 }],
+-            preventDefault: jest.fn()
+-        })
+-        handler._handleTouchEnd({})
++        const touchStart = new Event('touchstart', { bubbles: true, cancelable: true })
++        Object.defineProperty(touchStart, 'touches', { value: [{ clientX: 10, clientY: 10, target: trigger }] })
++        trigger.dispatchEvent(touchStart)
++        const touchEnd = new Event('touchend', { bubbles: true, cancelable: true })
++        Object.defineProperty(touchEnd, 'touches', { value: [] })
++        trigger.dispatchEvent(touchEnd)
+ 
+-        expect(handler.container).toBe(trigger)
+         expect(click).toHaveBeenCalled()
+-        handler.destroy()
+         delete window.ontouchstart
+     })
+ 
+diff --git a/engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js b/engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js
+new file mode 100644
+index 0000000..3eb66df
+--- /dev/null
++++ b/engines/collavre/app/javascript/controllers/comments/__tests__/topics_controller_dnd.test.js
+@@ -0,0 +1,71 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import { Application } from '@hotwired/stimulus'
++import TopicsController from '../topics_controller'
++
++let application, controller
++function drag(type, target, values) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.assign(event, { clientX: 10, dataTransfer: {
++    get types() { return Object.keys(values) }, getData: type => values[type] || '',
++    setData: (type, value) => { values[type] = value }
++  } })
++  target.dispatchEvent(event)
++  return event
++}
++beforeEach(async () => {
++  global.requestAnimationFrame = fn => { fn(); return 0 }
++  document.body.innerHTML = `<div id="comments-popup" data-controller="comments--topics">
++    <div data-comments--topics-target="list"></div>
++    <span data-comments--topics-target="creationContainer"></span></div>`
++  application = Application.start()
++  application.register('comments--topics', TopicsController)
++  await new Promise(resolve => setTimeout(resolve, 0))
++  controller = application.getControllerForElementAndIdentifier(document.querySelector('#comments-popup'), 'comments--topics')
++  controller.creativeIdValue = '42'
++  controller.canManageTopics = true
++  controller.topics = [{ id: 1, name: 'First' }, { id: 2, name: 'Second' }, { id: 3, name: 'Read only', read_only: true }]
++  controller.renderTopics(controller.topics, true)
++  controller.saveTopicOrder = jest.fn().mockResolvedValue()
++  controller.setTopicPrimaryAgent = jest.fn().mockResolvedValue()
++  controller.createTopicWithAgent = jest.fn().mockResolvedValue()
++  controller.createTopicAndMoveComments = jest.fn().mockResolvedValue()
++})
++afterEach(() => {
++  controller.disconnect()
++  application.stop()
++  document.body.innerHTML = ''
++})
++
++test('topic source preserves reorder and cross-creative move MIME and reorders from normalized data', async () => {
++  const values = {}
++  const source = controller.listTarget.querySelector('[data-id="1"]')
++  drag('dragstart', source, values)
++  expect(values['application/x-topic-id']).toBe('1')
++  expect(JSON.parse(values['application/x-topic-move'])).toEqual({ topicId: '1', sourceCreativeId: '42' })
++  drag('drop', controller.listTarget.querySelector('[data-id="2"]'), values)
++  await Promise.resolve()
++  expect(controller.saveTopicOrder).toHaveBeenCalledWith([2, 1, 3])
++  drag('dragend', source, values)
++  expect(source.classList.contains('topic-dragging')).toBe(false)
++})
++
++test('agent and comments drops retain their different commands and read-only policy', async () => {
++  const agent = { id: 8, name: 'Agent', avatar_url: '/agent.png' }
++  const agentValues = { 'application/x-agent-drop': JSON.stringify(agent) }
++  const commentValues = { 'application/x-comment-ids': JSON.stringify(['7', '9']) }
++  const target = controller.listTarget.querySelector('[data-id="2"]')
++  const moved = jest.fn()
++  controller.element.addEventListener('comments--topics:move-to-topic', moved)
++  expect(drag('dragover', target, agentValues).dataTransfer.dropEffect).toBe('copy')
++  drag('drop', target, agentValues)
++  drag('drop', target, commentValues)
++  drag('drop', controller.creationContainerTarget, agentValues)
++  drag('drop', controller.creationContainerTarget, commentValues)
++  expect(drag('dragover', controller.listTarget.querySelector('[data-id="3"]'), agentValues).defaultPrevented).toBe(false)
++  await Promise.resolve()
++  expect(controller.setTopicPrimaryAgent).toHaveBeenCalledWith('2', { ...agent, id: '8' })
++  expect(moved.mock.calls[0][0].detail).toEqual({ targetTopicId: '2', commentIds: ['7', '9'] })
++  expect(controller.createTopicWithAgent).toHaveBeenCalledWith({ ...agent, id: '8' })
++  expect(controller.createTopicAndMoveComments).toHaveBeenCalledWith(['7', '9'])
++})
+diff --git a/engines/collavre/app/javascript/controllers/comments/contexts_controller.js b/engines/collavre/app/javascript/controllers/comments/contexts_controller.js
+index 54c221e..1a5f1c8 100644
+--- a/engines/collavre/app/javascript/controllers/comments/contexts_controller.js
++++ b/engines/collavre/app/javascript/controllers/comments/contexts_controller.js
+@@ -1,8 +1,10 @@
++import { createDragDropRegistry } from '../../lib/dnd/registry'
++import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
++import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
+ import { Controller } from "@hotwired/stimulus"
+ import PopupToggleGuard from '../../lib/popup_toggle_guard'
+ import { elementAnchor } from '../../lib/common_popup'
+ 
+-const CREATIVE_MIME_TYPE = 'application/x-collavre-creative'
+ const CONTEXT_LIST_MODAL_ID = 'context-list-modal'
+ const SELF_CONTEXT_ID = 'self'
+ 
+@@ -22,10 +24,12 @@ export default class extends Controller {
+         this.listVisible = false
+         this.handleContextListClose = this.handleContextListClose.bind(this)
+         this.element.addEventListener('entity-list:close', this.handleContextListClose)
+-        // External drop zone handlers are now Stimulus actions on the list target
++        this._registerDragDrop()
+     }
+ 
+     disconnect() {
++        this.dnd?.destroy()
++        this._unbindPopupDragDetection()
+         this._contextLoadVersion += 1
+         this._closeContextListPopup()
+         this.element.removeEventListener('entity-list:close', this.handleContextListClose)
+@@ -149,15 +153,6 @@ export default class extends Controller {
+         if (!this.hasListTarget) return
+ 
+         this._updateToggleButton()
+-        // Drop zone is handled by Stimulus data-action on the list element
+-
+-        const dragActions = this.canManage
+-            ? 'dragstart->comments--contexts#handleDragStart dragend->comments--contexts#handleDragEnd'
+-            : ''
+-        const reorderActions = this.canManage
+-            ? 'dragover->comments--contexts#handleReorderDragOver dragleave->comments--contexts#handleReorderDragLeave drop->comments--contexts#handleReorderDrop'
+-            : ''
+-
+         let html = ''
+ 
+         // Current creative self-context toggle (always first)
+@@ -176,7 +171,7 @@ export default class extends Controller {
+             const draggable = this.canManage && !ctx.inherited ? 'draggable="true"' : ''
+ 
+             html += `<span class="context-chip ${disabledClass} ${inheritedClass}" ${draggable}
+-                          data-action="click->comments--contexts#toggleContext ${dragActions} ${reorderActions}"
++                          data-action="click->comments--contexts#toggleContext"
+                           data-context-id="${ctx.id}"
+                           title="${ctx.inherited ? this.inheritedLabel : ''}">
+                         ${this.constructor.ICON_CONTEXT_LINK} ${this._escapeHtml(ctx.description)}`
+@@ -449,68 +444,28 @@ export default class extends Controller {
+         await this.loadContexts()
+     }
+ 
+-    // --- Drag & Drop for reordering ---
+-    handleDragStart(event) {
+-        const chipEl = event.currentTarget
+-        const contextId = chipEl.dataset.contextId
+-        if (!contextId) { event.preventDefault(); return }
+-
+-        this.draggingContextId = contextId
+-        event.dataTransfer.setData('application/x-context-id', contextId)
+-        event.dataTransfer.effectAllowed = 'move'
+-
+-        requestAnimationFrame(() => {
+-            chipEl.classList.add('context-dragging')
+-        })
+-    }
+-
+-    handleDragEnd(event) {
+-        this.draggingContextId = null
+-        event.currentTarget.classList.remove('context-dragging')
+-        this.listTarget.querySelectorAll('.context-chip').forEach(el => {
+-            el.classList.remove('context-drag-over-left', 'context-drag-over-right')
+-        })
+-    }
+-
+-    handleReorderDragOver(event) {
+-        if (!event.dataTransfer.types.includes('application/x-context-id')) return
+-        if (!this.draggingContextId) return
+-
+-        const targetEl = event.currentTarget
+-        const targetId = targetEl.dataset.contextId
+-        if (!targetId || targetId === this.draggingContextId) return
+-        // Don't allow reorder onto inherited chips
+-        const ctx = this.contexts.find(c => String(c.id) === targetId)
+-        if (ctx?.inherited) return
+-
+-        event.preventDefault()
+-        event.dataTransfer.dropEffect = 'move'
+-
+-        const rect = targetEl.getBoundingClientRect()
+-        const midpoint = rect.left + rect.width / 2
+-        const isLeft = event.clientX < midpoint
+-
+-        targetEl.classList.toggle('context-drag-over-left', isLeft)
+-        targetEl.classList.toggle('context-drag-over-right', !isLeft)
+-    }
+-
+-    handleReorderDragLeave(event) {
+-        event.currentTarget.classList.remove('context-drag-over-left', 'context-drag-over-right')
+-    }
+-
+-    async handleReorderDrop(event) {
+-        const targetEl = event.currentTarget
+-        targetEl.classList.remove('context-drag-over-left', 'context-drag-over-right')
+-
+-        // If this is a creative drag (not a context reorder), let it bubble to the list handler
+-        if (!event.dataTransfer.types.includes('application/x-context-id')) return
+-
+-        event.preventDefault()
+-        event.stopPropagation()
+-
+-        const draggedId = parseInt(event.dataTransfer.getData('application/x-context-id'))
+-        const targetId = parseInt(targetEl.dataset.contextId)
+-
++    _registerDragDrop() {
++        this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
++        const selector = '.context-chip[draggable="true"]'
++        this.dnd.registerDragSource({ selector,
++            onDragStart: ({ el, event }) => {
++                this.draggingContextId = el.dataset.contextId
++                writeDragData(event.dataTransfer, { kind: 'context', ids: [this.draggingContextId], payload: {} })
++                event.dataTransfer.effectAllowed = 'move'
++                requestAnimationFrame(() => {
++                    if (this.draggingContextId === el.dataset.contextId) el.classList.add('context-dragging')
++                })
++            },
++            onDragEnd: ({ el }) => { this.draggingContextId = null; el.classList.remove('context-dragging') } })
++        this.dnd.registerDropZone({ selector, accepts: ['context'],
++            hitTest: ({ el, event }) => this.canManage && this.draggingContextId && el.dataset.contextId !== this.draggingContextId
++                ? horizontalHit({ el, event }) : null,
++            preview: previewDrop, onDrop: this.handleReorderDrop.bind(this) })
++    }
++
++    async handleReorderDrop({ el, ids: draggedIds, hit }) {
++        const draggedId = Number(draggedIds[0])
++        const targetId = Number(el.dataset.contextId)
+         if (!draggedId || !targetId || draggedId === targetId) return
+ 
+         const ownContexts = this.contexts.filter(c => !c.inherited)
+@@ -520,10 +475,7 @@ export default class extends Controller {
+         const targetIndex = ids.indexOf(targetId)
+         if (draggedIndex === -1 || targetIndex === -1) return
+ 
+-        // Determine drop position
+-        const rect = targetEl.getBoundingClientRect()
+-        const midpoint = rect.left + rect.width / 2
+-        const insertBefore = event.clientX < midpoint
++        const insertBefore = hit === 'left'
+ 
+         ids.splice(draggedIndex, 1)
+         let newIndex = ids.indexOf(targetId)
+@@ -572,115 +524,39 @@ export default class extends Controller {
+         }
+     }
+ 
+-    // --- Auto-show context list when dragging creative over popup ---
++    // The popup is also a drop zone; the form owns creative-link insertion.
+     _bindPopupDragDetection() {
+         const popup = this.element.closest('#comments-popup')
+         if (!popup) return
+-        // Unbind any existing handlers first to prevent accumulation across opens
+         this._unbindPopupDragDetection()
+-        this._popupEl = popup
+-        this._boundPopupDragOver = this._handlePopupDragOver.bind(this)
+-        this._boundPopupDragLeave = this._handlePopupDragLeave.bind(this)
+-        this._boundPopupDrop = (event) => {
+-            // Skip if dropping on the comment form — let form_controller handle it
+-            if (event.target.closest('#new-comment-form')) return
+-            this.handleExternalDrop(event)
+-        }
+-        popup.addEventListener('dragover', this._boundPopupDragOver)
+-        popup.addEventListener('dragleave', this._boundPopupDragLeave)
+-        popup.addEventListener('drop', this._boundPopupDrop)
++        this.popupDnd = createDragDropRegistry({ root: popup, getKind: getDragKind, readData: readDragData })
++        this.popupDnd.registerDropZone({ selector: '#comments-popup', accepts: ['creative'],
++            hitTest: ({ event }) => this.canManage && !event.target.closest('#new-comment-form') ? 'into' : null,
++            preview: () => {
++                this.listVisible = true
++                this._updateListVisibility()
++                const clear = previewDrop({ el: this.listTarget, hit: 'into' })
++                return () => {
++                    clear()
++                    if (!this._hasBeenManuallyToggled && this.contexts.length === 0) {
++                        this.listVisible = false
++                        this._updateListVisibility()
++                    }
++                }
++            },
++            onDrop: async ({ ids, event }) => {
++                event.stopPropagation()
++                const ownIds = this.contexts.filter(context => !context.inherited).map(context => context.id)
++                const addedIds = ids.map(Number).filter(id => id && !this.contexts.some(context => Number(context.id) === id))
++                if (!addedIds.length) return
++                await this._updateContextIds([...new Set([...ownIds, ...addedIds])])
++                await this.loadContexts()
++            } })
+     }
+ 
+     _unbindPopupDragDetection() {
+-        if (!this._popupEl) return
+-        this._popupEl.removeEventListener('dragover', this._boundPopupDragOver)
+-        this._popupEl.removeEventListener('dragleave', this._boundPopupDragLeave)
+-        this._popupEl.removeEventListener('drop', this._boundPopupDrop)
+-        this._popupEl = null
+-    }
+-
+-    _handlePopupDragOver(event) {
+-        if (this._isInternalReorder(event)) return
+-        if (!this._isCreativeDrag(event)) return
+-        if (!this.canManage) return
+-        // Skip if dragging over the comment form — let form_controller handle it
+-        if (event.target.closest('#new-comment-form')) return
+-
+-        // Must preventDefault to allow drop on the popup
+-        event.preventDefault()
+-        event.dataTransfer.dropEffect = 'move'
+-
+-        if (!this.listVisible) {
+-            // Auto-show context list when dragging a creative over the popup
+-            this.listVisible = true
+-            this._updateListVisibility()
+-        }
+-    }
+-
+-    _handlePopupDragLeave(event) {
+-        if (!this._popupEl) return
+-        // Only hide if leaving the popup entirely
+-        if (this._popupEl.contains(event.relatedTarget)) return
+-        if (this._hasBeenManuallyToggled) return
+-
+-        // Restore original state if no contexts
+-        if (this.contexts.length === 0) {
+-            this.listVisible = false
+-            this._updateListVisibility()
+-        }
+-    }
+-
+-    // --- Drop zone for adding creatives from tree ---
+-
+-    _isCreativeDrag(event) {
+-        return event.dataTransfer.types.includes(CREATIVE_MIME_TYPE)
+-    }
+-
+-    _isInternalReorder(event) {
+-        return event.dataTransfer.types.includes('application/x-context-id')
+-    }
+-
+-    handleExternalDragOver(event) {
+-        if (this._isInternalReorder(event)) return
+-        if (!this._isCreativeDrag(event)) return
+-        if (!this.canManage) return
+-
+-        event.preventDefault()
+-        event.dataTransfer.dropEffect = 'move'
+-        this.listTarget.classList.add('context-drop-active')
+-    }
+-
+-    handleExternalDragLeave(event) {
+-        // Only remove highlight if truly leaving the list area
+-        if (!this.listTarget.contains(event.relatedTarget)) {
+-            this.listTarget.classList.remove('context-drop-active')
+-        }
+-    }
+-
+-    async handleExternalDrop(event) {
+-        if (this._isInternalReorder(event)) return
+-        if (!this._isCreativeDrag(event)) return
+-        if (!this.canManage) return
+-
+-        // Always prevent default for creative drags to avoid browser navigation
+-        event.preventDefault()
+-        event.stopPropagation()
+-
+-        this.listTarget.classList.remove('context-drop-active')
+-
+-        let creativeId = null
+-
+-        const rawData = event.dataTransfer.getData(CREATIVE_MIME_TYPE)
+-        if (rawData) {
+-            try {
+-                const parsed = JSON.parse(rawData)
+-                creativeId = parseInt(parsed.creativeId)
+-            } catch (e) { /* ignore */ }
+-        }
+-
+-        if (!creativeId) return
+-
+-        await this._addContextId(creativeId)
++        this.popupDnd?.destroy()
++        this.popupDnd = null
+     }
+ 
+     _escapeHtml(text) {
+diff --git a/engines/collavre/app/javascript/controllers/comments/form_controller.js b/engines/collavre/app/javascript/controllers/comments/form_controller.js
+index 8232928..0b5f8dd 100644
+--- a/engines/collavre/app/javascript/controllers/comments/form_controller.js
++++ b/engines/collavre/app/javascript/controllers/comments/form_controller.js
+@@ -1,3 +1,6 @@
++import { createDragDropRegistry } from '../../lib/dnd/registry'
++import { getDragKind, readDragData } from '../../lib/dnd/envelope'
++import { previewDrop } from '../../lib/dnd/preview'
+ import { Controller } from '@hotwired/stimulus'
+ import { renderMarkdownInContainer } from '../../lib/utils/markdown'
+ import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
+@@ -36,6 +39,13 @@ export default class extends Controller {
+   ]
+ 
+   connect() {
++    this.dnd = createDragDropRegistry({ root: this.formTarget, getKind: getDragKind, readData: readDragData })
++    this.dnd.registerDropZone({ selector: '#new-comment-form', accepts: ['creative'],
++      preview: previewDrop, dropEffect: 'copy',
++      onDrop: ({ ids, event }) => {
++        event.stopPropagation()
++        for (const id of ids) this.insertCreativeLink({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })
++      } })
+     this.creativeId = null
+     this.editingId ??= null
+     this.sending = false
+@@ -57,7 +67,6 @@ export default class extends Controller {
+     this.handleImageButtonClick = this.handleImageButtonClick.bind(this)
+     this.handleImageChange = this.handleImageChange.bind(this)
+     this.handleDragOver = this.handleDragOver.bind(this)
+-    this.handleDragLeave = this.handleDragLeave.bind(this)
+     this.handleDrop = this.handleDrop.bind(this)
+ 
+     this.formTarget.addEventListener('submit', this.handleSubmit)
+@@ -71,7 +80,6 @@ export default class extends Controller {
+     this.imageButtonTarget?.addEventListener('click', this.handleImageButtonClick)
+     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
+     this.formTarget.addEventListener('dragover', this.handleDragOver)
+-    this.formTarget.addEventListener('dragleave', this.handleDragLeave)
+     this.formTarget.addEventListener('drop', this.handleDrop)
+     this.handlePaste = this.handlePaste.bind(this)
+     this.textareaTarget.addEventListener('paste', this.handlePaste)
+@@ -309,6 +317,7 @@ export default class extends Controller {
+   }
+ 
+   disconnect() {
++    this.dnd?.destroy()
+     this._flushDraftSave()
+     this.textareaTarget.removeEventListener('compositionend', this._handleCompositionEnd)
+     this.textareaTarget.removeEventListener('keydown', this._expireImeCommitLatch)
+@@ -329,7 +338,6 @@ export default class extends Controller {
+     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
+     this.textareaTarget.removeEventListener('input', this._autoResize)
+     this.formTarget.removeEventListener('dragover', this.handleDragOver)
+-    this.formTarget.removeEventListener('dragleave', this.handleDragLeave)
+     this.formTarget.removeEventListener('drop', this.handleDrop)
+     this.textareaTarget.removeEventListener('paste', this.handlePaste)
+     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+@@ -1317,38 +1325,13 @@ export default class extends Controller {
+   }
+ 
+   handleDragOver(event) {
+-    const isCreative = this.hasCreativeFromDataTransfer(event.dataTransfer)
+-    const isImage = this.hasImageFromDataTransfer(event.dataTransfer)
+-    if (isImage || isCreative) {
++    if (getDragKind(event.dataTransfer) === 'creative' || this.hasImageFromDataTransfer(event.dataTransfer)) {
+       event.preventDefault()
+       event.stopPropagation()
+-      if (isCreative) {
+-        this.formTarget.classList.add('creative-drop-hover')
+-      }
+-    }
+-  }
+-
+-  handleDragLeave(event) {
+-    // Only remove highlight if truly leaving the form
+-    if (!this.formTarget.contains(event.relatedTarget)) {
+-      this.formTarget.classList.remove('creative-drop-hover')
+     }
+   }
+ 
+   handleDrop(event) {
+-    this.formTarget.classList.remove('creative-drop-hover')
+-
+-    // Handle creative drop — stop propagation so contexts_controller doesn't intercept
+-    if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
+-      event.preventDefault()
+-      event.stopPropagation()
+-      const creativeData = this.extractCreativeData(event.dataTransfer)
+-      if (creativeData) {
+-        this.insertCreativeLink(creativeData)
+-      }
+-      return
+-    }
+-
+     // Handle image drop
+     const imageFiles = this.extractImageFiles(event.dataTransfer)
+     if (!imageFiles.length) return
+@@ -1357,25 +1340,6 @@ export default class extends Controller {
+     this.updateAttachmentList()
+   }
+ 
+-  hasCreativeFromDataTransfer(dataTransfer) {
+-    if (!dataTransfer || !dataTransfer.types) return false
+-    return Array.from(dataTransfer.types).includes('application/x-collavre-creative')
+-  }
+-
+-  extractCreativeData(dataTransfer) {
+-    if (!dataTransfer) return null
+-    const raw = dataTransfer.getData('application/x-collavre-creative') || dataTransfer.getData('text/plain')
+-    if (!raw) return null
+-    try {
+-      const parsed = JSON.parse(raw)
+-      if (!parsed || !parsed.creativeId) return null
+-      const label = this.getCreativeLabelFromDom(parsed.creativeId)
+-      return { id: parsed.creativeId, label: label || `Creative #${parsed.creativeId}` }
+-    } catch {
+-      return null
+-    }
+-  }
+-
+   getCreativeLabelFromDom(creativeId) {
+     const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
+     if (!row) return null
+diff --git a/engines/collavre/app/javascript/controllers/comments/list_controller.js b/engines/collavre/app/javascript/controllers/comments/list_controller.js
+index 39509dc..2ca4eee 100644
+--- a/engines/collavre/app/javascript/controllers/comments/list_controller.js
++++ b/engines/collavre/app/javascript/controllers/comments/list_controller.js
+@@ -1,3 +1,5 @@
++import { createDragDropRegistry } from '../../lib/dnd/registry'
++import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
+ import { Controller } from '@hotwired/stimulus'
+ import { copyTextToClipboard } from '../../utils/clipboard'
+ import { attachBundleDragImage } from '../../utils/drag_bundle_image'
+@@ -66,11 +68,11 @@ export default class extends Controller {
+     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+ 
+     // Drag and drop handlers for moving comments to topics
+-    this.handleDragStart = this.handleDragStart.bind(this)
+-    this.handleDragEnd = this.handleDragEnd.bind(this)
+     this.handleMoveToTopic = this.handleMoveToTopic.bind(this)
+-    this.listTarget.addEventListener('dragstart', this.handleDragStart)
+-    this.listTarget.addEventListener('dragend', this.handleDragEnd)
++    this.dnd = createDragDropRegistry({ root: this.listTarget, getKind: getDragKind, readData: readDragData })
++    this.dnd.registerDragSource({ selector: '.comment-item[draggable="true"]',
++      onDragStart: ({ event }) => this.handleDragStart(event),
++      onDragEnd: () => this.listTarget.classList.remove('dragging-comments') })
+     this.element.addEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
+ 
+   }
+@@ -109,8 +111,7 @@ export default class extends Controller {
+     this.listTarget.removeEventListener('change', this.handleChange)
+     this.listTarget.removeEventListener('click', this.handleClick)
+     this.listTarget.removeEventListener('submit', this.handleSubmit)
+-    this.listTarget.removeEventListener('dragstart', this.handleDragStart)
+-    this.listTarget.removeEventListener('dragend', this.handleDragEnd)
++    this.dnd?.destroy()
+     document.removeEventListener('turbo:before-stream-render', this.handleStreamRender)
+     if (this.listObserver) {
+       this.listObserver.disconnect()
+@@ -1067,7 +1068,7 @@ export default class extends Controller {
+ 
+     // Include all selected comment IDs
+     const commentIds = Array.from(this.selection)
+-    event.dataTransfer.setData('application/x-comment-ids', JSON.stringify(commentIds))
++    writeDragData(event.dataTransfer, { kind: 'comments', ids: commentIds, payload: {} })
+     event.dataTransfer.effectAllowed = 'move'
+ 
+     // Add visual feedback
+@@ -1081,10 +1082,6 @@ export default class extends Controller {
+     }
+   }
+ 
+-  handleDragEnd(event) {
+-    this.listTarget.classList.remove('dragging-comments')
+-  }
+-
+   async handleMoveToTopic(event) {
+     const { commentIds, targetTopicId } = event.detail
+     if (!commentIds || commentIds.length === 0 || !this.creativeId) return
+diff --git a/engines/collavre/app/javascript/controllers/comments/presence_controller.js b/engines/collavre/app/javascript/controllers/comments/presence_controller.js
+index 306bce0..c609396 100644
+--- a/engines/collavre/app/javascript/controllers/comments/presence_controller.js
++++ b/engines/collavre/app/javascript/controllers/comments/presence_controller.js
+@@ -1,6 +1,7 @@
++import { createDragDropRegistry } from '../../lib/dnd/registry'
++import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
+ import { Controller } from '@hotwired/stimulus'
+ import { createSubscription } from '../../services/cable'
+-import TouchDragHandler from '../../lib/touch_drag'
+ import csrfFetch from '../../lib/api/csrf_fetch'
+ import { alertDialog } from '../../lib/utils/dialog'
+ import PopupToggleGuard from '../../lib/popup_toggle_guard'
+@@ -24,6 +25,17 @@ export default class extends Controller {
+     'addParticipantButton', 'participantListButton']
+ 
+   connect() {
++    this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
++    this.dnd.registerDragSource({ selector: '.ai-agent-draggable',
++      onDragStart: ({ el, event }) => {
++        const user = this.participantsData.find(user => String(user.id) === el.dataset.agentId)
++        if (!user) return false
++        writeDragData(event.dataTransfer, { kind: 'agent', ids: [user.id],
++          payload: { name: user.name, avatar_url: user.avatar_url } })
++        event.dataTransfer.effectAllowed = 'copy'
++        el.classList.add('dragging')
++      },
++      onDragEnd: ({ el }) => el.classList.remove('dragging') })
+     this.creativeId = null
+     this.participantsData = null
+     this.canShare = false
+@@ -63,6 +75,7 @@ export default class extends Controller {
+   }
+ 
+   disconnect() {
++    this.dnd?.destroy()
+     this._participantLoadVersion += 1
+     this._closeParticipantListPopup()
+     this.unsubscribe()
+@@ -501,22 +514,6 @@ export default class extends Controller {
+         wrapper.dataset.agentName = user.name
+         wrapper.dataset.agentAvatarUrl = user.avatar_url
+ 
+-        // HTML5 DnD (desktop)
+-        wrapper.addEventListener('dragstart', (e) => {
+-          e.dataTransfer.setData('application/x-agent-drop', JSON.stringify({
+-            id: user.id,
+-            name: user.name,
+-            avatar_url: user.avatar_url
+-          }))
+-          e.dataTransfer.effectAllowed = 'copy'
+-          wrapper.classList.add('dragging')
+-        })
+-        wrapper.addEventListener('dragend', () => {
+-          wrapper.classList.remove('dragging')
+-        })
+-
+-        // Touch drag (mobile)
+-        this._addAgentTouchDrag(wrapper, user)
+       }
+ 
+       this.participantsTarget.appendChild(wrapper)
+@@ -1079,44 +1076,4 @@ export default class extends Controller {
+     }))
+   }
+ 
+-  // ── Agent touch drag-and-drop (mobile) ─────────────────
+-
+-  _addAgentTouchDrag(wrapper, user) {
+-    if (!('ontouchstart' in window)) return
+-    const trigger = wrapper.querySelector('.comment-user-menu-trigger')
+-    if (!trigger) return
+-
+-    const handler = new TouchDragHandler({
+-      container: trigger,
+-      singleElement: true,
+-      dropTargetSelector: '.topic-tag.topic-drop-target, .topic-creation-container',
+-      draggingClass: 'dragging',
+-
+-      proxyContent: () =>
+-        `<span class="touch-drag-proxy-badge">${user.name}</span>`,
+-
+-      onTap: () => trigger.click(),
+-
+-      onDrop: (targetEl) => {
+-        const agentData = { id: user.id, name: user.name, avatar_url: user.avatar_url }
+-        const topicsCtrl = this.application.getControllerForElementAndIdentifier(
+-          this.element, 'comments--topics'
+-        )
+-        if (!topicsCtrl) return
+-
+-        if (targetEl.closest('.topic-creation-container')) {
+-          topicsCtrl.createTopicWithAgent(agentData)
+-        } else {
+-          const topicTag = targetEl.closest('.topic-tag.topic-drop-target')
+-          if (topicTag?.dataset.id) {
+-            topicsCtrl.setTopicPrimaryAgent(topicTag.dataset.id, agentData)
+-          }
+-        }
+-      }
+-    })
+-
+-    // Store for cleanup if needed
+-    if (!this._agentTouchDragHandlers) this._agentTouchDragHandlers = []
+-    this._agentTouchDragHandlers.push(handler)
+-  }
+ }
+diff --git a/engines/collavre/app/javascript/controllers/comments/topics_controller.js b/engines/collavre/app/javascript/controllers/comments/topics_controller.js
+index 37f8a56..58f9f81 100644
+--- a/engines/collavre/app/javascript/controllers/comments/topics_controller.js
++++ b/engines/collavre/app/javascript/controllers/comments/topics_controller.js
+@@ -1,3 +1,6 @@
++import { createDragDropRegistry } from '../../lib/dnd/registry'
++import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
++import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
+ import { Controller } from "@hotwired/stimulus"
+ import { createSubscription } from "../../services/cable"
+ import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
+@@ -35,6 +38,7 @@ export default class extends Controller {
+     static targets = ["list", "creationContainer", "topicListButton"]
+ 
+     connect() {
++        this._registerDragDrop()
+         this.topics = []
+         this.canManageTopics = false
+         this.canCreateTopic = false
+@@ -64,6 +68,7 @@ export default class extends Controller {
+     }
+ 
+     disconnect() {
++        this.dnd?.destroy()
+         this.cancelProgrammaticScroll()
+         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
+         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
+@@ -483,14 +488,6 @@ export default class extends Controller {
+     }
+ 
+     renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage, sourceCreativeId = this._topicsCreativeId || this.creativeId) {
+-        const dragActions = canManage
+-            ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
+-            : ''
+-        const dropActions = 'dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop'
+-        const topicDropActions = canManage
+-            ? 'dragover->comments--topics#handleTopicReorderDragOver dragleave->comments--topics#handleTopicReorderDragLeave drop->comments--topics#handleTopicReorderDrop'
+-            : ''
+-
+         const allMessagesLabel = this.element.dataset.topicMainText || 'All Messages'
+ 
+         const mainTopic = this.mainTopicId ? topics.find(t => String(t.id) === String(this.mainTopicId)) : null
+@@ -514,9 +511,8 @@ export default class extends Controller {
+                 : ''
+             const cronBadge = topic.cron_badge_html || ''
+             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
+-            const interactionActions = topic.read_only ? '' : `${dropActions} ${dragActions} ${topicDropActions}`
+             let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
+-                          data-action="click->comments--topics#select ${interactionActions}"
++                          data-action="click->comments--topics#select" data-dnd-read-only="${!!topic.read_only}"
+                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
+                         ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${cronBadge}${unreadBadge}`
+             if (canManage && !isMainTopic && !topic.read_only) {
+@@ -531,7 +527,7 @@ export default class extends Controller {
+         otherTopics.forEach(topic => { html += renderTopic(topic) })
+ 
+         html += `<span class="topic-tag topic-drop-target topic-all-messages ${this.currentTopicId ? '' : 'active'}"
+-                      data-action="click->comments--topics#select ${dropActions}"
++                      data-action="click->comments--topics#select"
+                       data-id="">📋 ${allMessagesLabel}</span>`
+ 
+         // Archived topics section
+@@ -597,57 +593,36 @@ export default class extends Controller {
+             `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
+     }
+ 
+-    handleDragOver(event) {
+-        // Accept comment drops or agent drops
+-        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
+-        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
+-        if (!isComment && !isAgent) return
+-
+-        event.preventDefault()
+-        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
+-        event.currentTarget.classList.add('drag-over')
+-    }
+-
+-    handleDragLeave(event) {
+-        event.currentTarget.classList.remove('drag-over')
+-    }
+-
+-    async handleDrop(event) {
+-        event.preventDefault()
+-        event.currentTarget.classList.remove('drag-over')
+-
+-        // Handle agent drop
+-        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
+-        if (agentJson) {
+-            const agent = JSON.parse(agentJson)
+-            const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
+-            if (targetTopicId) {
+-                await this.setTopicPrimaryAgent(targetTopicId, agent)
+-            }
+-            return
++    _registerDragDrop() {
++        this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
++        this.dnd.registerDragSource({ selector: '.topic-tag[draggable="true"]',
++            onDragStart: this.handleTopicDragStart.bind(this),
++            onDragEnd: ({ el }) => { this.draggingTopicId = null; el.classList.remove('topic-dragging') } })
++        const selector = '.topic-drop-target:not([data-dnd-read-only="true"]), [data-comments--topics-target="creationContainer"]'
++        for (const kind of ['comments', 'agent']) {
++            this.dnd.registerDropZone({ selector, accepts: [kind], dropEffect: kind === 'agent' ? 'copy' : 'move',
++                preview: previewDrop,
++                onDrop: async ({ el, ids, payload }) => {
++                    const agent = { ...payload, id: ids[0] }
++                    if (el === this.creationContainerTarget) {
++                        if (kind === 'comments') await this.createTopicAndMoveComments(ids)
++                        else await this.createTopicWithAgent(agent)
++                    } else {
++                        const targetTopicId = el.dataset.id || this.mainTopicId
++                        if (kind === 'agent') {
++                            if (targetTopicId) await this.setTopicPrimaryAgent(targetTopicId, agent)
++                        } else this.dispatch('move-to-topic', { detail: { commentIds: ids, targetTopicId } })
++                    }
++                } })
+         }
+-
+-        // Handle comment drop
+-        const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
+-        if (!commentIdsJson) return
+-
+-        const commentIds = JSON.parse(commentIdsJson)
+-        if (!commentIds || commentIds.length === 0) return
+-
+-        const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
+-
+-        // Dispatch event for list_controller to handle the move
+-        this.dispatch('move-to-topic', {
+-            detail: {
+-                commentIds,
+-                targetTopicId
+-            }
+-        })
++        this.dnd.registerDropZone({ selector: '.topic-tag[draggable="true"]', accepts: ['topic'],
++            hitTest: ({ el, event }) => this.draggingTopicId && el.dataset.id !== this.draggingTopicId
++                ? horizontalHit({ el, event }) : null,
++            preview: previewDrop, onDrop: this.handleTopicReorderDrop.bind(this) })
+     }
+ 
+     // Topic reorder drag & drop handlers
+-    handleTopicDragStart(event) {
+-        const topicEl = event.currentTarget
++    handleTopicDragStart({ event, el: topicEl }) {
+         const topicId = topicEl.dataset.id
+         if (!topicId) {
+             event.preventDefault()
+@@ -655,69 +630,19 @@ export default class extends Controller {
+         }
+ 
+         this.draggingTopicId = topicId
+-        event.dataTransfer.setData('application/x-topic-id', topicId)
+-        // Include topic move data so creative tree rows can accept this drop
+-        event.dataTransfer.setData('application/x-topic-move', JSON.stringify({
+-            topicId,
+-            sourceCreativeId: this.creativeId
+-        }))
++        writeDragData(event.dataTransfer, { kind: 'topic', ids: [topicId], payload: { sourceCreativeId: this.creativeId } })
+         event.dataTransfer.effectAllowed = 'move'
+ 
+         requestAnimationFrame(() => {
+-            topicEl.classList.add('topic-dragging')
+-        })
+-    }
+-
+-    handleTopicDragEnd(event) {
+-        this.draggingTopicId = null
+-        event.currentTarget.classList.remove('topic-dragging')
+-        this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
+-            el.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
++            if (this.draggingTopicId === topicId) topicEl.classList.add('topic-dragging')
+         })
+     }
+ 
+-    handleTopicReorderDragOver(event) {
+-        // Only accept topic reorder drops
+-        if (!event.dataTransfer.types.includes('application/x-topic-id')) return
+-        if (!this.draggingTopicId) return
+-
+-        const targetEl = event.currentTarget
+-        const targetId = targetEl.dataset.id
+-
+-        // Don't allow drop on self or Main
+-        if (!targetId || targetId === this.draggingTopicId) return
+-
+-        event.preventDefault()
+-        event.dataTransfer.dropEffect = 'move'
+-
+-        // Determine drop position (left or right) based on mouse position
+-        const rect = targetEl.getBoundingClientRect()
+-        const midpoint = rect.left + rect.width / 2
+-        const isLeft = event.clientX < midpoint
+-
+-        targetEl.classList.toggle('topic-drag-over-left', isLeft)
+-        targetEl.classList.toggle('topic-drag-over-right', !isLeft)
+-    }
+-
+-    handleTopicReorderDragLeave(event) {
+-        event.currentTarget.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
+-    }
+-
+-    async handleTopicReorderDrop(event) {
+-        event.preventDefault()
+-
+-        const targetEl = event.currentTarget
+-        targetEl.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
+-
+-        const draggedTopicId = event.dataTransfer.getData('application/x-topic-id')
+-        const targetTopicId = targetEl.dataset.id
+-
+-        if (!draggedTopicId || !targetTopicId || draggedTopicId === targetTopicId) return
+-
+-        // Determine drop position
+-        const rect = targetEl.getBoundingClientRect()
+-        const midpoint = rect.left + rect.width / 2
+-        const insertBefore = event.clientX < midpoint
++    async handleTopicReorderDrop({ el, ids, hit }) {
++        const draggedTopicId = ids[0]
++        const targetTopicId = el.dataset.id
++        if (!draggedTopicId || !targetTopicId || String(draggedTopicId) === targetTopicId) return
++        const insertBefore = hit === 'left'
+ 
+         // Reorder topics array
+         const topics = [...this.topics]
+@@ -2624,37 +2549,6 @@ export default class extends Controller {
+         this.restoreSelection()
+     }
+ 
+-    handleAddButtonDragOver(event) {
+-        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
+-        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
+-        if (!isAgent && !isComment) return
+-        event.preventDefault()
+-        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
+-        event.currentTarget.classList.add('drag-over')
+-    }
+-
+-    async handleAddButtonDrop(event) {
+-        event.preventDefault()
+-        event.currentTarget.classList.remove('drag-over')
+-
+-        // Handle comment drop → create new topic + move
+-        const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
+-        if (commentIdsJson) {
+-            const commentIds = JSON.parse(commentIdsJson)
+-            if (commentIds && commentIds.length > 0) {
+-                await this.createTopicAndMoveComments(commentIds)
+-            }
+-            return
+-        }
+-
+-        // Handle agent drop (existing logic)
+-        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
+-        if (!agentJson) return
+-
+-        const agent = JSON.parse(agentJson)
+-        await this.createTopicWithAgent(agent)
+-    }
+-
+     async createTopicAndMoveComments(commentIds, topicName = null) {
+         if (!this.creativeId) return
+ 
+diff --git a/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js b/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+new file mode 100644
+index 0000000..0a9d328
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+@@ -0,0 +1,134 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import TouchDragHandler from '../touch_drag'
++
++let handler, container, onDrop, onCancel, onTargetChange
++const rect = (top = 0) => ({ left: 0, right: 200, top, bottom: top + 100, width: 200, height: 100 })
++function target(top = 0) {
++  const el = document.createElement('div')
++  el.className = 'drop-target'
++  el.getBoundingClientRect = () => rect(top)
++  document.body.appendChild(el)
++  return el
++}
++function touch(type, x = 50, y = 50) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel'
++    ? [] : [{ clientX: x, clientY: y, target: container }] })
++  container.dispatchEvent(event)
++  return event
++}
++function start(x = 50, y = 50) {
++  touch('touchstart', x, y)
++  jest.advanceTimersByTime(400)
++}
++function setup(options = {}) {
++  handler = new TouchDragHandler({ container, singleElement: true, dropTargetSelector: '.drop-target',
++    onDrop, onCancel, onTargetChange, ...options })
++}
++beforeEach(() => {
++  jest.useFakeTimers()
++  container = document.createElement('div')
++  container.getBoundingClientRect = () => rect()
++  document.body.appendChild(container)
++  onDrop = jest.fn()
++  onCancel = jest.fn()
++  onTargetChange = jest.fn()
++})
++afterEach(() => {
++  handler?.destroy()
++  document.body.innerHTML = ''
++  jest.useRealTimers()
++})
++
++test('reports hit changes inside one target and delivers position at drop', () => {
++  const el = target()
++  const hitTest = jest.fn((target, point) => point.clientY < 30 ? 'up' : 'child')
++  setup({ hitTest })
++  start(50, 20)
++  touch('touchmove', 50, 60)
++  expect(hitTest).toHaveBeenLastCalledWith(el, { clientX: 50, clientY: 60 }, 'up')
++  expect(onTargetChange).toHaveBeenLastCalledWith(el, { clientX: 50, clientY: 60, hit: 'child' })
++  touch('touchend')
++  expect(onDrop).toHaveBeenCalledWith(el, { clientX: 50, clientY: 60, hit: 'child' })
++  expect(el.classList.contains('drag-over')).toBe(false)
++})
++
++test('refresh discovers expanded targets and forgets removed targets without finger movement', () => {
++  setup()
++  start()
++  const added = target()
++  handler.refreshDropTargets()
++  expect(added.classList.contains('drag-over')).toBe(true)
++  added.remove()
++  handler.refreshDropTargets()
++  touch('touchend')
++  expect(onDrop).not.toHaveBeenCalled()
++  expect(onCancel).toHaveBeenCalledTimes(1)
++})
++
++test('rejects hidden and disallowed targets, resolving fresh candidate lists', () => {
++  const hidden = target()
++  hidden.getBoundingClientRect = () => ({ ...rect(), width: 0 })
++  const rejected = target()
++  const accepted = target()
++  const getDropTargets = jest.fn(() => [hidden, rejected, accepted])
++  setup({ getDropTargets, hitTest: el => el === rejected ? null : 'down' })
++  start()
++  touch('touchend')
++  expect(onDrop).toHaveBeenCalledWith(accepted, expect.objectContaining({ hit: 'down' }))
++})
++
++test('touchcancel never commits a drop or triggers a pending tap', () => {
++  target()
++  const onTap = jest.fn()
++  setup({ onTap })
++  touch('touchstart')
++  touch('touchcancel')
++  expect(onTap).not.toHaveBeenCalled()
++  start()
++  touch('touchcancel')
++  expect(onDrop).not.toHaveBeenCalled()
++  expect(onCancel).toHaveBeenCalledTimes(1)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('autoscroll continues while stationary and stops on cancellation', () => {
++  const el = target()
++  const scrollContainer = jest.fn(() => container)
++  setup({ autoScroll: true, scrollContainer })
++  start(50, 95)
++  jest.advanceTimersByTime(48)
++  expect(container.scrollTop).toBeGreaterThan(0)
++  expect(scrollContainer).toHaveBeenCalledWith({ clientX: 50, clientY: 95 }, el)
++  touch('touchcancel')
++  const stopped = container.scrollTop
++  jest.advanceTimersByTime(100)
++  expect(container.scrollTop).toBe(stopped)
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('autoscroll moves up near the top, stays still at the center and outside the pane', () => {
++  setup({ autoScroll: true })
++  container.scrollTop = 200
++  start(50, 5)
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBeLessThan(200)
++  touch('touchmove', 50, 50)
++  const centered = container.scrollTop
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBe(centered)
++  touch('touchmove', 250, 95)
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBe(centered)
++})
++
++test('destroy clears active highlights, proxy and animation frames', () => {
++  const el = target()
++  setup({ autoScroll: true })
++  start()
++  handler.destroy()
++  expect(el.classList.contains('drag-over')).toBe(false)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/preview.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/preview.test.js
+new file mode 100644
+index 0000000..1114d17
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/preview.test.js
+@@ -0,0 +1,13 @@
++import { horizontalHit, previewDrop } from '../preview.js'
++
++test('horizontal hit uses the midpoint and preview cleanup removes only its class', () => {
++  const el = document.createElement('span')
++  el.getBoundingClientRect = () => ({ left: 10, width: 20 })
++  expect(horizontalHit({ el, event: { clientX: 19 } })).toBe('left')
++  expect(horizontalHit({ el, event: { clientX: 20 } })).toBe('right')
++  el.classList.add('topic-tag')
++  const cleanup = previewDrop({ el, hit: 'left' })
++  expect(el.classList.contains('dnd-over-left')).toBe(true)
++  cleanup()
++  expect(el.className).toBe('topic-tag')
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+new file mode 100644
+index 0000000..69f75ef
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/registry.test.js
+@@ -0,0 +1,208 @@
++import { jest } from '@jest/globals'
++import { createDragDropRegistry } from '../registry.js'
++
++let registry, root, readData, onError, cleanup, onDrop
++const transfer = () => ({ types: ['application/x-collavre-creative'], dropEffect: 'none' })
++function dispatch(type, el = root.querySelector('.inner'), properties = {}) {
++  const event = new window.Event(type, { bubbles: true, cancelable: true })
++  Object.assign(event, { dataTransfer: transfer(), ...properties })
++  el.dispatchEvent(event)
++  return event
++}
++function zone(options = {}) {
++  return registry.registerDropZone({ selector: '.outer', accepts: ['creative'], onDrop,
++    preview: () => cleanup, ...options })
++}
++beforeEach(() => {
++  document.body.innerHTML = '<div id="root"><div class="outer"><span class="inner">Row</span></div></div>'
++  root = document.querySelector('#root')
++  readData = jest.fn(() => ({ kind: 'creative', ids: ['1'] }))
++  onError = jest.fn()
++  cleanup = jest.fn()
++  onDrop = jest.fn()
++  registry = createDragDropRegistry({ root, readData, onError,
++    getKind: dt => dt.types.includes('application/x-collavre-creative') ? 'creative' : null })
++})
++afterEach(() => registry.destroy())
++
++test('uses visible types during dragover and reads payload only on drop', () => {
++  zone()
++  const event = dispatch('dragover')
++  expect(event.defaultPrevented).toBe(true)
++  expect(event.dataTransfer.dropEffect).toBe('move')
++  expect(readData).not.toHaveBeenCalled()
++  dispatch('drop')
++  expect(readData).toHaveBeenCalledTimes(1)
++  expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ kind: 'creative', ids: ['1'], hit: 'into' }))
++  expect(cleanup).toHaveBeenCalledTimes(1)
++})
++
++test('picks nearest supported nested zone independent of registration order', () => {
++  zone()
++  const nested = jest.fn()
++  zone({ selector: '.inner', onDrop: nested })
++  dispatch('drop')
++  expect(nested).toHaveBeenCalledTimes(1)
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('ignores unsupported types and incompatible zones', () => {
++  zone({ accepts: ['topic'] })
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  expect(dispatch('drop', undefined, { dataTransfer: { types: ['text/plain'] } }).defaultPrevented).toBe(false)
++  expect(readData).not.toHaveBeenCalled()
++})
++
++test('rejects invalid hit without falling through to ancestor zones', () => {
++  zone()
++  zone({ selector: '.inner', hitTest: () => null })
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('rejects absent or mismatched decoded payload', () => {
++  zone()
++  readData.mockReturnValueOnce(null).mockReturnValueOnce({ kind: 'topic', ids: ['1'] })
++  dispatch('drop')
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('delegation survives row replacement and accepts text node event targets', () => {
++  zone()
++  root.innerHTML = '<div class="outer">New row</div>'
++  dispatch('drop', root.firstChild.firstChild)
++  expect(onDrop).toHaveBeenCalledTimes(1)
++})
++
++test('preview persists inside zone and cleans when moving outside or changing hit', () => {
++  let hit = 'up'
++  const preview = jest.fn(() => cleanup)
++  zone({ hitTest: () => hit, preview, dropEffect: 'copy' })
++  expect(dispatch('dragover').dataTransfer.dropEffect).toBe('copy')
++  dispatch('dragover')
++  dispatch('dragleave', undefined, { relatedTarget: root.querySelector('.outer') })
++  expect(preview).toHaveBeenCalledTimes(1)
++  expect(cleanup).not.toHaveBeenCalled()
++  hit = 'child'
++  dispatch('dragover')
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  dispatch('dragover', root)
++  expect(cleanup).toHaveBeenCalledTimes(2)
++  dispatch('dragover')
++  dispatch('dragleave', undefined, { relatedTarget: null })
++  expect(cleanup).toHaveBeenCalledTimes(3)
++})
++
++test('unregistration and destruction remove previews and listeners', () => {
++  const unregister = zone()
++  dispatch('dragover')
++  unregister()
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  zone()
++  dispatch('dragover')
++  registry.destroy()
++  expect(cleanup).toHaveBeenCalledTimes(2)
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++})
++
++test('source lifecycle handles cancellation, outside dragend and unregister', () => {
++  const onDragStart = jest.fn()
++  const onDragEnd = jest.fn()
++  const unregister = registry.registerDragSource({ selector: '.inner', onDragStart, onDragEnd })
++  zone()
++  dispatch('dragstart')
++  dispatch('dragover')
++  dispatch('keydown', document.body, { key: 'ArrowDown' })
++  expect(onDragEnd).not.toHaveBeenCalled()
++  dispatch('keydown', document.body, { key: 'Escape' })
++  expect(onDragEnd).toHaveBeenCalledTimes(1)
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  dispatch('dragstart')
++  dispatch('dragend', document.body)
++  expect(onDragEnd).toHaveBeenCalledTimes(2)
++  dispatch('dragstart')
++  unregister()
++  expect(onDragEnd).toHaveBeenCalledTimes(3)
++  dispatch('dragstart')
++  expect(onDragStart).toHaveBeenCalledTimes(3)
++})
++
++test('source can reject a start and unsupported source is ignored', () => {
++  const onDragEnd = jest.fn()
++  registry.registerDragSource({ selector: '.inner', onDragStart: () => false, onDragEnd })
++  dispatch('dragstart', root)
++  dispatch('dragstart')
++  dispatch('dragend')
++  expect(onDragEnd).not.toHaveBeenCalled()
++})
++
++test('handles async and synchronous failures and always removes preview', async () => {
++  const error = new Error('failed command')
++  zone({ onDrop: () => Promise.reject(error) })
++  dispatch('dragover')
++  dispatch('drop')
++  await Promise.resolve()
++  expect(onError).toHaveBeenCalledWith(error)
++  expect(cleanup).toHaveBeenCalledTimes(1)
++  readData.mockImplementation(() => { throw error })
++  dispatch('dragover')
++  dispatch('drop')
++  expect(onError).toHaveBeenCalledTimes(2)
++  expect(cleanup).toHaveBeenCalledTimes(2)
++})
++
++test('document roots and optional callbacks work without a preview', () => {
++  registry.destroy()
++  registry = createDragDropRegistry({ root: document, getKind: () => 'creative', readData })
++  const unregisterSource = registry.registerDragSource({ selector: '.inner', onDragStart: () => {} })
++  const unregisterZone = registry.registerDropZone({ selector: '.outer', accepts: ['creative'], onDrop })
++  dispatch('dragstart')
++  dispatch('dragend')
++  unregisterSource()
++  unregisterZone()
++})
++
++test('touch discovery combines live zones and tracks changing DOM and teardown', () => {
++  const other = createDragDropRegistry({ root: document, getKind: () => null, readData })
++  registry.registerDragSource({ selector: '.inner', onDragStart: () => {} })
++  expect(registry.getDragSource(root.querySelector('.inner'))).toBe(root.querySelector('.inner'))
++  expect(registry.getDragSource(root)).toBeNull()
++  expect(other.getDropTargets()).toEqual([])
++  zone()
++  other.registerDropZone({ selector: '#root', accepts: ['creative'], onDrop })
++  expect(registry.getDropTargets()).toEqual([root.querySelector('.outer'), root])
++  const unregister = registry.registerDropZone({ selector: '#root', accepts: ['creative'], onDrop })
++  expect(registry.getDropTargets()).toHaveLength(2)
++  unregister()
++  root.innerHTML = '<div class="outer">replacement</div>'
++  expect(registry.getDropTargets()[0]).toBe(root.firstChild)
++  other.destroy()
++  expect(registry.getDropTargets()).toEqual([root.firstChild])
++})
++
++test.each([true, false])('one nearest registry owns a drop with shared root=%s regardless of listener order', sharedRoot => {
++  zone()
++  const nestedDrop = jest.fn(() => root.querySelector('.inner').classList.remove('inner'))
++  const other = createDragDropRegistry({ root: sharedRoot ? root : root.querySelector('.outer'),
++    getKind: () => 'creative', readData })
++  other.registerDropZone({ selector: '.inner', accepts: ['creative'], onDrop: nestedDrop })
++  expect(dispatch('dragover').defaultPrevented).toBe(true)
++  dispatch('drop')
++  expect(nestedDrop).toHaveBeenCalledTimes(1)
++  expect(onDrop).not.toHaveBeenCalled()
++  other.destroy()
++})
++
++test('an invalid inner registry target blocks the ancestor registry', () => {
++  zone()
++  const other = createDragDropRegistry({ root, getKind: () => 'creative', readData })
++  other.registerDropZone({ selector: '.inner', accepts: ['creative'], hitTest: () => null, onDrop })
++  expect(dispatch('dragover').defaultPrevented).toBe(false)
++  dispatch('drop')
++  expect(onDrop).not.toHaveBeenCalled()
++  other.destroy()
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+new file mode 100644
+index 0000000..bc92eba
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+@@ -0,0 +1,240 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import { createDragDropRegistry } from '../registry'
++import { createTouchBridge } from '../touch_bridge'
++
++let registry, bridge, source, zone, drops, previews
++function touch(type, y = 50, target = source) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel' ? []
++    : [{ clientX: 50, clientY: y, target }] })
++  target.dispatchEvent(event)
++  return event
++}
++function makeZone() {
++  const el = document.createElement('div')
++  el.className = 'zone'
++  el.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100 })
++  document.body.appendChild(el)
++  return el
++}
++beforeEach(() => {
++  jest.useFakeTimers()
++  source = document.createElement('div')
++  source.className = 'source'
++  document.body.appendChild(source)
++  zone = makeZone()
++  drops = jest.fn()
++  previews = jest.fn(() => jest.fn())
++  registry = createDragDropRegistry({ root: document, touch: false, getKind: dt => dt.types.includes('test') ? 'creative' : null,
++    readData: dt => JSON.parse(dt.getData('test')) })
++  registry.registerDragSource({ selector: '.source', onDragStart: ({ event }) => {
++    event.dataTransfer.setData('test', JSON.stringify({ kind: 'creative', ids: ['1'] }))
++  } })
++  registry.registerDropZone({ selector: '.zone', accepts: ['creative'],
++    hitTest: ({ event }) => event.clientY < 30 ? 'up' : event.clientY > 70 ? 'down' : 'child',
++    preview: previews, onDrop: drops })
++  bridge = createTouchBridge({ root: document, registry })
++})
++afterEach(() => {
++  bridge.destroy()
++  registry.destroy()
++  document.body.innerHTML = ''
++  jest.useRealTimers()
++  delete document.elementFromPoint
++})
++
++test.each([[10, 'up'], [50, 'child'], [90, 'down']])('touch uses shared directional hit at %s', async (y, hit) => {
++  touch('touchstart', y)
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  await Promise.resolve()
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ kind: 'creative', ids: ['1'], hit, el: zone }))
++  expect(previews).toHaveBeenCalledWith(expect.objectContaining({ hit }))
++})
++
++test('ordinary touches are untouched and can scroll', () => {
++  const event = touch('touchstart', 50, zone)
++  expect(event.defaultPrevented).toBe(false)
++  jest.advanceTimersByTime(500)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('expansion replaces targets while the finger is stationary', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  zone.remove()
++  const expanded = makeZone()
++  bridge.refreshDropTargets()
++  touch('touchend')
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ el: expanded }))
++})
++
++test('cancellation and destruction clear preview, proxy and timers without drop', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchcancel')
++  expect(drops).not.toHaveBeenCalled()
++  expect(previews.mock.results[0].value).toHaveBeenCalled()
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  bridge.destroy()
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('a target registered in another controller receives the same drop', () => {
++  zone.remove()
++  const pane = document.createElement('section')
++  document.body.appendChild(pane)
++  const external = makeZone()
++  external.className = 'external'
++  pane.appendChild(external)
++  const onDrop = jest.fn()
++  const otherRegistry = createDragDropRegistry({ root: pane, touch: false,
++    getKind: dt => dt.types.includes('test') ? 'creative' : null,
++    readData: dt => JSON.parse(dt.getData('test')) })
++  otherRegistry.registerDropZone({ selector: '.external', accepts: ['creative'], onDrop })
++  try {
++    touch('touchstart')
++    jest.advanceTimersByTime(400)
++    touch('touchend')
++    expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ ids: ['1'], el: external }))
++  } finally {
++    otherRegistry.destroy()
++  }
++})
++
++test('a source rejecting dragstart does not leave a proxy or timer', () => {
++  source.className = 'rejected'
++  registry.registerDragSource({ selector: '.rejected', onDragStart: ({ event }) => {
++    event.preventDefault()
++    return false
++  } })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('edge scrolling resolves the destination pane while the finger stays still', () => {
++  const pane = document.createElement('section')
++  pane.style.overflowY = 'auto'
++  pane.getBoundingClientRect = zone.getBoundingClientRect
++  Object.defineProperties(pane, { scrollHeight: { value: 500 }, clientHeight: { value: 100 } })
++  document.body.appendChild(pane)
++  pane.appendChild(zone)
++  touch('touchstart', 95)
++  jest.advanceTimersByTime(450)
++  expect(pane.scrollTop).toBeGreaterThan(0)
++  touch('touchmove', 250)
++  jest.advanceTimersByTime(32)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('moving between targets clears the former registry preview', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(450)
++  const firstCleanup = previews.mock.results[0].value
++  zone.remove()
++  makeZone()
++  touch('touchmove')
++  expect(firstCleanup).toHaveBeenCalled()
++})
++
++test('native source adapters can replace transfer data and set a drag image', () => {
++  source.className = 'replacement'
++  registry.registerDragSource({ selector: '.replacement', onDragStart: ({ event }) => {
++    const dt = event.dataTransfer
++    dt.setData('old', 'discard')
++    dt.clearData('old')
++    expect(dt.getData('old')).toBe('')
++    dt.setData('another', 'discard')
++    dt.clearData()
++    expect(dt.types).toEqual([])
++    dt.setDragImage(source, 0, 0)
++    dt.setData('test', JSON.stringify({ kind: 'creative', ids: ['2'] }))
++  } })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ ids: ['2'] }))
++})
++
++test('an element-scoped bridge handles dynamically added sources', () => {
++  bridge.destroy()
++  bridge = createTouchBridge({ root: document.body, registry })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).toHaveBeenCalledTimes(1)
++})
++
++test('a source removed during long press cannot begin dragging', () => {
++  touch('touchstart')
++  source.className = ''
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('registry acceptance rules also reject touch targets', () => {
++  zone.className = 'blocked'
++  registry.registerDropZone({ selector: '.blocked', accepts: ['topic'], onDrop: drops })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('a quick tap retains the original nested button action', () => {
++  const button = document.createElement('button')
++  source.appendChild(button)
++  const click = jest.fn()
++  button.addEventListener('click', click)
++  touch('touchstart', 50, button)
++  touch('touchend', 50, button)
++  expect(click).toHaveBeenCalledTimes(1)
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('editable controls retain native touch behavior', () => {
++  const input = document.createElement('input')
++  source.appendChild(input)
++  expect(touch('touchstart', 50, input).defaultPrevented).toBe(false)
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('hit tests receive the actual nested pointer target instead of its zone ancestor', () => {
++  const form = document.createElement('form')
++  zone.appendChild(form)
++  document.elementFromPoint = () => form
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops.mock.calls[0][0].event.target).toBe(form)
++})
++
++test('an overlay outside the candidate blocks an otherwise matching rectangle', () => {
++  document.elementFromPoint = () => source
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('source adapters can reject long presses on nested action buttons', () => {
++  source.className = 'actions'
++  const button = document.createElement('button')
++  source.appendChild(button)
++  registry.registerDragSource({ selector: '.actions', onDragStart: ({ event }) => {
++    expect(event.target).toBe(button)
++    if (event.target.closest('button')) { event.preventDefault(); return false }
++    event.dataTransfer.setData('test', JSON.stringify({ kind: 'creative', ids: ['1'] }))
++  } })
++  touch('touchstart', 50, button)
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(drops).not.toHaveBeenCalled()
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/preview.js b/engines/collavre/app/javascript/lib/dnd/preview.js
+new file mode 100644
+index 0000000..2cb5bcc
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/preview.js
+@@ -0,0 +1,10 @@
++export function horizontalHit({ el, event }) {
++  const rect = el.getBoundingClientRect()
++  return event.clientX < rect.left + rect.width / 2 ? 'left' : 'right'
++}
++
++export function previewDrop({ el, hit }) {
++  const className = `dnd-over-${hit}`
++  el.classList.add(className)
++  return () => el.classList.remove(className)
++}
+diff --git a/engines/collavre/app/javascript/lib/dnd/registry.js b/engines/collavre/app/javascript/lib/dnd/registry.js
+new file mode 100644
+index 0000000..805c0a9
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/registry.js
+@@ -0,0 +1,165 @@
++import { createTouchBridge } from './touch_bridge'
++
++const liveRegistries = new Set()
++const eventTargets = new WeakMap()
++
++// Event delegation keeps registrations valid when a view replaces its rows.
++// Serialization and business commands belong to the caller, not this registry.
++export function createDragDropRegistry({ root, getKind, readData, onError = console.error, touch = true }) {
++  const sources = new Set()
++  const zones = new Set()
++  const document = root.ownerDocument || root
++  let activeSource = null
++  let activePreview = null
++
++  function clearPreview() {
++    const previous = activePreview
++    activePreview = null
++    previous?.cleanup?.()
++  }
++
++  function finish(event) {
++    clearPreview()
++    const previous = activeSource
++    activeSource = null
++    previous?.registration.onDragEnd?.({ el: previous.el, event })
++  }
++
++  function closest(event, registrations, accepts = () => true) {
++    let el = event.target?.nodeType === 1 ? event.target : event.target?.parentElement
++    while (el && root.contains(el)) {
++      for (const registration of registrations) {
++        if (el.matches(registration.selector) && accepts(registration)) return { el, registration }
++      }
++      if (el === root) break
++      el = el.parentElement
++    }
++    return null
++  }
++
++  function target(event) {
++    if (!eventTargets.has(event)) {
++      let winner = null
++      for (const owner of liveRegistries) {
++        const match = owner.matchDrop(event)
++        if (match && (!winner || (winner.el !== match.el && winner.el.contains(match.el)))) {
++          winner = { ...match, owner }
++        }
++      }
++      if (winner) {
++        const hit = winner.registration.hitTest
++          ? winner.registration.hitTest({ el: winner.el, event, kind: winner.kind }) : 'into'
++        winner = hit == null ? null : { ...winner, hit }
++      }
++      eventTargets.set(event, winner)
++    }
++    const winner = eventTargets.get(event)
++    return winner?.owner === registry ? winner : null
++  }
++
++  function dragstart(event) {
++    const match = closest(event, sources)
++    if (!match) return
++    finish(event)
++    if (match.registration.onDragStart({ el: match.el, event }) !== false) activeSource = match
++  }
++
++  function dragover(event) {
++    const match = target(event)
++    if (!match) return clearPreview()
++    event.preventDefault()
++    event.dataTransfer.dropEffect = match.registration.dropEffect || 'move'
++    if (activePreview?.el === match.el && activePreview.hit === match.hit &&
++        activePreview.registration === match.registration) return
++    clearPreview()
++    activePreview = { ...match, cleanup: match.registration.preview?.({ ...match, event }) }
++  }
++
++  function dragleave(event) {
++    if (activePreview && !activePreview.el.contains(event.relatedTarget)) clearPreview()
++  }
++
++  function drop(event) {
++    const match = target(event)
++    clearPreview()
++    if (!match) return
++    event.preventDefault()
++    try {
++      const data = readData(event.dataTransfer)
++      if (!data || data.kind !== match.kind) return
++      // Catch rejected commands without tying view-specific recovery to input handling.
++      Promise.resolve(match.registration.onDrop({ ...data, el: match.el, hit: match.hit, event }))
++        .catch(onError)
++    } finally {
++      // The command may replace its source DOM before the browser emits dragend.
++      finish(event)
++    }
++  }
++
++  const listeners = { dragstart, dragover, dragleave, drop }
++  const guarded = callback => event => {
++    try { callback(event) } catch (error) { clearPreview(); onError(error) }
++  }
++  const handlers = Object.fromEntries(Object.entries(listeners).map(([name, callback]) => [name, guarded(callback)]))
++  for (const [name, callback] of Object.entries(handlers)) root.addEventListener(name, callback)
++  const end = guarded(finish)
++  const keydown = guarded(event => { if (event.key === 'Escape') finish(event) })
++  document.addEventListener('dragend', end)
++  document.addEventListener('keydown', keydown)
++
++  const registry = {
++    matchDrop(event) {
++      const kind = getKind(event.dataTransfer)
++      if (!kind) return null
++      const match = closest(event, zones, zone => zone.accepts.includes(kind))
++      return match ? { ...match, kind } : null
++    },
++    getDragSource(target) {
++      return closest({ target }, sources)?.el || null
++    },
++    getDropTargets() {
++      const targets = new Set()
++      for (const registry of liveRegistries) {
++        for (const target of registry.localDropTargets()) targets.add(target)
++      }
++      const depth = el => {
++        let value = 0
++        for (let parent = el.parentElement; parent; parent = parent.parentElement) value += 1
++        return value
++      }
++      return [...targets].sort((left, right) => depth(right) - depth(left))
++    },
++    localDropTargets() {
++      const selectors = [...zones].map(zone => zone.selector).join(',')
++      if (!selectors) return []
++      return [...(root.matches?.(selectors) ? [root] : []), ...root.querySelectorAll(selectors)]
++    },
++    registerDragSource(registration) {
++      sources.add(registration)
++      return () => {
++        sources.delete(registration)
++        if (activeSource?.registration === registration) finish()
++      }
++    },
++    registerDropZone(registration) {
++      zones.add(registration)
++      return () => {
++        zones.delete(registration)
++        if (activePreview?.registration === registration) clearPreview()
++      }
++    },
++    destroy() {
++      bridge?.destroy()
++      liveRegistries.delete(registry)
++      for (const [name, callback] of Object.entries(handlers)) root.removeEventListener(name, callback)
++      document.removeEventListener('dragend', end)
++      document.removeEventListener('keydown', keydown)
++      finish()
++      sources.clear()
++      zones.clear()
++    }
++  }
++  liveRegistries.add(registry)
++  const bridge = touch ? createTouchBridge({ root, registry }) : null
++  return registry
++}
+diff --git a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+new file mode 100644
+index 0000000..9ccd99b
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+@@ -0,0 +1,106 @@
++import TouchDragHandler from '../touch_drag'
++
++// Feed touch input through the same DOM events as native dragging so source
++// serialization, target policy, previews and business commands have one owner.
++export function createTouchBridge({ root, registry }) {
++  const document = root.ownerDocument || root
++  const container = root.nodeType === 9 ? document.documentElement : root
++  let source = null
++  let dataTransfer = null
++  let lastTarget = null
++  let tapTarget = null
++
++  function dispatch(type, target, point = {}) {
++    const event = new Event(type, { bubbles: true, cancelable: true })
++    Object.assign(event, { dataTransfer, clientX: point.clientX ?? 0,
++      clientY: point.clientY ?? 0, shiftKey: false })
++    target.dispatchEvent(event)
++    return event
++  }
++
++  function finish() {
++    if (source) dispatch('dragend', source)
++    source = null
++    dataTransfer = null
++    lastTarget = null
++  }
++
++  function targetAtPoint(el, point) {
++    const actual = document.elementFromPoint?.(point.clientX, point.clientY)
++    return actual ? (el.contains(actual) ? actual : null) : el
++  }
++
++  const handler = new TouchDragHandler({
++    container,
++    singleElement: true,
++    canStart(touch) {
++      if (!registry.getDragSource(touch.target)) return false
++      // Text editing keeps native focus/selection; other accepted sources retain
++      // their normal click when the gesture ends before the long press.
++      if (touch.target.closest('input, textarea, select, [contenteditable="true"]')) return false
++      tapTarget = touch.target
++      return true
++    },
++    onTap() {
++      if (tapTarget?.isConnected) tapTarget.click()
++      tapTarget = null
++    },
++    getDropTargets: () => registry.getDropTargets(),
++    autoScroll: true,
++    scrollContainer(point, target) {
++      let el = target || document.elementFromPoint?.(point.clientX, point.clientY)
++      while (el) {
++        const overflow = document.defaultView.getComputedStyle(el).overflowY
++        if (/(auto|scroll)/.test(overflow) && el.scrollHeight > el.clientHeight) return el
++        el = el.parentElement
++      }
++      return document.scrollingElement
++    },
++    onDragStart(_items, touch) {
++      source = registry.getDragSource(touch.target)
++      if (!source) return false
++      const values = new Map()
++      dataTransfer = {
++        effectAllowed: 'all', dropEffect: 'none',
++        get types() { return [...values.keys()] },
++        setData(type, value) { values.set(type, String(value)) },
++        getData(type) { return values.get(type) || '' },
++        clearData(type) { type ? values.delete(type) : values.clear() },
++        setDragImage() {},
++      }
++      const event = dispatch('dragstart', touch.target, touch)
++      if (event.defaultPrevented || !dataTransfer.types.length) {
++        finish()
++        return false
++      }
++    },
++    hitTest(el, point) {
++      const target = targetAtPoint(el, point)
++      if (!target) return null
++      if (lastTarget && lastTarget !== target) dispatch('dragleave', lastTarget, point)
++      lastTarget = target
++      return dispatch('dragover', target, point).defaultPrevented ? 'into' : null
++    },
++    onTargetChange(el, point) {
++      if (!el && lastTarget) {
++        dispatch('dragleave', lastTarget, point)
++        lastTarget = null
++      }
++    },
++    onDrop(el, point) {
++      try {
++        const target = targetAtPoint(el, point)
++        if (target) dispatch('drop', target, point)
++      } finally { finish() }
++    },
++    onCancel: finish,
++  })
++
++  return {
++    refreshDropTargets: () => handler.refreshDropTargets(),
++    destroy() {
++      finish()
++      handler.destroy()
++    },
++  }
++}
+diff --git a/engines/collavre/app/javascript/lib/touch_drag.js b/engines/collavre/app/javascript/lib/touch_drag.js
+index b1efb7f..bf43162 100644
+--- a/engines/collavre/app/javascript/lib/touch_drag.js
++++ b/engines/collavre/app/javascript/lib/touch_drag.js
+@@ -15,8 +15,15 @@
+  *     onDrop(targetEl) {},              // called when dropped on a valid target
+  *     onCancel() {},
+  *     proxyContent(items) { return '...' }  // HTML for the drag proxy badge
++ *     getDropTargets() {},              // optional live target resolver
++ *     hitTest(el, point, previousHit) {}, // null rejects; otherwise domain hit
++ *     onTargetChange(el, { hit, clientX, clientY }) {},
++ *     autoScroll: true,                 // opt in to continuous edge scrolling
++ *     scrollContainer(point, target) {}, // element or resolver; defaults to container
+  *   })
+  *
++ *   // onDrop also receives { hit, clientX, clientY } as a second argument.
++ *   td.refreshDropTargets() // after asynchronous folder expansion
+  *   td.destroy()  // cleanup
+  */
+ 
+@@ -38,7 +45,15 @@ export default class TouchDragHandler {
+     this.onDrop = opts.onDrop
+     this.onCancel = opts.onCancel
+     this.onTap = opts.onTap
++    this.canStart = opts.canStart
+     this.proxyContent = opts.proxyContent
++    this.getDropTargets = opts.getDropTargets ?? (() => document.querySelectorAll(this.dropTargetSelector))
++    this.hitTest = opts.hitTest
++    this.onTargetChange = opts.onTargetChange
++    this.autoScroll = opts.autoScroll ?? false
++    this.scrollContainer = opts.scrollContainer ?? this.container
++    this.scrollEdge = opts.scrollEdge ?? 40
++    this.scrollSpeed = opts.scrollSpeed ?? 12
+ 
+     // State
+     this._timer = null
+@@ -47,6 +62,9 @@ export default class TouchDragHandler {
+     this._startX = 0
+     this._startY = 0
+     this._currentTarget = null
++    this._currentHit = null
++    this._point = null
++    this._frame = null
+ 
+     // Bind handlers
+     this._onTouchStart = this._handleTouchStart.bind(this)
+@@ -74,8 +92,9 @@ export default class TouchDragHandler {
+   _handleTouchStart(e) {
+     if (this._dragging) return
+ 
+-    const touch = e.touches[0]
++    const touch = e.touches?.[0]
+     if (!touch) return
++    if (this.canStart && !this.canStart(touch, e)) return
+ 
+     if (this.singleElement) {
+       // In single-element mode, the container itself is the draggable
+@@ -105,7 +124,7 @@ export default class TouchDragHandler {
+   }
+ 
+   _handleTouchMove(e) {
+-    const touch = e.touches[0]
++    const touch = e.touches?.[0]
+     if (!touch) return
+ 
+     if (this._dragging) {
+@@ -133,7 +152,7 @@ export default class TouchDragHandler {
+   _handleTouchEnd(e) {
+     if (this._timer) {
+       this._cancelLongPress()
+-      this.onTap?.(e)
++      if (e.type !== 'touchcancel') this.onTap?.(e)
+       return
+     }
+ 
+@@ -141,13 +160,16 @@ export default class TouchDragHandler {
+ 
+     e.preventDefault()
+ 
+-    if (this._currentTarget) {
+-      this.onDrop?.(this._currentTarget)
+-    } else {
+-      this.onCancel?.()
++    try {
++      if (e.type !== 'touchcancel') this.refreshDropTargets()
++      if (e.type !== 'touchcancel' && this._currentTarget) {
++        this.onDrop?.(this._currentTarget, { ...this._point, hit: this._currentHit })
++      } else {
++        this.onCancel?.()
++      }
++    } finally {
++      this._endDrag()
+     }
+-
+-    this._endDrag()
+   }
+ 
+   _handleContextMenu(e) {
+@@ -167,7 +189,7 @@ export default class TouchDragHandler {
+     if (!items || items.length === 0) return
+ 
+     // Let caller cancel
+-    if (this.onDragStart && this.onDragStart(items) === false) return
++    if (this.onDragStart && this.onDragStart(items, touch) === false) return
+ 
+     this._dragging = true
+ 
+@@ -183,12 +205,15 @@ export default class TouchDragHandler {
+     // Create floating proxy
+     this._proxy = document.createElement('div')
+     this._proxy.className = this.proxyClass
++    this._proxy.style.pointerEvents = 'none'
+     this._proxy.innerHTML = this.proxyContent?.(items) ?? `${items.length}`
+     document.body.appendChild(this._proxy)
+-    this._moveProxy(touch.clientX, touch.clientY)
++    this._moveDrag(touch)
++    if (this.autoScroll) this._scheduleScroll()
+   }
+ 
+   _moveDrag(touch) {
++    this._point = { clientX: touch.clientX, clientY: touch.clientY }
+     this._moveProxy(touch.clientX, touch.clientY)
+     this._updateDropTarget(touch.clientX, touch.clientY)
+   }
+@@ -210,31 +235,67 @@ export default class TouchDragHandler {
+     // elementFromPoint is unreliable on mobile when z-index, overlays,
+     // or reflow timing interfere with the result.
+     const PAD = 12 // extra padding for finger imprecision
+-    // Cache drop targets on first call (topic list doesn't change during drag)
+-    if (!this._cachedDropTargets) {
+-      this._cachedDropTargets = document.querySelectorAll(this.dropTargetSelector)
+-    }
+-    const targets = this._cachedDropTargets
++    // Resolve each time: expanding folders can add or remove targets mid-drag.
++    const targets = this.getDropTargets()
+     let found = null
++    let hit = null
+ 
+     for (const target of targets) {
+       const rect = target.getBoundingClientRect()
++      if (!target.isConnected || rect.width <= 0 || rect.height <= 0) continue
+       if (x >= rect.left - PAD && x <= rect.right + PAD &&
+           y >= rect.top - PAD && y <= rect.bottom + PAD) {
++        hit = this.hitTest ? this.hitTest(target, { clientX: x, clientY: y },
++          target === this._currentTarget ? this._currentHit : null) : 'into'
++        if (hit == null || hit === false) continue
+         found = target
+         break
+       }
+     }
+ 
+-    if (found !== this._currentTarget) {
++    if (found !== this._currentTarget || hit !== this._currentHit) {
+       this._currentTarget?.classList.remove(this.dragOverClass)
+       this._currentTarget = found
++      this._currentHit = found ? hit : null
+       this._currentTarget?.classList.add(this.dragOverClass)
++      this.onTargetChange?.(found, { clientX: x, clientY: y, hit: this._currentHit })
++    }
++  }
++
++  // Call after asynchronous folder expansion, even if the finger has not moved.
++  refreshDropTargets() {
++    if (this._dragging && this._point) {
++      this._updateDropTarget(this._point.clientX, this._point.clientY)
+     }
+   }
+ 
++  _scheduleScroll() {
++    this._frame = requestAnimationFrame(() => {
++      this._frame = null
++      if (!this._dragging) return
++      const container = typeof this.scrollContainer === 'function'
++        ? this.scrollContainer(this._point, this._currentTarget) : this.scrollContainer
++      if (container && this._point) {
++        const doc = container.ownerDocument
++        const rect = container === doc.scrollingElement
++          ? { top: 0, left: 0, right: doc.defaultView.innerWidth, bottom: doc.defaultView.innerHeight }
++          : container.getBoundingClientRect()
++        const { clientX: x, clientY: y } = this._point
++        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
++          const distance = y < rect.top + this.scrollEdge ? y - rect.top - this.scrollEdge
++            : y > rect.bottom - this.scrollEdge ? y - rect.bottom + this.scrollEdge : 0
++          container.scrollTop += Math.round(distance / this.scrollEdge * this.scrollSpeed)
++        }
++      }
++      this.refreshDropTargets()
++      this._scheduleScroll()
++    })
++  }
++
+   _endDrag() {
+     this._dragging = false
++    if (this._frame !== null) cancelAnimationFrame(this._frame)
++    this._frame = null
+     this._cancelLongPress()
+ 
+     document.removeEventListener('contextmenu', this._onContextMenu, { capture: true })
+@@ -244,7 +305,10 @@ export default class TouchDragHandler {
+     if (this._currentTarget) {
+       this._currentTarget.classList.remove(this.dragOverClass)
+       this._currentTarget = null
++      this.onTargetChange?.(null, { ...this._point, hit: null })
+     }
++    this._currentHit = null
++    this._point = null
+ 
+     if (this._proxy) {
+       this._proxy.remove()
+@@ -252,7 +316,6 @@ export default class TouchDragHandler {
+       this._proxyHW = undefined
+       this._proxyHH = undefined
+     }
+-    this._cachedDropTargets = null
+   }
+ 
+   _cancelLongPress() {
+diff --git a/engines/collavre/app/views/collavre/comments/_comments_popup.html.erb b/engines/collavre/app/views/collavre/comments/_comments_popup.html.erb
+index 9abffb3..8fc5a2a 100644
+--- a/engines/collavre/app/views/collavre/comments/_comments_popup.html.erb
++++ b/engines/collavre/app/views/collavre/comments/_comments_popup.html.erb
+@@ -143,8 +143,7 @@
+     <div id="comment-contexts" data-comments--contexts-target="list" class="comment-contexts-list"
+          data-inherited-label="<%= t('collavre.contexts.inherited_label', default: 'Inherited from parent') %>"
+          data-self-context-label="<%= t('collavre.contexts.self_context_label', default: 'Current creative context') %>"
+-         data-navigate-label="<%= t('collavre.contexts.navigate_label', default: 'Go to creative') %>"
+-         data-action="dragover->comments--contexts#handleExternalDragOver drop->comments--contexts#handleExternalDrop dragleave->comments--contexts#handleExternalDragLeave"></div>
++         data-navigate-label="<%= t('collavre.contexts.navigate_label', default: 'Go to creative') %>"></div>
+     <button type="button" class="add-context-btn"
+             data-comments--contexts-target="addButton"
+             data-action="click->comments--contexts#addContext"
+@@ -179,8 +178,7 @@
+     <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"
+          data-confirm-delete-text="<%= t('collavre.topics.delete_confirm') %>"
+          data-new-topic-placeholder="<%= t('collavre.topics.new_placeholder') %>"></div>
+-    <span class="topic-creation-container" data-comments--topics-target="creationContainer" hidden
+-          data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop"></span>
++    <span class="topic-creation-container" data-comments--topics-target="creationContainer" hidden></span>
+     <button type="button" class="topic-list-btn"
+ 			data-comments--topics-target="topicListButton"
+ 			data-action="pointerdown->comments--topics#prepareTopicListToggle pointerup->comments--topics#finishTopicListToggle pointercancel->comments--topics#cancelTopicListToggle click->comments--topics#openTopicListPopup"
