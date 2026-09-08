@@ -6,6 +6,7 @@ import {
   ensureDragWindowId,
 } from '../../lib/dnd/session'
 import { getVerticalDropPosition } from '../../lib/dnd/hit_test'
+import { reportPartialMove } from './move_feedback'
 import { executeMoveCommand } from './move_command'
 import {
   hasKnownWorkspaceCycle,
@@ -69,6 +70,7 @@ function previewWorkspaceRow(controller, expandDelay, { el: row, hit }) {
 
   return () => {
     if (expandTimer) window.clearTimeout(expandTimer)
+    controller.cancelDragExpansion?.()
     clearHighlight()
   }
 }
@@ -92,7 +94,7 @@ function notifyMoveCompletion(ids, payload, targetId, direction, mode) {
   if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail)
 }
 
-async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, payload }) {
+async function performWorkspaceDrop({ root, execute, partialFailureMessage, el: row, event, hit, ids, payload }) {
   const targetItem = workspaceItemFromRow(row)
   if (!targetItem || hasKnownWorkspaceCycle({ root, ids, targetItem, direction: hit })) return
 
@@ -106,6 +108,8 @@ async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, p
     return
   }
 
+  reportPartialMove(result, partialFailureMessage)
+
   // A failure and a partial success differ only in how many ids landed, and
   // nothing landing is the one case with nobody to notify.
   if (result.succeededIds.length === 0) return
@@ -118,6 +122,7 @@ export function createWorkspaceTreeDragDrop({
   controller,
   execute = executeMoveCommand,
   expandDelay = WORKSPACE_TREE_EXPAND_DELAY_MS,
+  partialFailureMessage = '',
 } = {}) {
   const registry = createDragDropRegistry({
     root,
@@ -136,7 +141,7 @@ export function createWorkspaceTreeDragDrop({
     accepts: 'creative',
     hitTest: hitWorkspaceRow,
     preview: (details) => previewWorkspaceRow(controller, expandDelay, details),
-    onDrop: (details) => performWorkspaceDrop({ root, execute, ...details }),
+    onDrop: (details) => performWorkspaceDrop({ root, execute, partialFailureMessage, ...details }),
     dropEffect: ({ event }) => event.shiftKey ? 'copy' : 'move',
   })
 

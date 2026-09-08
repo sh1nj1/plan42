@@ -108,6 +108,7 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
     assert_selector "#workspace-creative-#{workspace_creative.id}", wait: 10
     assert_selector "#creative-#{center_creative.id}", wait: 10
   end
+
   def assert_workspace_placement(creative, parent)
     assert_selector ".creative-workspace-tree-item[data-creative-id='#{creative.id}'][data-parent-id='#{parent.id}']"
   end

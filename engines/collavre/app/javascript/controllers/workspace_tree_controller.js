@@ -30,6 +30,7 @@ export default class extends Controller {
     loadingText: String,
     emptyText: String,
     errorText: String,
+    partialFailureText: String,
   }
 
   connect() {
@@ -40,6 +41,7 @@ export default class extends Controller {
     this.invalidatedCreativeIds = new Set()
     this.destroyedCreativeIds = new Set()
     this.invalidationGeneration = 0
+    this.dragExpandGeneration = 0
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleFrameRequest = this.handleFrameRequest.bind(this)
     this.handleFetchRequest = this.handleFetchRequest.bind(this)
@@ -66,6 +68,7 @@ export default class extends Controller {
     this.dragDropRegistry = createWorkspaceTreeDragDrop({
       root: this.treeTarget,
       controller: this,
+      partialFailureMessage: this.partialFailureTextValue,
     })
     this.observeWorkspaceFrame()
     // A restore render may reconnect this controller after turbo:render has
@@ -86,7 +89,7 @@ export default class extends Controller {
 
   disconnect() {
     this.loadAbortController?.abort()
-    this.dragExpandAbortController?.abort()
+    this.cancelDragExpansion()
     this.frameObserver?.disconnect()
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     if (this.popStateSyncTimer) window.clearTimeout(this.popStateSyncTimer)
@@ -110,6 +113,9 @@ export default class extends Controller {
   async load({ showLoading = true, syncChat = true, preserveView = false, focusCreativeId } = {}) {
     this.loadAbortController?.abort()
     this.loadAbortController = new AbortController()
+    // A full load re-renders the whole tree from an authoritative payload, so
+    // any hover expansion still in flight is stale the moment it starts.
+    this.cancelDragExpansion()
     if (this.pendingRevealPath) this.addExpandedPath(this.pendingRevealPath)
     const requestId = (this.loadRequestId || 0) + 1
     this.loadRequestId = requestId
@@ -136,6 +142,7 @@ export default class extends Controller {
       // that reveal has not been rendered yet — carry it into the next request
       // instead of letting an older answer erase it.
       this.expandedCreativeIds = new Set([...requestedExpandedIds, ...this.pendingDropDestinationIds])
+      this.trimExpandedCreativeIds()
       this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
       requestedExpandedIds.forEach((id) => this.pendingDropDestinationIds.delete(id))
       if (requestedRevealPath && this.samePath(requestedRevealPath, this.pendingRevealPath || [])) {
@@ -255,6 +262,7 @@ export default class extends Controller {
 
     if (this.expandedCreativeIds.has(creativeId)) {
       this.expandedCreativeIds.delete(creativeId)
+      this.pendingDropDestinationIds.delete(creativeId)
     } else {
       this.expandedCreativeIds.delete(creativeId)
       this.expandedCreativeIds.add(creativeId)
@@ -271,50 +279,105 @@ export default class extends Controller {
 
   async expandBranchForDrag(creativeId) {
     const id = String(creativeId)
-    if (this.expandedCreativeIds.has(id)) return
+    // Hovering a second branch aborts the first request but leaves its id in
+    // `expandedCreativeIds`, so only the rendered row can say whether a branch
+    // is actually open — otherwise the aborted one can never be retried.
+    const hoveredItem = this.findWorkspaceItem(id)
+    if (!hoveredItem || hoveredItem.dataset.expanded === 'true') return
 
+    this.cancelDragExpansion()
     this.expandedCreativeIds.add(id)
     this.trimExpandedCreativeIds()
     const requestedExpandedIds = new Set(this.expandedCreativeIds)
-    this.dragExpandAbortController?.abort()
-    this.dragExpandAbortController = new AbortController()
+    const abortController = new AbortController()
+    this.dragExpandAbortController = abortController
+    this.dragExpandCreativeId = id
+    const expandGeneration = this.dragExpandGeneration
+    const loadGeneration = this.loadRequestId
 
     try {
       const requestOptions = { headers: { Accept: 'application/json' } }
-      requestOptions.signal = this.dragExpandAbortController.signal
+      requestOptions.signal = abortController.signal
       const response = await fetch(this.workspaceTreeUrl(requestedExpandedIds), requestOptions)
       if (!response.ok) throw new Error(`Failed to expand workspace tree branch: ${response.status}`)
       const data = await response.json()
+      // A load that started after this request owns the tree. Splicing these
+      // children in would overwrite `nodesData` with the pre-move placement.
+      if (this.loadRequestId !== loadGeneration || this.dragExpandGeneration !== expandGeneration) return
+
       const nodes = Array.isArray(data.creatives) ? data.creatives : []
-      this.renderExpandedBranch(id, nodes)
+      const expanded = this.renderExpandedBranch(id, nodes)
+      if (expanded === false) requestedExpandedIds.delete(id)
       this.nodesData = nodes
       this.committedExpandedCreativeIds = new Set(requestedExpandedIds)
     } catch (error) {
-      if (error.name === 'AbortError') return
+      if (this.loadRequestId !== loadGeneration || this.dragExpandGeneration !== expandGeneration) return
+      if (error.name === 'AbortError') {
+        // The branch was never rendered, so it must not survive as expanded
+        // state that a later load would replay.
+        if (!this.committedExpandedCreativeIds.has(id)) this.expandedCreativeIds.delete(id)
+        return
+      }
       this.expandedCreativeIds = new Set(this.committedExpandedCreativeIds)
       console.error(error)
+    } finally {
+      if (this.dragExpandAbortController === abortController) {
+        this.dragExpandAbortController = null
+        this.dragExpandCreativeId = null
+      }
     }
+  }
+
+  cancelDragExpansion() {
+    this.dragExpandGeneration += 1
+    this.dragExpandAbortController?.abort()
+    const creativeId = this.dragExpandCreativeId
+    this.dragExpandAbortController = null
+    this.dragExpandCreativeId = null
+    if (creativeId && !this.committedExpandedCreativeIds.has(creativeId)) {
+      this.expandedCreativeIds.delete(creativeId)
+    }
+  }
+
+  findWorkspaceItem(creativeId) {
+    return [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
+      .find((candidate) => candidate.dataset.creativeId === String(creativeId)) || null
   }
 
   renderExpandedBranch(creativeId, nodes) {
     const node = this.findNode(nodes, creativeId)
-    const item = [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
-      .find((candidate) => candidate.dataset.creativeId === String(creativeId))
+    const item = this.findWorkspaceItem(creativeId)
     if (!node || !item) return
 
     const existingList = [...item.children]
       .find((child) => child.matches?.('.creative-workspace-tree-list'))
     existingList?.remove()
     const children = Array.isArray(node.children) ? node.children : []
-    if (children.length > 0) {
-      item.appendChild(this.buildList(children, node.id, Number(item.dataset.level || 1) + 1))
-    }
+    if (children.length === 0) return this.collapseEmptyBranch(item, creativeId)
+
+    item.appendChild(this.buildList(children, node.id, Number(item.dataset.level || 1) + 1))
+    item.dataset.hasChildren = 'true'
     item.dataset.expanded = 'true'
     const toggle = item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')
     if (toggle) {
       toggle.setAttribute('aria-expanded', 'true')
       toggle.innerHTML = CHEVRON_EXPANDED
     }
+    return true
+  }
+
+  collapseEmptyBranch(item, creativeId) {
+    this.expandedCreativeIds.delete(String(creativeId))
+    item.dataset.hasChildren = 'false'
+    item.dataset.expanded = 'false'
+    const toggle = item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')
+    if (toggle) {
+      const spacer = document.createElement('span')
+      spacer.className = 'creative-workspace-tree-branch-spacer'
+      spacer.setAttribute('aria-hidden', 'true')
+      toggle.replaceWith(spacer)
+    }
+    return false
   }
 
   findNode(nodes, creativeId) {
@@ -619,6 +682,7 @@ export default class extends Controller {
       if (!evictedId) return
 
       this.expandedCreativeIds.delete(evictedId)
+      this.pendingDropDestinationIds.delete(evictedId)
     }
   }
 

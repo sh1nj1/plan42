@@ -60,7 +60,7 @@ describe('workspace tree drag and drop adapter', () => {
     root.querySelectorAll('.creative-workspace-tree-row').forEach((row) => {
       row.getBoundingClientRect = () => ({ top: 0, height: 100 })
     })
-    controller = { expandBranchForDrag: jest.fn() }
+    controller = { expandBranchForDrag: jest.fn(), cancelDragExpansion: jest.fn() }
     execute = jest.fn(async command => ({ status: 'success', succeededIds: command.ids }))
     registry = createWorkspaceTreeDragDrop({ root, controller, execute })
   })
@@ -324,7 +324,64 @@ describe('workspace tree drag and drop adapter', () => {
     expect(window.localStorage.getItem('collavre.dragDropSignal')).toBeNull()
   })
 
-  test('expands a collapsed child target after 600ms and cancels when leaving', () => {
+  // The source window reacts to this signal by deleting the row it dragged, so
+  // broadcasting a link would destroy the original the link was made from.
+  test('signals the source window for a cross-window move but never for a link', async () => {
+    const setItem = jest.spyOn(Storage.prototype, 'setItem')
+    const target = document.getElementById('workspace-creative-2')
+    const envelope = () => {
+      const transfer = dataTransfer()
+      writeDragData(transfer, {
+        kind: 'creative',
+        ids: ['9'],
+        payload: { creativeId: '9', treeId: 'creative-9', sourceWindowId: 'right-window' },
+      })
+      return transfer
+    }
+
+    const linked = envelope()
+    event('dragover', target, linked, { shiftKey: true })
+    event('drop', target, linked, { shiftKey: true })
+    await flush()
+    expect(setItem).not.toHaveBeenCalledWith('collavre.dragDropSignal', expect.any(String))
+
+    const moved = envelope()
+    event('dragover', target, moved)
+    event('drop', target, moved)
+    await flush()
+    expect(setItem).toHaveBeenCalledWith('collavre.dragDropSignal', expect.any(String))
+
+    setItem.mockRestore()
+  })
+
+  // The dialog copy comes from the server and is covered by move_feedback's own
+  // suite; here only the hand-off from the adapter matters.
+  test('surfaces the rows a partial move left behind', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    execute.mockResolvedValue({
+      status: 'partial',
+      succeededIds: ['8'],
+      failedIds: ['9'],
+      failures: [{ id: '9', reason: 'network_error', message: '' }],
+    })
+    const transfer = dataTransfer()
+    writeDragData(transfer, {
+      kind: 'creative', ids: ['8', '9'], payload: { creativeId: '8', treeId: 'creative-8' },
+    })
+    const target = document.getElementById('workspace-creative-2')
+
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    await flush()
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Creative move partially failed',
+      expect.objectContaining({ failedIds: ['9'] })
+    )
+    consoleError.mockRestore()
+  })
+
+  test('expands after 600ms and invalidates the request on leave, drop, and dragend', () => {
     jest.useFakeTimers()
     const target = document.getElementById('workspace-creative-2')
     const transfer = dataTransfer()
@@ -343,6 +400,15 @@ describe('workspace tree drag and drop adapter', () => {
     event('dragleave', target, transfer)
     jest.advanceTimersByTime(600)
     expect(controller.expandBranchForDrag).not.toHaveBeenCalled()
+    expect(controller.cancelDragExpansion).toHaveBeenCalledTimes(1)
+
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    expect(controller.cancelDragExpansion).toHaveBeenCalledTimes(2)
+
+    event('dragover', target, transfer)
+    event('dragend', target, transfer)
+    expect(controller.cancelDragExpansion).toHaveBeenCalledTimes(3)
   })
   test('keeps placements unchanged while the server request is pending', async () => {
     let finish

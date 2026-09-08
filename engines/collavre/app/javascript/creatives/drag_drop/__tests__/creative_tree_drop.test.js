@@ -30,10 +30,27 @@ jest.unstable_mockModule('../indicator', () => ({
 jest.unstable_mockModule('../../topic_move_members_popup', () => ({
   showMissingMembersPopup: jest.fn(),
 }))
-jest.unstable_mockModule('../../../lib/utils/dialog', () => ({ alertDialog: jest.fn() }))
+const alertDialog = jest.fn()
+jest.unstable_mockModule('../../../lib/utils/dialog', () => ({ alertDialog }))
+
+const loadChildren = jest.fn()
+jest.unstable_mockModule('../../../lib/api/creatives', () => ({
+  loadChildren,
+  default: { loadChildren },
+}))
+
+const renderCreativeTree = jest.fn()
+jest.unstable_mockModule('../../tree_renderer', () => ({
+  renderCreativeTree,
+  appendCreativeNodes: jest.fn(),
+  dispatchCreativeTreeUpdated: jest.fn(),
+  applyRowProperties: jest.fn(),
+}))
 
 const {
   addGlobalListeners,
+  createCreativeTreeDragDrop,
+  handleDragLeave,
   handleDragOver,
   handleDragStart,
   handleDrop,
@@ -79,6 +96,13 @@ function tree(id) {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+function nativeDrag(type, target, dataTransfer) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.assign(event, { dataTransfer, clientX: 0, clientY: 10, shiftKey: false })
+  target.dispatchEvent(event)
+  return event
+}
+
 describe('right creative tree drop wiring', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -120,7 +144,9 @@ describe('right creative tree drop wiring', () => {
 
     handleDragStart(dragEvent(tree('1'), dataTransfer))
 
-    expect(dataTransfer.effectAllowed).toBe('move')
+    // A shift-drag links, and a link target answers 'copy'. Advertising 'move'
+    // alone makes the browser negotiate that pair down to no drag operation.
+    expect(dataTransfer.effectAllowed).toBe('copyMove')
     expect(readDragData(dataTransfer)).toEqual({
       kind: 'creative',
       ids: ['1'],
@@ -132,6 +158,19 @@ describe('right creative tree drop wiring', () => {
         sourceWindowId: expect.any(String),
       }),
     })
+  })
+
+  // The workspace tree answers a shift-drag with dropEffect 'copy'. Reporting
+  // 'move' here would leave the two trees advertising incompatible effects.
+  test('answers a shift-drag with the copy effect', () => {
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('2'), dataTransfer, { shiftKey: true }))
+    expect(dataTransfer.dropEffect).toBe('copy')
+
+    handleDragOver(dragEvent(tree('2'), dataTransfer))
+    expect(dataTransfer.dropEffect).toBe('move')
   })
 
   test('carries a multi-selection into the envelope and the command', async () => {
@@ -153,6 +192,69 @@ describe('right creative tree drop wiring', () => {
     expect(runMoveWithDomRecovery).toHaveBeenCalledWith(expect.objectContaining({
       command: { ids: ['1', '2'], targetId: '4', direction: 'child', mode: 'move' },
       moveContext: null,
+    }))
+  })
+
+  test('the registry preserves same-window dragging when storage blocks MIME writes', async () => {
+    const getItem = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const registry = createCreativeTreeDragDrop()
+    try {
+      const dataTransfer = transfer()
+      nativeDrag('dragstart', tree('2'), dataTransfer)
+      expect(dataTransfer.types).toEqual([])
+      expect(nativeDrag('dragover', tree('1'), dataTransfer).defaultPrevented).toBe(true)
+      nativeDrag('drop', tree('1'), dataTransfer)
+      await flush()
+      expect(runMoveWithDomRecovery).toHaveBeenCalledWith(expect.objectContaining({
+        command: { ids: ['2'], targetId: '1', direction: 'up', mode: 'move' },
+        moveContext: { context: true },
+      }))
+    } finally {
+      registry.destroy()
+      getItem.mockRestore()
+      setItem.mockRestore()
+      consoleError.mockRestore()
+    }
+  })
+
+  test.each(['invalid token', 'malformed JSON', 'unrelated MIME'])(
+    'the registry never replaces %s with local drag state', async kind => {
+      const registry = createCreativeTreeDragDrop()
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        let dataTransfer = transfer()
+        nativeDrag('dragstart', tree('2'), dataTransfer)
+        if (kind === 'unrelated MIME') {
+          dataTransfer = transfer()
+          dataTransfer.setData('text/plain', 'untrusted')
+        } else {
+          const payload = JSON.parse(dataTransfer.getData('application/x-collavre-creative'))
+          dataTransfer.setData('application/x-collavre-creative', kind === 'malformed JSON'
+            ? 'not JSON' : JSON.stringify({ ...payload, token: 'invalid' }))
+        }
+        nativeDrag('dragover', tree('1'), dataTransfer)
+        nativeDrag('drop', tree('1'), dataTransfer)
+        await flush()
+        expect(runMoveWithDomRecovery).not.toHaveBeenCalled()
+      } finally {
+        registry.destroy()
+        consoleError.mockRestore()
+      }
+    }
+  )
+
+  test('a numeric legacy creative id keeps same-window DOM recovery', async () => {
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('2'), dataTransfer))
+    const payload = JSON.parse(dataTransfer.getData('application/x-collavre-creative'))
+    dataTransfer.setData('application/x-collavre-creative', JSON.stringify({ ...payload, creativeId: 2 }))
+    await handleDrop(dragEvent(tree('1'), dataTransfer, { clientY: 10 }))
+    expect(createMoveContext).toHaveBeenCalled()
+    expect(runMoveWithDomRecovery).toHaveBeenCalledWith(expect.objectContaining({
+      command: { ids: ['2'], targetId: '1', direction: 'up', mode: 'move' },
+      moveContext: { context: true },
     }))
   })
 
@@ -208,6 +310,46 @@ describe('right creative tree drop wiring', () => {
     await flush()
 
     expect(completion).not.toHaveBeenCalled()
+  })
+
+  test('surfaces a partial move instead of reporting a clean success', async () => {
+    runMoveWithDomRecovery.mockResolvedValue({
+      status: 'partial',
+      succeededIds: ['1'],
+      failedIds: ['2'],
+      failures: [{
+        id: '2',
+        reason: 'permission_denied',
+        message: 'HTTP 403: Forbidden',
+        serverMessage: 'Not allowed',
+      }],
+    })
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    const dataTransfer = transfer()
+
+    handleDragStart(dragEvent(tree('2'), dataTransfer))
+    handleDrop(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await flush()
+
+    expect(alertDialog).toHaveBeenCalledWith('Not allowed')
+    // The rows that did move still need both trees to refresh.
+    expect(completion).toHaveBeenCalled()
+  })
+
+  test('the registered drop path uses the translated partial failure message', async () => {
+    runMoveWithDomRecovery.mockResolvedValue({
+      status: 'partial', succeededIds: ['2'], failedIds: ['9'], failures: [],
+    })
+    const registry = createCreativeTreeDragDrop({ partialFailureMessage: 'Retry missing links only' })
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('2'), dataTransfer))
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.assign(drop, { dataTransfer, clientX: 0, clientY: 50, shiftKey: true })
+    tree('1').dispatchEvent(drop)
+    await flush()
+    expect(alertDialog).toHaveBeenCalledWith('Retry missing links only')
+    registry.destroy()
   })
 
   test('reports a command that rejects outright', async () => {
@@ -409,6 +551,150 @@ describe('right creative tree drag feedback', () => {
     // The second dragover must not restart the timer, or a hovering pointer
     // would never reach the 600ms threshold.
     expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+  })
+
+  // A collapsed branch renders empty with data-loaded="false", so revealing the
+  // container alone would advertise an expansion with nothing to drop onto.
+  test('fills a lazily loaded branch before revealing it', async () => {
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockResolvedValue({ creatives: [{ id: 2 }] })
+    const container = document.getElementById('creative-children-1')
+    renderCreativeTree.mockImplementationOnce((target) => {
+      target.innerHTML = row('2', { parentId: '1', level: 2 })
+    })
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    expect(loadChildren).toHaveBeenCalledWith('/creatives/1/children.json')
+    expect(renderCreativeTree).toHaveBeenCalledWith(container, [{ id: 2 }])
+    expect(container.dataset.loaded).toBe('true')
+    expect(tree('1').closest('creative-tree-row').hasAttribute('has-children')).toBe(true)
+    expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+  })
+
+  test('does not apply an in-flight hover response after the drop starts', async () => {
+    let resolveChildren
+    document.body.innerHTML = `
+<div id="creatives">
+${row('1', { isRoot: true })}
+<creative-tree-row creative-id="2" level="1" has-children>
+<div class="creative-tree" id="creative-2" draggable="true"></div>
+</creative-tree-row>
+<div class="creative-children" id="creative-children-2" style="display:none"
+data-loaded="false" data-load-url="/creatives/2/children.json"></div>
+</div>
+`
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    tree('2').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockImplementation(() => new Promise((resolve) => { resolveChildren = resolve }))
+    runMoveWithDomRecovery.mockResolvedValue({ status: 'success' })
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+    handleDragOver(dragEvent(tree('2'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    handleDrop(dragEvent(tree('2'), dataTransfer, { clientY: 50 }))
+    resolveChildren({ creatives: [{ id: 3 }] })
+    await Promise.resolve()
+
+    expect(runMoveWithDomRecovery).toHaveBeenCalled()
+    expect(renderCreativeTree).not.toHaveBeenCalled()
+    expect(document.getElementById('creative-children-2').dataset.loaded).toBe('false')
+  })
+
+  test('does not apply an in-flight hover response after leaving the target', async () => {
+    let resolveChildren
+    document.body.innerHTML = `
+<creative-tree-row creative-id="1" level="1" has-children>
+<div class="creative-tree" id="creative-1" draggable="true"></div>
+</creative-tree-row>
+<div class="creative-children" id="creative-children-1" style="display:none"
+data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+`
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockImplementation(() => new Promise((resolve) => { resolveChildren = resolve }))
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    handleDragLeave(dragEvent(tree('1'), dataTransfer))
+    resolveChildren({ creatives: [{ id: 2 }] })
+    await Promise.resolve()
+
+    expect(renderCreativeTree).not.toHaveBeenCalled()
+    expect(document.getElementById('creative-children-1').dataset.loaded).toBe('false')
+  })
+
+  test('allows dragleave cleanup when no hover expansion is pending', () => {
+    const dataTransfer = transfer()
+
+    expect(() => handleDragLeave(dragEvent(tree('1'), dataTransfer))).not.toThrow()
+  })
+
+  test('settles a branch the server reports as empty', async () => {
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockResolvedValue({})
+    const container = document.getElementById('creative-children-1')
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    expect(renderCreativeTree).toHaveBeenCalledWith(container, [])
+    expect(container.dataset.loaded).toBe('true')
+    expect(tree('1').closest('creative-tree-row').hasAttribute('has-children')).toBe(false)
+    expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(false)
+    expect(container.style.display).toBe('none')
+  })
+
+  test('leaves the branch collapsed when its children cannot be loaded', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    document.body.innerHTML = `
+      <div id="creatives">
+        <creative-tree-row creative-id="1" level="1" has-children>
+          <div class="creative-tree" id="creative-1" draggable="true"></div>
+        </creative-tree-row>
+        <div class="creative-children" id="creative-children-1" style="display:none"
+             data-loaded="false" data-load-url="/creatives/1/children.json"></div>
+      </div>
+    `
+    tree('1').getBoundingClientRect = () => ({ top: 0, height: 100 })
+    loadChildren.mockRejectedValue(new Error('offline'))
+    const dataTransfer = transfer()
+    handleDragStart(dragEvent(tree('1'), dataTransfer))
+
+    handleDragOver(dragEvent(tree('1'), dataTransfer, { clientY: 50 }))
+    await jest.advanceTimersByTimeAsync(600)
+
+    expect(tree('1').closest('creative-tree-row').hasAttribute('expanded')).toBe(false)
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to load children for branch expansion',
+      expect.objectContaining({ message: 'offline' })
+    )
+    consoleError.mockRestore()
   })
 
   test('cancels a pending expansion when the drag ends', () => {

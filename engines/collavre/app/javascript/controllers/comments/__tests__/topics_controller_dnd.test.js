@@ -69,3 +69,52 @@ test('agent and comments drops retain their different commands and read-only pol
   expect(controller.createTopicWithAgent).toHaveBeenCalledWith({ ...agent, id: '8' })
   expect(controller.createTopicAndMoveComments).toHaveBeenCalledWith(['7', '9'])
 })
+
+test('all-messages uses the main topic for agents and preserves the unassigned comments destination', async () => {
+  const target = controller.listTarget.querySelector('.topic-all-messages')
+  const agent = { 'application/x-agent-drop': JSON.stringify({ id: 8 }) }
+  drag('drop', target, agent)
+  await Promise.resolve()
+  expect(controller.setTopicPrimaryAgent).not.toHaveBeenCalled()
+  const moved = jest.fn()
+  controller.element.addEventListener('comments--topics:move-to-topic', moved)
+  drag('drop', target, { 'application/x-comment-ids': '[7,9]' })
+  expect(moved.mock.calls[0][0].detail.targetTopicId).toBe(controller.mainTopicId)
+  controller.mainTopicId = '1'
+  drag('drop', target, agent)
+  await Promise.resolve()
+  expect(controller.setTopicPrimaryAgent).toHaveBeenCalledWith('1', { id: '8' })
+})
+
+test('topic cancellation before the animation frame never restores feedback', () => {
+  let frame
+  global.requestAnimationFrame = fn => { frame = fn; return 0 }
+  const source = controller.listTarget.querySelector('[data-id="1"]')
+  const values = {}
+  drag('dragstart', source, values)
+  expect(drag('dragover', source, values).defaultPrevented).toBe(false)
+  drag('dragend', source, values)
+  frame()
+  expect(source.classList.contains('topic-dragging')).toBe(false)
+})
+
+test('malformed comment and agent data never trigger topic commands', () => {
+  const moved = jest.fn()
+  controller.element.addEventListener('comments--topics:move-to-topic', moved)
+  for (const mime of ['application/x-comment-ids', 'application/x-agent-drop']) {
+    drag('drop', controller.creationContainerTarget, { [mime]: '{broken' })
+  }
+  expect(controller.createTopicWithAgent).not.toHaveBeenCalled()
+  expect(controller.createTopicAndMoveComments).not.toHaveBeenCalled()
+  expect(moved).not.toHaveBeenCalled()
+})
+
+test('topic reorder ignores stale source IDs and accepts placement before a target', async () => {
+  const el = controller.listTarget.querySelector('[data-id="1"]')
+  for (const ids of [[], ['1'], ['999']]) {
+    await controller.handleTopicReorderDrop({ el, ids, hit: 'left' })
+  }
+  expect(controller.saveTopicOrder).not.toHaveBeenCalled()
+  await controller.handleTopicReorderDrop({ el, ids: ['2'], hit: 'left' })
+  expect(controller.saveTopicOrder).toHaveBeenCalledWith([2, 1, 3])
+})

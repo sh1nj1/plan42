@@ -146,7 +146,7 @@ test('starts a selected creative bundle through the shared writer', () => {
     dataTransfer: transfer,
   });
 
-  expect(transfer.effectAllowed).toBe('move');
+  expect(transfer.effectAllowed).toBe('copyMove');
   expect(transfer.types).toContain(LEGACY_MIME_TYPES.creative);
   expect(JSON.parse(transfer.getData(LEGACY_MIME_TYPES.creative))).toMatchObject({
     creativeId: '1',

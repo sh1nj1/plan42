@@ -493,4 +493,18 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(controller.addParticipantButtonTarget.style.display).toBe('none')
         expect(controller.participantListButtonTarget.style.display).toBe('none')
     })
+    test('a stale agent avatar cannot start a drag after its participant is removed', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([1])
+        const wrapper = controller.participantsTarget.querySelector('.ai-agent-draggable')
+        controller.participantsData = []
+        const setData = jest.fn()
+        const event = new Event('dragstart', { bubbles: true, cancelable: true })
+        Object.assign(event, { dataTransfer: { setData } })
+        wrapper.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+        expect(setData).not.toHaveBeenCalled()
+        expect(wrapper.classList.contains('dragging')).toBe(false)
+    })
+
 })

@@ -12,7 +12,6 @@ import {
   setRowParent,
   setRowRootState,
   setHasChildren,
-  setExpanded,
   syncParentHasChildren,
 } from './dom';
 import {
@@ -26,6 +25,8 @@ import {
 import * as dragState from './state';
 import { createMoveContext, applyMove, revertMove } from './operations';
 import * as moveOperations from './operations';
+import { reportPartialMove } from './move_feedback';
+import { expandBranchWithChildren } from '../branch_expansion';
 import { sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
@@ -48,11 +49,14 @@ export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
 
 let hoverExpandTimer = null;
 let hoverExpandTree = null;
+let hoverExpansionVersion = 0;
+const hoverExpandingTrees = new WeakSet();
 
 function clearHoverExpand() {
   if (hoverExpandTimer) clearTimeout(hoverExpandTimer);
   hoverExpandTimer = null;
   hoverExpandTree = null;
+  hoverExpansionVersion += 1;
 }
 
 function scheduleHoverExpand(tree, position) {
@@ -66,18 +70,21 @@ function scheduleHoverExpand(tree, position) {
     clearHoverExpand();
     return;
   }
-  if (hoverExpandTree === tree) return;
+  if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) return;
 
   clearHoverExpand();
+  const expansionVersion = hoverExpansionVersion;
   hoverExpandTree = tree;
   hoverExpandTimer = setTimeout(() => {
-    const container = getChildrenContainer(row);
-    if (container) setExpanded(row, true, container);
-    clearHoverExpand();
+    hoverExpandTimer = null;
+    hoverExpandTree = null;
+    hoverExpandingTrees.add(tree);
+    expandBranchWithChildren(row, getChildrenContainer(row), {
+      isCurrent: () => expansionVersion === hoverExpansionVersion,
+    })
+      .finally(() => hoverExpandingTrees.delete(tree));
   }, CREATIVE_TREE_EXPAND_DELAY_MS);
 }
-
-
 
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
@@ -284,12 +291,12 @@ function getDraggedContext(event, data) {
   const transfer = event.dataTransfer;
   const hasTrustedPayload = getDragKind(transfer) === 'creative';
   const parsed = data?.kind === 'creative'
-    ? { ...data.payload, selectedCreativeIds: data.ids }
+    ? { ...data.payload, creativeId: String(data.payload.creativeId), selectedCreativeIds: data.ids }
     : null;
   const wasRejectedPayload = hasTrustedPayload && !parsed;
 
   if (existing) {
-    if (parsed && parsed.creativeId === existing.creativeId && parsed.treeId === existing.treeId) {
+    if (parsed && parsed.creativeId === String(existing.creativeId) && parsed.treeId === existing.treeId) {
       return { draggedState: { ...existing, ...parsed }, isExternal: false, wasRejectedPayload };
     }
 
@@ -345,7 +352,7 @@ export function handleDragStart(event) {
     sourceWindowId: windowId,
     selectedCreativeIds,
   });
-  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.effectAllowed = 'copyMove';
 
   // Custom bundle drag image for multi-select
   if (selectedCreativeIds.length > 1) {
@@ -393,7 +400,7 @@ export function handleDragOver(event, intent = null) {
   if (dragKind !== 'creative' && !hasDraggedState()) return;
 
   event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
+  event.dataTransfer.dropEffect = event.shiftKey ? 'copy' : 'move';
 
   const previousPosition = getLastDragOverRow() === tree ? dragState.getLastDragOverPosition() : null;
 
@@ -437,7 +444,7 @@ function resetDrag() {
   hideLinkHover();
 }
 
-export function handleDrop(event, intent = null) {
+export function handleDrop(event, intent = null, { partialFailureMessage = '' } = {}) {
   clearHoverExpand();
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
@@ -616,6 +623,7 @@ export function handleDrop(event, intent = null) {
     moveContext,
     attemptedParentId: newParentId,
   }).then((result) => {
+    reportPartialMove(result, partialFailureMessage);
     if (!result.ok) {
       console.error('Creative move did not fully complete', result);
     }
@@ -656,7 +664,7 @@ export function handleDragLeave(event) {
   if (!tree || tree.draggable === false) return;
   clearDragHighlight(tree);
   if (getLastDragOverRow() === tree) setLastDragOverRow(null);
-  if (hoverExpandTree === tree) clearHoverExpand();
+  if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) clearHoverExpand();
   hideLinkHover();
 }
 
@@ -687,8 +695,16 @@ export function hasActiveDrag() {
 
 // Keep domain commands and DOM recovery in this adapter. Native and touch
 // gestures share the registry's source, hit intent and cleanup lifecycle.
-export function createCreativeTreeDragDrop() {
-  const registry = createDragDropRegistry();
+export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) {
+  const localData = (transfer) => {
+    if (Array.from(transfer?.types || []).length || !hasDraggedState()) return null;
+    const { tree: _tree, row: _row, ...payload } = getDraggedState();
+    return { kind: 'creative', ids: resolveDraggedIds(payload), payload };
+  };
+  const registry = createDragDropRegistry({
+    getKind: (transfer) => getDragKind(transfer) || localData(transfer)?.kind || null,
+    readData: (transfer) => readDragData(transfer) || localData(transfer),
+  });
   registry.registerDragSource({
     selector: DRAGGABLE_SELECTOR,
     onDragStart: ({ event }) => handleDragStart(event),
@@ -713,12 +729,13 @@ export function createCreativeTreeDragDrop() {
       handleDragOver(event, hit);
       return () => handleDragLeave(event);
     },
-    dropEffect: ({ event }) => {
+    dropEffect: ({ event, kind }) => {
+      if (kind === 'topic') { hideLinkHover(); return 'move'; }
       if (event.shiftKey) showLinkHover(event.clientX, event.clientY);
       else hideLinkHover();
       return event.shiftKey ? 'copy' : 'move';
     },
-    onDrop: ({ event, hit }) => handleDrop(event, hit),
+    onDrop: ({ event, hit }) => handleDrop(event, hit, { partialFailureMessage }),
   });
   return registry;
 }

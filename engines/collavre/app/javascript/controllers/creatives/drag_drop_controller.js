@@ -10,11 +10,13 @@ let connectionCount = 0
 let registry = null
 
 export default class extends Controller {
+  static values = { partialFailureText: String }
+
   connect() {
     if (connectionCount === 0) {
       initIndicator()
       addGlobalListeners()
-      registry = createCreativeTreeDragDrop()
+      registry = createCreativeTreeDragDrop({ partialFailureMessage: this.partialFailureTextValue })
     }
     connectionCount += 1
   }

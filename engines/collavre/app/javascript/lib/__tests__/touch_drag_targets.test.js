@@ -218,3 +218,30 @@ test('a queued animation callback cannot restart scrolling after cancellation', 
   expect(document.querySelector('.touch-drag-proxy')).toBeNull()
   schedule.mockRestore()
 })
+
+test('default selected-item mode keeps native menus after cancellation and can start again', () => {
+  container.innerHTML = '<span class="selected">One</span><span class="selected">Two</span>'
+  const item = container.firstElementChild
+  const onDragStart = jest.fn()
+  setup({ singleElement: undefined, itemSelector: '.selected', onDragStart })
+  const begin = () => {
+    item.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true,
+      touches: [{ target: item, clientX: 50, clientY: 50 }] }))
+    jest.advanceTimersByTime(400)
+  }
+  begin()
+  expect(Array.from(onDragStart.mock.calls[0][0])).toEqual(Array.from(container.children))
+  expect(document.querySelector('.touch-drag-proxy').textContent).toBe('2')
+  const activeMenu = new Event('contextmenu', { cancelable: true })
+  document.dispatchEvent(activeMenu)
+  expect(activeMenu.defaultPrevented).toBe(true)
+
+  handler.cancel()
+  const nativeMenu = new Event('contextmenu', { cancelable: true })
+  document.dispatchEvent(nativeMenu)
+  expect(nativeMenu.defaultPrevented).toBe(false)
+  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+  begin()
+  expect(onDragStart).toHaveBeenCalledTimes(2)
+  expect(document.querySelectorAll('.touch-drag-proxy')).toHaveLength(1)
+})

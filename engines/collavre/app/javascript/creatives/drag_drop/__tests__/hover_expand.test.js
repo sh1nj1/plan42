@@ -108,4 +108,27 @@ describe('right creative tree hover expansion', () => {
 
     expect(tree.closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
   })
+  test('does not schedule another load while hover expansion is in flight', () => {
+    document.body.innerHTML = `
+      <creative-tree-row creative-id="2" has-children>
+        <div id="creative-2" class="creative-tree" draggable="true"></div>
+      </creative-tree-row>
+      <div id="creative-children-2" style="display:none" data-loaded="false"
+           data-load-url="/creatives/2/children.json"></div>
+    `
+    const tree = document.getElementById('creative-2')
+    tree.getBoundingClientRect = () => ({ top: 0, height: 100 })
+    global.fetch = jest.fn(() => new Promise(() => {}))
+    const dataTransfer = transfer()
+    writeDragData(dataTransfer, {
+      kind: 'creative', ids: ['1'], payload: { creativeId: '1', treeId: 'creative-1' },
+    })
+
+    handleDragOver(event(tree, dataTransfer))
+    jest.advanceTimersByTime(600)
+    handleDragOver(event(tree, dataTransfer))
+    jest.advanceTimersByTime(600)
+
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
 })

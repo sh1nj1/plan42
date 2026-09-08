@@ -2087,4 +2087,22 @@ describe('FormController - draft persistence', () => {
     expect(input).toHaveBeenCalledTimes(1)
   })
 
+  test('creative and image dragover remain accepted while unrelated transfers bubble', () => {
+    controller.formTarget.id = 'new-comment-form'
+    for (const types of [['application/x-collavre-creative'], ['Files'], ['text/plain']]) {
+      const event = new Event('dragover', { bubbles: true, cancelable: true })
+      Object.assign(event, { dataTransfer: { types, files: types[0] === 'Files' ? [new File(['image'], 'image.png', { type: 'image/png' })] : [] } })
+      controller.textareaTarget.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(types[0] !== 'text/plain')
+    }
+  })
+
+  test('single-link callers preserve the shared insertion behavior', () => {
+    controller.textareaTarget.value = 'See'
+    controller.textareaTarget.setSelectionRange(3, 3)
+    controller.insertCreativeLink({ id: '10', label: 'Task' })
+    expect(controller.textareaTarget.value).toBe('See [Task](/creatives/10) ')
+    expect(document.activeElement).toBe(controller.textareaTarget)
+  })
+
 })
