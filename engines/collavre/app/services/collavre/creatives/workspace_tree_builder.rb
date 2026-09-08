@@ -39,19 +39,25 @@ module Collavre
 
         entries.map do |entry|
           creative = entry.fetch(:creative)
-          visible_children = acyclic_children(entry, children_by_parent.fetch(creative.id))
-          children = child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }
-          {
-            id: creative.id,
-            parent_id: creative.parent_id,
-            label: Collavre::HtmlText.label(creative.effective_description),
-            snippet: creative.creative_snippet,
-            can_comment: allowed?(creative, :feedback),
-            url: view_context.collavre.creatives_path(id: creative.id),
-            has_children: visible_children.any?,
-            children: children
-          }
+          node(
+            creative,
+            visible_children: acyclic_children(entry, children_by_parent.fetch(creative.id)),
+            children: child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }
+          )
         end
+      end
+
+      def node(creative, visible_children:, children:)
+        {
+          id: creative.id,
+          parent_id: creative.parent_id,
+          label: Collavre::HtmlText.label(creative.effective_description),
+          snippet: creative.creative_snippet,
+          can_comment: allowed?(creative, :feedback),
+          url: view_context.collavre.creatives_path(id: creative.id),
+          has_children: visible_children.any?,
+          children: children
+        }
       end
 
       def acyclic_children(entry, children)
