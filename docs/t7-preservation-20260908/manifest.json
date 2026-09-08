@@ -1,0 +1,59 @@
+{
+  "source_sha": "689726b7460889216d4ee47737f280e5c9bb82eb",
+  "source_tree": "5c5a71fc9372bc4c8aeb22033e68d895651cc0d9",
+  "baseline_sha": "5ca92af7c0cf27eecd9e8229ae36630ae43fb910",
+  "branch": "preserve/t7-touch-connector-20260908",
+  "files": [
+    {
+      "path": "engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js",
+      "git_blob": "0a9d328b3faad1b94a6dde7a8ffa6e364d248c05",
+      "sha256": "8d5936d948db83cd744f2c680c119491fc7526da007e3470663aac51d16ae582"
+    },
+    {
+      "path": "engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js",
+      "git_blob": "bc92ebafe001acfaae3c35141973a92c497ec0ac",
+      "sha256": "588e8e571d5f56f6ddc6ef4993700eecb803217398aed7f65f9b372fc286007a"
+    },
+    {
+      "path": "engines/collavre/app/javascript/lib/dnd/touch_bridge.js",
+      "git_blob": "9ccd99b3645ee4124505fedde0d30c4ab910c508",
+      "sha256": "1b4b9ceb074870bc10ce6683a482f23377e216c8c924a7f70aa9abc9a030eee4"
+    },
+    {
+      "path": "engines/collavre/app/javascript/lib/touch_drag.js",
+      "git_blob": "bf4316284db45aca058f854857d5b11912956b0d",
+      "sha256": "be981b0950b74d5f6bc163a01fe2d2a9ca40fe3024a55c204279714a560d91cb"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/t7-preservation-20260908/README.md",
+      "sha256": "fb76fb13ddd271ae921a7e9a0e97e0efb79c190010740159a81fe406d31e9de7"
+    },
+    {
+      "path": "docs/t7-preservation-20260908/SHA256SUMS",
+      "sha256": "999ac08fd9c240f556471783fbaa6f17164f0b82a06a11421f0e60da84c4e906"
+    },
+    {
+      "path": "docs/t7-preservation-20260908/historical-test-results.json",
+      "sha256": "d58ab2b8dc9bfa6b33cb50936d597b76a6080199a976510fd8eee17d026b7eb8"
+    },
+    {
+      "path": "docs/t7-preservation-20260908/registry-auto-touch-bridge.patch",
+      "sha256": "687c1022dde96499c8d8cd093fb09f0986ea43e3ff5efa72b9546554df99cfbf"
+    },
+    {
+      "path": "docs/t7-preservation-20260908/registry-inclusive-original.patch",
+      "sha256": "584dd6fbf3882e5a19e7afd5b8a154b5e450006645e5d1ff117403221f86e735"
+    },
+    {
+      "path": "docs/t7-preservation-20260908/t7-original.patch",
+      "sha256": "7b3c000a4c15a84cf2ccf462d524b594ce26199f91b68af362eec8a6b68c8e67"
+    },
+    {
+      "path": "docs/t7-preservation-20260908/worktree5-untracked-registry.js.snapshot",
+      "sha256": "e2675ca99f11b30358aeacfdf4342c37b3b933ad6a274d7d242808ccaa4188da"
+    }
+  ],
+  "note": "Exact original source snapshot plus preservation evidence. Connector commit has new SHA and baseline parent; original ancestry is not recreated. README.md remains a historical record; pending-delivery statement predates this publication. No new tests; final coordinate-guard commit has no confirmed historical rerun."
+}

@@ -1,0 +1,715 @@
+diff --git a/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js b/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+new file mode 100644
+index 0000000..0a9d328
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/__tests__/touch_drag_targets.test.js
+@@ -0,0 +1,134 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import TouchDragHandler from '../touch_drag'
++
++let handler, container, onDrop, onCancel, onTargetChange
++const rect = (top = 0) => ({ left: 0, right: 200, top, bottom: top + 100, width: 200, height: 100 })
++function target(top = 0) {
++  const el = document.createElement('div')
++  el.className = 'drop-target'
++  el.getBoundingClientRect = () => rect(top)
++  document.body.appendChild(el)
++  return el
++}
++function touch(type, x = 50, y = 50) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel'
++    ? [] : [{ clientX: x, clientY: y, target: container }] })
++  container.dispatchEvent(event)
++  return event
++}
++function start(x = 50, y = 50) {
++  touch('touchstart', x, y)
++  jest.advanceTimersByTime(400)
++}
++function setup(options = {}) {
++  handler = new TouchDragHandler({ container, singleElement: true, dropTargetSelector: '.drop-target',
++    onDrop, onCancel, onTargetChange, ...options })
++}
++beforeEach(() => {
++  jest.useFakeTimers()
++  container = document.createElement('div')
++  container.getBoundingClientRect = () => rect()
++  document.body.appendChild(container)
++  onDrop = jest.fn()
++  onCancel = jest.fn()
++  onTargetChange = jest.fn()
++})
++afterEach(() => {
++  handler?.destroy()
++  document.body.innerHTML = ''
++  jest.useRealTimers()
++})
++
++test('reports hit changes inside one target and delivers position at drop', () => {
++  const el = target()
++  const hitTest = jest.fn((target, point) => point.clientY < 30 ? 'up' : 'child')
++  setup({ hitTest })
++  start(50, 20)
++  touch('touchmove', 50, 60)
++  expect(hitTest).toHaveBeenLastCalledWith(el, { clientX: 50, clientY: 60 }, 'up')
++  expect(onTargetChange).toHaveBeenLastCalledWith(el, { clientX: 50, clientY: 60, hit: 'child' })
++  touch('touchend')
++  expect(onDrop).toHaveBeenCalledWith(el, { clientX: 50, clientY: 60, hit: 'child' })
++  expect(el.classList.contains('drag-over')).toBe(false)
++})
++
++test('refresh discovers expanded targets and forgets removed targets without finger movement', () => {
++  setup()
++  start()
++  const added = target()
++  handler.refreshDropTargets()
++  expect(added.classList.contains('drag-over')).toBe(true)
++  added.remove()
++  handler.refreshDropTargets()
++  touch('touchend')
++  expect(onDrop).not.toHaveBeenCalled()
++  expect(onCancel).toHaveBeenCalledTimes(1)
++})
++
++test('rejects hidden and disallowed targets, resolving fresh candidate lists', () => {
++  const hidden = target()
++  hidden.getBoundingClientRect = () => ({ ...rect(), width: 0 })
++  const rejected = target()
++  const accepted = target()
++  const getDropTargets = jest.fn(() => [hidden, rejected, accepted])
++  setup({ getDropTargets, hitTest: el => el === rejected ? null : 'down' })
++  start()
++  touch('touchend')
++  expect(onDrop).toHaveBeenCalledWith(accepted, expect.objectContaining({ hit: 'down' }))
++})
++
++test('touchcancel never commits a drop or triggers a pending tap', () => {
++  target()
++  const onTap = jest.fn()
++  setup({ onTap })
++  touch('touchstart')
++  touch('touchcancel')
++  expect(onTap).not.toHaveBeenCalled()
++  start()
++  touch('touchcancel')
++  expect(onDrop).not.toHaveBeenCalled()
++  expect(onCancel).toHaveBeenCalledTimes(1)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('autoscroll continues while stationary and stops on cancellation', () => {
++  const el = target()
++  const scrollContainer = jest.fn(() => container)
++  setup({ autoScroll: true, scrollContainer })
++  start(50, 95)
++  jest.advanceTimersByTime(48)
++  expect(container.scrollTop).toBeGreaterThan(0)
++  expect(scrollContainer).toHaveBeenCalledWith({ clientX: 50, clientY: 95 }, el)
++  touch('touchcancel')
++  const stopped = container.scrollTop
++  jest.advanceTimersByTime(100)
++  expect(container.scrollTop).toBe(stopped)
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('autoscroll moves up near the top, stays still at the center and outside the pane', () => {
++  setup({ autoScroll: true })
++  container.scrollTop = 200
++  start(50, 5)
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBeLessThan(200)
++  touch('touchmove', 50, 50)
++  const centered = container.scrollTop
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBe(centered)
++  touch('touchmove', 250, 95)
++  jest.advanceTimersByTime(32)
++  expect(container.scrollTop).toBe(centered)
++})
++
++test('destroy clears active highlights, proxy and animation frames', () => {
++  const el = target()
++  setup({ autoScroll: true })
++  start()
++  handler.destroy()
++  expect(el.classList.contains('drag-over')).toBe(false)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+new file mode 100644
+index 0000000..bc92eba
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/__tests__/touch_bridge.test.js
+@@ -0,0 +1,240 @@
++/** @jest-environment jsdom */
++import { jest } from '@jest/globals'
++import { createDragDropRegistry } from '../registry'
++import { createTouchBridge } from '../touch_bridge'
++
++let registry, bridge, source, zone, drops, previews
++function touch(type, y = 50, target = source) {
++  const event = new Event(type, { bubbles: true, cancelable: true })
++  Object.defineProperty(event, 'touches', { value: type === 'touchend' || type === 'touchcancel' ? []
++    : [{ clientX: 50, clientY: y, target }] })
++  target.dispatchEvent(event)
++  return event
++}
++function makeZone() {
++  const el = document.createElement('div')
++  el.className = 'zone'
++  el.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100 })
++  document.body.appendChild(el)
++  return el
++}
++beforeEach(() => {
++  jest.useFakeTimers()
++  source = document.createElement('div')
++  source.className = 'source'
++  document.body.appendChild(source)
++  zone = makeZone()
++  drops = jest.fn()
++  previews = jest.fn(() => jest.fn())
++  registry = createDragDropRegistry({ root: document, touch: false, getKind: dt => dt.types.includes('test') ? 'creative' : null,
++    readData: dt => JSON.parse(dt.getData('test')) })
++  registry.registerDragSource({ selector: '.source', onDragStart: ({ event }) => {
++    event.dataTransfer.setData('test', JSON.stringify({ kind: 'creative', ids: ['1'] }))
++  } })
++  registry.registerDropZone({ selector: '.zone', accepts: ['creative'],
++    hitTest: ({ event }) => event.clientY < 30 ? 'up' : event.clientY > 70 ? 'down' : 'child',
++    preview: previews, onDrop: drops })
++  bridge = createTouchBridge({ root: document, registry })
++})
++afterEach(() => {
++  bridge.destroy()
++  registry.destroy()
++  document.body.innerHTML = ''
++  jest.useRealTimers()
++  delete document.elementFromPoint
++})
++
++test.each([[10, 'up'], [50, 'child'], [90, 'down']])('touch uses shared directional hit at %s', async (y, hit) => {
++  touch('touchstart', y)
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  await Promise.resolve()
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ kind: 'creative', ids: ['1'], hit, el: zone }))
++  expect(previews).toHaveBeenCalledWith(expect.objectContaining({ hit }))
++})
++
++test('ordinary touches are untouched and can scroll', () => {
++  const event = touch('touchstart', 50, zone)
++  expect(event.defaultPrevented).toBe(false)
++  jest.advanceTimersByTime(500)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('expansion replaces targets while the finger is stationary', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  zone.remove()
++  const expanded = makeZone()
++  bridge.refreshDropTargets()
++  touch('touchend')
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ el: expanded }))
++})
++
++test('cancellation and destruction clear preview, proxy and timers without drop', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchcancel')
++  expect(drops).not.toHaveBeenCalled()
++  expect(previews.mock.results[0].value).toHaveBeenCalled()
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  bridge.destroy()
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('a target registered in another controller receives the same drop', () => {
++  zone.remove()
++  const pane = document.createElement('section')
++  document.body.appendChild(pane)
++  const external = makeZone()
++  external.className = 'external'
++  pane.appendChild(external)
++  const onDrop = jest.fn()
++  const otherRegistry = createDragDropRegistry({ root: pane, touch: false,
++    getKind: dt => dt.types.includes('test') ? 'creative' : null,
++    readData: dt => JSON.parse(dt.getData('test')) })
++  otherRegistry.registerDropZone({ selector: '.external', accepts: ['creative'], onDrop })
++  try {
++    touch('touchstart')
++    jest.advanceTimersByTime(400)
++    touch('touchend')
++    expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ ids: ['1'], el: external }))
++  } finally {
++    otherRegistry.destroy()
++  }
++})
++
++test('a source rejecting dragstart does not leave a proxy or timer', () => {
++  source.className = 'rejected'
++  registry.registerDragSource({ selector: '.rejected', onDragStart: ({ event }) => {
++    event.preventDefault()
++    return false
++  } })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(jest.getTimerCount()).toBe(0)
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('edge scrolling resolves the destination pane while the finger stays still', () => {
++  const pane = document.createElement('section')
++  pane.style.overflowY = 'auto'
++  pane.getBoundingClientRect = zone.getBoundingClientRect
++  Object.defineProperties(pane, { scrollHeight: { value: 500 }, clientHeight: { value: 100 } })
++  document.body.appendChild(pane)
++  pane.appendChild(zone)
++  touch('touchstart', 95)
++  jest.advanceTimersByTime(450)
++  expect(pane.scrollTop).toBeGreaterThan(0)
++  touch('touchmove', 250)
++  jest.advanceTimersByTime(32)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('moving between targets clears the former registry preview', () => {
++  touch('touchstart')
++  jest.advanceTimersByTime(450)
++  const firstCleanup = previews.mock.results[0].value
++  zone.remove()
++  makeZone()
++  touch('touchmove')
++  expect(firstCleanup).toHaveBeenCalled()
++})
++
++test('native source adapters can replace transfer data and set a drag image', () => {
++  source.className = 'replacement'
++  registry.registerDragSource({ selector: '.replacement', onDragStart: ({ event }) => {
++    const dt = event.dataTransfer
++    dt.setData('old', 'discard')
++    dt.clearData('old')
++    expect(dt.getData('old')).toBe('')
++    dt.setData('another', 'discard')
++    dt.clearData()
++    expect(dt.types).toEqual([])
++    dt.setDragImage(source, 0, 0)
++    dt.setData('test', JSON.stringify({ kind: 'creative', ids: ['2'] }))
++  } })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).toHaveBeenCalledWith(expect.objectContaining({ ids: ['2'] }))
++})
++
++test('an element-scoped bridge handles dynamically added sources', () => {
++  bridge.destroy()
++  bridge = createTouchBridge({ root: document.body, registry })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).toHaveBeenCalledTimes(1)
++})
++
++test('a source removed during long press cannot begin dragging', () => {
++  touch('touchstart')
++  source.className = ''
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++})
++
++test('registry acceptance rules also reject touch targets', () => {
++  zone.className = 'blocked'
++  registry.registerDropZone({ selector: '.blocked', accepts: ['topic'], onDrop: drops })
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('a quick tap retains the original nested button action', () => {
++  const button = document.createElement('button')
++  source.appendChild(button)
++  const click = jest.fn()
++  button.addEventListener('click', click)
++  touch('touchstart', 50, button)
++  touch('touchend', 50, button)
++  expect(click).toHaveBeenCalledTimes(1)
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('editable controls retain native touch behavior', () => {
++  const input = document.createElement('input')
++  source.appendChild(input)
++  expect(touch('touchstart', 50, input).defaultPrevented).toBe(false)
++  expect(jest.getTimerCount()).toBe(0)
++})
++
++test('hit tests receive the actual nested pointer target instead of its zone ancestor', () => {
++  const form = document.createElement('form')
++  zone.appendChild(form)
++  document.elementFromPoint = () => form
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops.mock.calls[0][0].event.target).toBe(form)
++})
++
++test('an overlay outside the candidate blocks an otherwise matching rectangle', () => {
++  document.elementFromPoint = () => source
++  touch('touchstart')
++  jest.advanceTimersByTime(400)
++  touch('touchend')
++  expect(drops).not.toHaveBeenCalled()
++})
++
++test('source adapters can reject long presses on nested action buttons', () => {
++  source.className = 'actions'
++  const button = document.createElement('button')
++  source.appendChild(button)
++  registry.registerDragSource({ selector: '.actions', onDragStart: ({ event }) => {
++    expect(event.target).toBe(button)
++    if (event.target.closest('button')) { event.preventDefault(); return false }
++    event.dataTransfer.setData('test', JSON.stringify({ kind: 'creative', ids: ['1'] }))
++  } })
++  touch('touchstart', 50, button)
++  jest.advanceTimersByTime(400)
++  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
++  expect(drops).not.toHaveBeenCalled()
++})
+diff --git a/engines/collavre/app/javascript/lib/dnd/touch_bridge.js b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+new file mode 100644
+index 0000000..9ccd99b
+--- /dev/null
++++ b/engines/collavre/app/javascript/lib/dnd/touch_bridge.js
+@@ -0,0 +1,106 @@
++import TouchDragHandler from '../touch_drag'
++
++// Feed touch input through the same DOM events as native dragging so source
++// serialization, target policy, previews and business commands have one owner.
++export function createTouchBridge({ root, registry }) {
++  const document = root.ownerDocument || root
++  const container = root.nodeType === 9 ? document.documentElement : root
++  let source = null
++  let dataTransfer = null
++  let lastTarget = null
++  let tapTarget = null
++
++  function dispatch(type, target, point = {}) {
++    const event = new Event(type, { bubbles: true, cancelable: true })
++    Object.assign(event, { dataTransfer, clientX: point.clientX ?? 0,
++      clientY: point.clientY ?? 0, shiftKey: false })
++    target.dispatchEvent(event)
++    return event
++  }
++
++  function finish() {
++    if (source) dispatch('dragend', source)
++    source = null
++    dataTransfer = null
++    lastTarget = null
++  }
++
++  function targetAtPoint(el, point) {
++    const actual = document.elementFromPoint?.(point.clientX, point.clientY)
++    return actual ? (el.contains(actual) ? actual : null) : el
++  }
++
++  const handler = new TouchDragHandler({
++    container,
++    singleElement: true,
++    canStart(touch) {
++      if (!registry.getDragSource(touch.target)) return false
++      // Text editing keeps native focus/selection; other accepted sources retain
++      // their normal click when the gesture ends before the long press.
++      if (touch.target.closest('input, textarea, select, [contenteditable="true"]')) return false
++      tapTarget = touch.target
++      return true
++    },
++    onTap() {
++      if (tapTarget?.isConnected) tapTarget.click()
++      tapTarget = null
++    },
++    getDropTargets: () => registry.getDropTargets(),
++    autoScroll: true,
++    scrollContainer(point, target) {
++      let el = target || document.elementFromPoint?.(point.clientX, point.clientY)
++      while (el) {
++        const overflow = document.defaultView.getComputedStyle(el).overflowY
++        if (/(auto|scroll)/.test(overflow) && el.scrollHeight > el.clientHeight) return el
++        el = el.parentElement
++      }
++      return document.scrollingElement
++    },
++    onDragStart(_items, touch) {
++      source = registry.getDragSource(touch.target)
++      if (!source) return false
++      const values = new Map()
++      dataTransfer = {
++        effectAllowed: 'all', dropEffect: 'none',
++        get types() { return [...values.keys()] },
++        setData(type, value) { values.set(type, String(value)) },
++        getData(type) { return values.get(type) || '' },
++        clearData(type) { type ? values.delete(type) : values.clear() },
++        setDragImage() {},
++      }
++      const event = dispatch('dragstart', touch.target, touch)
++      if (event.defaultPrevented || !dataTransfer.types.length) {
++        finish()
++        return false
++      }
++    },
++    hitTest(el, point) {
++      const target = targetAtPoint(el, point)
++      if (!target) return null
++      if (lastTarget && lastTarget !== target) dispatch('dragleave', lastTarget, point)
++      lastTarget = target
++      return dispatch('dragover', target, point).defaultPrevented ? 'into' : null
++    },
++    onTargetChange(el, point) {
++      if (!el && lastTarget) {
++        dispatch('dragleave', lastTarget, point)
++        lastTarget = null
++      }
++    },
++    onDrop(el, point) {
++      try {
++        const target = targetAtPoint(el, point)
++        if (target) dispatch('drop', target, point)
++      } finally { finish() }
++    },
++    onCancel: finish,
++  })
++
++  return {
++    refreshDropTargets: () => handler.refreshDropTargets(),
++    destroy() {
++      finish()
++      handler.destroy()
++    },
++  }
++}
+diff --git a/engines/collavre/app/javascript/lib/touch_drag.js b/engines/collavre/app/javascript/lib/touch_drag.js
+index b1efb7f..bf43162 100644
+--- a/engines/collavre/app/javascript/lib/touch_drag.js
++++ b/engines/collavre/app/javascript/lib/touch_drag.js
+@@ -15,8 +15,15 @@
+  *     onDrop(targetEl) {},              // called when dropped on a valid target
+  *     onCancel() {},
+  *     proxyContent(items) { return '...' }  // HTML for the drag proxy badge
++ *     getDropTargets() {},              // optional live target resolver
++ *     hitTest(el, point, previousHit) {}, // null rejects; otherwise domain hit
++ *     onTargetChange(el, { hit, clientX, clientY }) {},
++ *     autoScroll: true,                 // opt in to continuous edge scrolling
++ *     scrollContainer(point, target) {}, // element or resolver; defaults to container
+  *   })
+  *
++ *   // onDrop also receives { hit, clientX, clientY } as a second argument.
++ *   td.refreshDropTargets() // after asynchronous folder expansion
+  *   td.destroy()  // cleanup
+  */
+ 
+@@ -38,7 +45,15 @@ export default class TouchDragHandler {
+     this.onDrop = opts.onDrop
+     this.onCancel = opts.onCancel
+     this.onTap = opts.onTap
++    this.canStart = opts.canStart
+     this.proxyContent = opts.proxyContent
++    this.getDropTargets = opts.getDropTargets ?? (() => document.querySelectorAll(this.dropTargetSelector))
++    this.hitTest = opts.hitTest
++    this.onTargetChange = opts.onTargetChange
++    this.autoScroll = opts.autoScroll ?? false
++    this.scrollContainer = opts.scrollContainer ?? this.container
++    this.scrollEdge = opts.scrollEdge ?? 40
++    this.scrollSpeed = opts.scrollSpeed ?? 12
+ 
+     // State
+     this._timer = null
+@@ -47,6 +62,9 @@ export default class TouchDragHandler {
+     this._startX = 0
+     this._startY = 0
+     this._currentTarget = null
++    this._currentHit = null
++    this._point = null
++    this._frame = null
+ 
+     // Bind handlers
+     this._onTouchStart = this._handleTouchStart.bind(this)
+@@ -74,8 +92,9 @@ export default class TouchDragHandler {
+   _handleTouchStart(e) {
+     if (this._dragging) return
+ 
+-    const touch = e.touches[0]
++    const touch = e.touches?.[0]
+     if (!touch) return
++    if (this.canStart && !this.canStart(touch, e)) return
+ 
+     if (this.singleElement) {
+       // In single-element mode, the container itself is the draggable
+@@ -105,7 +124,7 @@ export default class TouchDragHandler {
+   }
+ 
+   _handleTouchMove(e) {
+-    const touch = e.touches[0]
++    const touch = e.touches?.[0]
+     if (!touch) return
+ 
+     if (this._dragging) {
+@@ -133,7 +152,7 @@ export default class TouchDragHandler {
+   _handleTouchEnd(e) {
+     if (this._timer) {
+       this._cancelLongPress()
+-      this.onTap?.(e)
++      if (e.type !== 'touchcancel') this.onTap?.(e)
+       return
+     }
+ 
+@@ -141,13 +160,16 @@ export default class TouchDragHandler {
+ 
+     e.preventDefault()
+ 
+-    if (this._currentTarget) {
+-      this.onDrop?.(this._currentTarget)
+-    } else {
+-      this.onCancel?.()
++    try {
++      if (e.type !== 'touchcancel') this.refreshDropTargets()
++      if (e.type !== 'touchcancel' && this._currentTarget) {
++        this.onDrop?.(this._currentTarget, { ...this._point, hit: this._currentHit })
++      } else {
++        this.onCancel?.()
++      }
++    } finally {
++      this._endDrag()
+     }
+-
+-    this._endDrag()
+   }
+ 
+   _handleContextMenu(e) {
+@@ -167,7 +189,7 @@ export default class TouchDragHandler {
+     if (!items || items.length === 0) return
+ 
+     // Let caller cancel
+-    if (this.onDragStart && this.onDragStart(items) === false) return
++    if (this.onDragStart && this.onDragStart(items, touch) === false) return
+ 
+     this._dragging = true
+ 
+@@ -183,12 +205,15 @@ export default class TouchDragHandler {
+     // Create floating proxy
+     this._proxy = document.createElement('div')
+     this._proxy.className = this.proxyClass
++    this._proxy.style.pointerEvents = 'none'
+     this._proxy.innerHTML = this.proxyContent?.(items) ?? `${items.length}`
+     document.body.appendChild(this._proxy)
+-    this._moveProxy(touch.clientX, touch.clientY)
++    this._moveDrag(touch)
++    if (this.autoScroll) this._scheduleScroll()
+   }
+ 
+   _moveDrag(touch) {
++    this._point = { clientX: touch.clientX, clientY: touch.clientY }
+     this._moveProxy(touch.clientX, touch.clientY)
+     this._updateDropTarget(touch.clientX, touch.clientY)
+   }
+@@ -210,31 +235,67 @@ export default class TouchDragHandler {
+     // elementFromPoint is unreliable on mobile when z-index, overlays,
+     // or reflow timing interfere with the result.
+     const PAD = 12 // extra padding for finger imprecision
+-    // Cache drop targets on first call (topic list doesn't change during drag)
+-    if (!this._cachedDropTargets) {
+-      this._cachedDropTargets = document.querySelectorAll(this.dropTargetSelector)
+-    }
+-    const targets = this._cachedDropTargets
++    // Resolve each time: expanding folders can add or remove targets mid-drag.
++    const targets = this.getDropTargets()
+     let found = null
++    let hit = null
+ 
+     for (const target of targets) {
+       const rect = target.getBoundingClientRect()
++      if (!target.isConnected || rect.width <= 0 || rect.height <= 0) continue
+       if (x >= rect.left - PAD && x <= rect.right + PAD &&
+           y >= rect.top - PAD && y <= rect.bottom + PAD) {
++        hit = this.hitTest ? this.hitTest(target, { clientX: x, clientY: y },
++          target === this._currentTarget ? this._currentHit : null) : 'into'
++        if (hit == null || hit === false) continue
+         found = target
+         break
+       }
+     }
+ 
+-    if (found !== this._currentTarget) {
++    if (found !== this._currentTarget || hit !== this._currentHit) {
+       this._currentTarget?.classList.remove(this.dragOverClass)
+       this._currentTarget = found
++      this._currentHit = found ? hit : null
+       this._currentTarget?.classList.add(this.dragOverClass)
++      this.onTargetChange?.(found, { clientX: x, clientY: y, hit: this._currentHit })
++    }
++  }
++
++  // Call after asynchronous folder expansion, even if the finger has not moved.
++  refreshDropTargets() {
++    if (this._dragging && this._point) {
++      this._updateDropTarget(this._point.clientX, this._point.clientY)
+     }
+   }
+ 
++  _scheduleScroll() {
++    this._frame = requestAnimationFrame(() => {
++      this._frame = null
++      if (!this._dragging) return
++      const container = typeof this.scrollContainer === 'function'
++        ? this.scrollContainer(this._point, this._currentTarget) : this.scrollContainer
++      if (container && this._point) {
++        const doc = container.ownerDocument
++        const rect = container === doc.scrollingElement
++          ? { top: 0, left: 0, right: doc.defaultView.innerWidth, bottom: doc.defaultView.innerHeight }
++          : container.getBoundingClientRect()
++        const { clientX: x, clientY: y } = this._point
++        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
++          const distance = y < rect.top + this.scrollEdge ? y - rect.top - this.scrollEdge
++            : y > rect.bottom - this.scrollEdge ? y - rect.bottom + this.scrollEdge : 0
++          container.scrollTop += Math.round(distance / this.scrollEdge * this.scrollSpeed)
++        }
++      }
++      this.refreshDropTargets()
++      this._scheduleScroll()
++    })
++  }
++
+   _endDrag() {
+     this._dragging = false
++    if (this._frame !== null) cancelAnimationFrame(this._frame)
++    this._frame = null
+     this._cancelLongPress()
+ 
+     document.removeEventListener('contextmenu', this._onContextMenu, { capture: true })
+@@ -244,7 +305,10 @@ export default class TouchDragHandler {
+     if (this._currentTarget) {
+       this._currentTarget.classList.remove(this.dragOverClass)
+       this._currentTarget = null
++      this.onTargetChange?.(null, { ...this._point, hit: null })
+     }
++    this._currentHit = null
++    this._point = null
+ 
+     if (this._proxy) {
+       this._proxy.remove()
+@@ -252,7 +316,6 @@ export default class TouchDragHandler {
+       this._proxyHW = undefined
+       this._proxyHH = undefined
+     }
+-    this._cachedDropTargets = null
+   }
+ 
+   _cancelLongPress() {
