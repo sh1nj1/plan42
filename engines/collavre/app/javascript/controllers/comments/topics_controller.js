@@ -1461,7 +1461,11 @@ export default class extends Controller {
         this._loadTopicsVersion += 1
         this.cancelPendingSaveLastTopic()
         if (String(this._pendingPick?.topicId) === String(topicId)) this._pendingPick = null
-        const preservePreference = this.hasDeepLinkSelection
+        // A link only protects a distinct saved preference behind it. If both
+        // sources name the removed topic, releasing the link would otherwise
+        // expose that same dead preference and select it again.
+        const preservePreference = this.hasDeepLinkSelection &&
+            String(this.serverLastTopicId) !== String(topicId)
         this.releaseDeepLinkSelection(topicId)
         if (!preservePreference) {
             this.serverLastTopicId = ""

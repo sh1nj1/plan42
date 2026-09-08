@@ -169,6 +169,20 @@ describe('TopicsController topic strip scrolling', () => {
         expect(controller._explicitAllMessagesSelection).toBe(false)
     })
 
+    test('clears a moved preference hidden behind a deep link to the same topic', () => {
+        controller.creativeIdValue = '42'
+        controller.serverLastTopicId = '1'
+        controller.setOverrideTopicId('1')
+        controller.loadTopics = jest.fn()
+        const saveLastTopic = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+        controller.handleTopicMoved({ detail: { sourceCreativeId: '42', topicId: '1' } })
+
+        expect(controller.currentTopicId).toBe('')
+        expect(controller.serverLastTopicId).toBe('')
+        expect(saveLastTopic).not.toHaveBeenCalled()
+    })
+
     test('preserves the user scroll lock when moving an inactive topic away', () => {
         controller.creativeIdValue = '42'
         controller.serverLastTopicId = '1'
