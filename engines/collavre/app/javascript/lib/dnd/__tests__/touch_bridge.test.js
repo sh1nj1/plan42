@@ -188,13 +188,15 @@ test('registry acceptance rules also reject touch targets', () => {
   expect(drops).not.toHaveBeenCalled()
 })
 
-test('a quick tap retains the original nested button action', () => {
+test('a quick tap retains the native nested button action without a duplicate click', () => {
   const button = document.createElement('button')
   source.appendChild(button)
   const click = jest.fn()
   button.addEventListener('click', click)
-  touch('touchstart', 50, button)
-  touch('touchend', 50, button)
+  expect(touch('touchstart', 50, button).defaultPrevented).toBe(false)
+  expect(touch('touchend', 50, button).defaultPrevented).toBe(false)
+  expect(click).not.toHaveBeenCalled()
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   expect(click).toHaveBeenCalledTimes(1)
   expect(drops).not.toHaveBeenCalled()
 })
@@ -369,4 +371,64 @@ test('the closest drop zone wins across registries with the same root', () => {
     expect(onDrop).toHaveBeenCalledTimes(1)
     expect(drops).not.toHaveBeenCalled()
   } finally { nestedRegistry.destroy() }
+})
+
+test('a removed tap target cannot receive a stale click', () => {
+  const click = jest.fn()
+  source.addEventListener('click', click)
+  touch('touchstart')
+  source.remove()
+  document.documentElement.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true }))
+  expect(click).not.toHaveBeenCalled()
+})
+
+test('an overlay appearing during drop revalidation cancels the commit', () => {
+  touch('touchstart')
+  jest.advanceTimersByTime(400)
+  document.elementFromPoint = jest.fn().mockReturnValueOnce(zone).mockReturnValue(source)
+  touch('touchend')
+  expect(drops).not.toHaveBeenCalled()
+  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+})
+
+test('non-cancel keys do not interrupt a touch drag', () => {
+  touch('touchstart')
+  jest.advanceTimersByTime(400)
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+  touch('touchend')
+  expect(drops).toHaveBeenCalledTimes(1)
+})
+
+test('live targets include a registered root and exclude another document', () => {
+  const foreignDocument = document.implementation.createHTMLDocument('Other pane')
+  foreignDocument.body.innerHTML = '<div class="foreign"></div>'
+  const foreign = createDragDropRegistry({ root: foreignDocument, touch: false })
+  foreign.registerDropZone({ selector: '.foreign', accepts: ['creative'], onDrop: jest.fn() })
+  const local = createDragDropRegistry({ root: zone, touch: false })
+  local.registerDropZone({ selector: '.zone', accepts: ['creative'], onDrop: jest.fn() })
+  try {
+    expect(local.localDropTargets()).toEqual([zone])
+    expect(registry.getDropTargets()).toEqual([zone])
+  } finally { local.destroy(); foreign.destroy() }
+})
+
+test('normal swipes retain native scrolling and never start a delayed drag', () => {
+  expect(touch('touchstart', 50).defaultPrevented).toBe(false)
+  expect(touch('touchmove', 55).defaultPrevented).toBe(false)
+  expect(touch('touchmove', 80).defaultPrevented).toBe(false)
+  jest.advanceTimersByTime(500)
+  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+  expect(touch('touchend').defaultPrevented).toBe(false)
+  expect(drops).not.toHaveBeenCalled()
+})
+
+test('committed long presses suppress native movement and the compatibility click', () => {
+  const click = jest.fn()
+  source.addEventListener('click', click)
+  expect(touch('touchstart').defaultPrevented).toBe(false)
+  jest.advanceTimersByTime(400)
+  expect(touch('touchmove', 55).defaultPrevented).toBe(true)
+  expect(touch('touchend').defaultPrevented).toBe(true)
+  expect(click).not.toHaveBeenCalled()
+  expect(drops).toHaveBeenCalledTimes(1)
 })

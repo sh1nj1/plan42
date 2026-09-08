@@ -178,3 +178,43 @@ test('a selected item disappearing during the delay does not begin a drag', () =
   jest.advanceTimersByTime(400)
   expect(document.querySelector('.touch-drag-proxy')).toBeNull()
 })
+
+test('empty touch notifications and repeated starts do not create another gesture', () => {
+  const onDragStart = jest.fn()
+  setup({ onDragStart })
+  container.dispatchEvent(new TouchEvent('touchstart', { bubbles: true }))
+  container.dispatchEvent(new TouchEvent('touchmove', { bubbles: true }))
+  expect(jest.getTimerCount()).toBe(0)
+  start()
+  touch('touchstart')
+  expect(onDragStart).toHaveBeenCalledTimes(1)
+})
+
+test('viewport autoscroll uses the window edges and provides optional haptic feedback', () => {
+  Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.documentElement })
+  navigator.vibrate = jest.fn()
+  try {
+    setup({ autoScroll: true, scrollContainer: document.documentElement })
+    start(50, window.innerHeight - 5)
+    jest.advanceTimersByTime(32)
+    expect(document.documentElement.scrollTop).toBeGreaterThan(0)
+    expect(navigator.vibrate).toHaveBeenCalledWith(30)
+    touch('touchcancel')
+    handler.refreshDropTargets()
+  } finally {
+    delete document.scrollingElement
+    delete navigator.vibrate
+  }
+})
+
+test('a queued animation callback cannot restart scrolling after cancellation', () => {
+  let callback
+  const schedule = jest.spyOn(window, 'requestAnimationFrame').mockImplementation(fn => { callback = fn; return 7 })
+  setup({ autoScroll: true })
+  start()
+  handler.cancel()
+  callback()
+  expect(schedule).toHaveBeenCalledTimes(1)
+  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+  schedule.mockRestore()
+})

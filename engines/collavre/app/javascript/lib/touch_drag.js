@@ -18,6 +18,7 @@
  *     getDropTargets() {},              // optional live target resolver
  *     hitTest(el, point, previousHit) {}, // null rejects; otherwise domain hit
  *     onTargetChange(el, { hit, clientX, clientY }) {},
+ *     preserveNativeGestures: true,     // native taps/scroll until long press
  *     autoScroll: true,                 // opt in to continuous edge scrolling
  *     scrollContainer(point, target) {}, // element or resolver; defaults to container
  *   })
@@ -45,6 +46,7 @@ export default class TouchDragHandler {
     this.onDrop = opts.onDrop
     this.onCancel = opts.onCancel
     this.onTap = opts.onTap
+    this.preserveNativeGestures = opts.preserveNativeGestures ?? false
     this.canStart = opts.canStart
     this.proxyContent = opts.proxyContent
     this.getDropTargets = opts.getDropTargets ?? (() => document.querySelectorAll(this.dropTargetSelector))
@@ -116,12 +118,9 @@ export default class TouchDragHandler {
     this._startX = touch.clientX
     this._startY = touch.clientY
 
-    // Prevent native long-press behavior (text selection, context menu,
-    // native drag preview) from stealing touch events after ~500ms.
-    // Scrolling is handled via touchmove: within tolerance we preventDefault,
-    // beyond tolerance we cancel the timer and the user can scroll normally
-    // on the next touch.
-    e.preventDefault()
+    // Legacy avatar-only consumers replay taps themselves. Delegated tree
+    // sources retain native taps and scrolling until the long press commits.
+    if (!this.preserveNativeGestures) e.preventDefault()
 
     this._cancelLongPress()
     this._timer = setTimeout(() => {
@@ -148,8 +147,8 @@ export default class TouchDragHandler {
       if (dx > this.moveTolerance || dy > this.moveTolerance) {
         // User intentionally scrolling — cancel long-press, let scroll happen
         this._cancelLongPress()
-      } else {
-        // Within tolerance — prevent scroll to keep the long-press alive
+      } else if (!this.preserveNativeGestures) {
+        // Legacy consumers opt into suppressing native gestures while waiting.
         e.preventDefault()
       }
     }
@@ -158,7 +157,7 @@ export default class TouchDragHandler {
   _handleTouchEnd(e) {
     if (this._timer) {
       this._cancelLongPress()
-      if (e.type !== 'touchcancel') this.onTap?.(e)
+      if (e.type !== 'touchcancel' && !this.preserveNativeGestures) this.onTap?.(e)
       return
     }
 

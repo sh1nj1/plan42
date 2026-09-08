@@ -8,7 +8,6 @@ function attachTouchBridge({ root, registry }) {
   let source = null
   let dataTransfer = null
   let lastTarget = null
-  let tapTarget = null
   let dragImage = null
 
   function dispatch(type, target, point = {}) {
@@ -38,17 +37,13 @@ function attachTouchBridge({ root, registry }) {
   const handler = new TouchDragHandler({
     container,
     singleElement: true,
+    preserveNativeGestures: true,
     canStart(touch) {
       if (!registry.getDragSource(touch.target)) return false
-      // Text editing keeps native focus/selection; other accepted sources retain
-      // their normal click when the gesture ends before the long press.
+      // Editing keeps native focus and selection. Other sources retain native
+      // taps and swipes until the long press commits; no synthetic click replay.
       if (touch.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return false
-      tapTarget = touch.target
       return true
-    },
-    onTap() {
-      if (tapTarget?.isConnected) tapTarget.click()
-      tapTarget = null
     },
     getDropTargets: () => registry.getDropTargets(),
     proxyContent: () => dragImage,
