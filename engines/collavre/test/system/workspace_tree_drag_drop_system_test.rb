@@ -127,7 +127,7 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
       "var entryPoint = pointOnRect(sourceCenter, targetRect)",
       "var entryPoint = rectCenter(targetRect); entryPoint.x += x_offset; entryPoint.y += y_offset;"
     )
-    page.execute_async_script(
+    page.driver.browser.execute_async_script(
       script, find("#workspace-creative-#{source.id}").native,
       find("#workspace-creative-#{target.id}").native, 150, [], 0, 0
     )
