@@ -139,6 +139,19 @@ test.each([
   }
 })
 
+test('context patch requests a JSON response', async () => {
+  const originalFetch = global.fetch
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: { get: () => 'application/json' } })
+  try {
+    expect(await controller._sendContextPatch('42', { context_ids: [10, 30] })).toBe(true)
+    expect(global.fetch).toHaveBeenCalledWith('/creatives/42/update_contexts', expect.objectContaining({
+      headers: expect.objectContaining({ Accept: 'application/json' }),
+    }))
+  } finally {
+    global.fetch = originalFetch
+  }
+})
+
 test('context patch reports network uncertainty and successful writes distinctly', async () => {
   const originalFetch = global.fetch
   global.fetch = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ ok: true })
