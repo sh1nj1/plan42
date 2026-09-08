@@ -412,6 +412,17 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       expect(saveSpy).not.toHaveBeenCalled()
       expect(controller._explicitAllMessagesSelection).toBe(true)
     })
+
+    test('keeps All Messages behind a deleted deep-linked topic', () => {
+      controller.serverLastTopicId = ''
+      controller._explicitAllMessagesSelection = true
+      controller.setOverrideTopicId('2')
+
+      controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller._explicitAllMessagesSelection).toBe(true)
+    })
   })
 
   // A pick can only outrank the response if it was made against the strip of

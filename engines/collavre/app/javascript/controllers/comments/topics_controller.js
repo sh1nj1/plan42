@@ -1458,9 +1458,12 @@ export default class extends Controller {
         this._loadTopicsVersion += 1
         this.cancelPendingSaveLastTopic()
         if (String(this._pendingPick?.topicId) === String(topicId)) this._pendingPick = null
+        const preservePreference = this.hasDeepLinkSelection
         this.releaseDeepLinkSelection(topicId)
-        this.serverLastTopicId = ""
-        this._explicitAllMessagesSelection = false
+        if (!preservePreference) {
+            this.serverLastTopicId = ""
+            this._explicitAllMessagesSelection = false
+        }
     }
 
     // Drop ?topic_id= when it names the topic being archived. It is a selection
