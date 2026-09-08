@@ -42,13 +42,7 @@ module Collavre
     # Left nil, each is resolved for this creative alone — correct, but a query
     # per node. Single-creative call sites take that path.
     def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [], can_delete_cron: nil)
-      progress_value = if params[:tags].present?
-        tag_ids = Array(params[:tags]).map(&:to_s)
-        creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
-      else
-        creative.progress
-      end
-
+      progress_value = creative_progress_value(creative)
       can_feedback = creative.has_permission?(Current.user, :feedback) if can_feedback.nil?
 
       content_tag(:div, class: "creative-row-end") do
@@ -73,6 +67,15 @@ module Collavre
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
       end
+    end
+
+    # A tag filter narrows the rollup to the matching subtree, so the row shows
+    # the filtered figure rather than the creative's overall progress.
+    def creative_progress_value(creative)
+      return creative.progress if params[:tags].blank?
+
+      tag_ids = Array(params[:tags]).map(&:to_s)
+      creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
     end
 
     def render_creative_comment_action(creative, can_feedback, unread_count)
