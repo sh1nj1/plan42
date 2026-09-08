@@ -1,4 +1,13 @@
-const PREVIEW_CLASSES = ['drag-over-top', 'drag-over-bottom', 'drag-over-child']
+// The hit test speaks the move vocabulary the server accepts (up/down/child);
+// the stylesheet speaks the presentation vocabulary (top/bottom/child). Keeping
+// the translation here is what stops a preview from adding a class the cleanup
+// below has never heard of.
+const PREVIEW_CLASS_BY_DIRECTION = {
+  up: 'drag-over-top',
+  down: 'drag-over-bottom',
+  child: 'drag-over-child',
+}
+const PREVIEW_CLASSES = Object.values(PREVIEW_CLASS_BY_DIRECTION)
 
 export function workspaceItemFromRow(row) {
   return row?.closest?.('.creative-workspace-tree-item') || null
@@ -35,7 +44,9 @@ export function hasKnownWorkspaceCycle({ root, ids, targetItem, direction }) {
 }
 
 export function showWorkspaceDropPreview(row, direction) {
-  PREVIEW_CLASSES.forEach((className) => row.classList.remove(className))
-  row.classList.add(`drag-over-${direction}`)
-  return () => PREVIEW_CLASSES.forEach((className) => row.classList.remove(className))
+  const clearPreview = () => PREVIEW_CLASSES.forEach((className) => row.classList.remove(className))
+  clearPreview()
+  const className = PREVIEW_CLASS_BY_DIRECTION[direction]
+  if (className) row.classList.add(className)
+  return clearPreview
 }
