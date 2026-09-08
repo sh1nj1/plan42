@@ -1,5 +1,10 @@
 module Collavre
   module CreativesHelper
+    # `render_creative_progress` calls into this module, and host apps mount the
+    # engine's helpers one module at a time. Including it here keeps the row
+    # action available wherever the row itself is rendered.
+    include CreativeMoveHelper
+
     def render_tags(labels, class_name = nil, name_only = false)
       return "" if labels&.empty? or labels.nil?
 
