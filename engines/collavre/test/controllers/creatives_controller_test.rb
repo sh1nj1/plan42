@@ -302,6 +302,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-workspace-tree"
     assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-token-value]"
     assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-sequence-value]"
+    assert_select "[data-controller='workspace-tree'][data-workspace-tree-partial-failure-text-value=?]",
+      I18n.t("collavre.creatives.drag_drop.partial_failure")
     assert_select "[data-controller='last-visited-creative']", count: 0
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-last-visited-creative-visit-token][data-last-visited-creative-visit-sequence]"
@@ -730,6 +732,14 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     # later reloads, so the accessible name does not switch languages mid-session.
     assert_equal I18n.t("collavre.creatives.index.loading_creatives"),
       css_select("#creatives").first["data-creatives--tree-loading-text-value"]
+  end
+
+  test "index supplies localized drag and drop failure copy" do
+    get creatives_path(id: creatives(:childless_creative).id)
+
+    assert_response :success
+    assert_select "[data-creatives--drag-drop-partial-failure-text-value=?]",
+      I18n.t("collavre.creatives.drag_drop.partial_failure")
   end
 
   test "index renders an empty-state template outside the client-rendered tree" do

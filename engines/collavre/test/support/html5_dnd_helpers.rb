@@ -115,7 +115,19 @@ module Html5DndHelpers
       window.setTimeout(dragEnterTarget, step_delay);
     JS
 
-  def html5_drag_by_offset(source, target, x_offset, y_offset)
-    page.execute_script(HTML5_DRAG_DROP_SCRIPT, source.native, target.native, 500, [], x_offset, y_offset)
+  # Capybara runs its own copy of this script through `execute_async_script`, where
+  # Selenium appends the completion callback as the trailing argument. Driving it
+  # with the synchronous `execute_script` instead left `arguments[6]` undefined, so
+  # every drag closed with an uncaught `reading 'call'` TypeError in the browser
+  # console and Ruby resumed before the drop had even been dispatched.
+  def html5_drag_by_offset(source, target, x_offset, y_offset, step_delay: 500)
+    browser = page.driver.browser
+    # dragenter, dragover and dragleave are each a `setTimeout` apart, so the
+    # callback cannot fire until three delays have elapsed.
+    browser.manage.timeouts.script_timeout =
+      (step_delay * 3 / 1000.0) + Capybara.default_max_wait_time
+    browser.execute_async_script(
+      HTML5_DRAG_DROP_SCRIPT, source.native, target.native, step_delay, [], x_offset, y_offset
+    )
   end
 end

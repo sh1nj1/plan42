@@ -12,7 +12,6 @@ import {
   setRowParent,
   setRowRootState,
   setHasChildren,
-  setExpanded,
   syncParentHasChildren,
 } from './dom';
 import {
@@ -25,12 +24,16 @@ import {
 } from './state';
 import * as dragState from './state';
 import { createMoveContext, applyMove, revertMove } from './operations';
-import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/drag_drop';
+import * as moveOperations from './operations';
+import { reportPartialMove } from './move_feedback';
+import { expandBranchWithChildren } from '../branch_expansion';
+import { sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
 import { restoreTreeEmptyState } from '../../modules/creative_tree_empty_state';
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope';
+import { createDragDropRegistry } from '../../lib/dnd/registry';
 import { getVerticalDropPosition } from '../../lib/dnd/hit_test';
 import {
   DROP_COMPLETED_EVENT,
@@ -42,6 +45,46 @@ import {
 } from '../../lib/dnd/session';
 
 const coordPrecision = 5;
+export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
+
+let hoverExpandTimer = null;
+let hoverExpandTree = null;
+let hoverExpansionVersion = 0;
+const hoverExpandingTrees = new WeakSet();
+
+function clearHoverExpand() {
+  if (hoverExpandTimer) clearTimeout(hoverExpandTimer);
+  hoverExpandTimer = null;
+  hoverExpandTree = null;
+  hoverExpansionVersion += 1;
+}
+
+function scheduleHoverExpand(tree, position) {
+  if (position !== 'child') {
+    clearHoverExpand();
+    return;
+  }
+
+  const row = asTreeRow(tree);
+  if (!row?.hasAttribute('has-children') || row.hasAttribute('expanded')) {
+    clearHoverExpand();
+    return;
+  }
+  if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) return;
+
+  clearHoverExpand();
+  const expansionVersion = hoverExpansionVersion;
+  hoverExpandTree = tree;
+  hoverExpandTimer = setTimeout(() => {
+    hoverExpandTimer = null;
+    hoverExpandTree = null;
+    hoverExpandingTrees.add(tree);
+    expandBranchWithChildren(row, getChildrenContainer(row), {
+      isCurrent: () => expansionVersion === hoverExpansionVersion,
+    })
+      .finally(() => hoverExpandingTrees.delete(tree));
+  }, CREATIVE_TREE_EXPAND_DELAY_MS);
+}
 
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
@@ -248,13 +291,13 @@ function getDraggedContext(event, data) {
   const transfer = event.dataTransfer;
   const hasTrustedPayload = getDragKind(transfer) === 'creative';
   const parsed = data?.kind === 'creative'
-    ? { ...data.payload, selectedCreativeIds: data.ids }
+    ? { ...data.payload, creativeId: String(data.payload.creativeId), selectedCreativeIds: data.ids }
     : null;
   const wasRejectedPayload = hasTrustedPayload && !parsed;
 
   if (existing) {
-    if (parsed && parsed.creativeId === existing.creativeId && parsed.treeId === existing.treeId) {
-      return { draggedState: existing, isExternal: false, wasRejectedPayload };
+    if (parsed && parsed.creativeId === String(existing.creativeId) && parsed.treeId === existing.treeId) {
+      return { draggedState: { ...existing, ...parsed }, isExternal: false, wasRejectedPayload };
     }
 
     if (parsed) {
@@ -309,7 +352,7 @@ export function handleDragStart(event) {
     sourceWindowId: windowId,
     selectedCreativeIds,
   });
-  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.effectAllowed = 'copyMove';
 
   // Custom bundle drag image for multi-select
   if (selectedCreativeIds.length > 1) {
@@ -332,12 +375,13 @@ export function handleDragStart(event) {
   });
 }
 
-export function handleDragOver(event) {
+export function handleDragOver(event, intent = null) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   const lastRow = getLastDragOverRow();
   if (lastRow && lastRow !== tree) {
     clearDragHighlight(lastRow);
     setLastDragOverRow(null);
+    clearHoverExpand();
   }
   if (!tree || tree.draggable === false) return;
 
@@ -356,17 +400,21 @@ export function handleDragOver(event) {
   if (dragKind !== 'creative' && !hasDraggedState()) return;
 
   event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
+  event.dataTransfer.dropEffect = event.shiftKey ? 'copy' : 'move';
 
-  const previousPosition = getLastDragOverRow() === tree
-    ? dragState.getLastDragOverPosition?.() || null
-    : null;
+  const previousPosition = getLastDragOverRow() === tree ? dragState.getLastDragOverPosition() : null;
 
-  const position = getVerticalDropPosition({
+  const position = intent || getVerticalDropPosition({
     clientY: event.clientY,
     rect: tree.getBoundingClientRect(),
     previousPosition,
   });
+
+  setLastDragOverRow(tree, position);
+  if (!position) {
+    clearDragHighlight(tree);
+    return;
+  }
 
   if (position === 'up') {
     tree.classList.add('drag-over', 'drag-over-top');
@@ -379,6 +427,8 @@ export function handleDragOver(event) {
     tree.classList.remove('drag-over-top', 'drag-over-bottom');
   }
 
+  scheduleHoverExpand(tree, position);
+
   if (event.shiftKey) {
     showLinkHover(event.clientX, event.clientY);
   } else {
@@ -389,11 +439,13 @@ export function handleDragOver(event) {
 }
 
 function resetDrag() {
+  clearHoverExpand();
   resetDraggedState();
   hideLinkHover();
 }
 
-export function handleDrop(event) {
+export function handleDrop(event, intent = null, { partialFailureMessage = '' } = {}) {
+  clearHoverExpand();
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
 
@@ -446,17 +498,13 @@ export function handleDrop(event) {
     return;
   }
 
-  const previewedDirection = targetTree && getLastDragOverRow() === targetTree
-    ? dragState.getLastDragOverPosition?.() || null
-    : null;
+  const previewedDirection = intent || (getLastDragOverRow() === targetTree
+    ? dragState.getLastDragOverPosition() : null);
 
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
 
-  const { draggedState, isExternal, wasRejectedPayload } = getDraggedContext(
-    event,
-    dragData
-  );
+  const { draggedState, isExternal, wasRejectedPayload } = getDraggedContext(event, dragData);
 
   if (!targetTree || targetTree.draggable === false) {
     resetDrag();
@@ -497,13 +545,12 @@ export function handleDrop(event) {
     return;
   }
 
-  if (isMultiDrag) {
-    const targetCreativeId = targetRow.getAttribute('creative-id');
-    if (draggedIds.includes(String(targetCreativeId))) {
-      resetDrag();
-      return;
-    }
+  if (draggedIds.includes(String(targetRow.getAttribute('creative-id')))) {
+    resetDrag();
+    return;
+  }
 
+  if (isMultiDrag) {
     if (typeof document !== 'undefined') {
       const selectedRows = draggedIds
         .map((id) => {
@@ -526,54 +573,25 @@ export function handleDrop(event) {
     }
   }
 
-  let direction = previewedDirection;
+  const direction = previewedDirection || getVerticalDropPosition({
+    clientY: event.clientY,
+    rect: targetTree.getBoundingClientRect(),
+  });
   if (!direction) {
-    // Fallback calculation
-    direction = getVerticalDropPosition({
-      clientY: event.clientY,
-      rect: targetTree.getBoundingClientRect(),
-    });
-    if (!direction) {
-      resetDrag();
-      return;
-    }
-  }
-
-  if (event.shiftKey) {
-    const snapshot = { ...draggedState };
     resetDrag();
-
-    if (isMultiDrag) {
-      // Handle multiple linked creatives
-      const promises = draggedIds.map(draggedId =>
-        sendLinkedCreative({
-          draggedId,
-          targetId: targetId.replace('creative-', ''),
-          direction,
-        })
-      );
-
-      Promise.all(promises)
-        .then(() => window.location.reload())
-        .catch((error) => console.error('Failed to create linked creatives', error));
-    } else {
-      // Handle single linked creative
-      sendLinkedCreative({
-        draggedId: snapshot.creativeId,
-        targetId: targetId.replace('creative-', ''),
-        direction,
-      })
-        .then(() => window.location.reload())
-        .catch((error) => console.error('Failed to create linked creative', error));
-    }
     return;
   }
+  if (hasKnownCreativeTreeCycle(draggedIds, targetRow, direction)) {
+    resetDrag();
+    return;
+  }
+  const mode = event.shiftKey ? 'link' : 'move';
 
   let moveContext = null;
   let newParentId = null;
   let draggedChildren = null;
 
-  if (draggedRow && !isMultiDrag) {
+  if (draggedRow && !isMultiDrag && !isExternal && mode === 'move') {
     draggedChildren = getChildrenContainer(draggedRow);
     moveContext = createMoveContext(
       resolvedDraggedState,
@@ -590,64 +608,55 @@ export function handleDrop(event) {
     }));
   }
 
-  const draggedNumericId = draggedState.creativeId;
-  const dropSignalDetails = isMultiDrag
-    ? null
-    : {
-      creativeId: draggedNumericId,
-      treeId: draggedState.treeId,
-      sourceWindowId: draggedState.sourceWindowId,
-      targetTreeId: targetId,
-      direction,
-    };
-
+  const dropSignalDetails = {
+    treeId: draggedState.treeId,
+    sourceWindowId: draggedState.sourceWindowId,
+    targetTreeId: targetId,
+    targetCreativeId: targetId.replace('creative-', ''),
+    direction,
+    mode,
+  };
   resetDrag();
 
-  const shouldReloadOnFinalize = isExternal && !moveContext;
-
-  const finalizeDrop = () => {
-    if (shouldReloadOnFinalize) {
-      window.location.reload();
+  return moveOperations.runMoveWithDomRecovery({
+    command: { ids: draggedIds, targetId: targetId.replace('creative-', ''), direction, mode },
+    moveContext,
+    attemptedParentId: newParentId,
+  }).then((result) => {
+    reportPartialMove(result, partialFailureMessage);
+    if (!result.ok) {
+      console.error('Creative move did not fully complete', result);
     }
-  };
+    if (result.succeededIds.length === 0) return result;
+    const detail = {
+      ...dropSignalDetails,
+      creativeId: result.succeededIds[0],
+      creativeIds: result.succeededIds,
+    };
+    if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail);
+    dispatchDropCompletion({ ...detail, context: 'target' });
+    return result;
+  }).catch((error) => {
+    // Only an unusable command or a synchronous transport failure lands here;
+    // the DOM is already restored, so all that is left is to say why.
+    console.error('Failed to update order', error);
+  });
+}
 
-  const reorderPayload = {
-    targetId: targetId.replace('creative-', ''),
-    direction,
-  };
+function hasKnownCreativeTreeCycle(ids, targetRow, direction) {
+  const movingIds = new Set(ids.map(String));
+  const targetId = targetRow.getAttribute('creative-id');
+  if (!targetId || movingIds.has(String(targetId))) return true;
 
-  if (isMultiDrag) {
-    reorderPayload.draggedIds = draggedIds;
-  } else {
-    reorderPayload.draggedId = draggedNumericId;
+  let parentId = direction === 'child' ? targetId : targetRow.getAttribute('parent-id');
+  const visited = new Set();
+  while (parentId && !visited.has(String(parentId))) {
+    const normalizedId = String(parentId);
+    if (movingIds.has(normalizedId)) return true;
+    visited.add(normalizedId);
+    parentId = getRowByCreativeId(normalizedId)?.getAttribute('parent-id') || null;
   }
-
-  sendNewOrder(reorderPayload)
-    .then((response) => {
-      if (!response.ok) {
-        if (moveContext) {
-          revertMove(moveContext, newParentId);
-        }
-        return;
-      }
-
-      if (isMultiDrag) {
-        window.location.reload();
-        return;
-      }
-
-      if (dropSignalDetails?.sourceWindowId) {
-        emitDropSignal(dropSignalDetails);
-        dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
-      }
-    })
-    .catch((error) => {
-      console.error('Failed to update order', error);
-      if (moveContext) {
-        revertMove(moveContext, newParentId);
-      }
-    })
-    .finally(finalizeDrop);
+  return false;
 }
 
 export function handleDragLeave(event) {
@@ -655,6 +664,7 @@ export function handleDragLeave(event) {
   if (!tree || tree.draggable === false) return;
   clearDragHighlight(tree);
   if (getLastDragOverRow() === tree) setLastDragOverRow(null);
+  if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) clearHoverExpand();
   hideLinkHover();
 }
 
@@ -681,4 +691,51 @@ export function registerGlobalHandlers() {
 
 export function hasActiveDrag() {
   return hasDraggedState();
+}
+
+// Keep domain commands and DOM recovery in this adapter; the registry owns
+// native event routing, hit intent and cleanup.
+export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) {
+  const localData = (transfer) => {
+    if (Array.from(transfer?.types || []).length || !hasDraggedState()) return null;
+    const { tree: _tree, row: _row, ...payload } = getDraggedState();
+    return { kind: 'creative', ids: resolveDraggedIds(payload), payload };
+  };
+  const registry = createDragDropRegistry({
+    getKind: (transfer) => getDragKind(transfer) || localData(transfer)?.kind || null,
+    readData: (transfer) => readDragData(transfer) || localData(transfer),
+  });
+  registry.registerDragSource({
+    selector: DRAGGABLE_SELECTOR,
+    onDragStart: ({ event }) => handleDragStart(event),
+    onDragEnd: () => {
+      clearDragHighlight(getLastDragOverRow());
+      resetDrag();
+    },
+  });
+  registry.registerDropZone({
+    selector: DRAGGABLE_SELECTOR,
+    accepts: ['creative', 'topic'],
+    hitTest: ({ el, event, kind, previousHit }) => {
+      if (el.draggable === false) return null;
+      if (kind === 'topic') return 'child';
+      return getVerticalDropPosition({
+        clientY: event.clientY,
+        rect: el.getBoundingClientRect(),
+        previousPosition: previousHit,
+      });
+    },
+    preview: ({ event, hit }) => {
+      handleDragOver(event, hit);
+      return () => handleDragLeave(event);
+    },
+    dropEffect: ({ event, kind }) => {
+      if (kind === 'topic') { hideLinkHover(); return 'move'; }
+      if (event.shiftKey) showLinkHover(event.clientX, event.clientY);
+      else hideLinkHover();
+      return event.shiftKey ? 'copy' : 'move';
+    },
+    onDrop: ({ event, hit }) => handleDrop(event, hit, { partialFailureMessage }),
+  });
+  return registry;
 }

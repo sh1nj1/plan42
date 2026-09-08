@@ -56,3 +56,14 @@ test('supports explicit ratios and validates geometry', () => {
   expect(getVerticalDropPosition({ clientY: 1, rect: { top: 'bad', height: 10 } }))
     .toBeNull();
 });
+
+test('keeps the child band reachable on a row shorter than the hysteresis floor', () => {
+  const rect = { top: 0, height: 28 };
+
+  // Entering from above holds "up" through the top of the row...
+  expect(getVerticalDropPosition({ clientY: 13, rect, previousPosition: 'up' })).toBe('up');
+  // ...and hands over to "child" at the halfway line rather than skipping it.
+  expect(getVerticalDropPosition({ clientY: 14, rect, previousPosition: 'up' })).toBe('child');
+  expect(getVerticalDropPosition({ clientY: 14, rect, previousPosition: 'down' })).toBe('child');
+  expect(getVerticalDropPosition({ clientY: 15, rect, previousPosition: 'down' })).toBe('down');
+});

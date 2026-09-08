@@ -38,6 +38,16 @@ module Creatives
       assert_empty nodes.first[:children]
     end
 
+    test "reports the real parent of a displayed top-level branch" do
+      parent = Creative.create!(user: @user, description: "Parent")
+      branch = Creative.create!(user: @user, parent: parent, description: "Displayed branch")
+
+      node = build_tree([ branch ]).first
+
+      assert_equal branch.id, node[:id]
+      assert_equal parent.id, node[:parent_id]
+    end
+
     test "keeps a childless root visible with its own metadata" do
       root_leaf = Creative.create!(user: @user, description: "<em>Root leaf</em>")
 
