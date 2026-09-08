@@ -29,52 +29,25 @@ import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
 import { restoreTreeEmptyState } from '../../modules/creative_tree_empty_state';
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope';
+import { getVerticalDropPosition } from '../../lib/dnd/hit_test';
+import {
+  DROP_COMPLETED_EVENT,
+  dispatchDropCompletion,
+  emitDropSignal,
+  ensureDragWindowId,
+  readDragWindowId,
+  readDropSignal,
+} from '../../lib/dnd/session';
 
-const childZoneRatio = 0.3;
 const coordPrecision = 5;
 
-const TRANSFER_MIME_TYPE = 'application/x-collavre-creative';
-const DRAG_TOKEN_STORAGE_KEY = 'collavre.dragToken';
-const DROP_SIGNAL_STORAGE_KEY = 'collavre.dragDropSignal';
-const WINDOW_ID_SESSION_KEY = 'collavre.dragWindowId';
 const INVALID_DROP_MESSAGE =
   'We could not verify that drop. Please refresh the page and try again.';
-const DROP_COMPLETED_EVENT = 'collavre:creative-drop-complete';
-
-let cachedDragToken;
-let cachedWindowId;
 
 function getRowByCreativeId(creativeId) {
   if (typeof document === 'undefined' || !creativeId) return null;
   return document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`);
-}
-
-function generateRandomIdentifier(context) {
-  const fallback = () =>
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-
-  if (typeof window === 'undefined') return fallback();
-
-  try {
-    const { crypto } = window;
-    if (crypto && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-  } catch (error) {
-    if (context) {
-      console.error(`Failed to access crypto API for ${context}`, error);
-    } else {
-      console.error('Failed to access crypto API for identifier generation', error);
-    }
-  }
-
-  return fallback();
-}
-
-function generateDragToken() {
-  if (typeof window === 'undefined') return null;
-
-  return generateRandomIdentifier('drag token generation');
 }
 
 function collectSelectedCreativeIds(activeCreativeId) {
@@ -125,88 +98,6 @@ function resolveDraggedIds(state) {
   return result;
 }
 
-function readStoredDragToken() {
-  if (cachedDragToken) return cachedDragToken;
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const storage = window.localStorage;
-    if (!storage) return null;
-
-    const storedToken = storage.getItem(DRAG_TOKEN_STORAGE_KEY);
-    if (storedToken) {
-      cachedDragToken = storedToken;
-    }
-
-    return cachedDragToken || null;
-  } catch (error) {
-    console.error('Failed to read drag session token from storage', error);
-    return null;
-  }
-}
-
-function ensureDragSessionToken() {
-  if (typeof window === 'undefined') return null;
-
-  const existing = readStoredDragToken();
-  if (existing) return existing;
-
-  try {
-    const storage = window.localStorage;
-    if (!storage) return null;
-
-    const freshToken = generateDragToken();
-    if (!freshToken) return null;
-
-    storage.setItem(DRAG_TOKEN_STORAGE_KEY, freshToken);
-    cachedDragToken = freshToken;
-    return freshToken;
-  } catch (error) {
-    console.error('Failed to persist drag session token', error);
-    return null;
-  }
-}
-
-function readWindowId() {
-  if (cachedWindowId) return cachedWindowId;
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const storage = window.sessionStorage;
-    if (!storage) return null;
-
-    const stored = storage.getItem(WINDOW_ID_SESSION_KEY);
-    if (stored) {
-      cachedWindowId = stored;
-    }
-    return cachedWindowId || null;
-  } catch (error) {
-    console.error('Failed to read drag window id from session storage', error);
-    return cachedWindowId || null;
-  }
-}
-
-function ensureWindowId() {
-  if (typeof window === 'undefined') return null;
-
-  const existing = readWindowId();
-  if (existing) return existing;
-
-  const freshId = generateRandomIdentifier('drag window id generation');
-  if (!freshId) return null;
-
-  try {
-    const storage = window.sessionStorage;
-    storage?.setItem(WINDOW_ID_SESSION_KEY, freshId);
-    cachedWindowId = freshId;
-    return freshId;
-  } catch (error) {
-    console.error('Failed to persist drag window id', error);
-    cachedWindowId = freshId;
-    return freshId;
-  }
-}
-
 function resolveDraggedStateFromDom(state) {
   if (!state) return null;
   if (typeof document === 'undefined') return null;
@@ -250,105 +141,6 @@ function resolveTargetTree(targetTreeId) {
 
 function relaxedCoord(value) {
   return Math.round(value / coordPrecision) * coordPrecision;
-}
-
-function serializeDragState(state, sessionToken) {
-  if (!sessionToken) return null;
-
-  try {
-    return JSON.stringify({
-      creativeId: state.creativeId,
-      treeId: state.treeId,
-      parentId: state.parentId,
-      level: state.level,
-      isRoot: state.isRoot,
-      token: sessionToken,
-      sourceWindowId: state.sourceWindowId,
-      selectedCreativeIds: Array.isArray(state.selectedCreativeIds)
-        ? state.selectedCreativeIds
-        : [],
-    });
-  } catch (error) {
-    console.error('Failed to serialize drag state', error);
-    return null;
-  }
-}
-
-function parseDragState(data) {
-  if (!data) return null;
-
-  try {
-    const parsed = JSON.parse(data);
-    if (parsed && parsed.creativeId && parsed.treeId) {
-      const expectedToken = readStoredDragToken();
-      if (!expectedToken || parsed.token !== expectedToken) {
-        return null;
-      }
-
-      const {
-        creativeId,
-        treeId,
-        parentId = null,
-        level,
-        isRoot,
-        sourceWindowId = null,
-        selectedCreativeIds = [],
-      } = parsed;
-      const normalizedSelected = Array.isArray(selectedCreativeIds)
-        ? selectedCreativeIds.map((id) => String(id)).filter((value, index, array) => array.indexOf(value) === index)
-        : [];
-      return {
-        creativeId,
-        treeId,
-        parentId,
-        level,
-        isRoot,
-        sourceWindowId,
-        selectedCreativeIds: normalizedSelected,
-      };
-    }
-  } catch (error) {
-    console.error('Failed to parse drag data', error);
-  }
-
-  return null;
-}
-
-function emitDropSignal(detail) {
-  if (typeof window === 'undefined') return;
-
-  const sessionToken = readStoredDragToken();
-  if (!sessionToken) return;
-
-  try {
-    const storage = window.localStorage;
-    if (!storage) return;
-
-    const payload = JSON.stringify({
-      ...detail,
-      sessionToken,
-      nonce: generateRandomIdentifier('drag drop signal'),
-    });
-
-    storage.setItem(DROP_SIGNAL_STORAGE_KEY, payload);
-    storage.removeItem(DROP_SIGNAL_STORAGE_KEY);
-  } catch (error) {
-    console.error('Failed to broadcast drop completion signal', error);
-  }
-}
-
-function dispatchDropCompletion(detail) {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.dispatchEvent(
-      new CustomEvent(DROP_COMPLETED_EVENT, {
-        detail,
-      })
-    );
-  } catch (error) {
-    console.error('Failed to dispatch creative drop completion event', error);
-  }
 }
 
 function removeDroppedCreative({ creativeId, treeId }) {
@@ -421,27 +213,8 @@ function syncSourceWindowDrop(detail) {
 }
 
 function handleStorageChange(event) {
-  if (!event || event.key !== DROP_SIGNAL_STORAGE_KEY || !event.newValue) {
-    return;
-  }
-
-  let payload;
-  try {
-    payload = JSON.parse(event.newValue);
-  } catch (error) {
-    console.error('Failed to parse drop completion payload', error);
-    return;
-  }
-
-  const expectedToken = readStoredDragToken();
-  if (!expectedToken || payload.sessionToken !== expectedToken) {
-    return;
-  }
-
-  const windowId = readWindowId();
-  if (!windowId || payload.sourceWindowId !== windowId) {
-    return;
-  }
+  const payload = readDropSignal(event);
+  if (!payload) return;
 
   const { creativeId } = payload;
   if (!creativeId) return;
@@ -459,7 +232,7 @@ function handleDropCompletionEvent(event) {
   const { creativeId, treeId = null, sourceWindowId = null, context } = detail;
   if (!creativeId || !context) return;
 
-  const windowId = readWindowId();
+  const windowId = readDragWindowId();
   if (!windowId || sourceWindowId !== windowId) {
     return;
   }
@@ -472,13 +245,9 @@ function handleDropCompletionEvent(event) {
 function getDraggedContext(event) {
   const existing = getDraggedState();
   const transfer = event.dataTransfer;
-  const transferTypes = transfer?.types
-    ? new Set(Array.from(transfer.types))
-    : new Set();
-  const hasTrustedPayload = transferTypes.has(TRANSFER_MIME_TYPE);
-
-  const rawData = hasTrustedPayload ? transfer.getData(TRANSFER_MIME_TYPE) : null;
-  const parsed = parseDragState(rawData);
+  const hasTrustedPayload = getDragKind(transfer) === 'creative';
+  const data = readDragData(transfer);
+  const parsed = data?.kind === 'creative' ? data.payload : null;
   const wasRejectedPayload = hasTrustedPayload && !parsed;
 
   if (existing) {
@@ -524,7 +293,7 @@ export function handleDragStart(event) {
   if (!tree || tree.draggable === false) return;
   const row = asTreeRow(tree);
   if (!row) return;
-  const windowId = ensureWindowId();
+  const windowId = ensureDragWindowId();
   const creativeId = row.getAttribute('creative-id');
   const selectedCreativeIds = collectSelectedCreativeIds(creativeId);
   setDraggedState({
@@ -545,12 +314,20 @@ export function handleDragStart(event) {
     attachBundleDragImage(event, selectedCreativeIds.length, getCreativeText(creativeId));
   }
 
-  const sessionToken = ensureDragSessionToken();
-  const serialized = serializeDragState(getDraggedState(), sessionToken);
-  if (serialized) {
-    event.dataTransfer.setData(TRANSFER_MIME_TYPE, serialized);
-    event.dataTransfer.setData('text/plain', serialized);
-  }
+  const state = getDraggedState();
+  writeDragData(event.dataTransfer, {
+    kind: 'creative',
+    ids: selectedCreativeIds,
+    payload: {
+      creativeId: state.creativeId,
+      treeId: state.treeId,
+      parentId: state.parentId,
+      level: state.level,
+      isRoot: state.isRoot,
+      sourceWindowId: state.sourceWindowId,
+      selectedCreativeIds: state.selectedCreativeIds,
+    },
+  });
 }
 
 export function handleDragOver(event) {
@@ -561,8 +338,10 @@ export function handleDragOver(event) {
   }
   if (!tree || tree.draggable === false) return;
 
+  const dragKind = getDragKind(event.dataTransfer);
+
   // Topic move drag: always show as child drop target
-  if (event.dataTransfer.types.includes('application/x-topic-move')) {
+  if (dragKind === 'topic') {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
     tree.classList.add('drag-over', 'drag-over-child', 'child-drop-indicator-active');
@@ -571,40 +350,26 @@ export function handleDragOver(event) {
     return;
   }
 
+  if (dragKind !== 'creative') return;
+
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
 
-  const rect = tree.getBoundingClientRect();
-  const height = rect.height;
-  const relY = event.clientY - rect.top;
+  let previousPosition = null;
+  if (tree.classList.contains('drag-over-top')) previousPosition = 'up';
+  else if (tree.classList.contains('drag-over-child')) previousPosition = 'child';
+  else if (tree.classList.contains('drag-over-bottom')) previousPosition = 'down';
 
-  // Hysteresis buffer (12% of height or at least 12px to handle small items)
-  // Increased from 5% to provide more stability against tremors
-  const hysteresis = Math.max(12, height * 0.12);
-  const topLimit = height * childZoneRatio;
-  const bottomLimit = height * (1 - childZoneRatio);
+  const position = getVerticalDropPosition({
+    clientY: event.clientY,
+    rect: tree.getBoundingClientRect(),
+    previousPosition,
+  });
 
-  const isTop = tree.classList.contains('drag-over-top');
-  const isBottom = tree.classList.contains('drag-over-bottom');
-  const isChild = tree.classList.contains('drag-over-child');
-
-  let effectiveTop = topLimit;
-  let effectiveBottom = bottomLimit;
-
-  // Apply hysteresis based on current state to create "stickiness"
-  if (isTop) {
-    effectiveTop += hysteresis;
-  } else if (isChild) {
-    effectiveTop -= hysteresis;
-    effectiveBottom += hysteresis;
-  } else if (isBottom) {
-    effectiveBottom -= hysteresis;
-  }
-
-  if (relY < effectiveTop) {
+  if (position === 'up') {
     tree.classList.add('drag-over', 'drag-over-top');
     tree.classList.remove('drag-over-bottom', 'drag-over-child', 'child-drop-indicator-active');
-  } else if (relY > effectiveBottom) {
+  } else if (position === 'down') {
     tree.classList.add('drag-over', 'drag-over-bottom');
     tree.classList.remove('drag-over-top', 'drag-over-child', 'child-drop-indicator-active');
   } else {
@@ -631,14 +396,15 @@ export function handleDrop(event) {
   const targetId = targetTree ? targetTree.id : '';
 
   // Handle topic move drop
-  const topicMoveData = event.dataTransfer.getData('application/x-topic-move');
-  if (topicMoveData && targetTree) {
+  const dragData = readDragData(event.dataTransfer);
+  if (dragData?.kind === 'topic' && targetTree) {
     event.preventDefault();
     clearDragHighlight(targetTree);
     clearDragHighlight(getLastDragOverRow());
 
     try {
-      const { topicId, sourceCreativeId } = JSON.parse(topicMoveData);
+      const topicId = dragData.ids[0];
+      const { sourceCreativeId } = dragData.payload;
       const targetCreativeId = targetId.replace('creative-', '');
 
       if (sourceCreativeId === targetCreativeId) return;
@@ -764,18 +530,13 @@ export function handleDrop(event) {
     direction = 'child';
   } else {
     // Fallback calculation
-    const rect = targetTree.getBoundingClientRect();
-    const height = rect.height;
-    const relY = event.clientY - rect.top;
-    const topLimit = height * childZoneRatio;
-    const bottomLimit = height * (1 - childZoneRatio);
-
-    if (relY < topLimit) {
-      direction = 'up';
-    } else if (relY > bottomLimit) {
-      direction = 'down';
-    } else {
-      direction = 'child';
+    direction = getVerticalDropPosition({
+      clientY: event.clientY,
+      rect: targetTree.getBoundingClientRect(),
+    });
+    if (!direction) {
+      resetDrag();
+      return;
     }
   }
 
