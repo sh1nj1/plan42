@@ -76,6 +76,17 @@ test('uses MIME types to ignore unsupported drags during dragover', () => {
   expect(tree.classList.contains('drag-over')).toBe(false);
 });
 
+test('allows same-window dragover when storage prevented MIME writes', () => {
+  const { tree, target } = mountTarget();
+  setDraggedState({ creativeId: '1' });
+  const event = dragEvent(target, []);
+
+  handleDragOver(event);
+
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(tree.classList.contains('drag-over-child')).toBe(true);
+});
+
 test('clears the previous target and intent when dragover changes rows', () => {
   const { target } = mountTarget();
   const previous = document.createElement('div');
