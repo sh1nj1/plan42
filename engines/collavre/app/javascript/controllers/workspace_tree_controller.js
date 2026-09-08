@@ -22,6 +22,7 @@ export default class extends Controller {
 
   static values = {
     url: String,
+    moveText: String,
     lastVisitedCreativeUrl: String,
     lastVisitedCreativeVisitToken: String,
     lastVisitedCreativeVisitSequence: Number,
@@ -238,6 +239,13 @@ export default class extends Controller {
     }
     link.addEventListener('click', (event) => this.selectNode(event))
     row.appendChild(link)
+    const moveButton = document.createElement('button')
+    moveButton.type = 'button'
+    moveButton.className = 'creative-action-btn'
+    moveButton.dataset.creativeMoveId = String(node.id)
+    moveButton.setAttribute('aria-haspopup', 'dialog')
+    moveButton.textContent = this.moveTextValue
+    row.appendChild(moveButton)
     item.appendChild(row)
 
     if (hasChildren && expanded) {

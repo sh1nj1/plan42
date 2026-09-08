@@ -12,7 +12,16 @@ describe('WorkspaceTreeController', () => {
   let fetchMock
   let preventNavigation
 
-
+  test('renders localized native move buttons for workspace creative placements', () => {
+    const buttons = [...controller.treeTarget.querySelectorAll('[data-creative-move-id]')]
+    expect(buttons.map(button => button.dataset.creativeMoveId)).toEqual(['1', '2'])
+    buttons.forEach(button => {
+      expect(button.tagName).toBe('BUTTON')
+      expect(button.type).toBe('button')
+      expect(button.textContent).toBe('이동…')
+      expect(button.getAttribute('aria-haspopup')).toBe('dialog')
+    })
+  })
 
   beforeEach(async () => {
     window.localStorage.clear()
@@ -56,6 +65,7 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="이동…"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
@@ -455,6 +465,7 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="이동…"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
