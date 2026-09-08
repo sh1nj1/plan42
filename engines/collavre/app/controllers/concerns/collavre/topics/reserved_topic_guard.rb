@@ -8,7 +8,8 @@ module Collavre
       included do
         before_action :reject_reserved_topic_name!, only: :create
         before_action :reject_reserved_topic_mutation!,
-                      only: %i[update destroy move archive unarchive set_primary_agent]
+                      only: %i[update destroy move archive unarchive]
+        before_action :reject_history_topic_pin_change!, only: :set_primary_agent
         before_action :pin_history_topic_last!, only: :reorder
       end
 
@@ -23,6 +24,11 @@ module Collavre
         new_name = topic_params[:name] if action_name == "update"
         reject_reserved_topic! if ReservedName.reserved_topic?(@creative, topic) ||
                                   ReservedName.reserved?(@creative, new_name)
+      end
+
+      def reject_history_topic_pin_change!
+        topic = @creative.topics.find(params[:id])
+        reject_reserved_topic! if topic.history?
       end
 
       def reject_reserved_topic!

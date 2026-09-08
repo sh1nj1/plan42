@@ -18,6 +18,9 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
   test "History topic is read-only, reserved, and kept last" do
     history = @creative.history_topic
     other = @creative.topics.create!(name: "Later", user: @user)
+    agent = assignable_agent(
+      creative: @creative, email: "history-pin@test.local", name: "HistoryPinAgent"
+    )
     assert_equal history, @creative.topics.active.last
 
     get collavre.creative_topics_url(@creative), as: :json
@@ -33,6 +36,15 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     delete collavre.creative_topic_url(@creative, history), as: :json
     assert_response :unprocessable_entity
     assert history.reload.persisted?
+
+    patch archive_creative_topic_url(@creative, history), as: :json
+    assert_response :unprocessable_entity
+    assert_nil history.reload.archived_at
+
+    patch set_primary_agent_creative_topic_url(@creative, history),
+      params: { agent_id: agent.id }, as: :json
+    assert_response :unprocessable_entity
+    assert_nil history.reload.primary_agent_id
 
     post collavre.reorder_creative_topics_url(@creative),
          params: { topic_ids: [ history.id, other.id, @topic.id ] }, as: :json
@@ -735,6 +747,48 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ai_agent.id, @topic.primary_agent_id
   end
 
+  test "should set and clear primary agent on Main topic" do
+    main_topic = @creative.main_topic(fallback_user: @user)
+    ai_agent = assignable_agent(
+      creative: @creative, email: "main-agent@test.local", name: "MainAgent"
+    )
+
+    patch set_primary_agent_creative_topic_url(@creative, main_topic),
+      params: { agent_id: ai_agent.id }, as: :json
+
+    assert_response :success
+    assert_equal ai_agent.id, main_topic.reload.primary_agent_id
+
+    patch set_primary_agent_creative_topic_url(@creative, main_topic),
+      params: { agent_id: nil }, as: :json
+
+    assert_response :success
+    assert_nil main_topic.reload.primary_agent_id
+  end
+
+  test "should set primary agent on inbox System topic" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    system_topic = inbox.system_topic(fallback_user: @user)
+    ai_agent = assignable_agent(
+      creative: inbox, email: "system-agent@test.local", name: "SystemAgent"
+    )
+
+    patch set_primary_agent_creative_topic_url(inbox, system_topic),
+      params: { agent_id: ai_agent.id }, as: :json
+
+    assert_response :success
+    assert_equal ai_agent.id, system_topic.reload.primary_agent_id
+  end
+
+  test "Main and System topics keep reserved mutation protections" do
+    main_topic = @creative.main_topic(fallback_user: @user)
+    inbox = Collavre::Creative.inbox_for(@user)
+    system_topic = inbox.system_topic(fallback_user: @user)
+
+    assert_reserved_topic_mutations_rejected(@creative, main_topic)
+    assert_reserved_topic_mutations_rejected(inbox, system_topic)
+  end
+
   test "should replace existing primary agent" do
     old_agent = User.create!(
       email: "old@test.local", password: "password123", name: "OldAgent",
@@ -1073,5 +1127,28 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
       email: email, password: "password123", name: name,
       llm_vendor: "openai", llm_model: "gpt-4", searchable: true
     )
+  end
+
+  def assignable_agent(creative:, email:, name:)
+    agent = move_test_agent(email, name)
+    Collavre::CreativeShare.create!(
+      creative: creative, user: agent, shared_by: @user, permission: :feedback
+    )
+    agent
+  end
+
+  def assert_reserved_topic_mutations_rejected(creative, topic)
+    patch collavre.creative_topic_url(creative, topic),
+      params: { topic: { name: "Renamed reserved topic" } }, as: :json
+    assert_response :unprocessable_entity
+    assert_not_equal "Renamed reserved topic", topic.reload.name
+
+    patch archive_creative_topic_url(creative, topic), as: :json
+    assert_response :unprocessable_entity
+    assert_nil topic.reload.archived_at
+
+    delete collavre.creative_topic_url(creative, topic), as: :json
+    assert_response :unprocessable_entity
+    assert topic.reload.persisted?
   end
 end
