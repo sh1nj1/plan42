@@ -144,6 +144,22 @@ test('moving between targets clears the former registry preview', () => {
   expect(firstCleanup).toHaveBeenCalled()
 })
 
+test('drifting between descendants of one zone keeps its preview and hover timer', () => {
+  const label = document.createElement('span')
+  const badge = document.createElement('span')
+  zone.append(label, badge)
+  document.elementFromPoint = () => label
+  touch('touchstart')
+  jest.advanceTimersByTime(450)
+  expect(previews).toHaveBeenCalledTimes(1)
+  const cleanup = previews.mock.results[0].value
+
+  document.elementFromPoint = () => badge
+  touch('touchmove')
+  expect(cleanup).not.toHaveBeenCalled()
+  expect(previews).toHaveBeenCalledTimes(1)
+})
+
 test('native source adapters can replace transfer data and set a drag image', () => {
   source.className = 'replacement'
   registry.registerDragSource({ selector: '.replacement', onDragStart: ({ event }) => {

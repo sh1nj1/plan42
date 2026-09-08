@@ -10,9 +10,9 @@ function attachTouchBridge({ root, registry }) {
   let lastTarget = null
   let dragImage = null
 
-  function dispatch(type, target, point = {}) {
+  function dispatch(type, target, point = {}, relatedTarget = null) {
     const event = new Event(type, { bubbles: true, cancelable: true })
-    Object.assign(event, { dataTransfer, clientX: point.clientX ?? 0,
+    Object.assign(event, { dataTransfer, relatedTarget, clientX: point.clientX ?? 0,
       clientY: point.clientY ?? 0, shiftKey: false })
     target.dispatchEvent(event)
     return event
@@ -84,7 +84,9 @@ function attachTouchBridge({ root, registry }) {
     hitTest(el, point) {
       const target = targetAtPoint(el, point)
       if (!target) return null
-      if (lastTarget && lastTarget !== target) dispatch('dragleave', lastTarget, point)
+      // Carry relatedTarget like a native dragleave so a zone can tell a move
+      // between its own descendants from a real departure and keep its preview.
+      if (lastTarget && lastTarget !== target) dispatch('dragleave', lastTarget, point, target)
       lastTarget = target
       return dispatch('dragover', target, point).defaultPrevented ? 'into' : null
     },
