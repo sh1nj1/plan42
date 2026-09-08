@@ -133,7 +133,8 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         controller.participantsData = [USERS[1]]
         controller.renderParticipants([])
         const trigger = controller.participantsTarget.querySelector('.comment-user-menu-trigger')
-        const click = jest.spyOn(trigger, 'click')
+        const click = jest.fn()
+        trigger.addEventListener('click', click)
         const touchStart = new Event('touchstart', { bubbles: true, cancelable: true })
         Object.defineProperty(touchStart, 'touches', { value: [{ clientX: 10, clientY: 10, target: trigger }] })
         trigger.dispatchEvent(touchStart)
@@ -141,7 +142,11 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         Object.defineProperty(touchEnd, 'touches', { value: [] })
         trigger.dispatchEvent(touchEnd)
 
-        expect(click).toHaveBeenCalled()
+        expect(touchStart.defaultPrevented).toBe(false)
+        expect(touchEnd.defaultPrevented).toBe(false)
+        expect(click).not.toHaveBeenCalled()
+        trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        expect(click).toHaveBeenCalledTimes(1)
         delete window.ontouchstart
     })
 

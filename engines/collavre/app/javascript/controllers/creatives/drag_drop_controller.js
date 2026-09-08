@@ -3,19 +3,18 @@ import { initIndicator } from '../../creatives/drag_drop/indicator'
 import {
   addGlobalListeners,
   removeGlobalListeners,
-  handleDragStart,
-  handleDragOver,
-  handleDrop,
-  handleDragLeave,
+  createCreativeTreeDragDrop,
 } from '../../creatives/drag_drop/event_handlers'
 
 let connectionCount = 0
+let registry = null
 
 export default class extends Controller {
   connect() {
     if (connectionCount === 0) {
       initIndicator()
       addGlobalListeners()
+      registry = createCreativeTreeDragDrop()
     }
     connectionCount += 1
   }
@@ -23,23 +22,10 @@ export default class extends Controller {
   disconnect() {
     connectionCount = Math.max(0, connectionCount - 1)
     if (connectionCount === 0) {
+      registry?.destroy()
+      registry = null
       removeGlobalListeners()
     }
   }
 
-  start(event) {
-    handleDragStart(event)
-  }
-
-  over(event) {
-    handleDragOver(event)
-  }
-
-  drop(event) {
-    handleDrop(event)
-  }
-
-  leave(event) {
-    handleDragLeave(event)
-  }
 }

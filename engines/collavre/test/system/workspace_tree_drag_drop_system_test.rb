@@ -66,10 +66,91 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
     assert_equal @right_root, @left_root.reload.parent
   end
 
+  test "visible descendant drops are rejected before any network write" do
+    descendant = Creative.create!(description: "Visible descendant", user: @user, parent: @left_child)
+    Creative.create!(description: "Descendant leaf", user: @user, parent: descendant)
+    visit collavre.creatives_path(id: @left_root.id)
+    expand_workspace_branch(@left_root)
+    expand_workspace_branch(@left_child)
+    assert_workspace_and_center_rows(descendant, @left_child)
+    track_workspace_writes
+
+    drag_between_workspace_rows(@left_child, descendant)
+
+    assert_equal 0, page.evaluate_script("window.workspaceDndWriteRequests")
+    assert_workspace_placement(@left_child, @left_root)
+    assert_workspace_placement(descendant, @left_child)
+    assert_selector "creative-tree-row[creative-id='#{@left_child.id}'][parent-id='#{@left_root.id}']"
+    assert_equal @left_root.id, @left_child.reload.parent_id
+    assert_equal @left_child.id, descendant.reload.parent_id
+  end
+
+  test "a forbidden workspace drop preserves placement in both trees and the database" do
+    Creative.create!(description: "Source leaf", user: @user, parent: @left_child)
+    visit collavre.creatives_path(id: @left_root.id)
+    expand_workspace_branch(@left_root)
+    assert_workspace_and_center_rows(@right_root, @left_child)
+    before = Creative.where(user: @user).order(:id).pluck(:id, :parent_id, :sequence)
+    track_workspace_writes(reject: true)
+
+    drag_between_workspace_rows(@left_child, @right_root)
+
+    assert_selector "body[data-workspace-dnd-rejected='true']"
+    assert_equal 1, page.evaluate_script("window.workspaceDndWriteRequests")
+    assert_workspace_placement(@left_child, @left_root)
+    assert_selector "creative-tree-row[creative-id='#{@left_child.id}'][parent-id='#{@left_root.id}']"
+    assert_equal before, Creative.where(user: @user).order(:id).pluck(:id, :parent_id, :sequence)
+  end
+
   private
 
   def assert_workspace_and_center_rows(workspace_creative, center_creative)
     assert_selector "#workspace-creative-#{workspace_creative.id}", wait: 10
     assert_selector "#creative-#{center_creative.id}", wait: 10
   end
+  def assert_workspace_placement(creative, parent)
+    assert_selector ".creative-workspace-tree-item[data-creative-id='#{creative.id}'][data-parent-id='#{parent.id}']"
+  end
+
+  def expand_workspace_branch(creative)
+    selector = "#workspace-creative-#{creative.id} > .creative-workspace-tree-branch-toggle"
+    assert_selector selector
+    toggle = find(selector)
+    toggle.click if toggle["aria-expanded"] == "false"
+  end
+
+  # Await the delayed events, and enter at the same center point as the drop so
+  # hysteresis cannot change a requested child drop into a sibling drop.
+  def drag_between_workspace_rows(source, target)
+    script = Html5DndHelpers::HTML5_DRAG_DROP_SCRIPT.sub(
+      "var entryPoint = pointOnRect(sourceCenter, targetRect)",
+      "var entryPoint = rectCenter(targetRect); entryPoint.x += x_offset; entryPoint.y += y_offset;"
+    )
+    page.execute_async_script(
+      script, find("#workspace-creative-#{source.id}").native,
+      find("#workspace-creative-#{target.id}").native, 150, [], 0, 0
+    )
+  end
+
+  def track_workspace_writes(reject: false)
+    page.execute_script(<<~JS, reject)
+      const reject = arguments[0];
+      const originalFetch = window.fetch.bind(window);
+      window.workspaceDndWriteRequests = 0;
+      window.fetch = function(input, options = {}) {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        if (!['/creatives/reorder', '/creatives/link_drop'].includes(url.pathname)) return originalFetch(input, options);
+        const method = (options.method || input.method || 'GET').toUpperCase();
+        if (['GET', 'HEAD', 'OPTIONS'].includes(method)) return originalFetch(input, options);
+        window.workspaceDndWriteRequests += 1;
+        if (!reject || url.pathname !== '/creatives/reorder') return originalFetch(input, options);
+        const response = new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { 'Content-Type': 'application/json' }
+        });
+        setTimeout(() => { document.body.dataset.workspaceDndRejected = 'true'; }, 0);
+        return Promise.resolve(response);
+      };
+    JS
+  end
+
 end

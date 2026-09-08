@@ -60,6 +60,7 @@ module Collavre
         cron_part = render_cron_badge_for_creative(creative, cron_tasks, can_delete: can_delete_cron)
 
         safe_join([
+          render_creative_move_action(creative, can_write),
           progress_part,
           cron_part,
           comment_part,

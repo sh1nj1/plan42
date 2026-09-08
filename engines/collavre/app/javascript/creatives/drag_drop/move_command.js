@@ -38,7 +38,9 @@
  *   5. For direction 'down' the requests are issued in reverse selection order,
  *      because every insert lands directly after the target — sending 3,4,5
  *      forwards would leave them ordered 5,4,3. `succeededIds` and `payloads`
- *      are still reported in selection order, so callers never see the reversal.
+ *      are still reported in selection order. A DOM adapter must insert these
+ *      payloads as a contiguous run in that order, rather than repeatedly
+ *      inserting each payload immediately after the original target.
  *
  * ## Expired sessions
  *

@@ -466,6 +466,23 @@ describe('LinkCreativeController picker', () => {
     application.stop()
   })
 
+  test('placement selection preserves a linked shell id and resets for link consumers', async () => {
+    browse.mockResolvedValue([
+      { id: 100, description: 'Shared', has_children: false, origin_id: 1 },
+    ])
+    const onSelect = jest.fn()
+    const { application, controller } = await installController()
+    controller.open(rect, onSelect, jest.fn(), { selectOrigin: false })
+    await flush()
+    document.querySelector('.link-tree-row').click()
+    expect(onSelect).toHaveBeenLastCalledWith({ id: 100, label: 'Shared' })
+    controller.open(rect, onSelect, jest.fn())
+    await flush()
+    document.querySelector('.link-tree-row').click()
+    expect(onSelect).toHaveBeenLastCalledWith({ id: 1, label: 'Shared' })
+    application.stop()
+  })
+
   test('selecting a linked shell row emits the effective origin id', async () => {
     // Shell row (id 100) whose effective origin is 1; selecting it must hand the
     // origin id to consumers so a new link is based on the real shared creative,
@@ -694,5 +711,27 @@ describe('LinkCreativeController picker', () => {
 
       application.stop()
     })
+  })
+})
+
+describe('destination picker cancellation callbacks', () => {
+  test.each(['close', 'Escape', 'outside', 'touch'])('%s closes and calls back exactly once', async method => {
+    browse.mockResolvedValue([])
+    const { application, controller, element } = await installController()
+    const onClose = jest.fn()
+    const onSelect = jest.fn()
+    controller.open(rect, onSelect, onClose, { allowCreate: false })
+    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)))
+    if (method === 'close') controller.closeTarget.click()
+    if (method === 'Escape') controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (method === 'outside') document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    if (method === 'touch') document.body.dispatchEvent(new Event('touchstart', { bubbles: true }))
+    expect(element.style.display).toBe('none')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onSelect).not.toHaveBeenCalled()
+    controller.close()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    application.stop()
+    document.body.innerHTML = ''
   })
 })

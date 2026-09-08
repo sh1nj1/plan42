@@ -205,8 +205,8 @@ describe('executeMoveCommand — link mode', () => {
     )
 
     expect(sendLinkedCreative).toHaveBeenCalledTimes(2)
-    expect(sendLinkedCreative).toHaveBeenCalledWith({ draggedId: '3', targetId: '9', direction: 'child' })
-    expect(sendLinkedCreative).toHaveBeenCalledWith({ draggedId: '4', targetId: '9', direction: 'child' })
+    expect(sendLinkedCreative).toHaveBeenNthCalledWith(1, { draggedId: '3', targetId: '9', direction: 'child' })
+    expect(sendLinkedCreative).toHaveBeenNthCalledWith(2, { draggedId: '4', targetId: '9', direction: 'child' })
   })
 
   test('returns the server payloads in selection order', async () => {
