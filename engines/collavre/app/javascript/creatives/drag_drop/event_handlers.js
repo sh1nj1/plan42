@@ -278,13 +278,10 @@ function handleDropCompletionEvent(event) {
   }
 }
 
-function getDraggedContext(event) {
+function getDraggedContext(event, data) {
   const existing = getDraggedState();
   const transfer = event.dataTransfer;
   const hasTrustedPayload = getDragKind(transfer) === 'creative';
-  const data = readDragData(transfer);
-  // The shared reader always folds `creativeId` into `ids`, so the canonical
-  // list is the one to carry forward.
   const parsed = data?.kind === 'creative'
     ? { ...data.payload, selectedCreativeIds: data.ids }
     : null;
@@ -392,7 +389,7 @@ export function handleDragOver(event) {
     return;
   }
 
-  if (dragKind !== 'creative') return;
+  if (dragKind !== 'creative' && !hasDraggedState()) return;
 
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
@@ -499,7 +496,7 @@ export function handleDrop(event) {
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
 
-  const { draggedState, isExternal, wasRejectedPayload } = getDraggedContext(event);
+  const { draggedState, isExternal, wasRejectedPayload } = getDraggedContext(event, dragData);
 
   if (!targetTree || targetTree.draggable === false) {
     resetDrag();

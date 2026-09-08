@@ -24,6 +24,7 @@ export function getDragKind(dataTransfer) {
   const types = transferTypes(dataTransfer);
   return SUPPORTED_KINDS.find((kind) => {
     if (types.has(LEGACY_MIME_TYPES[kind])) return true;
+    // Topic list reordering historically declares only this topic-specific type.
     return kind === 'topic' && types.has(TOPIC_ID_MIME_TYPE);
   }) || null;
 }
