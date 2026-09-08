@@ -14,7 +14,7 @@ function scrollContainer(element) {
 }
 
 function rowId(row) {
-  return row?.getAttribute('creative-id') || null
+  return row.getAttribute('creative-id')
 }
 
 function findRow(element, creativeId) {

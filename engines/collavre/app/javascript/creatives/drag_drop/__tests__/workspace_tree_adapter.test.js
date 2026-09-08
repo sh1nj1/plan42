@@ -280,7 +280,10 @@ describe('workspace tree drag and drop adapter', () => {
     expect([...root.querySelector('ul').children].map((entry) => entry.dataset.creativeId)).toEqual(['1', '2', '3'])
   })
 
-  test('completes a drop whose envelope carries no originating tree', async () => {
+  // A creative envelope has to name the tree it came from: the completion event
+  // is how the originating view learns to re-render, and an unnamed source
+  // leaves nobody to tell. The shared reader declines it before the zone runs.
+  test('declines an envelope that never names its originating tree', async () => {
     const completion = jest.fn()
     window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
     const transfer = dataTransfer()
@@ -291,9 +294,8 @@ describe('workspace tree drag and drop adapter', () => {
     event('drop', target, transfer)
     await flush()
 
-    expect(completion).toHaveBeenCalledWith(expect.objectContaining({
-      detail: expect.objectContaining({ treeId: null, targetCreativeId: '2' }),
-    }))
+    expect(execute).not.toHaveBeenCalled()
+    expect(completion).not.toHaveBeenCalled()
   })
 
   // A tab still running the pre-envelope build writes only the legacy payload and

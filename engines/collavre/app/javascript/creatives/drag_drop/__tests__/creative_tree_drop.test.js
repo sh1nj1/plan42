@@ -85,7 +85,11 @@ describe('right creative tree drop wiring', () => {
     window.sessionStorage.clear()
     resetDragSessionCache()
     resetDraggedState()
-    runMoveWithDomRecovery.mockResolvedValue({ status: 'success' })
+    // T2 always answers with a full result; a mock that omits `succeededIds`
+    // would let a real crash pass unnoticed here.
+    runMoveWithDomRecovery.mockImplementation(({ command }) => Promise.resolve({
+      command, status: 'success', ok: true, succeededIds: [...command.ids], failedIds: [], failures: [],
+    }))
     document.body.innerHTML = `
       <div id="creatives">
         ${row('1', { isRoot: true })}
@@ -192,7 +196,9 @@ describe('right creative tree drop wiring', () => {
   })
 
   test('stays silent when the command reports it did not move anything', async () => {
-    runMoveWithDomRecovery.mockResolvedValue({ status: 'failure' })
+    runMoveWithDomRecovery.mockResolvedValue({
+      status: 'failure', ok: false, succeededIds: [], failedIds: ['2'], failures: [],
+    })
     const completion = jest.fn()
     window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
     const dataTransfer = transfer()
@@ -317,6 +323,19 @@ describe('right creative tree drop wiring', () => {
     expect(runMoveWithDomRecovery).not.toHaveBeenCalled()
   })
 
+  // A row rendered without its id gives the cycle check nothing to compare, so
+  // the drop is refused rather than sent to the server on a guess.
+  test('declines a drop onto a row that names no creative', () => {
+    const anonymous = document.getElementById('creative-4').closest('creative-tree-row')
+    anonymous.removeAttribute('creative-id')
+    const dataTransfer = transfer()
+
+    handleDragStart(dragEvent(tree('2'), dataTransfer))
+    handleDrop(dragEvent(tree('4'), dataTransfer, { clientY: 50 }))
+
+    expect(runMoveWithDomRecovery).not.toHaveBeenCalled()
+  })
+
   test('allows a sibling drop next to a row whose parent chain is unknown', async () => {
     const detached = document.getElementById('creative-3').closest('creative-tree-row')
     document.getElementById('creatives').appendChild(detached)
@@ -428,6 +447,23 @@ describe('source window synchronization', () => {
     removeGlobalListeners()
     jest.clearAllMocks()
     document.body.innerHTML = ''
+  })
+
+  // The originating window learns about the move through localStorage, so a
+  // signal it can verify has to reach the tree and take the row away.
+  test('removes the moved row when the originating window verifies the signal', () => {
+    window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'token-under-test')
+    window.sessionStorage.setItem('collavre.dragWindowId', 'this-window')
+    resetDragSessionCache()
+
+    window.dispatchEvent(Object.assign(new Event('storage'), {
+      key: DROP_SIGNAL_STORAGE_KEY,
+      newValue: JSON.stringify({
+        creativeId: '7', sessionToken: 'token-under-test', sourceWindowId: 'this-window',
+      }),
+    }))
+
+    expect(document.querySelector('creative-tree-row[creative-id="7"]')).toBeNull()
   })
 
   test('ignores a storage event that carries no verifiable drop signal', () => {

@@ -73,4 +73,39 @@ describe('right creative tree hover expansion', () => {
 
     expect(tree.closest('creative-tree-row').hasAttribute('expanded')).toBe(false)
   })
+
+  // `has-children` is rendered from the server's count, so the container can
+  // still be missing on a row whose children have not been fetched yet.
+  test('leaves a branch alone when its children container is absent', () => {
+    document.getElementById('creative-children-2').remove()
+    const dataTransfer = transfer()
+    writeDragData(dataTransfer, {
+      kind: 'creative', ids: ['1'], payload: { creativeId: '1', treeId: 'creative-1' },
+    })
+    const tree = document.getElementById('creative-2')
+
+    handleDragOver(event(tree, dataTransfer))
+    jest.advanceTimersByTime(600)
+
+    expect(tree.closest('creative-tree-row').hasAttribute('expanded')).toBe(false)
+  })
+
+  test('leaving a row the pointer never entered keeps the pending expansion', () => {
+    document.body.insertAdjacentHTML('beforeend', `
+      <creative-tree-row creative-id="3">
+        <div id="creative-3" class="creative-tree" draggable="true"></div>
+      </creative-tree-row>
+    `)
+    const dataTransfer = transfer()
+    writeDragData(dataTransfer, {
+      kind: 'creative', ids: ['1'], payload: { creativeId: '1', treeId: 'creative-1' },
+    })
+    const tree = document.getElementById('creative-2')
+
+    handleDragOver(event(tree, dataTransfer))
+    handleDragLeave(event(document.getElementById('creative-3'), dataTransfer))
+    jest.advanceTimersByTime(600)
+
+    expect(tree.closest('creative-tree-row').hasAttribute('expanded')).toBe(true)
+  })
 })

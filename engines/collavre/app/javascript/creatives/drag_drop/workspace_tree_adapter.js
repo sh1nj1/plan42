@@ -6,7 +6,7 @@ import {
   ensureDragWindowId,
 } from '../../lib/dnd/session'
 import { getVerticalDropPosition } from '../../lib/dnd/hit_test'
-import { executeMoveCommand, MOVE_STATUSES } from './move_command'
+import { executeMoveCommand } from './move_command'
 import {
   hasKnownWorkspaceCycle,
   showWorkspaceDropPreview,
@@ -77,8 +77,9 @@ function completionDetail(ids, payload, targetId, direction) {
   return {
     creativeId: ids[0],
     creativeIds: ids,
-    treeId: payload?.treeId || null,
-    sourceWindowId: payload?.sourceWindowId || null,
+    // The shared reader rejects a creative envelope with no originating tree.
+    treeId: payload.treeId,
+    sourceWindowId: payload.sourceWindowId || null,
     targetCreativeId: targetId,
     direction,
     context: 'target',
@@ -105,17 +106,15 @@ async function performWorkspaceDrop({ root, execute, el: row, event, hit, ids, p
     return
   }
 
-  if (result.status === MOVE_STATUSES.FAILURE) {
-    return
-  }
+  // A failure and a partial success differ only in how many ids landed, and
+  // nothing landing is the one case with nobody to notify.
+  if (result.succeededIds.length === 0) return
 
-  if (result.succeededIds.length > 0) {
-    notifyMoveCompletion(result.succeededIds, payload, targetItem.dataset.creativeId, hit, mode)
-  }
+  notifyMoveCompletion(result.succeededIds, payload, targetItem.dataset.creativeId, hit, mode)
 }
 
 export function createWorkspaceTreeDragDrop({
-  root,
+  root = document,
   controller,
   execute = executeMoveCommand,
   expandDelay = WORKSPACE_TREE_EXPAND_DELAY_MS,

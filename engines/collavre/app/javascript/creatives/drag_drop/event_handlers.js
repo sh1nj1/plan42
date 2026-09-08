@@ -283,12 +283,11 @@ function getDraggedContext(event) {
   const transfer = event.dataTransfer;
   const hasTrustedPayload = getDragKind(transfer) === 'creative';
   const data = readDragData(transfer);
-  const parsed = data?.kind === 'creative' ? {
-    ...data.payload,
-    creativeId: data.ids.includes(String(data.payload.creativeId))
-      ? String(data.payload.creativeId) : data.ids[0],
-    selectedCreativeIds: data.ids,
-  } : null;
+  // The shared reader always folds `creativeId` into `ids`, so the canonical
+  // list is the one to carry forward.
+  const parsed = data?.kind === 'creative'
+    ? { ...data.payload, selectedCreativeIds: data.ids }
+    : null;
   const wasRejectedPayload = hasTrustedPayload && !parsed;
 
   if (existing) {
@@ -631,6 +630,10 @@ export function handleDrop(event) {
     if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail);
     dispatchDropCompletion({ ...detail, context: 'target' });
     return result;
+  }).catch((error) => {
+    // Only an unusable command or a synchronous transport failure lands here;
+    // the DOM is already restored, so all that is left is to say why.
+    console.error('Failed to update order', error);
   });
 }
 

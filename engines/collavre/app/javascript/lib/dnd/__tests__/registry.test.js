@@ -125,12 +125,13 @@ describe('createDragDropRegistry', () => {
     expect(onDrop).not.toHaveBeenCalled()
   })
 
+  // The readers default to T1's public envelope functions, so only a root that
+  // cannot deliver events or an explicitly broken reader is a construction error.
   test('rejects a construction that cannot deliver events or read a payload', () => {
     registry = null
-    expect(() => createDragDropRegistry()).toThrow(TypeError)
     expect(() => createDragDropRegistry({ root: {} })).toThrow(/event root/)
-    expect(() => createDragDropRegistry({ root, readData: () => null })).toThrow(/getKind/)
-    expect(() => createDragDropRegistry({ root, getKind: () => null })).toThrow(/readData/)
+    expect(() => createDragDropRegistry({ root, getKind: null })).toThrow(/getKind/)
+    expect(() => createDragDropRegistry({ root, readData: null })).toThrow(/readData/)
   })
 
   test('ignores elements matched outside the registry root', () => {
@@ -451,5 +452,248 @@ describe('createDragDropRegistry', () => {
     unregister()
     expect(cleanup).toHaveBeenCalledTimes(1)
     expect(dragEvent('drop', zone, transfer()).defaultPrevented).toBe(false)
+  })
+
+  test('rejects incomplete source and zone registrations', () => {
+    registry = createDragDropRegistry({ root, getKind: () => null, readData: () => null })
+
+    expect(() => registry.registerDragSource({ selector: '.source' })).toThrow(TypeError)
+    expect(() => registry.registerDropZone({ selector: '.zone', accepts: 'creative' })).toThrow(TypeError)
+    expect(() => createDragDropRegistry({ root: null })).toThrow(TypeError)
+    expect(() => createDragDropRegistry({ root, getKind: 'nope' })).toThrow(TypeError)
+    expect(() => createDragDropRegistry({ root, readData: 'nope' })).toThrow(TypeError)
+  })
+
+  test('unregistering a source stops it from claiming later drags', () => {
+    const onDragStart = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => null, readData: () => null })
+    const unregister = registry.registerDragSource({ selector: '.source', onDragStart })
+    const source = root.querySelector('.source')
+
+    source.dispatchEvent(dragEvent('dragstart', source, transfer()))
+    unregister()
+    unregister()
+    source.dispatchEvent(dragEvent('dragstart', source, transfer()))
+
+    expect(onDragStart).toHaveBeenCalledTimes(1)
+  })
+
+  // A zone that cannot measure itself must not swallow the drag: the kernel
+  // reports and steps aside so nothing is left highlighted.
+  test('a throwing hitTest clears the preview and reports once', () => {
+    const onError = jest.fn()
+    const cleanup = jest.fn()
+    let hitTest = () => 'child'
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => null, onError })
+    registry.registerDropZone({
+      selector: '.zone', accepts: 'creative', hitTest: (...args) => hitTest(...args), preview: () => cleanup, onDrop: jest.fn(),
+    })
+    const zone = root.querySelector('.zone')
+
+    zone.dispatchEvent(dragEvent('dragover', zone, transfer()))
+    hitTest = () => { throw new Error('layout unavailable') }
+    const second = dragEvent('dragover', zone, transfer())
+    zone.dispatchEvent(second)
+
+    expect(second.defaultPrevented).toBe(false)
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'layout unavailable' }))
+  })
+
+  test('reports failures raised by preview, its cleanup, dragend, and drop reads', () => {
+    const onError = jest.fn()
+    registry = createDragDropRegistry({
+      root,
+      getKind: () => 'creative',
+      readData: () => { throw new Error('unreadable transfer') },
+      onError,
+    })
+    registry.registerDragSource({
+      selector: '.source', onDragStart: jest.fn(), onDragEnd: () => { throw new Error('broken end') },
+    })
+    let hit = 'up'
+    registry.registerDropZone({
+      selector: '.zone',
+      accepts: (kind) => kind === 'creative',
+      hitTest: () => hit,
+      preview: () => { throw new Error('broken preview') },
+      onDrop: jest.fn(),
+    })
+    const zone = root.querySelector('.zone')
+    const source = root.querySelector('.source')
+
+    zone.dispatchEvent(dragEvent('dragover', zone, transfer()))
+    zone.dispatchEvent(dragEvent('drop', zone, transfer()))
+    source.dispatchEvent(dragEvent('dragstart', source, transfer()))
+    source.dispatchEvent(dragEvent('dragend', source, transfer()))
+
+    expect(onError.mock.calls.map(([error]) => error.message)).toEqual([
+      'broken preview', 'unreadable transfer', 'broken end',
+    ])
+  })
+
+  test('a cleanup failure is reported and never escapes the kernel', () => {
+    const onError = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => null, onError })
+    let hit = 'up'
+    registry.registerDropZone({
+      selector: '.zone',
+      accepts: 'creative',
+      hitTest: () => hit,
+      preview: () => () => { throw new Error('broken cleanup') },
+      onDrop: jest.fn(),
+    })
+    const zone = root.querySelector('.zone')
+
+    zone.dispatchEvent(dragEvent('dragover', zone, transfer()))
+    hit = 'down'
+    zone.dispatchEvent(dragEvent('dragover', zone, transfer()))
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'broken cleanup' }))
+  })
+
+  test('falls back to console when no reporter is supplied and the reporter itself fails', () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    registry = createDragDropRegistry({ root, getKind: () => null, readData: () => null })
+    registry.registerDragSource({ selector: '.source', onDragStart: () => { throw new Error('default reporter') } })
+    const source = root.querySelector('.source')
+    source.dispatchEvent(dragEvent('dragstart', source, transfer()))
+    registry.destroy()
+
+    registry = createDragDropRegistry({
+      root, getKind: () => null, readData: () => null, onError: () => { throw new Error('reporter down') },
+    })
+    registry.registerDragSource({ selector: '.source', onDragStart: () => { throw new Error('source down') } })
+    source.dispatchEvent(dragEvent('dragstart', source, transfer()))
+
+    expect(consoleError.mock.calls.map(([error]) => error.message)).toEqual(['default reporter', 'reporter down'])
+    consoleError.mockRestore()
+  })
+
+  test('keeps the preview while the pointer moves inside the active zone', () => {
+    const cleanup = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => null })
+    registry.registerDropZone({
+      selector: '.zone', accepts: 'creative', preview: () => cleanup, onDrop: jest.fn(), dropEffect: 'copy',
+    })
+    const zone = root.querySelector('.zone')
+    const zoneChild = root.querySelector('.zone-child')
+    const dataTransfer = transfer()
+
+    zone.dispatchEvent(dragEvent('dragover', zone, dataTransfer))
+    expect(dataTransfer.dropEffect).toBe('copy')
+    zone.dispatchEvent(dragEvent('dragleave', zone, dataTransfer, { relatedTarget: zoneChild }))
+    expect(cleanup).not.toHaveBeenCalled()
+
+    zone.dispatchEvent(dragEvent('dragleave', zone, dataTransfer, { relatedTarget: root }))
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    zone.dispatchEvent(dragEvent('dragleave', zone, dataTransfer))
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  test('ignores events outside the registry root and unmatched selectors', () => {
+    const outside = document.createElement('div')
+    outside.className = 'zone'
+    document.body.appendChild(outside)
+    const onDrop = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => ({ kind: 'creative', ids: ['1'], payload: {} }) })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', onDrop })
+
+    root.dispatchEvent(dragEvent('drop', outside, transfer()))
+    root.dispatchEvent(dragEvent('drop', root, transfer()))
+    root.dispatchEvent(dragEvent('dragstart', root, transfer()))
+    root.dispatchEvent(dragEvent('dragend', root, transfer()))
+
+    expect(onDrop).not.toHaveBeenCalled()
+  })
+
+  test('a document-rooted registry serves zones anywhere in the page', () => {
+    const onDrop = jest.fn()
+    registry = createDragDropRegistry({ getKind: () => 'creative', readData: () => ({ kind: 'creative', ids: ['1'], payload: {} }) })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', onDrop })
+    const zone = root.querySelector('.zone')
+
+    zone.dispatchEvent(dragEvent('drop', zone, transfer()))
+
+    expect(onDrop).toHaveBeenCalledTimes(1)
+  })
+
+  test('declines drags with no readable kind', () => {
+    const onDrop = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => null, readData: () => null })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', onDrop })
+    const zone = root.querySelector('.zone')
+
+    const over = dragEvent('dragover', zone, transfer())
+    zone.dispatchEvent(over)
+
+    expect(over.defaultPrevented).toBe(false)
+    expect(onDrop).not.toHaveBeenCalled()
+  })
+
+  test('an outer zone registered last never steals an inner match', () => {
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => ({ kind: 'creative', ids: ['1'], payload: {} }) })
+    const innerDrop = jest.fn()
+    const outerDrop = jest.fn()
+    registry.registerDropZone({ selector: '.zone-child', accepts: 'creative', onDrop: innerDrop })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', onDrop: outerDrop })
+    const child = root.querySelector('.zone-child')
+
+    child.dispatchEvent(dragEvent('drop', child, transfer()))
+
+    expect(innerDrop).toHaveBeenCalledTimes(1)
+    expect(outerDrop).not.toHaveBeenCalled()
+  })
+
+  test('a hitTest that finds no position leaves the drag unhandled', () => {
+    const onDrop = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => ({ kind: 'creative', ids: ['1'], payload: {} }) })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', hitTest: () => null, onDrop })
+    const zone = root.querySelector('.zone')
+
+    const over = dragEvent('dragover', zone, transfer())
+    zone.dispatchEvent(over)
+    zone.dispatchEvent(dragEvent('drop', zone, transfer()))
+
+    expect(over.defaultPrevented).toBe(false)
+    expect(onDrop).not.toHaveBeenCalled()
+  })
+
+  test('a computed drop effect sees the resolved hit', () => {
+    const dropEffect = jest.fn(() => 'link')
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => null })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', hitTest: () => 'child', dropEffect, onDrop: jest.fn() })
+    const zone = root.querySelector('.zone')
+    const dataTransfer = transfer()
+
+    zone.dispatchEvent(dragEvent('dragover', zone, dataTransfer))
+
+    expect(dataTransfer.dropEffect).toBe('link')
+    expect(dropEffect).toHaveBeenCalledWith(expect.objectContaining({ hit: 'child', kind: 'creative' }))
+  })
+
+  test('unregistering an idle zone leaves an unrelated active preview alone', () => {
+    const cleanup = jest.fn()
+    registry = createDragDropRegistry({ root, getKind: () => 'creative', readData: () => null })
+    registry.registerDropZone({ selector: '.zone', accepts: 'creative', preview: () => cleanup, onDrop: jest.fn() })
+    const unregisterIdle = registry.registerDropZone({ selector: '.source', accepts: 'creative', onDrop: jest.fn() })
+    const zone = root.querySelector('.zone')
+
+    zone.dispatchEvent(dragEvent('dragover', zone, transfer()))
+    unregisterIdle()
+    unregisterIdle()
+
+    expect(cleanup).not.toHaveBeenCalled()
+  })
+
+  test('defaults every option when constructed bare', () => {
+    registry = createDragDropRegistry()
+    const onDrop = jest.fn()
+    registry.registerDropZone({ selector: '.zone', accepts: 'context', onDrop })
+    const zone = root.querySelector('.zone')
+
+    zone.dispatchEvent(dragEvent('drop', zone, { types: ['application/x-context-id'], getData: () => '7' }))
+
+    expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ kind: 'context', ids: ['7'] }))
   })
 })

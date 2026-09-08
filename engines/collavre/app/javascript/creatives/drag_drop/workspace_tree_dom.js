@@ -5,14 +5,15 @@ export function workspaceItemFromRow(row) {
 }
 
 export function findWorkspaceItem(root, creativeId) {
-  if (!root || creativeId === null || creativeId === undefined) return null
   return [...root.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
     .find((item) => item.dataset.creativeId === String(creativeId)) || null
 }
 
-export function destinationParentId(targetItem, direction) {
-  if (direction === 'child') return targetItem?.dataset.creativeId || null
-  return targetItem?.dataset.parentId || null
+// Only reached once `hasKnownWorkspaceCycle` has proven the target names a
+// creative, so the item and its id are both there.
+function destinationParentId(targetItem, direction) {
+  if (direction === 'child') return targetItem.dataset.creativeId
+  return targetItem.dataset.parentId || null
 }
 
 export function hasKnownWorkspaceCycle({ root, ids, targetItem, direction }) {
