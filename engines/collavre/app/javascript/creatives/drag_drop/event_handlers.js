@@ -25,7 +25,8 @@ import {
 } from './state';
 import * as dragState from './state';
 import { createMoveContext, applyMove, revertMove } from './operations';
-import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/drag_drop';
+import * as moveOperations from './operations';
+import { sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
@@ -248,12 +249,17 @@ function getDraggedContext(event) {
   const transfer = event.dataTransfer;
   const hasTrustedPayload = getDragKind(transfer) === 'creative';
   const data = readDragData(transfer);
-  const parsed = data?.kind === 'creative' ? data.payload : null;
+  const parsed = data?.kind === 'creative' ? {
+    ...data.payload,
+    creativeId: data.ids.includes(String(data.payload.creativeId))
+      ? String(data.payload.creativeId) : data.ids[0],
+    selectedCreativeIds: data.ids,
+  } : null;
   const wasRejectedPayload = hasTrustedPayload && !parsed;
 
   if (existing) {
     if (parsed && parsed.creativeId === existing.creativeId && parsed.treeId === existing.treeId) {
-      return { draggedState: existing, isExternal: false, wasRejectedPayload };
+      return { draggedState: { ...existing, ...parsed }, isExternal: false, wasRejectedPayload };
     }
 
     if (parsed) {
@@ -357,15 +363,19 @@ export function handleDragOver(event) {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
 
-  const previousPosition = getLastDragOverRow() === tree
-    ? dragState.getLastDragOverPosition?.() || null
-    : null;
+  const previousPosition = getLastDragOverRow() === tree ? dragState.getLastDragOverPosition() : null;
 
   const position = getVerticalDropPosition({
     clientY: event.clientY,
     rect: tree.getBoundingClientRect(),
     previousPosition,
   });
+
+  setLastDragOverRow(tree, position);
+  if (!position) {
+    clearDragHighlight(tree);
+    return;
+  }
 
   if (position === 'up') {
     tree.classList.add('drag-over', 'drag-over-top');
@@ -445,9 +455,8 @@ export function handleDrop(event) {
     return;
   }
 
-  const previewedDirection = targetTree && getLastDragOverRow() === targetTree
-    ? dragState.getLastDragOverPosition?.() || null
-    : null;
+  const previewedDirection = getLastDragOverRow() === targetTree
+    ? dragState.getLastDragOverPosition() : null;
 
   clearDragHighlight(targetTree);
   clearDragHighlight(getLastDragOverRow());
@@ -493,13 +502,12 @@ export function handleDrop(event) {
     return;
   }
 
-  if (isMultiDrag) {
-    const targetCreativeId = targetRow.getAttribute('creative-id');
-    if (draggedIds.includes(String(targetCreativeId))) {
-      resetDrag();
-      return;
-    }
+  if (draggedIds.includes(String(targetRow.getAttribute('creative-id')))) {
+    resetDrag();
+    return;
+  }
 
+  if (isMultiDrag) {
     if (typeof document !== 'undefined') {
       const selectedRows = draggedIds
         .map((id) => {
@@ -522,54 +530,21 @@ export function handleDrop(event) {
     }
   }
 
-  let direction = previewedDirection;
+  const direction = previewedDirection || getVerticalDropPosition({
+    clientY: event.clientY,
+    rect: targetTree.getBoundingClientRect(),
+  });
   if (!direction) {
-    // Fallback calculation
-    direction = getVerticalDropPosition({
-      clientY: event.clientY,
-      rect: targetTree.getBoundingClientRect(),
-    });
-    if (!direction) {
-      resetDrag();
-      return;
-    }
-  }
-
-  if (event.shiftKey) {
-    const snapshot = { ...draggedState };
     resetDrag();
-
-    if (isMultiDrag) {
-      // Handle multiple linked creatives
-      const promises = draggedIds.map(draggedId =>
-        sendLinkedCreative({
-          draggedId,
-          targetId: targetId.replace('creative-', ''),
-          direction,
-        })
-      );
-
-      Promise.all(promises)
-        .then(() => window.location.reload())
-        .catch((error) => console.error('Failed to create linked creatives', error));
-    } else {
-      // Handle single linked creative
-      sendLinkedCreative({
-        draggedId: snapshot.creativeId,
-        targetId: targetId.replace('creative-', ''),
-        direction,
-      })
-        .then(() => window.location.reload())
-        .catch((error) => console.error('Failed to create linked creative', error));
-    }
     return;
   }
+  const mode = event.shiftKey ? 'link' : 'move';
 
   let moveContext = null;
   let newParentId = null;
   let draggedChildren = null;
 
-  if (draggedRow && !isMultiDrag) {
+  if (draggedRow && !isMultiDrag && !isExternal && mode === 'move') {
     draggedChildren = getChildrenContainer(draggedRow);
     moveContext = createMoveContext(
       resolvedDraggedState,
@@ -607,43 +582,26 @@ export function handleDrop(event) {
     }
   };
 
-  const reorderPayload = {
-    targetId: targetId.replace('creative-', ''),
-    direction,
-  };
-
-  if (isMultiDrag) {
-    reorderPayload.draggedIds = draggedIds;
-  } else {
-    reorderPayload.draggedId = draggedNumericId;
-  }
-
-  sendNewOrder(reorderPayload)
-    .then((response) => {
-      if (!response.ok) {
-        if (moveContext) {
-          revertMove(moveContext, newParentId);
-        }
-        return;
-      }
-
-      if (isMultiDrag) {
-        window.location.reload();
-        return;
-      }
-
-      if (dropSignalDetails?.sourceWindowId) {
-        emitDropSignal(dropSignalDetails);
-        dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
-      }
-    })
-    .catch((error) => {
-      console.error('Failed to update order', error);
-      if (moveContext) {
-        revertMove(moveContext, newParentId);
-      }
-    })
-    .finally(finalizeDrop);
+  return moveOperations.runMoveWithDomRecovery({
+    command: { ids: draggedIds, targetId: targetId.replace('creative-', ''), direction, mode },
+    moveContext,
+    attemptedParentId: newParentId,
+  }).then((result) => {
+    if (!result.ok) {
+      console.error('Creative move did not fully complete', result);
+    }
+    if (result.succeededIds.length === 0) return result;
+    if (mode === 'link' || isMultiDrag) {
+      window.location.reload();
+      return result;
+    }
+    if (dropSignalDetails?.sourceWindowId) {
+      emitDropSignal(dropSignalDetails);
+      dispatchDropCompletion({ ...dropSignalDetails, context: 'target' });
+    }
+    finalizeDrop();
+    return result;
+  });
 }
 
 export function handleDragLeave(event) {
