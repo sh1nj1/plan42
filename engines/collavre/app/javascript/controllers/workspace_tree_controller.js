@@ -286,7 +286,8 @@ export default class extends Controller {
       if (this.loadRequestId !== loadGeneration) return
 
       const nodes = Array.isArray(data.creatives) ? data.creatives : []
-      this.renderExpandedBranch(id, nodes)
+      const expanded = this.renderExpandedBranch(id, nodes)
+      if (expanded === false) requestedExpandedIds.delete(id)
       this.nodesData = nodes
       this.committedExpandedCreativeIds = new Set(requestedExpandedIds)
     } catch (error) {
@@ -315,15 +316,31 @@ export default class extends Controller {
       .find((child) => child.matches?.('.creative-workspace-tree-list'))
     existingList?.remove()
     const children = Array.isArray(node.children) ? node.children : []
-    if (children.length > 0) {
-      item.appendChild(this.buildList(children, node.id, Number(item.dataset.level || 1) + 1))
-    }
+    if (children.length === 0) return this.collapseEmptyBranch(item, creativeId)
+
+    item.appendChild(this.buildList(children, node.id, Number(item.dataset.level || 1) + 1))
+    item.dataset.hasChildren = 'true'
     item.dataset.expanded = 'true'
     const toggle = item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')
     if (toggle) {
       toggle.setAttribute('aria-expanded', 'true')
       toggle.innerHTML = CHEVRON_EXPANDED
     }
+    return true
+  }
+
+  collapseEmptyBranch(item, creativeId) {
+    this.expandedCreativeIds.delete(String(creativeId))
+    item.dataset.hasChildren = 'false'
+    item.dataset.expanded = 'false'
+    const toggle = item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')
+    if (toggle) {
+      const spacer = document.createElement('span')
+      spacer.className = 'creative-workspace-tree-branch-spacer'
+      spacer.setAttribute('aria-hidden', 'true')
+      toggle.replaceWith(spacer)
+    }
+    return false
   }
 
   findNode(nodes, creativeId) {

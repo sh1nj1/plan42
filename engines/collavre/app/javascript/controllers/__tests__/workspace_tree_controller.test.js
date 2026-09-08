@@ -131,6 +131,29 @@ describe('WorkspaceTreeController', () => {
     expect(item.querySelector(':scope > .creative-workspace-tree-list')).not.toBeNull()
   })
 
+  test('collapses a stale drag target when its refreshed branch is empty', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1', has_children: false, children: [] }] }),
+    })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.hasChildren).toBe('false')
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).toBeNull()
+    expect(item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')).toBeNull()
+    expect(item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-spacer')).not.toBeNull()
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+  })
+
   test('skips a branch request for a target that is already open', async () => {
     fetchMock.mockClear()
 
@@ -139,15 +162,15 @@ describe('WorkspaceTreeController', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  test('expands a nested drag target found deeper in the payload', async () => {
+  test('collapses an empty nested drag target found deeper in the payload', async () => {
     const childItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="2"]')
     childItem.dataset.expanded = 'false'
     controller.expandedCreativeIds.delete('2')
 
     await controller.expandBranchForDrag('2')
 
-    expect(childItem.dataset.expanded).toBe('true')
-    expect(controller.expandedCreativeIds.has('2')).toBe(true)
+    expect(childItem.dataset.expanded).toBe('false')
+    expect(controller.expandedCreativeIds.has('2')).toBe(false)
   })
 
   test('leaves the hovered row untouched when the payload omits its branch', async () => {
