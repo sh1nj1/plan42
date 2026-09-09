@@ -294,16 +294,22 @@ module Collavre
       html = job.send(:render_progress_html, @child, @shared_user, skip_permission_check: true)
 
       assert_includes html, %(data-creative-move-id="#{@child.id}")
+      assert_includes html, %(data-creative-move-writable="true")
     end
 
-    test "render_progress_html omits the move action without write permission" do
+    # A reader still gets the menu, because linking a readable creative
+    # elsewhere is allowed; only the move option is withheld. The flag is what
+    # `creative_move_controller` reads to disable that option, so a broadcast row
+    # that dropped it would offer a reader a move the server then refuses.
+    test "render_progress_html marks the move action unwritable without write permission" do
       reader = users(:three)
       perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: reader, permission: :read) }
 
       job = CreativeBroadcastJob.new
       html = job.send(:render_progress_html, @child, reader, skip_permission_check: true)
 
-      assert_not_includes html, "data-creative-move-id"
+      assert_includes html, %(data-creative-move-id="#{@child.id}")
+      assert_includes html, %(data-creative-move-writable="false")
     end
 
     test "render_progress_html includes progress percentage" do
