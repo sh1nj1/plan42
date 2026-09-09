@@ -244,6 +244,7 @@ export default class extends Controller {
     moveButton.type = 'button'
     moveButton.className = 'creative-action-btn'
     moveButton.dataset.creativeMoveId = String(node.id)
+    moveButton.dataset.creativeMoveWritable = String(node.can_write !== false)
     moveButton.setAttribute('aria-haspopup', 'dialog')
     // The visible label repeats on every row, so the accessible name has to
     // name the creative the button acts on.

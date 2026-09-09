@@ -118,6 +118,25 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
   })
 
+  test('preserves read-only source capability on workspace move launchers after a refresh', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [
+        { id: 10, label: 'Readable source', url: '/creatives?id=10', can_write: false, children: [] },
+        { id: 11, label: 'Writable source', url: '/creatives?id=11', can_write: true, children: [] },
+      ] }),
+    })
+    await controller.load({ showLoading: false, syncChat: false })
+    const readOnly = controller.treeTarget.querySelector('[data-creative-move-id="10"]')
+    const writable = controller.treeTarget.querySelector('[data-creative-move-id="11"]')
+    expect(readOnly).not.toBeNull()
+    expect(readOnly.dataset.creativeMoveWritable).toBe('false')
+    expect(readOnly.disabled).toBe(false)
+    expect(readOnly.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(writable.dataset.creativeMoveWritable).toBe('true')
+  })
+
   test('retains the actual parent of a branch displayed at the top level', () => {
     const element = document.querySelector('[data-controller="workspace-tree"]')
     const controller = application.getControllerForElementAndIdentifier(element, 'workspace-tree')

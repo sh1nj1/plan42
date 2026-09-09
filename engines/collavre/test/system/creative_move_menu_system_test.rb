@@ -52,4 +52,25 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @source.id.to_s, page.evaluate_script("document.activeElement.dataset.creativeMoveId")
     assert_nil @source.reload.parent_id
   end
+
+  test "keyboard creates a link from a readable source without the workspace" do
+    @user.update!(creative_workspace_enabled: false)
+    @source.update!(user: users(:two))
+    CreativeShare.create!(creative: @source, user: @user, permission: :read)
+    visit collavre.creatives_path(id: @source.id)
+
+    find("#creative-#{@source.id} [data-creative-move-id]").send_keys(:return)
+    assert_selector '[data-creative-move-target="mode"] option[value="move"][disabled]', visible: :all
+    assert_equal "link", find('[data-creative-move-target="mode"]').value
+    find('[data-creative-move-target="destination"]').send_keys(:return)
+    input = find('[data-link-creative-target="input"]')
+    input.set("Menu destination")
+    assert_selector "#link-creative-modal .link-result-item[data-id='#{@destination.id}']"
+    input.send_keys(:return)
+    find('[data-creative-move-target="confirm"]').send_keys(:return)
+
+    assert_no_selector "dialog[open][data-creative-move-target]"
+    assert Creative.exists?(origin_id: @source.id, parent_id: @destination.id, user_id: @user.id)
+    assert_nil @source.reload.parent_id
+  end
 end
