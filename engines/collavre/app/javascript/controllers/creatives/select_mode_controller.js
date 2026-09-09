@@ -13,11 +13,17 @@ export default class extends Controller {
     'setPlan',
   ]
 
+  initialize() {
+    // rowTargetConnected() runs before connect(), so the registry has to exist
+    // by then — and connect() must not replace it, or the rows registered in
+    // that window would get a second set of listeners from attachRowHandlers().
+    this.rowListeners = new Map()
+  }
+
   connect() {
     this.active = false
     this.dragging = false
     this.dragMode = 'toggle'
-    this.rowListeners = new Map()
 
     this.handleDocumentMouseUp = this.handleDocumentMouseUp.bind(this)
     document.addEventListener('mouseup', this.handleDocumentMouseUp)
@@ -29,6 +35,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.element.classList.remove('select-mode-active')
     document.removeEventListener('mouseup', this.handleDocumentMouseUp)
     document.removeEventListener('turbo:load', this.handleTurboLoad)
 
@@ -207,6 +214,12 @@ export default class extends Controller {
 
   updateUiForMode() {
     const show = this.active
+
+    // Rows are rendered before this mode is toggled, so they cannot know about
+    // it from their own attributes. Publish it on the container instead:
+    // creative-tree-row checks for this class before touching the draggable
+    // attribute that handleRowMouseDown reads to detect a bundle drag.
+    this.element.classList.toggle('select-mode-active', show)
 
     this.checkboxTargets.forEach((checkbox) => {
       checkbox.style.display = show ? '' : 'none'
