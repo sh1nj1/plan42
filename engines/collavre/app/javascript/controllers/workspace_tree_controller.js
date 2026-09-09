@@ -7,6 +7,7 @@ import {
 // Keep the workspace tree's branch affordance visually aligned with the
 // central creative tree (components/creative_tree_row.js#_toggleIcon).
 import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
+import { createWorkspaceTreeDragDrop } from '../creatives/drag_drop/workspace_tree_adapter'
 
 // Module-scoped: a history restore replaces the whole body, swapping this
 // controller's instance mid-visit. The instance that observes turbo:visit is
@@ -21,6 +22,8 @@ export default class extends Controller {
 
   static values = {
     url: String,
+    moveText: String,
+    moveLabel: String,
     lastVisitedCreativeUrl: String,
     lastVisitedCreativeVisitToken: String,
     lastVisitedCreativeVisitSequence: Number,
@@ -28,15 +31,18 @@ export default class extends Controller {
     loadingText: String,
     emptyText: String,
     errorText: String,
+    partialFailureText: String,
   }
 
   connect() {
     this.expandedCreativeIds = new Set()
+    this.pendingDropDestinationIds = new Set()
     this.addExpandedPath(this.currentPathValue)
     this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
     this.invalidatedCreativeIds = new Set()
     this.destroyedCreativeIds = new Set()
     this.invalidationGeneration = 0
+    this.dragExpandGeneration = 0
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleFrameRequest = this.handleFrameRequest.bind(this)
     this.handleFetchRequest = this.handleFetchRequest.bind(this)
@@ -60,6 +66,11 @@ export default class extends Controller {
     document.addEventListener('workspace-tree:invalidate', this.queueRefresh)
     document.addEventListener('creative-destroyed', this.queueRefresh)
     window.addEventListener('collavre:creative-drop-complete', this.queueRefresh)
+    this.dragDropRegistry = createWorkspaceTreeDragDrop({
+      root: this.treeTarget,
+      controller: this,
+      partialFailureMessage: this.partialFailureTextValue,
+    })
     this.observeWorkspaceFrame()
     // A restore render may reconnect this controller after turbo:render has
     // already fired on the previous, now-disconnected instance's listeners.
@@ -79,6 +90,7 @@ export default class extends Controller {
 
   disconnect() {
     this.loadAbortController?.abort()
+    this.cancelDragExpansion()
     this.frameObserver?.disconnect()
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     if (this.popStateSyncTimer) window.clearTimeout(this.popStateSyncTimer)
@@ -95,11 +107,16 @@ export default class extends Controller {
     document.removeEventListener('workspace-tree:invalidate', this.queueRefresh)
     document.removeEventListener('creative-destroyed', this.queueRefresh)
     window.removeEventListener('collavre:creative-drop-complete', this.queueRefresh)
+    this.dragDropRegistry?.destroy()
+    this.dragDropRegistry = null
   }
 
   async load({ showLoading = true, syncChat = true, preserveView = false, focusCreativeId } = {}) {
     this.loadAbortController?.abort()
     this.loadAbortController = new AbortController()
+    // A full load re-renders the whole tree from an authoritative payload, so
+    // any hover expansion still in flight is stale the moment it starts.
+    this.cancelDragExpansion()
     if (this.pendingRevealPath) this.addExpandedPath(this.pendingRevealPath)
     const requestId = (this.loadRequestId || 0) + 1
     this.loadRequestId = requestId
@@ -122,8 +139,13 @@ export default class extends Controller {
 
       const nodes = Array.isArray(data.creatives) ? data.creatives : []
       if (invalidationGeneration === this.invalidationGeneration) this.restoreReadableCreativeIds(nodes)
-      this.expandedCreativeIds = new Set(requestedExpandedIds)
-      this.committedExpandedCreativeIds = new Set(requestedExpandedIds)
+      // A drop can reveal a branch while this response is still in flight, and
+      // that reveal has not been rendered yet — carry it into the next request
+      // instead of letting an older answer erase it.
+      this.expandedCreativeIds = new Set([...requestedExpandedIds, ...this.pendingDropDestinationIds])
+      this.trimExpandedCreativeIds()
+      this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
+      requestedExpandedIds.forEach((id) => this.pendingDropDestinationIds.delete(id))
       if (requestedRevealPath && this.samePath(requestedRevealPath, this.pendingRevealPath || [])) {
         this.pendingRevealPath = null
       }
@@ -156,24 +178,34 @@ export default class extends Controller {
     this.syncFromWorkspaceFrame(undefined, { syncChat })
   }
 
-  buildList(nodes) {
+  buildList(nodes, parentId = null, level = 1) {
     const list = document.createElement('ul')
     list.className = 'creative-workspace-tree-list'
 
-    nodes.forEach((node) => list.appendChild(this.buildNode(node)))
+    nodes.forEach((node) => list.appendChild(this.buildNode(node, parentId, level)))
     return list
   }
 
-  buildNode(node) {
+  buildNode(node, parentId = null, level = 1) {
     const item = document.createElement('li')
     item.className = 'creative-workspace-tree-item'
     item.dataset.creativeId = String(node.id)
+    parentId = node.parent_id === undefined ? parentId : node.parent_id
+    item.dataset.level = String(level)
+    if (parentId) item.dataset.parentId = String(parentId)
 
     const row = document.createElement('div')
     row.className = 'creative-workspace-tree-row'
+    row.id = `workspace-creative-${node.id}`
+    row.draggable = true
+    row.dataset.creativeId = String(node.id)
+    row.dataset.level = String(level)
+    if (parentId) row.dataset.parentId = String(parentId)
     const children = Array.isArray(node.children) ? node.children : []
     const hasChildren = node.has_children === true || children.length > 0
     const expanded = hasChildren && this.expandedCreativeIds.has(String(node.id))
+    item.dataset.hasChildren = String(hasChildren)
+    item.dataset.expanded = String(expanded)
 
     if (hasChildren) {
       const toggle = document.createElement('button')
@@ -193,6 +225,7 @@ export default class extends Controller {
 
     const link = document.createElement('a')
     link.href = node.url
+    link.draggable = false
     link.textContent = node.label
     link.className = 'creative-workspace-tree-link'
     link.dataset.turboFrame = 'creative-workspace-content'
@@ -207,10 +240,23 @@ export default class extends Controller {
     }
     link.addEventListener('click', (event) => this.selectNode(event))
     row.appendChild(link)
+    const moveButton = document.createElement('button')
+    moveButton.type = 'button'
+    moveButton.className = 'creative-action-btn'
+    moveButton.dataset.creativeMoveId = String(node.id)
+    moveButton.dataset.creativeMoveWritable = String(node.can_write !== false)
+    moveButton.setAttribute('aria-haspopup', 'dialog')
+    // The visible label repeats on every row, so the accessible name has to
+    // name the creative the button acts on.
+    moveButton.setAttribute('aria-label', this.moveLabelValue
+      ? this.moveLabelValue.replace('%{title}', () => node.label)
+      : node.label)
+    moveButton.textContent = this.moveTextValue
+    row.appendChild(moveButton)
     item.appendChild(row)
 
     if (hasChildren && expanded) {
-      const childList = this.buildList(children)
+      const childList = this.buildList(children, node.id, level + 1)
       item.appendChild(childList)
     }
 
@@ -223,6 +269,7 @@ export default class extends Controller {
 
     if (this.expandedCreativeIds.has(creativeId)) {
       this.expandedCreativeIds.delete(creativeId)
+      this.pendingDropDestinationIds.delete(creativeId)
     } else {
       this.expandedCreativeIds.delete(creativeId)
       this.expandedCreativeIds.add(creativeId)
@@ -235,6 +282,118 @@ export default class extends Controller {
       preserveView: true,
       focusCreativeId: creativeId,
     })
+  }
+
+  async expandBranchForDrag(creativeId) {
+    const id = String(creativeId)
+    // Hovering a second branch aborts the first request but leaves its id in
+    // `expandedCreativeIds`, so only the rendered row can say whether a branch
+    // is actually open — otherwise the aborted one can never be retried.
+    const hoveredItem = this.findWorkspaceItem(id)
+    if (!hoveredItem || hoveredItem.dataset.expanded === 'true') return
+
+    this.cancelDragExpansion()
+    this.expandedCreativeIds.add(id)
+    this.trimExpandedCreativeIds()
+    const requestedExpandedIds = new Set(this.expandedCreativeIds)
+    const abortController = new AbortController()
+    this.dragExpandAbortController = abortController
+    this.dragExpandCreativeId = id
+    const expandGeneration = this.dragExpandGeneration
+    const loadGeneration = this.loadRequestId
+
+    try {
+      const requestOptions = { headers: { Accept: 'application/json' } }
+      requestOptions.signal = abortController.signal
+      const response = await fetch(this.workspaceTreeUrl(requestedExpandedIds), requestOptions)
+      if (!response.ok) throw new Error(`Failed to expand workspace tree branch: ${response.status}`)
+      const data = await response.json()
+      // A load that started after this request owns the tree. Splicing these
+      // children in would overwrite `nodesData` with the pre-move placement.
+      if (this.loadRequestId !== loadGeneration || this.dragExpandGeneration !== expandGeneration) return
+
+      const nodes = Array.isArray(data.creatives) ? data.creatives : []
+      const expanded = this.renderExpandedBranch(id, nodes)
+      if (expanded === false) requestedExpandedIds.delete(id)
+      this.nodesData = nodes
+      this.committedExpandedCreativeIds = new Set(requestedExpandedIds)
+    } catch (error) {
+      if (this.loadRequestId !== loadGeneration || this.dragExpandGeneration !== expandGeneration) return
+      if (error.name === 'AbortError') {
+        // The branch was never rendered, so it must not survive as expanded
+        // state that a later load would replay.
+        if (!this.committedExpandedCreativeIds.has(id)) this.expandedCreativeIds.delete(id)
+        return
+      }
+      this.expandedCreativeIds = new Set(this.committedExpandedCreativeIds)
+      console.error(error)
+    } finally {
+      if (this.dragExpandAbortController === abortController) {
+        this.dragExpandAbortController = null
+        this.dragExpandCreativeId = null
+      }
+    }
+  }
+
+  cancelDragExpansion() {
+    this.dragExpandGeneration += 1
+    this.dragExpandAbortController?.abort()
+    const creativeId = this.dragExpandCreativeId
+    this.dragExpandAbortController = null
+    this.dragExpandCreativeId = null
+    if (creativeId && !this.committedExpandedCreativeIds.has(creativeId)) {
+      this.expandedCreativeIds.delete(creativeId)
+    }
+  }
+
+  findWorkspaceItem(creativeId) {
+    return [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
+      .find((candidate) => candidate.dataset.creativeId === String(creativeId)) || null
+  }
+
+  renderExpandedBranch(creativeId, nodes) {
+    const node = this.findNode(nodes, creativeId)
+    const item = this.findWorkspaceItem(creativeId)
+    if (!node || !item) return
+
+    const existingList = [...item.children]
+      .find((child) => child.matches?.('.creative-workspace-tree-list'))
+    existingList?.remove()
+    const children = Array.isArray(node.children) ? node.children : []
+    if (children.length === 0) return this.collapseEmptyBranch(item, creativeId)
+
+    item.appendChild(this.buildList(children, node.id, Number(item.dataset.level || 1) + 1))
+    item.dataset.hasChildren = 'true'
+    item.dataset.expanded = 'true'
+    const toggle = item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', 'true')
+      toggle.innerHTML = CHEVRON_EXPANDED
+    }
+    return true
+  }
+
+  collapseEmptyBranch(item, creativeId) {
+    this.expandedCreativeIds.delete(String(creativeId))
+    item.dataset.hasChildren = 'false'
+    item.dataset.expanded = 'false'
+    const toggle = item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')
+    if (toggle) {
+      const spacer = document.createElement('span')
+      spacer.className = 'creative-workspace-tree-branch-spacer'
+      spacer.setAttribute('aria-hidden', 'true')
+      toggle.replaceWith(spacer)
+    }
+    return false
+  }
+
+  findNode(nodes, creativeId) {
+    for (const node of nodes) {
+      if (String(node.id) === String(creativeId)) return node
+      const found = this.findNode(Array.isArray(node.children) ? node.children : [], creativeId)
+      if (found) return found
+    }
+    return null
   }
 
   togglePanel() {
@@ -377,11 +536,23 @@ export default class extends Controller {
 
   queueRefresh(event) {
     this.rememberInvalidatedCreativeIds(event)
+    this.revealDropDestination(event)
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     this.refreshTimeout = window.setTimeout(() => {
       this.refreshTimeout = null
       this.load({ showLoading: false, syncChat: false, preserveView: true })
     }, 100)
+  }
+
+  // A row dropped into a collapsed branch would simply disappear from this
+  // partial view, so the destination is opened before the tree is fetched again.
+  revealDropDestination(event) {
+    const { direction, targetCreativeId } = event?.detail || {}
+    if (direction !== 'child' || !targetCreativeId) return
+
+    this.pendingDropDestinationIds.add(String(targetCreativeId))
+    this.expandedCreativeIds.add(String(targetCreativeId))
+    this.trimExpandedCreativeIds()
   }
 
   syncFromWorkspaceFrame(
@@ -518,6 +689,7 @@ export default class extends Controller {
       if (!evictedId) return
 
       this.expandedCreativeIds.delete(evictedId)
+      this.pendingDropDestinationIds.delete(evictedId)
     }
   }
 

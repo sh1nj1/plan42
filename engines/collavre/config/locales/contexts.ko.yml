@@ -11,3 +11,4 @@ ko:
       search_placeholder: "컨텍스트 검색..."
       enabled: "활성화됨"
       disabled: "비활성화됨"
+      update_error: "컨텍스트를 변경하지 못했습니다. 목록을 새로고침한 뒤 다시 시도해 주세요."

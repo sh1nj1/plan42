@@ -1,4 +1,20 @@
 import csrfFetch from './csrf_fetch';
+import { ApiError, apiErrorFromResponse } from './api_error';
+
+/**
+ * True when the response is the login page rather than the endpoint's answer.
+ *
+ * `Authentication#request_authentication` redirects *every* request without a
+ * live session to `new_session_path` — POSTs included — and fetch follows that
+ * redirect and returns a perfectly `ok` HTML page. Trusting `response.ok`
+ * alone would read an expired session as a successful move.
+ *
+ * @param {Response} response
+ * @returns {boolean}
+ */
+export function isAuthenticationRedirect(response) {
+  return response?.redirected === true;
+}
 
 export function sendNewOrder({ draggedId, draggedIds, targetId, direction }) {
   const payload = { target_id: targetId, direction };
@@ -42,7 +58,15 @@ export function sendLinkedCreative({ draggedId, targetId, direction }) {
     },
     body: JSON.stringify({ dragged_id: draggedId, target_id: targetId, direction }),
   }).then((response) => {
-    if (!response.ok) throw new Error('Failed to create linked creative');
+    if (isAuthenticationRedirect(response)) {
+      const error = new ApiError('Authentication required', { status: response.status });
+      error.authenticationRequired = true;
+      throw error;
+    }
+    // An ApiError keeps the HTTP status attached: link_drop answers 403 for a
+    // permission failure and 422 for a domain rejection, and a multi-link drop
+    // has to report which of the two happened per creative.
+    if (!response.ok) return apiErrorFromResponse(response).then((error) => { throw error; });
     return response.json();
   });
 }

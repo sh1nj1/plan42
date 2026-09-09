@@ -38,6 +38,28 @@ module Creatives
       assert_empty nodes.first[:children]
     end
 
+    test "reports the real parent of a displayed top-level branch" do
+      parent = Creative.create!(user: @user, description: "Parent")
+      branch = Creative.create!(user: @user, parent: parent, description: "Displayed branch")
+
+      node = build_tree([ branch ]).first
+
+      assert_equal branch.id, node[:id]
+      assert_equal parent.id, node[:parent_id]
+    end
+
+    test "includes write capability while retaining readable link sources" do
+      owned = Creative.create!(user: @user, description: "Owned")
+      shared = Creative.create!(user: users(:two), description: "Readable")
+      CreativeShare.create!(creative: shared, user: @user, permission: :read)
+
+      nodes = build_tree([ owned, shared ])
+
+      assert nodes.first[:can_write]
+      refute nodes.last[:can_write]
+      assert_equal shared.id, nodes.last[:id]
+    end
+
     test "keeps a childless root visible with its own metadata" do
       root_leaf = Creative.create!(user: @user, description: "<em>Root leaf</em>")
 

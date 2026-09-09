@@ -294,7 +294,7 @@ body.chat-fullscreen {
     /* Prevent iOS zoom on focus */
 }
 
-#new-comment-form.creative-drop-hover textarea {
+#new-comment-form.dnd-over-into textarea {
     border-color: var(--link);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 25%, transparent);
 }
@@ -1433,17 +1433,19 @@ body.chat-fullscreen {
     opacity: 0.5;
 }
 
-.context-chip.context-drag-over-left {
+.context-chip.dnd-over-left,
+.topic-tag.dnd-over-left {
     border-left: 3px solid var(--color-active);
     margin-left: -1px;
 }
 
-.context-chip.context-drag-over-right {
+.context-chip.dnd-over-right,
+.topic-tag.dnd-over-right {
     border-right: 3px solid var(--color-active);
     margin-right: -1px;
 }
 
-.comment-contexts-list.context-drop-active {
+.comment-contexts-list.dnd-over-into {
     outline: 2px dashed var(--color-link);
     outline-offset: -2px;
     background-color: color-mix(in srgb, var(--color-link) 8%, transparent);
@@ -1593,7 +1595,7 @@ body.chat-fullscreen {
     opacity: 0.5;
 }
 
-.topic-creation-container.drag-over {
+.topic-creation-container.dnd-over-into {
     background: var(--color-active);
     border-radius: 12px;
     opacity: 0.8;
@@ -1643,7 +1645,7 @@ body.chat-fullscreen {
 }
 
 /* Drag and drop styles for moving comments to topics */
-.topic-tag.drag-over {
+.topic-tag.dnd-over-into {
     background-color: var(--color-active);
     color: var(--color-badge-text);
     border-color: var(--color-active);
@@ -1666,16 +1668,6 @@ body.chat-fullscreen {
 
 .topic-tag.topic-dragging {
     opacity: 0.5;
-}
-
-.topic-tag.topic-drag-over-left {
-    border-left: 3px solid var(--color-active);
-    margin-left: -1px;
-}
-
-.topic-tag.topic-drag-over-right {
-    border-right: 3px solid var(--color-active);
-    margin-right: -1px;
 }
 
 .creative-history-list {

@@ -12,6 +12,32 @@ describe('WorkspaceTreeController', () => {
   let fetchMock
   let preventNavigation
 
+  test('renders localized native move buttons for workspace creative placements', () => {
+    const buttons = [...controller.treeTarget.querySelectorAll('[data-creative-move-id]')]
+    expect(buttons.map(button => button.dataset.creativeMoveId)).toEqual(['1', '2'])
+    buttons.forEach(button => {
+      expect(button.tagName).toBe('BUTTON')
+      expect(button.type).toBe('button')
+      expect(button.textContent).toBe('이동…')
+      expect(button.getAttribute('aria-haspopup')).toBe('dialog')
+      const requests = fetchMock.mock.calls.length
+      button.click()
+      expect(fetchMock).toHaveBeenCalledTimes(requests)
+    })
+    // The visible label repeats on every row, so the accessible name has to
+    // distinguish the rows from each other.
+    expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['Root 이동', 'Current branch 이동'])
+  })
+
+  test.each(['Budget $$', 'Title $&', "Title $`", "Title $'"])(
+    'preserves literal title %s in the localized move button label', label => {
+      controller.moveLabelValue = 'Move %{title} here'
+      const item = controller.buildNode({ id: 20, label, url: '/creatives?id=20' })
+      expect(item.querySelector('[data-creative-move-id]').getAttribute('aria-label'))
+        .toBe(`Move ${label} here`)
+    }
+  )
+
   beforeEach(async () => {
     window.localStorage.clear()
     fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
@@ -54,6 +80,8 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="이동…"
+               data-workspace-tree-move-label-value="%{title} 이동"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
@@ -102,6 +130,383 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
   })
 
+  test('preserves read-only source capability on workspace move launchers after a refresh', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [
+        { id: 10, label: 'Readable source', url: '/creatives?id=10', can_write: false, children: [] },
+        { id: 11, label: 'Writable source', url: '/creatives?id=11', can_write: true, children: [] },
+      ] }),
+    })
+    await controller.load({ showLoading: false, syncChat: false })
+    const readOnly = controller.treeTarget.querySelector('[data-creative-move-id="10"]')
+    const writable = controller.treeTarget.querySelector('[data-creative-move-id="11"]')
+    expect(readOnly).not.toBeNull()
+    expect(readOnly.dataset.creativeMoveWritable).toBe('false')
+    expect(readOnly.disabled).toBe(false)
+    expect(readOnly.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(writable.dataset.creativeMoveWritable).toBe('true')
+  })
+
+  test('retains the actual parent of a branch displayed at the top level', () => {
+    const element = document.querySelector('[data-controller="workspace-tree"]')
+    const controller = application.getControllerForElementAndIdentifier(element, 'workspace-tree')
+    controller.render([{ id: 50, parent_id: 49, label: 'Shared branch', url: '/creatives?id=50', children: [] }])
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="50"]')
+    expect(item.dataset.parentId).toBe('49')
+    expect(item.querySelector('.creative-workspace-tree-row').dataset.parentId).toBe('49')
+    expect(item.dataset.level).toBe('1')
+  })
+
+  test('renders rows as creative drag handles without native link dragging', () => {
+    const rootItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    const childItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="2"]')
+    const childRow = childItem.querySelector(':scope > .creative-workspace-tree-row')
+    const childLink = childRow.querySelector('.creative-workspace-tree-link')
+
+    expect(rootItem.dataset.level).toBe('1')
+    expect(childItem.dataset.parentId).toBe('1')
+    expect(childItem.dataset.level).toBe('2')
+    expect(childRow.draggable).toBe(true)
+    expect(childRow.dataset.parentId).toBe('1')
+    expect(childLink.draggable).toBe(false)
+  })
+
+  test('expands a drag target without replacing the hovered row', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    const hoveredRow = item.querySelector(':scope > .creative-workspace-tree-row')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+
+    await controller.expandBranchForDrag('1')
+
+    expect(document.getElementById('workspace-creative-1')).toBe(hoveredRow)
+    expect(item.dataset.expanded).toBe('true')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).not.toBeNull()
+  })
+
+  // Nesting a row under a collapsed branch would drop it out of this partial
+  // view entirely, leaving the user with no sign the move landed.
+  test('opens the destination branch before refreshing after a nesting drop', () => {
+    controller.expandedCreativeIds.delete('1')
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '1', direction: 'child' },
+    }))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+  })
+
+  // The centre pane reloads its own tree on a drop, so a request that started
+  // before the drop can answer after it — and it must not close the branch the
+  // drop just revealed.
+  test('keeps the destination open when an older tree response lands after the drop', async () => {
+    let answerInFlight
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      answerInFlight = () => resolve({ ok: true, headers: new Headers(), json: async () => ({ creatives: [] }) })
+    }))
+    const inFlight = controller.load({ showLoading: false })
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '7', direction: 'child' },
+    }))
+    answerInFlight()
+    await inFlight
+
+    expect(controller.expandedCreativeIds.has('7')).toBe(true)
+
+    fetchMock.mockClear()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    const [requestedUrl] = fetchMock.mock.calls.find(([url]) => url.includes('workspace_tree=1'))
+    expect(requestedUrl).toContain('expand%5B%5D=7')
+  })
+
+  test('leaves the expansion set alone for a sibling drop', () => {
+    controller.expandedCreativeIds.delete('1')
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '1', direction: 'down' },
+    }))
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', { detail: {} }))
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('collapses a stale drag target when its refreshed branch is empty', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1', has_children: false, children: [] }] }),
+    })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.hasChildren).toBe('false')
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).toBeNull()
+    expect(item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')).toBeNull()
+    expect(item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-spacer')).not.toBeNull()
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('treats malformed children as empty while resolving a hover target among unrelated nodes', async () => {
+    const item = controller.findWorkspaceItem('1')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [
+        { id: 99, children: { id: 100 } },
+        { id: 1, label: 'Root', children: null },
+      ] }),
+    })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.dataset.hasChildren).toBe('false')
+    expect(item.querySelector('.creative-workspace-tree-list')).toBeNull()
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('renders a standalone root row with a useful action name when the optional label is absent', () => {
+    controller.moveLabelValue = ''
+    const item = controller.buildNode({ id: 20, label: 'Standalone root', url: '/creatives?id=20' })
+    const row = item.querySelector('.creative-workspace-tree-row')
+    expect(item.dataset.level).toBe('1')
+    expect(item.dataset.parentId).toBeUndefined()
+    expect(row.dataset.level).toBe('1')
+    expect(row.draggable).toBe(true)
+    expect(row.querySelector('[data-creative-move-id="20"]').getAttribute('aria-label')).toBe('Standalone root')
+  })
+
+  test('skips a branch request for a target that is already open', async () => {
+    fetchMock.mockClear()
+
+    await controller.expandBranchForDrag('1')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('collapses an empty nested drag target found deeper in the payload', async () => {
+    const childItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="2"]')
+    childItem.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('2')
+
+    await controller.expandBranchForDrag('2')
+
+    expect(childItem.dataset.expanded).toBe('false')
+    expect(controller.expandedCreativeIds.has('2')).toBe(false)
+  })
+
+  test('leaves the hovered row untouched when the payload omits its branch', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({ ok: true, headers: new Headers(), json: async () => ({}) })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.expanded).toBe('false')
+  })
+
+  // A hover expansion that fails must not leave the pointer over a row the
+  // controller believes is open — the next re-render would drop the children.
+  test('ignores a hover expansion for a row that is not rendered', async () => {
+    fetchMock.mockClear()
+
+    await controller.expandBranchForDrag('999')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('rolls the expansion back when the branch request fails', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Failed to expand workspace tree branch: 500' })
+    )
+    consoleError.mockRestore()
+  })
+
+  test('stays quiet when a newer hover supersedes an in-flight branch request', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockRejectedValueOnce(
+      Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' })
+    )
+
+    await controller.expandBranchForDrag('1')
+
+    expect(consoleError).not.toHaveBeenCalled()
+    // The branch never rendered, so it must not linger as expanded state that a
+    // later load would replay onto a row the user only passed over.
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    consoleError.mockRestore()
+  })
+
+  // Hovering a second branch aborts the first request. The abandoned id used to
+  // stay in `expandedCreativeIds`, so coming back to the still-collapsed branch
+  // short-circuited and it could never be expanded again.
+  test('retries a hover expansion whose earlier request was aborted', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockRejectedValueOnce(
+      Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' })
+    )
+
+    await controller.expandBranchForDrag('1')
+    expect(item.dataset.expanded).toBe('false')
+
+    fetchMock.mockClear()
+    await controller.expandBranchForDrag('1')
+
+    expect(fetchMock).toHaveBeenCalled()
+    expect(item.dataset.expanded).toBe('true')
+    consoleError.mockRestore()
+  })
+
+  // A hover response that outlives the reload triggered by a completed drop
+  // would splice the pre-move children back in and overwrite `nodesData`.
+  test('discards a hover expansion answered after a full reload started', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+
+    let releaseHover
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseHover = () => resolve({
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({ creatives: [{ id: 1, label: 'Stale', url: '/creatives?id=1', children: [] }] }),
+      })
+    }))
+
+    const hover = controller.expandBranchForDrag('1')
+    await controller.load({ showLoading: false, syncChat: false })
+    const reloadedNodes = controller.nodesData
+    releaseHover()
+    await hover
+
+    expect(controller.nodesData).toBe(reloadedNodes)
+  })
+
+  test.each(['AbortError', 'TypeError'])('a stale %s cannot remove the latest hover expansion', async name => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    let rejectOld
+    fetchMock.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject }))
+    const oldHover = controller.expandBranchForDrag('1')
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}))
+    controller.expandBranchForDrag('1')
+    rejectOld(Object.assign(new Error('stale request'), { name }))
+    await oldHover
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+  })
+
+  test('aborts an in-flight hover expansion when a full load starts', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    let signal
+    fetchMock.mockImplementationOnce((_url, options) => {
+      signal = options.signal
+      return new Promise(() => {})
+    })
+
+    controller.expandBranchForDrag('1')
+    expect(signal.aborted).toBe(false)
+
+    await controller.load({ showLoading: false, syncChat: false })
+
+    expect(signal.aborted).toBe(true)
+  })
+
+  test('discards a hover response after the drag preview is cleared', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    const renderedNodes = controller.nodesData
+    let releaseResponse
+    let signal
+    fetchMock.mockImplementationOnce((_url, options) => {
+      signal = options.signal
+      return new Promise((resolve) => {
+        releaseResponse = () => resolve({
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            creatives: [{ id: 1, label: 'Stale', url: '/creatives?id=1', children: [{ id: 9 }] }],
+          }),
+        })
+      })
+    })
+
+    const hover = controller.expandBranchForDrag('1')
+    controller.cancelDragExpansion()
+    releaseResponse()
+    await hover
+
+    expect(signal.aborted).toBe(true)
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).toBeNull()
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.nodesData).toBe(renderedNodes)
+  })
+
+  test('keeps a successful child drop target expanded for the authoritative reload', () => {
+    controller.expandedCreativeIds.delete('2')
+
+    controller.revealDropDestination({ detail: { targetCreativeId: '2', direction: 'child' } })
+
+    expect(controller.expandedCreativeIds.has('2')).toBe(true)
+  })
+
+  test('nests a branch under a row that never declared its depth', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    delete item.dataset.level
+    controller.expandedCreativeIds.delete('1')
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.querySelector(':scope > .creative-workspace-tree-list [data-creative-id="2"]').dataset.level).toBe('2')
+  })
+
   test('records the visible creative after a cached Turbo history restore', async () => {
     document.head.innerHTML = '<meta name="csrf-token" content="token">'
     document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
@@ -128,6 +533,8 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="이동…"
+               data-workspace-tree-move-label-value="%{title} 이동"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
@@ -414,6 +821,18 @@ describe('WorkspaceTreeController', () => {
     expect(controller.committedExpandedCreativeIds.has('1')).toBe(true)
     expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
     console.error.mockRestore()
+  })
+
+  test('does not replay a pending drop destination evicted by the expansion bound', async () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+    controller.revealDropDestination({ detail: { targetCreativeId: '9000', direction: 'child' } })
+    const path = Array.from({ length: 100 }, (_, index) => index + 1000)
+    controller.addExpandedPath(path)
+    expect(controller.pendingDropDestinationIds.has('9000')).toBe(false)
+    await controller.load({ showLoading: false, syncChat: false })
+    expect(controller.expandedCreativeIds.has('9000')).toBe(false)
+    expect(controller.expandedCreativeIds.size).toBe(100)
   })
 
   test('bounds the expanded branch request state', () => {
