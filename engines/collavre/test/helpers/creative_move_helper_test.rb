@@ -46,13 +46,15 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_includes html, 'data-creative-move-id=""'
   end
 
-  test "both locales interpolate the creative into the accessible name" do
+  test "the menu uses its localized label in both locales" do
     %w[en ko].each do |locale|
-      name = I18n.t("collavre.dnd.move_creative", title: "Quarterly plan", locale: locale)
-      assert_includes name, "Quarterly plan", "#{locale} must name the creative"
-      assert_not_includes name, "%{title}", "#{locale} must interpolate the title"
+      I18n.with_locale(locale) do
+        html = render_creative_move_action(nil, nil)
+        assert_equal I18n.t("collavre.dnd.move_title"), Nokogiri::HTML5.fragment(html).at_css("button").text
+      end
     end
   end
+
 end
 
 # The engine is isolated, so its helpers are not on the host's helpers_path.

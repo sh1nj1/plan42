@@ -2,7 +2,6 @@ en:
   collavre:
     dnd:
       move_title: "Move…"
-      move_creative: "Move %{title}"
       choose_destination: "Choose destination…"
       destination: "Destination"
       position: "Position"
