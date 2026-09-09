@@ -116,13 +116,7 @@ module Collavre
       # auth_key defaults to the admin key, which is what every route but the
       # health surface is gated on. Pass an explicit key (or nil) to override.
       def request(method, path, body: nil, auth_key: :admin_key)
-        key = auth_key == :admin_key ? @gateway.admin_key : auth_key
-        headers = { "Accept" => "application/json" }
-        headers["Authorization"] = "Bearer #{key}" if key.present?
-        headers["X-CLI-Proxy-User-Key"] = @user_key if @user_key.present?
-        headers.merge!(Identity.headers(gateway: @gateway, workspace: @workspace, method: method, path: path)) if @workspace
-        headers["Content-Type"] = "application/json" if body
-
+        headers = headers_for(method, path, body: body, auth_key: auth_key)
         response = if method == :delete
           @http_client.delete(@gateway.proxy_path(path), headers: headers)
         elsif method == :get
@@ -149,6 +143,16 @@ module Collavre
         raise Error.new(e.message, code: "proxy_unreachable")
       rescue EndpointPolicy::UnsafeEndpoint
         raise Error.new(I18n.t("collavre.agent_gateways.unsafe_endpoint"), code: "unsafe_proxy_endpoint")
+      end
+
+      def headers_for(method, path, body:, auth_key:)
+        key = auth_key == :admin_key ? @gateway.admin_key : auth_key
+        headers = { "Accept" => "application/json" }
+        headers["Authorization"] = "Bearer #{key}" if key.present?
+        headers["X-CLI-Proxy-User-Key"] = @user_key if @user_key.present?
+        headers.merge!(Identity.headers(gateway: @gateway, workspace: @workspace, method: method, path: path)) if @workspace
+        headers["Content-Type"] = "application/json" if body
+        headers
       end
 
       # A failure may answer with a non-JSON body: the proxy itself answers JSON
