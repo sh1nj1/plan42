@@ -69,6 +69,10 @@ module CollavreSlack
       post("chat.delete", { channel: channel, ts: timestamp })
     end
 
+    def auth_test
+      post("auth.test", {})
+    end
+
     def get_user_info(user_id:)
       get("users.info", user: user_id)
     end

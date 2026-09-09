@@ -13,13 +13,11 @@ module CollavreSlack
       slack_account = SlackAccount.find_by(team_id: team_id)
       return unless slack_account
 
-      channel_link = SlackChannelLink.find_by(
-        slack_account: slack_account,
-        channel_id: channel_id
-      )
+      channel_link = linked_channel(slack_account)
       return unless channel_link
 
-      user_result = find_or_map_user(slack_account, event_user_id)
+      user_result = message_sender(slack_account)
+      return unless user_result
       user = user_result[:user] || channel_link.created_by
       slack_display_name = user_result[:slack_display_name]
       slack_email = user_result[:slack_email]
@@ -55,8 +53,8 @@ module CollavreSlack
       message_ts = message[:ts]
       return unless message_ts
 
-      # Skip bot messages
-      return if message[:bot_id].present?
+      # Ignore our own edits to prevent synchronization loops.
+      return if SlackBotMessage.new(account: slack_account, message: message).own?
 
       # Find the comment link by Slack message
       comment_link = SlackCommentLink.find_by_slack_message(
@@ -135,12 +133,21 @@ module CollavreSlack
 
     attr_reader :payload
 
+    def linked_channel(slack_account)
+      SlackChannelLink.find_by(slack_account: slack_account, channel_id: channel_id)
+    end
+
+    def message_sender(slack_account)
+      bot_message = SlackBotMessage.new(account: slack_account, message: event_payload)
+      return if bot_message.own?
+
+      bot_message.bot? ? bot_message.sender : find_or_map_user(slack_account, event_user_id)
+    end
+
     def message_event?
       return false unless event_type == "event_callback"
       return false unless event_payload[:type] == "message"
-      return false if event_payload[:subtype].present?
-      # Skip bot messages to prevent loops
-      return false if event_payload[:bot_id].present?
+      return false if event_payload[:subtype].present? && event_payload[:subtype] != "bot_message"
       true
     end
 
