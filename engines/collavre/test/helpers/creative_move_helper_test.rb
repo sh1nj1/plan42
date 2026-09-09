@@ -46,11 +46,16 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_includes html, 'data-creative-move-id=""'
   end
 
-  test "both locales interpolate the creative into the accessible name" do
+  # The action is named by its visible label alone now that a page renders one
+  # of it, so that label is the whole accessible name in both locales.
+  test "both locales label the action" do
+    creative = Struct.new(:id, :archived?).new(42, false)
+
     %w[en ko].each do |locale|
-      name = I18n.t("collavre.dnd.move_creative", title: "Quarterly plan", locale: locale)
-      assert_includes name, "Quarterly plan", "#{locale} must name the creative"
-      assert_not_includes name, "%{title}", "#{locale} must interpolate the title"
+      I18n.with_locale(locale) do
+        assert_includes render_creative_move_action(creative, true),
+          I18n.t("collavre.dnd.move_title", locale: locale)
+      end
     end
   end
 end

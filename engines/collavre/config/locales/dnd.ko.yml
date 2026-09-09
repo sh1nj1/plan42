@@ -2,7 +2,6 @@ ko:
   collavre:
     dnd:
       move_title: "이동…"
-      move_creative: "%{title} 이동"
       choose_destination: "대상 선택…"
       destination: "대상"
       position: "위치"
