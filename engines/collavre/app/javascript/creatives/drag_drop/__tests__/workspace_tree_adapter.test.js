@@ -354,6 +354,37 @@ describe('workspace tree drag and drop adapter', () => {
     setItem.mockRestore()
   })
 
+  test.each([
+    [['8', '9'], '9', 'creative-9'],
+    [['8'], '8', null],
+    [['9'], '9', 'creative-9'],
+  ])('preserves the originating row/tree pair for successful IDs %j', async (succeededIds, creativeId, treeId) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    const setItem = jest.spyOn(Storage.prototype, 'setItem')
+    execute.mockResolvedValue({
+      status: succeededIds.length === 2 ? 'success' : 'partial', succeededIds,
+      failedIds: ['8', '9'].filter(id => !succeededIds.includes(id)), failures: [],
+    })
+    const transfer = dataTransfer()
+    writeDragData(transfer, {
+      kind: 'creative', ids: ['8', '9'],
+      payload: { creativeId: '9', treeId: 'creative-9', sourceWindowId: 'right-window' },
+    })
+    const target = document.getElementById('workspace-creative-2')
+    event('dragover', target, transfer)
+    event('drop', target, transfer)
+    await flush()
+    expect(completion).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId, treeId, creativeIds: succeededIds }),
+    }))
+    const signal = setItem.mock.calls.find(([key]) => key === 'collavre.dragDropSignal')
+    expect(JSON.parse(signal[1])).toEqual(expect.objectContaining({ creativeId, treeId, creativeIds: succeededIds }))
+    setItem.mockRestore()
+    consoleError.mockRestore()
+  })
+
   // The dialog copy comes from the server and is covered by move_feedback's own
   // suite; here only the hand-off from the adapter matters.
   test('surfaces the rows a partial move left behind', async () => {

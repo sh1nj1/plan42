@@ -72,6 +72,25 @@ test.each([
   expect(load).not.toHaveBeenCalled()
 })
 
+test.each([
+  { creativeId: '8', creativeIds: ['7', '8'], treeId: 'creative-8', expected: ['9', '7', '8'] },
+  { creativeId: '7', creativeIds: ['7'], treeId: null, expected: ['8', '9', '7'] },
+])('completion preserves bundle rows while editing defers refresh: %j', detail => {
+  const draft = document.createElement('textarea')
+  draft.value = 'Unsaved target draft'
+  container.lastElementChild.appendChild(draft)
+  document.dispatchEvent(new Event('creative-editing:start'))
+  signal({ ...detail, direction: 'down', targetTreeId: 'creative-9', mode: 'move' })
+  jest.advanceTimersByTime(400)
+  expect(ids()).toEqual(detail.expected)
+  expect(draft.isConnected).toBe(true)
+  expect(draft.value).toBe('Unsaved target draft')
+  expect(load).not.toHaveBeenCalled()
+  document.dispatchEvent(new Event('creative-editing:stop'))
+  jest.advanceTimersByTime(400)
+  expect(load).toHaveBeenCalledTimes(1)
+})
+
 test('bundle children retain their order and parent metadata', () => {
   controller.beginReloadHold()
   signal({ creativeId: '7', creativeIds: [7, 8], treeId: 'creative-7', direction: 'child', targetTreeId: 'creative-9' })

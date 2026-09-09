@@ -6,6 +6,7 @@ import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import FormController from '../form_controller'
 import chatDrafts from '../../../lib/chat_drafts'
+import { writeDragData } from '../../../lib/dnd/envelope'
 
 describe('FormController - draft persistence', () => {
   let application
@@ -2066,4 +2067,37 @@ describe('FormController - draft persistence', () => {
     await new Promise((resolve) => setTimeout(resolve, 600))
     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
   })
+  test.each([
+    [['application/x-collavre-creative'], [], true],
+    [['Files'], [new File(['image'], 'image.png', { type: 'image/png' })], true],
+    [['text/plain'], [], false],
+  ])('dragover accepts creative or image transfers and ignores other data (%j)', (types, files, accepted) => {
+    const event = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.assign(event, { dataTransfer: { types, files } })
+    const stop = jest.spyOn(event, 'stopPropagation')
+    controller.handleDragOver(event)
+    expect(event.defaultPrevented).toBe(accepted)
+    expect(stop).toHaveBeenCalledTimes(accepted ? 1 : 0)
+  })
+
+  test.each([
+    { ids: ['10'], payload: { treeId: 'tree' } },
+    { ids: ['11', '10'], payload: { creativeId: '10', treeId: 'tree' } },
+  ])('dropping a creative inserts the active source link and preserves text after the cursor: %j', (data) => {
+    controller.formTarget.id = 'new-comment-form'
+    const textarea = controller.textareaTarget
+    textarea.value = 'Before after'
+    textarea.setSelectionRange(7, 7)
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    const values = {}
+    const dataTransfer = { types: [], files: [], getData: type => values[type] || '',
+      setData: (type, value) => { values[type] = value; dataTransfer.types = Object.keys(values) } }
+    writeDragData(dataTransfer, { kind: 'creative', ...data })
+    Object.assign(event, { dataTransfer })
+    textarea.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(textarea.value).toBe('Before [Creative #10](/creatives/10)after')
+    expect(textarea.selectionStart).toBe(textarea.value.indexOf('after'))
+  })
+
 })

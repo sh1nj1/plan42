@@ -1,3 +1,6 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData } from '../../lib/dnd/envelope'
+import { previewDrop } from '../../lib/dnd/preview'
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
@@ -36,6 +39,14 @@ export default class extends Controller {
   ]
 
   connect() {
+    this.dnd = createDragDropRegistry({ root: this.formTarget, getKind: getDragKind, readData: readDragData })
+    this.dnd.registerDropZone({ selector: '#new-comment-form', accepts: ['creative'],
+      preview: previewDrop, dropEffect: 'copy',
+      onDrop: ({ ids, payload, event }) => {
+        event.stopPropagation()
+        const id = payload.creativeId || ids[0]
+        this.insertCreativeLink({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })
+      } })
     this.creativeId = null
     this.editingId ??= null
     this.sending = false
@@ -57,7 +68,6 @@ export default class extends Controller {
     this.handleImageButtonClick = this.handleImageButtonClick.bind(this)
     this.handleImageChange = this.handleImageChange.bind(this)
     this.handleDragOver = this.handleDragOver.bind(this)
-    this.handleDragLeave = this.handleDragLeave.bind(this)
     this.handleDrop = this.handleDrop.bind(this)
 
     this.formTarget.addEventListener('submit', this.handleSubmit)
@@ -71,7 +81,6 @@ export default class extends Controller {
     this.imageButtonTarget?.addEventListener('click', this.handleImageButtonClick)
     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
     this.formTarget.addEventListener('dragover', this.handleDragOver)
-    this.formTarget.addEventListener('dragleave', this.handleDragLeave)
     this.formTarget.addEventListener('drop', this.handleDrop)
     this.handlePaste = this.handlePaste.bind(this)
     this.textareaTarget.addEventListener('paste', this.handlePaste)
@@ -309,6 +318,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.dnd?.destroy()
     this._flushDraftSave()
     this.textareaTarget.removeEventListener('compositionend', this._handleCompositionEnd)
     this.textareaTarget.removeEventListener('keydown', this._expireImeCommitLatch)
@@ -329,7 +339,6 @@ export default class extends Controller {
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('input', this._autoResize)
     this.formTarget.removeEventListener('dragover', this.handleDragOver)
-    this.formTarget.removeEventListener('dragleave', this.handleDragLeave)
     this.formTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
@@ -1317,63 +1326,19 @@ export default class extends Controller {
   }
 
   handleDragOver(event) {
-    const isCreative = this.hasCreativeFromDataTransfer(event.dataTransfer)
-    const isImage = this.hasImageFromDataTransfer(event.dataTransfer)
-    if (isImage || isCreative) {
+    if (getDragKind(event.dataTransfer) === 'creative' || this.hasImageFromDataTransfer(event.dataTransfer)) {
       event.preventDefault()
       event.stopPropagation()
-      if (isCreative) {
-        this.formTarget.classList.add('creative-drop-hover')
-      }
-    }
-  }
-
-  handleDragLeave(event) {
-    // Only remove highlight if truly leaving the form
-    if (!this.formTarget.contains(event.relatedTarget)) {
-      this.formTarget.classList.remove('creative-drop-hover')
     }
   }
 
   handleDrop(event) {
-    this.formTarget.classList.remove('creative-drop-hover')
-
-    // Handle creative drop — stop propagation so contexts_controller doesn't intercept
-    if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
-      event.preventDefault()
-      event.stopPropagation()
-      const creativeData = this.extractCreativeData(event.dataTransfer)
-      if (creativeData) {
-        this.insertCreativeLink(creativeData)
-      }
-      return
-    }
-
     // Handle image drop
     const imageFiles = this.extractImageFiles(event.dataTransfer)
     if (!imageFiles.length) return
     event.preventDefault()
     this.setImageFiles([...this.currentImageFiles(), ...imageFiles])
     this.updateAttachmentList()
-  }
-
-  hasCreativeFromDataTransfer(dataTransfer) {
-    if (!dataTransfer || !dataTransfer.types) return false
-    return Array.from(dataTransfer.types).includes('application/x-collavre-creative')
-  }
-
-  extractCreativeData(dataTransfer) {
-    if (!dataTransfer) return null
-    const raw = dataTransfer.getData('application/x-collavre-creative') || dataTransfer.getData('text/plain')
-    if (!raw) return null
-    try {
-      const parsed = JSON.parse(raw)
-      if (!parsed || !parsed.creativeId) return null
-      const label = this.getCreativeLabelFromDom(parsed.creativeId)
-      return { id: parsed.creativeId, label: label || `Creative #${parsed.creativeId}` }
-    } catch {
-      return null
-    }
   }
 
   getCreativeLabelFromDom(creativeId) {

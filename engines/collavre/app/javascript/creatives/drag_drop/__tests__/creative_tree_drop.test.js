@@ -389,6 +389,38 @@ describe('right creative tree drop wiring', () => {
     }))
   })
 
+  test.each([
+    [['8', '9'], '9', 'creative-9'],
+    [['8'], '8', null],
+    [['9'], '9', 'creative-9'],
+  ])('pairs the source tree with its successful dragged row for %j', async (succeededIds, creativeId, treeId) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'token-under-test')
+    resetDragSessionCache()
+    const setItem = jest.spyOn(Storage.prototype, 'setItem')
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    runMoveWithDomRecovery.mockResolvedValue({
+      status: succeededIds.length === 2 ? 'success' : 'partial', ok: succeededIds.length === 2,
+      succeededIds, failedIds: ['8', '9'].filter(id => !succeededIds.includes(id)), failures: [],
+    })
+    const dataTransfer = transfer()
+    dataTransfer.setData('application/x-collavre-creative', JSON.stringify({
+      creativeId: '9', treeId: 'creative-9', selectedCreativeIds: ['8', '9'],
+      token: 'token-under-test', sourceWindowId: 'other-window',
+    }))
+
+    await handleDrop(dragEvent(tree('1'), dataTransfer))
+
+    expect(completion).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId, treeId, creativeIds: succeededIds }),
+    }))
+    const signal = setItem.mock.calls.find(([key]) => key === DROP_SIGNAL_STORAGE_KEY)
+    expect(JSON.parse(signal[1])).toEqual(expect.objectContaining({ creativeId, treeId, creativeIds: succeededIds }))
+    setItem.mockRestore()
+    consoleError.mockRestore()
+  })
+
   // A partial view can hand back an envelope whose tree id no longer resolves,
   // so the row identity — not the tree id — has to catch the self drop.
   test('declines an envelope that resolves back onto its own row', async () => {
