@@ -56,6 +56,7 @@
  */
 
 import { sendNewOrder, sendLinkedCreative, isAuthenticationRedirect } from '../../lib/api/drag_drop';
+import { serverErrorMessage } from '../../lib/api/api_error';
 
 export const MOVE_MODES = Object.freeze({
   MOVE: 'move',
@@ -157,6 +158,10 @@ function failureFromError(id, error) {
       ? MOVE_FAILURE_REASONS.AUTHENTICATION_REQUIRED
       : classifyStatus(status),
     message: error?.message || '',
+    // `message` is the transport line ("HTTP 403: Forbidden") -- diagnostic
+    // English that must never reach the user. `move_feedback` presents only
+    // a payload the server actually wrote, so carry that one separately.
+    serverMessage: serverErrorMessage(error) || '',
   };
 }
 
