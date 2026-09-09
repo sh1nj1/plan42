@@ -48,6 +48,18 @@ module Creatives
       assert_equal parent.id, node[:parent_id]
     end
 
+    test "includes write capability while retaining readable link sources" do
+      owned = Creative.create!(user: @user, description: "Owned")
+      shared = Creative.create!(user: users(:two), description: "Readable")
+      CreativeShare.create!(creative: shared, user: @user, permission: :read)
+
+      nodes = build_tree([ owned, shared ])
+
+      assert nodes.first[:can_write]
+      refute nodes.last[:can_write]
+      assert_equal shared.id, nodes.last[:id]
+    end
+
     test "keeps a childless root visible with its own metadata" do
       root_leaf = Creative.create!(user: @user, description: "<em>Root leaf</em>")
 

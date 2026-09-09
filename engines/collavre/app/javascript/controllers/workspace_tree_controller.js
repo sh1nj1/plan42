@@ -22,6 +22,8 @@ export default class extends Controller {
 
   static values = {
     url: String,
+    moveText: String,
+    moveLabel: String,
     lastVisitedCreativeUrl: String,
     lastVisitedCreativeVisitToken: String,
     lastVisitedCreativeVisitSequence: Number,
@@ -238,6 +240,19 @@ export default class extends Controller {
     }
     link.addEventListener('click', (event) => this.selectNode(event))
     row.appendChild(link)
+    const moveButton = document.createElement('button')
+    moveButton.type = 'button'
+    moveButton.className = 'creative-action-btn'
+    moveButton.dataset.creativeMoveId = String(node.id)
+    moveButton.dataset.creativeMoveWritable = String(node.can_write !== false)
+    moveButton.setAttribute('aria-haspopup', 'dialog')
+    // The visible label repeats on every row, so the accessible name has to
+    // name the creative the button acts on.
+    moveButton.setAttribute('aria-label', this.moveLabelValue
+      ? this.moveLabelValue.replace('%{title}', () => node.label)
+      : node.label)
+    moveButton.textContent = this.moveTextValue
+    row.appendChild(moveButton)
     item.appendChild(row)
 
     if (hasChildren && expanded) {

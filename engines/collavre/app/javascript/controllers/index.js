@@ -1,3 +1,5 @@
+import CreativeMoveController from "./creative_move_controller"
+
 // Collavre Engine Controllers
 // Import all controllers
 import AgentTriggerController from "./agent_trigger_controller"
@@ -53,6 +55,7 @@ import CronBadgeController from "./cron_badge_controller"
 
 // Export all controllers
 export {
+  CreativeMoveController,
   AgentTriggerController,
   PopupMenuController,
   ProgressFilterController,
@@ -103,6 +106,7 @@ export {
 
 // Registration function for use with a Stimulus application
 export function registerControllers(application) {
+  application.register("creative-move", CreativeMoveController)
   application.register("agent-trigger", AgentTriggerController)
   application.register("popup-menu", PopupMenuController)
   application.register("progress-filter", ProgressFilterController)

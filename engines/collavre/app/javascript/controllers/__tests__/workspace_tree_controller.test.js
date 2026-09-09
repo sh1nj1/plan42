@@ -12,7 +12,31 @@ describe('WorkspaceTreeController', () => {
   let fetchMock
   let preventNavigation
 
+  test('renders localized native move buttons for workspace creative placements', () => {
+    const buttons = [...controller.treeTarget.querySelectorAll('[data-creative-move-id]')]
+    expect(buttons.map(button => button.dataset.creativeMoveId)).toEqual(['1', '2'])
+    buttons.forEach(button => {
+      expect(button.tagName).toBe('BUTTON')
+      expect(button.type).toBe('button')
+      expect(button.textContent).toBe('이동…')
+      expect(button.getAttribute('aria-haspopup')).toBe('dialog')
+      const requests = fetchMock.mock.calls.length
+      button.click()
+      expect(fetchMock).toHaveBeenCalledTimes(requests)
+    })
+    // The visible label repeats on every row, so the accessible name has to
+    // distinguish the rows from each other.
+    expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['Root 이동', 'Current branch 이동'])
+  })
 
+  test.each(['Budget $$', 'Title $&', "Title $`", "Title $'"])(
+    'preserves literal title %s in the localized move button label', label => {
+      controller.moveLabelValue = 'Move %{title} here'
+      const item = controller.buildNode({ id: 20, label, url: '/creatives?id=20' })
+      expect(item.querySelector('[data-creative-move-id]').getAttribute('aria-label'))
+        .toBe(`Move ${label} here`)
+    }
+  )
 
   beforeEach(async () => {
     window.localStorage.clear()
@@ -56,6 +80,8 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="이동…"
+               data-workspace-tree-move-label-value="%{title} 이동"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
@@ -102,6 +128,25 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboPrefetch).toBe('false')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
+  })
+
+  test('preserves read-only source capability on workspace move launchers after a refresh', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [
+        { id: 10, label: 'Readable source', url: '/creatives?id=10', can_write: false, children: [] },
+        { id: 11, label: 'Writable source', url: '/creatives?id=11', can_write: true, children: [] },
+      ] }),
+    })
+    await controller.load({ showLoading: false, syncChat: false })
+    const readOnly = controller.treeTarget.querySelector('[data-creative-move-id="10"]')
+    const writable = controller.treeTarget.querySelector('[data-creative-move-id="11"]')
+    expect(readOnly).not.toBeNull()
+    expect(readOnly.dataset.creativeMoveWritable).toBe('false')
+    expect(readOnly.disabled).toBe(false)
+    expect(readOnly.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(writable.dataset.creativeMoveWritable).toBe('true')
   })
 
   test('retains the actual parent of a branch displayed at the top level', () => {
@@ -212,6 +257,39 @@ describe('WorkspaceTreeController', () => {
     expect(item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-spacer')).not.toBeNull()
     expect(controller.expandedCreativeIds.has('1')).toBe(false)
     expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('treats malformed children as empty while resolving a hover target among unrelated nodes', async () => {
+    const item = controller.findWorkspaceItem('1')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [
+        { id: 99, children: { id: 100 } },
+        { id: 1, label: 'Root', children: null },
+      ] }),
+    })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.dataset.hasChildren).toBe('false')
+    expect(item.querySelector('.creative-workspace-tree-list')).toBeNull()
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('renders a standalone root row with a useful action name when the optional label is absent', () => {
+    controller.moveLabelValue = ''
+    const item = controller.buildNode({ id: 20, label: 'Standalone root', url: '/creatives?id=20' })
+    const row = item.querySelector('.creative-workspace-tree-row')
+    expect(item.dataset.level).toBe('1')
+    expect(item.dataset.parentId).toBeUndefined()
+    expect(row.dataset.level).toBe('1')
+    expect(row.draggable).toBe(true)
+    expect(row.querySelector('[data-creative-move-id="20"]').getAttribute('aria-label')).toBe('Standalone root')
   })
 
   test('skips a branch request for a target that is already open', async () => {
@@ -455,6 +533,8 @@ describe('WorkspaceTreeController', () => {
                data-workspace-tree-last-visited-creative-visit-token-value="server-token"
                data-workspace-tree-last-visited-creative-visit-sequence-value="1"
                data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-move-text-value="이동…"
+               data-workspace-tree-move-label-value="%{title} 이동"
                data-workspace-tree-loading-text-value="Loading"
                data-workspace-tree-empty-text-value="Empty"
                data-workspace-tree-error-text-value="Error">
