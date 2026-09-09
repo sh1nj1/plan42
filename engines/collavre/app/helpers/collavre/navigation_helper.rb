@@ -91,16 +91,12 @@ module Collavre
       uri = URI.parse(value)
       return leaves_origin_by_spelling?(value) if uri.host.blank?
 
-      scheme = uri.scheme.presence&.downcase || request.scheme
-      port = uri.port || URI.scheme_list[scheme.upcase]&.default_port
-
-      [ scheme, uri.host.downcase, port ] !=
-        [ request.scheme, request.host.downcase, request.port ]
+      leaves_origin?(uri.scheme, uri.host, uri.port)
     # URI::InvalidComponentError is a sibling of URI::InvalidURIError, not a
     # subclass — "mailto://x@y.com" raises it, and letting it escape would take
     # down every page carrying the navigation.
     rescue URI::Error
-      leaves_origin_by_spelling?(value)
+      canonicalized_origin_leaves?(value)
     end
 
     # True when a URL runs code in whatever document it is clicked from instead
@@ -115,6 +111,36 @@ module Collavre
     end
 
     private
+
+    # The origin comparison itself. An omitted scheme is inherited from the page,
+    # and an omitted port resolves to that scheme's default rather than to the
+    # port we happen to be served on — what a browser does with "//host/x".
+    def leaves_origin?(scheme, host, port)
+      scheme = scheme.presence&.downcase || request.scheme
+      port ||= URI.scheme_list[scheme.upcase]&.default_port
+
+      [ scheme, host.downcase, port ] !=
+        [ request.scheme, request.host.downcase, request.port ]
+    end
+
+    # Ruby's parser is ASCII-only, so an internationalized hostname reaches the
+    # rescue even though a browser navigates it without complaint: it converts
+    # the host to punycode, which is also the spelling that arrives in our own
+    # Host header. Recover that before falling back to the written form, or a
+    # same-origin help URL on an IDN-hosted deployment reads as off-site.
+    #
+    # Any failure here — an unparseable value, a label punycode cannot encode —
+    # falls through to the spelling check, which is the conservative answer.
+    def canonicalized_origin_leaves?(value)
+      uri = Addressable::URI.parse(value)
+      host = uri.normalized_host
+
+      return leaves_origin_by_spelling?(value) if host.blank?
+
+      leaves_origin?(uri.scheme, host, uri.port)
+    rescue StandardError
+      leaves_origin_by_spelling?(value)
+    end
 
     # What a browser throws away before it parses anything: every tab and
     # newline wherever they sit, then leading and trailing C0 controls and

@@ -76,6 +76,14 @@ gem "octokit"
 gem "ruby_llm"
 gem "liquid"
 
+# Punycode for the help-link origin check. Ruby's URI parser is ASCII-only, so
+# it rejects an internationalized hostname that a browser converts and navigates
+# happily; Addressable#normalized_host produces the same spelling the browser
+# sends in the Host header. It is already in the bundle transitively (octokit,
+# googleauth, capybara), but naming it here keeps that from being an accident
+# that ends when one of those drops it.
+gem "addressable", require: "addressable/uri"
+
 # :desktop too — config/boot.rb requires "dotenv" unconditionally, and the
 # vendored desktop bundle excludes the development/test groups (.env.desktop
 # itself need not exist; Dotenv.overload skips missing files).

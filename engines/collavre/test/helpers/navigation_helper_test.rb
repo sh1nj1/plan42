@@ -314,6 +314,52 @@ class NavigationHelperTest < ActionView::TestCase
     assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
   end
 
+  # ...but when the app itself is served from that domain, the browser converts
+  # the Unicode spelling to the very host it sent us in the Host header, so the
+  # URL is ours. Ruby's parser cannot see that: it rejects the value outright,
+  # and the written form alone would call every authority off-site.
+  test "help partial opens an internationalized configured link on our own IDN host in the current window" do
+    request.host = "xn--mnich-kva.example"
+
+    SystemSetting.stub(:help_menu_link, "http://münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial opens a scheme-relative internationalized link on our own IDN host in the current window" do
+    request.host = "xn--mnich-kva.example"
+
+    SystemSetting.stub(:help_menu_link, "//münich.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target]", count: 0
+  end
+
+  test "help partial opens a different internationalized domain in a new tab even on an IDN host" do
+    request.host = "xn--mnich-kva.example"
+
+    SystemSetting.stub(:help_menu_link, "http://münchen.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
+  # A label punycode cannot encode leaves us with no canonical host to compare,
+  # so the decision falls back to the spelling — an authority, therefore off-site.
+  test "help partial opens an internationalized domain punycode cannot encode in a new tab" do
+    request.host = "xn--mnich-kva.example"
+
+    SystemSetting.stub(:help_menu_link, "http://#{"ü" * 300}.example/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[target='_blank'][rel='noopener']", count: 1
+  end
+
   # Ruby finds no host past the extra slashes; a browser skips them and lands on
   # docs.example.com.
   test "help partial opens a configured link with extra leading slashes in a new tab" do
