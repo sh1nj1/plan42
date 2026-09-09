@@ -137,6 +137,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     find("#inline-add", wait: 5).click
     fill_inline_editor("C")
     find("#inline-add", wait: 5).click
+    assert_selector "#creatives > creative-tree-row:nth-of-type(4) #inline-edit-form-element", wait: 10
     fill_inline_editor("D")
     close_inline_editor
 

@@ -31,16 +31,17 @@ function creativePayload(item, row) {
   }
 }
 
-function startWorkspaceDrag({ el: row, event }) {
+function startWorkspaceDrag({ el: row, event, setLocalData }) {
   const item = workspaceItemFromRow(row)
-  if (!item || !event.dataTransfer) return
+  if (!item || !event.dataTransfer) return false
 
   const payload = creativePayload(item, row)
-  writeDragData(event.dataTransfer, {
+  const data = {
     kind: 'creative',
     ids: [payload.creativeId],
     payload,
-  })
+  }
+  if (!writeDragData(event.dataTransfer, data)) setLocalData(data)
   event.dataTransfer.effectAllowed = 'copyMove'
   row.classList.add('is-dragging')
 }
@@ -76,11 +77,12 @@ function previewWorkspaceRow(controller, expandDelay, { el: row, hit }) {
 }
 
 function completionDetail(ids, payload, targetId, direction) {
+  const sourceSucceeded = ids.includes(String(payload.creativeId))
   return {
-    creativeId: ids[0],
+    creativeId: sourceSucceeded ? String(payload.creativeId) : ids[0],
     creativeIds: ids,
-    // The shared reader rejects a creative envelope with no originating tree.
-    treeId: payload.treeId,
+    // The originating tree belongs to the dragged row, not the first bundle ID.
+    treeId: sourceSucceeded ? payload.treeId : null,
     sourceWindowId: payload.sourceWindowId || null,
     targetCreativeId: targetId,
     direction,
