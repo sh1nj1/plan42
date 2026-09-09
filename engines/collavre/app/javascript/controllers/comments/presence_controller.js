@@ -875,7 +875,7 @@ export default class extends Controller {
     if (String(activeTopicId) !== String(topicId)) return
 
     fetch(`/creatives/${this.creativeId}/topics/${topicId}/channel_chips`, {
-      headers: { Accept: 'text/html' },
+      headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
       credentials: 'same-origin',
     })
       .then((r) => (r.ok ? r.text() : null))
