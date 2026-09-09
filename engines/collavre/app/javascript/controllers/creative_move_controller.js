@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import { executeMoveCommand } from '../creatives/drag_drop/move_command'
 import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
+import { alertDialog } from '../lib/utils/dialog'
 
 // The header overflow menu opens the move dialog. The picker browses
 // server data, so destinations do not have to exist in either rendered tree.
@@ -35,8 +36,10 @@ export default class extends Controller {
       this.ids = []
       this.targetId = null
       this.announcementTarget.textContent = this.messagesValue.archived
-      window.alert(this.messagesValue.archived)
-      this.restoreFocus()
+      // Not window.alert(): the packaged Tauri webview swallows native dialogs,
+      // so the rejection would be invisible there. alertDialog restores focus to
+      // the now-hidden menu item, so take the trigger back after it closes.
+      alertDialog(this.messagesValue.archived).then(() => this.restoreFocus())
       return
     }
     const selected = selectedRows.map(el => el.value)

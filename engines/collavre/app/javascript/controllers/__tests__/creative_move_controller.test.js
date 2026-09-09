@@ -4,15 +4,16 @@ import { Application } from '@hotwired/stimulus'
 
 const executeMoveCommand = jest.fn()
 const invalidateCreativeTree = jest.fn()
+const alertDialog = jest.fn(() => Promise.resolve())
 jest.unstable_mockModule('../../creatives/drag_drop/move_command', () => ({ executeMoveCommand }))
 jest.unstable_mockModule('../../lib/creative_tree_invalidation', () => ({ invalidateCreativeTree }))
+jest.unstable_mockModule('../../lib/utils/dialog', () => ({ alertDialog }))
 const { default: CreativeMoveController } = await import('../creative_move_controller')
 
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 let app, controller, picker, dialog
 beforeEach(async () => {
   jest.clearAllMocks()
-  window.alert = jest.fn()
   document.body.innerHTML = `
     <button data-creative-move-id="1" data-creative-move-writable="true">Move</button>
     <creative-tree-row creative-id="1" can-write><input class="select-creative-checkbox" type="checkbox" value="1" checked></creative-tree-row>
@@ -394,12 +395,13 @@ test.each(['', 'true'])('rejects archived-only and mixed selections with archive
   for (const mixed of [false, true]) {
     rows[1].querySelector('input').checked = mixed
     for (const mode of ['move', 'link']) {
-      window.alert.mockClear()
+      alertDialog.mockClear()
       controller.modeTarget.value = mode
       document.querySelector('[data-creative-move-id]').click()
       expect(dialog.open).toBe(false)
-      expect(window.alert).toHaveBeenCalledTimes(1)
-      expect(window.alert).toHaveBeenCalledWith('Deselect archived creatives')
+      expect(alertDialog).toHaveBeenCalledTimes(1)
+      expect(alertDialog).toHaveBeenCalledWith('Deselect archived creatives')
+      await flush()
       expect(document.activeElement).toBe(document.querySelector('[data-creative-move-id]'))
       expect(controller.ids).toEqual([])
       expect(controller.announcementTarget.textContent).toBe('Deselect archived creatives')
@@ -407,10 +409,10 @@ test.each(['', 'true'])('rejects archived-only and mixed selections with archive
       expect(executeMoveCommand).not.toHaveBeenCalled()
     }
   }
-  window.alert.mockClear()
+  alertDialog.mockClear()
   rows[0].removeAttribute('archived')
   document.querySelector('[data-creative-move-id]').click()
   expect(dialog.open).toBe(true)
-  expect(window.alert).not.toHaveBeenCalled()
+  expect(alertDialog).not.toHaveBeenCalled()
   expect(controller.ids).toEqual(['1', '2'])
 })
