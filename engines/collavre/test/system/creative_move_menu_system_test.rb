@@ -115,6 +115,29 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @destination, extra.reload.parent
   end
 
+  # A filtered-to-nothing view still marks the tree loaded, so the header action
+  # has a confirmed empty result to report. Without the in-app dialog the click
+  # would look like a no-op, which is what the native alert did inside the
+  # packaged desktop webview.
+  test "the root action explains a view with nothing to select" do
+    visit collavre.creatives_path(search: "no-such-creative-#{SecureRandom.hex(4)}")
+    assert_selector "#creatives[data-loaded='true']", visible: :all
+
+    open_move_menu
+
+    assert_no_selector "dialog[open][data-creative-move-target]"
+    assert_selector "dialog[role='alertdialog'] .confirm-dialog-message",
+      text: I18n.t("collavre.dnd.no_sources")
+    assert_selector '[data-creative-move-target="announcement"]',
+      text: I18n.t("collavre.dnd.no_sources"), visible: :all
+
+    find("dialog[role='alertdialog'] .modal-dialog-btn-primary").click
+
+    assert_no_selector "dialog[role='alertdialog']"
+    assert_equal "creative-overflow-menu", page.evaluate_script("document.activeElement.getAttribute('aria-controls')")
+    assert_nil @source.reload.parent_id
+  end
+
   private
 
   def open_move_menu(key = nil)
