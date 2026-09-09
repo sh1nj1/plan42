@@ -35,6 +35,7 @@ export default class extends Controller {
       this.ids = []
       this.targetId = null
       this.announcementTarget.textContent = this.messagesValue.archived
+      window.alert(this.messagesValue.archived)
       this.restoreFocus()
       return
     }
