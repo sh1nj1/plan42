@@ -59,7 +59,7 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     CreativeShare.create!(creative: @source, user: @user, permission: :read)
     visit collavre.creatives_path(id: @source.id)
 
-    find("#creative-#{@source.id} [data-creative-move-id]").send_keys(:return)
+    find("[data-creative-move-id='#{@source.id}']").send_keys(:return)
     assert_selector '[data-creative-move-target="mode"] option[value="move"][disabled]', visible: :all
     assert_equal "link", find('[data-creative-move-target="mode"]').value
     find('[data-creative-move-target="destination"]').send_keys(:return)
