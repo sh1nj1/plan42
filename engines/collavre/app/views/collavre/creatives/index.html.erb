@@ -91,12 +91,16 @@
             button_content: '⋯',
             menu_id: 'creative-overflow-menu',
             align: :right,
-            button_classes: 'creative-header-outline-btn'
+            button_classes: 'creative-header-outline-btn',
+            button_attributes: { aria: { controls: 'creative-overflow-menu', expanded: false } }
           ) do %>
         <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
           <button type="button" id="share-creative-btn" class="popup-menu-item" data-action="click->share-modal#open" data-share-modal-url-param="<%= collavre.creative_creative_shares_path(current_creative) %>">
             <span aria-hidden="true"><%= svg_tag 'share.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.share') %>
           </button>
+        <% end %>
+        <% if current_creative || params[:id].blank? %>
+          <%= render_creative_move_action(current_creative, current_creative&.has_permission?(Current.user, :write) && !current_creative.effective_origin.read_only_source?) %>
         <% end %>
         <% if authenticated? %>
           <button type="button" id="select-creative-btn" class="popup-menu-item" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle">

@@ -740,6 +740,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     get creatives_path(id: creatives(:childless_creative).id)
 
     assert_response :success
+    assert_select "#creative-overflow-menu [data-creative-move-id]", count: 1
+    assert_select ".creative-tree-title [data-creative-move-id]", count: 0
     assert_select "#creative-move-destination-label", text: I18n.t("collavre.dnd.destination")
     assert_select "[data-creative-move-target='destination'][aria-labelledby=?]",
       "creative-move-destination-label creative-move-destination"
@@ -751,6 +753,67 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-creatives--drag-drop-partial-failure-text-value=?]",
       I18n.t("collavre.creatives.drag_drop.partial_failure")
+  end
+
+  test "header move action is hidden for inaccessible and missing requested creatives" do
+    inaccessible = Creative.create!(user: users(:two), description: "Private move source")
+    assert_not inaccessible.has_permission?(users(:one), :read)
+    # The first index visit lazily creates the user's Inbox, which claims the
+    # next sequence value. Reserve an id well past it so it stays missing.
+    missing_id = Creative.maximum(:id) + 1_000
+
+    [ inaccessible.id, missing_id ].each do |id|
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path(id: id), headers: headers
+
+        assert_response :success
+        assert_not Creative.exists?(missing_id)
+        assert_select "#creative-overflow-menu [data-creative-move-id]", count: 0
+      end
+    end
+  end
+
+  test "header move action remains available on the actual root route" do
+    [ {}, { id: "" } ].each do |params|
+      get creatives_path, params: params
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+    end
+  end
+
+  test "archived parent retains a selection-only header action for active children" do
+    parent = Creative.create!(user: users(:one), description: "Archived parent", archived_at: Time.current)
+    child = Creative.create!(user: users(:one), parent: parent, description: "Active child")
+    assert_not child.archived?
+
+    [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+      get creatives_path(id: parent.id, show_archived: true), headers: headers
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+      assert_select "#creative-overflow-menu [data-creative-move-id=?]", parent.id.to_s, count: 0
+    end
+  end
+
+  test "header move capability respects registered read-only sources and their linked shells" do
+    source_type = "header_move_read_only_source"
+    Creative.register_read_only_source(source_type)
+    source = Creative.create!(user: users(:one), description: "Managed source",
+      data: { "source" => { "type" => source_type } })
+    linked = Creative.create!(user: users(:one), origin: source)
+    writable = Creative.create!(user: users(:one), description: "Writable source")
+
+    [ [ source, false ], [ linked, false ], [ writable, true ] ].each do |creative, can_move|
+      assert creative.has_permission?(users(:one), :write)
+      get creatives_path(id: creative.id)
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id=?][data-creative-move-writable=?]",
+        creative.id.to_s, can_move.to_s, count: 1
+    end
+  ensure
+    Creative.read_only_source_types.delete(source_type)
   end
 
   test "index renders an empty-state template outside the client-rendered tree" do

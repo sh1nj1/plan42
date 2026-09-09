@@ -145,11 +145,13 @@ describe('CreativesTreeController retry on transient network errors', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'))
 
-    const { application } = installController()
+    const { container, application } = installController()
     // Allow time for both retries to complete (200 + 600 = 800ms)
     await new Promise((resolve) => setTimeout(resolve, 1500))
 
     expect(collectRetryDelays(setTimeoutSpy)).toEqual(TRANSIENT_RETRY_DELAYS)
+    expect(container.dataset.loadState).toBe('error')
+    expect(container.dataset.loaded).toBe('true')
 
     application.stop()
   })
@@ -481,9 +483,20 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     await flush()
     await flush()
 
+    expect(container.dataset.loadState).toBe('error')
     expect(container.querySelector('.creative-tree-error')).not.toBeNull()
     expect(container.querySelector('.creative-empty-state')).toBeNull()
     expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ creatives: [] }) })
+    controller.load()
+    expect(container.dataset.loadState).toBeUndefined()
+    expect(container.dataset.loaded).toBeUndefined()
+    await flush()
+    await flush()
+    expect(container.dataset.loadState).toBe('success')
+    expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
 
     application.stop()
   })
@@ -502,6 +515,7 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     await flush()
     await flush()
 
+    expect(container.dataset.loadState).toBe('error')
     expect(container.querySelector('.creative-tree-error')).not.toBeNull()
     expect(container.querySelector('.creative-empty-state')).toBeNull()
     expect(container.querySelector('.new-root-creative-btn')).toBeNull()
@@ -542,6 +556,7 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     await flush()
 
     expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
+    expect(container.dataset.loadState).toBe('success')
     expect(container.querySelector('.creative-tree-error')).toBeNull()
 
     application.stop()

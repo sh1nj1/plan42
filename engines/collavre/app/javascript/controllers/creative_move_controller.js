@@ -1,8 +1,9 @@
 import { Controller } from '@hotwired/stimulus'
 import { executeMoveCommand } from '../creatives/drag_drop/move_command'
+import { alertDialog } from '../lib/utils/dialog'
 import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 
-// Both trees expose native buttons with data-creative-move-id. The picker browses
+// The header overflow menu opens the move dialog. The picker browses
 // server data, so destinations do not have to exist in either rendered tree.
 export default class extends Controller {
   static targets = ['dialog', 'destination', 'direction', 'mode', 'confirm', 'status', 'announcement']
@@ -26,13 +27,26 @@ export default class extends Controller {
     if (!button || this.busy || this.picking || this.dialogTarget.open) return
     event.preventDefault()
     this.focusObserver?.disconnect()
-    this.trigger = button
+    this.trigger = button.closest('[data-controller="popup-menu"]')?.querySelector('[data-popup-menu-target="button"]') || button
     const id = button.dataset.creativeMoveId
     this.triggerId = id
-    const selected = [...document.querySelectorAll('.select-creative-checkbox:checked')].map(el => el.value)
-    this.ids = selected.includes(id) ? [...new Set(selected)] : [id]
-    this.canMove = ![...document.querySelectorAll('[data-creative-move-writable="false"]')]
-      .some(el => this.ids.includes(el.dataset.creativeMoveId))
+    const selectedRows = [...document.querySelectorAll('.select-creative-checkbox:checked')]
+    // Lit reflects archived as a Boolean attribute, including archived="".
+    if (selectedRows.some(el => el.closest('creative-tree-row')?.hasAttribute('archived'))) {
+      this.ids = []
+      this.targetId = null
+      this.showFeedback(this.messagesValue.archived)
+      return
+    }
+    const selected = selectedRows.map(el => el.value)
+    this.ids = selected.length ? [...new Set(selected)] : id ? [id] : []
+    if (!this.ids.length) {
+      this.startSelection()
+      return
+    }
+    this.canMove = selected.length
+      ? selectedRows.every(el => el.closest('creative-tree-row')?.hasAttribute('can-write') === true)
+      : button.dataset.creativeMoveWritable === 'true'
     this.targetId = null
     this.directionTarget.value = 'child'
     this.modeTarget.querySelector('option[value="move"]').disabled = !this.canMove
@@ -43,6 +57,44 @@ export default class extends Controller {
     this.announcementTarget.textContent = ''
     this.dialogTarget.showModal()
     this.destinationTarget.focus()
+  }
+
+  startSelection() {
+    const checkbox = document.querySelector('.select-creative-checkbox')
+    if (checkbox) {
+      const select = document.getElementById('select-creative-btn')
+      if (select?.getAttribute('aria-pressed') !== 'true') select?.click()
+      checkbox.focus()
+      return
+    }
+    const tree = document.getElementById('creatives')
+    if (tree?.dataset.loaded === 'true') {
+      const message = tree.dataset.loadState === 'error'
+        ? tree.getAttribute('data-creatives--tree-error-text-value') || this.messagesValue.failed
+        : this.messagesValue.empty
+      this.showFeedback(message)
+      return
+    }
+    // The selection toggle also lives in the closed overflow menu. Wait on
+    // its visible launcher until CSR supplies a source, without stealing focus.
+    this.restoreFocus()
+    this.focusObserver = new MutationObserver(() => {
+      if (document.activeElement !== this.trigger || !this.trigger.isConnected) {
+        this.focusObserver.disconnect()
+      } else if (document.querySelector('.select-creative-checkbox') ||
+        document.getElementById('creatives')?.dataset.loaded === 'true') {
+        this.focusObserver.disconnect()
+        this.startSelection()
+      }
+    })
+    this.focusObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-loaded'] })
+  }
+
+  showFeedback(message) {
+    this.announcementTarget.textContent = message
+    alertDialog(message).then(() => {
+      if (!this.disconnected) this.restoreFocus()
+    })
   }
 
   chooseDestination() {
@@ -133,13 +185,10 @@ export default class extends Controller {
 
   restoreFocus() {
     if (this.trigger?.isConnected) return this.trigger.focus()
-    // A refresh replaces the trigger rather than moving it, so recover the
-    // button for the same creative first: falling straight through to the
-    // first button in the document would drop the user at the top of a tree
-    // they did not act on. The creative can also be gone from both trees --
-    // moved under a collapsed branch -- and only then is any button better
-    // than none.
-    const buttons = [...document.querySelectorAll('[data-creative-move-id]')]
+    // Navigation can replace the entire header while the command completes.
+    // Focus the visible overflow toggle, never its now-hidden menu item.
+    const buttons = [...document.querySelectorAll('[data-creative-move-id]')].map(button =>
+      button.closest('[data-controller="popup-menu"]')?.querySelector('[data-popup-menu-target="button"]') || button)
     const sameCreative = buttons.find(el => el.dataset.creativeMoveId === this.triggerId)
     ;(sameCreative || buttons[0])?.focus()
   }

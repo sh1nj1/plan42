@@ -23,7 +23,14 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_includes html, 'data-creative-move-id="42"'
     assert_includes html, 'aria-haspopup="dialog"'
     assert_includes html, 'data-creative-move-writable="true"'
-    creative[:archived?] = true
+  end
+
+  test "archived parents expose selection without using the parent as a source" do
+    creative = Struct.new(:id, :archived?).new(42, true)
+    html = render_creative_move_action(creative, true)
+    assert_includes html, 'data-creative-move-id=""'
+    assert_not_includes html, 'data-creative-move-id="42"'
+    Collavre::Current.user = nil
     assert_empty render_creative_move_action(creative, true)
   end
 
@@ -40,22 +47,22 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_empty render_creative_move_action(creative, true)
   end
 
-  # Every row renders this button, so the visible label alone leaves a screen
-  # reader with a list of controls it cannot tell apart.
-  test "the accessible name names the creative rather than repeating the visible label" do
-    creative = Struct.new(:id, :archived?, :creative_snippet).new(42, false, "Quarterly plan")
-    html = render_creative_move_action(creative, true)
-
-    assert_includes html, I18n.t("collavre.dnd.move_creative", title: "Quarterly plan")
-    assert_not_equal I18n.t("collavre.dnd.move_title"),
-      Nokogiri::HTML5.fragment(html).at_css("button")["aria-label"]
+  test "the root menu supports selection without a current creative" do
+    html = render_creative_move_action(nil, nil)
+    assert_includes html, 'class="popup-menu-item"'
+    assert_includes html, 'data-creative-move-id=""'
   end
 
-  test "both locales interpolate the creative into the accessible name" do
+  # The action is named by its visible label alone now that a page renders one
+  # of it, so that label is the whole accessible name in both locales.
+  test "both locales label the action" do
+    creative = Struct.new(:id, :archived?).new(42, false)
+
     %w[en ko].each do |locale|
-      name = I18n.t("collavre.dnd.move_creative", title: "Quarterly plan", locale: locale)
-      assert_includes name, "Quarterly plan", "#{locale} must name the creative"
-      assert_not_includes name, "%{title}", "#{locale} must interpolate the title"
+      I18n.with_locale(locale) do
+        assert_includes render_creative_move_action(creative, true),
+          I18n.t("collavre.dnd.move_title", locale: locale)
+      end
     end
   end
 end

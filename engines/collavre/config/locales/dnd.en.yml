@@ -2,7 +2,6 @@ en:
   collavre:
     dnd:
       move_title: "Move…"
-      move_creative: "Move %{title}"
       choose_destination: "Choose destination…"
       destination: "Destination"
       position: "Position"
@@ -20,3 +19,5 @@ en:
       invalid_target: "Choose a destination outside the selected creatives."
       partial: "Some changes failed. Confirm again to retry only the failed items."
       failed: "Changes could not be applied. Check your permissions and destination, then try again."
+      archived_selection: "Deselect archived creatives before moving or creating links."
+      no_sources: "There are no selectable creatives in this view. Add a creative or change the filter, then try again."
