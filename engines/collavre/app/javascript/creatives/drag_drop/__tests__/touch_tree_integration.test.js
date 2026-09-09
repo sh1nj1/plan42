@@ -91,3 +91,99 @@ test.each(['workspace-2', 'creative-1'])('touch %s → right tree keeps command 
   expect(getDraggedState()).toBeNull()
   expect(document.querySelector('.drag-over')).toBeNull()
 })
+
+function native(type, source, transfer, target = source) {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperties(event, {
+    dataTransfer: { value: transfer },
+    clientX: { value: point(target).clientX },
+    clientY: { value: point(target).clientY },
+  })
+  target.dispatchEvent(event)
+  return event
+}
+
+function emptyTransfer() {
+  return { types: [], getData: () => '', setData: jest.fn(), effectAllowed: 'none' }
+}
+
+function blockStorage() {
+  jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage blocked') })
+  jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage blocked') })
+}
+
+test.each(['native', 'touch'])('%s preserves all local tree routes when storage is blocked', async mode => {
+  blockStorage()
+  for (const [sourceId, targetId, id] of [
+    ['workspace-2', 'workspace-3', '2'],
+    ['workspace-2', 'creative-9', '2'],
+    ['creative-1', 'workspace-3', '1'],
+  ]) {
+    const source = row(sourceId)
+    const target = row(targetId)
+    const transfer = emptyTransfer()
+    execute.mockClear()
+    sendNewOrder.mockClear()
+    if (mode === 'native') {
+      native('dragstart', source, transfer)
+      expect(native('dragover', source, transfer, target).defaultPrevented).toBe(true)
+      native('drop', source, transfer, target)
+    } else {
+      touch('touchstart', source)
+      jest.advanceTimersByTime(400)
+      touch('touchmove', source, target)
+      touch('touchend', source, target)
+    }
+    for (let i = 0; i < 10; i += 1) await Promise.resolve()
+    if (targetId === 'creative-9') {
+      expect(sendNewOrder).toHaveBeenCalledWith({ draggedId: id, targetId: '9', direction: 'child' })
+    } else {
+      expect(execute).toHaveBeenCalledWith({ ids: [id], targetId: '3', direction: 'child', mode: 'move' })
+    }
+    execute.mockClear()
+    sendNewOrder.mockClear()
+    native('drop', source, emptyTransfer(), target)
+    expect(execute).not.toHaveBeenCalled()
+    expect(sendNewOrder).not.toHaveBeenCalled()
+    expect(document.querySelector('.is-dragging')).toBeNull()
+  }
+})
+
+test.each(['dragend', 'escape', 'destroy'])('%s clears the workspace gesture fallback', action => {
+  blockStorage()
+  const source = row('workspace-2')
+  const transfer = emptyTransfer()
+  native('dragstart', source, transfer)
+  if (action === 'dragend') native('dragend', source, transfer)
+  if (action === 'escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  if (action === 'destroy') left.destroy()
+  native('drop', source, transfer, row('creative-9'))
+  expect(sendNewOrder).not.toHaveBeenCalled()
+  expect(document.querySelector('.is-dragging')).toBeNull()
+})
+
+test('local fallback cannot authorize a rejected foreign transfer', () => {
+  blockStorage()
+  const source = row('workspace-2')
+  native('dragstart', source, emptyTransfer())
+  const foreign = { types: ['application/x-collavre-creative'], getData: () => JSON.stringify({
+    creativeId: '99', treeId: 'foreign-99', token: 'foreign', sourceWindowId: 'foreign',
+  }) }
+  native('drop', source, foreign, row('creative-9'))
+  expect(sendNewOrder).not.toHaveBeenCalled()
+  expect(execute).not.toHaveBeenCalled()
+})
+
+test('touch cancellation clears the workspace fallback before another drop', () => {
+  blockStorage()
+  const source = row('workspace-2')
+  touch('touchstart', source)
+  jest.advanceTimersByTime(400)
+  touch('touchmove', source, row('workspace-3'))
+  touch('touchcancel', source)
+  native('drop', source, emptyTransfer(), row('creative-9'))
+  expect(sendNewOrder).not.toHaveBeenCalled()
+  expect(execute).not.toHaveBeenCalled()
+  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+  expect(document.querySelector('.is-dragging')).toBeNull()
+})

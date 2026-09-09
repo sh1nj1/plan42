@@ -410,7 +410,7 @@ export function handleDragStart(event) {
   });
 }
 
-export function handleDragOver(event, intent = null) {
+export function handleDragOver(event, intent = null, kind = null) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
   const lastRow = getLastDragOverRow();
   if (lastRow && lastRow !== tree) {
@@ -420,7 +420,7 @@ export function handleDragOver(event, intent = null) {
   }
   if (!tree || tree.draggable === false) return;
 
-  const dragKind = getDragKind(event.dataTransfer);
+  const dragKind = kind || getDragKind(event.dataTransfer);
 
   // Topic move drag: always show as child drop target
   if (dragKind === 'topic') {
@@ -479,13 +479,12 @@ function resetDrag() {
   hideLinkHover();
 }
 
-export function handleDrop(event, intent = null, { partialFailureMessage = '' } = {}) {
+export function handleDrop(event, intent = null, { partialFailureMessage = '', dragData = readDragData(event.dataTransfer) } = {}) {
   clearHoverExpand();
   const targetTree = event.target.closest(DRAGGABLE_SELECTOR);
   const targetId = targetTree ? targetTree.id : '';
 
   // Handle topic move drop
-  const dragData = readDragData(event.dataTransfer);
   if (dragData?.kind === 'topic' && targetTree) {
     event.preventDefault();
     clearDragHighlight(targetTree);
@@ -742,7 +741,11 @@ export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) 
   });
   registry.registerDragSource({
     selector: DRAGGABLE_SELECTOR,
-    onDragStart: ({ event }) => handleDragStart(event),
+    onDragStart: ({ event, setLocalData }) => {
+      handleDragStart(event);
+      const data = localData(event.dataTransfer);
+      if (data) setLocalData(data);
+    },
     onDragEnd: () => {
       clearDragHighlight(getLastDragOverRow());
       resetDrag();
@@ -760,8 +763,8 @@ export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) 
         previousPosition: previousHit,
       });
     },
-    preview: ({ event, hit }) => {
-      handleDragOver(event, hit);
+    preview: ({ event, hit, kind }) => {
+      handleDragOver(event, hit, kind);
       return () => handleDragLeave(event);
     },
     dropEffect: ({ event, kind }) => {
@@ -770,7 +773,9 @@ export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) 
       else hideLinkHover();
       return event.shiftKey ? 'copy' : 'move';
     },
-    onDrop: ({ event, hit }) => handleDrop(event, hit, { partialFailureMessage }),
+    onDrop: ({ event, hit, kind, ids, payload }) => handleDrop(event, hit, {
+      partialFailureMessage, dragData: { kind, ids, payload },
+    }),
   });
   return registry;
 }

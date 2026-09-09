@@ -31,9 +31,12 @@ export default class extends Controller {
     this.triggerId = id
     const selected = [...document.querySelectorAll('.select-creative-checkbox:checked')].map(el => el.value)
     this.ids = selected.includes(id) ? [...new Set(selected)] : [id]
+    this.canMove = ![...document.querySelectorAll('[data-creative-move-writable="false"]')]
+      .some(el => this.ids.includes(el.dataset.creativeMoveId))
     this.targetId = null
     this.directionTarget.value = 'child'
-    this.modeTarget.value = 'move'
+    this.modeTarget.querySelector('option[value="move"]').disabled = !this.canMove
+    this.modeTarget.value = this.canMove ? 'move' : 'link'
     this.destinationTarget.textContent = this.messagesValue.choose
     this.confirmTarget.disabled = true
     this.statusTarget.textContent = ''
@@ -77,6 +80,7 @@ export default class extends Controller {
   async submit(event) {
     event.preventDefault()
     if (this.busy || !this.targetId || this.ids.includes(this.targetId)) return
+    if (!this.canMove && this.modeTarget.value === 'move') return
     this.busy = true
     this.setDisabled(true)
     this.statusTarget.textContent = this.messagesValue.moving

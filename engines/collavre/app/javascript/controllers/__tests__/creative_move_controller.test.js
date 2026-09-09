@@ -46,6 +46,56 @@ const destination = (id = 99) => {
 }
 const submit = () => controller.submit({ preventDefault: jest.fn() })
 
+test('offers link mode for a readable source and never submits a forbidden move', async () => {
+  controller.cancel()
+  const button = document.querySelector('[data-creative-move-id]')
+  button.dataset.creativeMoveWritable = 'false'
+  button.click()
+  expect(dialog.open).toBe(true)
+  expect(controller.modeTarget.value).toBe('link')
+  expect(controller.modeTarget.querySelector('[value="move"]').disabled).toBe(true)
+  destination()
+  controller.modeTarget.value = 'move'
+  await submit()
+  expect(executeMoveCommand).not.toHaveBeenCalled()
+  controller.modeTarget.value = 'link'
+  executeMoveCommand.mockResolvedValue({ status: 'success', ok: true, succeededIds: ['1', '2'], failedIds: [] })
+  await submit()
+  expect(executeMoveCommand).toHaveBeenCalledWith(expect.objectContaining({ mode: 'link', ids: ['1', '2'] }))
+});
+
+test('keeps move disabled after a readable bundle link partially fails and retries only missing links', async () => {
+  controller.cancel()
+  const button = document.querySelector('[data-creative-move-id]')
+  button.dataset.creativeMoveWritable = 'false'
+  button.click()
+  destination()
+  executeMoveCommand.mockResolvedValueOnce({ status: 'partial', ok: false, succeededIds: ['1'], failedIds: ['2'] })
+  await submit()
+  expect(controller.ids).toEqual(['2'])
+  expect(controller.modeTarget.disabled).toBe(false)
+  expect(controller.modeTarget.querySelector('[value="move"]').disabled).toBe(true)
+  expect(controller.modeTarget.value).toBe('link')
+  executeMoveCommand.mockResolvedValueOnce({ status: 'success', ok: true, succeededIds: ['2'], failedIds: [] })
+  await submit()
+  expect(executeMoveCommand).toHaveBeenLastCalledWith({ ids: ['2'], targetId: '99', direction: 'child', mode: 'link' })
+})
+
+test('a mixed-permission selection defaults to links and a later writable selection can move', () => {
+  controller.cancel()
+  const readOnly = document.createElement('button')
+  readOnly.dataset.creativeMoveId = '2'
+  readOnly.dataset.creativeMoveWritable = 'false'
+  document.body.appendChild(readOnly)
+  document.querySelector('[data-creative-move-id="1"]').click()
+  expect(controller.modeTarget.value).toBe('link')
+  controller.cancel()
+  document.querySelector('.select-creative-checkbox[value="2"]').checked = false
+  document.querySelector('[data-creative-move-id="1"]').click()
+  expect(controller.modeTarget.value).toBe('move')
+  expect(controller.modeTarget.querySelector('[value="move"]').disabled).toBe(false)
+});
+
 test('opens a native modal from a button and uses the shared picker for off-screen destinations', () => {
   expect(dialog.open).toBe(true)
   expect(controller.ids).toEqual(['1', '2'])

@@ -60,8 +60,18 @@ export function createDragDropRegistry({
     activePreview = null
   }
 
+  const localData = (transfer) => {
+    // Never substitute memory for a rejected or cross-window transfer payload.
+    if (Array.from(transfer?.types || []).length) return null
+    for (const candidate of liveRegistries) {
+      const data = candidate.gestureData(root.ownerDocument || root)
+      if (data) return data
+    }
+    return null
+  }
+
   const matchZone = (event) => {
-    const kind = getKind(event.dataTransfer)
+    const kind = getKind(event.dataTransfer) || localData(event.dataTransfer)?.kind
     let match = null
     for (const zone of zones) {
       const element = matchingElement(root, event, zone.selector)
@@ -99,9 +109,15 @@ export function createDragDropRegistry({
     if (owner?.registry !== registry) return
     const source = sources.find((candidate) => matchingElement(root, event, candidate.selector))
     const element = matchingElement(root, event, source.selector)
-    activeSource = { source, element }
+    for (const candidate of liveRegistries) candidate.finishDrag(event)
+    activeSource = { source, element, data: null }
     try {
-      if (source.onDragStart({ el: element, event }) === false) event.preventDefault()
+      if (source.onDragStart({ el: element, event,
+        setLocalData: data => { activeSource.data = data },
+      }) === false) {
+        event.preventDefault()
+        handleDragEnd(event)
+      }
       event.stopPropagation()
     } catch (error) {
       event.preventDefault()
@@ -173,7 +189,7 @@ export function createDragDropRegistry({
       resolved = resolveZone(event, true)
       if (!resolved) return
 
-      const data = readData(event.dataTransfer)
+      const data = readData(event.dataTransfer) || localData(event.dataTransfer)
       if (!data || data.kind !== resolved.kind) return
 
       event.preventDefault()
@@ -212,6 +228,9 @@ export function createDragDropRegistry({
 
   const registry = {
     finishDrag: handleDragEnd,
+    gestureData(document) {
+      return document === ownerDocument ? activeSource?.data : null
+    },
     matchDrop: matchZone,
     getDragSource(target) {
       for (const source of sources) {
@@ -253,6 +272,7 @@ export function createDragDropRegistry({
       sources.push(source)
       return () => {
         const index = sources.indexOf(source)
+        if (activeSource?.source === source) handleDragEnd({ type: 'unregister' })
         if (index >= 0) sources.splice(index, 1)
       }
     },

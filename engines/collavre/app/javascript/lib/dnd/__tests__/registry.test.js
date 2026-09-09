@@ -746,3 +746,52 @@ describe('createDragDropRegistry', () => {
   })
 
 })
+
+test('gesture fallback remains document-local and is cleared by source removal', () => {
+  document.body.innerHTML = '<div class="source"></div><div class="zone"></div>'
+  const foreignDocument = document.implementation.createHTMLDocument('foreign')
+  foreignDocument.body.innerHTML = '<div class="zone"></div>'
+  const sourceRegistry = createDragDropRegistry({ root: document, touch: false })
+  const foreignRegistry = createDragDropRegistry({ root: foreignDocument, touch: false })
+  const onDrop = jest.fn()
+  const data = { kind: 'creative', ids: ['1'], payload: { creativeId: '1', treeId: 'tree-1' } }
+  const unregister = sourceRegistry.registerDragSource({ selector: '.source',
+    onDragStart: ({ setLocalData }) => setLocalData(data) })
+  foreignRegistry.registerDropZone({ selector: '.zone', accepts: 'creative', onDrop })
+  try {
+    const transfer = { types: [], getData: () => '' }
+    const source = document.querySelector('.source')
+    source.dispatchEvent(dragEvent('dragstart', source, transfer))
+    expect(sourceRegistry.gestureData(document)).toEqual(data)
+    expect(sourceRegistry.gestureData(foreignDocument)).toBeNull()
+    const target = foreignDocument.querySelector('.zone')
+    target.dispatchEvent(dragEvent('drop', target, transfer))
+    expect(onDrop).not.toHaveBeenCalled()
+    unregister()
+    expect(sourceRegistry.gestureData(document)).toBeUndefined()
+  } finally {
+    foreignRegistry.destroy()
+    sourceRegistry.destroy()
+  }
+})
+
+test('touch cancels a source that provides neither serialized nor local data', () => {
+  jest.useFakeTimers()
+  document.body.innerHTML = '<div class="source"></div>'
+  const registry = createDragDropRegistry()
+  registry.registerDragSource({ selector: '.source', onDragStart: () => {} })
+  try {
+    const source = document.querySelector('.source')
+    const point = { target: source, clientX: 10, clientY: 10 }
+    source.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true,
+      touches: [point], changedTouches: [point] }))
+    jest.advanceTimersByTime(400)
+    expect(registry.gestureData(document)).toBeUndefined()
+    expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+    source.dispatchEvent(dragEvent('dragover', source, null))
+    source.dispatchEvent(dragEvent('dragover', source, {}))
+  } finally {
+    registry.destroy()
+    jest.useRealTimers()
+  }
+})

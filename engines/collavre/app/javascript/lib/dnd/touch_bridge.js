@@ -91,7 +91,7 @@ function attachTouchBridge({ root, registry }) {
         },
       }
       const event = dispatch('dragstart', touch.target, touch)
-      if (event.defaultPrevented || !dataTransfer.types.length) {
+      if (event.defaultPrevented || (!dataTransfer.types.length && !registry.gestureData?.(document))) {
         finish()
         return false
       }
@@ -150,6 +150,13 @@ export function createTouchBridge({ root, registry }) {
           if (match && (!source || source.contains(match))) source = match
         }
         return source
+      },
+      gestureData(document) {
+        for (const candidate of registries) {
+          const data = candidate.gestureData(document)
+          if (data) return data
+        }
+        return null
       },
       getDropTargets() {
         return registries.values().next().value.getDropTargets()

@@ -179,6 +179,24 @@ describe('CommentsPresenceController', () => {
     expect(refreshChannelChips).toHaveBeenCalledWith('45')
   })
 
+  test('marks channel chip refreshes as background requests', () => {
+    controller.element.insertAdjacentHTML(
+      'beforeend',
+      '<div data-comments--presence-target="channelChips"></div>',
+    )
+    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockReturnValue({
+      currentTopicId: '45',
+    })
+    global.fetch.mockResolvedValueOnce({ ok: false })
+
+    controller.refreshChannelChips('45')
+
+    expect(global.fetch).toHaveBeenCalledWith('/creatives/123/topics/45/channel_chips', {
+      headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+    })
+  })
+
   test('clears topic timers when the popup closes', () => {
     const resetAgentActivity = jest.spyOn(controller, 'resetAgentActivity').mockImplementation(() => {})
 

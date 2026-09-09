@@ -158,6 +158,68 @@ describe('LinkCreativeController picker', () => {
     application.stop()
   })
 
+  test.each([
+    ['root shell', { 9: [900] }],
+    ['nested shell with another ancestor shell', { 1: [50, 100], 9: [60, 70, 900] }],
+  ])('search selects the %s placement only in destination mode', async (_label, revealPath) => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([{
+      id: 9, description: 'Shared destination', progress: 0,
+      path: [{ id: 1, description: 'Shared root' }], reveal_path: revealPath,
+    }])
+    const { application, controller } = await installController()
+    const onSelect = jest.fn()
+    try {
+      controller.open(rect, onSelect, jest.fn(), { selectOrigin: false })
+      await flush()
+      controller.inputTarget.value = 'shared'
+      controller.search()
+      await flush()
+      document.querySelector('.link-result-item').click()
+      expect(onSelect).toHaveBeenLastCalledWith({ id: 900, label: 'Shared destination' })
+
+      // Reopening the same picker for ordinary linking resets destination mode.
+      controller.open(rect, onSelect, jest.fn())
+      await flush()
+      controller.inputTarget.value = 'shared'
+      controller.search()
+      await flush()
+      controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      expect(onSelect).toHaveBeenLastCalledWith({ id: 9, label: 'Shared destination' })
+      expect(onSelect).toHaveBeenCalledTimes(2)
+    } finally {
+      controller.close()
+      application.stop()
+    }
+  })
+
+  test.each([
+    ['no linked placement', undefined],
+    ['ancestor placement only', { 1: [50, 100] }],
+    ['empty placement path', { 9: [] }],
+    ['invalid placement path', { 9: 900 }],
+  ])('destination search retains the hit id with %s', async (_label, revealPath) => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([{
+      id: 9, description: 'Descendant destination', progress: 0,
+      path: [{ id: 1, description: 'Shared root' }], reveal_path: revealPath,
+    }])
+    const { application, controller } = await installController()
+    const onSelect = jest.fn()
+    try {
+      controller.open(rect, onSelect, jest.fn(), { selectOrigin: false })
+      await flush()
+      controller.inputTarget.value = 'descendant'
+      controller.search()
+      await flush()
+      controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      expect(onSelect).toHaveBeenCalledWith({ id: 9, label: 'Descendant destination' })
+    } finally {
+      controller.close()
+      application.stop()
+    }
+  })
+
   test('creates a creative from a non-matching query when creation is enabled', async () => {
     browse.mockResolvedValue([])
     search.mockResolvedValue([])

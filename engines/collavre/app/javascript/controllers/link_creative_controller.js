@@ -319,7 +319,11 @@ export default class extends CommonPopupController {
             const li = document.createElement('li')
             li.className = 'link-result-item'
             li.setAttribute('data-pick-row', '')
-            li.dataset.id = String(result.id)
+            // Search returns origins. Only the hit's own reveal entry identifies
+            // its placement; an ancestor's shell is not this hit's destination.
+            const placementPath = result.reveal_path?.[String(result.id)]
+            const placementId = Array.isArray(placementPath) ? placementPath.at(-1) : null
+            li.dataset.id = String((!this._selectOrigin && placementId) || result.id)
 
             const label = document.createElement('div')
             label.className = 'link-result-label'
@@ -494,8 +498,8 @@ export default class extends CommonPopupController {
         // For a linked-creative shell row, emit the effective origin id, not the
         // shell id: consumers use the selected id as the new link's origin, and
         // linking to the shell (rather than the real shared creative) would make
-        // PermissionChecker treat the shell as the permission base. Flat search
-        // rows already carry the origin creative's id, so they pass through.
+        // PermissionChecker treat the shell as the permission base. Search rows
+        // already carry the id resolved for the picker's selection mode.
         const item = row.closest('.link-tree-item')
         // Placement commands target the chosen shell, while link creation
         // continues to resolve its effective origin by default.

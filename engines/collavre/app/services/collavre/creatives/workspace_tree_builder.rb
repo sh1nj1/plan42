@@ -54,6 +54,7 @@ module Collavre
           label: Collavre::HtmlText.label(creative.effective_description),
           snippet: creative.creative_snippet,
           can_comment: allowed?(creative, :feedback),
+          can_write: allowed?(creative, :write) && !creative.effective_origin.read_only_source?,
           url: view_context.collavre.creatives_path(id: creative.id),
           has_children: visible_children.any?,
           children: children

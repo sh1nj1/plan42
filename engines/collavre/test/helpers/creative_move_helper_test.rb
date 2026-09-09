@@ -3,13 +3,16 @@ require "test_helper"
 class CreativeMoveHelperTest < ActionView::TestCase
   include Collavre::CreativeMoveHelper
 
-  test "only writable non-archived creatives expose a native move button" do
+  test "readable creatives expose the menu while write permission controls the move option" do
     creative = Struct.new(:id, :archived?, :creative_snippet).new(42, false, "Quarterly plan")
-    assert_empty render_creative_move_action(creative, false)
+    read_only_html = render_creative_move_action(creative, false)
+    assert_includes read_only_html, 'data-creative-move-id="42"'
+    assert_includes read_only_html, 'data-creative-move-writable="false"'
     html = render_creative_move_action(creative, true)
     assert_includes html, 'type="button"'
     assert_includes html, 'data-creative-move-id="42"'
     assert_includes html, 'aria-haspopup="dialog"'
+    assert_includes html, 'data-creative-move-writable="true"'
     creative[:archived?] = true
     assert_empty render_creative_move_action(creative, true)
   end
