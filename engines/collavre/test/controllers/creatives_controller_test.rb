@@ -755,6 +755,30 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
       I18n.t("collavre.creatives.drag_drop.partial_failure")
   end
 
+  test "header move action is hidden for inaccessible and missing requested creatives" do
+    inaccessible = Creative.create!(user: users(:two), description: "Private move source")
+    assert_not inaccessible.has_permission?(users(:one), :read)
+    missing_id = Creative.maximum(:id) + 1
+
+    [ inaccessible.id, missing_id ].each do |id|
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path(id: id), headers: headers
+
+        assert_response :success
+        assert_select "#creative-overflow-menu [data-creative-move-id]", count: 0
+      end
+    end
+  end
+
+  test "header move action remains available on the actual root route" do
+    [ {}, { id: "" } ].each do |params|
+      get creatives_path, params: params
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+    end
+  end
+
   test "header move capability respects registered read-only sources and their linked shells" do
     source_type = "header_move_read_only_source"
     Creative.register_read_only_source(source_type)
