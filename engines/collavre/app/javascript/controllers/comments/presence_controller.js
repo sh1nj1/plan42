@@ -1,6 +1,7 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
-import TouchDragHandler from '../../lib/touch_drag'
 import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
@@ -24,6 +25,17 @@ export default class extends Controller {
     'addParticipantButton', 'participantListButton']
 
   connect() {
+    this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
+    this.dnd.registerDragSource({ selector: '.ai-agent-draggable',
+      onDragStart: ({ el, event }) => {
+        const user = this.participantsData.find(user => String(user.id) === el.dataset.agentId)
+        if (!user) return false
+        writeDragData(event.dataTransfer, { kind: 'agent', ids: [user.id],
+          payload: { name: user.name, avatar_url: user.avatar_url } })
+        event.dataTransfer.effectAllowed = 'copy'
+        el.classList.add('dragging')
+      },
+      onDragEnd: ({ el }) => el.classList.remove('dragging') })
     this.creativeId = null
     this.participantsData = null
     this.canShare = false
@@ -63,6 +75,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.dnd?.destroy()
     this._participantLoadVersion += 1
     this._closeParticipantListPopup()
     this.unsubscribe()
@@ -501,22 +514,6 @@ export default class extends Controller {
         wrapper.dataset.agentName = user.name
         wrapper.dataset.agentAvatarUrl = user.avatar_url
 
-        // HTML5 DnD (desktop)
-        wrapper.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('application/x-agent-drop', JSON.stringify({
-            id: user.id,
-            name: user.name,
-            avatar_url: user.avatar_url
-          }))
-          e.dataTransfer.effectAllowed = 'copy'
-          wrapper.classList.add('dragging')
-        })
-        wrapper.addEventListener('dragend', () => {
-          wrapper.classList.remove('dragging')
-        })
-
-        // Touch drag (mobile)
-        this._addAgentTouchDrag(wrapper, user)
       }
 
       this.participantsTarget.appendChild(wrapper)
@@ -1079,44 +1076,4 @@ export default class extends Controller {
     }))
   }
 
-  // ── Agent touch drag-and-drop (mobile) ─────────────────
-
-  _addAgentTouchDrag(wrapper, user) {
-    if (!('ontouchstart' in window)) return
-    const trigger = wrapper.querySelector('.comment-user-menu-trigger')
-    if (!trigger) return
-
-    const handler = new TouchDragHandler({
-      container: trigger,
-      singleElement: true,
-      dropTargetSelector: '.topic-tag.topic-drop-target, .topic-creation-container',
-      draggingClass: 'dragging',
-
-      proxyContent: () =>
-        `<span class="touch-drag-proxy-badge">${user.name}</span>`,
-
-      onTap: () => trigger.click(),
-
-      onDrop: (targetEl) => {
-        const agentData = { id: user.id, name: user.name, avatar_url: user.avatar_url }
-        const topicsCtrl = this.application.getControllerForElementAndIdentifier(
-          this.element, 'comments--topics'
-        )
-        if (!topicsCtrl) return
-
-        if (targetEl.closest('.topic-creation-container')) {
-          topicsCtrl.createTopicWithAgent(agentData)
-        } else {
-          const topicTag = targetEl.closest('.topic-tag.topic-drop-target')
-          if (topicTag?.dataset.id) {
-            topicsCtrl.setTopicPrimaryAgent(topicTag.dataset.id, agentData)
-          }
-        }
-      }
-    })
-
-    // Store for cleanup if needed
-    if (!this._agentTouchDragHandlers) this._agentTouchDragHandlers = []
-    this._agentTouchDragHandlers.push(handler)
-  }
 }

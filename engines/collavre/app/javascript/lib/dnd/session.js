@@ -10,8 +10,6 @@ function generateRandomIdentifier(context) {
   const fallback = () =>
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-  if (typeof window === 'undefined') return fallback();
-
   try {
     const { crypto } = window;
     if (crypto && typeof crypto.randomUUID === 'function') {

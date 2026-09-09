@@ -1,0 +1,38 @@
+<div data-controller="creative-move"
+     data-creative-move-messages-value="<%= {
+       choose: t('collavre.dnd.choose_destination'), invalid: t('collavre.dnd.invalid_target'),
+       moving: t('collavre.dnd.moving'), complete: t('collavre.dnd.dropped'),
+       partial: t('collavre.dnd.partial'), failed: t('collavre.dnd.failed'),
+       cancelled: t('collavre.dnd.cancelled')
+     }.to_json %>">
+  <dialog class="modal-dialog modal-dialog-compact" data-creative-move-target="dialog" aria-labelledby="creative-move-title"
+          data-action="cancel->creative-move#cancel">
+    <h2 id="creative-move-title" class="modal-dialog-header modal-dialog-title"><%= t('collavre.dnd.move_title') %></h2>
+    <form class="modal-dialog-body" data-action="submit->creative-move#submit">
+      <%# Position and Operation are labelled fields; the destination has to name
+          itself too, or its accessible name becomes just the chosen creative. %>
+      <p><span id="creative-move-destination-label"><%= t('collavre.dnd.destination') %></span>
+         <button type="button" id="creative-move-destination" data-creative-move-target="destination"
+                 aria-labelledby="creative-move-destination-label creative-move-destination"
+                 data-action="creative-move#chooseDestination"><%= t('collavre.dnd.choose_destination') %></button></p>
+      <p><label><%= t('collavre.dnd.position') %>
+        <select data-creative-move-target="direction">
+          <% %w[child up down].each do |direction| %>
+            <option value="<%= direction %>"><%= t("collavre.dnd.#{direction}") %></option>
+          <% end %>
+        </select>
+      </label></p>
+      <p><label><%= t('collavre.dnd.operation') %>
+        <select data-creative-move-target="mode">
+          <% %w[move link].each do |mode| %>
+            <option value="<%= mode %>"><%= t("collavre.dnd.#{mode}") %></option>
+          <% end %>
+        </select>
+      </label></p>
+      <p role="status" aria-live="polite" data-creative-move-target="status"></p>
+      <button type="button" data-action="creative-move#cancel"><%= t('collavre.dnd.cancel') %></button>
+      <button type="submit" data-creative-move-target="confirm" disabled><%= t('collavre.dnd.confirm') %></button>
+    </form>
+  </dialog>
+  <span role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;" data-creative-move-target="announcement"></span>
+</div>

@@ -6,6 +6,7 @@ import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import FormController from '../form_controller'
 import chatDrafts from '../../../lib/chat_drafts'
+import { writeDragData } from '../../../lib/dnd/envelope'
 
 describe('FormController - draft persistence', () => {
   let application
@@ -2066,4 +2067,65 @@ describe('FormController - draft persistence', () => {
     await new Promise((resolve) => setTimeout(resolve, 600))
     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
   })
+  test.each([
+    [['application/x-collavre-creative'], [], true],
+    [['Files'], [new File(['image'], 'image.png', { type: 'image/png' })], true],
+    [['text/plain'], [], false],
+  ])('dragover accepts creative or image transfers and ignores other data (%j)', (types, files, accepted) => {
+    const event = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.assign(event, { dataTransfer: { types, files } })
+    const stop = jest.spyOn(event, 'stopPropagation')
+    controller.handleDragOver(event)
+    expect(event.defaultPrevented).toBe(accepted)
+    expect(stop).toHaveBeenCalledTimes(accepted ? 1 : 0)
+  })
+
+  test('dropping a creative bundle inserts every link and preserves text after the cursor', () => {
+    controller.formTarget.id = 'new-comment-form'
+    const textarea = controller.textareaTarget
+    textarea.value = 'Before after'
+    textarea.setSelectionRange(7, 7)
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    const values = {}
+    const dataTransfer = { types: [], files: [], getData: type => values[type] || '',
+      setData: (type, value) => { values[type] = value; dataTransfer.types = Object.keys(values) } }
+    writeDragData(dataTransfer, { kind: 'creative', ids: ['10', '20', '10'], payload: { treeId: 'tree' } })
+    const input = jest.fn()
+    textarea.addEventListener('input', input)
+    Object.assign(event, { dataTransfer })
+    textarea.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(textarea.value).toBe('Before [Creative #10](/creatives/10) [Creative #20](/creatives/20)after')
+    expect(textarea.selectionStart).toBe(textarea.value.indexOf('after'))
+    expect(input).toHaveBeenCalledTimes(1)
+  })
+
+  test('creative and image dragover remain accepted while unrelated transfers bubble', () => {
+    controller.formTarget.id = 'new-comment-form'
+    for (const types of [['application/x-collavre-creative'], ['Files'], ['text/plain']]) {
+      const event = new Event('dragover', { bubbles: true, cancelable: true })
+      Object.assign(event, { dataTransfer: { types, files: types[0] === 'Files' ? [new File(['image'], 'image.png', { type: 'image/png' })] : [] } })
+      controller.textareaTarget.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(types[0] !== 'text/plain')
+    }
+  })
+
+  test('an empty bundle leaves the draft and its dirty state untouched', () => {
+    controller.textareaTarget.value = 'See'
+    controller.textareaTarget.setSelectionRange(3, 3)
+    const input = jest.fn()
+    controller.textareaTarget.addEventListener('input', input)
+    controller.insertCreativeLinks([])
+    expect(controller.textareaTarget.value).toBe('See')
+    expect(input).not.toHaveBeenCalled()
+  })
+
+  test('single-link callers preserve the shared insertion behavior', () => {
+    controller.textareaTarget.value = 'See'
+    controller.textareaTarget.setSelectionRange(3, 3)
+    controller.insertCreativeLink({ id: '10', label: 'Task' })
+    expect(controller.textareaTarget.value).toBe('See [Task](/creatives/10) ')
+    expect(document.activeElement).toBe(controller.textareaTarget)
+  })
+
 })

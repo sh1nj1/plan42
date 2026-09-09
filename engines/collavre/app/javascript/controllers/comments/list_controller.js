@@ -1,6 +1,8 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
-import { attachBundleDragImage } from '../../utils/drag_bundle_image'
+import { attachBundleDragImage } from '../../lib/dnd/bundle_image'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
@@ -66,11 +68,11 @@ export default class extends Controller {
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
 
     // Drag and drop handlers for moving comments to topics
-    this.handleDragStart = this.handleDragStart.bind(this)
-    this.handleDragEnd = this.handleDragEnd.bind(this)
     this.handleMoveToTopic = this.handleMoveToTopic.bind(this)
-    this.listTarget.addEventListener('dragstart', this.handleDragStart)
-    this.listTarget.addEventListener('dragend', this.handleDragEnd)
+    this.dnd = createDragDropRegistry({ root: this.listTarget, getKind: getDragKind, readData: readDragData })
+    this.dnd.registerDragSource({ selector: '.comment-item[draggable="true"]',
+      onDragStart: ({ event }) => this.handleDragStart(event),
+      onDragEnd: () => this.listTarget.classList.remove('dragging-comments') })
     this.element.addEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
 
   }
@@ -109,8 +111,7 @@ export default class extends Controller {
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
     this.listTarget.removeEventListener('submit', this.handleSubmit)
-    this.listTarget.removeEventListener('dragstart', this.handleDragStart)
-    this.listTarget.removeEventListener('dragend', this.handleDragEnd)
+    this.dnd?.destroy()
     document.removeEventListener('turbo:before-stream-render', this.handleStreamRender)
     if (this.listObserver) {
       this.listObserver.disconnect()
@@ -1067,7 +1068,7 @@ export default class extends Controller {
 
     // Include all selected comment IDs
     const commentIds = Array.from(this.selection)
-    event.dataTransfer.setData('application/x-comment-ids', JSON.stringify(commentIds))
+    writeDragData(event.dataTransfer, { kind: 'comments', ids: commentIds, payload: {} })
     event.dataTransfer.effectAllowed = 'move'
 
     // Add visual feedback
@@ -1079,10 +1080,6 @@ export default class extends Controller {
       const text = bodyEl ? bodyEl.textContent.trim() : ''
       attachBundleDragImage(event, commentIds.length, text)
     }
-  }
-
-  handleDragEnd(event) {
-    this.listTarget.classList.remove('dragging-comments')
   }
 
   async handleMoveToTopic(event) {

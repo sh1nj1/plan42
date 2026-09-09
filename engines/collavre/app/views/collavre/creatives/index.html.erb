@@ -42,6 +42,7 @@
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
      data-creatives--import-failed-value="<%= t('collavre.creatives.index.import_failed') %>"
      data-creatives--import-only-markdown-value="<%= t('collavre.creatives.index.only_markdown') %>"
+     data-creatives--drag-drop-partial-failure-text-value="<%= t('collavre.creatives.drag_drop.partial_failure') %>"
      data-creatives--import-dragover-class="dragover">
   <% current_creative = @parent_creative || @creative %>
   <% can_manage_integrations = current_creative&.has_permission?(Current.user, :admin) %>

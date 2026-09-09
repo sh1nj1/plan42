@@ -1,3 +1,6 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
+import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
 import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
 import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
@@ -35,6 +38,7 @@ export default class extends Controller {
     static targets = ["list", "creationContainer", "topicListButton"]
 
     connect() {
+        this._registerDragDrop()
         this.topics = []
         this.canManageTopics = false
         this.canCreateTopic = false
@@ -64,6 +68,7 @@ export default class extends Controller {
     }
 
     disconnect() {
+        this.dnd?.destroy()
         this.cancelProgrammaticScroll()
         window.removeEventListener('comments--topics:new-message', this.handleNewMessage)
         window.removeEventListener('collavre:topic-moved', this.handleTopicMoved)
@@ -483,14 +488,6 @@ export default class extends Controller {
     }
 
     renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage, sourceCreativeId = this._topicsCreativeId || this.creativeId) {
-        const dragActions = canManage
-            ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
-            : ''
-        const dropActions = 'dragover->comments--topics#handleDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleDrop'
-        const topicDropActions = canManage
-            ? 'dragover->comments--topics#handleTopicReorderDragOver dragleave->comments--topics#handleTopicReorderDragLeave drop->comments--topics#handleTopicReorderDrop'
-            : ''
-
         const allMessagesLabel = this.element.dataset.topicMainText || 'All Messages'
 
         const mainTopic = this.mainTopicId ? topics.find(t => String(t.id) === String(this.mainTopicId)) : null
@@ -514,9 +511,8 @@ export default class extends Controller {
                 : ''
             const cronBadge = topic.cron_badge_html || ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
-            const interactionActions = topic.read_only ? '' : `${dropActions} ${dragActions} ${topicDropActions}`
             let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
-                          data-action="click->comments--topics#select ${interactionActions}"
+                          data-action="click->comments--topics#select" data-dnd-read-only="${!!topic.read_only}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
                         ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${cronBadge}${unreadBadge}`
             if (canManage && !isMainTopic && !topic.read_only) {
@@ -531,7 +527,7 @@ export default class extends Controller {
         otherTopics.forEach(topic => { html += renderTopic(topic) })
 
         html += `<span class="topic-tag topic-drop-target topic-all-messages ${this.currentTopicId ? '' : 'active'}"
-                      data-action="click->comments--topics#select ${dropActions}"
+                      data-action="click->comments--topics#select"
                       data-id="">📋 ${allMessagesLabel}</span>`
 
         // Archived topics section
@@ -597,57 +593,36 @@ export default class extends Controller {
             `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
     }
 
-    handleDragOver(event) {
-        // Accept comment drops or agent drops
-        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
-        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
-        if (!isComment && !isAgent) return
-
-        event.preventDefault()
-        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
-        event.currentTarget.classList.add('drag-over')
-    }
-
-    handleDragLeave(event) {
-        event.currentTarget.classList.remove('drag-over')
-    }
-
-    async handleDrop(event) {
-        event.preventDefault()
-        event.currentTarget.classList.remove('drag-over')
-
-        // Handle agent drop
-        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
-        if (agentJson) {
-            const agent = JSON.parse(agentJson)
-            const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
-            if (targetTopicId) {
-                await this.setTopicPrimaryAgent(targetTopicId, agent)
-            }
-            return
+    _registerDragDrop() {
+        this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
+        this.dnd.registerDragSource({ selector: '.topic-tag[draggable="true"]',
+            onDragStart: this.handleTopicDragStart.bind(this),
+            onDragEnd: ({ el }) => { this.draggingTopicId = null; el.classList.remove('topic-dragging') } })
+        const selector = '.topic-drop-target:not([data-dnd-read-only="true"]), [data-comments--topics-target="creationContainer"]'
+        for (const kind of ['comments', 'agent']) {
+            this.dnd.registerDropZone({ selector, accepts: [kind], dropEffect: kind === 'agent' ? 'copy' : 'move',
+                preview: previewDrop,
+                onDrop: async ({ el, ids, payload }) => {
+                    const agent = { ...payload, id: ids[0] }
+                    if (el === this.creationContainerTarget) {
+                        if (kind === 'comments') await this.createTopicAndMoveComments(ids)
+                        else await this.createTopicWithAgent(agent)
+                    } else {
+                        const targetTopicId = el.dataset.id || this.mainTopicId
+                        if (kind === 'agent') {
+                            if (targetTopicId) await this.setTopicPrimaryAgent(targetTopicId, agent)
+                        } else this.dispatch('move-to-topic', { detail: { commentIds: ids, targetTopicId } })
+                    }
+                } })
         }
-
-        // Handle comment drop
-        const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
-        if (!commentIdsJson) return
-
-        const commentIds = JSON.parse(commentIdsJson)
-        if (!commentIds || commentIds.length === 0) return
-
-        const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
-
-        // Dispatch event for list_controller to handle the move
-        this.dispatch('move-to-topic', {
-            detail: {
-                commentIds,
-                targetTopicId
-            }
-        })
+        this.dnd.registerDropZone({ selector: '.topic-tag[draggable="true"]', accepts: ['topic'],
+            hitTest: ({ el, event }) => this.draggingTopicId && el.dataset.id !== this.draggingTopicId
+                ? horizontalHit({ el, event }) : null,
+            preview: previewDrop, onDrop: this.handleTopicReorderDrop.bind(this) })
     }
 
     // Topic reorder drag & drop handlers
-    handleTopicDragStart(event) {
-        const topicEl = event.currentTarget
+    handleTopicDragStart({ event, el: topicEl }) {
         const topicId = topicEl.dataset.id
         if (!topicId) {
             event.preventDefault()
@@ -655,69 +630,19 @@ export default class extends Controller {
         }
 
         this.draggingTopicId = topicId
-        event.dataTransfer.setData('application/x-topic-id', topicId)
-        // Include topic move data so creative tree rows can accept this drop
-        event.dataTransfer.setData('application/x-topic-move', JSON.stringify({
-            topicId,
-            sourceCreativeId: this.creativeId
-        }))
+        writeDragData(event.dataTransfer, { kind: 'topic', ids: [topicId], payload: { sourceCreativeId: this.creativeId } })
         event.dataTransfer.effectAllowed = 'move'
 
         requestAnimationFrame(() => {
-            topicEl.classList.add('topic-dragging')
+            if (this.draggingTopicId === topicId) topicEl.classList.add('topic-dragging')
         })
     }
 
-    handleTopicDragEnd(event) {
-        this.draggingTopicId = null
-        event.currentTarget.classList.remove('topic-dragging')
-        this.listTarget.querySelectorAll('.topic-tag').forEach(el => {
-            el.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
-        })
-    }
-
-    handleTopicReorderDragOver(event) {
-        // Only accept topic reorder drops
-        if (!event.dataTransfer.types.includes('application/x-topic-id')) return
-        if (!this.draggingTopicId) return
-
-        const targetEl = event.currentTarget
-        const targetId = targetEl.dataset.id
-
-        // Don't allow drop on self or Main
-        if (!targetId || targetId === this.draggingTopicId) return
-
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-
-        // Determine drop position (left or right) based on mouse position
-        const rect = targetEl.getBoundingClientRect()
-        const midpoint = rect.left + rect.width / 2
-        const isLeft = event.clientX < midpoint
-
-        targetEl.classList.toggle('topic-drag-over-left', isLeft)
-        targetEl.classList.toggle('topic-drag-over-right', !isLeft)
-    }
-
-    handleTopicReorderDragLeave(event) {
-        event.currentTarget.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
-    }
-
-    async handleTopicReorderDrop(event) {
-        event.preventDefault()
-
-        const targetEl = event.currentTarget
-        targetEl.classList.remove('topic-drag-over-left', 'topic-drag-over-right')
-
-        const draggedTopicId = event.dataTransfer.getData('application/x-topic-id')
-        const targetTopicId = targetEl.dataset.id
-
-        if (!draggedTopicId || !targetTopicId || draggedTopicId === targetTopicId) return
-
-        // Determine drop position
-        const rect = targetEl.getBoundingClientRect()
-        const midpoint = rect.left + rect.width / 2
-        const insertBefore = event.clientX < midpoint
+    async handleTopicReorderDrop({ el, ids, hit }) {
+        const draggedTopicId = ids[0]
+        const targetTopicId = el.dataset.id
+        if (!draggedTopicId || !targetTopicId || String(draggedTopicId) === targetTopicId) return
+        const insertBefore = hit === 'left'
 
         // Reorder topics array
         const topics = [...this.topics]
@@ -2622,37 +2547,6 @@ export default class extends Controller {
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
-    }
-
-    handleAddButtonDragOver(event) {
-        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
-        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
-        if (!isAgent && !isComment) return
-        event.preventDefault()
-        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
-        event.currentTarget.classList.add('drag-over')
-    }
-
-    async handleAddButtonDrop(event) {
-        event.preventDefault()
-        event.currentTarget.classList.remove('drag-over')
-
-        // Handle comment drop → create new topic + move
-        const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
-        if (commentIdsJson) {
-            const commentIds = JSON.parse(commentIdsJson)
-            if (commentIds && commentIds.length > 0) {
-                await this.createTopicAndMoveComments(commentIds)
-            }
-            return
-        }
-
-        // Handle agent drop (existing logic)
-        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
-        if (!agentJson) return
-
-        const agent = JSON.parse(agentJson)
-        await this.createTopicWithAgent(agent)
     }
 
     async createTopicAndMoveComments(commentIds, topicName = null) {
