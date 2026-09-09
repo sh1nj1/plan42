@@ -1092,7 +1092,7 @@ body.chat-fullscreen {
     }
 
     #comments-popup.open {
-        transform: translateY(0);
+        transform: none;
     }
 
     #comments-popup[data-fullscreen="true"] {
