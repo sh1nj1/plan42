@@ -46,15 +46,18 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_includes html, 'data-creative-move-id=""'
   end
 
-  test "the menu uses its localized label in both locales" do
+  # The action is named by its visible label alone now that a page renders one
+  # of it, so that label is the whole accessible name in both locales.
+  test "both locales label the action" do
+    creative = Struct.new(:id, :archived?).new(42, false)
+
     %w[en ko].each do |locale|
       I18n.with_locale(locale) do
-        html = render_creative_move_action(nil, nil)
-        assert_equal I18n.t("collavre.dnd.move_title"), Nokogiri::HTML5.fragment(html).at_css("button").text
+        assert_includes render_creative_move_action(creative, true),
+          I18n.t("collavre.dnd.move_title", locale: locale)
       end
     end
   end
-
 end
 
 # The engine is isolated, so its helpers are not on the host's helpers_path.
