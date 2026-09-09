@@ -223,6 +223,49 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_nil archived.reload.parent_id
   end
 
+  # An archived parent is not a movable source, but its active children still
+  # are. The header keeps the launcher with an empty ID so the action falls
+  # through to selection instead of disappearing, and the archived parent -- the
+  # title row -- never offers a checkbox of its own.
+  %w[move link].each do |mode|
+    test "an archived parent still lets its active children be #{mode}ed" do
+      parent = Creative.create!(description: "Menu archived parent", user: @user, archived_at: Time.current)
+      child = Creative.create!(description: "Menu active child", user: @user, parent: parent)
+      visit collavre.creatives_path(id: parent.id, show_archived: "true")
+
+      assert_selector "#creative-overflow-menu [data-creative-move-id='']", visible: :all
+      assert_selector "#creative-#{child.id}"
+      assert_no_selector "#creative-#{parent.id} .select-creative-checkbox", visible: :all
+
+      open_move_menu
+      assert_no_selector "dialog[open][data-creative-move-target]"
+      assert_selector "#select-creative-btn[aria-pressed='true']", visible: :all
+
+      find("#creative-#{child.id} .select-creative-checkbox").click
+      open_move_menu
+
+      # An active child is writable, so move stays available and link is a choice.
+      assert_equal "move", find('[data-creative-move-target="mode"]').value
+      find(%([data-creative-move-target="mode"] option[value="#{mode}"])).select_option
+      find('[data-creative-move-target="destination"]').click
+      find('[data-link-creative-target="input"]').set("Menu destination")
+      find("#link-creative-modal .link-result-item[data-id='#{@destination.id}']").click
+      find('[data-creative-move-target="confirm"]').click
+
+      assert_no_selector "dialog[open][data-creative-move-target]"
+      if mode == "move"
+        assert_equal @destination, child.reload.parent
+      else
+        # Link leaves the child where it is and adds a shell under the target.
+        assert_equal parent, child.reload.parent
+        shell = @destination.children.reload.find { |row| row.origin_id == child.id }
+        assert shell, "expected a linked shell for the child under the destination"
+      end
+      assert_nil parent.reload.parent_id
+      assert parent.reload.archived?
+    end
+  end
+
   private
 
   def open_move_menu(key = nil)
