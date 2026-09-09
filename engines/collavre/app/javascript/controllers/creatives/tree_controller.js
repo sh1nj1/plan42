@@ -463,7 +463,7 @@ export default class extends Controller {
       message.textContent = this.errorTextValue
       this.element.appendChild(message)
     }
-    this.markContentLoaded()
+    this.markContentLoaded('error')
     document.documentElement.classList.add('creative-alignment-ready')
   }
 
@@ -585,11 +585,13 @@ export default class extends Controller {
     return Boolean(this.element.querySelector('creative-tree-row') || this.element.innerHTML.trim() !== '')
   }
 
-  markContentLoaded() {
+  markContentLoaded(state = 'success') {
+    this.element.dataset.loadState = state
     this.element.dataset.loaded = 'true'
   }
 
   clearLoadedState() {
+    delete this.element.dataset.loadState
     delete this.element.dataset.loaded
   }
 

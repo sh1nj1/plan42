@@ -14,7 +14,6 @@ const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 let app, controller, picker, dialog
 beforeEach(async () => {
   jest.clearAllMocks()
-  window.alert = jest.fn()
   document.body.innerHTML = `
     <button data-creative-move-id="1" data-creative-move-writable="true">Move</button>
     <creative-tree-row creative-id="1" can-write><input class="select-creative-checkbox" type="checkbox" value="1" checked></creative-tree-row>
@@ -442,12 +441,13 @@ test.each(['', 'true'])('rejects archived-only and mixed selections with archive
   for (const mixed of [false, true]) {
     rows[1].querySelector('input').checked = mixed
     for (const mode of ['move', 'link']) {
-      window.alert.mockClear()
+      alertDialog.mockClear()
       controller.modeTarget.value = mode
       document.querySelector('[data-creative-move-id]').click()
       expect(dialog.open).toBe(false)
-      expect(window.alert).toHaveBeenCalledTimes(1)
-      expect(window.alert).toHaveBeenCalledWith('Deselect archived creatives')
+      expect(alertDialog).toHaveBeenCalledTimes(1)
+      expect(alertDialog).toHaveBeenCalledWith('Deselect archived creatives')
+      await flush()
       expect(document.activeElement).toBe(document.querySelector('[data-creative-move-id]'))
       expect(controller.ids).toEqual([])
       expect(controller.announcementTarget.textContent).toBe('Deselect archived creatives')
@@ -455,11 +455,11 @@ test.each(['', 'true'])('rejects archived-only and mixed selections with archive
       expect(executeMoveCommand).not.toHaveBeenCalled()
     }
   }
-  window.alert.mockClear()
+  alertDialog.mockClear()
   rows[0].removeAttribute('archived')
   document.querySelector('[data-creative-move-id]').click()
   expect(dialog.open).toBe(true)
-  expect(window.alert).not.toHaveBeenCalled()
+  expect(alertDialog).not.toHaveBeenCalled()
   expect(controller.ids).toEqual(['1', '2'])
 })
 
@@ -514,12 +514,17 @@ test.each(['already-empty', 'finishes-empty', 'focus-away', 'disconnect'])(
 )
 
 
-test.each([false, true])('empty feedback restores focus after dismissal unless disconnected: %s', async disconnected => {
+test.each([
+  ['empty', false], ['empty', true], ['archived', false], ['archived', true]
+])('%s feedback restores focus after dismissal unless disconnected: %s', async (kind, disconnected) => {
   controller.cancel()
   document.querySelectorAll('creative-tree-row').forEach(row => row.remove())
   document.body.insertAdjacentHTML('beforeend', '<div id="creatives" data-loaded="true"></div>')
   const action = document.querySelector('[data-creative-move-id]')
   action.dataset.creativeMoveId = ''
+  if (kind === 'archived') {
+    document.body.insertAdjacentHTML('beforeend', '<creative-tree-row archived><input type="checkbox" class="select-creative-checkbox" checked value="1"></creative-tree-row>')
+  }
   let dismiss
   alertDialog.mockImplementationOnce(() => new Promise(resolve => { dismiss = resolve }))
   const restore = jest.spyOn(controller, 'restoreFocus')
@@ -529,4 +534,35 @@ test.each([false, true])('empty feedback restores focus after dismissal unless d
   dismiss()
   await flush()
   expect(restore).toHaveBeenCalledTimes(disconnected ? 0 : 1)
+})
+
+test.each([false, true])('root load failure preserves error feedback, already completed: %s', async completed => {
+  controller.cancel()
+  document.querySelectorAll('creative-tree-row').forEach(row => row.remove())
+  const tree = document.createElement('div')
+  tree.id = 'creatives'
+  tree.setAttribute('data-creatives--tree-error-text-value', 'Could not load the creative tree.')
+  document.body.appendChild(tree)
+  const fail = () => {
+    tree.dataset.loadState = 'error'
+    tree.dataset.loaded = 'true'
+    tree.innerHTML = '<p class="creative-tree-error">Could not load the creative tree.</p>'
+  }
+  if (completed) fail()
+  const action = document.querySelector('[data-creative-move-id]')
+  action.dataset.creativeMoveId = ''
+  action.click()
+  if (!completed) fail()
+  await flush()
+  expect(alertDialog).toHaveBeenCalledTimes(1)
+  expect(alertDialog).toHaveBeenCalledWith('Could not load the creative tree.')
+  expect(controller.announcementTarget.textContent).toBe('Could not load the creative tree.')
+  expect(tree.querySelector('.creative-tree-error')).not.toBeNull()
+  expect(dialog.open).toBe(false)
+  expect(document.activeElement).toBe(action)
+  tree.innerHTML = '<input type="checkbox" class="select-creative-checkbox" value="7">'
+  await flush()
+  expect(document.activeElement).toBe(action)
+  expect(alertDialog).toHaveBeenCalledTimes(1)
+  expect(executeMoveCommand).not.toHaveBeenCalled()
 })

@@ -35,9 +35,7 @@ export default class extends Controller {
     if (selectedRows.some(el => el.closest('creative-tree-row')?.hasAttribute('archived'))) {
       this.ids = []
       this.targetId = null
-      this.announcementTarget.textContent = this.messagesValue.archived
-      window.alert(this.messagesValue.archived)
-      this.restoreFocus()
+      this.showFeedback(this.messagesValue.archived)
       return
     }
     const selected = selectedRows.map(el => el.value)
@@ -69,11 +67,12 @@ export default class extends Controller {
       checkbox.focus()
       return
     }
-    if (document.getElementById('creatives')?.dataset.loaded === 'true') {
-      this.announcementTarget.textContent = this.messagesValue.empty
-      alertDialog(this.messagesValue.empty).then(() => {
-        if (!this.disconnected) this.restoreFocus()
-      })
+    const tree = document.getElementById('creatives')
+    if (tree?.dataset.loaded === 'true') {
+      const message = tree.dataset.loadState === 'error'
+        ? tree.getAttribute('data-creatives--tree-error-text-value') || this.messagesValue.failed
+        : this.messagesValue.empty
+      this.showFeedback(message)
       return
     }
     // The selection toggle also lives in the closed overflow menu. Wait on
@@ -89,6 +88,13 @@ export default class extends Controller {
       }
     })
     this.focusObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-loaded'] })
+  }
+
+  showFeedback(message) {
+    this.announcementTarget.textContent = message
+    alertDialog(message).then(() => {
+      if (!this.disconnected) this.restoreFocus()
+    })
   }
 
   chooseDestination() {
