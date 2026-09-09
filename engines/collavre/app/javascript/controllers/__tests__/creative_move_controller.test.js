@@ -3,7 +3,7 @@ import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 
 const alertDialog = jest.fn(() => Promise.resolve())
-jest.unstable_mockModule('../../lib/utils/dialog', () => ({ alertDialog }))
+jest.unstable_mockModule('../../lib/utils/dialog', () => ({ alertDialog, confirmDialog: jest.fn(), default: jest.fn() }))
 const executeMoveCommand = jest.fn()
 const invalidateCreativeTree = jest.fn()
 jest.unstable_mockModule('../../creatives/drag_drop/move_command', () => ({ executeMoveCommand }))
@@ -637,4 +637,46 @@ test.each(['move', 'link'])('archived-parent selection launcher submits only the
   executeMoveCommand.mockResolvedValue({ ok: true, succeededIds: ['2'], failedIds: [] })
   await submit()
   expect(executeMoveCommand).toHaveBeenCalledWith({ ids: ['2'], targetId: '99', direction: 'child', mode })
+})
+
+test.each([['move', true], ['link', true], ['move', false], ['link', false]])('restored hidden selections cannot replace the current source in %s mode (clone: %s)', async (mode, clone) => {
+  controller.cancel()
+  const { default: SelectModeController } = await import('../creatives/select_mode_controller')
+  app.register('creatives--select-mode', SelectModeController)
+  const selection = document.createElement('div')
+  selection.dataset.controller = 'creatives--select-mode'
+  selection.innerHTML = `
+    <button data-creatives--select-mode-target="toggle" data-select-text="Select" data-cancel-text="Cancel" aria-pressed="true">Cancel</button>
+    <input type="checkbox" checked data-creatives--select-mode-target="selectAll">
+  `
+  document.querySelectorAll('creative-tree-row').forEach(row => {
+    row.classList.add('creative-row', 'selected')
+    row.setAttribute('data-creatives--select-mode-target', 'row')
+    row.querySelector('input').setAttribute('data-creatives--select-mode-target', 'checkbox')
+    selection.append(row)
+  })
+  // Turbo clones live checkbox properties into history snapshots.
+  const snapshot = selection.cloneNode(true)
+  document.body.append(selection)
+  await flush()
+  selection.remove()
+  await flush()
+  const restored = clone ? snapshot : selection
+  restored.querySelectorAll('input').forEach(checkbox => { checkbox.checked = true })
+  document.body.append(restored)
+  await flush()
+
+  expect(restored.querySelectorAll('input:checked')).toHaveLength(0)
+  expect(restored.querySelectorAll('.selected')).toHaveLength(0)
+  expect(restored.querySelector('button').getAttribute('aria-pressed')).toBe('false')
+  restored.querySelectorAll('.select-creative-checkbox').forEach(checkbox => {
+    expect(checkbox.style.display).toBe('none')
+  })
+  document.querySelector('[data-creative-move-id]').click()
+  expect(controller.ids).toEqual(['1'])
+  destination()
+  controller.modeTarget.value = mode
+  executeMoveCommand.mockResolvedValue({ ok: true, succeededIds: ['1'], failedIds: [] })
+  await submit()
+  expect(executeMoveCommand).toHaveBeenCalledWith({ ids: ['1'], targetId: '99', direction: 'child', mode })
 })
