@@ -162,7 +162,7 @@ function writeLegacyData(dataTransfer, data, token, sourceWindowId) {
     dataTransfer.setData(LEGACY_MIME_TYPES.context, ids[0]);
   } else if (kind === 'comments') {
     dataTransfer.setData(LEGACY_MIME_TYPES.comments, JSON.stringify(ids));
-  } else if (kind === 'agent') {
+  } else {
     dataTransfer.setData(LEGACY_MIME_TYPES.agent, JSON.stringify({
       ...payload,
       id: ids[0],

@@ -240,7 +240,7 @@ export default class extends Controller {
     this._fetchTree(viewRestoreGeneration)
   }
 
-  _fetchTree(viewRestoreGeneration = this._viewRestoreGeneration) {
+  _fetchTree(viewRestoreGeneration) {
     if (viewRestoreGeneration !== this._viewRestoreGeneration) return
 
     fetch(this.urlValue, {

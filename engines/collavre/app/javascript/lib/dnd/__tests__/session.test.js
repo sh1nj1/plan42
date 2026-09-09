@@ -24,6 +24,25 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+test('does not create a trusted session when local storage is unavailable', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  try {
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: null });
+    expect(ensureDragSessionToken()).toBeNull();
+  } finally {
+    Object.defineProperty(window, 'localStorage', descriptor);
+  }
+
+  window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'cached');
+  expect(readDragSessionToken()).toBe('cached');
+  try {
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: null });
+    expect(emitDropSignal({ creativeId: '7' })).toBe(false);
+  } finally {
+    Object.defineProperty(window, 'localStorage', descriptor);
+  }
+});
+
 test('creates and reuses one shared token and one id per window', () => {
   const token = ensureDragSessionToken();
   const windowId = ensureDragWindowId();

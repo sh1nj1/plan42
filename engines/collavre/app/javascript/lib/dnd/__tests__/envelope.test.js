@@ -35,6 +35,49 @@ beforeEach(() => {
   resetDragSessionCache();
 });
 
+test('handles missing drop readers and empty declared data without accepting a drag', () => {
+  expect(readDragData(null)).toBeNull();
+  expect(readDragData({ types: [LEGACY_MIME_TYPES.creative] })).toBeNull();
+  expect(readDragData(new FakeDataTransfer({ [LEGACY_MIME_TYPES.comments]: '' })))
+    .toBeNull();
+  expect(readDragData({ getData: () => '' })).toBeNull();
+  expect(readDragData(new FakeDataTransfer({ 'application/x-topic-id': '' }))).toBeNull();
+});
+
+test('probes topic-id data when a drop source does not expose types', () => {
+  const transfer = { getData: (type) => type === 'application/x-topic-id' ? '12' : '' };
+  expect(readDragData(transfer)).toEqual({ kind: 'topic', ids: ['12'], payload: {} });
+});
+
+test.each([
+  ['creative', { creativeId: [], treeId: 'creative-7', token: 'trusted' }],
+  ['topic', { topicId: [] }],
+  ['agent', { id: [] }],
+])('rejects a %s payload whose identifier normalizes to an empty string', (kind, payload) => {
+  window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'trusted');
+  expect(readDragData(new FakeDataTransfer({
+    [LEGACY_MIME_TYPES[kind]]: JSON.stringify(payload),
+  }))).toBeNull();
+});
+
+test('accepts scalar creative payloads only with a matching current session', () => {
+  const transfer = new FakeDataTransfer({
+    [LEGACY_MIME_TYPES.creative]: JSON.stringify({
+      creativeId: 7, treeId: 'creative-7', token: 'trusted', selectedCreativeIds: '7',
+    }),
+  });
+  expect(readDragData(transfer)).toBeNull();
+  window.localStorage.setItem(DRAG_TOKEN_STORAGE_KEY, 'trusted');
+  expect(readDragData(transfer)).toMatchObject({ kind: 'creative', ids: ['7'] });
+});
+
+test('rejects empty normalized write IDs without changing the transfer', () => {
+  const transfer = new FakeDataTransfer();
+  expect(writeDragData(transfer, { kind: 'comments', ids: [null, '', undefined], payload: {} }))
+    .toBe(false);
+  expect(transfer.types).toEqual([]);
+});
+
 test('writes creative data using the existing MIME boundary', () => {
   const transfer = new FakeDataTransfer();
 

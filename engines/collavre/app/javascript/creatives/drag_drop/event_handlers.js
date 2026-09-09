@@ -732,8 +732,8 @@ export function hasActiveDrag() {
   return hasDraggedState();
 }
 
-// Keep domain commands and DOM recovery in this adapter; the registry owns
-// native event routing, hit intent and cleanup.
+// Keep domain commands and DOM recovery in this adapter. Native and touch
+// gestures share the registry's source, hit intent and cleanup lifecycle.
 export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) {
   const localData = (transfer) => {
     if (Array.from(transfer?.types || []).length || !hasDraggedState()) return null;
