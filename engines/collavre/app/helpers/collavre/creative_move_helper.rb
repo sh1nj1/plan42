@@ -1,7 +1,11 @@
 module Collavre
   module CreativeMoveHelper
     def render_creative_move_action(creative, can_write)
-      return safe_join([]) if creative.archived?
+      # Signed-out visitors reach public creatives through the unauthenticated
+      # index/show actions. They cannot move and cannot link either, since
+      # link_drop requires a session, so the menu would only ever redirect them
+      # to sign-in. The comment action hides itself the same way.
+      return safe_join([]) if creative.archived? || Current.user.nil?
 
       # Every row carries this button, so the visible "Move…" label alone would
       # give a screen reader dozens of identically named controls. The snippet
