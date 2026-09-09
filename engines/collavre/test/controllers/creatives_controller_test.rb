@@ -755,6 +755,26 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
       I18n.t("collavre.creatives.drag_drop.partial_failure")
   end
 
+  test "header move capability respects registered read-only sources and their linked shells" do
+    source_type = "header_move_read_only_source"
+    Creative.register_read_only_source(source_type)
+    source = Creative.create!(user: users(:one), description: "Managed source",
+      data: { "source" => { "type" => source_type } })
+    linked = Creative.create!(user: users(:one), origin: source)
+    writable = Creative.create!(user: users(:one), description: "Writable source")
+
+    [ [ source, false ], [ linked, false ], [ writable, true ] ].each do |creative, can_move|
+      assert creative.has_permission?(users(:one), :write)
+      get creatives_path(id: creative.id)
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id=?][data-creative-move-writable=?]",
+        creative.id.to_s, can_move.to_s, count: 1
+    end
+  ensure
+    Creative.read_only_source_types.delete(source_type)
+  end
+
   test "index renders an empty-state template outside the client-rendered tree" do
     # The tree is client-rendered and every load wipes #creatives, so the empty
     # state cannot be server-rendered into the container. The template is the copy

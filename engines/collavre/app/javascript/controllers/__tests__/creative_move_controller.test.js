@@ -321,6 +321,7 @@ test('uses the current creative when nothing is selected, including its read-onl
   button.dataset.creativeMoveWritable = 'false'
   button.click()
   expect(controller.modeTarget.value).toBe('link')
+  expect(controller.modeTarget.querySelector('option[value="move"]').disabled).toBe(true)
 })
 
 test('root action starts selection instead of opening an empty move dialog', () => {

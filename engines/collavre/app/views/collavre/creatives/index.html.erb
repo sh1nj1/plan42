@@ -99,7 +99,7 @@
             <span aria-hidden="true"><%= svg_tag 'share.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.share') %>
           </button>
         <% end %>
-        <%= render_creative_move_action(current_creative, current_creative&.has_permission?(Current.user, :write)) %>
+        <%= render_creative_move_action(current_creative, current_creative&.has_permission?(Current.user, :write) && !current_creative.effective_origin.read_only_source?) %>
         <% if authenticated? %>
           <button type="button" id="select-creative-btn" class="popup-menu-item" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle">
             <span aria-hidden="true"><%= svg_tag 'selection.svg', width: 16, height: 16 %></span> <%= t('app.select') %>
