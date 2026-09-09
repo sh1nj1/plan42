@@ -77,11 +77,12 @@ function previewWorkspaceRow(controller, expandDelay, { el: row, hit }) {
 }
 
 function completionDetail(ids, payload, targetId, direction) {
+  const sourceSucceeded = ids.includes(String(payload.creativeId))
   return {
-    creativeId: ids[0],
+    creativeId: sourceSucceeded ? String(payload.creativeId) : ids[0],
     creativeIds: ids,
-    // The shared reader rejects a creative envelope with no originating tree.
-    treeId: payload.treeId,
+    // The originating tree belongs to the dragged row, not the first bundle ID.
+    treeId: sourceSucceeded ? payload.treeId : null,
     sourceWindowId: payload.sourceWindowId || null,
     targetCreativeId: targetId,
     direction,

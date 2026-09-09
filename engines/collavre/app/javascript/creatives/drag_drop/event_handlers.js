@@ -643,6 +643,7 @@ export function handleDrop(event, intent = null, { partialFailureMessage = '', d
   }
 
   const dropSignalDetails = {
+    creativeId: String(draggedState.creativeId),
     treeId: draggedState.treeId,
     sourceWindowId: draggedState.sourceWindowId,
     targetTreeId: targetId,
@@ -662,9 +663,13 @@ export function handleDrop(event, intent = null, { partialFailureMessage = '', d
       console.error('Creative move did not fully complete', result);
     }
     if (result.succeededIds.length === 0) return result;
+    // The source tree identifies the dragged row even when the bundle starts
+    // with another ID. Never attach it to a different successful row.
+    const sourceSucceeded = result.succeededIds.includes(dropSignalDetails.creativeId);
     const detail = {
       ...dropSignalDetails,
-      creativeId: result.succeededIds[0],
+      creativeId: sourceSucceeded ? dropSignalDetails.creativeId : result.succeededIds[0],
+      treeId: sourceSucceeded ? dropSignalDetails.treeId : null,
       creativeIds: result.succeededIds,
     };
     if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail);
