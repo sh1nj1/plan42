@@ -17,7 +17,7 @@ beforeEach(async () => {
     <creative-tree-row creative-id="1" can-write><input class="select-creative-checkbox" type="checkbox" value="1" checked></creative-tree-row>
     <creative-tree-row creative-id="2" can-write><input class="select-creative-checkbox" type="checkbox" value="2" checked></creative-tree-row>
     <div id="link-creative-modal"></div>
-    <div data-controller="creative-move" data-creative-move-messages-value='{"choose":"Choose","invalid":"Invalid","moving":"Moving","complete":"Done","partial":"Partial","failed":"Failed","cancelled":"Cancelled"}'>
+    <div data-controller="creative-move" data-creative-move-messages-value='{"archived":"Deselect archived creatives","choose":"Choose","invalid":"Invalid","moving":"Moving","complete":"Done","partial":"Partial","failed":"Failed","cancelled":"Cancelled"}'>
       <dialog data-creative-move-target="dialog"><button data-creative-move-target="destination"></button>
       <select data-creative-move-target="direction"><option value="child">Child</option><option value="up">Before</option><option value="down">After</option></select>
       <select data-creative-move-target="mode"><option value="move">Move</option><option value="link">Link</option></select>
@@ -363,4 +363,26 @@ test('returns focus to the visible overflow toggle on cancel and after replaceme
   wrapper.replaceWith(replacement)
   await flush()
   expect(document.activeElement).toBe(replacement.firstElementChild)
+})
+
+test.each(['', 'true'])('rejects archived-only and mixed selections with archived="%s" for both modes', async archived => {
+  controller.cancel()
+  const rows = [...document.querySelectorAll('creative-tree-row')]
+  rows[0].setAttribute('archived', archived)
+  for (const mixed of [false, true]) {
+    rows[1].querySelector('input').checked = mixed
+    for (const mode of ['move', 'link']) {
+      controller.modeTarget.value = mode
+      document.querySelector('[data-creative-move-id]').click()
+      expect(dialog.open).toBe(false)
+      expect(controller.ids).toEqual([])
+      expect(controller.announcementTarget.textContent).toBe('Deselect archived creatives')
+      await submit()
+      expect(executeMoveCommand).not.toHaveBeenCalled()
+    }
+  }
+  rows[0].removeAttribute('archived')
+  document.querySelector('[data-creative-move-id]').click()
+  expect(dialog.open).toBe(true)
+  expect(controller.ids).toEqual(['1', '2'])
 })

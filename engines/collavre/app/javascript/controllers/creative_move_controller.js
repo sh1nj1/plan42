@@ -29,7 +29,16 @@ export default class extends Controller {
     this.trigger = button.closest('[data-controller="popup-menu"]')?.querySelector('[data-popup-menu-target="button"]') || button
     const id = button.dataset.creativeMoveId
     this.triggerId = id
-    const selected = [...document.querySelectorAll('.select-creative-checkbox:checked')].map(el => el.value)
+    const selectedRows = [...document.querySelectorAll('.select-creative-checkbox:checked')]
+    // Lit reflects archived as a Boolean attribute, including archived="".
+    if (selectedRows.some(el => el.closest('creative-tree-row')?.hasAttribute('archived'))) {
+      this.ids = []
+      this.targetId = null
+      this.announcementTarget.textContent = this.messagesValue.archived
+      this.restoreFocus()
+      return
+    }
+    const selected = selectedRows.map(el => el.value)
     this.ids = selected.length ? [...new Set(selected)] : id ? [id] : []
     if (!this.ids.length) {
       const select = document.getElementById('select-creative-btn')
@@ -38,8 +47,7 @@ export default class extends Controller {
       return
     }
     this.canMove = selected.length
-      ? [...document.querySelectorAll('.select-creative-checkbox:checked')]
-        .every(el => el.closest('creative-tree-row')?.hasAttribute('can-write') === true)
+      ? selectedRows.every(el => el.closest('creative-tree-row')?.hasAttribute('can-write') === true)
       : button.dataset.creativeMoveWritable === 'true'
     this.targetId = null
     this.directionTarget.value = 'child'
