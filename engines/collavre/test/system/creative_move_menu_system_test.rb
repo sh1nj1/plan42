@@ -18,7 +18,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   end
 
   test "keyboard moves a creative using the shared destination picker" do
-    find("#creative-#{@source.id} [data-creative-move-id]").send_keys(:return)
+    visit collavre.creatives_path(id: @source.id)
+    open_move_menu(:return)
     find('[data-creative-move-target="destination"]').send_keys(:return)
     input = find('[data-link-creative-target="input"]')
     input.set("Menu destination")
@@ -32,7 +33,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   end
 
   test "workspace move menu offers a click-only path" do
-    find("#workspace-creative-#{@source.id} [data-creative-move-id]").click
+    visit collavre.creatives_path(id: @source.id)
+    open_move_menu
     find('[data-creative-move-target="destination"]').click
     find('[data-link-creative-target="input"]').set("Menu destination")
     find("#link-creative-modal .link-result-item[data-id='#{@destination.id}']").click
@@ -44,12 +46,12 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   end
 
   test "Escape cancels and returns focus without moving" do
-    button = find("#workspace-creative-#{@source.id} [data-creative-move-id]")
-    button.send_keys(:return)
+    visit collavre.creatives_path(id: @source.id)
+    open_move_menu(:return)
     find('[data-creative-move-target="destination"]').send_keys(:escape)
 
     assert_no_selector "dialog[open][data-creative-move-target]"
-    assert_equal @source.id.to_s, page.evaluate_script("document.activeElement.dataset.creativeMoveId")
+    assert_equal "creative-overflow-menu", page.evaluate_script("document.activeElement.getAttribute('aria-controls')")
     assert_nil @source.reload.parent_id
   end
 
@@ -59,10 +61,7 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     CreativeShare.create!(creative: @source, user: @user, permission: :read)
     visit collavre.creatives_path(id: @source.id)
 
-    # The creative being viewed renders its row as the page title
-    # (`.creative-tree-title`), not as a `#creative-<id>` list row -- the list
-    # below it holds that creative's children.
-    find(".creative-tree-title [data-creative-move-id='#{@source.id}']").send_keys(:return)
+    open_move_menu(:return)
     assert_selector '[data-creative-move-target="mode"] option[value="move"][disabled]', visible: :all
     assert_equal "link", find('[data-creative-move-target="mode"]').value
     find('[data-creative-move-target="destination"]').send_keys(:return)
@@ -76,4 +75,14 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert Creative.exists?(origin_id: @source.id, parent_id: @destination.id, user_id: @user.id)
     assert_nil @source.reload.parent_id
   end
+
+  private
+
+  def open_move_menu(key = nil)
+    toggle = find('[aria-controls="creative-overflow-menu"]')
+    key ? toggle.send_keys(key) : toggle.click
+    action = find('#creative-overflow-menu [data-creative-move-id]')
+    key ? action.send_keys(key) : action.click
+  end
+
 end

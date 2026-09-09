@@ -740,6 +740,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     get creatives_path(id: creatives(:childless_creative).id)
 
     assert_response :success
+    assert_select "#creative-overflow-menu [data-creative-move-id]", count: 1
+    assert_select ".creative-tree-title [data-creative-move-id]", count: 0
     assert_select "#creative-move-destination-label", text: I18n.t("collavre.dnd.destination")
     assert_select "[data-creative-move-target='destination'][aria-labelledby=?]",
       "creative-move-destination-label creative-move-destination"

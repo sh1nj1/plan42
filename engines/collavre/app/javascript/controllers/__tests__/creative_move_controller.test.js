@@ -13,9 +13,9 @@ let app, controller, picker, dialog
 beforeEach(async () => {
   jest.clearAllMocks()
   document.body.innerHTML = `
-    <button data-creative-move-id="1">Move</button>
-    <input class="select-creative-checkbox" type="checkbox" value="1" checked>
-    <input class="select-creative-checkbox" type="checkbox" value="2" checked>
+    <button data-creative-move-id="1" data-creative-move-writable="true">Move</button>
+    <creative-tree-row creative-id="1" can-write><input class="select-creative-checkbox" type="checkbox" value="1" checked></creative-tree-row>
+    <creative-tree-row creative-id="2" can-write><input class="select-creative-checkbox" type="checkbox" value="2" checked></creative-tree-row>
     <div id="link-creative-modal"></div>
     <div data-controller="creative-move" data-creative-move-messages-value='{"choose":"Choose","invalid":"Invalid","moving":"Moving","complete":"Done","partial":"Partial","failed":"Failed","cancelled":"Cancelled"}'>
       <dialog data-creative-move-target="dialog"><button data-creative-move-target="destination"></button>
@@ -49,7 +49,7 @@ const submit = () => controller.submit({ preventDefault: jest.fn() })
 test('offers link mode for a readable source and never submits a forbidden move', async () => {
   controller.cancel()
   const button = document.querySelector('[data-creative-move-id]')
-  button.dataset.creativeMoveWritable = 'false'
+  document.querySelector('creative-tree-row').removeAttribute('can-write')
   button.click()
   expect(dialog.open).toBe(true)
   expect(controller.modeTarget.value).toBe('link')
@@ -67,7 +67,7 @@ test('offers link mode for a readable source and never submits a forbidden move'
 test('keeps move disabled after a readable bundle link partially fails and retries only missing links', async () => {
   controller.cancel()
   const button = document.querySelector('[data-creative-move-id]')
-  button.dataset.creativeMoveWritable = 'false'
+  document.querySelector('creative-tree-row').removeAttribute('can-write')
   button.click()
   destination()
   executeMoveCommand.mockResolvedValueOnce({ status: 'partial', ok: false, succeededIds: ['1'], failedIds: ['2'] })
@@ -83,10 +83,7 @@ test('keeps move disabled after a readable bundle link partially fails and retri
 
 test('a mixed-permission selection defaults to links and a later writable selection can move', () => {
   controller.cancel()
-  const readOnly = document.createElement('button')
-  readOnly.dataset.creativeMoveId = '2'
-  readOnly.dataset.creativeMoveWritable = 'false'
-  document.body.appendChild(readOnly)
+  document.querySelector('creative-tree-row[creative-id="2"]').removeAttribute('can-write')
   document.querySelector('[data-creative-move-id="1"]').click()
   expect(controller.modeTarget.value).toBe('link')
   controller.cancel()
@@ -181,13 +178,13 @@ test('picker cancellation reopens the dialog without enabling confirmation', () 
   expect(controller.confirmTarget.disabled).toBe(true)
 })
 
-test('an unselected row acts only on itself and detached triggers recover to another button', () => {
+test('a header action prioritizes the selected rows and detached triggers recover to another button', () => {
   controller.cancel()
   const other = document.createElement('button')
   other.dataset.creativeMoveId = '3'
   document.body.prepend(other)
   other.click()
-  expect(controller.ids).toEqual(['3'])
+  expect(controller.ids).toEqual(['1', '2'])
   other.remove()
   controller.cancel()
   expect(document.activeElement).toBe(document.querySelector('[data-creative-move-id]'))
@@ -309,4 +306,61 @@ test('an authentication redirect is a failure, preserves selection, and never an
   expect(controller.announcementTarget.textContent).toBe('')
   expect(controller.ids).toEqual(['1', '2'])
   expect(controller.confirmTarget.disabled).toBe(false)
+})
+
+
+test('uses the current creative when nothing is selected, including its read-only capability', () => {
+  controller.cancel()
+  document.querySelectorAll('.select-creative-checkbox').forEach(el => { el.checked = false })
+  const button = document.querySelector('[data-creative-move-id]')
+  button.click()
+  expect(controller.ids).toEqual(['1'])
+  expect(controller.modeTarget.value).toBe('move')
+  controller.cancel()
+  button.dataset.creativeMoveWritable = 'false'
+  button.click()
+  expect(controller.modeTarget.value).toBe('link')
+})
+
+test('root action starts selection instead of opening an empty move dialog', () => {
+  controller.cancel()
+  document.querySelectorAll('.select-creative-checkbox').forEach(el => { el.checked = false })
+  const button = document.querySelector('[data-creative-move-id]')
+  button.dataset.creativeMoveId = ''
+  const select = document.createElement('button')
+  select.id = 'select-creative-btn'
+  const startSelection = jest.fn(() => select.setAttribute('aria-pressed', 'true'))
+  select.addEventListener('click', startSelection)
+  document.body.appendChild(select)
+  button.click()
+  expect(dialog.open).toBe(false)
+  expect(startSelection).toHaveBeenCalledTimes(1)
+  expect(document.activeElement).toBe(document.querySelector('.select-creative-checkbox'))
+  button.click()
+  expect(startSelection).toHaveBeenCalledTimes(1)
+  document.querySelector('.select-creative-checkbox[value="2"]').checked = true
+  button.click()
+  expect(controller.ids).toEqual(['2'])
+  expect(dialog.open).toBe(true)
+})
+
+test('returns focus to the visible overflow toggle on cancel and after replacement', async () => {
+  controller.cancel()
+  const action = document.querySelector('[data-creative-move-id]')
+  const wrapper = document.createElement('div')
+  wrapper.dataset.controller = 'popup-menu'
+  wrapper.innerHTML = '<button data-popup-menu-target="button">…</button><div id="creative-overflow-menu"></div>'
+  document.body.prepend(wrapper)
+  wrapper.lastElementChild.appendChild(action)
+  action.click()
+  controller.cancel()
+  expect(document.activeElement).toBe(wrapper.firstElementChild)
+  action.click()
+  destination()
+  executeMoveCommand.mockResolvedValue({ ok: true, succeededIds: ['1', '2'], failedIds: [] })
+  await submit()
+  const replacement = wrapper.cloneNode(true)
+  wrapper.replaceWith(replacement)
+  await flush()
+  expect(document.activeElement).toBe(replacement.firstElementChild)
 })

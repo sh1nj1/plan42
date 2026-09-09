@@ -40,15 +40,10 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_empty render_creative_move_action(creative, true)
   end
 
-  # Every row renders this button, so the visible label alone leaves a screen
-  # reader with a list of controls it cannot tell apart.
-  test "the accessible name names the creative rather than repeating the visible label" do
-    creative = Struct.new(:id, :archived?, :creative_snippet).new(42, false, "Quarterly plan")
-    html = render_creative_move_action(creative, true)
-
-    assert_includes html, I18n.t("collavre.dnd.move_creative", title: "Quarterly plan")
-    assert_not_equal I18n.t("collavre.dnd.move_title"),
-      Nokogiri::HTML5.fragment(html).at_css("button")["aria-label"]
+  test "the root menu supports selection without a current creative" do
+    html = render_creative_move_action(nil, nil)
+    assert_includes html, 'class="popup-menu-item"'
+    assert_includes html, 'data-creative-move-id=""'
   end
 
   test "both locales interpolate the creative into the accessible name" do

@@ -177,8 +177,6 @@ module Collavre
     # New creatives always have 0 comments and initial progress, so we can
     # construct the HTML directly without a full view render.
     # Includes:
-    # - the move action, so a row that arrives over the wire keeps the same
-    #   click/keyboard move path a server-rendered row has
     # - turbo-cable-stream-source (per-user subscription for badge updates)
     # - comment button (hidden via no-comments class — 0 comments initially)
     # - the same progress control used by normal server rendering
@@ -186,7 +184,6 @@ module Collavre
       I18n.with_locale(user.locale.presence || I18n.default_locale) do
         origin = creative.effective_origin
         can_write = creative.has_permission?(user, :write) && !origin.read_only_source?
-        move_part = Collavre::ApplicationController.helpers.render_creative_move_action(creative, can_write)
         progress_part = render_progress_control_html(creative, user, effective: origin, can_write: can_write)
 
         # Comment part — only render if user has feedback permission (matching helper behavior)
@@ -216,7 +213,7 @@ module Collavre
         end
 
         # Wrap in creative-row-end div — order: move, progress, then comment (matching helper)
-        %(<div class="creative-row-end">#{move_part}#{progress_part}#{comment_part}</div>)
+        %(<div class="creative-row-end">#{progress_part}#{comment_part}</div>)
       end
     rescue StandardError => e
       Rails.logger.warn "[CreativeBroadcastJob] render_progress_html failed for creative##{creative.id} user##{user.id}: #{e.message}"

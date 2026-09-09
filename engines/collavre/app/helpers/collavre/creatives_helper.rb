@@ -50,7 +50,6 @@ module Collavre
 
       content_tag(:div, class: "creative-row-end") do
         safe_join([
-          render_creative_move_action(creative, can_write),
           render_progress_control(
             creative,
             creative_progress_value(creative),
