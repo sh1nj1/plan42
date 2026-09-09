@@ -5,7 +5,7 @@ module Collavre
   # unreachable host cannot spend the sweep interval and leave the gateways
   # behind it in the loop unprobed.
   class GatewayHealthSweepJob < ApplicationJob
-    queue_as :default
+    queue_as :gateway_health
 
     def perform
       AgentGateway.active.pluck(:id).each do |gateway_id|

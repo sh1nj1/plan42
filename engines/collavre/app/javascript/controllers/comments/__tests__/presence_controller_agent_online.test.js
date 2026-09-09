@@ -117,6 +117,62 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
         jest.useRealTimers()
     })
 
+    // A background refresh fires once a minute whether or not the network is
+    // well. Tearing the strip down on a blip would blank the chat until the next
+    // successful tick, and take any open profile menu with it.
+    test('a failed background refresh keeps the last good participants', async () => {
+        controller.participantsData = [HUMAN, AGENT]
+        controller.canShare = true
+        controller.renderParticipants([])
+        const menuBefore = controller.participantsTarget.querySelector('[data-comment-user-menu-user-id-value="2"]')
+
+        global.fetch = jest.fn(() => Promise.reject(new Error('offline')))
+        await controller.loadParticipants('42', { preserveMenus: true })
+
+        expect(controller.participantsData).toEqual([HUMAN, AGENT])
+        expect(controller.canShare).toBe(true)
+        expect(controller.participantsTarget.querySelector('[data-comment-user-menu-user-id-value="2"]'))
+            .toBe(menuBefore)
+
+        global.fetch = jest.fn(() => Promise.resolve({
+            ok: false, status: 500, json: () => Promise.resolve({ error: 'boom' })
+        }))
+        await controller.loadParticipants('42', { preserveMenus: true })
+
+        expect(controller.participantsData).toEqual([HUMAN, AGENT])
+        expect(controller.participantsTarget.querySelector('[data-comment-user-menu-user-id-value="2"]'))
+            .toBe(menuBefore)
+    })
+
+    // The one failure that is about the reader rather than the network.
+    test('a background refresh refused for access clears the participants', async () => {
+        controller.participantsData = [HUMAN, AGENT]
+        controller.canShare = true
+        controller.renderParticipants([])
+
+        global.fetch = jest.fn(() => Promise.resolve({
+            ok: false, status: 403, json: () => Promise.resolve({ error: 'No permission' })
+        }))
+        await controller.loadParticipants('42', { preserveMenus: true })
+
+        expect(controller.participantsData).toEqual([])
+        expect(controller.canShare).toBe(false)
+        expect(controller.participantsTarget.innerHTML).toBe('')
+    })
+
+    // The initial load is user-initiated: a blank strip is the honest answer
+    // there, and there is no open menu to protect.
+    test('a failed initial load still clears the participants', async () => {
+        controller.participantsData = [HUMAN, AGENT]
+        controller.renderParticipants([])
+
+        global.fetch = jest.fn(() => Promise.reject(new Error('offline')))
+        await controller.loadParticipants('42')
+
+        expect(controller.participantsData).toEqual([])
+        expect(controller.participantsTarget.innerHTML).toBe('')
+    })
+
     test('the periodic refresh preserves the rendered menus', async () => {
         controller.participantsData = [HUMAN, AGENT]
         controller.renderParticipants([])

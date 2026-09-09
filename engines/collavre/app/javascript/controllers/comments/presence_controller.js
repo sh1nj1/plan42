@@ -16,6 +16,10 @@ const PRESENCE_HEARTBEAT_INTERVAL = 30000
 // readiness verdict the server refreshes on its own schedule, for agents nobody
 // has to be looking at. Re-reading the participant list is how it gets here.
 const AGENT_PRESENCE_REFRESH_INTERVAL = 60000
+// The only answers that are evidence the reader lost access to the creative.
+// Everything else a failed fetch can report — offline, a 500, a proxy's error
+// page — is evidence about the network, not about the participant list.
+const ACCESS_DENIED_STATUSES = [401, 403, 404]
 const PARTICIPANT_LIST_MODAL_ID = 'participant-list-modal'
 
 // agent_status values that keep a task registered. thinking/streaming are the
@@ -300,7 +304,9 @@ export default class extends Controller {
       .then(async (response) => {
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}))
-          throw new Error(payload.error || this.element.dataset.noPermissionText || 'No permission')
+          const error = new Error(payload.error || this.element.dataset.noPermissionText || 'No permission')
+          error.status = response.status
+          throw error
         }
         return response.json()
       })
@@ -315,8 +321,13 @@ export default class extends Controller {
         this.dispatchPresenceChanged(this.currentPresentIds)
         this.renderTypingIndicator()
       })
-      .catch(() => {
+      .catch((error) => {
         if (!this._isCurrentParticipantLoad(loadVersion, creativeId)) return
+        // A background refresh nobody asked for must not destroy what is on
+        // screen. A dropped connection or a 500 says nothing about who the
+        // participants are, so the last good snapshot stays and the open profile
+        // menu with it; only an answer that refuses the read clears the strip.
+        if (preserveMenus && !ACCESS_DENIED_STATUSES.includes(error?.status)) return
         this.participantsData = []
         this.canShare = false
         this.renderParticipants([])

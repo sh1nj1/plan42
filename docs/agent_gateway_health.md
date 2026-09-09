@@ -12,6 +12,17 @@ gateway and turns the answer into the online dot next to that agent's avatar.
 unreachable host cannot spend the whole interval and leave the gateways behind
 it in the loop unprobed.
 
+Both jobs run on their own `gateway_health` queue (`config/queue.yml`), not on
+`default`. A probe blocks on an unreachable host for up to
+`OPEN_TIMEOUT + READ_TIMEOUT`, and there is one per gateway every minute, so on
+the shared pool a handful of dead gateways would hold every default thread and
+stall mailers, broadcasts and notifications behind them.
+
+The sweep enqueues unconditionally, so a probe skips any gateway whose verdict
+is newer than `GatewayHealthProbeJob::DEBOUNCE` (30s, half the sweep interval).
+That is what keeps a queue that fell behind from compounding: the stacked-up
+copies of an already-answered probe drop instead of re-running.
+
 Each probe calls `GET /health/ready` on the gateway
 ([contract](https://github.com/sh1nj1/cli-openai-proxy/blob/main/docs/health-monitoring.md))
 and writes the verdict onto the `agent_gateways` row with `update_columns`:

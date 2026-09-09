@@ -34,6 +34,16 @@ default: &default
       threads: 1
       processes: 1
       polling_interval: 0.1
+    # Dedicated worker for gateway readiness probes. A probe spends up to
+    # OPEN_TIMEOUT + READ_TIMEOUT blocked on an unreachable host, and the sweep
+    # enqueues one per gateway every minute, so on the default worker a handful
+    # of dead gateways would hold all three of its threads and stall mailers,
+    # broadcasts and notifications behind them. Isolated here, a slow sweep only
+    # delays the next sweep.
+    - queues: [gateway_health]
+      threads: 3
+      processes: 1
+      polling_interval: 0.5
 
 development:
   <<: *default
