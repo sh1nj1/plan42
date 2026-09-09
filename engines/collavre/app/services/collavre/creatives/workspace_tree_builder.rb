@@ -54,6 +54,10 @@ module Collavre
           label: Collavre::HtmlText.label(creative.effective_description),
           snippet: creative.creative_snippet,
           can_comment: allowed?(creative, :feedback),
+          # Mirrors `render_creative_move_action`, which drops the button
+          # entirely for the same two cases in the creative tree. Without it the
+          # workspace tree offers "Move…" on rows the server will refuse.
+          can_move: !creative.archived? && allowed?(creative, :write),
           url: view_context.collavre.creatives_path(id: creative.id),
           has_children: visible_children.any?,
           children: children

@@ -29,6 +29,19 @@ describe('WorkspaceTreeController', () => {
     expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['Root 이동', 'Current branch 이동'])
   })
 
+  // The creative tree drops the button entirely for an archived or read-only
+  // row. Offering it here would let the user browse to a destination and only
+  // then be refused by the move endpoint.
+  test.each([false, undefined])('renders no move button when can_move is %p', (canMove) => {
+    const item = controller.buildNode({
+      id: 9, label: 'Read only', snippet: 'Read only', can_comment: true,
+      can_move: canMove, url: '/creatives?id=9', children: [],
+    })
+
+    expect(item.querySelector('[data-creative-move-id]')).toBeNull()
+    expect(item.querySelector('.creative-workspace-tree-link').textContent).toBe('Read only')
+  })
+
   beforeEach(async () => {
     window.localStorage.clear()
     fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
@@ -44,6 +57,7 @@ describe('WorkspaceTreeController', () => {
             label: 'Root',
             snippet: 'Root chat',
             can_comment: true,
+            can_move: true,
             url: '/creatives?id=1',
             children: [
               {
@@ -51,6 +65,7 @@ describe('WorkspaceTreeController', () => {
                 label: 'Current branch',
                 snippet: 'Branch chat',
                 can_comment: false,
+                can_move: true,
                 url: '/creatives?id=2',
                 children: [],
               },

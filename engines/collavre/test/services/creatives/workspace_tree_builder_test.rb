@@ -179,6 +179,23 @@ module Creatives
       assert_empty per_node_queries, "expected batched workspace tree reads, got:\n#{per_node_queries.join("\n")}"
     end
 
+    # The creative tree renders no move button for these rows, so the workspace
+    # tree has to be told the same thing rather than offering a move the
+    # reorder endpoint will refuse.
+    test "reports move affordance per permission and archived state" do
+      own = Creative.create!(user: @user, description: "Own")
+      archived = Creative.create!(user: @user, description: "Archived")
+      archived.update!(archived_at: Time.current)
+      read_only = Creative.create!(user: users(:two), description: "Read only")
+      CreativeShare.create!(creative: read_only, user: @user, permission: :feedback)
+
+      nodes = build_tree([ own, archived, read_only ])
+
+      assert_equal [ true, false, false ], nodes.pluck(:can_move)
+      # Guards the pairing: a feedback share still lists, it just cannot move.
+      assert_equal [ true, true, true ], nodes.pluck(:can_comment)
+    end
+
     private
 
     def build_tree(creatives, expanded_ids: [])
