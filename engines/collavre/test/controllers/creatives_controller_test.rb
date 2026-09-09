@@ -773,12 +773,15 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "header move action remains available on the actual root route" do
+  test "header move action is hidden on the actual root route" do
     [ {}, { id: "" } ].each do |params|
-      get creatives_path, params: params
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path, params: params, headers: headers
 
-      assert_response :success
-      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+        assert_response :success
+        assert_select "#creative-overflow-menu [data-creative-move-id]", count: 0
+        assert_select "#creative-overflow-menu #select-creative-btn", count: 1
+      end
     end
   end
 

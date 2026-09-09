@@ -47,10 +47,10 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_empty render_creative_move_action(creative, true)
   end
 
-  test "the root menu supports selection without a current creative" do
-    html = render_creative_move_action(nil, nil)
-    assert_includes html, 'class="popup-menu-item"'
-    assert_includes html, 'data-creative-move-id=""'
+  # The root route renders the header without a current creative. There is
+  # nothing for the action to move there, so it is not offered at all.
+  test "the root menu has no move action without a current creative" do
+    assert_empty render_creative_move_action(nil, nil)
   end
 
   # The action is named by its visible label alone now that a page renders one

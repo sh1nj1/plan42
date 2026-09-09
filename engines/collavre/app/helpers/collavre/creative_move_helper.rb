@@ -1,7 +1,8 @@
 module Collavre
   module CreativeMoveHelper
     def render_creative_move_action(creative, can_write)
-      return safe_join([]) if Current.user.nil?
+      # The root route has no current creative, so the header has nothing to move.
+      return safe_join([]) if Current.user.nil? || creative.nil?
 
       # Archived parents still expose selection for their active children.
       creative = nil if creative&.archived?
