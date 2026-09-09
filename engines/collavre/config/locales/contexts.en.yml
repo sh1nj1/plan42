@@ -11,3 +11,4 @@ en:
       search_placeholder: "Search contexts..."
       enabled: "Enabled"
       disabled: "Disabled"
+      update_error: "Could not update contexts. Refresh the list before trying again."
