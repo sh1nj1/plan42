@@ -130,7 +130,8 @@ echo "[build-macos] 7/7 building the Tauri bundle"
   # Finder, which needs Automation (TCC) permission and fails with "failed to run
   # bundle_dmg.sh" on managed or headless Macs. Skipping it yields a plain but fully
   # functional .dmg; the .app target is unaffected. Preserve a real CI value if set.
-  CI="${CI:-true}" cargo tauri build
+  # Release tooling passes --no-sign for developer-only GitHub Releases.
+  CI="${CI:-true}" cargo tauri build "$@"
 )
 
 # Verify the exact runtime copied into the .app, not merely the source vendor

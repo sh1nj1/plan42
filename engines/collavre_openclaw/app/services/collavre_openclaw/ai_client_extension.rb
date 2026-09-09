@@ -62,10 +62,9 @@ module CollavreOpenclaw
           @last_handoff_failed = adapter.last_handoff_failed?
           @handed_off = adapter.handed_off?
 
-          # Honor no-log mode (e.g. inline typo correction on *unsubmitted* drafts).
-          # Base Collavre::AiClient#chat gates logging behind @log_interactions; this
-          # prepended adapter path bypasses super, so it must gate it too — otherwise
-          # private drafts leak to ActivityLog for OpenClaw-backed agents.
+          # Honor no-log mode. Base Collavre::AiClient#chat gates logging behind
+          # @log_interactions; this prepended adapter path bypasses super, so it
+          # must gate logging too.
           if @log_interactions
             log_interaction(
               messages: messages_data[:messages],

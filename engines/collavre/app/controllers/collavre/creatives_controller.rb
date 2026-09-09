@@ -19,8 +19,9 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
+    before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
+    include Collavre::Concerns::CreativeHistoryTrackable
 
     def index
       respond_to do |format|
@@ -266,15 +267,6 @@ module Collavre
       end
     end
 
-    def parent_suggestions
-      unless @creative.has_permission?(Current.user, :read)
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
-      suggestions = ::GeminiParentRecommender.new.recommend(@creative)
-      render json: suggestions
-    end
-
     def edit
       unless @creative.has_permission?(Current.user, :write)
         redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
@@ -310,15 +302,11 @@ module Collavre
         # Because if @creative is Linked, params might include origin_id.
         # Passing origin_id to the Origin creative causes it to fail validation (cannot changes if has origin)
         # or creates a self-cycle.
-        permitted.delete("origin_id")
-        permitted.delete(:origin_id)
+        permitted.except!("origin_id", :origin_id)
 
         success &&= base.update(permitted)
         if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
-          if base.children.exists?
-            base.self_and_descendants.where(origin_id: nil)
-              .update_all(progress: 1.0, updated_at: Time.current)
-          end
+          base.complete_self_and_descendants! if base.children.exists?
         end
 
         if success
@@ -703,7 +691,7 @@ module Collavre
       # query layer while preserving every filter the index endpoint supports.
       def index_query_params
         params.permit(
-          :id, :simple, :search, :search_mode, :comment, :has_comments,
+          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron,
           :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
           :assignee_id, :unassigned, :show_archived, :page, :per_page,
           tags: []
@@ -720,18 +708,7 @@ module Collavre
       helper_method :any_filter_active?
 
       def any_filter_active?
-        params[:tags].present? ||
-          params[:min_progress].present? ||
-          params[:max_progress].present? ||
-          params[:search].present? ||
-          params[:comment] == "true" ||
-          params[:has_comments].present? ||
-          params[:due_before].present? ||
-          params[:due_after].present? ||
-          params[:has_due_date].present? ||
-          params[:assignee_id].present? ||
-          params[:unassigned].present? ||
-          params[:show_archived].present?
+        Creatives::FilterState.new(params, include_archived: true).active?
       end
 
       # Thin delegator to Creatives::CreativeTreeSerializer. Kept as a controller
@@ -819,7 +796,7 @@ module Collavre
           skip_dispatch: true
         )
 
-        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload)
+        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "trigger_restart")
         Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
       end
 

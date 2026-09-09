@@ -793,9 +793,8 @@ class AiClientTest < ActiveSupport::TestCase
   end
 
   test "does not log raw error message to app log when log_interactions is false" do
-    # Inline typo correction passes log_interactions: false because it runs on the
-    # user's *unsubmitted* draft. An LLM error whose message echoes that draft must
-    # not leak to Rails.logger — only the error class may be logged.
+    # An LLM error message can echo sensitive request content. It must not leak to
+    # Rails.logger when log_interactions is false — only the error class may log.
     draft = "my-secret-unsubmitted-draft-xyzzy"
     conversation = FakeConversation.new
     conversation.define_singleton_method(:complete) do |&_block|

@@ -41,8 +41,8 @@
   text-overflow: ellipsis;
 }
 
+/* The selected surface is drawn by the overlay pseudo-element in gnb.css. */
 .search-popup-trigger.active {
-  background: var(--surface-hover);
   color: var(--text-primary);
   font-weight: var(--weight-5);
 }

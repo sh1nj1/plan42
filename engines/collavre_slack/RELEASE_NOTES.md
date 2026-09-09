@@ -1,3 +1,8 @@
+## v0.2.10 (2026-09-02)
+
+### Changes
+- 209e6549 refactor: remove the /work command and its workflow engine (#1542)
+
 ## v0.2.9 (2026-07-16)
 
 ### Changes

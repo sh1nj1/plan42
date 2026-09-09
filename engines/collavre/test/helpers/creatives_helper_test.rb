@@ -2,6 +2,36 @@ require "test_helper"
 
 class CreativesHelperTest < ActionView::TestCase
   include Collavre::CreativesHelper
+
+  test "render_cron_badge shows the count, schedules, and next run times" do
+    task = Struct.new(:key, :schedule, :next_time, :arguments)
+    first = task.new(
+      "cron_1_first",
+      "0 9 * * *",
+      Time.zone.parse("2026-09-05 09:00"),
+      [ { message: "Morning check-in" } ]
+    )
+    second = task.new(
+      "cron_1_second",
+      "0 18 * * *",
+      Time.zone.parse("2026-09-05 18:00"),
+      [ { message: "Evening check-in" } ]
+    )
+
+    I18n.with_locale(:en) do
+      html = render_cron_badge([ first, second ], creative_id: 1)
+
+      assert_includes html, "creative-cron-badge"
+      assert_includes html, "⏰"
+      assert_includes html, ">2</span>"
+      assert_includes html, "2 scheduled jobs"
+      assert_includes html, "0 9 * * *"
+      assert_includes html, I18n.l(first.next_time, format: :short)
+      assert_includes html, "Morning check-in"
+      assert_includes html, "click->popup-menu#toggle"
+    end
+  end
+
   test "markdown_links_to_html converts markdown link to HTML" do
     input = "Check [link](https://example.com)"
     result = markdown_links_to_html(input)
@@ -194,6 +224,108 @@ class CreativesHelperTest < ActionView::TestCase
     end
 
     assert_equal 1, calls
+  end
+
+  test "render_progress_control shows a checkbox for writable binary leaf progress" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Checkbox leaf", progress: 0)
+
+    Current.set(user: user) do
+      html = render_progress_control(creative, 0, has_children: false, can_write: true)
+
+      assert_includes html, 'data-progress-toggle="true"'
+      assert_includes html, 'type="checkbox"'
+      refute_includes html, "creative-progress-incomplete"
+    end
+  end
+
+  test "render_progress_control keeps percentages for non-binary leaves and parents" do
+    user = users(:one)
+    leaf = Creative.create!(user: user, description: "Partial leaf", progress: 0.5)
+    parent = Creative.create!(user: user, description: "Parent", progress: 0)
+
+    Current.set(user: user) do
+      partial_html = render_progress_control(leaf, 0.5, has_children: false, can_write: true)
+      parent_html = render_progress_control(parent, 0, has_children: true, can_write: true)
+
+      assert_includes partial_html, "50%"
+      refute_includes partial_html, "progress-toggle-checkbox"
+      assert_includes parent_html, "0%"
+      refute_includes parent_html, "progress-toggle-checkbox"
+    end
+  end
+
+  test "render_progress_control keeps percentages in select mode and for read-only users" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Non interactive leaf", progress: 1)
+
+    Current.set(user: user) do
+      select_mode_html = render_progress_control(creative, 1, has_children: false, can_write: true, select_mode: true)
+      read_only_html = render_progress_control(creative, 1, has_children: false, can_write: false)
+
+      refute_includes select_mode_html, "progress-toggle-checkbox"
+      refute_includes read_only_html, "progress-toggle-checkbox"
+    end
+  end
+
+  test "render_progress_toggle renders the completion mark alongside the checkbox" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Completed leaf", progress: 1)
+
+    Current.set(user: user) do
+      Collavre::SystemSetting.stub(:completion_mark, "✓") do
+        html = render_progress_control(creative, 1, has_children: false, can_write: true)
+
+        assert_includes html, 'data-current-progress="1"'
+        assert_includes html, "progress-toggle-mark"
+        assert_includes html, "✓"
+        # The checkbox stays the accessible control; CSS is what hides it behind
+        # the mark until the row is hovered or focused.
+        assert_includes html, "progress-toggle-checkbox"
+        assert_includes html, 'checked="checked"'
+      end
+    end
+  end
+
+  test "render_progress_toggle falls back to a non-breaking space for a blank completion mark" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Quietly completed leaf", progress: 1)
+
+    Current.set(user: user) do
+      Collavre::SystemSetting.stub(:completion_mark, "") do
+        html = render_progress_control(creative, 1, has_children: false, can_write: true)
+
+        assert_includes html, %(<span class="progress-toggle-mark" aria-hidden="true"> </span>)
+      end
+    end
+  end
+
+  # The view passes creative.progress, a decimal, so a raw value would serialize
+  # as "1.0"/"0.0" and the CSS and JS state checks against "1"/"0" would never
+  # match. Pass the value the way the view does, not a literal Integer.
+  test "render_progress_toggle emits the completion state as an integer" do
+    user = users(:one)
+    complete = Creative.create!(user: user, description: "Completed leaf", progress: 1)
+    incomplete = Creative.create!(user: user, description: "Open leaf", progress: 0)
+
+    Current.set(user: user) do
+      complete_html = render_progress_control(complete, complete.progress, has_children: false, can_write: true)
+      incomplete_html = render_progress_control(incomplete, incomplete.progress, has_children: false, can_write: true)
+
+      assert_includes complete_html, 'data-current-progress="1"'
+      assert_includes incomplete_html, 'data-current-progress="0"'
+    end
+  end
+
+  test "render_progress_toggle keeps the checkbox reachable by keyboard" do
+    user = users(:one)
+    creative = Creative.create!(user: user, description: "Keyboard leaf", progress: 0)
+
+    Current.set(user: user) do
+      html = render_progress_control(creative, 0, has_children: false, can_write: true)
+
+      refute_includes html, 'tabindex="-1"'
+    end
   end
 
   test "render_creative_tree_markdown includes children of origin for linked creatives" do

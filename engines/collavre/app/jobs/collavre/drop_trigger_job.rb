@@ -35,13 +35,8 @@ module Collavre
       end
 
       topic = find_or_create_trigger_topic(child, agent)
-
-      # Initialize trigger loop state on the child creative
-      initialize_trigger_loop(child, topic)
-
-      # Step 1: Find existing or create new trigger comment (idempotent)
-      comment = find_trigger_comment(child, parent, topic) ||
-                create_trigger_comment(child, parent, agent, topic)
+      comment = prepare_trigger(child, parent, agent, topic)
+      return unless comment
 
       # Step 2: Skip if dispatch already produced a Task for this comment
       return if task_exists_for?(comment)
@@ -57,6 +52,19 @@ module Collavre
     end
 
     private
+
+    def prepare_trigger(child, parent, agent, topic)
+      comment = nil
+      applied = Comments::TopicMutation.call(topic.id, child.id) do
+        # The loop reference and its trigger comment must be created under the
+        # topic lock. A concurrent topic move either sees the reference and is
+        # rejected, or wins first and makes this stale job a no-op.
+        initialize_trigger_loop(child.reload, topic)
+        comment = find_trigger_comment(child, parent, topic) ||
+                  create_trigger_comment(child, parent, agent, topic)
+      end
+      comment if applied
+    end
 
     def post_trigger_failure_notice(child, parent)
       topic = child.topics.find_by(name: DROP_TRIGGER_TOPIC_NAME) ||
@@ -102,6 +110,7 @@ module Collavre
       # selection cap so full Main history transfers regardless of length.
       main_comment_ids = main.comments
                              .visible_to(creative.user)
+                             .without_approval_action
                              .order(:created_at)
                              .pluck(:id)
 
@@ -113,7 +122,12 @@ module Collavre
           user: creative.user,
           source_topic: main,
           name: DROP_TRIGGER_TOPIC_NAME
-        ).call(comment_ids: main_comment_ids, enforce_limit: false, auto_select: false)
+        ).call(
+          comment_ids: main_comment_ids,
+          enforce_limit: false,
+          auto_select: false,
+          skip_approval_actions: true
+        )
       else
         creative.topics.create!(
           name: DROP_TRIGGER_TOPIC_NAME,
@@ -190,7 +204,7 @@ module Collavre
       # Use Comment#dispatch_payload — single source of truth shared with
       # the after_create_commit callback, preventing payload drift.
       scheduled_agents = SystemEvents::Dispatcher.dispatch(
-        "comment_created", comment.dispatch_payload
+        "comment_created", comment.dispatch_payload, source: "drop_trigger"
       )
 
       if scheduled_agents.blank?

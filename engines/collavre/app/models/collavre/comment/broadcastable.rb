@@ -37,79 +37,32 @@ module Collavre
           users.uniq!
           return if users.empty?
 
-          user_ids = users.map(&:id)
-
-          pointers = CommentReadPointer.where(user_id: user_ids, creative: origin).index_by(&:user_id)
-          present_user_ids = CommentPresenceStore.list(origin.id)
-
-          # Only ever consumed as a boolean (show_zero below), so ask the
-          # database for existence rather than a total. An unbounded COUNT has
-          # no id predicate to anchor it, so the planner falls back to a
-          # sequential scan of the whole comments table and gets slower for
-          # every participant as the conversation grows.
-          any_public = origin.comments.public_only.exists?
-          private_counts = origin.comments
-            .where(private: true, user_id: user_ids)
-            .group(:user_id)
-            .count
-
-          last_read_ids = pointers.transform_values { |p| p.last_read_comment_id || 0 }
-
-          unread_public_by_threshold = {}
-          # Include 0 for users without a read pointer (never opened chat)
-          all_thresholds = (last_read_ids.values + [ 0 ]).uniq
-          all_thresholds.each do |threshold|
-            unread_public_by_threshold[threshold] = origin.comments
-              .where(private: false)
-              .where("comments.id > ?", threshold)
-              .count
-          end
-
-          unread_private_counts = {}
-          user_ids.each do |uid|
-            threshold = last_read_ids[uid] || 0
-            unread_private_counts[uid] = origin.comments
-              .where(private: true, user_id: uid)
-              .where("comments.id > ?", threshold)
-              .count
-          end
+          badges_by_user_id = Creatives::CommentBadgeIndex.for_users(origin: origin, users: users)
 
           users.each do |u|
-            user_private_count = private_counts[u.id] || 0
-            has_any_visible = any_public || user_private_count.positive?
-
-            threshold = last_read_ids[u.id] || 0
-            unread_public = unread_public_by_threshold[threshold] || 0
-            unread_private = unread_private_counts[u.id] || 0
-            unread_count = unread_public + unread_private
-
-            unread_count = 0 if present_user_ids.include?(u.id)
+            badge = badges_by_user_id.fetch(u.id)
 
             Turbo::StreamsChannel.broadcast_replace_to(
               [ u, origin, :comment_badge ],
               target: "comment-badge-#{origin.id}",
               partial: "inbox/badge_component/count",
               locals: {
-                count: unread_count,
+                count: badge.unread_count,
                 badge_id: "comment-badge-#{origin.id}",
-                show_zero: has_any_visible
+                show_zero: badge.visible_comments
               }
             )
 
             # Also update the global inbox badge when the creative is an inbox
-            broadcast_inbox_badge(origin, u, count: unread_count) if origin.inbox?
+            broadcast_inbox_badge(origin, u, count: badge.unread_count) if origin.inbox?
           end
         end
 
         def broadcast_badge(creative, user)
           origin = creative.effective_origin
-          visible_comments = origin.comments.visible_to(user)
-          comments_count = visible_comments.count
-          pointer = CommentReadPointer.find_by(user: user, creative: origin)
-          last_read_id = pointer&.last_read_comment_id
-          unread_scope = last_read_id ? visible_comments.where("comments.id > ?", last_read_id) : visible_comments
-          unread_count = unread_scope.count
-          unread_count = 0 if CommentPresenceStore.list(origin.id).include?(user.id)
+          badge_index = Creatives::CommentBadgeIndex.new(user: user)
+          badge_index.index([ origin ])
+          unread_count = badge_index.unread_count_for(origin)
           Turbo::StreamsChannel.broadcast_replace_to(
             [ user, origin, :comment_badge ],
             target: "comment-badge-#{origin.id}",
@@ -117,7 +70,7 @@ module Collavre
             locals: {
               count: unread_count,
               badge_id: "comment-badge-#{origin.id}",
-              show_zero: comments_count.positive?
+              show_zero: badge_index.visible_comments?(origin)
             }
           )
 

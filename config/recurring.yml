@@ -1,8 +1,4 @@
 production: &production
-  daily_inbox_summary:
-    class: InboxSummaryJob
-    queue: default
-    schedule: at 9am every day
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -19,9 +15,11 @@ production: &production
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day
 
-# Desktop runs non-mail jobs only: it has no SMTP/SES, so daily_inbox_summary's
-# deliver_now would fail every run and the in-Puma Solid Queue supervisor would retry forever.
 desktop:
   stuck_detector:
     class: Collavre::StuckDetectorJob
@@ -39,12 +37,12 @@ desktop:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day
 
 development:
-  daily_inbox_summary:
-    class: InboxSummaryJob
-    queue: default
-    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -61,3 +59,7 @@ development:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day

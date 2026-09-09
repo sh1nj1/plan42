@@ -8,8 +8,10 @@ module Collavre
       private
 
       def set_creative
-        @creative = Creative.find(params[:creative_id]).effective_origin
-        unless @creative.has_permission?(Current.user, :read)
+        @requested_creative = Creative.find(params[:creative_id])
+        @creative = @requested_creative.effective_origin
+        readable_ids = Creatives::PermissionFilter.new(user: Current.user).readable_ids([ @requested_creative.id ])
+        unless readable_ids.include?(@requested_creative.id)
           render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden
         end
       end

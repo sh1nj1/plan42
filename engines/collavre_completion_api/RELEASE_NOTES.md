@@ -1,3 +1,9 @@
+## v0.2.4 (2026-09-02)
+
+### Changes
+- 191bb5df revert: agent/user profile Creatives (Subsystem A) and creator-admin share (#1438)
+- 25184c9f feat: agent/user profile Creatives + system prompt sourced from profile (Subsystem A) (#1412)
+
 ## v0.2.3 (2026-07-16)
 
 ### Changes

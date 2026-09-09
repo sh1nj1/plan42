@@ -1,12 +1,18 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
-import TouchDragHandler from '../../lib/touch_drag'
 import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
+import PopupToggleGuard from '../../lib/popup_toggle_guard'
+import { elementAnchor } from '../../lib/common_popup'
+import { createUserMenu } from '../../comments/user_menu'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
+const PRESENCE_HEARTBEAT_INTERVAL = 30000
+const PARTICIPANT_LIST_MODAL_ID = 'participant-list-modal'
 
 // agent_status values that keep a task registered. thinking/streaming are the
 // agent producing output; pending_approval is it paused on a tool approval,
@@ -15,11 +21,25 @@ const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if
 const LIVE_AGENT_STATUSES = new Set(['thinking', 'streaming', 'pending_approval'])
 
 export default class extends Controller {
-  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow']
+  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow',
+    'addParticipantButton', 'participantListButton']
 
   connect() {
+    this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
+    this.dnd.registerDragSource({ selector: '.ai-agent-draggable',
+      onDragStart: ({ el, event }) => {
+        const user = this.participantsData.find(user => String(user.id) === el.dataset.agentId)
+        if (!user) return false
+        writeDragData(event.dataTransfer, { kind: 'agent', ids: [user.id],
+          payload: { name: user.name, avatar_url: user.avatar_url } })
+        event.dataTransfer.effectAllowed = 'copy'
+        el.classList.add('dragging')
+      },
+      onDragEnd: ({ el }) => el.classList.remove('dragging') })
     this.creativeId = null
     this.participantsData = null
+    this.canShare = false
+    this._participantLoadVersion = 0
     this.currentPresentIds = []
     this.typingUsers = {}
     this.typingTimers = {}
@@ -31,23 +51,33 @@ export default class extends Controller {
     this.streamingHeartbeatTimers = {} // { agentId: timeoutHandle }
     this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
+    this.presenceHeartbeatHandle = null
     this.currentUserId = document.body.dataset.currentUserId
     this.selectedTopicId = null
     this.mainTopicId = null
+    this.renderedAllTopicIds = null
+    this.renderedAllIncludesLegacy = false
 
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
     this.handleBlur = this.handleBlur.bind(this)
     this.handleTopicChange = this.handleTopicChange.bind(this)
+    this.handleRenderedAllTopics = this.handleRenderedAllTopics.bind(this)
+    this.handleParticipantListClose = this.handleParticipantListClose.bind(this)
 
     this.textareaTarget.addEventListener('input', this.handleInput)
     this.textareaTarget.addEventListener('focus', this.handleFocus)
     this.textareaTarget.addEventListener('blur', this.handleBlur)
     this.privateCheckboxTarget?.addEventListener('change', () => this.stoppedTyping())
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.addEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
+    this.element.addEventListener('entity-list:close', this.handleParticipantListClose)
   }
 
   disconnect() {
+    this.dnd?.destroy()
+    this._participantLoadVersion += 1
+    this._closeParticipantListPopup()
     this.unsubscribe()
     this.stopAgentTaskPoll()
     this.clearAllStreamingHeartbeats()
@@ -55,6 +85,8 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.removeEventListener('comments--list:rendered-all-topics', this.handleRenderedAllTopics)
+    this.element.removeEventListener('entity-list:close', this.handleParticipantListClose)
   }
 
   handleTopicChange(event) {
@@ -70,14 +102,30 @@ export default class extends Controller {
 
     this.selectedTopicId = nextSelectedTopicId
     this.mainTopicId = nextMainTopicId
+    if (selectionChanged) {
+      this.renderedAllTopicIds = null
+      this.renderedAllIncludesLegacy = false
+    }
 
-    if (selectionChanged) this.requestRunningAgents()
+    if (selectionChanged) {
+      this.reportViewingTopic()
+      this.requestRunningAgents()
+    }
 
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
       this.clearChannelChips()
     }
+  }
+
+  handleRenderedAllTopics(event) {
+    const { creativeId, topicIds, includesLegacy } = event.detail || {}
+    if (String(creativeId) !== String(this.creativeId) || this.selectedTopicId) return
+
+    this.renderedAllTopicIds = Array.isArray(topicIds) ? topicIds : []
+    this.renderedAllIncludesLegacy = Boolean(includesLegacy)
+    this.reportViewingTopic()
   }
 
   get listController() {
@@ -92,7 +140,7 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--popup')
   }
 
-  onPopupOpened({ creativeId }) {
+  onChatWillOpen({ creativeId }) {
     // Navigating the OPEN popup to another creative comes through here, not through
     // onPopupClosed() — PopupController#_navigateToEntry reuses open()/openForCreative().
     // Every piece of agent state below belongs to the chat being left: the poll is keyed
@@ -100,10 +148,18 @@ export default class extends Controller {
     // carried-over id keeps a foreign task's indicator alive here, and the Stop button it
     // renders cancels a turn in a creative that is no longer on screen.
     if (this.creativeId !== undefined && String(creativeId) !== String(this.creativeId)) {
+      this.unsubscribe()
       this.resetAgentActivity()
+      this.resetParticipantState()
     }
     this.creativeId = creativeId
-    this.loadParticipants()
+  }
+
+  onPopupOpened({ creativeId }) {
+    this.onChatWillOpen({ creativeId })
+    this.renderedAllTopicIds = null
+    this.renderedAllIncludesLegacy = false
+    this.loadParticipants(creativeId)
     this.subscribe()
     this.renderParticipants([])
     this.renderTypingIndicator()
@@ -121,6 +177,7 @@ export default class extends Controller {
     const topicId = topicsCtrl?.currentTopicId
     this.selectedTopicId = topicId || null
     this.mainTopicId = topicsCtrl?.mainTopicId || null
+    this.reportViewingTopic()
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -169,13 +226,22 @@ export default class extends Controller {
 
   onPopupClosed() {
     this.unsubscribe()
-    this.participantsData = null
-    this.currentPresentIds = []
+    this.creativeId = null
+    this.resetParticipantState()
     this.resetAgentActivity()
     this.clearManualTypingMessage()
     this.renderParticipants([])
     this.renderTypingIndicator()
     this.element.style.bottom = ''
+  }
+
+  resetParticipantState() {
+    this._participantLoadVersion += 1
+    this._closeParticipantListPopup()
+    this.participantsData = null
+    this.currentPresentIds = []
+    this.canShare = false
+    this.renderParticipants([])
   }
 
   setManualTypingMessage(message) {
@@ -216,9 +282,10 @@ export default class extends Controller {
     this.presenceSubscription.perform('running_agents', { topic_id: this.selectedTopicId })
   }
 
-  loadParticipants() {
-    if (!this.creativeId) return
-    fetch(`/creatives/${this.creativeId}/comments/participants`, {
+  loadParticipants(creativeId = this.creativeId) {
+    if (!creativeId) return
+    const loadVersion = ++this._participantLoadVersion
+    return fetch(`/creatives/${creativeId}/comments/participants`, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     })
@@ -230,6 +297,7 @@ export default class extends Controller {
         return response.json()
       })
       .then((data) => {
+        if (!this._isCurrentParticipantLoad(loadVersion, creativeId)) return
         this.participantsData = data.users
         this.canShare = data.can_share
         this.formController?.setCommentPermission(data.can_comment)
@@ -237,11 +305,16 @@ export default class extends Controller {
         this.renderTypingIndicator()
       })
       .catch(() => {
+        if (!this._isCurrentParticipantLoad(loadVersion, creativeId)) return
         this.participantsData = []
         this.canShare = false
         this.renderParticipants([])
         this.renderTypingIndicator()
       })
+  }
+
+  _isCurrentParticipantLoad(loadVersion, creativeId) {
+    return loadVersion === this._participantLoadVersion && String(creativeId) === String(this.creativeId)
   }
 
   subscribe() {
@@ -256,6 +329,8 @@ export default class extends Controller {
             this.listController?.loadInitialComments()
           }
           this.hasPresenceConnected = true
+          this.reportViewingTopic()
+          this.startPresenceHeartbeat()
         },
         received: (data) => this.handlePresenceMessage(data),
       },
@@ -263,6 +338,7 @@ export default class extends Controller {
   }
 
   unsubscribe() {
+    this.stopPresenceHeartbeat()
     if (this.presenceSubscription) {
       this.presenceSubscription.unsubscribe()
       this.presenceSubscription = null
@@ -270,11 +346,37 @@ export default class extends Controller {
     this.stoppedTyping()
   }
 
+  reportViewingTopic() {
+    if (!this.presenceSubscription) return
+
+    const payload = { topic_id: this.selectedTopicId }
+    if (!this.selectedTopicId && Array.isArray(this.renderedAllTopicIds)) {
+      payload.rendered_topic_ids = this.renderedAllTopicIds
+      if (this.renderedAllIncludesLegacy) payload.rendered_legacy_topic = true
+    }
+    this.presenceSubscription.perform('viewing_topic', payload)
+  }
+
+  startPresenceHeartbeat() {
+    this.stopPresenceHeartbeat()
+    this.presenceHeartbeatHandle = setInterval(() => {
+      this.presenceSubscription?.perform('heartbeat')
+    }, PRESENCE_HEARTBEAT_INTERVAL)
+  }
+
+  stopPresenceHeartbeat() {
+    if (this.presenceHeartbeatHandle) {
+      clearInterval(this.presenceHeartbeatHandle)
+      this.presenceHeartbeatHandle = null
+    }
+  }
+
   handlePresenceMessage(data) {
     if (data.ids) {
       this.currentPresentIds = data.ids.map((id) => parseInt(id, 10))
-      this.renderParticipants(this.currentPresentIds)
+      this.renderParticipants(this.currentPresentIds, { preserveMenus: true })
       this.updateReadReceiptPresence(this.currentPresentIds)
+      this.dispatchPresenceChanged(this.currentPresentIds)
     }
     if (data.typing) {
       const { id, name, topic_id: topicId } = data.typing
@@ -382,32 +484,27 @@ export default class extends Controller {
     }
   }
 
-  renderParticipants(presentIds) {
+  renderParticipants(presentIds, { preserveMenus = false } = {}) {
     if (!this.hasParticipantsTarget || !this.participantsData) {
       if (this.hasParticipantsTarget) this.participantsTarget.innerHTML = ''
+      this.updateParticipantActionButtons(presentIds)
+      return
+    }
+    if (preserveMenus && this.updateRenderedParticipantPresence(presentIds)) {
+      this.updateParticipantActionButtons(presentIds)
+      this.updateReadReceiptPresence(presentIds)
       return
     }
     this.participantsTarget.innerHTML = ''
     this.participantsData.forEach((user) => {
-      const wrapper = document.createElement('div')
-      wrapper.className = 'avatar-wrapper'
-      wrapper.style.width = '20px'
-      wrapper.style.height = '20px'
-
-      const img = document.createElement('img')
-      img.src = user.avatar_url
-      img.alt = ''
-      img.width = 20
-      img.height = 20
-      img.className = 'avatar comment-presence-avatar'
-      if (presentIds.indexOf(user.id) === -1) {
-        img.classList.add('inactive')
-      }
-      img.title = user.name
-      img.style.borderRadius = '50%'
-      if (user.email) img.dataset.email = user.email
-      img.dataset.userId = user.id
-      img.dataset.userName = user.name
+      const online = presentIds.indexOf(user.id) !== -1
+      const wrapper = createUserMenu({
+        user,
+        online,
+        labels: this.participantUserMenuLabels,
+        menuId: `participant-user-menu-${user.id}`,
+        draggable: Boolean(user.ai_user)
+      })
 
       // AI agents are draggable to topic tabs
       if (user.ai_user) {
@@ -417,48 +514,191 @@ export default class extends Controller {
         wrapper.dataset.agentName = user.name
         wrapper.dataset.agentAvatarUrl = user.avatar_url
 
-        // HTML5 DnD (desktop)
-        wrapper.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('application/x-agent-drop', JSON.stringify({
-            id: user.id,
-            name: user.name,
-            avatar_url: user.avatar_url
-          }))
-          e.dataTransfer.effectAllowed = 'copy'
-          wrapper.classList.add('dragging')
-        })
-        wrapper.addEventListener('dragend', () => {
-          wrapper.classList.remove('dragging')
-        })
-
-        // Touch drag (mobile)
-        this._addAgentTouchDrag(wrapper, user)
-      }
-
-      wrapper.appendChild(img)
-
-      if (user.default_avatar) {
-        const span = document.createElement('span')
-        span.className = 'avatar-initial'
-        span.textContent = user.initial
-        span.style.fontSize = `${Math.round(20 / 2)}px`
-        wrapper.appendChild(span)
       }
 
       this.participantsTarget.appendChild(wrapper)
     })
 
-    if (this.canShare) {
-      const addBtn = document.createElement('button')
-      addBtn.className = 'add-participant-btn'
-      addBtn.textContent = '+'
-      addBtn.title = this.element.dataset.addParticipantText || 'Add user'
-      addBtn.dataset.action = 'click->share-modal#open'
-      addBtn.dataset.shareModalUrlParam = `/creatives/${this.creativeId}/creative_shares`
-      this.participantsTarget.appendChild(addBtn)
+    this.updateParticipantActionButtons(presentIds)
+    this.updateReadReceiptPresence(presentIds)
+  }
+
+  updateRenderedParticipantPresence(presentIds) {
+    const menus = Array.from(this.participantsTarget.querySelectorAll('.comment-user-menu'))
+    const matchesParticipants = menus.length === this.participantsData.length && menus.every((menu, index) => (
+      menu.dataset.commentUserMenuUserIdValue === String(this.participantsData[index].id)
+    ))
+    if (!matchesParticipants) return false
+
+    const present = new Set(presentIds.map(String))
+    menus.forEach((menu) => {
+      const online = present.has(menu.dataset.commentUserMenuUserIdValue)
+      menu.querySelector('.comment-presence-avatar')?.classList.toggle('inactive', !online)
+      const status = menu.querySelector('.comment-user-popup-status')
+      status?.classList.toggle('is-online', online)
+      const statusLabel = menu.querySelector('[data-comment-user-menu-target="statusLabel"]')
+      if (status && statusLabel) {
+        statusLabel.textContent = online ? status.dataset.onlineText : status.dataset.offlineText
+      }
+    })
+    return true
+  }
+
+  get participantUserMenuLabels() {
+    return {
+      open: this.element.dataset.userMenuOpenText || 'Open %{name}\'s profile menu',
+      viewProfile: this.element.dataset.userMenuViewProfileText || 'View profile',
+      mention: this.element.dataset.userMenuMentionText || 'Mention',
+      dragGuide: this.element.dataset.userMenuAgentDragGuideText || '',
+      online: this.element.dataset.participantOnlineText || 'Online',
+      offline: this.element.dataset.participantOfflineText || 'Offline'
+    }
+  }
+
+  // The add and list buttons are pinned outside the horizontally scrolling avatar
+  // strip, so they stay reachable however many participants there are.
+  updateParticipantActionButtons(presentIds = this.currentPresentIds) {
+    if (this.hasAddParticipantButtonTarget) {
+      const canOpenShare = Boolean(this.canShare && this.creativeId)
+      this.addParticipantButtonTarget.style.display = canOpenShare ? '' : 'none'
+      if (canOpenShare) {
+        this.addParticipantButtonTarget.dataset.shareModalUrlParam = `/creatives/${this.creativeId}/creative_shares`
+      } else {
+        delete this.addParticipantButtonTarget.dataset.shareModalUrlParam
+      }
+    }
+    if (this.hasParticipantListButtonTarget) {
+      const hasParticipants = (this.participantsData || []).length > 0
+      this.participantListButtonTarget.style.display = hasParticipants ? '' : 'none'
+    }
+    this.refreshOpenParticipantListPopup(presentIds)
+  }
+
+  // --- Participant list popup (mirrors the topic list button) ---
+  get participantListToggleGuard() {
+    this._participantListToggleGuard ||= new PopupToggleGuard()
+    return this._participantListToggleGuard
+  }
+
+  prepareParticipantListToggle(event) {
+    this.participantListToggleGuard.prepare(event, Boolean(this._participantListPopup()?.popup?.isOpen()))
+  }
+
+  finishParticipantListToggle(event) {
+    this.participantListToggleGuard.finish(event)
+  }
+
+  cancelParticipantListToggle(event = {}) {
+    this.participantListToggleGuard.cancel(event)
+  }
+
+  _participantListPopup() {
+    const modal = document.getElementById(PARTICIPANT_LIST_MODAL_ID)
+    return modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+  }
+
+  _closeParticipantListPopup() {
+    const modal = this.element.querySelector(`#${PARTICIPANT_LIST_MODAL_ID}`)
+    const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+    popup?.close()
+    modal?.remove()
+    this._participantListToggleGuard?.cancel()
+    this.setParticipantListButtonExpanded(false)
+  }
+
+  openParticipantListPopup(event) {
+    if (this.participantListToggleGuard.consume()) return
+
+    const anchor = elementAnchor(event.currentTarget)
+
+    const openWith = (popup) => {
+      popup.openForItems(
+        this.participantListItems(),
+        anchor,
+        (item) => this.selectParticipantListItem(item),
+        this.element
+      )
+      this.setParticipantListButtonExpanded(true)
     }
 
-    this.updateReadReceiptPresence(presentIds)
+    let modal = document.getElementById(PARTICIPANT_LIST_MODAL_ID)
+    if (modal) {
+      const popup = this._participantListPopup()
+      if (popup?.popup?.isOpen()) {
+        popup.close()
+        this.setParticipantListButtonExpanded(false)
+      } else if (popup) {
+        openWith(popup)
+      }
+      return
+    }
+
+    modal = document.createElement('div')
+    modal.id = PARTICIPANT_LIST_MODAL_ID
+    modal.className = 'common-popup'
+    modal.style.display = 'none'
+    modal.dataset.controller = 'entity-list'
+    modal.dataset.closeLabel = this.element.dataset.closeLabel || ''
+    modal.innerHTML = `
+      <button type="button" class="popup-close-btn" data-entity-list-target="close">&times;</button>
+      <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+        data-entity-list-target="input">
+      <ul class="common-popup-list" data-popup-list data-entity-list-target="list"></ul>
+    `
+    modal.querySelector('input').placeholder =
+      this.element.dataset.participantSearchPlaceholderText || 'Search users...'
+    // Caged inside the chat box, like the topic list popup.
+    this.element.appendChild(modal)
+
+    requestAnimationFrame(() => {
+      const popup = this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+      if (popup) openWith(popup)
+      else console.error('entity-list controller not found after creation')
+    })
+  }
+
+  participantListItems(presentIds = this.currentPresentIds) {
+    const present = presentIds || []
+    return (this.participantsData || []).map((user) => ({
+      id: user.id,
+      label: user.name,
+      avatarUrl: user.avatar_url,
+      iconKey: user.avatar_url ? null : 'user',
+      // Offline reads the same here as it does on the avatar strip.
+      muted: present.indexOf(user.id) === -1,
+      statusLabel: present.indexOf(user.id) === -1
+        ? (this.element.dataset.participantOfflineText || 'Offline')
+        : (this.element.dataset.participantOnlineText || 'Online')
+    }))
+  }
+
+  // Selecting from the searchable list opens the same profile menu as the avatar strip.
+  selectParticipantListItem(item) {
+    const menu = Array.from(this.participantsTarget.querySelectorAll('[data-comment-user-menu-user-id-value]'))
+      .find((element) => element.dataset.commentUserMenuUserIdValue === String(item.id))
+    if (!menu) return
+
+    const popupMenu = this.application.getControllerForElementAndIdentifier(menu, 'popup-menu')
+    // Let the list-item click finish bubbling before popup-menu installs its
+    // document click listener; otherwise that same click immediately hides it.
+    requestAnimationFrame(() => popupMenu?.show())
+  }
+
+  refreshOpenParticipantListPopup(presentIds = this.currentPresentIds) {
+    const modal = this.element.querySelector(`#${PARTICIPANT_LIST_MODAL_ID}`)
+    const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+    if (popup?.popup?.isOpen()) popup.updateItems(this.participantListItems(presentIds))
+  }
+
+  handleParticipantListClose(event) {
+    if (event.target?.id !== PARTICIPANT_LIST_MODAL_ID) return
+    this.setParticipantListButtonExpanded(false)
+  }
+
+  setParticipantListButtonExpanded(expanded) {
+    if (this.hasParticipantListButtonTarget) {
+      this.participantListButtonTarget.setAttribute('aria-expanded', String(expanded))
+    }
   }
 
 
@@ -635,7 +875,7 @@ export default class extends Controller {
     if (String(activeTopicId) !== String(topicId)) return
 
     fetch(`/creatives/${this.creativeId}/topics/${topicId}/channel_chips`, {
-      headers: { Accept: 'text/html' },
+      headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
       credentials: 'same-origin',
     })
       .then((r) => (r.ok ? r.text() : null))
@@ -661,7 +901,9 @@ export default class extends Controller {
     csrfFetch(`/channels/${id}`, {
       method: 'DELETE',
       headers: { Accept: 'application/json' },
-    }).catch((err) => console.warn('[presence] detach channel failed:', err))
+    })
+      .then((response) => response.status === 204 && !response.redirected && btn.closest('.channel-chip')?.remove())
+      .catch((err) => console.warn('[presence] detach channel failed:', err))
   }
 
   clearTypingTimers() {
@@ -828,40 +1070,10 @@ export default class extends Controller {
     })
   }
 
-  // ── Agent touch drag-and-drop (mobile) ─────────────────
-
-  _addAgentTouchDrag(wrapper, user) {
-    if (!('ontouchstart' in window)) return
-
-    const handler = new TouchDragHandler({
-      container: wrapper,
-      singleElement: true,
-      dropTargetSelector: '.topic-tag.topic-drop-target, .topic-creation-container',
-      draggingClass: 'dragging',
-
-      proxyContent: () =>
-        `<span class="touch-drag-proxy-badge">${user.name}</span>`,
-
-      onDrop: (targetEl) => {
-        const agentData = { id: user.id, name: user.name, avatar_url: user.avatar_url }
-        const topicsCtrl = this.application.getControllerForElementAndIdentifier(
-          this.element, 'comments--topics'
-        )
-        if (!topicsCtrl) return
-
-        if (targetEl.closest('.topic-creation-container')) {
-          topicsCtrl.createTopicWithAgent(agentData)
-        } else {
-          const topicTag = targetEl.closest('.topic-tag.topic-drop-target')
-          if (topicTag?.dataset.id) {
-            topicsCtrl.setTopicPrimaryAgent(topicTag.dataset.id, agentData)
-          }
-        }
-      }
-    })
-
-    // Store for cleanup if needed
-    if (!this._agentTouchDragHandlers) this._agentTouchDragHandlers = []
-    this._agentTouchDragHandlers.push(handler)
+  dispatchPresenceChanged(presentIds = []) {
+    this.element.dispatchEvent(new CustomEvent('comments--presence:changed', {
+      detail: { presentIds },
+    }))
   }
+
 }

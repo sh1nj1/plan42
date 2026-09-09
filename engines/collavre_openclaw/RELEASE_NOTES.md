@@ -1,3 +1,10 @@
+## v0.6.6 (2026-09-02)
+
+### Changes
+- cd3aeb09 refactor: remove typo correction (#1549)
+- 34689157 Stabilize AI agent job execution: terminal-status cancellation, turn deadline, dedicated queue (#1468)
+- f8325ddf feat: drop a dispatch whose comment an in-flight turn already delivered (#1460)
+
 ## v0.6.5 (2026-07-16)
 
 ### Changes

@@ -2,6 +2,8 @@
 en:
   collavre:
     creatives:
+      drag_drop:
+        partial_failure: Some links were created. Retry only the missing links.
       workspace:
         tree_title: Creative tree
         tree_label: Creative navigation tree
@@ -26,6 +28,10 @@ en:
         unarchive: Restore
         show_archived: Show archived
         hide_archived: Hide archived
+        cron_count:
+          one: "%{count} scheduled job"
+          other: "%{count} scheduled jobs"
+        cron_schedule: "%{schedule} · next %{next_run}"
         delete_only_this: Delete only this Creative
         delete_with_children: Delete this Creative and all its children
         are_you_sure: Are you sure?
@@ -76,7 +82,6 @@ en:
         link_create_failed: Could not create the creative.
         link_expand: Expand
         search_placeholder: Search creatives...
-        recommend_parent: Recommend Category
         import_uploading: Uploading...
         import_success: Import successful! Reloading...
         import_failed: Import failed.

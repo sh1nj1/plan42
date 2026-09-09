@@ -1,3 +1,6 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData } from '../../lib/dnd/envelope'
+import { previewDrop } from '../../lib/dnd/preview'
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
@@ -36,6 +39,13 @@ export default class extends Controller {
   ]
 
   connect() {
+    this.dnd = createDragDropRegistry({ root: this.formTarget, getKind: getDragKind, readData: readDragData })
+    this.dnd.registerDropZone({ selector: '#new-comment-form', accepts: ['creative'],
+      preview: previewDrop, dropEffect: 'copy',
+      onDrop: ({ ids, event }) => {
+        event.stopPropagation()
+        this.insertCreativeLinks(ids.map(id => ({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })))
+      } })
     this.creativeId = null
     this.editingId ??= null
     this.sending = false
@@ -57,7 +67,6 @@ export default class extends Controller {
     this.handleImageButtonClick = this.handleImageButtonClick.bind(this)
     this.handleImageChange = this.handleImageChange.bind(this)
     this.handleDragOver = this.handleDragOver.bind(this)
-    this.handleDragLeave = this.handleDragLeave.bind(this)
     this.handleDrop = this.handleDrop.bind(this)
 
     this.formTarget.addEventListener('submit', this.handleSubmit)
@@ -71,7 +80,6 @@ export default class extends Controller {
     this.imageButtonTarget?.addEventListener('click', this.handleImageButtonClick)
     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
     this.formTarget.addEventListener('dragover', this.handleDragOver)
-    this.formTarget.addEventListener('dragleave', this.handleDragLeave)
     this.formTarget.addEventListener('drop', this.handleDrop)
     this.handlePaste = this.handlePaste.bind(this)
     this.textareaTarget.addEventListener('paste', this.handlePaste)
@@ -293,9 +301,11 @@ export default class extends Controller {
       this._awaitingEffectiveDraftKeyFor = null
     }
     this.currentTopicId = event.detail.topicId
+    this.readOnlyTopic = event.detail.readOnly || false
     this._isInbox = event.detail.isInbox || false
     this._systemTopicId = event.detail.systemTopicId || null
     this._mainTopicId = event.detail.mainTopicId || null
+    this.updateFormVisibility()
     this._updateInboxReplyMode()
   }
 
@@ -307,6 +317,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.dnd?.destroy()
     this._flushDraftSave()
     this.textareaTarget.removeEventListener('compositionend', this._handleCompositionEnd)
     this.textareaTarget.removeEventListener('keydown', this._expireImeCommitLatch)
@@ -327,7 +338,6 @@ export default class extends Controller {
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('input', this._autoResize)
     this.formTarget.removeEventListener('dragover', this.handleDragOver)
-    this.formTarget.removeEventListener('dragleave', this.handleDragLeave)
     this.formTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
@@ -351,7 +361,8 @@ export default class extends Controller {
     // controller BEFORE topics loadTopics() dispatches comments--topics:change,
     // so by the time we get here, currentTopicId already reflects the new
     // creative's restored topic. Do not re-clear it.
-    this.formTarget.style.display = canComment ? '' : 'none'
+    this.canComment = canComment
+    this.updateFormVisibility()
     // Capture input entered while topics were loading before reset clears it.
     // Without a pending input timer, a blank textarea must not erase a draft
     // that is waiting in storage to be restored below.
@@ -414,7 +425,8 @@ export default class extends Controller {
   }
 
   setCommentPermission(canComment) {
-    this.formTarget.style.display = canComment ? '' : 'none'
+    this.canComment = canComment
+    this.updateFormVisibility()
 
     if (!canComment) {
       this._flushDraftSave()
@@ -436,8 +448,13 @@ export default class extends Controller {
   }
 
   shouldAutoFocusOnOpen() {
+    if (this.readOnlyTopic) return false
     if (window.innerWidth <= 768) return false
     return this.element.dataset.autoFocusOnOpen !== 'false'
+  }
+
+  updateFormVisibility() {
+    this.formTarget.style.display = this.canComment && !this.readOnlyTopic ? '' : 'none'
   }
 
   focusTextarea() {
@@ -822,6 +839,7 @@ export default class extends Controller {
 
   handleSend(event) {
     event.preventDefault()
+    const commandSubmissionId = event.commandSubmissionId || null
 
     // If active quote exists, handle based on type
     const store = this._reviewStore
@@ -845,6 +863,11 @@ export default class extends Controller {
     this.sending = true
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
+    if (commandSubmissionId) {
+      this.element.dispatchEvent(new CustomEvent('comments--form:submit-started', {
+        detail: { submissionId: commandSubmissionId },
+      }))
+    }
 
     // Cancel any pending input debounce before capturing the submission. A
     // write while the request is in flight looks like a newer draft and can
@@ -930,6 +953,7 @@ export default class extends Controller {
       method = 'PATCH'
     }
 
+    let settlementUi = Promise.resolve()
     const doFetch = () => fetch(url, {
       method,
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
@@ -1090,7 +1114,7 @@ export default class extends Controller {
           this._updateSubmitButton()
         }
         this._persistFailedSubmissionDraft(submittedDraft)
-        alertDialog(error?.message || 'Failed to submit comment')
+        settlementUi = alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
         this._pendingDraftSubmissions.delete(submittedDraft)
@@ -1105,6 +1129,12 @@ export default class extends Controller {
         } else {
           this._stashedDraft = null
         }
+        const announceSettlement = () => {
+          this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled', {
+            detail: { submissionId: commandSubmissionId },
+          }))
+        }
+        settlementUi.then(announceSettlement, announceSettlement)
       })
   }
 
@@ -1295,63 +1325,19 @@ export default class extends Controller {
   }
 
   handleDragOver(event) {
-    const isCreative = this.hasCreativeFromDataTransfer(event.dataTransfer)
-    const isImage = this.hasImageFromDataTransfer(event.dataTransfer)
-    if (isImage || isCreative) {
+    if (getDragKind(event.dataTransfer) === 'creative' || this.hasImageFromDataTransfer(event.dataTransfer)) {
       event.preventDefault()
       event.stopPropagation()
-      if (isCreative) {
-        this.formTarget.classList.add('creative-drop-hover')
-      }
-    }
-  }
-
-  handleDragLeave(event) {
-    // Only remove highlight if truly leaving the form
-    if (!this.formTarget.contains(event.relatedTarget)) {
-      this.formTarget.classList.remove('creative-drop-hover')
     }
   }
 
   handleDrop(event) {
-    this.formTarget.classList.remove('creative-drop-hover')
-
-    // Handle creative drop — stop propagation so contexts_controller doesn't intercept
-    if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
-      event.preventDefault()
-      event.stopPropagation()
-      const creativeData = this.extractCreativeData(event.dataTransfer)
-      if (creativeData) {
-        this.insertCreativeLink(creativeData)
-      }
-      return
-    }
-
     // Handle image drop
     const imageFiles = this.extractImageFiles(event.dataTransfer)
     if (!imageFiles.length) return
     event.preventDefault()
     this.setImageFiles([...this.currentImageFiles(), ...imageFiles])
     this.updateAttachmentList()
-  }
-
-  hasCreativeFromDataTransfer(dataTransfer) {
-    if (!dataTransfer || !dataTransfer.types) return false
-    return Array.from(dataTransfer.types).includes('application/x-collavre-creative')
-  }
-
-  extractCreativeData(dataTransfer) {
-    if (!dataTransfer) return null
-    const raw = dataTransfer.getData('application/x-collavre-creative') || dataTransfer.getData('text/plain')
-    if (!raw) return null
-    try {
-      const parsed = JSON.parse(raw)
-      if (!parsed || !parsed.creativeId) return null
-      const label = this.getCreativeLabelFromDom(parsed.creativeId)
-      return { id: parsed.creativeId, label: label || `Creative #${parsed.creativeId}` }
-    } catch {
-      return null
-    }
   }
 
   getCreativeLabelFromDom(creativeId) {
@@ -1365,7 +1351,12 @@ export default class extends Controller {
   }
 
   insertCreativeLink({ id, label }) {
-    const link = `[${label}](/creatives/${id})`
+    this.insertCreativeLinks([{ id, label }])
+  }
+
+  insertCreativeLinks(creatives) {
+    if (!creatives.length) return
+    const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
     const textarea = this.textareaTarget
     const pos = textarea.selectionStart
     const before = textarea.value.substring(0, pos)
@@ -1818,6 +1809,14 @@ export default class extends Controller {
       listElement.appendChild(commentElement)
     }
 
+    // The submit response can win the race against its Turbo Stream echo. Keep
+    // the All Messages read snapshot in step with this visible local append;
+    // the stream then deduplicates without getting a second chance to do it.
+    const addedTopic = listCtrl?.recordRenderedAllTopicWatermarks(
+      commentElement,
+      { includeNewTopics: !replaceExisting },
+    )
+    if (addedTopic) listCtrl?.reportRenderedAllTopics()
     renderMarkdownInContainer(commentElement)
     if (replaceExisting) {
       this.listController?.markCommentsRead()

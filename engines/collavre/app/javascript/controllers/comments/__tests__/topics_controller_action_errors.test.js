@@ -95,18 +95,24 @@ describe('TopicsController topic action failures', () => {
 
     test('deleteTopic surfaces the localized delete error', async () => {
       global.fetch = failingFetch()
+      controller.serverLastTopicId = '1'
+      controller._topicScrollInterrupted = true
 
       await controller.deleteTopic(eventFor(1))
 
       expect(alertDialog).toHaveBeenCalledWith(LOCALIZED.topicDeleteError)
+      expect(controller._topicScrollInterrupted).toBe(true)
     })
 
     test('archiveTopic surfaces the localized archive error', async () => {
       global.fetch = failingFetch()
+      controller.serverLastTopicId = '1'
+      controller._topicScrollInterrupted = true
 
       await controller.archiveTopic(eventFor(1))
 
       expect(alertDialog).toHaveBeenCalledWith(LOCALIZED.topicArchiveError)
+      expect(controller._topicScrollInterrupted).toBe(true)
     })
 
     test('unarchiveTopic surfaces the localized restore error', async () => {

@@ -24,6 +24,206 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "History topic renders change sets and rejects comments" do
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: @creative, anchor_source: :explicit) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert", count: 1
+    assert_select ".creative-history-split th[scope='col']", text: I18n.t("collavre.creative_history.before")
+    assert_select ".creative-history-split th[scope='col']", text: I18n.t("collavre.creative_history.after")
+
+    assert_no_difference("Comment.count") do
+      post creative_comments_path(@creative),
+           params: { comment: { topic_id: history_topic.id, content: "not allowed" } }, as: :json
+    end
+    assert_response :forbidden
+    assert_equal I18n.t("collavre.creative_history.read_only"), response.parsed_body["error"]
+  end
+
+  test "History hides revert and restore controls from a read-only viewer" do
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: @creative) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+    viewer = users(:two)
+    grant_read_access_to_other_user(@creative, user: viewer)
+    delete session_path
+    post session_path, params: { email: viewer.email, password: "password" }
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert", count: 0
+    assert_select ".creative-history-restore", count: 0
+  end
+
+  test "History renders approval and rejection controls for a draft" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    draft = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "agent_topic", user: users(:ai_bot),
+      actor_kind: "agent", origin: "tool", status: "draft"
+    )
+    draft.creative_changes.create!(
+      creative: @creative, operation: "update", before: snapshot,
+      after: snapshot.merge("description" => "Proposed"), position: 0
+    )
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".approve-comment-btn[data-mode='approve']", text: I18n.t("collavre.creative_history.approve")
+    assert_select ".deny-comment-btn[data-mode='reject']", text: I18n.t("collavre.creative_history.reject")
+    assert_select ".creative-history-revert", count: 0
+  end
+
+  test "History hides draft actions from a read-only viewer" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    draft = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "agent_topic", user: users(:ai_bot),
+      actor_kind: "agent", origin: "tool", status: "draft"
+    )
+    draft.creative_changes.create!(
+      creative: @creative, operation: "update", before: snapshot,
+      after: snapshot.merge("description" => "Proposed"), position: 0
+    )
+    history_topic = @creative.reload.history_topic
+    viewer = users(:two)
+    grant_read_access_to_other_user(@creative, user: viewer)
+    delete session_path
+    post session_path, params: { email: viewer.email, password: "password" }
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".approve-comment-btn", count: 0
+    assert_select ".deny-comment-btn", count: 0
+    assert_select ".creative-history-state", text: I18n.t("collavre.creative_history.pending_review")
+  end
+
+  test "linked Creatives use the origin History topic while preserving the linked history scope" do
+    linked = Collavre::Creative.create!(user: @user, origin: @creative)
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: linked, anchor_source: :explicit) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+
+    assert_equal history_topic, linked.history_topic
+    assert_nil linked.topics.find_by(name: Collavre::Creative::HISTORY_TOPIC_NAME)
+
+    get creative_comments_path(linked), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+  end
+
+  test "History rejects a foreign private linked placement whose origin is readable" do
+    foreign_parent = Collavre::Creative.create!(description: "Private", user: users(:two))
+    linked = Collavre::Creative.create!(user: users(:two), parent: foreign_parent, origin: @creative)
+    history_topic = @creative.history_topic
+
+    get creative_comments_path(linked), params: { topic_id: history_topic.id }
+
+    assert_response :forbidden
+  end
+
+  test "hard deletion is recorded without offering a lossy restore" do
+    child = Collavre::Creative.create!(description: "Disposable", user: @user, parent: @creative)
+    Collavre::Creatives::History.track(actor: @user, origin: :editor, anchor: @creative) { child.destroy! }
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert", count: 0
+    assert_select ".creative-history-state", text: I18n.t("collavre.creative_history.irreversible")
+  end
+
+  test "History topic paginates beyond the newest twenty change sets" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    sets = 21.times.map do |index|
+      change_set = Collavre::CreativeChangeSet.create!(
+        anchor_creative: @creative, anchor_source: "explicit", user: @user,
+        actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+      )
+      change_set.creative_changes.create!(
+        creative: @creative, operation: "update", before: snapshot,
+        after: snapshot.merge("description" => "Version #{index}"), position: 0
+      )
+      change_set
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+    assert_response :success
+    assert_select ".creative-history-item", count: 20
+    oldest_visible_id = sets.second.id
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id, before_id: oldest_visible_id }
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-list", count: 0
+    assert_select ".creative-history-item[data-change-set-id='#{sets.first.id}']", count: 1
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id, after_id: sets.last.id }
+    assert_response :success
+    assert_select ".creative-history-item", count: 0
+  end
+
+  test "History pagination scans past an invisible page" do
+    snapshot = Collavre::Creatives::History.snapshot(@creative)
+    visible = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "explicit", user: @user,
+      actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+    )
+    visible.creative_changes.create!(
+      creative: @creative, operation: "update", before: snapshot,
+      after: snapshot.merge("description" => "Visible history"), position: 0
+    )
+    foreign = Collavre::Creative.create!(description: "Foreign", user: users(:two))
+    foreign_snapshot = Collavre::Creatives::History.snapshot(foreign)
+    20.times do |index|
+      hidden = Collavre::CreativeChangeSet.create!(
+        anchor_creative: @creative, anchor_source: "explicit", user: users(:two),
+        actor_kind: "human", origin: "editor", status: "applied", applied_at: Time.current
+      )
+      hidden.creative_changes.create!(
+        creative: @creative, operation: "update", before: snapshot,
+        after: snapshot, position: 0
+      ).update_columns(creative_id: foreign.id, previous_parent_id: @creative.id)
+      hidden.update_column(:summary, "Hidden #{index}")
+    end
+    history_topic = @creative.reload.history_topic
+
+    get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-item[data-change-set-id='#{visible.id}']", count: 1
+  end
+
+  test "merge rejects comments from different topics" do
+    first_topic = @creative.topics.create!(name: "First merge topic", user: @user)
+    second_topic = @creative.topics.create!(name: "Second merge topic", user: @user)
+    first = @creative.comments.create!(content: "First merge comment", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "Second merge comment", user: @user, topic: second_topic)
+
+    Collavre::MergeCommentsJob.stub(:perform_later, ->(*) { flunk("merge job should not be enqueued") }) do
+      post merge_creative_comments_path(@creative), params: { comment_ids: [ first.id, second.id ] }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.comments.merge.same_topic_required"), response.parsed_body["error"]
+  end
+
   test "index renders version navigator only for comments with versions" do
     with_versions = @creative.comments.create!(content: "has versions", user: @user)
     Collavre::CommentVersion.create!(comment: with_versions, content: "v1", version_number: 1)
@@ -39,6 +239,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body,
                         "data-comment-version-comment-id-value=\"#{without_versions.id}\"",
                         "expected no version navigator for comment WITHOUT versions"
+  end
+
+  test "topic-filtered index keeps legacy fallback receipts in the rendered topic" do
+    reader = users(:two)
+    grant_read_access_to_other_user(user: reader)
+    first_topic = @creative.topics.create!(name: "First receipts", user: @user)
+    second_topic = @creative.topics.create!(name: "Second receipts", user: @user)
+    first = @creative.comments.create!(content: "first", user: @user, topic: first_topic)
+    second = @creative.comments.create!(content: "second", user: @user, topic: second_topic)
+    CommentReadPointer.create!(user: reader, creative: @creative, last_read_comment_id: second.id)
+
+    get creative_comments_path(@creative), params: { topic_id: first_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, "read_receipts_comment_#{first.id}"
+    assert_includes @response.body, "data-user-id=\"#{reader.id}\""
   end
 
   test "convert markdown comment to sub creatives" do
@@ -429,6 +645,68 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert comment.private?, "Comment should be private after checking"
   end
 
+  test "topic update rejects a comment whose source topic moved after validation" do
+    source_topic = @creative.topics.create!(name: "Update source", user: @user)
+    target_topic = @creative.topics.create!(name: "Update target", user: @user)
+    destination = Creative.create!(description: "Update destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    service = Collavre::CommentMoveService.new(creative: @creative, user: @user)
+    fetch_after_relocation = lambda do |_ids|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      [ comment ]
+    end
+
+    Collavre::CommentMoveService.stub(:new, ->(**) { service }) do
+      service.stub(:fetch_visible_comments, fetch_after_relocation) do
+        patch creative_comment_path(@creative, comment), params: {
+          comment: { content: "Stale update", topic_id: target_topic.id }
+        }
+      end
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal @creative.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
+    assert_equal @creative.id, source_topic.reload.creative_id
+  end
+
+  test "topic update rolls back the move when another attribute is invalid" do
+    source_topic = @creative.topics.create!(name: "Rollback source", user: @user)
+    target_topic = @creative.topics.create!(name: "Rollback target", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+
+    patch creative_comment_path(@creative, comment), params: {
+      comment: { content: "", topic_id: target_topic.id }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal source_topic.id, comment.reload.topic_id
+    assert_equal "Original", comment.content
+  end
+
+  test "content update rejects a comment whose topic moved before its lock" do
+    source_topic = @creative.topics.create!(name: "Edit source", user: @user)
+    destination = Creative.create!(description: "Edit destination", user: @user)
+    comment = @creative.comments.create!(content: "Original", user: @user, topic: source_topic)
+    topic_mutation = Collavre::Comments::TopicMutation.method(:call)
+    mutate_after_relocation = lambda do |*args, &block|
+      Collavre::Topics::TopicMove.new(topic: source_topic, target_creative: destination).call
+      topic_mutation.call(*args, &block)
+    end
+
+    Collavre::Comments::TopicMutation.stub(:call, mutate_after_relocation) do
+      patch creative_comment_path(@creative, comment), params: {
+        comment: { content: "Stale update" }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal destination.id, comment.reload.creative_id
+    assert_equal source_topic.id, comment.topic_id
+    assert_equal "Original", comment.content
+  end
+
   test "user can move comments to another creative" do
     target = creatives(:childless_creative)
     comment = @creative.comments.create!(content: "Move me", user: @user)
@@ -712,6 +990,45 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, topic_comment.content
     assert_includes @response.body, "comment-topic-switch"
     assert_includes @response.body, "##{topic.name}"
+    assert_equal @creative.topics.active.order(:id).pluck(:id).join(","), response.headers["X-Rendered-Topic-Ids"]
+    assert_equal topic_comment.id, JSON.parse(response.headers["X-Rendered-Topic-Watermarks"]).fetch(topic.id.to_s)
+  end
+
+  test "All Messages snapshot includes only topics represented in the rendered page" do
+    creative = Creative.create!(user: @user, description: "Rendered topic snapshot", sequence: 9_912)
+    older_topic = creative.topics.create!(name: "Older", user: @user)
+    rendered_topic = creative.topics.create!(name: "Rendered", user: @user)
+    older_comment = Comment.create!(creative: creative, topic: older_topic, user: users(:two), content: "older unread")
+    20.times do |index|
+      Comment.create!(creative: creative, topic: rendered_topic, user: users(:two), content: "rendered #{index}")
+    end
+
+    get creative_comments_path(creative)
+
+    assert_response :success
+    assert_not_includes @response.body, older_comment.content
+    assert_equal rendered_topic.id.to_s, response.headers["X-Rendered-Topic-Ids"]
+    assert_equal(
+      { rendered_topic.id.to_s => creative.comments.where(topic: rendered_topic).maximum(:id) },
+      JSON.parse(response.headers["X-Rendered-Topic-Watermarks"])
+    )
+  end
+
+  test "All Messages serializes legacy topic-less comments without sorting nil topic ids" do
+    creative = Creative.create!(user: @user, description: "Legacy Main snapshot", sequence: 9_913)
+    topic = creative.topics.create!(name: "Topic", user: @user)
+    legacy_comment = Comment.create!(creative: creative, user: users(:two), content: "legacy")
+    legacy_comment.update_column(:topic_id, nil)
+    topic_comment = Comment.create!(creative: creative, topic: topic, user: users(:two), content: "topic")
+
+    get creative_comments_path(creative)
+
+    assert_response :success
+    assert_equal topic.id.to_s, response.headers["X-Rendered-Topic-Ids"]
+    assert_equal(
+      { "_legacy" => legacy_comment.id, topic.id.to_s => topic_comment.id },
+      JSON.parse(response.headers["X-Rendered-Topic-Watermarks"])
+    )
   end
 
   test "topic view hides topic links and filters comments" do
@@ -1045,7 +1362,9 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, data["can_comment"]
     assert_equal true, data["has_access"]
     assert_kind_of Array, data["users"]
-    assert data["users"].any? { |u| u["id"] == @user.id }
+    participant = data["users"].find { |u| u["id"] == @user.id }
+    assert_not_nil participant
+    assert_equal user_path(@user), participant["profile_url"]
   end
 
   test "participants returns correct permission flags for non-admin shared user" do

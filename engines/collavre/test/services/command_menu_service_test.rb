@@ -118,10 +118,6 @@ module Collavre
       topic_item = items.find { |i| i[:name] == "topic" }
       agent_field = topic_item[:input_schema].find { |p| p[:name] == "agent_name" }
       assert_equal "mention", agent_field[:format], "topic agent_name should have mention format"
-
-      work_item = items.find { |i| i[:name] == "work" }
-      work_agent = work_item[:input_schema].find { |p| p[:name] == "agent_name" }
-      assert_equal "mention", work_agent[:format], "work agent_name should have mention format"
     end
 
     test "creative command has no input_schema" do

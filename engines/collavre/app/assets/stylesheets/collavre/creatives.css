@@ -334,64 +334,85 @@ creative-tree-row.show-edit .creative-row {
     color: var(--text-muted);
 }
 
-/* Progress toggle (hover-to-complete) */
+/* Leaf creatives with binary progress are directly actionable. The checkbox and
+   the completion mark share one grid cell so the control keeps a single width
+   whichever state is showing. */
 .progress-toggle-wrap {
-    position: relative;
     cursor: pointer;
-    display: inline-flex;
+    display: inline-grid;
+    grid-template-areas: "progress-state";
     align-items: center;
-    padding-top: 4px;
+    justify-items: center;
+    min-width: 1.5em;
 }
 
-.progress-toggle-wrap .creative-progress-complete,
-.progress-toggle-wrap .creative-progress-incomplete {
-    padding-top: 0;
+.progress-toggle-wrap > * {
+    grid-area: progress-state;
 }
 
 .progress-toggle-checkbox {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
+    width: 1em;
+    height: 1em;
     margin: 0;
-    z-index: 1;
+    cursor: pointer;
+    accent-color: var(--color-brand);
+    transition: opacity 0.12s ease;
 }
 
-/* Desktop: show checkbox on row hover (same pattern as edit-btn, comments-btn) */
+/* A completed leaf shows the admin completion mark (blank by default) instead of
+   a checked box, so finished rows read as quietly as completed parent rows. */
+.progress-toggle-mark {
+    color: var(--color-brand);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-checkbox {
+    opacity: 0;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-mark {
+    opacity: 1;
+}
+
+/* Hover or keyboard focus brings the checked box back, so an accidental
+   completion is undone in place instead of through the inline editor. */
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-checkbox,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-checkbox {
+    opacity: 1;
+}
+
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-mark,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-mark {
+    opacity: 0;
+}
+
+/* Pointer devices keep a resting row quiet: the checkbox joins the row's other
+   hover-revealed actions (edit, comments) instead of standing in every row, and
+   keyboard focus reveals it for pointerless navigation. Touch devices have no
+   hover to reveal it, so there the checkbox stays visible. The wrap keeps its
+   width either way, so revealing the box never shifts the row. */
 @media (hover: hover) {
-    .progress-toggle-checkbox {
-        width: 1em;
-        height: 1em;
-        visibility: hidden;
+    .creative-row .progress-toggle-checkbox {
         opacity: 0;
-        position: absolute;
-        margin: auto;
-        pointer-events: none;
     }
 
-    .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
-    .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
-        visibility: hidden;
-    }
-
-    .creative-row:hover .progress-toggle-checkbox {
-        visibility: visible;
+    .creative-row:hover .progress-toggle-checkbox,
+    .creative-row .progress-toggle-wrap:focus-within .progress-toggle-checkbox {
         opacity: 1;
-        position: absolute;
-        inset: 0;
-        margin: auto;
-        pointer-events: auto;
-        accent-color: var(--color-brand);
+    }
+
+    .creative-row:hover .progress-toggle-wrap[data-current-progress="1"] .progress-toggle-mark,
+    .creative-row .progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-mark {
+        opacity: 0;
     }
 }
 
-/* Touch devices: always show both text and clickable area */
-@media (hover: none) {
-    .progress-toggle-checkbox {
-        opacity: 0;
-        pointer-events: auto;
+@media (prefers-reduced-motion: reduce) {
+    .progress-toggle-checkbox,
+    .progress-toggle-mark {
+        transition: none;
     }
 }
 
@@ -1012,6 +1033,105 @@ creative-tree-row.is-being-edited .creative-tree {
     display: contents;
 }
 
+.cron-badge-wrapper {
+    display: inline-flex;
+    position: relative;
+}
+
+.creative-row-end > .progress-toggle-wrap,
+.creative-row-end > .cron-badge-wrapper {
+    align-self: center;
+}
+
+.creative-cron-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: var(--space-1);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-round, 9999px);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--text-0);
+    white-space: nowrap;
+    border: 0;
+    cursor: pointer;
+    line-height: 1.5;
+}
+
+.popup-menu.cron-badge-popup {
+    width: min(360px, calc(100vw - 8px));
+    max-height: min(480px, calc(100vh - 8px));
+    padding: var(--space-3);
+    overflow-y: auto;
+    cursor: default;
+    color: var(--text-primary);
+    white-space: normal;
+}
+
+.cron-badge-popup-title,
+.cron-task,
+.cron-task-field,
+.cron-task-label,
+.cron-task-message {
+    display: block;
+}
+
+.cron-badge-popup-title {
+    margin-bottom: var(--space-2);
+    font-size: var(--text-1);
+}
+
+.cron-task {
+    padding: var(--space-2) 0;
+    border-top: var(--border-1) solid var(--border-muted);
+}
+
+.cron-task:first-of-type {
+    border-top: 0;
+}
+
+.cron-task-field {
+    margin-bottom: var(--space-2);
+}
+
+.cron-task-label {
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-0);
+    font-weight: var(--weight-semibold);
+}
+
+.cron-task code,
+.cron-task time,
+.cron-task-message {
+    font-size: var(--text-0);
+}
+
+.cron-task-message {
+    max-height: 8em;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.cron-task-delete {
+    display: inline-flex;
+    justify-content: center;
+    width: 100%;
+    padding: var(--space-2);
+    border: var(--border-1) solid var(--color-danger);
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--color-danger);
+    cursor: pointer;
+}
+
+.cron-task-delete:hover,
+.cron-task-delete:focus-visible {
+    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
 /* ─── Bundle drag image (shared by creatives + comments) ─── */
 
 .drag-bundle-image {
@@ -1089,11 +1209,25 @@ creative-tree-row.is-being-edited .creative-tree {
     padding: var(--space-7) var(--space-3) var(--space-8);
 }
 
+/* The disc is painted by a gradient rather than by a border-radius background
+ * on purpose. Some Android devices (reproduced on a Galaxy S24 / Android 16,
+ * screenshot measured pixel by pixel) draw the *last* corner of a rounded-rect
+ * background fill — bottom-left — as the straight chord of its arc instead of
+ * the arc, which reads as a folded-over corner. It is the fill only; rounded
+ * borders on the same page come out correct. It is also independent of the
+ * radius value: `1e5px`, `9999px` and `50%` all resolve to the identical used
+ * radius (exactly 28 for this 56px box), so swapping the radius cannot help.
+ * A gradient never asks the rasteriser for a rounded rect in the first place.
+ *
+ * So: no border-radius on this rule. Putting one back reinstates the rounded
+ * background clip, and the artifact with it.
+ */
 .creative-empty-state-icon {
     width: 56px;
     height: 56px;
-    border-radius: var(--radius-round);
-    background: var(--surface-btn);
+    background: radial-gradient(circle closest-side,
+                                var(--surface-btn) calc(100% - 0.5px),
+                                transparent 100%);
     display: flex;
     align-items: center;
     justify-content: center;

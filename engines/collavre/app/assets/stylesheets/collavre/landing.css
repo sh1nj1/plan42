@@ -707,6 +707,20 @@ body.dark-mode .landing-shot-dark { display: block; }
 }
 
 .feature-guide-back {
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
   margin-top: var(--space-8);
+}
+
+/* On the hub this row carries two exits for a signed-in reader, and the one
+   that leads back into the app is the one that matters — on the desktop shell,
+   whose single webview has no back button, it is the only way out of the guide.
+   It takes the active colour to sit above the ghost beside it without becoming
+   a second filled button competing with the call to action below. */
+.feature-guide-back .feature-guide-back-to-app {
+  color: var(--color-active);
+  border-color: var(--color-active);
 }

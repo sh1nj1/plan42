@@ -32,9 +32,6 @@ module Collavre
         existing = User.find_by(email: email)
         return verified_agent(existing) if existing
 
-        # routing_expression: nil so the new ai_user is not matchable until the
-        # client claims the per-agent stream via AgentChannel. See the comment on
-        # verified_agent.
         User.create!(
           email: email,
           name: "Claude Channel (#{agent_name})",
@@ -42,8 +39,7 @@ module Collavre
           llm_vendor: "anthropic",
           llm_model: "claude-code",
           created_by_id: @user.id,
-          searchable: false,
-          routing_expression: nil
+          searchable: false
         )
       rescue ActiveRecord::RecordNotUnique
         # A concurrent registration for the same (user, agent_name) won the
@@ -92,9 +88,9 @@ module Collavre
       end
 
       # Returns the agent only when it is the current user's own Claude Channel
-      # agent; nil otherwise (the caller renders :conflict). Routing activation
+      # agent; nil otherwise (the caller renders :conflict). Presence creation
       # stays deferred to AgentChannel#subscribe_to_agent_stream so the agent
-      # becomes matchable only once a WebSocket subscriber exists for
+      # becomes ambiently routable only once a WebSocket subscriber exists for
       # agent:user:<id> — otherwise comments matched between register returning
       # and the client's subsequent cable subscribe would broadcast into an empty
       # stream, stranding delegated tasks until stuck recovery.

@@ -77,6 +77,7 @@ module CollavreGithub
       creative_retrieval_service
       creative_batch_service
       pr_monitor
+      pr_state_set
     ].freeze
 
     def self.call

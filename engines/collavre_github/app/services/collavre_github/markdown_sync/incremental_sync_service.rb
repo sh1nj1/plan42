@@ -184,8 +184,11 @@ module CollavreGithub
               is_dir = path.end_with?("/") || path == ""
               [ is_dir ? 0 : 1, c.description.to_s.downcase ]
             end
-            sorted.each_with_index do |c, idx|
-              c.update_column(:sequence, idx) if c.sequence != idx
+            changes = sorted.each_with_index.filter_map do |creative, index|
+              [ creative, index ] if creative.sequence != index
+            end
+            Collavre::Creatives::History.record_bulk(changes.map(&:first), operation: "reorder") do
+              changes.each { |creative, index| creative.update_column(:sequence, index) }
             end
           end
         end

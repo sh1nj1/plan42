@@ -285,7 +285,7 @@ module Collavre
           key: :home,
           label: "app.home",
           type: :button,
-          path: -> { main_app.root_path },
+          path: -> { home_navigation_path }, html_class: "home-nav-button",
           priority: 110
         )
 

@@ -73,7 +73,12 @@ module Collavre
         # creator and execute with that person's workspace credentials.
         payload[:workspace_user_id] = @workspace_user&.id
 
-        SystemEvents::Dispatcher.dispatch("comment_created", payload)
+        SystemEvents::Dispatcher.dispatch(
+          "comment_created",
+          payload,
+          source: "a2a",
+          parent: SystemEvents::Envelope.in(@context)
+        )
       end
     end
   end

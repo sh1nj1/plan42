@@ -1,5 +1,8 @@
 ---
 en:
+  time:
+    formats:
+      collavre_users_joined_at: "%b %-d, %Y %H:%M"
   collavre:
     users:
       app_header:
@@ -136,20 +139,6 @@ en:
         en: English
         ko: Korean
       timezone: Timezone
-      typo_correction:
-        legend: Typo correction
-        manage: Typo correction settings
-        description: Automatically suggest and fix typos as you type. Suggestions run only when both the typing device and the input location below are enabled.
-        enabled: Enable typo correction
-        threshold: Auto-apply threshold
-        threshold_hint: Edits at or above this confidence (0-100) are applied automatically; lower-confidence edits are only suggested.
-        device_legend: Typing devices
-        on_voice: Voice input
-        on_soft_keyboard: On-screen (soft) keyboard
-        on_physical_keyboard: Physical keyboard (Bluetooth/wired)
-        location_legend: Input locations
-        in_chat: Chat message input
-        in_editor: Creative editor
       profile_updated: Profile updated successfully.
       avatar_updated: Avatar updated successfully.
       password_updated: Password updated successfully.
@@ -190,6 +179,7 @@ en:
         avatar: Avatar
         name: Name
         email: Email
+        joined_at: Joined
         last_login_at: Last login
         last_login_unknown: Never
         push_token: Push token
@@ -200,6 +190,11 @@ en:
         actions: Actions
         current_user: This is you
         system_admin: System admin
+      pagination:
+        label: User list pages
+        prev: Previous
+        next: Next
+        page_info: Page %{current} of %{total}
     user_mailer:
       email_verification:
         subject: Verify your email

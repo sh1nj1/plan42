@@ -15,12 +15,6 @@ export function get(id) {
   }).then((response) => response.json())
 }
 
-export function parentSuggestions(id) {
-  return csrfFetch(`/creatives/${id}/parent_suggestions.json`, {
-    headers: JSON_HEADERS,
-  }).then((response) => response.json())
-}
-
 export function loadChildren(url) {
   return csrfFetch(url, { headers: JSON_HEADERS }).then((response) => response.json())
 }
@@ -127,7 +121,6 @@ export function updateMetadata(id, data) {
 
 const creativesApi = {
   get,
-  parentSuggestions,
   loadChildren,
   browse,
   search,

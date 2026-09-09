@@ -1,7 +1,7 @@
 module Collavre
   module Creatives
     # Compact markdown tree formatter for AI Agent consumption.
-    # Used by: creative_retrieval_service, GeminiParentRecommender, Agent context injection.
+    # Used by: creative_retrieval_service and agent context injection.
     #
     # Output format (header declared once, rows are values only):
     #   <!-- format: [id] description (progress%) -->
@@ -67,7 +67,6 @@ module Collavre
         if @use_permissions
           node.linked_children
         else
-          # When children are pre-set on association target (e.g. GeminiParentRecommender)
           node.children
         end
       end

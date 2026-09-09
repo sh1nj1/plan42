@@ -7,19 +7,14 @@ const CREATIVE_CLICK_EVENT = 'creative-comments-click'
 const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
 const LONG_PRESS_MS = 500
 
-// A collapsed docked chat shrinks to a 3rem rail where the close button is the
-// only visible control, so it acts as the expand affordance and shows a chevron
-// instead of the close glyph. Matched to the tree chevrons
-// (link_creative_controller.js) so the affordance reads the same everywhere.
-const EXPAND_CHEVRON =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15 6L9 12L15 18"/></svg>'
-
 export default class extends Controller {
   static targets = [
     'title',
     'list',
     'form',
     'closeButton',
+    'closeIcon',
+    'expandDockedIcon',
     'leftHandle',
     'rightHandle',
     'fullscreenButton',
@@ -248,7 +243,7 @@ export default class extends Controller {
           // subscriptions survive.
           this.expandDocked()
         } else if (highlightId) {
-          this.open(button, { creativeId, highlightId })
+          this.reloadDockedHighlight(creativeId, highlightId)
         }
         return
       }
@@ -259,6 +254,26 @@ export default class extends Controller {
     const openOptions = { creativeId }
     if (highlightId) openOptions.highlightId = highlightId
     this.open(button, openOptions)
+  }
+
+  reloadDockedHighlight(creativeId, highlightId) {
+    this.openGeneration += 1
+    const listController = this.listController
+    // This direct reload supersedes any full open that is still waiting for
+    // topics. That open will stop at its generation check, so release the
+    // suppression it installed before starting the replacement highlight load.
+    if (listController) listController.suppressTopicChangeLoad = false
+    const existingComment = document.getElementById(`comment_${highlightId}`)
+    if (existingComment && listController?.listTarget?.contains(existingComment)) {
+      listController.highlightComment(highlightId)
+      return
+    }
+
+    listController?.onPopupOpened({
+      creativeId,
+      highlightId,
+      topicId: this.topicsController?.currentTopicId,
+    })
   }
 
   resetDockedToEmpty() {
@@ -415,6 +430,13 @@ export default class extends Controller {
       this.formController.currentTopicId = ''
       this.formController._mainTopicId = null
     }
+    // Switching creatives reuses the context controller. Clear its previous
+    // creative synchronously so a slow topic load cannot leave stale context
+    // controls interactive under the new creative title.
+    this.contextsController?.onChatWillOpen?.({ creativeId })
+    // Participant rows can insert mentions, so clear them before the same topic
+    // await rather than leaving the previous creative's popup interactive.
+    this.presenceController?.onChatWillOpen?.({ creativeId })
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID
@@ -668,7 +690,8 @@ export default class extends Controller {
 
     if (!this.isDocked()) {
       const label = this.element.dataset.closeLabel || ''
-      this.closeButtonTarget.textContent = '×'
+      this.closeIconTarget.style.display = ''
+      this.expandDockedIconTarget.style.display = 'none'
       this.closeButtonTarget.setAttribute('aria-label', label)
       this.closeButtonTarget.title = label
       return
@@ -678,11 +701,8 @@ export default class extends Controller {
     const label = collapsed
       ? (this.element.dataset.expandDockedLabel || '')
       : (this.element.dataset.collapseDockedLabel || '')
-    if (collapsed) {
-      this.closeButtonTarget.innerHTML = EXPAND_CHEVRON
-    } else {
-      this.closeButtonTarget.textContent = '×'
-    }
+    this.closeIconTarget.style.display = collapsed ? 'none' : ''
+    this.expandDockedIconTarget.style.display = collapsed ? '' : 'none'
     this.closeButtonTarget.setAttribute('aria-label', label)
     this.closeButtonTarget.title = label
   }
@@ -785,7 +805,7 @@ export default class extends Controller {
       this.touchStartY = null
       return
     }
-    if (event.target.closest('#comments-list') || event.target.closest('.chat-nav-dropdown')) {
+    if (event.target.closest('#comments-list, .chat-nav-dropdown, .common-popup')) {
       this.touchStartY = null
     } else {
       this.touchStartY = event.touches[0].clientY
@@ -1170,7 +1190,15 @@ export default class extends Controller {
       el.style.width = `${animWidth}px`
       el.style.height = `${animHeight}px`
 
+      let cleanupTimer = null
+      let cleanedUp = false
       const cleanup = () => {
+        if (cleanedUp) return
+        cleanedUp = true
+        if (cleanupTimer !== null) {
+          clearTimeout(cleanupTimer)
+          cleanupTimer = null
+        }
         el.removeEventListener('transitionend', cleanup)
         // Popup is always position: fixed — just apply final coords
         el.style.transition = 'none'
@@ -1211,7 +1239,7 @@ export default class extends Controller {
         this.topicsController?.scrollToActiveTopic()
       }
       el.addEventListener('transitionend', cleanup, { once: true })
-      setTimeout(cleanup, 300)
+      cleanupTimer = setTimeout(cleanup, 300)
 
       // Update URL — append open_comments=true so the popup stays open on refresh
       let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)

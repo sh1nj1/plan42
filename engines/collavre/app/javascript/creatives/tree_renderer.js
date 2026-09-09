@@ -28,8 +28,64 @@ function syncProgressHtmlFromDom(row) {
   }
 }
 
+export function updateProgressHtml(html, progress, displayText) {
+  const complete = Number(progress) === 1
+  const template = document.createElement('template')
+  template.innerHTML = html
+
+  const checkbox = template.content.querySelector('input.progress-toggle-checkbox')
+  if (checkbox) {
+    checkbox.toggleAttribute('checked', complete)
+    if (complete) checkbox.setAttribute('checked', 'checked')
+
+    const toggle = template.content.querySelector('[data-progress-toggle="true"]')
+    if (toggle) {
+      const label = complete ? toggle.dataset.markIncomplete : toggle.dataset.markComplete
+      toggle.dataset.currentProgress = String(progress)
+      toggle.dataset.newProgress = complete ? '0' : '1'
+      if (label) {
+        toggle.title = label
+        checkbox.setAttribute('aria-label', label)
+      }
+    }
+    return template.innerHTML
+  }
+
+  const progressElement = template.content.querySelector(
+    '.creative-progress-complete, .creative-progress-incomplete'
+  )
+  if (!progressElement) return html
+
+  progressElement.textContent = displayText
+  progressElement.classList.toggle('creative-progress-complete', complete)
+  progressElement.classList.toggle('creative-progress-incomplete', !complete)
+  return template.innerHTML
+}
+
+export function replaceProgressControl(html, controlHtml) {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const replacementTemplate = document.createElement('template')
+  replacementTemplate.innerHTML = controlHtml
+
+  const currentControl = template.content.querySelector(
+    '[data-progress-toggle="true"], .creative-progress-complete, .creative-progress-incomplete'
+  )
+  const replacementControl = replacementTemplate.content.querySelector(
+    '[data-progress-toggle="true"], .creative-progress-complete, .creative-progress-incomplete'
+  )
+  if (!currentControl || !replacementControl) return html
+
+  currentControl.replaceWith(replacementControl.cloneNode(true))
+  return template.innerHTML
+}
+
 function applyRowProperties(row, node) {
   if (!row || !node) return
+  // Preserve Turbo-mutated child markup before accepting server-side templates.
+  // This must run first: synchronizing after assignment would overwrite a new
+  // progress control with the stale DOM from the previous render.
+  syncProgressHtmlFromDom(row)
   let dirty = false
 
   if (node.id != null && row.creativeId !== node.id) {
@@ -134,24 +190,17 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'progressValue', rawProgress)
     // Update progress percentage in existing progressHtml without replacing full HTML
     // (preserves chat badges, comment counts, etc.)
-    if (templates.progress_html == null) {
-      const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
+    if (node.progress_control_html != null) {
+      const updated = replaceProgressControl(row.progressHtml || '', node.progress_control_html)
+      if (updated !== (row.progressHtml || '')) {
+        row.progressHtml = updated
+        setDatasetValue(row, 'progressHtml', updated)
+        dirty = true
+      }
+    } else if (templates.progress_html == null) {
       let updated = row.progressHtml || ''
       if (updated) {
-        // Try regex replacement first (preserves chat buttons etc.)
-        const replaced = updated.replace(
-          /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
-          `$1${displayText}$2`
-        )
-        if (replaced !== updated) {
-          // Also update ONLY the first progress class (not chat buttons etc.)
-          updated = replaced.replace(
-            /class="creative-progress-(?:in)?complete"/,
-            `class="${cssClass}"`
-          )
-        }
-        // If regex didn't match, do NOT create fresh HTML — preserve existing progressHtml
-        // (it contains chat buttons, comment badges, etc.)
+        updated = updateProgressHtml(updated, rawProgress, displayText)
       }
       if (updated !== (row.progressHtml || '')) {
         row.progressHtml = updated
@@ -174,12 +223,6 @@ function applyRowProperties(row, node) {
   }
 
   if (dirty && typeof row.requestUpdate === 'function') {
-    // Before Lit re-renders, sync progressHtml from current DOM.
-    // Turbo Streams may have replaced badge elements directly in the DOM
-    // (e.g. comment badge count), but the Lit progressHtml string still
-    // holds the stale initial HTML. On re-render, Lit would overwrite
-    // the Turbo-updated DOM with the stale string, losing badges.
-    syncProgressHtmlFromDom(row)
     row.requestUpdate()
   }
 }

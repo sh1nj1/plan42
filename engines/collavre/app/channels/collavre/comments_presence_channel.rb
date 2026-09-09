@@ -33,8 +33,8 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   # somebody answers it, so the replayable set is unbounded and deployment-wide,
   # and every subscribe would otherwise load all of it just to keep one creative's
   # rows. tasks.creative_id is written from the same context["creative"]["id"] the
-  # payload carries (AiAgentJob#admit_or_defer!, park_waiter, WorkflowExecutor,
-  # WorkCommand), and is indexed. A row can only lose it to the FK's on_delete:
+  # payload carries (AiAgentJob#admit_or_defer!, park_waiter), and is indexed.
+  # A row can only lose it to the FK's on_delete:
   # :nullify, and a deleted creative already returns [] above.
   #
   # Ordered by id because the client appends these into a per-agent array and stops
@@ -123,8 +123,9 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     # #running_agents replays too, and reading @creative_id there would search the
     # origin for rows that only ever carried the shell's id.
     @requested_creative_id = requested.id
+    @presence_subscription_id = SecureRandom.uuid
     stream_from stream_name
-    CommentPresenceStore.add(@creative_id, current_user.id)
+    CommentPresenceStore.add(@creative_id, current_user.id, subscription_id: @presence_subscription_id)
     Comment.broadcast_badge(creative, current_user)
     broadcast_presence
     # Transmitted, not broadcast: stream_from attaches asynchronously, so a broadcast
@@ -135,14 +136,68 @@ class CommentsPresenceChannel < ApplicationCable::Channel
 
   def unsubscribed
     if @creative_id && current_user
-      CommentPresenceStore.remove(@creative_id, current_user.id)
+      CommentPresenceStore.remove(@creative_id, current_user.id, subscription_id: @presence_subscription_id)
       creative = Creative.find(@creative_id)
-      pointer = CommentReadPointer.find_or_initialize_by(user: current_user, creative: creative)
-      pointer.last_read_comment_id = creative.comments.maximum(:id)
-      pointer.save!
       Comment.broadcast_badge(creative, current_user)
       broadcast_presence
     end
+  end
+
+  # Presence is creative-wide for participant avatars, but unread suppression is
+  # topic-specific. A client reports the topic it is actively rendering so a
+  # message in another topic keeps its badge while the chat popup is open. All
+  # Messages also reports the topic snapshot rendered in its list: an active
+  # topic restored later has not yet been viewed.
+  def viewing_topic(data)
+    return unless @creative_id && current_user
+
+    topic_id = data["topic_id"] || data[:topic_id]
+    @viewing_topic_id = topic_id.present? && Topic.find_by(id: topic_id, creative_id: @creative_id)&.id
+    return if topic_id.present? && !@viewing_topic_id
+    @rendered_topic_ids = rendered_topic_ids_for(data) unless @viewing_topic_id
+    @rendered_legacy_topic = rendered_legacy_topic_for(data) unless @viewing_topic_id
+    @viewing_topic_reported = true
+
+    CommentPresenceStore.set_topic(
+      @creative_id,
+      current_user.id,
+      @viewing_topic_id,
+      subscription_id: @presence_subscription_id,
+      rendered_topic_ids: @rendered_topic_ids,
+      rendered_legacy_topic: @rendered_legacy_topic
+    )
+    Comment.broadcast_badge(Creative.find(@creative_id), current_user)
+  end
+
+  # The browser keeps this lease alive while its Action Cable subscription is
+  # healthy. If the process or connection disappears without #unsubscribed,
+  # the lease simply expires and no longer suppresses unread badges.
+  def heartbeat
+    return unless @creative_id && current_user
+
+    return if CommentPresenceStore.renew(
+      @creative_id,
+      current_user.id,
+      subscription_id: @presence_subscription_id
+    )
+
+    # A frozen browser can resume on an intact WebSocket after its cache lease
+    # expires. Recreate this live channel's membership from its last reported
+    # rendering context instead of waiting for a topic switch or resubscribe.
+    if @viewing_topic_reported
+      CommentPresenceStore.set_topic(
+        @creative_id,
+        current_user.id,
+        @viewing_topic_id,
+        subscription_id: @presence_subscription_id,
+        rendered_topic_ids: @rendered_topic_ids,
+        rendered_legacy_topic: @rendered_legacy_topic
+      )
+    else
+      CommentPresenceStore.add(@creative_id, current_user.id, subscription_id: @presence_subscription_id)
+    end
+    Comment.broadcast_badge(Creative.find(@creative_id), current_user)
+    broadcast_presence
   end
 
   def typing(data)
@@ -179,6 +234,17 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   end
 
   private
+
+  def rendered_topic_ids_for(data)
+    ids = data["rendered_topic_ids"] || data[:rendered_topic_ids]
+    return [] unless ids.is_a?(Array)
+
+    Topic.where(creative_id: @creative_id, id: ids).pluck(:id)
+  end
+
+  def rendered_legacy_topic_for(data)
+    ActiveModel::Type::Boolean.new.cast(data["rendered_legacy_topic"] || data[:rendered_legacy_topic])
+  end
 
   # Transmitted to the connection that asked, never broadcast: the stream is per
   # origin and shared by every viewer of it, so publishing one client's snapshot

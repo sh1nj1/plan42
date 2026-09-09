@@ -302,6 +302,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-workspace-tree"
     assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-token-value]"
     assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-sequence-value]"
+    assert_select "[data-controller='workspace-tree'][data-workspace-tree-partial-failure-text-value=?]",
+      I18n.t("collavre.creatives.drag_drop.partial_failure")
     assert_select "[data-controller='last-visited-creative']", count: 0
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-last-visited-creative-visit-token][data-last-visited-creative-visit-sequence]"
@@ -316,6 +318,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
   end
 
+  test "comments popup close control uses shared SVG action icons" do
+    get creatives_path(id: creatives(:root_parent))
+
+    assert_response :success
+    assert_select "#close-comments-btn.comments-popup-action.popup-close-btn" do
+      assert_select "[data-comments--popup-target='closeIcon'][aria-hidden='true'] svg.comments-popup-action-icon" do
+        assert_select "path[d='M6 6l12 12M6 18L18 6']"
+      end
+      assert_select "[data-comments--popup-target='expandDockedIcon'][aria-hidden='true'] svg.comments-popup-action-icon" do
+        assert_select "path[d='M15 6L9 12L15 18']"
+      end
+    end
+  end
+
   test "workspace breadcrumb root and ancestor links advance browser history" do
     ancestor = creatives(:unconvert_target)
     child = creatives(:unconvert_child_two)
@@ -328,10 +344,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a.creative-breadcrumb-current[href='#{creative_path(child)}'][data-turbo-action='replace'][data-turbo-prefetch='false']"
   end
 
-  test "workspace tree JSON returns collapsed branches without leaf roots" do
+  test "workspace tree JSON returns childless creatives at every expanded level" do
     branch = Creative.create!(user: users(:one), description: "Workspace branch")
     child = Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
-    Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
+    nested_leaf = Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
     leaf = Creative.create!(user: users(:one), description: "Workspace leaf")
 
     get creatives_path(format: :json, workspace_tree: 1)
@@ -340,7 +356,12 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     payload = JSON.parse(response.body)
     ids = payload.fetch("creatives").pluck("id")
     assert_includes ids, branch.id
-    refute_includes ids, leaf.id
+    assert_includes ids, leaf.id
+    refute_includes ids, nested_leaf.id
+    leaf_payload = payload.fetch("creatives").find { |node| node.fetch("id") == leaf.id }
+    assert_equal creatives_path(id: leaf.id), leaf_payload.fetch("url")
+    refute leaf_payload.fetch("has_children")
+    assert_empty leaf_payload.fetch("children")
     branch_payload = payload.fetch("creatives").find { |node| node.fetch("id") == branch.id }
     assert_equal creatives_path(id: branch.id), branch_payload.fetch("url")
     assert_equal branch.creative_snippet, branch_payload.fetch("snippet")
@@ -354,6 +375,14 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     expanded_branch = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
     assert_equal [ child.id ], expanded_branch.fetch("children").pluck("id")
+
+    get creatives_path(format: :json, workspace_tree: 1, expand: [ branch.id, child.id ])
+
+    assert_response :success
+    expanded_branch = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
+    expanded_child = expanded_branch.fetch("children").find { |node| node.fetch("id") == child.id }
+    assert_equal [ nested_leaf.id ], expanded_child.fetch("children").pluck("id")
+    refute expanded_child.fetch("children").first.fetch("has_children")
   end
 
   test "workspace tree JSON ignores invalid and excessive expansion ids" do
@@ -703,6 +732,88 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     # later reloads, so the accessible name does not switch languages mid-session.
     assert_equal I18n.t("collavre.creatives.index.loading_creatives"),
       css_select("#creatives").first["data-creatives--tree-loading-text-value"]
+  end
+
+  # The move menu's other two fields are labelled <select>s; without its own
+  # label the destination button announces only the creative it happens to hold.
+  test "index renders the move menu with a labelled destination control" do
+    get creatives_path(id: creatives(:childless_creative).id)
+
+    assert_response :success
+    assert_select "#creative-overflow-menu [data-creative-move-id]", count: 1
+    assert_select ".creative-tree-title [data-creative-move-id]", count: 0
+    assert_select "#creative-move-destination-label", text: I18n.t("collavre.dnd.destination")
+    assert_select "[data-creative-move-target='destination'][aria-labelledby=?]",
+      "creative-move-destination-label creative-move-destination"
+  end
+
+  test "index supplies localized drag and drop failure copy" do
+    get creatives_path(id: creatives(:childless_creative).id)
+
+    assert_response :success
+    assert_select "[data-creatives--drag-drop-partial-failure-text-value=?]",
+      I18n.t("collavre.creatives.drag_drop.partial_failure")
+  end
+
+  test "header move action is hidden for inaccessible and missing requested creatives" do
+    inaccessible = Creative.create!(user: users(:two), description: "Private move source")
+    assert_not inaccessible.has_permission?(users(:one), :read)
+    # The first index visit lazily creates the user's Inbox, which claims the
+    # next sequence value. Reserve an id well past it so it stays missing.
+    missing_id = Creative.maximum(:id) + 1_000
+
+    [ inaccessible.id, missing_id ].each do |id|
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path(id: id), headers: headers
+
+        assert_response :success
+        assert_not Creative.exists?(missing_id)
+        assert_select "#creative-overflow-menu [data-creative-move-id]", count: 0
+      end
+    end
+  end
+
+  test "header move action remains available on the actual root route" do
+    [ {}, { id: "" } ].each do |params|
+      get creatives_path, params: params
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+    end
+  end
+
+  test "archived parent retains a selection-only header action for active children" do
+    parent = Creative.create!(user: users(:one), description: "Archived parent", archived_at: Time.current)
+    child = Creative.create!(user: users(:one), parent: parent, description: "Active child")
+    assert_not child.archived?
+
+    [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+      get creatives_path(id: parent.id, show_archived: true), headers: headers
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+      assert_select "#creative-overflow-menu [data-creative-move-id=?]", parent.id.to_s, count: 0
+    end
+  end
+
+  test "header move capability respects registered read-only sources and their linked shells" do
+    source_type = "header_move_read_only_source"
+    Creative.register_read_only_source(source_type)
+    source = Creative.create!(user: users(:one), description: "Managed source",
+      data: { "source" => { "type" => source_type } })
+    linked = Creative.create!(user: users(:one), origin: source)
+    writable = Creative.create!(user: users(:one), description: "Writable source")
+
+    [ [ source, false ], [ linked, false ], [ writable, true ] ].each do |creative, can_move|
+      assert creative.has_permission?(users(:one), :write)
+      get creatives_path(id: creative.id)
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id=?][data-creative-move-writable=?]",
+        creative.id.to_s, can_move.to_s, count: 1
+    end
+  ensure
+    Creative.read_only_source_types.delete(source_type)
   end
 
   test "index renders an empty-state template outside the client-rendered tree" do

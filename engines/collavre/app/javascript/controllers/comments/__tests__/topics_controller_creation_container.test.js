@@ -128,6 +128,72 @@ describe('TopicsController create-button placement', () => {
     expect(document.querySelector('.add-topic-btn')).not.toBeNull()
   })
 
+  test('publishes the read-only state with History topic selection', () => {
+    const history = { id: 99, name: 'History', read_only: true }
+    controller.topics = [history]
+    controller.renderTopics([history], true, true)
+    const listener = jest.fn()
+    controller.element.addEventListener('comments--topics:change', listener)
+
+    controller.selectTopic(history.id)
+
+    expect(listener.mock.calls[0][0].detail).toMatchObject({
+      topicId: history.id,
+      readOnly: true,
+    })
+  })
+
+  test('renders the server-provided shared cron badge inside a topic', () => {
+    const cronBadge = '<span class="cron-badge-wrapper"><button class="creative-cron-badge">1</button></span>'
+
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge }], true, true)
+
+    expect(controller.listTarget.querySelector('.topic-tag[data-id="1"] .creative-cron-badge')).not.toBeNull()
+  })
+
+  test('reloads topics when a cron change is broadcast', () => {
+    const refetch = jest.fn()
+    const invalidate = jest.fn()
+    document.addEventListener('creative-sync:refetch', refetch)
+    document.addEventListener('workspace-tree:invalidate', invalidate)
+
+    controller.handleTopicMessage({ action: 'cron_changed' })
+
+    expect(controller.loadTopics).toHaveBeenCalled()
+    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    document.removeEventListener('creative-sync:refetch', refetch)
+    document.removeEventListener('workspace-tree:invalidate', invalidate)
+  })
+
+  test('reloads a cached newly created cron topic to render its badge', () => {
+    controller.topics = [{ id: 2, name: 'Scheduled topic' }]
+    controller.loadTopics.mockImplementation(() => { controller.topics = [] })
+    const renderTopics = jest.spyOn(controller, 'renderTopics')
+
+    controller.handleTopicMessage({
+      action: 'created',
+      topic: { id: 2, name: 'Scheduled topic' },
+      cron_changed: true,
+    })
+
+    expect(controller.loadTopics).toHaveBeenCalled()
+    expect(renderTopics).not.toHaveBeenCalled()
+  })
+
+  test('does not select or edit a topic when its cron badge is clicked', () => {
+    controller.currentTopicId = '1'
+    const selectTopic = jest.spyOn(controller, 'selectTopic')
+    const wrapper = document.createElement('span')
+    wrapper.className = 'cron-badge-wrapper'
+    const button = document.createElement('button')
+    wrapper.appendChild(button)
+
+    controller.select({ target: button, currentTarget: { dataset: { id: '1' } } })
+
+    expect(selectTopic).not.toHaveBeenCalled()
+  })
+
   // Alt+Left/Right chat navigation switches creatives without blurring the input,
   // so a preserved draft would otherwise be posted to the wrong creative.
   test('drops an in-progress topic name when the creative changes', () => {

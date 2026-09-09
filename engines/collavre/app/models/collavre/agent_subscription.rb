@@ -3,15 +3,15 @@
 module Collavre
   # Presence record for one live Claude Channel session subscription on the
   # per-agent ActionCable stream. The set of LIVE rows for an agent_id is the
-  # authority for whether routing_expression should be active: a human's
-  # concurrent sessions share one agent, so routing stays on while ANY session
-  # holds a live row, and only turns off when the last one is gone.
+  # authority for whether Claude Channel dispatch is active: a human's
+  # concurrent sessions share one agent, so dispatch stays on while ANY session
+  # holds a live row, and turns off when the last one is gone.
   #
   # Liveness is leased, not assumed. Rows are deleted only by
   # AgentChannel#unsubscribed, so a Puma/ActionCable crash or deploy orphans a
   # row. last_seen_at is refreshed by the channel's periodic heartbeat; a row
   # whose last_seen_at falls outside STALE_AFTER is dead — ignored by the live
-  # scope so it cannot pin routing on, and reaped opportunistically on the next
+  # scope so it cannot keep dispatch active, and reaped opportunistically on the next
   # subscribe/unsubscribe for the agent.
   class AgentSubscription < ApplicationRecord
     self.table_name = "agent_subscriptions"

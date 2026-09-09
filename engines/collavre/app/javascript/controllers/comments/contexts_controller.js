@@ -1,9 +1,16 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
+import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
+import { alertDialog } from '../../lib/utils/dialog'
 import { Controller } from "@hotwired/stimulus"
+import PopupToggleGuard from '../../lib/popup_toggle_guard'
+import { elementAnchor } from '../../lib/common_popup'
 
-const CREATIVE_MIME_TYPE = 'application/x-collavre-creative'
+const CONTEXT_LIST_MODAL_ID = 'context-list-modal'
+const SELF_CONTEXT_ID = 'self'
 
 export default class extends Controller {
-    static targets = ["list", "toggleButton"]
+    static targets = ["list", "toggleButton", "bar", "addButton", "listButton"]
 
     static ICON_CONTEXT_LINK = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
     static ICON_CONTEXT_PIN = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>'
@@ -11,48 +18,95 @@ export default class extends Controller {
     connect() {
         this.contexts = []
         this.canManage = false
+        this._activeCreativeId = null
+        this._contextLoadVersion = (this._contextLoadVersion || 0) + 1
+        this._contextSaveChain = Promise.resolve()
+        this._contextMutationLifetime = {}
+        this._contextDropNeedsRefresh = false
         this.draggingContextId = null
         this.listVisible = false
-        // External drop zone handlers are now Stimulus actions on the list target
+        this.handleContextListClose = this.handleContextListClose.bind(this)
+        this.element.addEventListener('entity-list:close', this.handleContextListClose)
+        this._registerDragDrop()
+    }
+
+    disconnect() {
+        this._contextMutationLifetime = null
+        this.dnd?.destroy()
+        this._unbindPopupDragDetection()
+        this._contextLoadVersion += 1
+        this._closeContextListPopup()
+        this.element.removeEventListener('entity-list:close', this.handleContextListClose)
     }
 
     get creativeId() {
         return this.element.closest('#comments-popup')?.dataset?.creativeId
     }
 
+    onChatWillOpen({ creativeId }) {
+        if (String(creativeId) !== String(this._activeCreativeId)) {
+            this._resetContextState()
+            this._activeCreativeId = creativeId
+        }
+    }
+
     async onPopupOpened({ creativeId }) {
+	this.onChatWillOpen({ creativeId })
         this._hasBeenManuallyToggled = false
         this.listVisible = false
         this._updateListVisibility()
-        await this.loadContexts()
+        await this.loadContexts(creativeId)
         this._bindPopupDragDetection()
     }
 
     onPopupClosed() {
-        this.contexts = []
-        this.canManage = false
-        if (this.hasListTarget) {
-            this.listTarget.innerHTML = ''
-        }
+        this._activeCreativeId = null
+        this._resetContextState()
         this._unbindPopupDragDetection()
     }
 
-    async loadContexts() {
-        const creativeId = this.creativeId
+    _resetContextState() {
+        this._contextMutationLifetime = {}
+        this._contextDropNeedsRefresh = false
+        this._contextLoadVersion += 1
+        this._closeContextListPopup()
+        this.contexts = []
+        this.canManage = false
+        this._selfContextDisabled = false
+	this.listVisible = false
+        if (this.hasListTarget) {
+            this.listTarget.innerHTML = ''
+        }
+	this._updateListVisibility()
+	if (this.hasToggleButtonTarget) this.toggleButtonTarget.style.display = 'none'
+        if (this.hasAddButtonTarget) this.addButtonTarget.style.display = 'none'
+    }
+
+    async loadContexts(creativeId = this.creativeId) {
         if (!creativeId) return
+        const loadVersion = ++this._contextLoadVersion
 
         try {
             const response = await fetch(`/creatives/${creativeId}/contexts`)
             if (response.ok) {
                 const data = await response.json()
+                if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
                 this.contexts = data.contexts || []
                 this.canManage = data.can_manage || false
                 this._selfContextDisabled = data.disabled_self_context || false
                 this.renderContexts()
+                this._contextDropNeedsRefresh = false
+                return true
             }
         } catch (e) {
+            if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
             console.error("Failed to load contexts", e)
         }
+        return false
+    }
+
+    _isCurrentContextLoad(loadVersion, creativeId) {
+        return loadVersion === this._contextLoadVersion && String(creativeId) === String(this.creativeId)
     }
 
     toggleVisibility() {
@@ -63,12 +117,18 @@ export default class extends Controller {
 
     _updateListVisibility() {
         if (!this.hasListTarget) return
-        this.listTarget.style.display = this.listVisible ? '' : 'none'
+        // The pinned add/list buttons live in the bar alongside the scrolling
+        // chips, so visibility is a property of the bar, not of the chip list.
+        this._visibilityElement.style.display = this.listVisible ? '' : 'none'
 
         // Update toggle button active state
         if (this.hasToggleButtonTarget) {
             this.toggleButtonTarget.classList.toggle('context-toggle-active', this.listVisible)
         }
+    }
+
+    get _visibilityElement() {
+        return this.hasBarTarget ? this.barTarget : this.listTarget
     }
 
     _updateToggleButton() {
@@ -102,15 +162,6 @@ export default class extends Controller {
         if (!this.hasListTarget) return
 
         this._updateToggleButton()
-        // Drop zone is handled by Stimulus data-action on the list element
-
-        const dragActions = this.canManage
-            ? 'dragstart->comments--contexts#handleDragStart dragend->comments--contexts#handleDragEnd'
-            : ''
-        const reorderActions = this.canManage
-            ? 'dragover->comments--contexts#handleReorderDragOver dragleave->comments--contexts#handleReorderDragLeave drop->comments--contexts#handleReorderDrop'
-            : ''
-
         let html = ''
 
         // Current creative self-context toggle (always first)
@@ -129,7 +180,7 @@ export default class extends Controller {
             const draggable = this.canManage && !ctx.inherited ? 'draggable="true"' : ''
 
             html += `<span class="context-chip ${disabledClass} ${inheritedClass}" ${draggable}
-                          data-action="click->comments--contexts#toggleContext ${dragActions} ${reorderActions}"
+                          data-action="click->comments--contexts#toggleContext"
                           data-context-id="${ctx.id}"
                           title="${ctx.inherited ? this.inheritedLabel : ''}">
                         ${this.constructor.ICON_CONTEXT_LINK} ${this._escapeHtml(ctx.description)}`
@@ -143,11 +194,148 @@ export default class extends Controller {
             html += `</span>`
         })
 
-        if (this.canManage) {
-            html += `<button class="add-context-btn" data-action="click->comments--contexts#addContext">+</button>`
+        this.listTarget.innerHTML = html
+        this._updateActionButtons()
+    }
+
+    _updateActionButtons() {
+        if (this.hasAddButtonTarget) {
+            this.addButtonTarget.style.display = this.canManage ? '' : 'none'
+        }
+        this.refreshOpenContextListPopup()
+    }
+
+    // --- Context list popup (mirrors the topic list button) ---
+    get contextListToggleGuard() {
+        this._contextListToggleGuard ||= new PopupToggleGuard()
+        return this._contextListToggleGuard
+    }
+
+    prepareContextListToggle(event) {
+        this.contextListToggleGuard.prepare(event, Boolean(this._contextListPopup()?.popup?.isOpen()))
+    }
+
+    finishContextListToggle(event) {
+        this.contextListToggleGuard.finish(event)
+    }
+
+    cancelContextListToggle(event = {}) {
+        this.contextListToggleGuard.cancel(event)
+    }
+
+    _contextListPopup() {
+        const modal = document.getElementById(CONTEXT_LIST_MODAL_ID)
+        return modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+    }
+
+    _closeContextListPopup() {
+        const modal = this.element.querySelector(`#${CONTEXT_LIST_MODAL_ID}`)
+        const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+        popup?.close()
+        modal?.remove()
+        this._contextListToggleGuard?.cancel()
+        this.setContextListButtonExpanded(false)
+    }
+
+    openContextListPopup(event) {
+        if (this.contextListToggleGuard.consume()) return
+
+        const anchor = elementAnchor(event.currentTarget)
+
+        const openWith = (popup) => {
+            popup.openForItems(
+                this.contextListItems(),
+                anchor,
+                (item) => this.selectContextListItem(item),
+                this.element
+            )
+            this.setContextListButtonExpanded(true)
         }
 
-        this.listTarget.innerHTML = html
+        let modal = document.getElementById(CONTEXT_LIST_MODAL_ID)
+        if (modal) {
+            const popup = this._contextListPopup()
+            if (popup?.popup?.isOpen()) {
+                popup.close()
+                this.setContextListButtonExpanded(false)
+            } else if (popup) {
+                openWith(popup)
+            }
+            return
+        }
+
+        modal = document.createElement('div')
+        modal.id = CONTEXT_LIST_MODAL_ID
+        modal.className = 'common-popup'
+        modal.style.display = 'none'
+        modal.dataset.controller = 'entity-list'
+        modal.dataset.closeLabel = this.element.dataset.closeLabel || ''
+        modal.innerHTML = `
+          <button type="button" class="popup-close-btn" data-entity-list-target="close">&times;</button>
+          <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+            data-entity-list-target="input">
+          <ul class="common-popup-list" data-popup-list data-entity-list-target="list"></ul>
+        `
+        modal.querySelector('input').placeholder = this.element.dataset.contextSearchPlaceholderText || 'Search contexts...'
+        // Caged inside the chat box, like the topic list popup.
+        this.element.appendChild(modal)
+
+        requestAnimationFrame(() => {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+            if (popup) openWith(popup)
+            else console.error('entity-list controller not found after creation')
+        })
+    }
+
+    contextListItems() {
+        const items = [{
+            id: SELF_CONTEXT_ID,
+            label: this.currentCreativeSnippet || 'Self',
+            iconKey: 'pin',
+            muted: this.selfContextDisabled,
+            selected: !this.selfContextDisabled,
+            actionable: this.canManage,
+            statusLabel: this.selfContextDisabled ? this.disabledContextLabel : this.enabledContextLabel
+        }]
+
+        this.contexts.forEach(ctx => items.push({
+            id: ctx.id,
+            label: ctx.description,
+            iconKey: 'context',
+            muted: Boolean(ctx.disabled),
+            selected: !ctx.disabled,
+            actionable: this.canManage,
+            statusLabel: ctx.disabled ? this.disabledContextLabel : this.enabledContextLabel,
+            badge: ctx.inherited ? this.inheritedLabel : null
+        }))
+
+        return items
+    }
+
+    // Selecting mirrors clicking the chip: it toggles the context on or off.
+    // Returning true keeps the popup open so several can be toggled in a row.
+    selectContextListItem(item) {
+        if (!this.canManage) return true
+        if (String(item.id) === SELF_CONTEXT_ID) this.toggleSelfContext()
+        else this.toggleContextById(item.id)
+        return true
+    }
+
+    refreshOpenContextListPopup() {
+        const modal = this.element.querySelector(`#${CONTEXT_LIST_MODAL_ID}`)
+        const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+        if (popup?.popup?.isOpen()) popup.updateItems(this.contextListItems())
+    }
+
+    handleContextListClose(event) {
+        if (event.target?.id !== CONTEXT_LIST_MODAL_ID) return
+        this.setContextListButtonExpanded(false)
+    }
+
+    setContextListButtonExpanded(expanded) {
+        if (this.hasListButtonTarget) {
+            this.listButtonTarget.setAttribute('aria-expanded', String(expanded))
+        }
     }
 
     get inheritedLabel() {
@@ -162,6 +350,14 @@ export default class extends Controller {
         return this.listTarget.dataset.navigateLabel || 'Go to creative'
     }
 
+    get enabledContextLabel() {
+        return this.element.dataset.contextEnabledText || 'Enabled'
+    }
+
+    get disabledContextLabel() {
+        return this.element.dataset.contextDisabledText || 'Disabled'
+    }
+
     get currentCreativeSnippet() {
         const popup = this.element.closest('#comments-popup')
         return popup?.querySelector('#comments-popup-title')?.textContent?.trim()
@@ -172,6 +368,7 @@ export default class extends Controller {
     }
 
     toggleSelfContext(event) {
+        if (!this.canManage) return
         this._selfContextDisabled = !this._selfContextDisabled
         this.renderContexts()
         this._saveSelfContextState()
@@ -191,10 +388,15 @@ export default class extends Controller {
     toggleContext(event) {
         if (event.target.closest('.delete-context-btn') || event.target.closest('.navigate-context-btn')) return
 
-        const contextId = parseInt(event.currentTarget.dataset.contextId)
-        if (!contextId) return
+        this.toggleContextById(event.currentTarget.dataset.contextId)
+    }
 
-        const ctx = this.contexts.find(c => c.id === contextId)
+    toggleContextById(contextId) {
+        if (!this.canManage) return
+        const id = parseInt(contextId)
+        if (!id) return
+
+        const ctx = this.contexts.find(c => c.id === id)
         if (!ctx) return
 
         ctx.disabled = !ctx.disabled
@@ -202,16 +404,16 @@ export default class extends Controller {
         this._saveDisabledState()
     }
 
-    async removeContext(event) {
+    removeContext(event) {
         event.stopPropagation()
         const contextId = parseInt(event.currentTarget.dataset.contextId)
-        if (!contextId) return
+        if (!contextId) return Promise.resolve()
 
-        const ownContexts = this.contexts.filter(c => !c.inherited)
-        const newIds = ownContexts.filter(c => c.id !== contextId).map(c => c.id)
-
-        await this._updateContextIds(newIds)
-        await this.loadContexts()
+        return this._enqueueContextMutation(() => {
+            const ownIds = this._ownContextIds()
+            if (!ownIds.includes(contextId)) return null
+            return ownIds.filter(id => id !== contextId)
+        })
     }
 
     addContext() {
@@ -226,7 +428,7 @@ export default class extends Controller {
             return
         }
 
-        const addBtn = this.listTarget.querySelector('.add-context-btn')
+        const addBtn = this.hasAddButtonTarget ? this.addButtonTarget : this.listTarget.querySelector('.add-context-btn')
         const rect = addBtn?.getBoundingClientRect() || { top: 200, left: 200, bottom: 230, right: 230 }
 
         linkController.open(rect, (selectedCreative) => {
@@ -234,111 +436,60 @@ export default class extends Controller {
         })
     }
 
-    async _addContextId(creativeId) {
+    _addContextId(creativeId) {
         // Prevent adding self as context
-        const selfId = parseInt(this.creativeId)
-        if (creativeId === selfId) return
+        const id = Number(creativeId)
+        if (!Number.isSafeInteger(id) || id <= 0 || id === Number(this.creativeId)) return Promise.resolve()
 
-        const ownContexts = this.contexts.filter(c => !c.inherited)
-        const existingIds = ownContexts.map(c => c.id)
-
-        if (existingIds.includes(creativeId)) return
-        // Also check inherited
-        if (this.contexts.some(c => c.id === creativeId)) return
-
-        const newIds = [...existingIds, creativeId]
-        await this._updateContextIds(newIds)
-        await this.loadContexts()
-    }
-
-    // --- Drag & Drop for reordering ---
-    handleDragStart(event) {
-        const chipEl = event.currentTarget
-        const contextId = chipEl.dataset.contextId
-        if (!contextId) { event.preventDefault(); return }
-
-        this.draggingContextId = contextId
-        event.dataTransfer.setData('application/x-context-id', contextId)
-        event.dataTransfer.effectAllowed = 'move'
-
-        requestAnimationFrame(() => {
-            chipEl.classList.add('context-dragging')
+        return this._enqueueContextMutation(() => {
+            // Direct and inherited contexts are both duplicates for a new addition.
+            if (this.contexts.some(context => Number(context.id) === id)) return null
+            return [...this._ownContextIds(), id]
         })
     }
 
-    handleDragEnd(event) {
-        this.draggingContextId = null
-        event.currentTarget.classList.remove('context-dragging')
-        this.listTarget.querySelectorAll('.context-chip').forEach(el => {
-            el.classList.remove('context-drag-over-left', 'context-drag-over-right')
+    _registerDragDrop() {
+        this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
+        const selector = '.context-chip[draggable="true"]'
+        this.dnd.registerDragSource({ selector,
+            onDragStart: ({ el, event }) => {
+                this.draggingContextId = el.dataset.contextId
+                writeDragData(event.dataTransfer, { kind: 'context', ids: [this.draggingContextId], payload: {} })
+                event.dataTransfer.effectAllowed = 'move'
+                requestAnimationFrame(() => {
+                    if (this.draggingContextId === el.dataset.contextId) el.classList.add('context-dragging')
+                })
+            },
+            onDragEnd: ({ el }) => { this.draggingContextId = null; el.classList.remove('context-dragging') } })
+        this.dnd.registerDropZone({ selector, accepts: ['context'],
+            hitTest: ({ el, event }) => this.canManage && this.draggingContextId && el.dataset.contextId !== this.draggingContextId
+                ? horizontalHit({ el, event }) : null,
+            preview: previewDrop, onDrop: this.handleReorderDrop.bind(this) })
+    }
+
+    handleReorderDrop({ el, ids: draggedIds, hit }) {
+        const draggedId = Number(draggedIds[0])
+        const targetId = Number(el.dataset.contextId)
+        if (!draggedId || !targetId || draggedId === targetId) return Promise.resolve()
+
+        const insertBefore = hit === 'left'
+
+        return this._enqueueContextMutation(() => {
+            const ids = this._ownContextIds()
+            const draggedIndex = ids.indexOf(draggedId)
+            if (draggedIndex === -1 || ids.indexOf(targetId) === -1) return null
+
+            ids.splice(draggedIndex, 1)
+            let newIndex = ids.indexOf(targetId)
+            if (!insertBefore) newIndex += 1
+            ids.splice(newIndex, 0, draggedId)
+            return ids
         })
-    }
-
-    handleReorderDragOver(event) {
-        if (!event.dataTransfer.types.includes('application/x-context-id')) return
-        if (!this.draggingContextId) return
-
-        const targetEl = event.currentTarget
-        const targetId = targetEl.dataset.contextId
-        if (!targetId || targetId === this.draggingContextId) return
-        // Don't allow reorder onto inherited chips
-        const ctx = this.contexts.find(c => String(c.id) === targetId)
-        if (ctx?.inherited) return
-
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-
-        const rect = targetEl.getBoundingClientRect()
-        const midpoint = rect.left + rect.width / 2
-        const isLeft = event.clientX < midpoint
-
-        targetEl.classList.toggle('context-drag-over-left', isLeft)
-        targetEl.classList.toggle('context-drag-over-right', !isLeft)
-    }
-
-    handleReorderDragLeave(event) {
-        event.currentTarget.classList.remove('context-drag-over-left', 'context-drag-over-right')
-    }
-
-    async handleReorderDrop(event) {
-        const targetEl = event.currentTarget
-        targetEl.classList.remove('context-drag-over-left', 'context-drag-over-right')
-
-        // If this is a creative drag (not a context reorder), let it bubble to the list handler
-        if (!event.dataTransfer.types.includes('application/x-context-id')) return
-
-        event.preventDefault()
-        event.stopPropagation()
-
-        const draggedId = parseInt(event.dataTransfer.getData('application/x-context-id'))
-        const targetId = parseInt(targetEl.dataset.contextId)
-
-        if (!draggedId || !targetId || draggedId === targetId) return
-
-        const ownContexts = this.contexts.filter(c => !c.inherited)
-        const ids = ownContexts.map(c => c.id)
-
-        const draggedIndex = ids.indexOf(draggedId)
-        const targetIndex = ids.indexOf(targetId)
-        if (draggedIndex === -1 || targetIndex === -1) return
-
-        // Determine drop position
-        const rect = targetEl.getBoundingClientRect()
-        const midpoint = rect.left + rect.width / 2
-        const insertBefore = event.clientX < midpoint
-
-        ids.splice(draggedIndex, 1)
-        let newIndex = ids.indexOf(targetId)
-        if (!insertBefore) newIndex += 1
-        ids.splice(newIndex, 0, draggedId)
-
-        await this._updateContextIds(ids)
-        await this.loadContexts()
     }
 
     // --- API calls ---
     async _updateContextIds(ids) {
-        await this._patchContexts({ context_ids: ids })
+        return this._patchContexts({ context_ids: ids })
     }
 
     async _saveDisabledState() {
@@ -346,137 +497,126 @@ export default class extends Controller {
         await this._patchContexts({ disabled_context_ids: disabledIds })
     }
 
-    async _patchContexts(params) {
+    _patchContexts(params) {
         const creativeId = this.creativeId
-        if (!creativeId) return
+        if (!creativeId) return Promise.resolve()
 
+        const lifetime = this._contextMutationLifetime
+        const save = () => lifetime && lifetime === this._contextMutationLifetime
+            ? this._sendContextPatch(creativeId, params) : undefined
+        this._contextSaveChain = this._contextSaveChain.then(save, save)
+        return this._contextSaveChain
+    }
+
+    async _sendContextPatch(creativeId, params) {
         try {
             const response = await fetch(`/creatives/${creativeId}/update_contexts`, {
                 method: 'PATCH',
                 headers: {
+                    'Accept': 'application/json',
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 },
                 body: JSON.stringify(params)
             })
 
-            if (!response.ok) {
+            if (!response.ok || response.redirected || response.headers?.get('content-type')?.includes('text/html')) {
                 console.error('Failed to update contexts', params)
+                return false
             }
+            return true
         } catch (e) {
             console.error('Error updating contexts', e)
+            return false
         }
     }
 
-    // --- Auto-show context list when dragging creative over popup ---
+    // The popup is also a drop zone; the form owns creative-link insertion.
     _bindPopupDragDetection() {
         const popup = this.element.closest('#comments-popup')
         if (!popup) return
-        // Unbind any existing handlers first to prevent accumulation across opens
         this._unbindPopupDragDetection()
-        this._popupEl = popup
-        this._boundPopupDragOver = this._handlePopupDragOver.bind(this)
-        this._boundPopupDragLeave = this._handlePopupDragLeave.bind(this)
-        this._boundPopupDrop = (event) => {
-            // Skip if dropping on the comment form — let form_controller handle it
-            if (event.target.closest('#new-comment-form')) return
-            this.handleExternalDrop(event)
+        this.popupDnd = createDragDropRegistry({ root: popup, getKind: getDragKind, readData: readDragData })
+        this.popupDnd.registerDropZone({ selector: '#comments-popup', accepts: ['creative'],
+            hitTest: ({ event }) => this.canManage && !event.target.closest('#new-comment-form') ? 'into' : null,
+            preview: () => {
+                this.listVisible = true
+                this._updateListVisibility()
+                const clear = previewDrop({ el: this.listTarget, hit: 'into' })
+                return () => {
+                    clear()
+                    if (!this._hasBeenManuallyToggled && this.contexts.length === 0) {
+                        this.listVisible = false
+                        this._updateListVisibility()
+                    }
+                }
+            },
+            onDrop: ({ ids, event }) => {
+                event.stopPropagation()
+                return this._addDroppedContexts(ids)
+            } })
+    }
+
+    _addDroppedContexts(ids) {
+        return this._enqueueContextMutation(() => {
+            const selfId = Number(this.creativeId)
+            const addedIds = ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0 && id !== selfId &&
+                !this.contexts.some(context => Number(context.id) === id))
+            if (!addedIds.length) return null
+            return [...new Set([...this._ownContextIds(), ...addedIds])]
+        })
+    }
+
+    _ownContextIds() {
+        return this.contexts.filter(context => !context.inherited).map(context => Number(context.id))
+    }
+
+    // `update_contexts` replaces the complete direct-context list, so every whole-list write must
+    // build its payload inside this queue. A payload computed while an earlier write was still in
+    // flight would silently drop that write's result.
+    _enqueueContextMutation(computeIds) {
+        const creativeId = this.creativeId
+        const lifetime = this._contextMutationLifetime
+        const run = async () => {
+            if (!this._isContextMutationCurrent(creativeId, lifetime)) return
+            if (this._contextDropNeedsRefresh) {
+                const refreshed = await this.loadContexts()
+                if (!this._isContextMutationCurrent(creativeId, lifetime)) return
+                // A superseded load resolves undefined: a newer load owns the rendered list, so the
+                // write is dropped without claiming it failed. Only `false` is a real load failure.
+                if (refreshed !== true) {
+                    if (refreshed === false) alertDialog(this._contextUpdateErrorText)
+                    return
+                }
+            }
+            const ids = computeIds()
+            if (!ids) return
+            const saved = await this._updateContextIds(ids)
+            if (!this._isContextMutationCurrent(creativeId, lifetime)) return
+            this._contextDropNeedsRefresh = true
+            if (saved === false) {
+                alertDialog(this._contextUpdateErrorText)
+                return
+            }
+            const refreshed = await this.loadContexts()
+            if (this._isContextMutationCurrent(creativeId, lifetime) && refreshed === false) alertDialog(this._contextUpdateErrorText)
         }
-        popup.addEventListener('dragover', this._boundPopupDragOver)
-        popup.addEventListener('dragleave', this._boundPopupDragLeave)
-        popup.addEventListener('drop', this._boundPopupDrop)
+        this._contextMutationChain = (this._contextMutationChain || Promise.resolve()).then(run, run)
+        return this._contextMutationChain
+    }
+
+    _isContextMutationCurrent(creativeId, lifetime) {
+        return lifetime !== null && lifetime === this._contextMutationLifetime &&
+            String(this.creativeId) === String(creativeId) && this.canManage
+    }
+
+    get _contextUpdateErrorText() {
+        return this.element.dataset.contextUpdateErrorText
     }
 
     _unbindPopupDragDetection() {
-        if (!this._popupEl) return
-        this._popupEl.removeEventListener('dragover', this._boundPopupDragOver)
-        this._popupEl.removeEventListener('dragleave', this._boundPopupDragLeave)
-        this._popupEl.removeEventListener('drop', this._boundPopupDrop)
-        this._popupEl = null
-    }
-
-    _handlePopupDragOver(event) {
-        if (this._isInternalReorder(event)) return
-        if (!this._isCreativeDrag(event)) return
-        if (!this.canManage) return
-        // Skip if dragging over the comment form — let form_controller handle it
-        if (event.target.closest('#new-comment-form')) return
-
-        // Must preventDefault to allow drop on the popup
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-
-        if (!this.listVisible) {
-            // Auto-show context list when dragging a creative over the popup
-            this.listVisible = true
-            this._updateListVisibility()
-        }
-    }
-
-    _handlePopupDragLeave(event) {
-        if (!this._popupEl) return
-        // Only hide if leaving the popup entirely
-        if (this._popupEl.contains(event.relatedTarget)) return
-        if (this._hasBeenManuallyToggled) return
-
-        // Restore original state if no contexts
-        if (this.contexts.length === 0) {
-            this.listVisible = false
-            this._updateListVisibility()
-        }
-    }
-
-    // --- Drop zone for adding creatives from tree ---
-
-    _isCreativeDrag(event) {
-        return event.dataTransfer.types.includes(CREATIVE_MIME_TYPE)
-    }
-
-    _isInternalReorder(event) {
-        return event.dataTransfer.types.includes('application/x-context-id')
-    }
-
-    handleExternalDragOver(event) {
-        if (this._isInternalReorder(event)) return
-        if (!this._isCreativeDrag(event)) return
-        if (!this.canManage) return
-
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-        this.listTarget.classList.add('context-drop-active')
-    }
-
-    handleExternalDragLeave(event) {
-        // Only remove highlight if truly leaving the list area
-        if (!this.listTarget.contains(event.relatedTarget)) {
-            this.listTarget.classList.remove('context-drop-active')
-        }
-    }
-
-    async handleExternalDrop(event) {
-        if (this._isInternalReorder(event)) return
-        if (!this._isCreativeDrag(event)) return
-        if (!this.canManage) return
-
-        // Always prevent default for creative drags to avoid browser navigation
-        event.preventDefault()
-        event.stopPropagation()
-
-        this.listTarget.classList.remove('context-drop-active')
-
-        let creativeId = null
-
-        const rawData = event.dataTransfer.getData(CREATIVE_MIME_TYPE)
-        if (rawData) {
-            try {
-                const parsed = JSON.parse(rawData)
-                creativeId = parseInt(parsed.creativeId)
-            } catch (e) { /* ignore */ }
-        }
-
-        if (!creativeId) return
-
-        await this._addContextId(creativeId)
+        this.popupDnd?.destroy()
+        this.popupDnd = null
     }
 
     _escapeHtml(text) {

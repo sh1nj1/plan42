@@ -161,7 +161,6 @@ module Collavre
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
     has_many :comment_versions, class_name: "Collavre::CommentVersion", dependent: :destroy
     has_many :review_versions, class_name: "Collavre::CommentVersion", foreign_key: :review_comment_id, dependent: :nullify
-    has_many :inbox_items, class_name: "Collavre::InboxItem", dependent: :nullify
     has_many :quoting_comments, class_name: "Collavre::Comment", foreign_key: :quoted_comment_id, dependent: :destroy
     has_one :snapshot_as_result, class_name: "Collavre::CommentSnapshot", foreign_key: :result_comment_id, dependent: :nullify
     belongs_to :selected_version, class_name: "Collavre::CommentVersion", optional: true
@@ -184,7 +183,7 @@ module Collavre
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
-    before_validation :assign_main_topic, on: :create
+    include TopicMembership
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
@@ -304,17 +303,6 @@ module Collavre
         next unless was_delegated
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
-        end
-        if task.parent_task_id.present?
-          begin
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task, error_message: "Triggering comment was deleted"
-            )
-          rescue StandardError => e
-            Rails.logger.error(
-              "[Comment#cancel_pending_tasks] fail_subtask! failed for task #{task.id}: #{e.message}"
-            )
-          end
         end
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
@@ -577,7 +565,7 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
+      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback")
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \
@@ -655,14 +643,6 @@ module Collavre
         "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
         "#{e.class} #{e.message}"
       )
-    end
-
-    def assign_main_topic
-      return if topic_id.present?
-      return unless creative
-
-      fallback = user || Collavre.current_user || creative.user
-      self.topic = creative.main_topic(fallback_user: fallback)
     end
 
     def use_origin_creative

@@ -117,14 +117,14 @@ module Collavre
       end
     end
 
-    test "unsubscribe clears routing_expression on Claude Channel session agent" do
+    test "unsubscribe removes Claude Channel presence without changing its routing expression" do
       agent = User.create!(
         email: "agent-channel-unsub-test@agent.collavre.local",
         password: SecureRandom.hex(32),
         name: "Claude Session Agent",
         llm_vendor: "anthropic",
         llm_model: "claude-code",
-        routing_expression: "true",
+        routing_expression: 'event_name == "comment_created"',
         created_by_id: @user.id,
         searchable: false
       )
@@ -134,38 +134,35 @@ module Collavre
 
       unsubscribe
 
-      assert_nil agent.reload.routing_expression
+      assert_equal 'event_name == "comment_created"', agent.reload.routing_expression
+      assert_not agent.claude_channel_online?
     end
 
-    test "resubscribe restores routing_expression cleared by prior unsubscribe" do
+    test "resubscribe restores presence without changing the routing expression" do
       agent = User.create!(
         email: "agent-channel-resub-test@agent.collavre.local",
         password: SecureRandom.hex(32),
         name: "Claude Session Agent",
         llm_vendor: "anthropic",
         llm_model: "claude-code",
-        routing_expression: "true",
+        routing_expression: 'event_name == "comment_created"',
         created_by_id: @user.id,
         searchable: false
       )
       stub_connection current_user: @user
       subscribe agent_id: agent.id
       unsubscribe
-      assert_nil agent.reload.routing_expression
+      assert_not agent.claude_channel_online?
 
       stub_connection current_user: @user
       subscribe agent_id: agent.id
       assert subscription.confirmed?
 
-      assert_equal "true", agent.reload.routing_expression
+      assert agent.claude_channel_online?
+      assert_equal 'event_name == "comment_created"', agent.reload.routing_expression
     end
 
-    test "subscribe activates routing_expression on freshly-registered Claude agent" do
-      # Closes the register-before-subscribe race: register() now creates the
-      # ai_user with routing_expression=nil so the Matcher cannot select it
-      # until a real subscriber exists for agent:user:<id>. The first cable
-      # subscribe by the owner is the activation event — same code path that
-      # restores routing on reconnect.
+    test "subscribe creates presence for a freshly-registered Claude agent" do
       agent = User.create!(
         email: "agent-channel-fresh-activate-test@agent.collavre.local",
         password: SecureRandom.hex(32),
@@ -176,28 +173,29 @@ module Collavre
         created_by_id: @user.id,
         searchable: false
       )
-      assert_nil agent.routing_expression, "precondition: register left routing disabled"
+      assert_nil agent.routing_expression, "precondition: no Liquid rule configured"
 
       stub_connection current_user: @user
       subscribe agent_id: agent.id
       assert subscription.confirmed?
 
-      # stream_from must be attached BEFORE routing_expression is activated,
+      # stream_from must be attached BEFORE presence is created,
       # otherwise a comment matched in the small window between the UPDATE
       # committing and stream_from registering the subscription would
       # broadcast into a stream with no subscriber.
       assert_has_stream "agent:user:#{agent.id}"
-      assert_equal "true", agent.reload.routing_expression,
-        "first owner subscribe must activate routing_expression so dispatches resume"
+      assert agent.claude_channel_online?,
+        "first owner subscribe must make the agent routable through live presence"
+      assert_nil agent.reload.routing_expression
     end
 
-    test "late unsubscribe does not clear routing when a newer subscribe already took over" do
+    test "late unsubscribe does not remove newer subscription presence" do
       # Race: WS drops on the old connection, but ActionCable's ping-timeout
       # (default ~5s) means unsubscribed fires several seconds late. During
       # that window the MCP client reconnects → new Channel instance subscribes
-      # → routing_expression is restored and the new connection is now the
+      # → a new presence row is created and the new connection is now the
       # live subscriber. The late unsubscribed for the OLD connection must NOT
-      # clear routing — that would mark the live agent offline and stop
+      # remove the live row — that would mark the live agent offline and stop
       # dispatches until another reconnect.
       agent = User.create!(
         email: "agent-channel-late-unsub-test@agent.collavre.local",
@@ -210,11 +208,11 @@ module Collavre
         searchable: false
       )
 
-      # Old connection subscribes; routing activates; capture the old token.
+      # Old connection subscribes; capture its token.
       stub_connection current_user: @user
       subscribe agent_id: agent.id
       assert subscription.confirmed?
-      assert_equal "true", agent.reload.routing_expression
+      assert agent.claude_channel_online?
       old_token = agent.reload.routing_subscription_token
       assert old_token.present?
 
@@ -237,8 +235,8 @@ module Collavre
       stale_channel.instance_variable_set(:@subscription_token, old_token)
       stale_channel.send(:unsubscribed)
 
-      assert_equal "true", agent.reload.routing_expression,
-        "late unsubscribe from a stale connection must not clobber the live subscription"
+      assert agent.claude_channel_online?,
+        "late unsubscribe from a stale connection must not remove the live subscription"
       assert_equal new_token, agent.reload.routing_subscription_token,
         "the live connection's token must still be the registered owner"
     end
@@ -255,7 +253,6 @@ module Collavre
         name: "Claude Session Agent",
         llm_vendor: "anthropic",
         llm_model: "claude-code",
-        routing_expression: "true",
         routing_subscription_token: "old-process-a-token",
         created_by_id: @user.id,
         searchable: false
@@ -270,14 +267,15 @@ module Collavre
       # Process A's late unsubscribed: this Channel instance still holds
       # the OLD token in its instance variable. With per-process maps, A
       # would believe it still owns the slot. With the persisted ownership
-      # marker, the conditional UPDATE matches zero rows and is a no-op.
+      # marker, the stale presence deletion matches zero rows and is a no-op.
+      AgentSubscription.create!(agent_id: agent.id, token: "new-process-b-token")
       stale_channel = AgentChannel.allocate
       stale_channel.instance_variable_set(:@session_agent, agent)
       stale_channel.instance_variable_set(:@subscription_token, "old-process-a-token")
       stale_channel.send(:unsubscribed)
 
-      assert_equal "true", agent.reload.routing_expression,
-        "stale unsubscribe on process A must not clear routing for process B's live subscriber"
+      assert agent.claude_channel_online?,
+        "stale unsubscribe on process A must not remove process B's live presence"
       assert_equal "new-process-b-token", agent.routing_subscription_token,
         "process B remains the registered owner across the stale unsubscribe"
     end
@@ -289,7 +287,6 @@ module Collavre
         name: "Claude Session Agent",
         llm_vendor: "anthropic",
         llm_model: "claude-code",
-        routing_expression: "true",
         created_by_id: @user.id,
         searchable: false
       )
@@ -316,7 +313,6 @@ module Collavre
         name: "Claude Session Agent",
         llm_vendor: "anthropic",
         llm_model: "claude-code",
-        routing_expression: "true",
         routing_subscription_token: "newer-token-owns-it",
         created_by_id: @user.id,
         searchable: false
@@ -378,10 +374,10 @@ module Collavre
         "the presence row must record the session_id sent by the plugin"
     end
 
-    test "concurrent sessions: unsubscribing one keeps routing active while a sibling remains" do
+    test "concurrent sessions: unsubscribing one keeps presence active while a sibling remains" do
       # The headline multi-session fix: with the shared default agent, two
       # Claude Code sessions subscribe to the SAME agent:user:<id> stream. When
-      # one ends, its unsubscribe must NOT clear routing or cancel work for the
+      # one ends, its unsubscribe must NOT remove presence or cancel work for the
       # still-live sibling.
       agent = User.create!(
         email: "agent-channel-sibling-test@agent.collavre.local",
@@ -400,14 +396,14 @@ module Collavre
       stub_connection current_user: @user
       subscribe agent_id: agent.id
       assert subscription.confirmed?
-      assert_equal "true", agent.reload.routing_expression
+      assert agent.claude_channel_online?
 
       assert_no_enqueued_jobs(only: Collavre::CancelOfflineDelegatedTasksJob) do
         unsubscribe
       end
 
-      assert_equal "true", agent.reload.routing_expression,
-        "routing must stay active while the sibling session is still subscribed"
+      assert agent.claude_channel_online?,
+        "presence must stay active while the sibling session is still subscribed"
       assert AgentSubscription.where(agent_id: agent.id, token: "sibling-token").exists?,
         "the sibling's presence row must survive this session's unsubscribe"
     end
@@ -445,11 +441,11 @@ module Collavre
         unsubscribe
       end
 
-      assert_equal "true", agent.reload.routing_expression,
-        "routing must stay active for the still-live sibling"
+      assert agent.claude_channel_online?,
+        "presence must stay active for the still-live sibling"
     end
 
-    test "last session unsubscribe clears routing and removes the presence row" do
+    test "last session unsubscribe removes the presence row" do
       agent = User.create!(
         email: "agent-channel-last-session-test@agent.collavre.local",
         password: SecureRandom.hex(32),
@@ -466,7 +462,7 @@ module Collavre
 
       unsubscribe
 
-      assert_nil agent.reload.routing_expression
+      assert_not agent.claude_channel_online?
       assert_equal 0, AgentSubscription.where(agent_id: agent.id).count,
         "the last session's presence row must be removed on unsubscribe"
     end
@@ -491,12 +487,12 @@ module Collavre
       assert_equal "true", agent.reload.routing_expression
     end
 
-    test "last session unsubscribe clears routing even when a crash-orphaned stale sibling row remains" do
+    test "last session unsubscribe removes presence even when a crash-orphaned stale sibling row remains" do
       # Codex P2: presence rows are deleted only by unsubscribed, so a Puma/
       # ActionCable crash leaves a stale row behind. If a plain `exists?` gated
-      # routing, that orphan would keep the agent routable forever — dispatching
+      # presence, that orphan would keep the agent routable forever — dispatching
       # into a dead stream. The live scope must ignore rows past STALE_AFTER so
-      # this session, leaving cleanly, still clears routing.
+      # this session, leaving cleanly, still becomes offline.
       agent = User.create!(
         email: "agent-channel-stale-sibling-test@agent.collavre.local",
         password: SecureRandom.hex(32),
@@ -513,12 +509,12 @@ module Collavre
 
       stub_connection current_user: @user
       subscribe agent_id: agent.id
-      assert_equal "true", agent.reload.routing_expression
+      assert agent.claude_channel_online?
 
       unsubscribe
 
-      assert_nil agent.reload.routing_expression,
-        "a crash-orphaned stale sibling row must not keep routing on"
+      assert_not agent.claude_channel_online?,
+        "a crash-orphaned stale sibling row must not keep presence on"
     end
 
     test "subscribe reaps crash-orphaned stale presence rows for the agent" do

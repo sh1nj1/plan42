@@ -10,8 +10,6 @@ module Collavre
       has_many :collavre_shared_creative_shares, class_name: "Collavre::CreativeShare",
                foreign_key: :shared_by_id, dependent: :nullify, inverse_of: :shared_by
       has_many :collavre_topics, class_name: "Collavre::Topic", dependent: :destroy
-      has_many :collavre_inbox_items, class_name: "Collavre::InboxItem",
-               foreign_key: :owner_id, dependent: :destroy, inverse_of: :owner
       has_many :collavre_invitations, class_name: "Collavre::Invitation",
                foreign_key: :inviter_id, dependent: :destroy, inverse_of: :inviter
       has_many :collavre_contacts, class_name: "Collavre::Contact", dependent: :destroy

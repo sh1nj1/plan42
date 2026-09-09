@@ -6,8 +6,7 @@ Collavre::Engine.routes.draw do
   # cards. Keys come from Collavre::FeatureCardRegistry, which rejects a key this
   # constraint could not route, so the two cannot drift apart.
   get "features", to: "features#index", as: :features
-  get "features/:key", to: "features#show", as: :feature,
-      constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
+  get "features/:key", to: "features#show", as: :feature, constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
 
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
@@ -40,7 +39,6 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
-      get :typo_correction
       get :agent_connection, to: "agent_connections#show"
     end
   end
@@ -78,10 +76,6 @@ Collavre::Engine.routes.draw do
   resources :contacts, only: [ :destroy ]
   resources :devices, only: [ :create ]
 
-  resources :inbox_items, path: "inbox", only: [ :index, :update, :destroy ] do
-    get :count, on: :collection
-  end
-
   resources :user_themes, only: [ :index, :create, :destroy ] do
     member do
       post :apply
@@ -89,8 +83,6 @@ Collavre::Engine.routes.draw do
   end
 
   resources :llm_models, only: [ :destroy ]
-
-  resources :typo_corrections, only: [ :create ]
 
   resources :creative_imports, only: [ :create ]
   resources :tasks, only: [] do
@@ -102,6 +94,8 @@ Collavre::Engine.routes.draw do
     end
   end
   resources :creatives do
+    resources :crons, only: [ :destroy ], param: :key
+    post "history/:id/apply", to: "creative_change_sets#apply", as: :apply_change_set
     resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
@@ -121,8 +115,7 @@ Collavre::Engine.routes.draw do
     resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
       member do
         post :convert
-        post :approve
-        post :deny
+        %i[approve deny].each { |action| post action }
         patch :update_action
         delete :reactions, to: "comments/reactions#destroy"
         get :download_images
@@ -168,7 +161,6 @@ Collavre::Engine.routes.draw do
       post :unconvert
       patch :archive
       patch :unarchive
-      get :parent_suggestions
       get :slide_view
       get :contexts
       patch :update_contexts
@@ -179,9 +171,8 @@ Collavre::Engine.routes.draw do
 
   resources :emails, only: [ :index, :show ]
   resource :invite, only: [ :show, :create ]
-
   post "/creative_expanded_states/toggle", to: "user_creative_preferences#toggle"
-  patch "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", as: :update_last_topic
+  match "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", via: [ :post, :patch ], as: :update_last_topic
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
   post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
   delete "/notices", to: "notices#restore_all", as: :restore_notices
@@ -193,16 +184,6 @@ Collavre::Engine.routes.draw do
       post "agent/reply", to: "agents#reply"
       post "agent/notify", to: "agents#notify"
       delete "agent/:id", to: "agents#destroy"
-
-      # Mobile voice companion (Android): poll Inbox#System messages, read aloud,
-      # reply to the origin topic; a cold mic press starts work in Inbox#Main.
-      namespace :mobile do
-        post "voice_commands", to: "voice_commands#create"
-        get  "agent_events", to: "agent_events#index"
-        post "agent_events/:id/respond", to: "agent_events#respond"
-        post "agent_events/:id/read", to: "agent_events#read"
-        post "devices", to: "devices#create"
-      end
     end
   end
 

@@ -6,8 +6,6 @@
 <div class="landing">
   <section class="landing-section landing-features">
     <div class="landing-container">
-      <%= render "collavre/features/breadcrumb" %>
-
       <h1 class="landing-section-title"><%= t('collavre.features.index.title') %></h1>
       <p class="landing-section-sub"><%= t('collavre.features.index.subtitle') %></p>
 
@@ -21,6 +19,17 @@
           <% end %>
         <% end %>
       </div>
+
+      <%# The hub uses the landing layout, which carries no application navigation.
+          A signed-in reader arrived here from the "?" menu, so the way back into
+          the app has to be on the page — it is the only exit in the desktop
+          shell, whose single webview has no back button. %>
+      <p class="feature-guide-back">
+        <% if authenticated? %>
+          <%= link_to t('collavre.features.nav.back_to_app', app_name: t('app.name')), main_app.root_path, class: "landing-btn landing-btn-ghost feature-guide-back-to-app" %>
+        <% end %>
+        <%= link_to t('collavre.features.nav.back_home'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name), class: "landing-btn landing-btn-ghost" %>
+      </p>
     </div>
   </section>
 

@@ -171,6 +171,31 @@ class RootHomePathTest < ActionDispatch::IntegrationTest
     # "/" sentinel disables the redirect - middleware rewrite still applies
   end
 
+  test "home button targets the top level even when a last visited creative exists" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+
+    sign_in_as(@user, password: "password")
+    get "/creatives"
+
+    assert_response :success
+    assert_select "form[action='/creatives'] .home-nav-button", minimum: 1
+    assert_select "form[action='/'] .home-nav-button", count: 0
+  end
+
+  test "home button follows through to the top level list" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+
+    sign_in_as(@user, password: "password")
+    get "/creatives"
+    home_action = css_select("form:has(.home-nav-button)").first["action"]
+    get home_action
+
+    assert_response :success
+    assert_nil response.location
+  end
+
   test "authenticated user visiting the authenticated home directly does not loop" do
     SystemSetting.create!(key: "home_page_path_authenticated", value: "/users")
     Rails.cache.clear

@@ -39,6 +39,18 @@ module Collavre
       assert_includes I18n.t("collavre.features.index.card_more", locale: :ko), "→"
     end
 
+    test "index renders a localized home button and preserves the mount prefix" do
+      request_env = { "SCRIPT_NAME" => "/collavre" }
+
+      %i[en ko].each do |locale|
+        get "/features", params: { locale: locale }, env: request_env
+
+        assert_response :success
+        assert_select "a.landing-btn.landing-btn-ghost[href=?]", "/collavre/landing?locale=#{locale}",
+                      text: I18n.t("collavre.features.nav.back_home", locale: locale), count: 1
+      end
+    end
+
     test "index is readable without signing in" do
       get "/features"
 
@@ -103,18 +115,6 @@ module Collavre
       {
         en: [ "form-backed command", "stashes the draft", "submits the command alone", "restores the draft" ],
         ko: [ "인자 폼이 있는 명령", "초안을 잠시 보관", "명령만 따로 전송", "초안을 복원" ]
-      }.each do |locale, phrases|
-        get "/features/slash_command", params: { locale: locale }
-
-        assert_response :success
-        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
-      end
-    end
-
-    test "slash command guide describes which creatives work skips in both locales" do
-      {
-        en: [ "each eligible one", "already complete", "have an active task" ],
-        ko: [ "대상 항목", "이미 완료", "활성 task", "건너뜁니다" ]
       }.each do |locale, phrases|
         get "/features/slash_command", params: { locale: locale }
 
@@ -265,9 +265,11 @@ module Collavre
     end
 
     # The guide uses the landing layout, which carries no application navigation.
-    # A signed-in reader arrived from the "?" menu, so the breadcrumb has to offer
-    # the way back — it is the only exit in the desktop shell, whose single
-    # webview has no back button.
+    # A signed-in reader arrived from the "?" menu, so the page has to offer the
+    # way back — it is the only exit in the desktop shell, whose single webview
+    # has no back button. The hub carries it in the button row beside "Home", the
+    # guide in the breadcrumb, so the assertion names the link rather than either
+    # container.
     test "guide pages offer signed-in readers a link back into the app" do
       sign_in_as users(:one), password: "password"
 
@@ -275,7 +277,7 @@ module Collavre
         get path
 
         assert_response :success
-        assert_select ".feature-guide-breadcrumb a.feature-guide-back-to-app[href=?]", "/",
+        assert_select "a.feature-guide-back-to-app[href=?]", "/",
                       text: I18n.t("collavre.features.nav.back_to_app", app_name: I18n.t("app.name")),
                       count: 1
       end

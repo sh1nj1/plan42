@@ -56,6 +56,42 @@ describe('CommentsListController deep-linked topic resolution', () => {
     jest.clearAllMocks()
   })
 
+  test('marks a comment topic-link switch as user initiated', () => {
+    const topicsController = { selectTopic: jest.fn() }
+    const controller = buildListController({ topicsController })
+
+    controller.switchToTopic('3')
+
+    expect(topicsController.selectTopic).toHaveBeenCalledWith('3', { userInitiated: true })
+  })
+
+  test('marks topic creation from the move popup as user initiated', () => {
+    const controller = buildListController()
+    controller.selection = new Set(['comment-1'])
+    controller.clearSelection = jest.fn()
+    controller.switchToTopic = jest.fn()
+    const topicSearchController = {
+      openForCreative: jest.fn((_creativeId, _rect, onSelect) => {
+        onSelect({ id: '9', created: true })
+      }),
+    }
+    const modal = document.createElement('div')
+    modal.id = 'topic-search-modal'
+    document.body.appendChild(modal)
+    Object.defineProperty(controller, 'application', {
+      value: {
+        getControllerForElementAndIdentifier: jest.fn(() => topicSearchController),
+      },
+    })
+
+    controller.openTopicSearchPopup({
+      currentTarget: { getBoundingClientRect: () => ({}) },
+    })
+
+    expect(controller.clearSelection).toHaveBeenCalledTimes(1)
+    expect(controller.switchToTopic).toHaveBeenCalledWith('9')
+  })
+
   // updateSelectionUI only repaints chips: it neither expands the archived
   // section nor tells form_controller which conversation the reply belongs to.
   test('routes the server-resolved topic through selectTopic', async () => {
@@ -199,6 +235,47 @@ describe('CommentsListController deep-linked topic resolution', () => {
     expect(controller.currentTopicId).toBe('9')
     expect(topicsController.selectTopic).not.toHaveBeenCalled()
     expect(topicsController.setOverrideTopicId).not.toHaveBeenCalled()
+  })
+
+  test('does not retain the All Messages snapshot from a superseded load', async () => {
+    const controller = buildListController()
+    controller._loadCommentsVersion = 2
+    controller.renderedAllTopicIds = ['9']
+    controller.renderedAllTopicWatermarks = { 9: 90 }
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name) => ({
+          'X-Rendered-Topic-Ids': '1,2',
+          'X-Rendered-Topic-Watermarks': '{"1":10,"2":20}',
+        })[name] || null,
+      },
+      text: async () => '',
+    })
+
+    await controller.fetchComments({}, { loadVersion: 1 })
+
+    expect(controller.renderedAllTopicIds).toEqual(['9'])
+    expect(controller.renderedAllTopicWatermarks).toEqual({ 9: 90 })
+  })
+
+  test('records whether the All Messages snapshot rendered the legacy lane', async () => {
+    const controller = buildListController()
+    controller._loadCommentsVersion = 1
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name) => ({
+          'X-Rendered-Topic-Ids': '1',
+          'X-Rendered-Topic-Watermarks': '{"_legacy":10,"1":20}',
+        })[name] || null,
+      },
+      text: async () => '',
+    })
+
+    await controller.fetchComments({}, { loadVersion: 1 })
+
+    expect(controller.renderedAllIncludesLegacy).toBe(true)
   })
 
   test('does not pass the topic-guard exemption to the load that superseded it', async () => {

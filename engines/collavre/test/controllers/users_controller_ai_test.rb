@@ -16,6 +16,8 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", create_ai_users_path
     assert_select "input[name='llm_model'][maxlength=?]", Collavre::LlmModel::MAX_NAME_LENGTH.to_s
     assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
+    assert_select "a[href=?][data-turbo='false']", agent_gateways_path,
+                  text: I18n.t("collavre.users.new_ai.manage_gateways")
     assert_select "[data-controller='llm-model']" do |nodes|
       models = JSON.parse(nodes.first["data-llm-model-models-value"])
       assert_includes models, {
@@ -175,7 +177,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "Renamed inactive proxy agent", @ai_user.reload.name
     assert_equal gateway, @ai_user.agent_gateway
   end
@@ -237,7 +239,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "This user is not an AI agent.", flash[:alert]
   end
 
-  test "should update ai user" do
+  test "should update ai user and redirect to contacts" do
     patch update_ai_user_url(@ai_user), params: {
       user: {
         name: "Updated Bot Name",
@@ -246,7 +248,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         searchable: true
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal "Updated Bot Name", @ai_user.name
     assert_equal "New prompt", @ai_user.system_prompt
@@ -376,7 +378,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { name: "Updated Bot Name", llm_api_key: "" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "existing-secret-key", @ai_user.reload.llm_api_key
   end
 
@@ -387,7 +389,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { llm_api_key: "", clear_llm_api_key: "1" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_nil @ai_user.reload.llm_api_key
   end
 
@@ -411,7 +413,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { llm_api_key: "replacement-secret-key" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "replacement-secret-key", @ai_user.reload.llm_api_key
   end
 
@@ -438,7 +440,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         routing_expression: 'chat.content contains "help"'
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal 'chat.content contains "help"', @ai_user.routing_expression
   end
@@ -449,7 +451,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         routing_expression: 'event_name == "comment_created"'
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal 'event_name == "comment_created"', @ai_user.routing_expression
   end
@@ -463,5 +465,101 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_equal "Name can't be blank", flash[:alert]
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
+  end
+
+  test "edit_ai keeps the originating list so saving returns there" do
+    get edit_ai_user_url(@ai_user), headers: { "HTTP_REFERER" => users_url }
+
+    assert_response :success
+    assert_select "form[data-turbo-action='replace']"
+    assert_select "input[type='hidden'][name='return_to'][value=?]", users_path
+  end
+
+  test "edit_ai ignores an off-site origin" do
+    get edit_ai_user_url(@ai_user), headers: { "HTTP_REFERER" => "https://evil.example.com/users" }
+
+    assert_response :success
+    assert_select "input[name='return_to']", false
+  end
+
+  test "edit_ai ignores itself as an origin" do
+    get edit_ai_user_url(@ai_user), headers: { "HTTP_REFERER" => edit_ai_user_url(@ai_user) }
+
+    assert_response :success
+    assert_select "input[name='return_to']", false
+  end
+
+  test "updating an ai user returns to the originating list" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: users_path,
+      user: { name: "Back To List Bot" }
+    }
+
+    assert_redirected_to users_path
+    assert_equal "Back To List Bot", @ai_user.reload.name
+  end
+
+  test "updating an ai user keeps the origin query string" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "#{user_path(@admin)}?tab=contacts",
+      user: { name: "Contacts Tab Bot" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects an off-site return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "https://evil.example.com/steal",
+      user: { name: "Safe Bot" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects a protocol relative return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "//evil.example.com/steal",
+      user: { name: "Safe Bot 2" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects a non http return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "javascript:alert(1)",
+      user: { name: "Safe Bot 3" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects a malformed return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "http://[bad",
+      user: { name: "Safe Bot 4" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects the edit page as return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: edit_ai_user_path(@ai_user),
+      user: { name: "No Loop Bot" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "a failed ai user update keeps the originating list" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: users_path,
+      user: { name: "" }
+    }
+
+    assert_response :unprocessable_entity
+    assert_select "input[type='hidden'][name='return_to'][value=?]", users_path
   end
 end

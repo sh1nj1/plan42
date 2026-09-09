@@ -9,12 +9,16 @@ module Creatives
         "<iframe></iframe>"
       end
 
-      def render_creative_progress(_creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil)
-        "<progress data-select='#{select_mode}'></progress>"
+      def render_creative_progress(_creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [], can_delete_cron: nil)
+        "<progress data-select='#{select_mode}'></progress><cron-badge count='#{cron_tasks.size}' can-delete='#{can_delete_cron}'></cron-badge>"
       end
 
-      def svg_tag(name, className: nil, width: nil, height: nil)
-        "<svg data-name='#{name}' data-class='#{className}' data-width='#{width}' data-height='#{height}'></svg>"
+      # Mirrors ApplicationHelper#svg_tag's options-hash signature: linked rows
+      # render the origin link icon with `class:`, which a keyword-only double
+      # rejects.
+      def svg_tag(name, options = {})
+        "<svg data-name='#{name}' data-class='#{options[:class] || options[:className]}' " \
+          "data-width='#{options[:width]}' data-height='#{options[:height]}'></svg>"
       end
 
       def link_to(_path, *args)
@@ -89,6 +93,74 @@ module Creatives
       assert_equal creative.effective_description, payload[:description_raw_html]
       assert_in_delta creative.progress, payload[:progress]
       assert_nil payload[:origin_id]
+    end
+
+    test "includes cron badge details when the cron filter is active" do
+      creative = Creative.create!(user: @user, progress: 0, description: "Scheduled")
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_#{SecureRandom.hex(4)}",
+        class_name: "Collavre::CronActionJob",
+        schedule: "0 9 * * *",
+        static: false,
+        arguments: []
+      )
+
+      nodes = build_tree_builder(params: { has_cron: "true" }).build([ creative ])
+
+      assert_includes nodes.first.dig(:templates, :progress_html), "<cron-badge count='1'"
+    ensure
+      task&.destroy!
+    end
+
+    test "allows cron deletion for a writer when source content is read-only" do
+      source_type = "tree_builder_read_only_source"
+      Creative.register_read_only_source(source_type)
+      owner = users(:two)
+      creative = Creative.create!(
+        user: owner,
+        progress: 0,
+        description: "Read-only scheduled",
+        data: { "source" => { "type" => source_type } }
+      )
+      CreativeShare.create!(creative: creative, user: @user, shared_by: owner, permission: :write)
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_#{SecureRandom.hex(4)}",
+        class_name: "Collavre::CronActionJob",
+        schedule: "0 9 * * *",
+        static: false,
+        arguments: []
+      )
+
+      node = build_tree_builder(params: { has_cron: "true" }).build([ creative ]).first
+
+      assert_equal false, node[:can_write]
+      assert_includes node.dig(:templates, :progress_html), "can-delete='true'"
+    ensure
+      task&.destroy!
+      Creative.read_only_source_types.delete(source_type) if source_type
+    end
+
+    test "linked shells inherit read-only origin capability in selectable rows" do
+      source_type = "tree_builder_linked_read_only_source"
+      Creative.register_read_only_source(source_type)
+      source = Creative.create!(user: @user, description: "Managed source",
+        data: { "source" => { "type" => source_type } })
+      linked = Creative.create!(user: @user, origin: source)
+      writable = Creative.create!(user: @user, description: "Writable source")
+      writable_link = Creative.create!(user: @user, origin: writable)
+      creatives = [ source, linked, writable, writable_link ]
+
+      creatives.each { |creative| assert creative.has_permission?(@user, :write) }
+      refute linked.read_only_source?
+      assert linked.effective_origin.read_only_source?
+
+      nodes = build_tree_builder.build(creatives).index_by { |node| node[:id] }
+      assert_equal false, nodes.fetch(source.id)[:can_write]
+      assert_equal false, nodes.fetch(linked.id)[:can_write]
+      assert_equal true, nodes.fetch(writable.id)[:can_write]
+      assert_equal true, nodes.fetch(writable_link.id)[:can_write]
+    ensure
+      Creative.read_only_source_types.delete(source_type)
     end
 
     private

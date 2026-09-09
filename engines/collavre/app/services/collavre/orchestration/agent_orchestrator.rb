@@ -12,9 +12,13 @@ module Collavre
     #   AgentOrchestrator.dispatch("comment_created", context)
     #
     class AgentOrchestrator
-      def self.dispatch(event_name, context)
-        new(event_name: event_name, context: context).dispatch
+      def self.dispatch(event_name, context, **options)
+        new(event_name: event_name, context: context).dispatch(**options)
       end
+
+      def self.select(event_name, context) = new(event_name: event_name, context: context).select
+
+      def self.prepare_selection(event_name, context, **options) = new(event_name: event_name, context: context).prepare_selection(**options)
 
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
         task = claim_next_waiter(topic_id, creative_id)
@@ -434,12 +438,7 @@ module Collavre
         # revision later. Skip reviews and take the newest ordinary comment,
         # which in the worst case is the waiter's own anchor (a no-op refresh)
         # rather than nothing, so this cannot strand a live waiter.
-        scope = Comment.public_only.without_approval_action
-          .where(creative_id: creative_id, topic_id: topic_id)
-          .where.not(user_id: [ task.agent_id, nil ])
-          .where.not(id: Comment.review_messages.where(creative_id: creative_id, topic_id: topic_id).select(:id))
-          .order(id: :desc)
-        scope = TaskCoalescer.reanchor_scope_for_workspace_principal(scope, task)
+        scope = DeferredTriggerScope.for(task, context)
 
         # Narrowing the destination closes the door this call site opens, but the
         # promotion door still moves the anchor onto the newest comment in the
@@ -498,7 +497,7 @@ module Collavre
         # reanchor_payload also records the move when it is one, which is what
         # delivered_comment_ids reads below: a comment this turn was handed
         # without having been created for it.
-        context = TaskCoalescer.reanchor_payload(context, latest_comment)
+        context = DeferredTriggerScope.reanchor_payload(task, context, latest_comment)
         # absorb_into_payload also drops the new anchor from the merged list, so
         # a comment promoted from "merged" back to "trigger" is not sent twice.
         context = TaskCoalescer.absorb_into_payload(context, [ previous_anchor_id ].compact)
@@ -559,12 +558,10 @@ module Collavre
       # (TaskCoalescer::ACQUIRED_ANCHOR_KEY, written by whichever door moved it)
       # rather than from comparing the comment's clock with the task's.
       #
-      # Scoped by topic and creative, which also keeps workflow subtasks out:
-      # Comments::WorkflowExecutor mints its own trigger comment in the child
-      # creative with topic_id nil, so it can never be mistaken for a delivery of
-      # a comment in this topic. Same trigger_event_name for the same reason
-      # TaskCoalescer folds only within one — a different event over the same
-      # comment is a different question.
+      # Scoped by topic and creative so a delivery is only ever matched against
+      # comments in the same conversation. Same trigger_event_name for the same
+      # reason TaskCoalescer folds only within one — a different event over the
+      # same comment is a different question.
       def self.delivered_comment_ids(task, context)
         others = Task.where(
           agent_id: task.agent_id,
@@ -675,44 +672,36 @@ module Collavre
         @context["event_name"] = event_name
       end
 
-      def dispatch
-        # Step 1: Find qualified agents (Matcher)
-        candidates = matcher.match
-        return [] if candidates.empty?
+      def select
+        prepare_selection.commit!.agents
+      end
 
-        # Step 2: Select responders (Arbiter) - with policy-based floor control
-        selected = arbiter.select(candidates)
+      def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, **options).call
+
+      def dispatch(selected_agents: nil, selection: nil, context_for: nil, scheduling_hooks: nil)
+        selected = selected_agents || (selection ||= prepare_selection).agents
         return [] if selected.empty?
+
+        selection&.commit!
 
         # Step 3: Schedule execution (Scheduler) - Phase 3
         # For now, immediate execution
-        decisions = scheduler.schedule(selected)
+        decisions = scheduler.schedule(selected, scheduling_hooks: scheduling_hooks)
+        scheduling_hooks&.scheduled(decisions.filter_map { |decision| decision[:agent] unless decision[:timing] == :rejected })
 
         # Step 4: Enqueue jobs
-        enqueue_jobs(decisions)
+        enqueue_jobs(decisions, context_for: context_for)
       end
 
       private
 
-      def policy_resolver
-        @policy_resolver ||= PolicyResolver.new(@context)
-      end
+      def policy_resolver = @policy_resolver ||= PolicyResolver.new(@context)
 
-      def matcher
-        @matcher ||= Matcher.new(@context)
-      end
+      def scheduler = @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
 
-      def arbiter
-        @arbiter ||= Arbiter.new(@context, policy_resolver: policy_resolver)
-      end
-
-      def scheduler
-        @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
-      end
-
-      def enqueue_jobs(decisions)
+      def enqueue_jobs(decisions, context_for:)
         decisions.filter_map do |decision|
-          agent = decision[:agent]
+          context = context_for_agent(agent = decision[:agent], context_for)
           log_decision(decision)
 
           # A rejected decision is not a dispatch, so neither guard below
@@ -731,7 +720,7 @@ module Collavre
           # Guard: skip if agent already has a running task for this comment.
           # Handled, not unscheduled — see the drop guard below for why the two
           # are different answers and what reads them apart.
-          comment_id = @context.dig("comment", "id")
+          comment_id = context.dig("comment", "id")
           if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
             Rails.logger.warn(
               "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
@@ -763,7 +752,7 @@ module Collavre
           # was scheduled*: DropTriggerJob#dispatch_trigger raises
           # DispatchFailedError on an empty result and retries a trigger that
           # was covered, three times, and calls the job failed at the end of it.
-          covering = DeliveryRecord.covering_task(agent, comment_id, @context, @event_name)
+          covering = DeliveryRecord.covering_task(agent, comment_id, context, @event_name)
           if covering && DeliveryRecord.claim_drop!(covering, comment_id)
             Rails.logger.info(
               "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
@@ -774,15 +763,16 @@ module Collavre
 
           case decision[:timing]
           when :immediate
-            AiAgentJob.perform_later(agent.id, @event_name, @context)
+            AiAgentJob.perform_later(agent.id, @event_name, context)
             agent
           when :deferred
-            waiter = park_waiter(agent)
+            next unless (waiter = park_waiter(agent, context))
+
             post_waiting_notice(agent, decision, waiter: waiter)
             agent
           when :delayed
             AiAgentJob.set(wait: decision[:delay]).perform_later(
-              agent.id, @event_name, @context
+              agent.id, @event_name, context
             )
             post_waiting_notice(agent, decision)
             agent
@@ -790,6 +780,11 @@ module Collavre
             nil
           end
         end
+      end
+
+      def context_for_agent(agent, context_for)
+        override = context_for&.call(agent)
+        override.present? ? @context.deep_merge(override.deep_stringify_keys) : @context
       end
 
       # Park this dispatch as a queued waiter and fold the earlier ones into it.
@@ -809,19 +804,20 @@ module Collavre
       # (coalesce_at_start!), so this is not a duplicate turn — but two doors
       # onto one queue should not disagree about when a burst becomes one
       # waiter, and only the serialized one holds without those later passes.
-      def park_waiter(agent)
-        topic_id = @context.dig("topic", "id")
-        creative_id = @context.dig("creative", "id")
+      def park_waiter(agent, context)
+        topic_id = context.dig("topic", "id")
+        creative_id = context.dig("creative", "id")
         coalescing = policy_resolver.coalesce_pending_tasks_for?(agent)
         waiter = nil
 
         Task.transaction do
-          TopicSlot.lock!(topic_id, creative_id)
+          next unless TopicSlot.matches_context?(TopicSlot.lock!(topic_id, creative_id), topic_id, creative_id)
+
           waiter = Task.create!(
             name: "Response to #{@event_name}",
             status: "queued",
             trigger_event_name: @event_name,
-            trigger_event_payload: @context,
+            trigger_event_payload: context,
             agent: agent,
             topic_id: topic_id,
             creative_id: creative_id,
@@ -895,7 +891,7 @@ module Collavre
       end
 
       def create_waiting_notice(creative, topic_id, reason_text, deferred:, shared:, waiter:)
-        creative.comments.create!(
+        creative.comments.build(
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           topic_id: topic_id,
           private: false,
@@ -908,7 +904,11 @@ module Collavre
           # Comment#cancel_queued_tasks_for_waiting_notice.
           waiting_notice_scope: deferred ? (shared ? Comment::WAITING_NOTICE_TOPIC : Comment::WAITING_NOTICE_TASK) : nil,
           waiting_notice_task_id: (waiter&.id unless shared)
-        )
+        ).tap(&:save!)
+      rescue ActiveRecord::RecordNotSaved => error
+        # A delayed job is already queued when this notice is posted. Topic
+        # relocation may invalidate only the stale notice in that gap.
+        raise unless error.record.errors.include?(:topic)
       end
 
       # Human-readable reason for the "⏳" waiting notice. For topic-concurrency

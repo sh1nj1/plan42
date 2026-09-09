@@ -70,6 +70,31 @@ describe('TopicsController archived topic messages', () => {
   })
 
   describe('selecting an archived topic', () => {
+    test('renders unread counts on active and archived topic chips', () => {
+      controller.topics = [{ id: 1, name: 'Main', unread_count: 2 }, { id: 2, name: 'Alpha', unread_count: 0 }]
+      controller.archivedTopics = [{ id: 3, name: 'Zeta', unread_count: 4 }]
+      controller.showingArchived = true
+
+      render()
+
+      expect(controller.listTarget.querySelector('.topic-tag[data-id="1"] .topic-unread-badge').textContent).toBe('2')
+      expect(controller.listTarget.querySelector('.topic-tag[data-id="2"] .topic-unread-badge')).toBeNull()
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="3"] .topic-unread-badge').textContent).toBe('4')
+    })
+
+    test('renders the shared cron badge on an archived topic', () => {
+      controller.archivedTopics = [{
+        id: 3,
+        name: 'Zeta',
+        cron_badge_html: '<span class="cron-badge-wrapper"><button class="creative-cron-badge">1</button></span>',
+      }]
+      controller.showingArchived = true
+
+      render()
+
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="3"] .creative-cron-badge')).not.toBeNull()
+    })
+
     test('archived chips carry the select action so clicking one opens it', () => {
       controller.showingArchived = true
       render()
@@ -495,6 +520,40 @@ describe('TopicsController archived topic messages', () => {
       expect(controller.currentTopicId).toBe('1')
     })
 
+    test('allows All Messages to scroll into view after archiving the selected topic', async () => {
+      controller.serverLastTopicId = '2'
+      controller._topicScrollInterrupted = true
+      const interruptionStatesAtLoad = []
+      controller.loadTopics = jest.fn(() => {
+        interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+      })
+      global.fetch = jest.fn().mockResolvedValue({ ok: true })
+
+      await controller.archiveTopic({
+        stopPropagation: jest.fn(),
+        currentTarget: { dataset: { id: '2' } },
+      })
+
+      expect(interruptionStatesAtLoad).toEqual([false])
+    })
+
+    test('preserves the user scroll lock after archiving an inactive topic', async () => {
+      controller.serverLastTopicId = '1'
+      controller._topicScrollInterrupted = true
+      const interruptionStatesAtLoad = []
+      controller.loadTopics = jest.fn(() => {
+        interruptionStatesAtLoad.push(controller._topicScrollInterrupted)
+      })
+      global.fetch = jest.fn().mockResolvedValue({ ok: true })
+
+      await controller.archiveTopic({
+        stopPropagation: jest.fn(),
+        currentTarget: { dataset: { id: '2' } },
+      })
+
+      expect(interruptionStatesAtLoad).toEqual([true])
+    })
+
     test('leaves the archived section collapsed instead of revealing the archived topic', async () => {
       controller.serverLastTopicId = '2'
       render()
@@ -704,6 +763,16 @@ describe('TopicsController archived topic messages', () => {
         deleteBroadcast(3)
 
         expect(controller.currentTopicId).toBe('1')
+      })
+
+      test('does not expose a saved preference naming the same deleted topic', () => {
+        controller.serverLastTopicId = '3'
+        controller.setOverrideTopicId('3')
+
+        deleteBroadcast(3)
+
+        expect(controller.currentTopicId).toBe('1')
+        expect(controller.serverLastTopicId).toBe('1')
       })
 
       test('drops a ?topic_id= naming it', () => {

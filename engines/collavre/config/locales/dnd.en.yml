@@ -1,0 +1,23 @@
+en:
+  collavre:
+    dnd:
+      move_title: "Move…"
+      choose_destination: "Choose destination…"
+      destination: "Destination"
+      position: "Position"
+      child: "Inside destination"
+      up: "Before destination"
+      down: "After destination"
+      operation: "Operation"
+      move: "Move"
+      link: "Create link"
+      cancel: "Cancel"
+      confirm: "Confirm"
+      moving: "Applying changes…"
+      dropped: "Changes applied."
+      cancelled: "Move cancelled."
+      invalid_target: "Choose a destination outside the selected creatives."
+      partial: "Some changes failed. Confirm again to retry only the failed items."
+      failed: "Changes could not be applied. Check your permissions and destination, then try again."
+      archived_selection: "Deselect archived creatives before moving or creating links."
+      no_sources: "There are no selectable creatives in this view. Add a creative or change the filter, then try again."

@@ -1,14 +1,12 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Collavre
   module Topics
-    # When a Topic is deleted, find every non-static recurring cron task that
-    # targets that topic (topic_id stored inside the task's arguments JSON) and
-    # post a system message into the affected creative's Main topic so the user
-    # knows the cron is now orphaned.
-    #
-    # Decision: notify only. The recurring task is intentionally left in place
-    # so the user can decide whether to re-point or cancel it.
+    # When a Topic is deleted, remove every non-static recurring cron task that
+    # targets it and post a system message with a command that recreates the
+    # original cron configuration.
     class OrphanedCronNotifier
       include Collavre::Crons::RecurringTaskArguments
 
@@ -20,7 +18,9 @@ module Collavre
       def call
         return if @topic_id.blank?
 
-        matching_tasks.each do |task, args|
+        tasks = matching_tasks
+        tasks.each { |task, _args| task.destroy! }
+        tasks.each do |task, args|
           notify_for(task, args)
         end
       end
@@ -59,9 +59,21 @@ module Collavre
             "collavre.topics.orphaned_cron_notice",
             topic_name: @topic_name,
             cron_key: task.key,
-            message: args["message"]
+            cron_create_command: cron_create_command(task, creative, args)
           )
         )
+      end
+
+      def cron_create_command(task, creative, args)
+        payload = {
+          creative_id: creative.id,
+          topic_name: @topic_name,
+          schedule: task.schedule,
+          message: args["message"],
+          description: task.description
+        }
+
+        "/cron_create #{JSON.generate(payload)}"
       end
     end
   end

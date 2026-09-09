@@ -4,6 +4,7 @@ import CommandArgsForm from './command_args_form'
 import { openCreativeLinkPicker } from './creative_link_picker'
 
 let commandMenuInitialized = false
+let commandSubmissionSequence = 0
 
 if (!commandMenuInitialized) {
   commandMenuInitialized = true
@@ -16,6 +17,7 @@ if (!commandMenuInitialized) {
 
     const list = menu.querySelector('[data-popup-list]')
     const commandCache = new Map()
+    let skipNextMenuInput = false
 
     const argsForm = new CommandArgsForm({
       container: popup,
@@ -47,11 +49,40 @@ if (!commandMenuInitialized) {
           }))
         }
         textarea.value = commandText
+        // Keep the normal input listeners (drafts, resize, submit state) in
+        // sync without treating this programmatic command as a new typeahead
+        // query. A schema command with no entered values is just "/name", so
+        // the command menu would otherwise reopen as soon as the form closes.
+        skipNextMenuInput = true
         textarea.dispatchEvent(new Event('input', { bubbles: true }))
         // Trigger form submission directly
         const submitBtn = document.querySelector('#new-comment-form [data-comments--form-target="submit"]')
         if (submitBtn) {
+          const submissionId = String(++commandSubmissionSequence)
+          let submissionStarted = false
+          const markSubmission = (event) => { event.commandSubmissionId = submissionId }
+          const onSubmissionStarted = (event) => {
+            if (event.detail?.submissionId === submissionId) submissionStarted = true
+          }
+          // Keep focus out of the textarea while its value is still the command
+          // being sent. The form announces settlement after success/failure
+          // cleanup, so typing cannot append to the in-flight command.
+          const onSubmissionSettled = (event) => {
+            if (event.detail?.submissionId !== submissionId) return
+            popup.removeEventListener('comments--form:submit-settled', onSubmissionSettled)
+            const active = document.activeElement
+            if (!active || active === document.body) textarea.focus()
+          }
+          submitBtn.addEventListener('click', markSubmission, { capture: true, once: true })
+          popup.addEventListener('comments--form:submit-started', onSubmissionStarted)
+          popup.addEventListener('comments--form:submit-settled', onSubmissionSettled)
           submitBtn.click()
+          submitBtn.removeEventListener('click', markSubmission, true)
+          popup.removeEventListener('comments--form:submit-started', onSubmissionStarted)
+          if (!submissionStarted) {
+            popup.removeEventListener('comments--form:submit-settled', onSubmissionSettled)
+            textarea.focus()
+          }
         }
       },
       onCancel: () => {
@@ -128,18 +159,25 @@ if (!commandMenuInitialized) {
       textarea.setSelectionRange(cleaned.length, cleaned.length)
     }
 
+    // Cached by creative id, and cached as the *promise* rather than its result:
+    // the list is fetched on every keystroke, so caching only after the response
+    // lands would fire one request per character of "/task" before the first one
+    // returns. In-flight callers share the request instead.
     function fetchCommands(creativeId) {
       if (!creativeId) return Promise.resolve([])
-      if (commandCache.has(creativeId)) return Promise.resolve(commandCache.get(creativeId))
+      if (commandCache.has(creativeId)) return commandCache.get(creativeId)
 
-      return fetch(`/creatives/${creativeId}/comments/commands`, { headers: { Accept: 'application/json' } })
+      const request = fetch(`/creatives/${creativeId}/comments/commands`, { headers: { Accept: 'application/json' } })
         .then((response) => (response.ok ? response.json() : []))
-        .then((data) => {
-          const list = Array.isArray(data) ? data : []
-          commandCache.set(creativeId, list)
-          return list
+        .then((data) => (Array.isArray(data) ? data : []))
+        .catch(() => {
+          // Don't leave a failed lookup cached — the next keystroke retries.
+          commandCache.delete(creativeId)
+          return []
         })
-        .catch(() => [])
+
+      commandCache.set(creativeId, request)
+      return request
     }
 
     function insert(command) {
@@ -184,7 +222,20 @@ if (!commandMenuInitialized) {
       if (popupMenu.handleKey(event)) return
     })
 
+    // Bumped by every input event, so a lookup that resolves after the user has
+    // typed on (or deleted the "/" entirely) is dropped instead of rendering the
+    // menu from a query that no longer matches the box — the late response would
+    // otherwise pop the menu back up over an unrelated draft.
+    let queryToken = 0
+
     textarea.addEventListener('input', function () {
+      const token = ++queryToken
+      if (skipNextMenuInput) {
+        skipNextMenuInput = false
+        popupMenu.hide()
+        return
+      }
+
       // If args form is open, don't show command menu
       if (argsForm.isOpen()) return
 
@@ -201,7 +252,10 @@ if (!commandMenuInitialized) {
       const query = match[1]
 
       fetchCommands(creativeId)
-        .then((commands) => show(commands, query))
+        .then((commands) => {
+          if (token !== queryToken) return
+          show(commands, query)
+        })
     })
   })
 }

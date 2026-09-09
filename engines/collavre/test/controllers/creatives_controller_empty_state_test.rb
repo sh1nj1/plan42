@@ -187,4 +187,26 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     assert_select "#creatives div[data-creatives-empty-state]", count: 0
     assert_select "#creatives > div[data-creatives-tree-loading]", count: 1
   end
+
+  # The empty-state icon is a hand-authored SVG rendered at 28px, where a 1-unit
+  # geometry error is a visible defect. Two rules keep it clean:
+  #   * each connector ends on its node's vertical centre, so it does not run
+  #     into the node's rounded corner and read as a folded corner;
+  #   * the two connectors never re-trace the same run of trunk, because two
+  #     separately antialiased strokes over the same pixels leave a step.
+  test "empty state tree icon connectors land on their node centres and do not overlap" do
+    sign_in_as(users(:one), password: "password")
+
+    get creatives_path
+
+    assert_response :success
+    icon = css_select(".creative-empty-state-icon svg").first
+    assert_not_nil icon
+
+    nodes = icon.css("rect").map { |r| r["y"].to_f + r["height"].to_f / 2 }
+    assert_equal [ 5.5, 12.5, 20.0 ], nodes
+
+    paths = icon.css("path").map { |p| p["d"] }
+    assert_equal [ "M6.5 8v10a2 2 0 0 0 2 2H14", "M6.5 10.5a2 2 0 0 0 2 2H14" ], paths
+  end
 end

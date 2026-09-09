@@ -13,14 +13,200 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal @creative.id, json["effective_creative_id"]
+    assert_equal false, json["last_topic_all_messages"]
+  end
+
+  test "index adds the shared cron popup badge to the scheduled topic" do
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob",
+      schedule: "0 9 * * *",
+      static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id, message: "Daily summary" } ]
+    )
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    topic = response.parsed_body["topics"].find { |candidate| candidate["id"] == @topic.id }
+    badge = topic.fetch("cron_badge_html")
+    assert_includes badge, "creative-cron-badge"
+    assert_includes badge, "Daily summary"
+    assert_includes badge, "cron-task-delete"
+  ensure
+    task&.destroy! if task&.persisted?
+  end
+
+  test "index hides cron deletion from a read-only collaborator" do
+    collaborator = users(:two)
+    Collavre::CreativeShare.create!(
+      creative: @creative,
+      user: collaborator,
+      shared_by: @user,
+      permission: :read
+    )
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob",
+      schedule: "0 9 * * *",
+      static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id, message: "Daily summary" } ]
+    )
+    sign_in_as collaborator, password: "password"
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    topic = response.parsed_body["topics"].find { |candidate| candidate["id"] == @topic.id }
+    badge = topic.fetch("cron_badge_html")
+    assert_includes badge, "Daily summary"
+    assert_not_includes badge, "cron-task-delete"
+  ensure
+    task&.destroy! if task&.persisted?
+  end
+
+  test "index rejects users without read access before exposing cron details" do
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob",
+      schedule: "0 9 * * *",
+      static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id, message: "Private schedule details" } ]
+    )
+    sign_in_as users(:two), password: "password"
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :forbidden
+    assert_not_includes response.body, "Private schedule details"
+  ensure
+    task&.destroy! if task&.persisted?
+  end
+
+  test "History topic is read-only, reserved, and kept last" do
+    history = @creative.history_topic
+    other = @creative.topics.create!(name: "Later", user: @user)
+    agent = assignable_agent(
+      creative: @creative, email: "history-pin@test.local", name: "HistoryPinAgent"
+    )
+    assert_equal history, @creative.topics.active.last
+
+    get collavre.creative_topics_url(@creative), as: :json
+    assert response.parsed_body["topics"].find { |topic| topic["id"] == history.id }["read_only"]
+
+    post collavre.creative_topics_url(@creative), params: { topic: { name: "History" } }, as: :json
+    assert_response :unprocessable_entity
+
+    patch collavre.creative_topic_url(@creative, history), params: { topic: { name: "Renamed" } }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "History", history.reload.name
+
+    delete collavre.creative_topic_url(@creative, history), as: :json
+    assert_response :unprocessable_entity
+    assert history.reload.persisted?
+
+    patch archive_creative_topic_url(@creative, history), as: :json
+    assert_response :unprocessable_entity
+    assert_nil history.reload.archived_at
+
+    patch set_primary_agent_creative_topic_url(@creative, history),
+      params: { agent_id: agent.id }, as: :json
+    assert_response :unprocessable_entity
+    assert_nil history.reload.primary_agent_id
+
+    post collavre.reorder_creative_topics_url(@creative),
+         params: { topic_ids: [ history.id, other.id, @topic.id ] }, as: :json
+    assert_response :success
+    assert_operator history.reload.position, :>, other.reload.position
+    assert_operator history.position, :>, @topic.reload.position
+  end
+
+  test "an existing ordinary History topic remains a normal conversation" do
+    legacy = @creative.topics.create!(name: "History", user: @user)
+    @creative.topics.create!(name: Collavre::Creative::HISTORY_TOPIC_INTERNAL_NAME, user: @user)
+    comment = @creative.comments.create!(topic: legacy, user: @user, content: "Existing history discussion")
+    history = @creative.history_topic
+
+    assert_not_equal legacy, history
+    assert legacy.reload.system_kind.nil?
+    assert history.history?
+    assert_equal "#{Collavre::Creative::HISTORY_TOPIC_INTERNAL_NAME}_2", history.name
+
+    get collavre.creative_topics_url(@creative), as: :json
+    topics = response.parsed_body["topics"].index_by { |topic| topic["id"] }
+    assert_not topics.fetch(legacy.id)["read_only"]
+    assert topics.fetch(history.id)["read_only"]
+
+    get collavre.creative_comments_url(@creative), params: { topic_id: legacy.id }
+    assert_response :success
+    assert_includes response.body, comment.content
+
+    patch collavre.creative_topic_url(@creative, legacy), params: { topic: { name: "History notes" } }, as: :json
+    assert_response :success
+    assert_equal "History notes", legacy.reload.name
+  end
+
+  test "index returns the last topic revision" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic: @topic,
+      last_topic_revision: 7
+    )
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal @topic.id, json["last_topic_id"]
+    assert_equal false, json["last_topic_all_messages"]
+    assert_equal [ preference.id, 7 ], json["last_topic_revision"]
+  end
+
+  test "index returns the revision of a cleared last topic" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic_all_messages: true,
+      last_topic_revision: 2
+    )
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_nil json["last_topic_id"]
+    assert_equal true, json["last_topic_all_messages"]
+    assert_equal [ preference.id, 2 ], json["last_topic_revision"]
+  end
+
+  test "index includes unread counts for active and archived topics" do
+    archived_topic = @creative.topics.create!(name: "Archived", user: @user)
+    archived_topic.archive!
+    read_comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: users(:two), content: "read")
+    Collavre::Comment.create!(creative: @creative, topic: @topic, user: users(:two), content: "active unread")
+    Collavre::Comment.create!(creative: @creative, topic: archived_topic, user: users(:two), content: "archived unread")
+    Collavre::CommentReadPointer.create!(user: @user, creative: @creative, last_read_comment_id: read_comment.id)
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal 1, json["topics"].find { |topic| topic["id"] == @topic.id }["unread_count"]
+    assert_equal 1, json["archived_topics"].find { |topic| topic["id"] == archived_topic.id }["unread_count"]
   end
 
   test "index returns effective_creative_id for linked creative (origin id)" do
     linked = Collavre::Creative.create!(user: @user, description: "linked wrapper", origin: @creative)
+    history = linked.history_topic
     get collavre.creative_topics_url(linked), as: :json
     assert_response :success
     json = JSON.parse(response.body)
     assert_equal @creative.id, json["effective_creative_id"]
+    assert_includes json["topics"].pluck("id"), history.id
+    assert_equal @creative, history.creative
   end
 
   # set_primary_agent is guarded by require_creative_write!, so the client needs a
@@ -92,6 +278,24 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
   end
 
+  test "destroying a selected topic advances its preference revision" do
+    preference = Collavre::UserCreativePreference.create!(
+      creative: @creative,
+      user: @user,
+      expanded_status: {},
+      last_topic: @topic,
+      last_topic_revision: 4
+    )
+
+    delete collavre.creative_topic_url(@creative, @topic)
+
+    assert_response :no_content
+    preference.reload
+    assert_nil preference.last_topic_id
+    assert_not preference.last_topic_all_messages?
+    assert_equal 5, preference.last_topic_revision
+  end
+
   # Uses the core PreviewChannel (not the collavre_github GithubPrChannel) so
   # the core engine test suite stays independent of the optional GitHub engine
   # per AGENTS.md. The cascade-on-delete behavior under test lives in the base
@@ -157,6 +361,33 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ai_agent.id, json["primary_agent"]["id"]
   end
 
+  test "update rejects a topic that moved before its lock" do
+    assert_topic_source_change_rejected do
+      patch collavre.creative_topic_url(@creative, @topic),
+        params: { topic: { name: "Stale rename" } }, as: :json
+    end
+
+    assert_equal "Existing Topic", @topic.reload.name
+  end
+
+  test "archive rejects a topic that moved before its lock" do
+    assert_topic_source_change_rejected do
+      patch archive_creative_topic_url(@creative, @topic), as: :json
+    end
+
+    assert_nil @topic.reload.archived_at
+  end
+
+  test "unarchive rejects a topic that moved before its lock" do
+    @topic.archive!
+
+    assert_topic_source_change_rejected do
+      patch unarchive_creative_topic_url(@creative, @topic), as: :json
+    end
+
+    assert_not_nil @topic.reload.archived_at
+  end
+
   test "should not update topic without permission" do
     other_user = users(:two)
     sign_in_as other_user, password: "password"
@@ -209,6 +440,194 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     comment.reload
     assert_equal target_creative.id, @topic.creative_id
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
+  end
+
+  test "should reject moving a topic with active agent work" do
+    target_creative = creatives(:root_parent)
+    Collavre::Task.create!(
+      name: "Queued topic work", agent: @user, creative: @creative,
+      topic_id: @topic.id, status: :queued
+    )
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.active_tasks"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
+  test "should reject moving a topic targeted by a recurring cron job" do
+    target_creative = creatives(:root_parent)
+    task = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob", schedule: "0 9 * * *",
+      queue_name: "default", static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: @topic.id,
+                     agent_id: @user.id, message: "Daily" } ]
+    )
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.recurring_tasks"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  ensure
+    task&.destroy
+  end
+
+  test "should reject moving a topic referenced by a trigger loop" do
+    target_creative = creatives(:root_parent)
+    @creative.update!(data: {
+      "trigger" => { "loop" => { "state" => "running", "trigger_topic_id" => @topic.id } }
+    })
+
+    patch move_creative_topic_url(@creative, @topic),
+      params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.topics.move.trigger_loop"), JSON.parse(response.body).fetch("error")
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
+  test "should not broadcast an obsolete destination after a consecutive move" do
+    target_creative = creatives(:root_parent)
+    final_target = Collavre::Creative.create!(description: "Final target", user: @user)
+    moved_again = false
+    broadcasts = []
+    run_after_commit = lambda do |&callback|
+      unless moved_again
+        moved_again = true
+        Collavre::Topics::TopicMove.new(
+          topic: @topic.reload, target_creative: final_target
+        ).call
+      end
+      callback.call
+    end
+
+    ActiveRecord.stub(:after_all_transactions_commit, run_after_commit) do
+      Collavre::TopicsChannel.stub(:broadcast_to, ->(creative, payload) { broadcasts << [ creative.id, payload ] }) do
+        patch move_creative_topic_url(@creative, @topic),
+          params: { target_creative_id: target_creative.id }, as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal final_target.id, @topic.reload.creative_id
+    assert_equal target_creative.id, JSON.parse(response.body).fetch("target_creative_id")
+    assert_equal [ @creative.id ], broadcasts.map(&:first)
+  end
+
+  test "a source changed while waiting for the move lock is forbidden" do
+    target_creative = creatives(:root_parent)
+    failed_move = Object.new
+    failed_move.define_singleton_method(:call) do |**|
+      raise Collavre::Topics::TopicMove::SourceChangedError,
+        I18n.t("collavre.topics.move.source_changed")
+    end
+
+    Collavre::Topics::TopicMove.stub(:new, ->(**) { failed_move }) do
+      patch move_creative_topic_url(@creative, @topic),
+        params: { target_creative_id: target_creative.id }, as: :json
+    end
+
+    assert_response :forbidden
+    assert_includes JSON.parse(response.body).fetch("error"), "moved"
+    assert_equal @creative.id, @topic.reload.creative_id
+  end
+
+  test "moving a topic moves its read pointers with it" do
+    target_creative = creatives(:root_parent)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    pointer = Collavre::CommentReadPointer.create!(
+      user: @user, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal target_creative.id, pointer.reload.creative_id
+    assert_nil Collavre::CommentReadPointer.find_by(user: @user, creative: @creative, topic: @topic)
+
+    patch move_creative_topic_url(target_creative, @topic), params: { target_creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    assert_equal @creative.id, pointer.reload.creative_id
+  end
+
+  test "moving a topic preserves unread history for destination readers with a newer legacy cursor" do
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 950)
+    target_reader = users(:two)
+    moved_comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "moved unread")
+    newer_target_comment = Collavre::Comment.create!(creative: target_creative, user: @user, content: "newer target comment")
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: target_reader, shared_by: @user, permission: :read
+    )
+    Collavre::CommentReadPointer.create!(
+      user: target_reader, creative: target_creative, last_read_comment: newer_target_comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    pointer = Collavre::CommentReadPointer.find_by(user: target_reader, creative: target_creative, topic: @topic)
+    assert_not_nil pointer
+    assert_nil pointer.last_read_comment_id
+    assert_equal 1, Collavre::Creatives::CommentBadgeIndex.new(user: target_reader)
+      .unread_counts_by_topic(target_creative).fetch(@topic.id)
+  end
+
+  test "moving a topic retains source-only readers' pointers with the topic" do
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 951)
+    source_only_reader = users(:two)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    Collavre::CreativeShare.create!(
+      creative: @creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+    pointer = Collavre::CommentReadPointer.create!(
+      user: source_only_reader, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal target_creative.id, pointer.reload.creative_id
+    assert_empty Collavre::Comments::ReadReceiptIndex.new(
+      creative: target_creative, comments: [ comment ]
+    ).receipts, "the retained pointer must not reveal a receipt before target access is granted"
+
+    @creative.destroy!
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+
+    assert_empty Collavre::Creatives::CommentBadgeIndex.new(user: source_only_reader).unread_counts_by_topic(target_creative)
+  end
+
+  test "moving a topic again retains its pointer with each destination" do
+    middle_creative = Collavre::Creative.create!(user: @user, description: "Pointer middle", sequence: 952)
+    target_creative = Collavre::Creative.create!(user: @user, description: "Pointer target", sequence: 953)
+    source_only_reader = users(:two)
+    comment = Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "read comment")
+    Collavre::CreativeShare.create!(
+      creative: @creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+    pointer = Collavre::CommentReadPointer.create!(
+      user: source_only_reader, creative: @creative, topic: @topic, last_read_comment: comment
+    )
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: middle_creative.id }, as: :json
+    assert_response :success
+    assert_equal middle_creative.id, pointer.reload.creative_id
+
+    Collavre::CreativeShare.create!(
+      creative: target_creative, user: source_only_reader, shared_by: @user, permission: :read
+    )
+    patch move_creative_topic_url(middle_creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal target_creative.id, pointer.reload.creative_id
   end
 
   test "moving a topic keeps comments_count in sync on both creatives" do
@@ -400,6 +819,48 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal ai_agent.id, @topic.primary_agent_id
   end
 
+  test "should set and clear primary agent on Main topic" do
+    main_topic = @creative.main_topic(fallback_user: @user)
+    ai_agent = assignable_agent(
+      creative: @creative, email: "main-agent@test.local", name: "MainAgent"
+    )
+
+    patch set_primary_agent_creative_topic_url(@creative, main_topic),
+      params: { agent_id: ai_agent.id }, as: :json
+
+    assert_response :success
+    assert_equal ai_agent.id, main_topic.reload.primary_agent_id
+
+    patch set_primary_agent_creative_topic_url(@creative, main_topic),
+      params: { agent_id: nil }, as: :json
+
+    assert_response :success
+    assert_nil main_topic.reload.primary_agent_id
+  end
+
+  test "should set primary agent on inbox System topic" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    system_topic = inbox.system_topic(fallback_user: @user)
+    ai_agent = assignable_agent(
+      creative: inbox, email: "system-agent@test.local", name: "SystemAgent"
+    )
+
+    patch set_primary_agent_creative_topic_url(inbox, system_topic),
+      params: { agent_id: ai_agent.id }, as: :json
+
+    assert_response :success
+    assert_equal ai_agent.id, system_topic.reload.primary_agent_id
+  end
+
+  test "Main and System topics keep reserved mutation protections" do
+    main_topic = @creative.main_topic(fallback_user: @user)
+    inbox = Collavre::Creative.inbox_for(@user)
+    system_topic = inbox.system_topic(fallback_user: @user)
+
+    assert_reserved_topic_mutations_rejected(@creative, main_topic)
+    assert_reserved_topic_mutations_rejected(inbox, system_topic)
+  end
+
   test "should replace existing primary agent" do
     old_agent = User.create!(
       email: "old@test.local", password: "password123", name: "OldAgent",
@@ -439,6 +900,20 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     # present-and-null to actually remove the avatar.
     assert body["topic"].key?("primary_agent")
     assert_nil body["topic"]["primary_agent"]
+  end
+
+  test "primary agent update rejects a topic that moved before its lock" do
+    ai_agent = User.create!(
+      email: "stale-pin@test.local", password: "password123", name: "StalePinAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+
+    assert_topic_source_change_rejected do
+      patch set_primary_agent_creative_topic_url(@creative, @topic), params: { agent_id: nil }, as: :json
+    end
+
+    assert_equal ai_agent.id, @topic.reload.primary_agent_id
   end
 
   # On a session topic primary_agent_id is session identity, not a routing pin:
@@ -702,10 +1177,50 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
   private
 
+  def assert_topic_source_change_rejected
+    destination = Collavre::Creative.create!(description: "Destination", user: @user)
+    topics = @creative.topics
+    lock_topic = lambda do
+      @topic.update_column(:creative_id, destination.id)
+      @topic.reload
+    end
+
+    Collavre::Creative.stub(:find, @creative) do
+      topics.stub(:find, @topic) do
+        @topic.stub(:lock!, lock_topic) { yield }
+      end
+    end
+
+    assert_response :forbidden
+  end
+
   def move_test_agent(email, name)
     User.create!(
       email: email, password: "password123", name: name,
       llm_vendor: "openai", llm_model: "gpt-4", searchable: true
     )
+  end
+
+  def assignable_agent(creative:, email:, name:)
+    agent = move_test_agent(email, name)
+    Collavre::CreativeShare.create!(
+      creative: creative, user: agent, shared_by: @user, permission: :feedback
+    )
+    agent
+  end
+
+  def assert_reserved_topic_mutations_rejected(creative, topic)
+    patch collavre.creative_topic_url(creative, topic),
+      params: { topic: { name: "Renamed reserved topic" } }, as: :json
+    assert_response :unprocessable_entity
+    assert_not_equal "Renamed reserved topic", topic.reload.name
+
+    patch archive_creative_topic_url(creative, topic), as: :json
+    assert_response :unprocessable_entity
+    assert_nil topic.reload.archived_at
+
+    delete collavre.creative_topic_url(creative, topic), as: :json
+    assert_response :unprocessable_entity
+    assert topic.reload.persisted?
   end
 end

@@ -22,6 +22,8 @@ module Collavre
           )
         end
         head :ok
+      rescue ::Creatives::Reorderer::PermissionError
+        head :forbidden
       rescue ::Creatives::Reorderer::Error
         head :unprocessable_entity
       end
@@ -48,6 +50,8 @@ module Collavre
           parent_id: result.parent&.id,
           direction: result.direction
         }
+      rescue ::Creatives::Reorderer::PermissionError
+        head :forbidden
       rescue ::Creatives::Reorderer::Error
         head :unprocessable_entity
       end

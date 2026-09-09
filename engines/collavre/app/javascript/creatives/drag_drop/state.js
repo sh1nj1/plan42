@@ -1,6 +1,7 @@
 const state = {
   dragged: null,
   lastOverRow: null,
+  lastOverPosition: null,
 };
 
 export function setDraggedState(payload) {
@@ -14,14 +15,20 @@ export function getDraggedState() {
 export function resetDraggedState() {
   state.dragged = null;
   state.lastOverRow = null;
+  state.lastOverPosition = null;
 }
 
-export function setLastDragOverRow(row) {
+export function setLastDragOverRow(row, position = null) {
   state.lastOverRow = row;
+  state.lastOverPosition = position;
 }
 
 export function getLastDragOverRow() {
   return state.lastOverRow;
+}
+
+export function getLastDragOverPosition() {
+  return state.lastOverPosition;
 }
 
 export function hasDraggedState() {

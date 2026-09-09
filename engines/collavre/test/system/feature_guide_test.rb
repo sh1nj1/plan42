@@ -39,11 +39,19 @@ class FeatureGuideTest < ApplicationSystemTestCase
     original_help_item ? registry.register(original_help_item) : registry.unregister(:help)
   end
 
-  test "the hub breadcrumb is visible" do
+  test "the hub home button is visible" do
     visit collavre.features_path
 
-    assert_selector "nav.feature-guide-breadcrumb"
-    assert_link I18n.t("collavre.features.nav.landing")
+    assert_selector ".feature-guide-back"
+    assert_link I18n.t("collavre.features.nav.back_home"), class: "landing-btn-ghost"
+  end
+
+  test "the hub offers a back button to the landing page" do
+    visit collavre.features_path
+
+    click_link I18n.t("collavre.features.nav.back_home")
+
+    assert_current_path collavre.landing_path(locale: I18n.locale)
   end
 
   test "a guide breadcrumb is visible and walks back to the hub" do
@@ -58,8 +66,9 @@ class FeatureGuideTest < ApplicationSystemTestCase
   end
 
   # The landing layout carries no application navigation, and the desktop shell's
-  # single webview has no back button, so the breadcrumb's return link is a
-  # signed-in reader's only visible way out of the guide.
+  # single webview has no back button, so the return link is a signed-in reader's
+  # only visible way out of the guide. The hub carries it in the button row beside
+  # "Home" and the detail page in the breadcrumb, so both are checked here.
   test "a signed-in reader can return to the app from the guide" do
     user = User.create!(
       email: "guide-reader@example.com",
@@ -71,9 +80,13 @@ class FeatureGuideTest < ApplicationSystemTestCase
     sign_in_via_ui(user)
     app_path = page.current_path
 
+    visit collavre.features_path
+
+    assert_selector ".feature-guide-back a.feature-guide-back-to-app", visible: :visible
+
     visit collavre.feature_path(:mention_agent)
 
-    assert_selector "a.feature-guide-back-to-app", visible: :visible
+    assert_selector "nav.feature-guide-breadcrumb a.feature-guide-back-to-app", visible: :visible
     click_link I18n.t("collavre.features.nav.back_to_app", app_name: I18n.t("app.name"))
 
     assert_current_path app_path

@@ -8,7 +8,7 @@ module Tools
     include Collavre::PublicAssetsHelper
 
     tool_name "creative_attach_files_service"
-    tool_description "Attach inline, agent-generated TEXT content (markdown, html, svg, plain text) to a Creative. The content is stored as an ActiveStorage blob, embedded into the Creative's description, and served via CloudFront-cached /public-assets URLs.\n\nUse this for content the agent produced as text (notes, generated markdown/html/svg).\n\nFor BINARY files already on disk (png, mp4, pdf), use the CLI `collavre attach --creative <id> --file <path>` instead — it uploads the raw bytes over a bearer multipart HTTP endpoint without base64 bloat.\n\nRequires :write permission on the target Creative."
+    tool_description "Attach inline, agent-generated TEXT content (markdown, html, svg, plain text) to a Creative. The content is stored as an ActiveStorage blob, embedded into the Creative's description, and served via CloudFront-cached /public-assets URLs.\n\nUse this for content the agent produced as text (notes, generated markdown/html/svg).\n\nFor BINARY files already on disk (png, mp4, pdf), use the CLI `collavre attach --creative <id> --file <path>` instead — it uploads the raw bytes over a bearer multipart HTTP endpoint without base64 bloat.\n\nRequires :write permission on the target Creative. A Creative with inherited ai_write_policy=review stores a draft in History for approval."
 
     tool_param :creative_id, description: "ID of the Creative to attach content to.", required: true
     tool_param :files, description: "Array of objects: { filename, content, content_type? }. `content` is the literal UTF-8 text to store (e.g. markdown/html/svg source). `content_type` is inferred from the filename when omitted.", required: true
@@ -30,6 +30,14 @@ module Tools
       # later in the array never leaves an orphaned blob from an earlier one.
       return { error: "Each file requires a filename" } if files.any? { |f| f["filename"].to_s.blank? }
 
+      Creatives::AiWritePolicy.capture(
+        creatives: [ creative, creative.effective_origin ], anchor: Creatives::AiWritePolicy.agent_anchor || creative
+      ) { attach_files(creative, files) }
+    end
+
+    private
+
+    def attach_files(creative, files)
       blobs = files.map do |f|
         name = f["filename"].to_s
         content = f["content"].to_s

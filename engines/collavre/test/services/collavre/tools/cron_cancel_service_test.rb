@@ -42,7 +42,7 @@ module Collavre
       test "does not cancel static tasks" do
         static_task = SolidQueue::RecurringTask.create!(
           key: "static_cancel_test",
-          class_name: "InboxSummaryJob",
+          class_name: "Collavre::StuckDetectorJob",
           schedule: "0 9 * * *",
           static: true
         )
