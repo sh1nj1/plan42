@@ -104,7 +104,25 @@ module CollavreSlack
       result = SlackEventHandler.new(payload: payload).call
       assert_equal :message_updated, result[:type]
       assert_equal comment.id, result[:comment_id]
+      prefix = I18n.t("collavre_slack.messages.slack_user_prefix", name: "BNEWS")
+      assert_equal "#{prefix} Updated article", result[:content]
+
+      message = payload[:event][:message]
+      [ { username: "GeekNews" }, { bot_profile: { name: "GeekNews" } } ].each do |identity|
+        payload[:event][:message] = message.merge(identity)
+        result = SlackEventHandler.new(payload: payload).call
+        prefix = I18n.t("collavre_slack.messages.slack_user_prefix", name: "GeekNews")
+        assert_equal "#{prefix} Updated article", result[:content]
+        SlackInboundMessageUpdateJob.perform_now(result)
+        assert_equal result[:content], comment.reload.content
+      end
+      assert_not_requested :get, "https://slack.com/api/users.info"
+
+      payload[:event][:message] = message.except(:bot_id).merge(user: "UHUMAN")
+      result = SlackEventHandler.new(payload: payload).call
       assert_equal "Updated article", result[:content]
+
+      payload[:event][:message] = message
 
       payload[:event][:message][:bot_id] = "BSELF"
       assert_nil SlackEventHandler.new(payload: payload).call

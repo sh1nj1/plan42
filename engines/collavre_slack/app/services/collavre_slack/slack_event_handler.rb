@@ -23,13 +23,7 @@ module CollavreSlack
       slack_email = user_result[:slack_email]
       slack_user_id = user_result[:slack_user_id]
 
-      normalized_content = MentionMapping.from_slack(formatted_content, slack_account)
-
-      # Prepend Slack username if user is not mapped
-      if user_result[:user].nil? && slack_display_name.present?
-        prefix = I18n.t("collavre_slack.messages.slack_user_prefix", name: slack_display_name)
-        normalized_content = "#{prefix} #{normalized_content}"
-      end
+      normalized_content = normalize_content(formatted_content, slack_account, user_result)
 
       {
         type: :message,
@@ -54,7 +48,8 @@ module CollavreSlack
       return unless message_ts
 
       # Ignore our own edits to prevent synchronization loops.
-      return if SlackBotMessage.new(account: slack_account, message: message).own?
+      bot_message = SlackBotMessage.new(account: slack_account, message: message)
+      return if bot_message.own?
 
       # Find the comment link by Slack message
       comment_link = SlackCommentLink.find_by_slack_message(
@@ -65,7 +60,8 @@ module CollavreSlack
       return unless comment_link
 
       new_text = message[:text].to_s
-      normalized_content = MentionMapping.from_slack(new_text, slack_account)
+      sender = bot_message.sender if bot_message.bot?
+      normalized_content = normalize_content(new_text, slack_account, sender)
 
       {
         type: :message_updated,
@@ -135,6 +131,14 @@ module CollavreSlack
 
     def linked_channel(slack_account)
       SlackChannelLink.find_by(slack_account: slack_account, channel_id: channel_id)
+    end
+
+    def normalize_content(text, slack_account, sender)
+      content = MentionMapping.from_slack(text, slack_account)
+      return content unless sender && sender[:user].nil? && sender[:slack_display_name].present?
+
+      prefix = I18n.t("collavre_slack.messages.slack_user_prefix", name: sender[:slack_display_name])
+      "#{prefix} #{content}"
     end
 
     def message_sender(slack_account)
