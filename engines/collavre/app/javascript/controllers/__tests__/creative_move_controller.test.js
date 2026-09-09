@@ -611,3 +611,30 @@ test.each([false, true])('root load failure preserves error feedback, already co
   expect(alertDialog).toHaveBeenCalledTimes(1)
   expect(executeMoveCommand).not.toHaveBeenCalled()
 })
+
+
+test.each(['move', 'link'])('archived-parent selection launcher submits only the active child in %s mode', async mode => {
+  controller.cancel()
+  const action = document.querySelector('[data-creative-move-id]')
+  // The helper omits the archived current parent's ID, retaining selection.
+  action.dataset.creativeMoveId = ''
+  document.querySelectorAll('.select-creative-checkbox').forEach(el => { el.checked = false })
+  const select = document.createElement('button')
+  select.id = 'select-creative-btn'
+  const startSelection = jest.fn(() => select.setAttribute('aria-pressed', 'true'))
+  select.addEventListener('click', startSelection)
+  document.body.appendChild(select)
+  action.click()
+  expect(dialog.open).toBe(false)
+  expect(controller.ids).toEqual([])
+  expect(startSelection).toHaveBeenCalledTimes(1)
+  document.querySelector('.select-creative-checkbox[value="2"]').checked = true
+  action.click()
+  expect(dialog.open).toBe(true)
+  expect(controller.modeTarget.value).toBe('move')
+  destination()
+  controller.modeTarget.value = mode
+  executeMoveCommand.mockResolvedValue({ ok: true, succeededIds: ['2'], failedIds: [] })
+  await submit()
+  expect(executeMoveCommand).toHaveBeenCalledWith({ ids: ['2'], targetId: '99', direction: 'child', mode })
+})

@@ -782,6 +782,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "archived parent retains a selection-only header action for active children" do
+    parent = Creative.create!(user: users(:one), description: "Archived parent", archived_at: Time.current)
+    child = Creative.create!(user: users(:one), parent: parent, description: "Active child")
+    assert_not child.archived?
+
+    [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+      get creatives_path(id: parent.id, show_archived: true), headers: headers
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+      assert_select "#creative-overflow-menu [data-creative-move-id=?]", parent.id.to_s, count: 0
+    end
+  end
+
   test "header move capability respects registered read-only sources and their linked shells" do
     source_type = "header_move_read_only_source"
     Creative.register_read_only_source(source_type)

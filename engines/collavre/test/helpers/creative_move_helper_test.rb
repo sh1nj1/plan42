@@ -23,7 +23,14 @@ class CreativeMoveHelperTest < ActionView::TestCase
     assert_includes html, 'data-creative-move-id="42"'
     assert_includes html, 'aria-haspopup="dialog"'
     assert_includes html, 'data-creative-move-writable="true"'
-    creative[:archived?] = true
+  end
+
+  test "archived parents expose selection without using the parent as a source" do
+    creative = Struct.new(:id, :archived?).new(42, true)
+    html = render_creative_move_action(creative, true)
+    assert_includes html, 'data-creative-move-id=""'
+    assert_not_includes html, 'data-creative-move-id="42"'
+    Collavre::Current.user = nil
     assert_empty render_creative_move_action(creative, true)
   end
 
