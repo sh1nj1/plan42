@@ -758,13 +758,16 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
   test "header move action is hidden for inaccessible and missing requested creatives" do
     inaccessible = Creative.create!(user: users(:two), description: "Private move source")
     assert_not inaccessible.has_permission?(users(:one), :read)
-    missing_id = Creative.maximum(:id) + 1
+    # The first index visit lazily creates the user's Inbox, which claims the
+    # next sequence value. Reserve an id well past it so it stays missing.
+    missing_id = Creative.maximum(:id) + 1_000
 
     [ inaccessible.id, missing_id ].each do |id|
       [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
         get creatives_path(id: id), headers: headers
 
         assert_response :success
+        assert_not Creative.exists?(missing_id)
         assert_select "#creative-overflow-menu [data-creative-move-id]", count: 0
       end
     end

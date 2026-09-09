@@ -536,6 +536,51 @@ test.each([
   expect(restore).toHaveBeenCalledTimes(disconnected ? 0 : 1)
 })
 
+// CSR emits unrelated mutations long before the rows land. The observer must
+// keep waiting through them instead of falling through to either outcome.
+test('unrelated mutations keep the root request waiting until rows arrive', async () => {
+  controller.cancel()
+  document.querySelectorAll('creative-tree-row').forEach(row => row.remove())
+  const tree = document.createElement('div')
+  tree.id = 'creatives'
+  document.body.appendChild(tree)
+  const action = document.querySelector('[data-creative-move-id]')
+  action.dataset.creativeMoveId = ''
+  const select = document.createElement('button')
+  select.id = 'select-creative-btn'
+  document.body.appendChild(select)
+  action.click()
+  expect(document.activeElement).toBe(action)
+  tree.appendChild(document.createElement('span'))
+  await flush()
+  expect(select.getAttribute('aria-pressed')).toBe(null)
+  expect(alertDialog).not.toHaveBeenCalled()
+  tree.innerHTML = '<input type="checkbox" class="select-creative-checkbox" value="7">'
+  await flush()
+  expect(document.activeElement).toBe(tree.firstElementChild)
+  expect(alertDialog).not.toHaveBeenCalled()
+})
+
+// The error text lives on a Stimulus value the tree partial always renders, but
+// a cached or partially rendered container may not carry it yet.
+test('a load failure without the tree error text falls back to the generic failure', async () => {
+  controller.cancel()
+  document.querySelectorAll('creative-tree-row').forEach(row => row.remove())
+  const tree = document.createElement('div')
+  tree.id = 'creatives'
+  tree.dataset.loadState = 'error'
+  tree.dataset.loaded = 'true'
+  document.body.appendChild(tree)
+  const action = document.querySelector('[data-creative-move-id]')
+  action.dataset.creativeMoveId = ''
+  action.click()
+  await flush()
+  expect(alertDialog).toHaveBeenCalledWith('Failed')
+  expect(controller.announcementTarget.textContent).toBe('Failed')
+  expect(dialog.open).toBe(false)
+  expect(document.activeElement).toBe(action)
+})
+
 test.each([false, true])('root load failure preserves error feedback, already completed: %s', async completed => {
   controller.cancel()
   document.querySelectorAll('creative-tree-row').forEach(row => row.remove())

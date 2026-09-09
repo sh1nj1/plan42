@@ -13,8 +13,12 @@ module Creatives
         "<progress data-select='#{select_mode}'></progress><cron-badge count='#{cron_tasks.size}' can-delete='#{can_delete_cron}'></cron-badge>"
       end
 
-      def svg_tag(name, className: nil, width: nil, height: nil)
-        "<svg data-name='#{name}' data-class='#{className}' data-width='#{width}' data-height='#{height}'></svg>"
+      # Mirrors ApplicationHelper#svg_tag's options-hash signature: linked rows
+      # render the origin link icon with `class:`, which a keyword-only double
+      # rejects.
+      def svg_tag(name, options = {})
+        "<svg data-name='#{name}' data-class='#{options[:class] || options[:className]}' " \
+          "data-width='#{options[:width]}' data-height='#{options[:height]}'></svg>"
       end
 
       def link_to(_path, *args)
