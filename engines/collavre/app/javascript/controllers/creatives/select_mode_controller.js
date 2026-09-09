@@ -118,6 +118,10 @@ export default class extends Controller {
     }
   }
 
+  checkboxTargetConnected(checkbox) {
+    checkbox.style.display = this.active ? '' : 'none'
+  }
+
   rowTargetConnected(row) {
     this.registerRowListeners(row)
   }

@@ -366,6 +366,52 @@ test('root action starts selection instead of opening an empty move dialog', () 
   expect(dialog.open).toBe(true)
 })
 
+test.each(['arrive', 'focus-away', 'disconnect'])('root selection waits for CSR rows: %s', async outcome => {
+  controller.cancel()
+  document.querySelectorAll('creative-tree-row').forEach(row => row.remove())
+  const action = document.querySelector('[data-creative-move-id]')
+  action.dataset.creativeMoveId = ''
+  const wrapper = document.createElement('div')
+  wrapper.dataset.controller = 'popup-menu'
+  wrapper.innerHTML = '<button data-popup-menu-target="button">…</button><div hidden></div>'
+  document.body.prepend(wrapper)
+  wrapper.lastElementChild.appendChild(action)
+  const select = document.createElement('button')
+  select.id = 'select-creative-btn'
+  wrapper.lastElementChild.appendChild(select)
+  const startSelection = jest.fn(() => {
+    select.setAttribute('aria-pressed', 'true')
+    document.querySelectorAll('.select-creative-checkbox').forEach(el => { el.style.display = '' })
+  })
+  select.addEventListener('click', startSelection)
+  action.click()
+  expect(startSelection).not.toHaveBeenCalled()
+  expect(document.activeElement).toBe(wrapper.firstElementChild)
+  expect(dialog.open).toBe(false)
+  let other
+  if (outcome === 'focus-away') {
+    other = document.createElement('button')
+    document.body.appendChild(other)
+    other.focus()
+  }
+  if (outcome === 'disconnect') controller.disconnect()
+  document.body.insertAdjacentHTML('beforeend', '<input type="checkbox" class="select-creative-checkbox" value="7" style="display:none">')
+  await flush()
+  if (outcome === 'arrive') {
+    const checkbox = document.querySelector('.select-creative-checkbox')
+    expect(startSelection).toHaveBeenCalledTimes(1)
+    expect(checkbox.style.display).toBe('')
+    expect(document.activeElement).toBe(checkbox)
+    checkbox.checked = true
+    action.click()
+    expect(controller.ids).toEqual(['7'])
+    expect(dialog.open).toBe(true)
+  } else {
+    expect(startSelection).not.toHaveBeenCalled()
+    if (other) expect(document.activeElement).toBe(other)
+  }
+})
+
 test('returns focus to the visible overflow toggle on cancel and after replacement', async () => {
   controller.cancel()
   const action = document.querySelector('[data-creative-move-id]')

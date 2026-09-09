@@ -137,3 +137,23 @@ test('declining the confirmation deletes nothing', async () => {
   expect(container().querySelectorAll('creative-tree-row')).toHaveLength(1)
   expect(placeholder()).toBeNull()
 })
+
+
+test('late CSR checkboxes inherit selection mode and remain hidden after cancellation', async () => {
+  application = await mount([])
+  const controller = controllerFor(application)
+  controller.toggle(new Event('click'))
+  container().innerHTML = rowMarkup('7').replace('type="checkbox"', 'type="checkbox" style="display:none"')
+  await flush()
+  const first = container().querySelector('input')
+  expect(first.style.display).toBe('')
+  first.focus()
+  container().insertAdjacentHTML('beforeend', rowMarkup('8'))
+  await flush()
+  expect(document.activeElement).toBe(first)
+  expect(container().querySelector('input[value="8"]').style.display).toBe('')
+  controller.toggle(new Event('click'))
+  container().insertAdjacentHTML('beforeend', rowMarkup('9'))
+  await flush()
+  container().querySelectorAll('input').forEach(checkbox => expect(checkbox.style.display).toBe('none'))
+})

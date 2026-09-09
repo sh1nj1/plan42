@@ -42,9 +42,7 @@ export default class extends Controller {
     const selected = selectedRows.map(el => el.value)
     this.ids = selected.length ? [...new Set(selected)] : id ? [id] : []
     if (!this.ids.length) {
-      const select = document.getElementById('select-creative-btn')
-      if (select?.getAttribute('aria-pressed') !== 'true') select?.click()
-      document.querySelector('.select-creative-checkbox')?.focus()
+      this.startSelection()
       return
     }
     this.canMove = selected.length
@@ -60,6 +58,28 @@ export default class extends Controller {
     this.announcementTarget.textContent = ''
     this.dialogTarget.showModal()
     this.destinationTarget.focus()
+  }
+
+  startSelection() {
+    const checkbox = document.querySelector('.select-creative-checkbox')
+    if (checkbox) {
+      const select = document.getElementById('select-creative-btn')
+      if (select?.getAttribute('aria-pressed') !== 'true') select?.click()
+      checkbox.focus()
+      return
+    }
+    // The selection toggle also lives in the closed overflow menu. Wait on
+    // its visible launcher until CSR supplies a source, without stealing focus.
+    this.restoreFocus()
+    this.focusObserver = new MutationObserver(() => {
+      if (document.activeElement !== this.trigger || !this.trigger.isConnected) {
+        this.focusObserver.disconnect()
+      } else if (document.querySelector('.select-creative-checkbox')) {
+        this.focusObserver.disconnect()
+        this.startSelection()
+      }
+    })
+    this.focusObserver.observe(document.body, { childList: true, subtree: true })
   }
 
   chooseDestination() {
