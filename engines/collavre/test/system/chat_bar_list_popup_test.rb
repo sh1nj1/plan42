@@ -125,4 +125,25 @@ class ChatBarListPopupTest < ApplicationSystemTestCase
     assert_selector "#comments-popup .comment-participants-bar > .add-participant-btn"
     assert_no_selector "#comment-participants .add-participant-btn"
   end
+
+  test "message author menu stays anchored below the avatar on mobile" do
+    comment = Comment.create!(creative: @creative, user: @user, content: "Mobile menu anchor")
+    resize_window_to(390, 844)
+    open_comments_popup
+
+    trigger_selector = "#comment_#{comment.id} .comment-user-menu-trigger"
+    menu_selector = "#user_menu_comment_#{comment.id}"
+    find(trigger_selector).click
+    assert_selector menu_selector, visible: :visible
+
+    gap = page.evaluate_script(<<~JS)
+      (() => {
+        const trigger = document.querySelector('#{trigger_selector}').getBoundingClientRect()
+        const menu = document.querySelector('#{menu_selector}').getBoundingClientRect()
+        return menu.top - trigger.bottom
+      })()
+    JS
+
+    assert_in_delta 4, gap, 0.5
+  end
 end
