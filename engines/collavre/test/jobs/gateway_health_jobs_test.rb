@@ -43,6 +43,16 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     assert_nil @gateway.reload.health_checked_at
   end
 
+  # The probe turns every transport failure into a recorded verdict, so anything
+  # reaching the job is a bug here. It must not take the sweep down with it.
+  test "the probe swallows an unexpected failure instead of failing the sweep" do
+    Collavre::CliProxy::HealthProbe.stub(:new, ->(*) { raise "boom" }) do
+      assert_nothing_raised { Collavre::GatewayHealthProbeJob.perform_now(@gateway.id) }
+    end
+
+    assert_nil @gateway.reload.health_checked_at
+  end
+
   private
 
   def create_gateway

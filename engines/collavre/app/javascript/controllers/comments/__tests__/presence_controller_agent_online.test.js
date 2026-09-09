@@ -101,6 +101,22 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
         expect(isMenuOnline(1)).toBe(false)
     })
 
+    test('the refresh timer runs while the chat is open and stops when it closes', () => {
+        jest.useFakeTimers()
+        const reload = jest.spyOn(controller, 'loadParticipants').mockImplementation(() => {})
+
+        controller.startAgentPresenceRefresh()
+        jest.advanceTimersByTime(60000)
+        expect(reload).toHaveBeenCalledWith('42', { preserveMenus: true })
+
+        controller.stopAgentPresenceRefresh()
+        reload.mockClear()
+        jest.advanceTimersByTime(180000)
+        expect(reload).not.toHaveBeenCalled()
+
+        jest.useRealTimers()
+    })
+
     test('the periodic refresh preserves the rendered menus', async () => {
         controller.participantsData = [HUMAN, AGENT]
         controller.renderParticipants([])
