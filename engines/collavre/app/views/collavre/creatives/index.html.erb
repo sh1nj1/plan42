@@ -99,7 +99,7 @@
             <span aria-hidden="true"><%= svg_tag 'share.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.share') %>
           </button>
         <% end %>
-        <% if current_creative || params[:id].blank? %>
+        <% if current_creative %>
           <%= render_creative_move_action(current_creative, current_creative&.has_permission?(Current.user, :write) && !current_creative.effective_origin.read_only_source?) %>
         <% end %>
         <% if authenticated? %>

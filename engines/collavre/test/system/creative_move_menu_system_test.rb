@@ -76,19 +76,15 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_nil @source.reload.parent_id
   end
 
-  # The header action is the only move entry point now, so the root page -- which
-  # has no current creative to act on -- has to lead somewhere rather than open an
-  # empty dialog. It starts select mode and puts the caret on the first checkbox.
-  test "the root action starts selection when nothing is selected" do
+  # The root page has no current creative to act on, so the header offers no move
+  # action there at all -- the rest of the overflow menu is untouched.
+  test "the root header offers no move action" do
     visit collavre.creatives_path
-    open_move_menu
+    assert_selector "#creative-#{@source.id}"
+    find('[aria-controls="creative-overflow-menu"]').click
 
-    assert_no_selector "dialog[open][data-creative-move-target]"
-    # The toggle lives inside the menu the action just closed, so its state is
-    # only assertable with the visibility filter off.
-    assert_selector "#select-creative-btn[aria-pressed='true']", visible: :all
-    assert_equal "select-creative-checkbox",
-      page.evaluate_script("document.activeElement.className")
+    assert_no_selector "#creative-overflow-menu [data-creative-move-id]", visible: :all
+    assert_selector "#select-creative-btn", visible: :all
     assert_nil @source.reload.parent_id
   end
 
@@ -96,12 +92,11 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   # the writable check now reads `can-write` off each row rather than a per-row
   # button that no longer exists.
   test "a multi-row selection moves every selected creative" do
-    extra = Creative.create!(description: "Menu extra", user: @user)
-    visit collavre.creatives_path
-    find('[aria-controls="creative-overflow-menu"]').click
-    find("#select-creative-btn").click
-    find("#creative-#{@source.id} .select-creative-checkbox").click
-    find("#creative-#{extra.id} .select-creative-checkbox").click
+    holder = Creative.create!(description: "Menu holder", user: @user)
+    first = Creative.create!(description: "Menu first child", user: @user, parent: holder)
+    second = Creative.create!(description: "Menu second child", user: @user, parent: holder)
+    visit collavre.creatives_path(id: holder.id)
+    select_rows(first, second)
 
     open_move_menu
     assert_equal "move", find('[data-creative-move-target="mode"]').value
@@ -111,16 +106,17 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     find('[data-creative-move-target="confirm"]').click
 
     assert_no_selector "dialog[open][data-creative-move-target]"
-    assert_equal @destination, @source.reload.parent
-    assert_equal @destination, extra.reload.parent
+    assert_equal @destination, first.reload.parent
+    assert_equal @destination, second.reload.parent
+    assert_nil holder.reload.parent_id
   end
 
-  # A filtered-to-nothing view still marks the tree loaded, so the header action
-  # has a confirmed empty result to report. Without the in-app dialog the click
-  # would look like a no-op, which is what the native alert did inside the
-  # packaged desktop webview.
-  test "the root action explains a view with nothing to select" do
-    visit collavre.creatives_path(search: "no-such-creative-#{SecureRandom.hex(4)}")
+  # An archived parent keeps the selection-only launcher, and a view with no
+  # active child still marks the tree loaded -- a confirmed empty result the
+  # action has to report. Without the in-app dialog the click would look like a
+  # no-op, which is what the native alert did inside the packaged desktop webview.
+  test "the selection-only action explains a view with nothing to select" do
+    visit collavre.creatives_path(id: archived_parent.id, show_archived: "true")
     assert_selector "#creatives[data-loaded='true']", visible: :all
 
     open_move_menu
@@ -141,7 +137,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   # A failed tree fetch is not a confirmed empty result. The header action has to
   # repeat the loading error instead of inviting the user to create a creative
   # that may already exist behind the failure.
-  test "the root action reports a failed tree load" do
+  test "the selection-only action reports a failed tree load" do
+    visit collavre.creatives_path(id: archived_parent.id, show_archived: "true")
     assert_selector "#creatives[data-loaded='true']", visible: :all
     fail_tree_fetch
     reload_tree
@@ -165,7 +162,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   # The failure can also land *after* the action was taken. The observer has to
   # keep waiting on the still-loading tree, hold focus on the visible launcher,
   # and then report the error rather than the empty-view copy.
-  test "the root action waits for a late tree failure" do
+  test "the selection-only action waits for a late tree failure" do
+    visit collavre.creatives_path(id: archived_parent.id, show_archived: "true")
     # The row alignment pass only reveals the header once rendered rows give it a
     # measurement, and a pending reload has no rows to measure. Wait for the real
     # launcher before injecting the failure, otherwise the test would be asserting
@@ -189,8 +187,9 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   # alert() -- invisible inside the packaged desktop webview. It has to be the
   # shared dialog, and closing it has to hand focus back to the launcher.
   test "an archived selection is refused with guidance" do
-    archived = Creative.create!(description: "Menu archived", user: @user, archived_at: Time.current)
-    visit collavre.creatives_path(show_archived: "true")
+    holder = Creative.create!(description: "Menu holder", user: @user)
+    archived = Creative.create!(description: "Menu archived", user: @user, parent: holder, archived_at: Time.current)
+    visit collavre.creatives_path(id: holder.id, show_archived: "true")
     select_rows(archived)
 
     open_move_menu
@@ -204,23 +203,25 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_no_selector "dialog[role='alertdialog']"
     assert_equal "creative-overflow-menu",
       page.evaluate_script("document.activeElement.getAttribute('aria-controls')")
-    assert_nil archived.reload.parent_id
+    assert_equal holder, archived.reload.parent
   end
 
   # One archived row poisons the whole batch: the move is refused outright rather
   # than silently dropping the archived member and moving the rest.
   test "a selection mixing archived rows is refused" do
-    archived = Creative.create!(description: "Menu archived", user: @user, archived_at: Time.current)
-    visit collavre.creatives_path(show_archived: "true")
-    select_rows(@source, archived)
+    holder = Creative.create!(description: "Menu holder", user: @user)
+    active = Creative.create!(description: "Menu active", user: @user, parent: holder)
+    archived = Creative.create!(description: "Menu archived", user: @user, parent: holder, archived_at: Time.current)
+    visit collavre.creatives_path(id: holder.id, show_archived: "true")
+    select_rows(active, archived)
 
     open_move_menu
 
     assert_no_selector "dialog[open][data-creative-move-target]"
     assert_selector "dialog[role='alertdialog'] .confirm-dialog-message",
       text: I18n.t("collavre.dnd.archived_selection")
-    assert_nil @source.reload.parent_id
-    assert_nil archived.reload.parent_id
+    assert_equal holder, active.reload.parent
+    assert_equal holder, archived.reload.parent
   end
 
   # An archived parent is not a movable source, but its active children still
@@ -312,6 +313,14 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   end
 
   private
+
+  # The selection-only launcher (an empty move id) now lives on archived parents
+  # alone, so the fallback paths are exercised from one.
+  def archived_parent
+    @archived_parent ||= Creative.create!(
+      description: "Menu archived parent", user: @user, archived_at: Time.current
+    )
+  end
 
   def open_move_menu(key = nil)
     toggle = find('[aria-controls="creative-overflow-menu"]')
