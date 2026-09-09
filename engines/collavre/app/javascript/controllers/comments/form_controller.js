@@ -42,10 +42,9 @@ export default class extends Controller {
     this.dnd = createDragDropRegistry({ root: this.formTarget, getKind: getDragKind, readData: readDragData })
     this.dnd.registerDropZone({ selector: '#new-comment-form', accepts: ['creative'],
       preview: previewDrop, dropEffect: 'copy',
-      onDrop: ({ ids, payload, event }) => {
+      onDrop: ({ ids, event }) => {
         event.stopPropagation()
-        const id = payload.creativeId || ids[0]
-        this.insertCreativeLink({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })
+        this.insertCreativeLinks(ids.map(id => ({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })))
       } })
     this.creativeId = null
     this.editingId ??= null
@@ -1352,7 +1351,12 @@ export default class extends Controller {
   }
 
   insertCreativeLink({ id, label }) {
-    const link = `[${label}](/creatives/${id})`
+    this.insertCreativeLinks([{ id, label }])
+  }
+
+  insertCreativeLinks(creatives) {
+    if (!creatives.length) return
+    const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
     const textarea = this.textareaTarget
     const pos = textarea.selectionStart
     const before = textarea.value.substring(0, pos)

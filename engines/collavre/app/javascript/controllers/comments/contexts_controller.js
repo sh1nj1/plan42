@@ -1,6 +1,7 @@
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
+import { alertDialog } from '../../lib/utils/dialog'
 import { Controller } from "@hotwired/stimulus"
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 import { elementAnchor } from '../../lib/common_popup'
@@ -18,8 +19,10 @@ export default class extends Controller {
         this.contexts = []
         this.canManage = false
         this._activeCreativeId = null
-        this._contextLoadVersion = 0
+        this._contextLoadVersion = (this._contextLoadVersion || 0) + 1
         this._contextSaveChain = Promise.resolve()
+        this._contextMutationLifetime = {}
+        this._contextDropNeedsRefresh = false
         this.draggingContextId = null
         this.listVisible = false
         this.handleContextListClose = this.handleContextListClose.bind(this)
@@ -28,6 +31,7 @@ export default class extends Controller {
     }
 
     disconnect() {
+        this._contextMutationLifetime = null
         this.dnd?.destroy()
         this._unbindPopupDragDetection()
         this._contextLoadVersion += 1
@@ -62,6 +66,8 @@ export default class extends Controller {
     }
 
     _resetContextState() {
+        this._contextMutationLifetime = {}
+        this._contextDropNeedsRefresh = false
         this._contextLoadVersion += 1
         this._closeContextListPopup()
         this.contexts = []
@@ -89,11 +95,14 @@ export default class extends Controller {
                 this.canManage = data.can_manage || false
                 this._selfContextDisabled = data.disabled_self_context || false
                 this.renderContexts()
+                this._contextDropNeedsRefresh = false
+                return true
             }
         } catch (e) {
             if (!this._isCurrentContextLoad(loadVersion, creativeId)) return
             console.error("Failed to load contexts", e)
         }
+        return false
     }
 
     _isCurrentContextLoad(loadVersion, creativeId) {
@@ -395,16 +404,16 @@ export default class extends Controller {
         this._saveDisabledState()
     }
 
-    async removeContext(event) {
+    removeContext(event) {
         event.stopPropagation()
         const contextId = parseInt(event.currentTarget.dataset.contextId)
-        if (!contextId) return
+        if (!contextId) return Promise.resolve()
 
-        const ownContexts = this.contexts.filter(c => !c.inherited)
-        const newIds = ownContexts.filter(c => c.id !== contextId).map(c => c.id)
-
-        await this._updateContextIds(newIds)
-        await this.loadContexts()
+        return this._enqueueContextMutation(() => {
+            const ownIds = this._ownContextIds()
+            if (!ownIds.includes(contextId)) return null
+            return ownIds.filter(id => id !== contextId)
+        })
     }
 
     addContext() {
@@ -427,21 +436,16 @@ export default class extends Controller {
         })
     }
 
-    async _addContextId(creativeId) {
+    _addContextId(creativeId) {
         // Prevent adding self as context
-        const selfId = parseInt(this.creativeId)
-        if (creativeId === selfId) return
+        const id = Number(creativeId)
+        if (!Number.isSafeInteger(id) || id <= 0 || id === Number(this.creativeId)) return Promise.resolve()
 
-        const ownContexts = this.contexts.filter(c => !c.inherited)
-        const existingIds = ownContexts.map(c => c.id)
-
-        if (existingIds.includes(creativeId)) return
-        // Also check inherited
-        if (this.contexts.some(c => c.id === creativeId)) return
-
-        const newIds = [...existingIds, creativeId]
-        await this._updateContextIds(newIds)
-        await this.loadContexts()
+        return this._enqueueContextMutation(() => {
+            // Direct and inherited contexts are both duplicates for a new addition.
+            if (this.contexts.some(context => Number(context.id) === id)) return null
+            return [...this._ownContextIds(), id]
+        })
     }
 
     _registerDragDrop() {
@@ -463,32 +467,29 @@ export default class extends Controller {
             preview: previewDrop, onDrop: this.handleReorderDrop.bind(this) })
     }
 
-    async handleReorderDrop({ el, ids: draggedIds, hit }) {
+    handleReorderDrop({ el, ids: draggedIds, hit }) {
         const draggedId = Number(draggedIds[0])
         const targetId = Number(el.dataset.contextId)
-        if (!draggedId || !targetId || draggedId === targetId) return
-
-        const ownContexts = this.contexts.filter(c => !c.inherited)
-        const ids = ownContexts.map(c => c.id)
-
-        const draggedIndex = ids.indexOf(draggedId)
-        const targetIndex = ids.indexOf(targetId)
-        if (draggedIndex === -1 || targetIndex === -1) return
+        if (!draggedId || !targetId || draggedId === targetId) return Promise.resolve()
 
         const insertBefore = hit === 'left'
 
-        ids.splice(draggedIndex, 1)
-        let newIndex = ids.indexOf(targetId)
-        if (!insertBefore) newIndex += 1
-        ids.splice(newIndex, 0, draggedId)
+        return this._enqueueContextMutation(() => {
+            const ids = this._ownContextIds()
+            const draggedIndex = ids.indexOf(draggedId)
+            if (draggedIndex === -1 || ids.indexOf(targetId) === -1) return null
 
-        await this._updateContextIds(ids)
-        await this.loadContexts()
+            ids.splice(draggedIndex, 1)
+            let newIndex = ids.indexOf(targetId)
+            if (!insertBefore) newIndex += 1
+            ids.splice(newIndex, 0, draggedId)
+            return ids
+        })
     }
 
     // --- API calls ---
     async _updateContextIds(ids) {
-        await this._patchContexts({ context_ids: ids })
+        return this._patchContexts({ context_ids: ids })
     }
 
     async _saveDisabledState() {
@@ -500,7 +501,9 @@ export default class extends Controller {
         const creativeId = this.creativeId
         if (!creativeId) return Promise.resolve()
 
-        const save = () => this._sendContextPatch(creativeId, params)
+        const lifetime = this._contextMutationLifetime
+        const save = () => lifetime && lifetime === this._contextMutationLifetime
+            ? this._sendContextPatch(creativeId, params) : undefined
         this._contextSaveChain = this._contextSaveChain.then(save, save)
         return this._contextSaveChain
     }
@@ -510,17 +513,21 @@ export default class extends Controller {
             const response = await fetch(`/creatives/${creativeId}/update_contexts`, {
                 method: 'PATCH',
                 headers: {
+                    'Accept': 'application/json',
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 },
                 body: JSON.stringify(params)
             })
 
-            if (!response.ok) {
+            if (!response.ok || response.redirected || response.headers?.get('content-type')?.includes('text/html')) {
                 console.error('Failed to update contexts', params)
+                return false
             }
+            return true
         } catch (e) {
             console.error('Error updating contexts', e)
+            return false
         }
     }
 
@@ -544,10 +551,67 @@ export default class extends Controller {
                     }
                 }
             },
-            onDrop: async ({ ids, payload, event }) => {
+            onDrop: ({ ids, event }) => {
                 event.stopPropagation()
-                await this._addContextId(Number(payload.creativeId || ids[0]))
+                return this._addDroppedContexts(ids)
             } })
+    }
+
+    _addDroppedContexts(ids) {
+        return this._enqueueContextMutation(() => {
+            const selfId = Number(this.creativeId)
+            const addedIds = ids.map(Number).filter(id => Number.isSafeInteger(id) && id > 0 && id !== selfId &&
+                !this.contexts.some(context => Number(context.id) === id))
+            if (!addedIds.length) return null
+            return [...new Set([...this._ownContextIds(), ...addedIds])]
+        })
+    }
+
+    _ownContextIds() {
+        return this.contexts.filter(context => !context.inherited).map(context => Number(context.id))
+    }
+
+    // `update_contexts` replaces the complete direct-context list, so every whole-list write must
+    // build its payload inside this queue. A payload computed while an earlier write was still in
+    // flight would silently drop that write's result.
+    _enqueueContextMutation(computeIds) {
+        const creativeId = this.creativeId
+        const lifetime = this._contextMutationLifetime
+        const run = async () => {
+            if (!this._isContextMutationCurrent(creativeId, lifetime)) return
+            if (this._contextDropNeedsRefresh) {
+                const refreshed = await this.loadContexts()
+                if (!this._isContextMutationCurrent(creativeId, lifetime)) return
+                // A superseded load resolves undefined: a newer load owns the rendered list, so the
+                // write is dropped without claiming it failed. Only `false` is a real load failure.
+                if (refreshed !== true) {
+                    if (refreshed === false) alertDialog(this._contextUpdateErrorText)
+                    return
+                }
+            }
+            const ids = computeIds()
+            if (!ids) return
+            const saved = await this._updateContextIds(ids)
+            if (!this._isContextMutationCurrent(creativeId, lifetime)) return
+            this._contextDropNeedsRefresh = true
+            if (saved === false) {
+                alertDialog(this._contextUpdateErrorText)
+                return
+            }
+            const refreshed = await this.loadContexts()
+            if (this._isContextMutationCurrent(creativeId, lifetime) && refreshed === false) alertDialog(this._contextUpdateErrorText)
+        }
+        this._contextMutationChain = (this._contextMutationChain || Promise.resolve()).then(run, run)
+        return this._contextMutationChain
+    }
+
+    _isContextMutationCurrent(creativeId, lifetime) {
+        return lifetime !== null && lifetime === this._contextMutationLifetime &&
+            String(this.creativeId) === String(creativeId) && this.canManage
+    }
+
+    get _contextUpdateErrorText() {
+        return this.element.dataset.contextUpdateErrorText
     }
 
     _unbindPopupDragDetection() {

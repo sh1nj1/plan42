@@ -77,6 +77,38 @@ describe('CreativesTreeController retry on transient network errors', () => {
     application.stop()
   })
 
+  test('ignores a queued network retry after a new reload takes ownership', async () => {
+    global.fetch = jest.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue({ ok: true, json: async () => ({ creatives: [{ id: 2 }] }) })
+    const { container, application } = installController()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.load({ preserveView: true })
+    await flush()
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+    expect(renderCreativeTree).toHaveBeenLastCalledWith(container, [{ id: 2 }])
+    application.stop()
+  })
+
+  test('discards a late JSON response even when the transport ignores abort', async () => {
+    let releaseJson
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: () => new Promise(resolve => { releaseJson = resolve }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ creatives: [{ id: 2 }] }) })
+    const { container, application } = installController()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.load({ preserveView: true })
+    await flush()
+    releaseJson({ creatives: [{ id: 1 }] })
+    await flush()
+    expect(renderCreativeTree).toHaveBeenLastCalledWith(container, [{ id: 2 }])
+    expect(renderCreativeTree.mock.calls.filter(([target, nodes]) => target === container && nodes[0]?.id === 1)).toEqual([])
+    application.stop()
+  })
+
   test('does NOT schedule retry on HTTP error responses', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = jest.fn().mockResolvedValue({

@@ -276,6 +276,30 @@ class CreativesReorderAuthorizationTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  # Nothing in the drag layer stops a single drag onto a row's own descendant -
+  # expanding a row puts its children on screen as drop targets - so the cyclic
+  # case is an ordinary rejection the endpoint has to answer itself.
+  #
+  # The status alone does not prove that: an unhandled RecordInvalid is mapped
+  # to 422 by rescue_responses too. The empty body is what distinguishes a
+  # `head :unprocessable_entity` from an escaped exception rendered as the
+  # exception page - which a JSON client would receive as HTML, and which is
+  # logged as an application error on every such drop.
+  test "single reorder onto its own descendant is rejected without raising" do
+    sign_in_as(@owner)
+
+    %w[child up down].each do |direction|
+      post reorder_creatives_path, params: {
+        dragged_id: @owner_root.id, target_id: @owner_a.id, direction: direction
+      }, as: :json
+
+      assert_response :unprocessable_entity, "direction #{direction}"
+      assert_predicate response.body, :blank?, "direction #{direction} answered with an exception page"
+      assert_nil @owner_root.reload.parent_id, "direction #{direction} moved the root"
+      assert_equal @owner_root.id, @owner_a.reload.parent_id, "direction #{direction} reparented the target"
+    end
+  end
+
   private
 
   def create_user(handle)

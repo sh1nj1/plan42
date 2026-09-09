@@ -30,6 +30,8 @@ jest.unstable_mockModule('../indicator', () => ({
 jest.unstable_mockModule('../../topic_move_members_popup', () => ({
   showMissingMembersPopup: jest.fn(),
 }))
+const { sendTopicMove } = await import('../../../lib/api/drag_drop')
+const { showLinkHover, hideLinkHover } = await import('../indicator')
 const alertDialog = jest.fn()
 jest.unstable_mockModule('../../../lib/utils/dialog', () => ({ alertDialog }))
 
@@ -96,9 +98,9 @@ function tree(id) {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-function nativeDrag(type, target, dataTransfer, { clientY = 10 } = {}) {
+function nativeDrag(type, target, dataTransfer, { clientY = 10, shiftKey = false } = {}) {
   const event = new Event(type, { bubbles: true, cancelable: true })
-  Object.assign(event, { dataTransfer, clientX: 0, clientY, shiftKey: false })
+  Object.assign(event, { dataTransfer, clientX: 0, clientY, shiftKey })
   target.dispatchEvent(event)
   return event
 }
@@ -137,6 +139,65 @@ describe('right creative tree drop wiring', () => {
     resetDraggedState()
     jest.clearAllMocks()
     document.body.innerHTML = ''
+  })
+
+  test('routes a topic through the registry into the target creative even while Shift is held', async () => {
+    const registry = createCreativeTreeDragDrop()
+    const dataTransfer = transfer()
+    dataTransfer.setData('application/x-topic-move', JSON.stringify({ topicId: '99', sourceCreativeId: '2' }))
+    sendTopicMove.mockResolvedValueOnce({})
+    try {
+      const over = nativeDrag('dragover', tree('1'), dataTransfer, { clientY: 0, shiftKey: true })
+      expect(over.defaultPrevented).toBe(true)
+      expect(dataTransfer.dropEffect).toBe('move')
+      expect(hideLinkHover).toHaveBeenCalled()
+      nativeDrag('drop', tree('1'), dataTransfer, { clientY: 0, shiftKey: true })
+      await flush()
+      expect(sendTopicMove).toHaveBeenCalledWith({ topicId: '99', sourceCreativeId: '2', targetCreativeId: '1' })
+      expect(runMoveWithDomRecovery).not.toHaveBeenCalled()
+    } finally {
+      registry.destroy()
+    }
+  })
+
+  test('rejects disabled rows through the registry without claiming the browser drop', () => {
+    const registry = createCreativeTreeDragDrop()
+    const dataTransfer = transfer()
+    tree('1').draggable = false
+    dataTransfer.setData('application/x-topic-id', '99')
+    try {
+      expect(nativeDrag('dragover', tree('1'), dataTransfer).defaultPrevented).toBe(false)
+      expect(nativeDrag('drop', tree('1'), dataTransfer).defaultPrevented).toBe(false)
+      expect(runMoveWithDomRecovery).not.toHaveBeenCalled()
+    } finally {
+      registry.destroy()
+    }
+  })
+
+  test('ignores a browser drag event with no transfer or active creative session', () => {
+    const registry = createCreativeTreeDragDrop()
+    try {
+      expect(nativeDrag('dragover', tree('1'), null).defaultPrevented).toBe(false)
+      expect(nativeDrag('drop', tree('1'), null).defaultPrevented).toBe(false)
+      expect(runMoveWithDomRecovery).not.toHaveBeenCalled()
+    } finally {
+      registry.destroy()
+    }
+  })
+
+  test('updates the registered creative effect when Shift changes over the same target', () => {
+    const registry = createCreativeTreeDragDrop()
+    const dataTransfer = transfer()
+    try {
+      nativeDrag('dragstart', tree('2'), dataTransfer)
+      nativeDrag('dragover', tree('1'), dataTransfer, { shiftKey: true })
+      expect(dataTransfer.dropEffect).toBe('copy')
+      expect(showLinkHover).toHaveBeenCalled()
+      nativeDrag('dragover', tree('1'), dataTransfer)
+      expect(dataTransfer.dropEffect).toBe('move')
+    } finally {
+      registry.destroy()
+    }
   })
 
   test('publishes an envelope the shared reader accepts', () => {
