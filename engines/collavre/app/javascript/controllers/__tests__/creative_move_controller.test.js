@@ -2,6 +2,8 @@
 import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 
+const alertDialog = jest.fn(() => Promise.resolve())
+jest.unstable_mockModule('../../lib/utils/dialog', () => ({ alertDialog }))
 const executeMoveCommand = jest.fn()
 const invalidateCreativeTree = jest.fn()
 jest.unstable_mockModule('../../creatives/drag_drop/move_command', () => ({ executeMoveCommand }))
@@ -18,7 +20,7 @@ beforeEach(async () => {
     <creative-tree-row creative-id="1" can-write><input class="select-creative-checkbox" type="checkbox" value="1" checked></creative-tree-row>
     <creative-tree-row creative-id="2" can-write><input class="select-creative-checkbox" type="checkbox" value="2" checked></creative-tree-row>
     <div id="link-creative-modal"></div>
-    <div data-controller="creative-move" data-creative-move-messages-value='{"archived":"Deselect archived creatives","choose":"Choose","invalid":"Invalid","moving":"Moving","complete":"Done","partial":"Partial","failed":"Failed","cancelled":"Cancelled"}'>
+    <div data-controller="creative-move" data-creative-move-messages-value='{"empty":"No selectable creatives","archived":"Deselect archived creatives","choose":"Choose","invalid":"Invalid","moving":"Moving","complete":"Done","partial":"Partial","failed":"Failed","cancelled":"Cancelled"}'>
       <dialog data-creative-move-target="dialog"><button data-creative-move-target="destination"></button>
       <select data-creative-move-target="direction"><option value="child">Child</option><option value="up">Before</option><option value="down">After</option></select>
       <select data-creative-move-target="mode"><option value="move">Move</option><option value="link">Link</option></select>
@@ -459,4 +461,72 @@ test.each(['', 'true'])('rejects archived-only and mixed selections with archive
   expect(dialog.open).toBe(true)
   expect(window.alert).not.toHaveBeenCalled()
   expect(controller.ids).toEqual(['1', '2'])
+})
+
+
+test.each(['already-empty', 'finishes-empty', 'focus-away', 'disconnect'])(
+  'root empty completion stops selection waiting: %s', async outcome => {
+    controller.cancel()
+    document.querySelectorAll('creative-tree-row').forEach(row => row.remove())
+    const tree = document.createElement('div')
+    tree.id = 'creatives'
+    document.body.appendChild(tree)
+    if (outcome === 'already-empty') tree.dataset.loaded = 'true'
+    const action = document.querySelector('[data-creative-move-id]')
+    action.dataset.creativeMoveId = ''
+    const wrapper = document.createElement('div')
+    wrapper.dataset.controller = 'popup-menu'
+    wrapper.innerHTML = '<button data-popup-menu-target="button">…</button><div hidden></div>'
+    document.body.prepend(wrapper)
+    wrapper.lastElementChild.appendChild(action)
+    const select = document.createElement('button')
+    select.id = 'select-creative-btn'
+    const startSelection = jest.fn()
+    select.addEventListener('click', startSelection)
+    wrapper.lastElementChild.appendChild(select)
+    action.click()
+    let other
+    if (outcome === 'focus-away') {
+      other = document.createElement('button')
+      document.body.appendChild(other)
+      other.focus()
+    }
+    if (outcome === 'disconnect') controller.disconnect()
+    tree.dataset.loaded = 'true'
+    await flush()
+    const abandoned = ['focus-away', 'disconnect'].includes(outcome)
+    expect(alertDialog).toHaveBeenCalledTimes(abandoned ? 0 : 1)
+    if (!abandoned) {
+      expect(alertDialog).toHaveBeenCalledWith('No selectable creatives')
+      expect(controller.announcementTarget.textContent).toBe('No selectable creatives')
+      expect(document.activeElement).toBe(wrapper.firstElementChild)
+    }
+    expect(dialog.open).toBe(false)
+    expect(startSelection).not.toHaveBeenCalled()
+    // A later tree change must not revive the completed/abandoned request.
+    tree.innerHTML = '<input type="checkbox" class="select-creative-checkbox" value="7">'
+    await flush()
+    expect(startSelection).not.toHaveBeenCalled()
+    expect(alertDialog).toHaveBeenCalledTimes(abandoned ? 0 : 1)
+    expect(executeMoveCommand).not.toHaveBeenCalled()
+    if (other) expect(document.activeElement).toBe(other)
+  }
+)
+
+
+test.each([false, true])('empty feedback restores focus after dismissal unless disconnected: %s', async disconnected => {
+  controller.cancel()
+  document.querySelectorAll('creative-tree-row').forEach(row => row.remove())
+  document.body.insertAdjacentHTML('beforeend', '<div id="creatives" data-loaded="true"></div>')
+  const action = document.querySelector('[data-creative-move-id]')
+  action.dataset.creativeMoveId = ''
+  let dismiss
+  alertDialog.mockImplementationOnce(() => new Promise(resolve => { dismiss = resolve }))
+  const restore = jest.spyOn(controller, 'restoreFocus')
+  action.click()
+  expect(restore).not.toHaveBeenCalled()
+  if (disconnected) controller.disconnect()
+  dismiss()
+  await flush()
+  expect(restore).toHaveBeenCalledTimes(disconnected ? 0 : 1)
 })

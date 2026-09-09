@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { executeMoveCommand } from '../creatives/drag_drop/move_command'
+import { alertDialog } from '../lib/utils/dialog'
 import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 
 // The header overflow menu opens the move dialog. The picker browses
@@ -68,18 +69,26 @@ export default class extends Controller {
       checkbox.focus()
       return
     }
+    if (document.getElementById('creatives')?.dataset.loaded === 'true') {
+      this.announcementTarget.textContent = this.messagesValue.empty
+      alertDialog(this.messagesValue.empty).then(() => {
+        if (!this.disconnected) this.restoreFocus()
+      })
+      return
+    }
     // The selection toggle also lives in the closed overflow menu. Wait on
     // its visible launcher until CSR supplies a source, without stealing focus.
     this.restoreFocus()
     this.focusObserver = new MutationObserver(() => {
       if (document.activeElement !== this.trigger || !this.trigger.isConnected) {
         this.focusObserver.disconnect()
-      } else if (document.querySelector('.select-creative-checkbox')) {
+      } else if (document.querySelector('.select-creative-checkbox') ||
+        document.getElementById('creatives')?.dataset.loaded === 'true') {
         this.focusObserver.disconnect()
         this.startSelection()
       }
     })
-    this.focusObserver.observe(document.body, { childList: true, subtree: true })
+    this.focusObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-loaded'] })
   }
 
   chooseDestination() {
