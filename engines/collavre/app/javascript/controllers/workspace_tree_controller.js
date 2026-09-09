@@ -240,6 +240,21 @@ export default class extends Controller {
     }
     link.addEventListener('click', (event) => this.selectNode(event))
     row.appendChild(link)
+    // The creative tree renders no button at all for an archived or read-only
+    // row, so the server sends the same verdict here rather than letting the
+    // user pick a destination the move endpoint will reject.
+    if (node.can_move === true) row.appendChild(this.buildMoveButton(node))
+    item.appendChild(row)
+
+    if (hasChildren && expanded) {
+      const childList = this.buildList(children, node.id, level + 1)
+      item.appendChild(childList)
+    }
+
+    return item
+  }
+
+  buildMoveButton(node) {
     const moveButton = document.createElement('button')
     moveButton.type = 'button'
     moveButton.className = 'creative-action-btn'
@@ -251,15 +266,7 @@ export default class extends Controller {
       ? this.moveLabelValue.replace('%{title}', node.label)
       : node.label)
     moveButton.textContent = this.moveTextValue
-    row.appendChild(moveButton)
-    item.appendChild(row)
-
-    if (hasChildren && expanded) {
-      const childList = this.buildList(children, node.id, level + 1)
-      item.appendChild(childList)
-    }
-
-    return item
+    return moveButton
   }
 
   async toggleBranch(item, toggle) {
