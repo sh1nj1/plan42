@@ -266,6 +266,51 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     end
   end
 
+  # The header action reads `.select-creative-checkbox:checked` document-wide,
+  # so a selection surviving a Back navigation would silently replace the
+  # creative on screen. This pins the restored page to the current creative and
+  # keeps a fresh selection working afterwards. Note that it passes without the
+  # controller reset too: <creative-tree-row> rebuilds its checkbox when the
+  # restored snapshot upgrades, so checkedness never actually survives here.
+  test "a restored history snapshot drops the hidden selection" do
+    child = Creative.create!(description: "Menu child", user: @user, parent: @source)
+    visit collavre.creatives_path(id: @source.id)
+    assert_selector "#creative-#{child.id} .select-creative-checkbox", visible: :all
+
+    select_rows(child)
+    assert_selector "#creative-#{child.id} .select-creative-checkbox:checked", visible: :all
+
+    page.execute_script("window.Turbo.visit('#{collavre.creatives_path(id: @destination.id)}')")
+    assert_no_selector "#creative-#{child.id}"
+
+    page.go_back
+
+    assert_selector "#creative-#{child.id} .select-creative-checkbox", visible: :all
+    assert_selector "#select-creative-btn[aria-pressed='false']", visible: :all
+    assert_no_selector ".select-creative-checkbox:checked", visible: :all
+
+    # The launcher falls back to the creative on screen, so the move has to land
+    # on the source and leave the previously selected child where it is.
+    open_move_menu
+    pick_destination
+    find('[data-creative-move-target="confirm"]').click
+
+    assert_no_selector "dialog[open][data-creative-move-target]"
+    assert_equal @destination, @source.reload.parent
+    assert_equal @source, child.reload.parent
+
+    # Selecting again after the restore still reaches the child.
+    select_rows(child)
+    assert_selector "#creative-#{child.id} .select-creative-checkbox:checked", visible: :all
+    open_move_menu
+    assert_selector "dialog[open][data-creative-move-target]"
+    pick_destination
+    find('[data-creative-move-target="confirm"]').click
+
+    assert_no_selector "dialog[open][data-creative-move-target]"
+    assert_equal @destination, child.reload.parent
+  end
+
   private
 
   def open_move_menu(key = nil)
@@ -273,6 +318,12 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     key ? toggle.send_keys(key) : toggle.click
     action = find('#creative-overflow-menu [data-creative-move-id]')
     key ? action.send_keys(key) : action.click
+  end
+
+  def pick_destination(creative = @destination)
+    find('[data-creative-move-target="destination"]').click
+    find('[data-link-creative-target="input"]').set(creative.description)
+    find("#link-creative-modal .link-result-item[data-id='#{creative.id}']").click
   end
 
   def select_rows(*creatives)
