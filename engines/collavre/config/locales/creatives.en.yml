@@ -2,6 +2,8 @@
 en:
   collavre:
     creatives:
+      drag_drop:
+        partial_failure: Some links were created. Retry only the missing links.
       workspace:
         tree_title: Creative tree
         tree_label: Creative navigation tree

@@ -7,7 +7,8 @@
          data-workspace-tree-current-path-value="<%= @workspace_path_ids.to_json %>"
          data-workspace-tree-loading-text-value="<%= t('app.loading') %>"
          data-workspace-tree-empty-text-value="<%= t('collavre.creatives.workspace.empty') %>"
-         data-workspace-tree-error-text-value="<%= t('collavre.creatives.workspace.load_error') %>">
+         data-workspace-tree-error-text-value="<%= t('collavre.creatives.workspace.load_error') %>"
+         data-workspace-tree-partial-failure-text-value="<%= t('collavre.creatives.drag_drop.partial_failure') %>">
   <%# Keep the stream source inside the tree region: as a direct child of the
       grid shell it would become a grid item with its own implicit row and
       push all three columns down. %>
