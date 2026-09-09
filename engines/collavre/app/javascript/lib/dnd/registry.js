@@ -1,4 +1,5 @@
 import { getDragKind, readDragData } from './envelope'
+import { createTouchBridge } from './touch_bridge'
 
 const liveRegistries = new Set()
 
@@ -33,6 +34,7 @@ function samePreview(left, right) {
 
 export function createDragDropRegistry({
   root = document,
+  touch = true,
   getKind = getDragKind,
   readData = readDragData,
   onError = (error) => console.error(error),
@@ -58,8 +60,18 @@ export function createDragDropRegistry({
     activePreview = null
   }
 
+  const localData = (transfer) => {
+    // Never substitute memory for a rejected or cross-window transfer payload.
+    if (Array.from(transfer?.types || []).length) return null
+    for (const candidate of liveRegistries) {
+      const data = candidate.gestureData(root.ownerDocument || root)
+      if (data) return data
+    }
+    return null
+  }
+
   const matchZone = (event) => {
-    const kind = getKind(event.dataTransfer)
+    const kind = getKind(event.dataTransfer) || localData(event.dataTransfer)?.kind
     let match = null
     for (const zone of zones) {
       const element = matchingElement(root, event, zone.selector)
@@ -97,9 +109,15 @@ export function createDragDropRegistry({
     if (owner?.registry !== registry) return
     const source = sources.find((candidate) => matchingElement(root, event, candidate.selector))
     const element = matchingElement(root, event, source.selector)
-    activeSource = { source, element }
+    for (const candidate of liveRegistries) candidate.finishDrag(event)
+    activeSource = { source, element, data: null }
     try {
-      if (source.onDragStart({ el: element, event }) === false) event.preventDefault()
+      if (source.onDragStart({ el: element, event,
+        setLocalData: data => { activeSource.data = data },
+      }) === false) {
+        event.preventDefault()
+        handleDragEnd(event)
+      }
       event.stopPropagation()
     } catch (error) {
       event.preventDefault()
@@ -171,7 +189,7 @@ export function createDragDropRegistry({
       resolved = resolveZone(event, true)
       if (!resolved) return
 
-      const data = readData(event.dataTransfer)
+      const data = readData(event.dataTransfer) || localData(event.dataTransfer)
       if (!data || data.kind !== resolved.kind) return
 
       event.preventDefault()
@@ -197,6 +215,7 @@ export function createDragDropRegistry({
   const ownerDocument = root.ownerDocument || root
   const handleKeyDown = (event) => {
     if (event.key !== 'Escape') return
+    bridge?.cancel()
     handleDragEnd(event)
   }
   ownerDocument.addEventListener('keydown', handleKeyDown)
@@ -209,6 +228,9 @@ export function createDragDropRegistry({
 
   const registry = {
     finishDrag: handleDragEnd,
+    gestureData(document) {
+      return document === ownerDocument ? activeSource?.data : null
+    },
     matchDrop: matchZone,
     getDragSource(target) {
       for (const source of sources) {
@@ -218,6 +240,31 @@ export function createDragDropRegistry({
       return null
     },
 
+    localDropTargets() {
+      const selector = zones.map(zone => zone.selector).join(',')
+      return selector ? [...(root.matches?.(selector) ? [root] : []), ...root.querySelectorAll(selector)] : []
+    },
+
+    getDropTargets() {
+      const targets = new Set()
+      for (const candidate of liveRegistries) {
+        for (const target of candidate.localDropTargets()) {
+          if (target.ownerDocument === (root.ownerDocument || root)) targets.add(target)
+        }
+      }
+      // Edge scrolling resolves targets every animation frame, so measure each
+      // ancestor chain once instead of on every comparison.
+      const depth = element => {
+        let count = 0
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) count += 1
+        return count
+      }
+      return [...targets]
+        .map(element => ({ element, depth: depth(element) }))
+        .sort((left, right) => right.depth - left.depth)
+        .map(({ element }) => element)
+    },
+
     registerDragSource(source) {
       if (!source?.selector || typeof source.onDragStart !== 'function') {
         throw new TypeError('A drag source requires selector and onDragStart')
@@ -225,6 +272,7 @@ export function createDragDropRegistry({
       sources.push(source)
       return () => {
         const index = sources.indexOf(source)
+        if (activeSource?.source === source) handleDragEnd({ type: 'unregister' })
         if (index >= 0) sources.splice(index, 1)
       }
     },
@@ -245,6 +293,7 @@ export function createDragDropRegistry({
     },
 
     destroy() {
+      bridge?.destroy()
       liveRegistries.delete(registry)
       handleDragEnd({ type: 'destroy' })
       ownerDocument.removeEventListener('keydown', handleKeyDown)
@@ -261,5 +310,6 @@ export function createDragDropRegistry({
     },
   }
   liveRegistries.add(registry)
+  const bridge = touch ? createTouchBridge({ root, registry }) : null
   return registry
 }

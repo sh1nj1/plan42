@@ -31,16 +31,17 @@ function creativePayload(item, row) {
   }
 }
 
-function startWorkspaceDrag({ el: row, event }) {
+function startWorkspaceDrag({ el: row, event, setLocalData }) {
   const item = workspaceItemFromRow(row)
-  if (!item || !event.dataTransfer) return
+  if (!item || !event.dataTransfer) return false
 
   const payload = creativePayload(item, row)
-  writeDragData(event.dataTransfer, {
+  const data = {
     kind: 'creative',
     ids: [payload.creativeId],
     payload,
-  })
+  }
+  if (!writeDragData(event.dataTransfer, data)) setLocalData(data)
   event.dataTransfer.effectAllowed = 'copyMove'
   row.classList.add('is-dragging')
 }
