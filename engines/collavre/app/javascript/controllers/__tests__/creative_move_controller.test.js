@@ -65,6 +65,26 @@ test('offers link mode for a readable source and never submits a forbidden move'
   expect(executeMoveCommand).toHaveBeenCalledWith(expect.objectContaining({ mode: 'link', ids: ['1', '2'] }))
 });
 
+test.each([false, true])('selected read-only-origin shells stay link-only with a writable header (mixed: %s)', async mixed => {
+  controller.cancel()
+  // TreeBuilder supplies this capability after resolving the shell's origin.
+  document.querySelector('creative-tree-row[creative-id="1"]').removeAttribute('can-write')
+  document.querySelector('.select-creative-checkbox[value="2"]').checked = mixed
+  document.querySelector('[data-creative-move-id]').click()
+  const ids = mixed ? ['1', '2'] : ['1']
+  expect(controller.ids).toEqual(ids)
+  expect(controller.modeTarget.value).toBe('link')
+  expect(controller.modeTarget.querySelector('[value="move"]').disabled).toBe(true)
+  destination()
+  controller.modeTarget.value = 'move'
+  await submit()
+  expect(executeMoveCommand).not.toHaveBeenCalled()
+  controller.modeTarget.value = 'link'
+  executeMoveCommand.mockResolvedValue({ status: 'success', ok: true, succeededIds: ids, failedIds: [] })
+  await submit()
+  expect(executeMoveCommand).toHaveBeenCalledWith({ ids, targetId: '99', direction: 'child', mode: 'link' })
+})
+
 test('keeps move disabled after a readable bundle link partially fails and retries only missing links', async () => {
   controller.cancel()
   const button = document.querySelector('[data-creative-move-id]')

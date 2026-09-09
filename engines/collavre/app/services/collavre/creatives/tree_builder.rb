@@ -83,8 +83,8 @@ module Creatives
 
     def can_write?(creative)
       return false unless user
-      # Read-only-source creatives are never writable
-      return false if creative.read_only_source?
+      # Linked shells inherit their effective origin's read-only capability.
+      return false if creative.effective_origin.read_only_source?
 
       allowed?(creative, :write)
     end

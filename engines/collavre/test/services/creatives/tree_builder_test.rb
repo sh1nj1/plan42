@@ -136,6 +136,29 @@ module Creatives
       Creative.read_only_source_types.delete(source_type) if source_type
     end
 
+    test "linked shells inherit read-only origin capability in selectable rows" do
+      source_type = "tree_builder_linked_read_only_source"
+      Creative.register_read_only_source(source_type)
+      source = Creative.create!(user: @user, description: "Managed source",
+        data: { "source" => { "type" => source_type } })
+      linked = Creative.create!(user: @user, origin: source)
+      writable = Creative.create!(user: @user, description: "Writable source")
+      writable_link = Creative.create!(user: @user, origin: writable)
+      creatives = [ source, linked, writable, writable_link ]
+
+      creatives.each { |creative| assert creative.has_permission?(@user, :write) }
+      refute linked.read_only_source?
+      assert linked.effective_origin.read_only_source?
+
+      nodes = build_tree_builder.build(creatives).index_by { |node| node[:id] }
+      assert_equal false, nodes.fetch(source.id)[:can_write]
+      assert_equal false, nodes.fetch(linked.id)[:can_write]
+      assert_equal true, nodes.fetch(writable.id)[:can_write]
+      assert_equal true, nodes.fetch(writable_link.id)[:can_write]
+    ensure
+      Creative.read_only_source_types.delete(source_type)
+    end
+
     private
 
     def build_tree_builder(allowed_creative_ids: nil, params: {})
