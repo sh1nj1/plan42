@@ -212,6 +212,69 @@ class CliProxyClientTest < ActiveSupport::TestCase
     assert_nil admin_http.instance_variable_get(:@endpoint_policy)
   end
 
+  # /health/ready is unauthenticated, but the proxy withholds per-engine detail
+  # from a caller without a completion key — and the admin key is not one.
+  test "readiness probe presents the completion key, not the admin key" do
+    gateway = build_gateway(owner: users(:two), name: "Ready proxy", base_url: "https://proxy.example.com")
+    response = FakeResponse.new(code: 200, message: "OK", payload: { "status" => "ok" }, successful: true)
+    http = FakeHttpClient.new(response)
+
+    Collavre::CliProxy::Client.new(gateway: gateway, http_client: http).health_ready
+
+    request = http.requests.fetch(0)
+    assert_equal "https://proxy.example.com/health/ready", request.fetch(:url)
+    assert_equal "Bearer completion-secret", request.dig(:headers, "Authorization")
+  end
+
+  test "readiness probe sends no credential when the gateway holds no completion key" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: users(:two), name: "Keyless proxy", base_url: "https://proxy.example.com", admin_key: "admin-secret"
+    )
+    response = FakeResponse.new(code: 200, message: "OK", payload: { "status" => "degraded" }, successful: true)
+    http = FakeHttpClient.new(response)
+
+    Collavre::CliProxy::Client.new(gateway: gateway, http_client: http).health_ready
+
+    assert_nil http.requests.fetch(0).dig(:headers, "Authorization")
+  end
+
+  # 503 is this endpoint's verdict for "every engine is logged out" and carries
+  # the same body as a 200. Raising it would discard what the caller probed for.
+  test "readiness probe returns the 503 body instead of raising" do
+    gateway = build_gateway(owner: users(:two), name: "Down proxy", base_url: "https://proxy.example.com")
+    body = { "status" => "down", "engines" => { "ready" => 0, "total" => 2 } }
+    http = FakeHttpClient.new(
+      FakeResponse.new(code: 503, message: "Service Unavailable", payload: body, successful: false)
+    )
+
+    assert_equal body, Collavre::CliProxy::Client.new(gateway: gateway, http_client: http).health_ready
+  end
+
+  test "readiness probe still raises a 503 that carries no verdict" do
+    gateway = build_gateway(owner: users(:two), name: "Proxied proxy", base_url: "https://proxy.example.com")
+    http = FakeHttpClient.new(
+      FakeResponse.new(code: 503, message: "Service Unavailable", payload: nil, successful: false)
+    )
+
+    error = assert_raises(Collavre::CliProxy::Client::Error) do
+      Collavre::CliProxy::Client.new(gateway: gateway, http_client: http).health_ready
+    end
+    assert_equal 503, error.status
+  end
+
+  test "liveness probe is unauthenticated" do
+    gateway = build_gateway(owner: users(:two), name: "Live proxy", base_url: "https://proxy.example.com")
+    http = FakeHttpClient.new(
+      FakeResponse.new(code: 200, message: "OK", payload: { "status" => "ok" }, successful: true)
+    )
+
+    Collavre::CliProxy::Client.new(gateway: gateway, http_client: http).health_live
+
+    request = http.requests.fetch(0)
+    assert_equal "https://proxy.example.com/health", request.fetch(:url)
+    assert_nil request.dig(:headers, "Authorization")
+  end
+
   private
 
   def build_gateway(owner:, name:, base_url:)

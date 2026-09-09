@@ -1395,6 +1395,34 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     refute data["users"].any? { |u| u["id"] == other.id }
   end
 
+  test "participants reports gateway-backed agent liveness alongside the user list" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @user, name: "Participants proxy", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion"
+    )
+    agent = Collavre::User.create!(
+      name: "CLI Agent", email: "cli-participants@ai.local", password: SecureRandom.hex(24),
+      system_prompt: "Help", llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local",
+      created_by_id: @user.id, agent_gateway: gateway
+    )
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    assert_response :success
+    assert_equal false, participant_json(agent)["agent_online"], "an unprobed gateway proves nothing"
+
+    gateway.update_columns(
+      health_status: 1,
+      health_checked_at: Time.current,
+      health_engines: { "mode" => "host", "items" => { "codex" => { "state" => "authenticated" } } }
+    )
+
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    assert_equal true, participant_json(agent)["agent_online"]
+    assert_equal false, participant_json(@user)["agent_online"],
+                 "a human's presence is chat presence, and does not travel here"
+  end
+
   test "participants disables caching" do
     get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
 
@@ -1615,5 +1643,9 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes @response.body, 'data-controller="comments--feature-cards comments--placeholder"'
+  end
+
+  def participant_json(user)
+    JSON.parse(response.body).fetch("users").find { |entry| entry["id"] == user.id }
   end
 end

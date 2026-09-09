@@ -7,6 +7,10 @@ production: &production
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  gateway_health_sweep:
+    class: Collavre::GatewayHealthSweepJob
+    queue: default
+    schedule: every minute
   restore_dropped_dispatches:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
@@ -29,6 +33,10 @@ desktop:
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  gateway_health_sweep:
+    class: Collavre::GatewayHealthSweepJob
+    queue: default
+    schedule: every minute
   restore_dropped_dispatches:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
@@ -49,6 +57,10 @@ development:
     schedule: every 5 minutes
   comment_push_delivery_sweep:
     class: Collavre::CommentPushDeliverySweepJob
+    queue: default
+    schedule: every minute
+  gateway_health_sweep:
+    class: Collavre::GatewayHealthSweepJob
     queue: default
     schedule: every minute
   restore_dropped_dispatches:

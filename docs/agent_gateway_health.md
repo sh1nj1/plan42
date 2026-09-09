@@ -1,0 +1,77 @@
+# Agent gateway health and agent presence
+
+An agent whose runs go through a CLI proxy gateway is only usable while that
+gateway can still reach the CLI behind it. Collavre polls each registered
+gateway and turns the answer into the online dot next to that agent's avatar.
+
+## The loop
+
+`Collavre::GatewayHealthSweepJob` runs every minute
+(`config/recurring.yml`) and enqueues one `Collavre::GatewayHealthProbeJob` per
+**active** gateway. Fanned out rather than looped in one job so a single
+unreachable host cannot spend the whole interval and leave the gateways behind
+it in the loop unprobed.
+
+Each probe calls `GET /health/ready` on the gateway
+([contract](https://github.com/sh1nj1/cli-openai-proxy/blob/main/docs/health-monitoring.md))
+and writes the verdict onto the `agent_gateways` row with `update_columns`:
+`health_status`, `health_engines`, `health_error`, `health_checked_at`. Readers
+answer from those columns, so no request path ever waits on the proxy.
+
+The probe presents the gateway's **completion key**, not its admin key. The
+endpoint is unauthenticated, but the proxy only returns per-engine detail to a
+caller holding a key from `API_KEYS`; the admin key gates the auth-provisioning
+routes and would buy the bare `{ready, total}` summary.
+
+## Statuses
+
+| `health_status` | Written when |
+|---|---|
+| `unknown` | Never probed, or the proxy answered a rollup this version has no name for. |
+| `ok` / `degraded` / `down` | The proxy's own rollup, verbatim. |
+| `unreachable` | No verdict at all: DNS, refused connection, a reverse proxy error page, a body that is not JSON. |
+
+A verdict expires after `AgentGateway::HEALTH_TTL` (3 minutes, three sweeps). A
+gateway whose probe loop stopped would otherwise keep serving whatever it last
+saw, reporting a dead host online until somebody noticed.
+
+A proxy older than the liveness/readiness split answers 404. The probe then
+falls back to `GET /health`, which every version has, and records `degraded`
+with an explanatory `health_error` — reading that 404 as `unreachable` would
+take every agent on an entirely healthy older gateway offline.
+
+## From gateway status to one agent's dot
+
+`User#agent_online?` is `claude_channel_online? || gateway_online?`, and
+`gateway_online?` asks `AgentGateway#health_serves_engine?` for the engine this
+agent's model spends (`CliProxy::AdapterEngine`).
+
+- `down` and `unreachable` take every agent on the gateway offline.
+- `degraded` is the normal steady state of most installs and cannot mean offline
+  on its own. What decides is the state of the agent's own engine: only an
+  explicit `unauthenticated` reads as offline.
+- `unknown` is **not** a failure. A healthy macOS host reports `claude` that way
+  forever, because the credential is in a keychain the proxy cannot read.
+- Under `mode: "per-user"` the engines live in each worker's `HOME`, so the
+  gateway probed a machine the agent's runs never touch. It did prove the
+  gateway routes, and calling that offline would black out every per-user agent
+  permanently.
+- An unrecognized engine, an engine absent from `items`, and the summary-only
+  response all fall back to the rollup, which is already `ok` or `degraded`.
+
+## Why it is not chat presence
+
+Chat presence answers "who has this creative open", and it alone drives read
+receipts and unread suppression. Agent liveness answers "can this agent be
+dispatched to", which is true whether or not anyone is watching. The two are
+merged only where the avatar strip paints its dot
+(`presence_controller#isParticipantOnline`); `presentIds` reaches
+`updateReadReceiptPresence` and the `comments--presence:changed` event
+untouched.
+
+The chat popup re-reads `GET /creatives/:id/comments/participants` every 60
+seconds to pick up a changed verdict, preserving the rendered menus so an open
+profile popup is not torn out from under the user.
+
+Agents on a hosted vendor API publish no liveness evidence either way and are
+left out rather than asserted online.

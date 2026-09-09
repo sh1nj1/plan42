@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_08_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_10_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -59,6 +59,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_000000) do
     t.text "completion_key"
     t.datetime "created_at", null: false
     t.boolean "desktop_managed", default: false, null: false
+    t.datetime "health_checked_at"
+    t.json "health_engines", default: {}, null: false
+    t.string "health_error"
+    t.integer "health_status", default: 0, null: false
     t.text "identity_secret"
     t.string "name", null: false
     t.integer "owner_id", null: false
@@ -292,9 +296,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_000000) do
     t.datetime "created_at", null: false
     t.integer "creative_change_set_id", null: false
     t.integer "creative_id", null: false
-    t.integer "previous_parent_id"
     t.string "operation", null: false
     t.integer "position", default: 0, null: false
+    t.integer "previous_parent_id"
     t.datetime "updated_at", null: false
     t.index ["creative_change_set_id", "creative_id"], name: "idx_creative_changes_on_set_and_creative", unique: true
     t.index ["creative_change_set_id"], name: "index_creative_changes_on_creative_change_set_id"

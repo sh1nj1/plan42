@@ -144,8 +144,12 @@ module Collavre
     def participants
       users = [ @creative.user ].compact + @creative.all_shared_users(:feedback).map(&:user)
       users = users.uniq
+      # Preloaded because agent liveness is read off the gateway row: without
+      # this the strip issues one query per agent every time it refreshes.
+      ActiveRecord::Associations::Preloader.new(records: users, associations: :agent_gateway).call
       user_data = users.map do |user|
-        view_context.user_json(user, email: true, ai_user: true).merge(profile_url: user_path(user))
+        view_context.user_json(user, email: true, ai_user: true)
+                    .merge(profile_url: user_path(user), agent_online: user.agent_online?)
       end
       response.headers["Cache-Control"] = "no-store"
       response.headers["Pragma"] = "no-cache"

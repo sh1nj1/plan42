@@ -14,11 +14,38 @@ module Collavre
         end
       end
 
-      def initialize(gateway:, workspace: nil, user_key: nil, http_client: nil)
+      DEFAULT_OPEN_TIMEOUT = 5
+      DEFAULT_READ_TIMEOUT = 35
+
+      def initialize(gateway:, workspace: nil, user_key: nil, http_client: nil,
+                     open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT)
         @gateway = gateway
         @workspace = workspace
         @user_key = user_key
-        @http_client = http_client || default_http_client
+        @http_client = http_client || default_http_client(open_timeout, read_timeout)
+      end
+
+      # Readiness rollup for the whole gateway. Unauthenticated by design — an
+      # external monitor cannot be asked to hold a completion key — but the
+      # proxy only returns per-engine detail to a caller that does hold one.
+      # The admin key gates the auth routes, not this one, so sending it here
+      # would buy the bare summary and nothing more.
+      def health_ready
+        request(:get, "/health/ready", auth_key: @gateway.completion_key.presence)
+      rescue Error => e
+        # 503 is this endpoint's verdict for "every engine is logged out", and
+        # it carries the same body as a 200. Raising it would discard the very
+        # detail the caller probed for.
+        raise unless e.status == 503 && e.details.is_a?(Hash) && e.details["status"].present?
+
+        e.details
+      end
+
+      # Liveness only: answers 200 whenever the process can answer at all, and
+      # never reflects engine state. Wired to supervisors upstream, so it is
+      # also the one health route every proxy version has.
+      def health_live
+        request(:get, "/health", auth_key: nil)
       end
 
       def engines
@@ -79,18 +106,19 @@ module Collavre
 
       private
 
-      def default_http_client
+      def default_http_client(open_timeout, read_timeout)
         requires_endpoint_policy = !@gateway.owner.system_admin? &&
           !@gateway.desktop_loopback?
         policy = EndpointPolicy.new if requires_endpoint_policy
-        Collavre::HttpClient.new(open_timeout: 5, read_timeout: 35, endpoint_policy: policy)
+        Collavre::HttpClient.new(open_timeout: open_timeout, read_timeout: read_timeout, endpoint_policy: policy)
       end
 
-      def request(method, path, body: nil)
-        headers = {
-          "Authorization" => "Bearer #{@gateway.admin_key}",
-          "Accept" => "application/json"
-        }
+      # auth_key defaults to the admin key, which is what every route but the
+      # health surface is gated on. Pass an explicit key (or nil) to override.
+      def request(method, path, body: nil, auth_key: :admin_key)
+        key = auth_key == :admin_key ? @gateway.admin_key : auth_key
+        headers = { "Accept" => "application/json" }
+        headers["Authorization"] = "Bearer #{key}" if key.present?
         headers["X-CLI-Proxy-User-Key"] = @user_key if @user_key.present?
         headers.merge!(Identity.headers(gateway: @gateway, workspace: @workspace, method: method, path: path)) if @workspace
         headers["Content-Type"] = "application/json" if body

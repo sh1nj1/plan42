@@ -34,17 +34,23 @@ export default class extends Controller {
   }
 
   syncPresence() {
-    const presence = this.application.getControllerForElementAndIdentifier(
-      this.popupElement,
-      'comments--presence'
-    )
-    this.updatePresence(presence?.currentPresentIds || [])
+    this.updatePresence(this.presenceController?.currentPresentIds || [])
+  }
+
+  get presenceController() {
+    return this.application.getControllerForElementAndIdentifier(this.popupElement, 'comments--presence')
   }
 
   updatePresence(presentIds) {
     if (!this.hasStatusTarget || !this.hasStatusLabelTarget) return
 
-    const online = presentIds.some((id) => String(id) === String(this.userIdValue))
+    // Asked of the presence controller rather than answered here, so a
+    // gateway-backed agent reads the same on its message avatar as it does on
+    // the participant strip. Without a presence controller (this menu rendered
+    // outside the chat popup) chat presence is all there is.
+    const online = this.presenceController
+      ? this.presenceController.isUserOnline(this.userIdValue, presentIds)
+      : presentIds.some((id) => String(id) === String(this.userIdValue))
     this.statusTarget.classList.toggle('is-online', online)
     this.statusLabelTarget.textContent = online
       ? this.statusTarget.dataset.onlineText
