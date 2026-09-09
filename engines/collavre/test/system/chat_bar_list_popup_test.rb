@@ -146,4 +146,34 @@ class ChatBarListPopupTest < ApplicationSystemTestCase
 
     assert_in_delta 4, gap, 0.5
   end
+
+  # The on-screen keyboard shrinks the visual viewport without touching
+  # window.innerHeight, and comments--presence lifts the sheet clear of it. A
+  # menu placed against innerHeight lands behind the keyboard; Selenium cannot
+  # raise a keyboard, so stub the viewport the way the browser reports one.
+  test "message author menu stays clear of the on-screen keyboard on mobile" do
+    comment = Comment.create!(creative: @creative, user: @user, content: "Keyboard anchor")
+    resize_window_to(390, 844)
+    open_comments_popup
+
+    trigger_selector = "#comment_#{comment.id} .comment-user-menu-trigger"
+    menu_selector = "#user_menu_comment_#{comment.id}"
+    keyboard_top = 344
+    page.execute_script(<<~JS)
+      window.__fakeViewport = { width: 390, height: #{keyboard_top}, offsetLeft: 0, offsetTop: 0,
+                                addEventListener() {}, removeEventListener() {} }
+      Object.defineProperty(window, 'visualViewport', { value: window.__fakeViewport, configurable: true })
+    JS
+
+    # Capybara's click asks chromedriver for the element region, which reads the
+    # real window.visualViewport we just replaced. Dispatch the click ourselves.
+    page.execute_script("document.querySelector('#{trigger_selector}').click()")
+    assert_selector menu_selector, visible: :visible
+
+    bottom = page.evaluate_script(<<~JS)
+      document.querySelector('#{menu_selector}').getBoundingClientRect().bottom
+    JS
+
+    assert_operator bottom, :<=, keyboard_top
+  end
 end

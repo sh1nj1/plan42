@@ -193,4 +193,104 @@ describe('PopupMenuController', () => {
 
     expect(menu.classList.contains('popup-menu-right')).toBe(true)
   })
+
+  // The mobile chat is a bottom sheet inside the *visual* viewport: the on-screen
+  // keyboard shrinks that viewport and comments--presence lifts the sheet clear
+  // of it, while window.innerHeight keeps reporting the full screen. Placing a
+  // menu against innerHeight therefore drops it behind the keyboard on a phone
+  // and nowhere near where the same menu lands on desktop.
+  describe('visual viewport', () => {
+    const stubVisualViewport = (rect) => {
+      const listeners = {}
+      const viewport = {
+        ...rect,
+        addEventListener: (type, handler) => { listeners[type] = handler },
+        removeEventListener: (type) => { delete listeners[type] }
+      }
+      Object.defineProperty(window, 'visualViewport', {
+        writable: true, configurable: true, value: viewport
+      })
+      return { viewport, listeners }
+    }
+
+    afterEach(() => {
+      delete window.visualViewport
+    })
+
+    test('flips above the button when the keyboard covers the space below', async () => {
+      stubVisualViewport({ width: 390, height: 344, offsetLeft: 0, offsetTop: 0 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 234, bottom: 254, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 153, left: 0, right: 240, width: 240, height: 153
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      // innerHeight (640) would leave room below and hide the menu behind the
+      // keyboard; against the 344px visual viewport it must flip above:
+      // 234 - 4 - 153 = 77
+      expect(menu.style.top).toBe('77px')
+    })
+
+    test('clamps into the visible strip when the visual viewport is offset', async () => {
+      stubVisualViewport({ width: 390, height: 300, offsetLeft: 0, offsetTop: 200 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 210, bottom: 230, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 400, left: 0, right: 240, width: 240, height: 400
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      // Taller than the strip either way, so it clamps to the strip's top edge
+      // (200 + 4) instead of the document's.
+      expect(menu.style.top).toBe('204px')
+    })
+
+    test('re-places the open menu when the keyboard resizes the viewport', async () => {
+      const { viewport, listeners } = stubVisualViewport({
+        width: 390, height: 844, offsetLeft: 0, offsetTop: 0
+      })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 234, bottom: 254, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 153, left: 0, right: 240, width: 240, height: 153
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      expect(menu.style.top).toBe('258px')
+
+      viewport.height = 344
+      listeners.resize?.()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      expect(menu.style.top).toBe('77px')
+    })
+
+    test('drops the viewport listeners on hide', async () => {
+      const { listeners } = stubVisualViewport({
+        width: 390, height: 844, offsetLeft: 0, offsetTop: 0
+      })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 234, bottom: 254, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 153, left: 0, right: 240, width: 240, height: 153
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      controller.hide()
+
+      expect(listeners.resize).toBeUndefined()
+      expect(listeners.scroll).toBeUndefined()
+    })
+  })
 })
