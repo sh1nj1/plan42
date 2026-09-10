@@ -95,6 +95,7 @@ export default class extends Controller {
 
     if (!(await confirmDialog(this.deleteConfirmValue, { danger: true }))) return
 
+		const releaseTreeReload = this.holdCreativeTreeReload()
 		const task = button.closest('[data-cron-badge-target="task"]')
 		const operationId = String(++cronOperationSequence)
 		task.dataset.cronDeleteOperation = operationId
@@ -114,6 +115,8 @@ export default class extends Controller {
       console.error(error)
 			this.finishCronDelete(task, operationId)
       await alertDialog(this.deleteErrorValue)
+		} finally {
+			releaseTreeReload()
     }
   }
 
