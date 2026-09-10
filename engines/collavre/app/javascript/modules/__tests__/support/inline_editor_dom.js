@@ -28,6 +28,21 @@ export const DIV_IDS = [
   'inline-save-status', 'metadata-popup',
 ]
 
+const INPUT_NAMES = {
+  'inline-method': '_method',
+  'inline-creative-description': 'creative[description]',
+  'inline-content-type': 'creative[content_type_input]',
+  'inline-markdown-editor': 'creative[markdown_editor]',
+  'inline-markdown-source': 'creative[markdown_source]',
+  'inline-parent-id': 'creative[parent_id]',
+  'inline-before-id': 'before_id',
+  'inline-after-id': 'after_id',
+  'inline-child-id': 'child_id',
+  'inline-origin-id': 'creative[origin_id]',
+  'inline-history-anchor-id': 'history_anchor_id',
+  'inline-change-group-token': 'change_group_token',
+}
+
 export function buildEditorDom(container, {
   saveFailedMessage,
   archiveFailedMessage,
@@ -49,13 +64,19 @@ export function buildEditorDom(container, {
     const input = document.createElement('input')
     input.type = 'hidden'
     input.id = id
-    if (id === 'inline-history-anchor-id') input.name = 'history_anchor_id'
-    if (id === 'inline-change-group-token') input.name = 'change_group_token'
+    input.name = INPUT_NAMES[id]
     form.appendChild(input)
   })
+  const hiddenProgress = document.createElement('input')
+  hiddenProgress.type = 'hidden'
+  hiddenProgress.name = 'creative[progress]'
+  hiddenProgress.value = '0'
+  form.appendChild(hiddenProgress)
   const progress = document.createElement('input')
   progress.type = 'checkbox'
   progress.id = 'inline-creative-progress'
+  progress.name = 'creative[progress]'
+  progress.value = '1'
   form.appendChild(progress)
 
   const editorRoot = document.createElement('div')
