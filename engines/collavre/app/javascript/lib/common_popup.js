@@ -1,3 +1,5 @@
+import visualViewportRect from './viewport_region'
+
 // Gap between the anchor (caret, button) and the popup edge.
 const ANCHOR_GAP = 4
 // Breathing room kept between the popup and the edge of its region.
@@ -150,17 +152,14 @@ export default class CommonPopup {
 
   // The region the popup must stay inside: an explicit bounds element (the chat
   // box) when caged, otherwise the visual viewport. window.innerHeight is the
-  // wrong number on mobile — it still counts the strip the keyboard covers.
+  // wrong number on mobile — it still counts the strip the keyboard covers, so
+  // the viewport case goes through the shared helper that popup_menu_controller
+  // also uses, keeping one definition of "the part of the screen you can see".
   regionRect() {
     const bounds = this._boundsElement?.getBoundingClientRect?.()
     if (bounds) return bounds
 
-    const viewport = window.visualViewport
-    const left = viewport?.offsetLeft || 0
-    const top = viewport?.offsetTop || 0
-    const width = viewport?.width || window.innerWidth
-    const height = viewport?.height || window.innerHeight
-    return { left, top, right: left + width, bottom: top + height, width, height }
+    return visualViewportRect()
   }
 
   updatePosition(anchorRect) {
