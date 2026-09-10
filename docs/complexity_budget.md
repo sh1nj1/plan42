@@ -392,6 +392,27 @@ slot identity:
   bucket, collapsing two callbacks that measured 5 and 4 onto one anchor. The
   set now matches ESLint's. `\v` and `\f` are not in it and stay horizontal.
 
+One more, in the statement fallback rather than the digest: **`max-depth` is the
+only measurement here that is not a property of the entity's own text.** Two
+byte-identical `if (a) { y() }` statements in one function sit at different
+depths when one of them is inside another guard, so they measure differently —
+and being byte-identical, they shared an anchor and fell back on the ordinal.
+The justification for the ordinal did not hold for statements. A statement's
+identity carries its nesting depth now:
+
+```js
+function handle(p, q, a) {
+  if (p) { if (p) { if (a) { y() } } }   // ~if (a) { y() } at depth 3
+  if (q) { if (a) { y() } }              // ~if (a) { y() } at depth 2
+}
+```
+
+Those are two keys, not two slots. The number only has to *change* when ESLint's
+depth changes, not to equal it, so it counts enclosing nesting statements and
+does not model ESLint's exceptions (an `else if` chain does not count twice for
+ESLint; here it does). Over-counting keeps entities apart, which is the property
+wanted.
+
 Comments are the one thing left that moves a digest without moving a measurement
 — `skipComments` is on — so editing a comment inside an over-budget twin re-keys
 it. That is the loud direction, and telling comments from their look-alikes
