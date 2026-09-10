@@ -113,6 +113,42 @@ back to its earlier size without tripping. Requiring branches to be current with
 That is a much smaller hole than a gate the team switches off in week two
 because it reddens unrelated PRs.
 
+### Which base the CI job passes
+
+The `complexity` job passes the base **branch**, not `github.event.pull_request.base.sha`.
+
+The two are not the same thing, and the difference is not academic. `base.sha`
+is the base tip as of the last `opened`/`synchronize` event on the PR: it is a
+snapshot of the base at the moment *this* branch last pushed, and it does not
+move when the base branch does. `actions/checkout` on a pull request checks out
+`refs/pull/N/merge`, which GitHub *does* recompute whenever the base moves.
+Measuring the second against the first blames this PR for every sibling PR that
+landed in between.
+
+That is not a hypothetical either. On the branch that introduced this file, the
+job reported eight offenses in `creative_row_editor.js`, `popup_fullscreen.js`
+and `creative_save_state.js` — three files it had never touched — because two
+sibling PRs had merged into the integration branch since its last push. It
+happened twice, and on an integration branch collecting eight parallel PRs it
+would have happened on nearly every run.
+
+Passing `origin/$BASE_REF` makes the baseline `merge-base(HEAD, base tip)`.
+Since the checkout has the base tip as an ancestor, that *is* the base tip, so
+what gets measured is exactly what this branch adds to the base as it stands
+right now. The branch no longer has to keep merging the base in to stay green.
+
+To reproduce a CI result locally, build the same tree the job sees:
+
+```sh
+git fetch origin "refs/pull/$PR/merge:refs/ci-merge" && git checkout refs/ci-merge
+bin/complexity_check --base origin/<base branch>
+```
+
+Note that `--base` is resolved through `git merge-base`, so running it on a
+branch that has *not* merged the base in compares against the fork point and
+reports base-side entities as new. That is the local mirror of the same
+mismatch, and checking out the merge ref is what removes it.
+
 ### Rule 3: why the budget still needs its own check
 
 Both trees are measured with **this branch's** `.rubocop_metrics.yml`, on
