@@ -60,8 +60,11 @@ module Collavre
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     # complexity_ratchet.rb and its directory back bin/complexity_check, a
     # CI-only lint tool. They have no business being eager loaded into a booted
-    # app, and bin/ runs them outside Rails anyway.
-    config.autoload_lib(ignore: %w[assets tasks middleware omniauth complexity_ratchet complexity_ratchet.rb])
+    # app, and bin/ runs them outside Rails anyway. js_complexity is the same
+    # tool's JavaScript half and holds no Ruby at all.
+    config.autoload_lib(
+      ignore: %w[assets tasks middleware omniauth complexity_ratchet complexity_ratchet.rb js_complexity]
+    )
 
     config.app_version = Collavre::VERSION
 
