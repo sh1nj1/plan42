@@ -133,11 +133,12 @@ class ComplexityRatchetJavascriptMeasurementTest < ActiveSupport::TestCase
     end
   end
 
-  # The Codex review on PR #1651 named this exactly: with an order-only ordinal,
-  # deleting the first of two same-named callbacks renames the survivor onto the
-  # deleted one's key, and the survivor's growth is then compared against a
-  # measurement that was never its own. The JavaScript unit tests pin the naming;
-  # this pins the thing that actually matters, which is that the gate reports it.
+  # The Codex reviews on PR #1651 named both halves of this. With an order-only
+  # ordinal a same-named callback is identified by its SLOT, so deleting the
+  # first of two renames the survivor onto the deleted one's key, and reordering
+  # two of them measures each against the other's baseline. The JavaScript unit
+  # tests pin the naming; these pin the thing that actually matters, which is
+  # what the gate does with it.
   test "reports a surviving twin's growth after its sibling is deleted" do
     before = measure_twins(12, 6)
     after  = measure_twins(9)
@@ -146,15 +147,39 @@ class ComplexityRatchetJavascriptMeasurementTest < ActiveSupport::TestCase
     assert_equal [ :new_offense ], check(actual: after, base: before).map(&:kind)
   end
 
+  # Codex's second case: under a slot ordinal this passed, because slot 1 read
+  # `9 <= 12` and slot 2 read `5 <= 6` while the 6-line callback had grown to 9.
+  test "reports growth hidden behind a reorder and a compensating shrink" do
+    problems = check(actual: measure_twins(9, 5), base: measure_twins(12, 6))
+
+    assert_equal [ :new_offense, :new_offense ], problems.map(&:kind)
+  end
+
   test "reports growth that moves between reordered twins" do
     problems = check(actual: measure_twins(9, 12), base: measure_twins(12, 6))
 
-    assert_equal [ :regression ], problems.map(&:kind)
-    assert_includes problems.sole.key, "(2/2)"
+    assert_equal [ :new_offense ], problems.map(&:kind)
   end
 
-  test "says nothing when a twin shrinks and nothing else moves" do
-    assert_empty check(actual: measure_twins(10, 6), base: measure_twins(12, 6))
+  # A twin is anchored to its own body, so its siblings can come and go around
+  # it without touching its baseline. Under the ordinal this reported.
+  test "says nothing when a twin is deleted and the rest are untouched" do
+    assert_empty check(actual: measure_twins(12, 8), base: measure_twins(12, 8, 6))
+  end
+
+  test "says nothing when twins are reordered and neither one changed" do
+    assert_empty check(actual: measure_twins(6, 12), base: measure_twins(12, 6))
+  end
+
+  # The cost of anchoring, stated as a test so it cannot drift into folklore: an
+  # over-budget twin that shrinks without getting under budget has a new body,
+  # so it has a new key and reads as new debt. Loud about an improvement is
+  # recoverable — name the callback, finish the job, or waive it. Quiet about
+  # growth is not.
+  test "reports a twin that shrinks without getting under budget" do
+    problems = check(actual: measure_twins(10, 6), base: measure_twins(12, 6))
+
+    assert_equal [ :new_offense ], problems.map(&:kind)
   end
 
   test "raises with the file and the reason when a tree cannot be measured" do

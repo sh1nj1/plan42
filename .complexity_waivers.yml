@@ -15,33 +15,4 @@
 #   reason: "Vendor protocol handshake is a single linear sequence; splitting it hides the order."
 #   expires: "2026-11-09"
 
-waivers:
-  # The three below are the JavaScript gate's own arrival cost, not new debt.
-  #
-  # This gate's baseline is merge-base(HEAD, main). The integration branch it
-  # lands on carries refactors (#1649, #1654) that MOVED three already-oversized
-  # entities rather than growing them, and a move changes the entity key — which
-  # the ratchet reads as new debt. It is the same property the Ruby half has and
-  # the reason waivers exist. Measured on both sides:
-  #
-  #   entity                                 merge base   integration branch
-  #   updateReadPointer (max-params)         5            5   (moved file)
-  #   flushSaveLastTopic callback            46 / 76      35 / 70
-  #     (complexity / max-lines-per-function)
-  #
-  # Nothing got worse and two got better. Short expiry on purpose: once the
-  # integration branch reaches main these entities are in the baseline, the
-  # waivers stop suppressing anything, and bin/complexity_check will say so
-  # ("waiver is no longer needed; delete it").
-  - key: "engines/collavre/app/javascript/controllers/comments/comment_read_tracker.js | max-params | CommentReadTracker#updateReadPointer"
-    owner: "@sh1nj1"
-    reason: "Unchanged 5-param signature moved out of list_controller.js by #1649; it is 5 params at the merge base too. Delete once the integration branch is on main."
-    expires: "2026-10-10"
-  - key: "engines/collavre/app/javascript/controllers/comments/topics_controller.js | complexity | default#flushSaveLastTopic>[this.saveOrderState.enqueue]"
-    owner: "@sh1nj1"
-    reason: "Same callback as the merge base's `>[then]`, rehomed onto SaveOrderState by #1654 and simplified from 46 to 35. The key moved, the code improved. Delete once the integration branch is on main."
-    expires: "2026-10-10"
-  - key: "engines/collavre/app/javascript/controllers/comments/topics_controller.js | max-lines-per-function | default#flushSaveLastTopic>[this.saveOrderState.enqueue]"
-    owner: "@sh1nj1"
-    reason: "Same callback as the merge base's `>[then]`, rehomed onto SaveOrderState by #1654 and shortened from 76 to 70 lines. Delete once the integration branch is on main."
-    expires: "2026-10-10"
+waivers: []

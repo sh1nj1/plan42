@@ -269,7 +269,8 @@ built from an ESTree walk (`lib/js_complexity/entity_map.js`):
 ```
 engines/collavre/app/javascript/controllers/comments/topics_controller.js | max-lines | (file)
 engines/collavre/app/javascript/modules/creative_row_editor.js | max-lines-per-function | setupEditorSession
-engines/collavre/app/javascript/components/InlineLexicalEditor.jsx | max-lines-per-function | Toolbar>[useCallback](10/11)
+engines/collavre/app/javascript/components/InlineLexicalEditor.jsx | max-lines-per-function | Toolbar>clearFormatting[useCallback]
+engines/collavre/app/javascript/controllers/comments/form_controller.js | complexity | default#handleSend>[doFetch().then().then]
 ```
 
 - A class member reads `Editor#save`, a static `Editor.create`, and a getter
@@ -280,13 +281,21 @@ engines/collavre/app/javascript/components/InlineLexicalEditor.jsx | max-lines-p
   passed to (`[this.element.addEventListener]`, `[rows.map]`). This is what the
   Ruby side does for blocks, with the receiver kept: `[map]` on its own turns
   every `.map` in a method into a twin of every other, and twins are the only
-  case where identity has to fall back on source position.
+  case where identity has to fall back on something other than a name.
+- A callee keeps its chain, rendered as `foo()`: the two callbacks in
+  `load().then(a).then(b)` are `[load().then]` and `[load().then().then]`, so
+  appending a third link leaves both of them where they were.
+- A callback whose call is itself bound to something takes that binding too:
+  `const handleFiles = useCallback(…)` is `handleFiles[useCallback]`. Every
+  callback in a React component is `useCallback`, so without this a component
+  with eleven of them has eleven twins, and adding a twelfth moves all eleven
+  keys.
 - `export default class extends Controller` — every Stimulus controller in the
   engine — is named `default`. "(anonymous class)" would be accurate and
   useless.
 - Entities in one scope that still share a name after all of that are **twins**,
-  and each carries its position *and* the size of its group: `[rows.map](2/3)`.
-  See [Twins](#twins) below for why the size is there.
+  and each is anchored to a digest of its own source: `[rows.map]#2842ca41`.
+  See [Twins](#twins) below.
 - `max-lines` belongs to `(file)`: it reports on the first line past the limit,
   which belongs to no entity in particular.
 - `max-depth` reports on a statement, so it falls back to the enclosing scope
@@ -303,8 +312,13 @@ right answer in every case.
 
 Two entities in one scope can end up with the same name however good the naming
 is: two `items.map(…)` callbacks in one method, two identical `if` lines. The
-obvious fix is an ordinal — first one bare, second one `(2)` — and it is not
-enough, because **the bare name is inherited**:
+obvious fix is a **position** — first one bare, second one `(2)`, or `(1/2)` and
+`(2/2)` to make the group's size part of it. Every version of that idea is
+wrong for the same reason: it makes a *slot* the identity, and the entity in
+slot 2 after an edit need not be the entity that was in slot 2 before it.
+
+Both ways of reaching that were found by Codex review on PR #1651. Deleting a
+twin:
 
 ```js
 // before                               // after
@@ -314,25 +328,58 @@ connect() {                             connect() {
 }
 ```
 
-Under a plain ordinal the survivor is renamed from `>[items.map](2)` to
-`>[items.map]`, which is the key the *deleted* callback held at 60. Its growth
-from 55 to 58 is then measured against 60 and the gate says nothing. That is a
-silent bypass, and a silent bypass is the one failure mode this whole design
-exists to avoid.
+Under a bare ordinal the survivor is renamed from `>[items.map](2)` to
+`>[items.map]`, the key the *deleted* callback held at 60, so its growth from 55
+to 58 is measured against 60 and the gate says nothing. Carrying the group's
+size fixes that one — and leaves reordering, which is the same bug wearing a
+different hat:
 
-So every member of a group of twins carries the group's size as well as its
-position — `(1/2)`, `(2/2)` — and a lone entity carries neither. Adding or
-removing a twin changes the size, which changes every key in the group at once,
-and the ratchet reports the survivors as new debt rather than comparing them
-against somebody else's baseline. Reordering twins moves a larger value into a
-smaller slot, which reports as growth. The statement fallback (`~if (a) {`) is
-counted the same way, over every nesting statement in the scope rather than only
-the offending ones, which is what the Ruby side does for `Metrics/BlockNesting`.
+```js
+// before: (1/2) = 12, (2/2) = 6       // after: (1/2) = 9, (2/2) = 5
+```
 
-The cost is a false alarm: delete the larger of two twins and the survivor reads
-as new debt even though the file improved. That is recoverable three ways —
-give the callback a name (`const renderRow = (row) => …`, which ends the tie for
-good), get it under budget, or write a dated waiver. The reverse trade is not
+Slot 1 reads `9 <= 12` and slot 2 reads `5 <= 6`, so nothing is reported, and
+yet the 6-line callback has grown to 9. Concealing growth this way costs an
+equal shrink somewhere else in the group, which is a low price for a silent
+bypass — and a silent bypass is the one failure mode this whole design exists to
+avoid.
+
+So the first move is to **have fewer twins**. Keeping the whole callee, keeping
+the call chain, and borrowing the binding a call sits in (see the naming rules
+above) between them name all but a handful: of the engine's 214 over-budget
+entities, thirteen needed a position before those rules and four after — the
+worst being an eleven-way `useCallback` group in one component.
+
+What is left is anchored to an **FNV digest of its own source**, whitespace
+collapsed, so reindenting does not move a key but editing does:
+
+```
+Row#connect>[items.map]#2842ca41
+Row#connect>[items.map]#5655f759
+```
+
+A twin's key now depends on the twin and on nothing around it. Siblings can be
+added, deleted or reordered without touching it, and an edit that changes its
+measurement changes its key, so growth surfaces as new debt instead of slipping
+into a neighbour's baseline. The statement fallback (`~if (a) {`) is anchored
+the same way, over the statement's whole span rather than its first line.
+
+Only **byte-identical** twins still take an ordinal — `#2842ca41(1/2)` — and
+those measure identically, so any permutation of them is a no-op. One entity in
+the engine is in that position; the other three are distinct and now keyed
+apart.
+
+The costs, both of which are the gate being loud about something it cannot
+attribute rather than quiet about something it can:
+
+- An over-budget twin that shrinks *without getting under budget* has a new
+  body, so it has a new key and reads as new debt.
+- The digest is only spelled out when a name is shared, so going from one such
+  entity to two — or back — renames it.
+
+Both are recoverable three ways: give the callback a name (`const renderRow =
+(row) => …`, which ends the tie for good and is usually the right change
+anyway), get it under budget, or write a dated waiver. The reverse trade is not
 recoverable, because nobody finds out.
 
 The Ruby half still uses a plain ordinal and still has the hole, with the
