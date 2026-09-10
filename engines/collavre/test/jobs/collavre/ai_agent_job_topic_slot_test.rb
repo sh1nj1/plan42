@@ -141,7 +141,7 @@ module Collavre
       }
 
       assert_no_difference notices do
-        Orchestration::AgentOrchestrator.post_topic_concurrency_notice(@creative.id, @topic.id)
+        Orchestration::WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, @topic.id)
       end
     end
 
@@ -514,7 +514,7 @@ module Collavre
         "another task is running"
       end
 
-      Orchestration::AgentOrchestrator.stub :waiting_reason_text, delete_shared_in_window do
+      Orchestration::WaitingNoticeManager.stub :waiting_reason_text, delete_shared_in_window do
         AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("opt-out")))
       end
 
@@ -544,7 +544,7 @@ module Collavre
         "another task is running"
       end
 
-      Orchestration::AgentOrchestrator.stub :waiting_reason_text, delete_anchor_in_window do
+      Orchestration::WaitingNoticeManager.stub :waiting_reason_text, delete_anchor_in_window do
         AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(anchor))
       end
 
@@ -652,7 +652,7 @@ module Collavre
         "another task is running"
       end
 
-      Orchestration::AgentOrchestrator.stub :waiting_reason_text, promote_in_window do
+      Orchestration::WaitingNoticeManager.stub :waiting_reason_text, promote_in_window do
         AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("mine")))
       end
 

@@ -268,11 +268,11 @@ module Collavre
         check_depth = nil
 
         Topic.stub(:lock, lock_relation) do
-          AgentOrchestrator.stub(:topic_concurrency_notice_exists?, ->(*) {
+          WaitingNoticeManager.stub(:topic_concurrency_notice_exists?, ->(*) {
             check_depth ||= Comment.connection.open_transactions
             false
           }) do
-            AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id)
+            WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, topic.id)
           end
         end
 
@@ -289,7 +289,7 @@ module Collavre
         Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
                      agent: @ai_agent, topic_id: topic.id, creative: @creative)
 
-        2.times { AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id) }
+        2.times { WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, topic.id) }
 
         notices = @creative.comments.where(topic_id: topic.id, topic_concurrency_defer: true)
                            .select { |c| c.content.start_with?(Comment::WAITING_NOTICE_PREFIX) }
