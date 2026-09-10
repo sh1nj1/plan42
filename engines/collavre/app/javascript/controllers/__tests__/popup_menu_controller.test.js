@@ -278,6 +278,30 @@ describe('PopupMenuController', () => {
       expect(124 + 216).toBe(344 - 4)
     })
 
+    test('preserves a smaller stylesheet height cap when there is more room', async () => {
+      const style = document.createElement('style')
+      style.textContent = '.cron-badge-popup { max-height: 480px; }'
+      document.head.appendChild(style)
+      menu.classList.add('cron-badge-popup')
+      stubVisualViewport({ width: 390, height: 1000, offsetLeft: 0, offsetTop: 0 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 900, bottom: 920, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 480, left: 0, right: 240, width: 240, height: 480
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      // The 892px above the trigger must not replace the cron popup's 480px
+      // stylesheet cap after it was measured at that height.
+      expect(menu.style.maxHeight).toBe('480px')
+      expect(menu.style.top).toBe('416px')
+
+      style.remove()
+    })
+
     // Both sides are under the sliver floor on a short phone with the keyboard
     // up, so the floor wins and the menu overhangs the button — then the bottom
     // clamp slides it back up inside the strip rather than off the screen.

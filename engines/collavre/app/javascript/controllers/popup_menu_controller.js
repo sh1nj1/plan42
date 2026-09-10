@@ -131,9 +131,12 @@ export default class extends Controller {
       Math.max(placeBelow ? spaceBelow : spaceAbove, MIN_MENU_HEIGHT),
       regionBottom - regionTop
     )
-    menu.style.maxHeight = `${available}px`
-    menu.style.overflowY = 'auto'
     const menuHeight = Math.min(menuH, available)
+    // menuH already reflects any smaller stylesheet cap (the cron popup uses
+    // 480px). Do not replace that cap with a larger amount of free space after
+    // measuring, or the menu can grow beyond the height used for positioning.
+    menu.style.maxHeight = `${menuHeight}px`
+    menu.style.overflowY = 'auto'
 
     let top = placeBelow ? btnRect.bottom + GAP : btnRect.top - GAP - menuHeight
 
