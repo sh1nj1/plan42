@@ -95,6 +95,14 @@ class ComplexityRatchetJavascriptMeasurementTest < ActiveSupport::TestCase
       max-params: 2
   YAML
 
+  TWIN_BUDGET = <<~YAML
+    include:
+      - "**/*.js"
+    exclude: []
+    rules:
+      max-lines-per-function: 2
+  YAML
+
   # Runs the real Node script against a throwaway tree, which is the part that
   # cannot be unit-tested from either side: the Ruby half has to survive the
   # script's actual output, and the script has to measure a tree that has no
@@ -125,6 +133,30 @@ class ComplexityRatchetJavascriptMeasurementTest < ActiveSupport::TestCase
     end
   end
 
+  # The Codex review on PR #1651 named this exactly: with an order-only ordinal,
+  # deleting the first of two same-named callbacks renames the survivor onto the
+  # deleted one's key, and the survivor's growth is then compared against a
+  # measurement that was never its own. The JavaScript unit tests pin the naming;
+  # this pins the thing that actually matters, which is that the gate reports it.
+  test "reports a surviving twin's growth after its sibling is deleted" do
+    before = measure_twins(12, 6)
+    after  = measure_twins(9)
+
+    assert_empty before.keys & after.keys, "a survivor must not inherit a deleted twin's key"
+    assert_equal [ :new_offense ], check(actual: after, base: before).map(&:kind)
+  end
+
+  test "reports growth that moves between reordered twins" do
+    problems = check(actual: measure_twins(9, 12), base: measure_twins(12, 6))
+
+    assert_equal [ :regression ], problems.map(&:kind)
+    assert_includes problems.sole.key, "(2/2)"
+  end
+
+  test "says nothing when a twin shrinks and nothing else moves" do
+    assert_empty check(actual: measure_twins(10, 6), base: measure_twins(12, 6))
+  end
+
   test "raises with the file and the reason when a tree cannot be measured" do
     Dir.mktmpdir do |tree|
       File.write(File.join(tree, "broken.js"), "class {\n")
@@ -142,10 +174,32 @@ class ComplexityRatchetJavascriptMeasurementTest < ActiveSupport::TestCase
 
   private
 
-  def with_budget
+  # A method holding `sizes.length` callbacks that the entity naming cannot tell
+  # apart, each `sizes[i]` statements long. Only the callbacks are returned: the
+  # enclosing method changes size whenever the fixture does, and that is not what
+  # these tests are about.
+  def measure_twins(*sizes)
+    calls = sizes.map { |size| "  items.map((row) => {\n#{Array.new(size) { |i| "    const v#{i} = #{i}" }.join("\n")}\n  })" }
+
+    Dir.mktmpdir do |tree|
+      File.write(File.join(tree, "row.js"), "class Row {\n connect() {\n#{calls.join("\n")}\n }\n}\n")
+
+      measured = with_budget(TWIN_BUDGET) do |config|
+        ComplexityRatchet::Javascript::Measurement.call(root: tree, tool_root: Rails.root.to_s, config: config)
+      end
+
+      measured.select { |key, _value| key.include?("[items.map]") }
+    end
+  end
+
+  def check(actual:, base:)
+    ComplexityRatchet::Check.new(actual: actual, base: base).problems
+  end
+
+  def with_budget(budget = BUDGET)
     Dir.mktmpdir do |dir|
       config = File.join(dir, "budget.yml")
-      File.write(config, BUDGET)
+      File.write(config, budget)
       yield config
     end
   end

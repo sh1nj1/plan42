@@ -17,16 +17,16 @@
 # Why these numbers: unlike the Ruby side — where RuboCop's defaults put ~90% of
 # entities in violation and the budget had to be set at the 75th percentile of
 # the violators — ESLint's documented defaults are already within reach here.
-# Measured over the 163 files this file selects, on 2026-09-10, the budget
+# Measured over the 161 files this file selects, on 2026-09-10, the budget
 # below leaves 214 entities over it, and each rule catches only the tail:
 #
 #   rule                     budget   entities   over budget
-#   complexity               13       3,123      88   (2.8%)
-#   max-depth                3        3,448      19   (0.6%)
-#   max-lines                300      163        21   (12.9%)
-#   max-lines-per-function   50       3,076      78   (2.5%)
-#   max-nested-callbacks     10       1,006      0    (0.0%)
-#   max-params               4        1,920      8    (0.4%)
+#   complexity               13       3,083      88   (2.9%)
+#   max-depth                3        3,402      19   (0.6%)
+#   max-lines                300      161        21   (13.0%)
+#   max-lines-per-function   50       3,036      78   (2.6%)
+#   max-nested-callbacks     10       1,001      0    (0.0%)
+#   max-params               4        1,880      8    (0.4%)
 #
 # Those 214 are grandfathered by the ratchet — they may shrink but not grow.
 # The budget is what NEW code has to fit, and ordinary Stimulus controllers and
@@ -35,12 +35,15 @@
 # Everything the core engine ships, not a hand-written list of directories: a
 # glob and the real file set drift apart, and the half that drifts is always the
 # one nobody is looking at.
+#
+# The core engine and nothing else. lib/js_complexity — the measurement itself —
+# is deliberately NOT here: this gate is being introduced for engines/collavre,
+# and a tool that measures itself makes every change to the tool read as engine
+# debt. It is a two-line addition whenever someone wants it, and the tool's own
+# tests are in lib/js_complexity/__tests__ either way.
 include:
   - "engines/collavre/**/*.js"
   - "engines/collavre/**/*.jsx"
-  # The measurement holds itself to the budget it enforces, the way the Ruby
-  # half's own lib/complexity_ratchet is measured by RuboCop's Metrics cops.
-  - "lib/js_complexity/**/*.js"
 
 exclude:
   # Tests are excluded for the same reason as on the Ruby side: a 2,000-line

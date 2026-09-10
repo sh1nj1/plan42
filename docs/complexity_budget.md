@@ -213,17 +213,17 @@ the merge base, the waivers, rules 1 to 4 — applies unchanged.
 
 Unlike the Ruby side, where RuboCop's defaults put ~90% of entities in violation
 and the budget had to be set at the 75th percentile of the violators, ESLint's
-documented defaults were already within reach. Measured over the 163 files the
+documented defaults were already within reach. Measured over the 161 files the
 budget selects, on 2026-09-10:
 
 | Rule | Budget | Entities | Over budget | Ruby counterpart |
 |------|--------|----------|-------------|------------------|
-| `complexity` | 13 | 3,123 | 88 (2.8%) | `Metrics/CyclomaticComplexity` |
-| `max-depth` | 3 | 3,448 | 19 (0.6%) | `Metrics/BlockNesting` |
-| `max-lines` | 300 | 163 | 21 (12.9%) | `Metrics/ClassLength` |
-| `max-lines-per-function` | 50 | 3,076 | 78 (2.5%) | `Metrics/MethodLength` |
-| `max-nested-callbacks` | 10 | 1,006 | 0 (0.0%) | — |
-| `max-params` | 4 | 1,920 | 8 (0.4%) | `Metrics/ParameterLists` |
+| `complexity` | 13 | 3,083 | 88 (2.9%) | `Metrics/CyclomaticComplexity` |
+| `max-depth` | 3 | 3,402 | 19 (0.6%) | `Metrics/BlockNesting` |
+| `max-lines` | 300 | 161 | 21 (13.0%) | `Metrics/ClassLength` |
+| `max-lines-per-function` | 50 | 3,036 | 78 (2.6%) | `Metrics/MethodLength` |
+| `max-nested-callbacks` | 10 | 1,001 | 0 (0.0%) | — |
+| `max-params` | 4 | 1,880 | 8 (0.4%) | `Metrics/ParameterLists` |
 
 214 entities are over it, against 394 on the Ruby side. They are grandfathered:
 they may shrink but not grow. The budget is what *new* code has to fit, and
@@ -269,22 +269,24 @@ built from an ESTree walk (`lib/js_complexity/entity_map.js`):
 ```
 engines/collavre/app/javascript/controllers/comments/topics_controller.js | max-lines | (file)
 engines/collavre/app/javascript/modules/creative_row_editor.js | max-lines-per-function | setupEditorSession
-engines/collavre/app/javascript/components/InlineLexicalEditor.jsx | max-lines-per-function | Toolbar>[useCallback](10)
+engines/collavre/app/javascript/components/InlineLexicalEditor.jsx | max-lines-per-function | Toolbar>[useCallback](10/11)
 ```
 
 - A class member reads `Editor#save`, a static `Editor.create`, and a getter
   `Editor#get draft` — without the kind, a `get`/`set` pair would collide into an
   ordinal pair that reads as two unrelated members.
 - An anonymous function takes the name it is bound to (`const submit = …` →
-  `submit`), or, if it is bound to nothing, the call it is passed to
-  (`[addEventListener]`). This is what the Ruby side does for blocks.
+  `submit`), or, if it is bound to nothing, the *whole callee* of the call it is
+  passed to (`[this.element.addEventListener]`, `[rows.map]`). This is what the
+  Ruby side does for blocks, with the receiver kept: `[map]` on its own turns
+  every `.map` in a method into a twin of every other, and twins are the only
+  case where identity has to fall back on source position.
 - `export default class extends Controller` — every Stimulus controller in the
   engine — is named `default`. "(anonymous class)" would be accurate and
   useless.
-- Siblings that share a name are numbered from the second on, so a second
-  over-budget `[map]` callback in one method cannot hide behind the first. As on
-  the Ruby side, an ordinal is a position and not an identity; the trade-off is
-  discussed under [Entity keys](#entity-keys) above and is the same here.
+- Entities in one scope that still share a name after all of that are **twins**,
+  and each carries its position *and* the size of its group: `[rows.map](2/3)`.
+  See [Twins](#twins) below for why the size is there.
 - `max-lines` belongs to `(file)`: it reports on the first line past the limit,
   which belongs to no entity in particular.
 - `max-depth` reports on a statement, so it falls back to the enclosing scope
@@ -297,16 +299,76 @@ offense on the method name and an arrow offense on the `=>` token. All of them
 are *inside* the entity, so the innermost scope containing the offense is the
 right answer in every case.
 
+### Twins
+
+Two entities in one scope can end up with the same name however good the naming
+is: two `items.map(…)` callbacks in one method, two identical `if` lines. The
+obvious fix is an ordinal — first one bare, second one `(2)` — and it is not
+enough, because **the bare name is inherited**:
+
+```js
+// before                               // after
+connect() {                             connect() {
+  items.map((row) => { …60 lines… })      items.map((row) => { …58 lines… })
+  items.map((row) => { …55 lines… })    }
+}
+```
+
+Under a plain ordinal the survivor is renamed from `>[items.map](2)` to
+`>[items.map]`, which is the key the *deleted* callback held at 60. Its growth
+from 55 to 58 is then measured against 60 and the gate says nothing. That is a
+silent bypass, and a silent bypass is the one failure mode this whole design
+exists to avoid.
+
+So every member of a group of twins carries the group's size as well as its
+position — `(1/2)`, `(2/2)` — and a lone entity carries neither. Adding or
+removing a twin changes the size, which changes every key in the group at once,
+and the ratchet reports the survivors as new debt rather than comparing them
+against somebody else's baseline. Reordering twins moves a larger value into a
+smaller slot, which reports as growth. The statement fallback (`~if (a) {`) is
+counted the same way, over every nesting statement in the scope rather than only
+the offending ones, which is what the Ruby side does for `Metrics/BlockNesting`.
+
+The cost is a false alarm: delete the larger of two twins and the survivor reads
+as new debt even though the file improved. That is recoverable three ways —
+give the callback a name (`const renderRow = (row) => …`, which ends the tie for
+good), get it under budget, or write a dated waiver. The reverse trade is not
+recoverable, because nobody finds out.
+
+The Ruby half still uses a plain ordinal and still has the hole, with the
+smaller blast radius its own section describes. Changing it would move every
+Ruby entity key at once, which is not this change's business.
+
 ### Scope
 
-`engines/collavre/**/*.{js,jsx}`, minus `__tests__` and `engines/collavre/test`,
-plus `lib/js_complexity` — the measurement holds itself to the budget it
-enforces, the way `lib/complexity_ratchet` is measured by the Metrics cops it
-runs. Tests are excluded for the reason they are excluded on the Ruby side,
-spelled out under [Entity keys](#entity-keys). The satellite engines hold about
-2,800 lines of JavaScript between them against the core's 35,000 and are not
-measured; adding them is a two-line change to `include`, which the budget check
-allows in that direction.
+`engines/collavre/**/*.{js,jsx}`, minus `__tests__` and `engines/collavre/test`.
+The core engine and nothing else: this gate is being introduced *for* the core
+engine, and `lib/js_complexity` — the measurement itself — is deliberately not
+in `include`, so a change to the tool cannot read as engine debt. Adding it is a
+one-line change whenever someone wants it, and the tool's own tests live in
+`lib/js_complexity/__tests__` either way. Tests are excluded for the reason they
+are excluded on the Ruby side, spelled out under
+[Entity keys](#entity-keys). The satellite engines hold about 2,800 lines of
+JavaScript between them against the core's 35,000 and are not measured; adding
+them is a two-line change to `include`, which the budget check allows in that
+direction.
+
+### What this change touches outside the engine
+
+The guard's *target* is `engines/collavre`. Nothing under `engines/` is modified
+by this change — the gate is new, and the 214 entities already over budget are
+grandfathered. What it does add lives outside the engine, because that is where
+a repository-wide gate has to live:
+
+| Path | Why it has to change |
+|------|----------------------|
+| `.eslint_metrics.yml` | The budget. New file. |
+| `lib/js_complexity/`, `bin/js_complexity.mjs` | The measurement. New files. |
+| `lib/complexity_ratchet/javascript.rb` | Runs the measurement and checks the budget can only tighten. New file. |
+| `bin/complexity_check` | Merges the JavaScript measurement into the existing Ruby one; the comparison, the waivers and the reporting are shared rather than duplicated. |
+| `.github/workflows/ci.yml` | The existing `complexity` job needs Node and `npm ci` to run the measurement. |
+| `package.json`, `jest.config.cjs` | ESLint as a devDependency, and the measurement's unit tests in the existing Jest run. |
+| `config/application.rb`, `docs/` | Keeps the CI-only tool out of the autoload path, and documents the above. |
 
 ## The engine boundary
 
