@@ -332,6 +332,86 @@ describe('CreativesTreeController cron message drafts', () => {
     application.stop()
   })
 
+  test('restores a dirty cron message after loading an expanded branch', async () => {
+    const { container, application, controller } = await installCachedTree(`
+      <creative-tree-row creative-id="1" has-children expanded></creative-tree-row>
+      <div id="creative-children-1" data-loaded="true">
+        <creative-tree-row creative-id="2">${cronTask('Saved message')}</creative-tree-row>
+      </div>
+    `)
+    const draftInput = container.querySelector('textarea')
+    draftInput.closest('[data-cron-key]').dataset.cronKey = 'creative-2'
+    draftInput.value = 'Half-typed child message'
+    let finishChildUpdate
+    global.fetch = jest.fn((url) => {
+      if (url === '/children/1') {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({ creatives: [{ id: 2 }] }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }] }),
+      })
+    })
+    renderCreativeTree
+      .mockImplementationOnce((element) => {
+        element.innerHTML = `
+          <creative-tree-row creative-id="1" has-children></creative-tree-row>
+          <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+        `
+      })
+      .mockImplementationOnce((element) => {
+        element.innerHTML = '<creative-tree-row creative-id="2"></creative-tree-row>'
+        const row = element.querySelector('creative-tree-row')
+        row.updateComplete = new Promise((resolve) => {
+          finishChildUpdate = () => {
+            row.innerHTML = cronTask('Server child message')
+            row.querySelector('[data-cron-key]').dataset.cronKey = 'creative-2'
+            resolve(true)
+          }
+        })
+      })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea')).toBeNull()
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-2', 'Half-typed child message'],
+    ]))
+
+    finishChildUpdate()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed child message')
+    expect(input.dataset.cronSavedMessage).toBe('Server child message')
+    expect(controller._pendingCronMessageDrafts).toBeNull()
+    application.stop()
+  })
+
+  test('keeps deferred branch drafts when a newer preserved load starts', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'New root draft'
+    controller._pendingCronMessageDrafts = new Map([
+      ['creative-2', 'Deferred child draft'],
+    ])
+    global.fetch = jest.fn(() => new Promise(() => {}))
+
+    controller.load({ preserveView: true })
+
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-2', 'Deferred child draft'],
+      ['creative-1', 'New root draft'],
+    ]))
+    controller.stopAnimation()
+    application.stop()
+  })
+
   test('uses the refreshed cron message when the local message is clean', async () => {
     const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
     renderCreativeTree.mockImplementationOnce((element) => {

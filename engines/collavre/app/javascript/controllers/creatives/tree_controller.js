@@ -227,7 +227,10 @@ export default class extends Controller {
       ? (this._pendingViewState || captureCreativeTreeViewState(this.element))
       : null
     this._pendingCronMessageDrafts = preserveView
-      ? (this._pendingCronMessageDrafts || this.captureCronMessageDrafts())
+      ? new Map([
+        ...(this._pendingCronMessageDrafts || []),
+        ...this.captureCronMessageDrafts(),
+      ])
       : null
 
     // A fresh load replaces the whole list (filter change, archive toggle, sync
@@ -299,23 +302,34 @@ export default class extends Controller {
     }
 
     renderCreativeTree(this.element, nodes)
-    await Promise.all(
-      Array.from(
-        this.element.querySelectorAll('creative-tree-row'),
-        row => row.updateComplete
-      )
-    )
+    await this.waitForCreativeTreeRows()
     if (!isCurrent()) return
-    this.restoreCronMessageDrafts(cronMessageDrafts)
+    const deferredCronMessageDrafts = this.restoreCronMessageDrafts(cronMessageDrafts)
     if (this._pendingCronMessageDrafts === cronMessageDrafts) {
-      this._pendingCronMessageDrafts = null
+      this._pendingCronMessageDrafts = deferredCronMessageDrafts
     }
     this.markContentLoaded()
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
     this._setupPagination(data?.pagination)
     await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
+    if (!isCurrent()) return
+    await this.waitForCreativeTreeRows()
+    if (!isCurrent()) return
+    this.restoreCronMessageDrafts(deferredCronMessageDrafts)
+    if (this._pendingCronMessageDrafts === deferredCronMessageDrafts) {
+      this._pendingCronMessageDrafts = null
+    }
     if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
+  }
+
+  waitForCreativeTreeRows() {
+    return Promise.all(
+      Array.from(
+        this.element.querySelectorAll('creative-tree-row'),
+        row => row.updateComplete
+      )
+    )
   }
 
   captureCronMessageDrafts() {
@@ -330,14 +344,21 @@ export default class extends Controller {
   }
 
   restoreCronMessageDrafts(drafts) {
-    if (!drafts) return
+    if (!drafts) return null
+
+    const deferredDrafts = new Map(drafts)
 
     this.element.querySelectorAll('[data-cron-key]').forEach(task => {
       if (!drafts.has(task.dataset.cronKey)) return
 
       const input = task.querySelector('[data-cron-badge-target="messageInput"]')
-      if (input) input.value = drafts.get(task.dataset.cronKey)
+      if (!input) return
+
+      input.value = drafts.get(task.dataset.cronKey)
+      deferredDrafts.delete(task.dataset.cronKey)
     })
+
+    return deferredDrafts.size > 0 ? deferredDrafts : null
   }
 
   // --- Load-more (paginated "Chats" feed) -------------------------------------
