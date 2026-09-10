@@ -46,7 +46,7 @@ export default class CommentReadTracker {
       if (!controller.element.isConnected || controller.creativeId !== creativeId ||
           (controller.currentTopicId || null) !== topicId) return
 
-      this.updateReadPointer(creativeId, topicId, topicIds, topicWatermarks)
+      this.updateReadPointer({ creativeId, topicId, topicIds, topicWatermarks })
     }, READ_DEBOUNCE_MS)
   }
 
@@ -58,16 +58,10 @@ export default class CommentReadTracker {
     if (controller.markReadTimeout) window.clearTimeout(controller.markReadTimeout)
     controller.markReadTimeout = null
     controller.pendingRead = null
-    this.updateReadPointer(
-      pendingRead.creativeId,
-      pendingRead.topicId,
-      pendingRead.topicIds,
-      pendingRead.topicWatermarks,
-      { keepalive }
-    )
+    this.updateReadPointer({ ...pendingRead, keepalive })
   }
 
-  updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null, { keepalive = false } = {}) {
+  updateReadPointer({ creativeId, topicId, topicIds = null, topicWatermarks = null, keepalive = false }) {
     if (!creativeId) return
 
     this.request('/comment_read_pointers/update', {

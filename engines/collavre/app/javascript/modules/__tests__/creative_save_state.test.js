@@ -116,20 +116,21 @@ test('applies server markdown substitutions to cached and live content', () => {
   expect(result.currentApplied).toBe(true)
 })
 
-test('resets baselines and keeps a newer buffer dirty', () => {
+test('resets baselines and preserves dirty state for a newer buffer', () => {
   const snapshot = captureCreativeSaveSnapshot({
     content: 'saved', progress: 1, persistProgress: true, originId: '7',
   })
 
-  expect(resetCreativeSaveState(snapshot, {
-    content: 'newer', progress: 1, originId: '7',
-  })).toEqual({
+  const newerBuffer = { content: 'newer', progress: 1, originId: '7' }
+
+  expect(resetCreativeSaveState(snapshot, newerBuffer, true)).toEqual({
     originalContent: 'saved',
     originalProgress: 1,
     originalOriginId: '7',
     isDirty: true,
     pendingSave: false,
   })
+  expect(resetCreativeSaveState(snapshot, newerBuffer, false).isDirty).toBe(false)
   expect(resetCreativeSaveState(snapshot).isDirty).toBe(false)
 })
 

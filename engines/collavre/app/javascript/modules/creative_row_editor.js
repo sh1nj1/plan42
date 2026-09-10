@@ -817,7 +817,7 @@ function setupEditorSession() {
               content: markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value,
               progress: readProgressValue(),
               originId: originIdInput?.value || '',
-            });
+	    }, isDirty);
             originalContent = reset.originalContent;
             if (reset.originalProgress !== undefined) originalProgress = reset.originalProgress;
             originalOriginId = reset.originalOriginId;

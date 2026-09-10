@@ -8,6 +8,7 @@ import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
 import { invalidateCreativeTree } from '../../lib/creative_tree_invalidation'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 import TopicSelectionRestoreState from './topics/selection_restore_state'
+import LastTopicSave from './topics/last_topic_save'
 import LastTopicSaveOrderState, { LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX } from './topics/save_order_state'
 import LastTopicSelfEchoState from './topics/self_echo_state'
 
@@ -28,6 +29,10 @@ export default class extends Controller {
     get saveOrderState() {
         return this._saveOrderState || (this._saveOrderState = new LastTopicSaveOrderState())
     }
+
+	get lastTopicSave() {
+		return this._lastTopicSave || (this._lastTopicSave = new LastTopicSave(this))
+	}
 
     get selfEchoState() {
         return this._selfEchoState || (this._selfEchoState = new LastTopicSelfEchoState())
@@ -1583,115 +1588,11 @@ export default class extends Controller {
         // sticks need not be the last one picked. Waiting for the one in
         // flight is what makes the order they were picked in the order they
         // are written.
-        const save = this.saveOrderState.enqueue(async () => {
-            // update_last_topic broadcasts to every session of this user, this
-            // one included. Claim the echo here, before the request goes out —
-            // the broadcast is sent server-side before the response is
-            // rendered, so it can beat the save returning.
-            const claimed = generation === this.subscriptionGenerationFor(effectiveCreativeId)
-            if (claimed) {
-                this.selfEchoState.claim(clientId, {
-                    creativeId: effectiveCreativeId,
-                    topicId: id,
-                    previousTopicId: this.lastKnownRemoteTopicIdFor(effectiveCreativeId) === undefined
-                        ? this.serverLastTopicId
-                        : this.lastKnownRemoteTopicIdFor(effectiveCreativeId),
-                    possiblyMissed: this._popupClosed && !this.topicsSubscription,
-                })
-                // A save can wait behind another request while the popup closes. It
-                // takes its claim only when the queue reaches it, after the close
-                // handler has already marked the claims that existed then. Its echo
-                // will also be sent into that closed gap, so mark it at creation.
-            }
-            // A thrown fetch has an unknown outcome: the server may have saved
-            // and broadcast before the connection failed, so keep its claim for
-            // that delayed echo. An HTTP failure is definitive, however, and
-            // update_last_topic returns before broadcasting in that case.
-            const saveResult = await this.saveLastTopicWithTimeout(creativeId, id || null, clientId)
-            const saved = saveResult === true || saveResult?.success === true
-            const savedRevision = this.normalizeLastTopicRevision(saveResult?.lastTopicRevision)
-            const savedRevisionIsCurrent = this.observeLastTopicRevision(
-                effectiveCreativeId,
-                savedRevision
-            )
-            const topicId = id ? String(id) : ""
-            const saveRejected = saveResult === false || saveResult?.success === false
-            const staleLastTopicSave = saveResult?.staleLastTopicSave === true
-            if (claimed && saved) {
-                // The Action Cable echo can arrive before this response. In that
-                // case it has already consumed the claim and removed its metadata;
-                // do not recreate an acknowledgement entry for a completed save.
-                const hasPendingSelfEcho = this.pendingSelfEchoes.includes(clientId)
-                if (hasPendingSelfEcho) {
-                    this.saveAcknowledgementVersion += 1
-                    this.pendingSelfEchoAcknowledgementVersions.set(
-                        clientId,
-                        this.saveAcknowledgementVersion
-                    )
-                    // The response can beat its Action Cable echo. Preserve the
-                    // server-issued revision now so a delayed GET can order this
-                    // acknowledged claim against a newer ABA snapshot.
-                    if (savedRevision) {
-                        this.pendingSelfEchoRemoteRevisions.set(clientId, savedRevision)
-                    }
-                }
-                const currentCreativeId = String(this.creativeId)
-                const currentStreamIsResolved = this.element.dataset.effectiveCreativeId ||
-                    this.knownEffectiveCreativeIds.has(currentCreativeId)
-                const subscribedToAnotherStream = this.topicsSubscription && currentStreamIsResolved &&
-                    String(this.effectiveCreativeId) !== String(effectiveCreativeId)
-                const possiblyMissedDuringDisconnect =
-                    this.possiblyMissedPendingSelfEchoesDuringDisconnect.has(clientId)
-                if ((this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) ||
-                    subscribedToAnotherStream ||
-                    possiblyMissedDuringDisconnect) {
-                    // update_last_topic broadcasts before it returns. With the popup
-                    // closed, or after its stream was replaced, that echo was necessarily
-                    // sent somewhere this controller can no longer receive it and cannot
-                    // settle this claim.
-                    // This completed save is also the remote baseline for the next
-                    // queued save, which may have claimed after the popup closed.
-                    this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
-                    if (possiblyMissedDuringDisconnect) {
-                        this.retirePendingSelfEcho(clientId)
-                    } else {
-                        this.releasePendingSelfEcho(clientId)
-                    }
-                } else {
-                    // The replacement subscription may have been active before this
-                    // response beat the WebSocket message back to the browser. Keep the
-                    // id to consume that echo, but do not use this acknowledged claim to
-                    // override a later reopen snapshot.
-                    // A completed save establishes the server value that the
-                    // next claim was made from. Without moving this baseline,
-                    // a later closed save compares its reopen snapshot to a
-                    // value from before an earlier local save and mistakes the
-                    // legitimate previous value for another session's update.
-                    // Do not overwrite a newer Action Cable update after this
-                    // save's echo has already been consumed: that echo records
-                    // the baseline at broadcast time, and another message may
-                    // have advanced it before the HTTP response arrived.
-                    if (hasPendingSelfEcho && savedRevisionIsCurrent) {
-                        this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
-                    }
-                    this.acknowledgePendingSelfEcho(clientId)
-                }
-            }
-            if (claimed && saveRejected) this.releasePendingSelfEcho(clientId)
-            if (claimed && saveResult === null) {
-                this.scheduleAmbiguousPendingSelfEchoRetirement(clientId)
-            }
-            const rejectedPendingPick = staleLastTopicSave &&
-                this.selectionState.pendingPickMatches(pendingPick, creativeId, topicId)
-            if (rejectedPendingPick) this.selectionState.clearPendingPick()
-            if (saveResult !== null) this.retryDeferredLastTopicReconciliation(effectiveCreativeId)
-            if (saveResult !== false &&
-                this.selectionState.pendingPickMatches(pendingPick, creativeId, topicId)) {
-                this.selectionState.clearPendingPick()
-            }
-        })
-        return save
-    }
+		const context = {
+			id, creativeId, effectiveCreativeId, clientId, pendingPick, generation,
+		}
+		return this.lastTopicSave.enqueue(context)
+	}
 
     // A timed-out fetch can still be running on Rails. Prefix each echo id with
     // a controller-local session and monotonically increasing sequence so Rails
