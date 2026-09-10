@@ -21,6 +21,14 @@ jest.unstable_mockModule('../../lib/api/csrf_fetch', () => ({
 
 const { default: CronBadgeController } = await import('../cron_badge_controller')
 
+function response({ ok, status, body = '' }) {
+  return {
+    ok,
+    status,
+    clone: () => ({ text: async () => body }),
+  }
+}
+
 describe('CronBadgeController', () => {
   let application
   let element
@@ -144,9 +152,9 @@ describe('CronBadgeController', () => {
     expect(input.disabled).toBe(false)
   })
 
-  test('refreshes the CSRF token and retries a message update after a 422 response', async () => {
+  test('refreshes the CSRF token and retries a message update after a payload-less 422 response', async () => {
     csrfFetch
-      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValueOnce(response({ ok: false, status: 422 }))
       .mockResolvedValueOnce({ ok: true, status: 200 })
 
     element.querySelector('[data-cron-update-url]').click()
@@ -154,6 +162,22 @@ describe('CronBadgeController', () => {
 
     expect(refreshCsrfToken).toHaveBeenCalledTimes(1)
     expect(csrfFetch).toHaveBeenCalledTimes(2)
+  })
+
+  test('does not retry a message update after a semantic 422 response', async () => {
+    csrfFetch.mockResolvedValue(response({
+      ok: false,
+      status: 422,
+      body: JSON.stringify({ error: 'Message cannot be blank' }),
+    }))
+    alertDialog.mockResolvedValue(undefined)
+
+    element.querySelector('[data-cron-update-url]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(refreshCsrfToken).not.toHaveBeenCalled()
+    expect(csrfFetch).toHaveBeenCalledTimes(1)
+    expect(alertDialog).toHaveBeenCalledWith('Update failed')
   })
 
   test('removes the badge after deleting its last task', async () => {
@@ -208,10 +232,10 @@ describe('CronBadgeController', () => {
     expect(controller.taskTargets).toHaveLength(2)
   })
 
-  test('refreshes the CSRF token and retries once after a 422 response', async () => {
+  test('refreshes the CSRF token and retries once after a payload-less 422 response', async () => {
     confirmDialog.mockResolvedValue(true)
     csrfFetch
-      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValueOnce(response({ ok: false, status: 422 }))
       .mockResolvedValueOnce({ ok: true, status: 204 })
 
     element.querySelector('[data-cron-delete-url$="/one"]').click()

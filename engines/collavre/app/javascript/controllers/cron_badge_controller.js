@@ -69,7 +69,7 @@ export default class extends Controller {
   async deleteCron(url) {
     const options = { method: 'DELETE' }
     let response = await csrfFetch(url, options)
-    if (response.status !== 422) return response
+    if (!(await this.shouldRetryCsrf(response))) return response
 
     await refreshCsrfToken()
     response = await csrfFetch(url, options)
@@ -83,11 +83,18 @@ export default class extends Controller {
       body: JSON.stringify({ message }),
     }
     let response = await csrfFetch(url, options)
-    if (response.status !== 422) return response
+    if (!(await this.shouldRetryCsrf(response))) return response
 
     await refreshCsrfToken()
     response = await csrfFetch(url, options)
     return response
+  }
+
+  async shouldRetryCsrf(response) {
+    if (response.status !== 422) return false
+
+    const body = await response.clone().text()
+    return body.trim() === ''
   }
 
   refreshCount() {
