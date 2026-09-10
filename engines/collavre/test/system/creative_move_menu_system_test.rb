@@ -292,11 +292,13 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
 
     # The launcher falls back to the creative on screen, so the move has to land
     # on the source and leave the previously selected child where it is.
+    mark_row_before_tree_refresh(child)
     open_move_menu
     pick_destination
     find('[data-creative-move-target="confirm"]').click
 
     assert_no_selector "dialog[open][data-creative-move-target]"
+    assert_row_replaced_by_tree_refresh(child)
     assert_equal @destination, @source.reload.parent
     assert_equal @source, child.reload.parent
 
@@ -340,6 +342,16 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     find('[aria-controls="creative-overflow-menu"]').click
     find("#select-creative-btn").click
     creatives.each { |creative| find("#creative-#{creative.id} .select-creative-checkbox").click }
+  end
+
+  def mark_row_before_tree_refresh(creative)
+    page.execute_script(<<~JS, "#creative-#{creative.id}")
+      document.querySelector(arguments[0]).dataset.beforeMoveRefresh = 'true'
+    JS
+  end
+
+  def assert_row_replaced_by_tree_refresh(creative)
+    assert_no_selector "#creative-#{creative.id}[data-before-move-refresh]", visible: :all, wait: 10
   end
 
   # Fails only the tree JSON request (/creatives?format=json) so the rest of the
