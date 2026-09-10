@@ -10,10 +10,8 @@ import { renderMarkdown } from '../lib/utils/markdown'
 import { CreativeSaveQueue } from './creative_save_queue'
 import { isHtmlEmpty } from './html_content_empty'
 import {
-  applyCreativeSaveResponse,
-  captureCreativeSaveSnapshot,
-  creativeSaveSnapshotIsEmpty,
-  resetCreativeSaveState,
+  applyCreativeSaveResponse, captureDirectCreativeSaveSnapshot, captureQueuedCreativeSaveSnapshot,
+  creativeSaveSnapshotIsEmpty, resetCreativeSaveState,
 } from './creative_save_state'
 import { createListenerRegistry } from './dom_listener_registry'
 import { createDelegatedClickHandler } from './creative_row_editor_delegated_clicks'
@@ -757,18 +755,17 @@ function setupEditorSession() {
       // in-flight state until that request settles. Returning null keeps the
       // queue idle without ever flipping the in-flight flag.
       function performSave() {
-        // Sync markdown form fields before saving
         if (markdownMode) syncMarkdownToForm();
 
-        let snapshot = captureCreativeSaveSnapshot({
-          content: markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value,
-          emptyContentType: markdownMode ? 'markdown' : 'html',
-          contentType: contentTypeInput?.value || 'html',
-          markdownSource: markdownSourceInput?.value || '',
-          markdownEditor: markdownEditorInput?.value || '',
-          progress: progressValueChanged() ? readProgressValue() : progressBaselineValueFrom(originalProgress),
-          persistProgress: progressValueChanged(),
-          originId: originIdInput?.value || '',
+        const persistProgress = progressValueChanged(), progress = persistProgress ? readProgressValue() : progressBaselineValueFrom(originalProgress);
+        let snapshot = captureDirectCreativeSaveSnapshot({
+          markdownMode, markdownContent: markdownTextarea?.value,
+          htmlContent: descriptionInput.value, contentType: contentTypeInput?.value,
+          markdownSource: markdownSourceInput?.value,
+          markdownEditor: markdownEditorInput?.value,
+          progress,
+          persistProgress,
+          originId: originIdInput?.value,
         });
         if (creativeSaveSnapshotIsEmpty(snapshot)) {
           pendingSave = false;
@@ -873,7 +870,6 @@ function setupEditorSession() {
               completionCascadePending = false;
             }
 
-            // Delete removed attachments after successful save
             if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
               const deletedIds = lexicalEditor.getDeletedAttachments();
               if (deletedIds && deletedIds.length > 0) {
@@ -1131,19 +1127,16 @@ function setupEditorSession() {
       // (markdownMode) syncs its value to the hidden fields here; the rich
       // surface already kept them current via onLexicalChange/applyCreativeData.
       if (markdownMode) syncMarkdownToForm();
-      const capturedContentType = contentTypeInput ? contentTypeInput.value : 'html';
-      const isMarkdownSave = capturedContentType === 'markdown';
-      let snapshot = captureCreativeSaveSnapshot({
+      let snapshot = captureQueuedCreativeSaveSnapshot({
         content: descriptionInput.value,
-        emptyContent: isMarkdownSave ? markdownSourceInput?.value : descriptionInput.value,
-        emptyContentType: isMarkdownSave ? 'markdown' : 'html',
-        contentType: capturedContentType,
-        markdownSource: isMarkdownSave ? markdownSourceInput?.value : '',
-        markdownEditor: markdownEditorInput?.value || '',
+        contentType: contentTypeInput?.value,
+        markdownSource: markdownSourceInput?.value,
+        markdownEditor: markdownEditorInput?.value,
         progress: readProgressValue(),
         persistProgress: progressValueChanged(),
-        originId: originIdInput?.value || '',
+        originId: originIdInput?.value,
       });
+      const isMarkdownSave = snapshot.contentType === 'markdown';
       const currentParentId = tree.dataset.parentId || '';
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
@@ -1164,16 +1157,14 @@ function setupEditorSession() {
       // made during the upload wait get overwritten by the stale pre-wait source.
       if (form.dataset.creativeId === startCreativeId) {
         if (markdownMode) syncMarkdownToForm();
-        snapshot = captureCreativeSaveSnapshot({
+        snapshot = captureQueuedCreativeSaveSnapshot({
           content: descriptionInput.value,
-          emptyContent: isMarkdownSave ? markdownSourceInput?.value : descriptionInput.value,
-          emptyContentType: isMarkdownSave ? 'markdown' : 'html',
-          contentType: capturedContentType,
-          markdownSource: isMarkdownSave ? markdownSourceInput?.value : '',
-          markdownEditor: markdownEditorInput?.value || '',
+          contentType: snapshot.contentType,
+          markdownSource: markdownSourceInput?.value,
+          markdownEditor: markdownEditorInput?.value,
           progress: readProgressValue(),
           persistProgress: progressValueChanged(),
-          originId: originIdInput?.value || '',
+          originId: originIdInput?.value,
         });
       }
 

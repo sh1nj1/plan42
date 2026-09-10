@@ -2,6 +2,10 @@ import { isHtmlEmpty } from './html_content_empty'
 import { isMarkdownEmpty } from './creative_row_editor_helpers'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 
+function stringOrEmpty(value) {
+  return value || ''
+}
+
 export function captureCreativeSaveSnapshot({
   content,
   emptyContent = content,
@@ -14,16 +18,62 @@ export function captureCreativeSaveSnapshot({
   originId = '',
 }) {
   return {
-    content: content || '',
-    emptyContent: emptyContent || '',
+    content: stringOrEmpty(content),
+    emptyContent: stringOrEmpty(emptyContent),
     emptyContentType,
     contentType,
-    markdownSource: markdownSource || '',
-    markdownEditor: markdownEditor || '',
+    markdownSource: stringOrEmpty(markdownSource),
+    markdownEditor: stringOrEmpty(markdownEditor),
     progress,
     persistProgress,
-    originId: originId || '',
+    originId: stringOrEmpty(originId),
   }
+}
+
+export function captureDirectCreativeSaveSnapshot({
+  markdownMode,
+  markdownContent,
+  htmlContent,
+  contentType,
+  markdownSource,
+  markdownEditor,
+  progress,
+  persistProgress,
+  originId,
+}) {
+  return captureCreativeSaveSnapshot({
+    content: markdownMode ? markdownContent : htmlContent,
+    emptyContentType: markdownMode ? 'markdown' : 'html',
+    contentType,
+    markdownSource,
+    markdownEditor,
+    progress,
+    persistProgress,
+    originId,
+  })
+}
+
+export function captureQueuedCreativeSaveSnapshot({
+  content,
+  contentType,
+  markdownSource,
+  markdownEditor,
+  progress,
+  persistProgress,
+  originId,
+}) {
+  const isMarkdown = contentType === 'markdown'
+  return captureCreativeSaveSnapshot({
+    content,
+    emptyContent: isMarkdown ? markdownSource : content,
+    emptyContentType: isMarkdown ? 'markdown' : 'html',
+    contentType,
+    markdownSource: isMarkdown ? markdownSource : '',
+    markdownEditor,
+    progress,
+    persistProgress,
+    originId,
+  })
 }
 
 export function creativeSaveSnapshotIsEmpty(snapshot) {

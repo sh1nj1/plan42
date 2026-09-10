@@ -4,10 +4,75 @@
 import { jest } from '@jest/globals'
 import {
   applyCreativeSaveResponse,
+  captureDirectCreativeSaveSnapshot,
+  captureQueuedCreativeSaveSnapshot,
   captureCreativeSaveSnapshot,
   creativeSaveSnapshotIsEmpty,
   resetCreativeSaveState,
 } from '../creative_save_state'
+
+test('captures direct saves from the active editor surface', () => {
+  const markdown = captureDirectCreativeSaveSnapshot({
+    markdownMode: true,
+    markdownContent: '# live',
+    htmlContent: '<p>rendered</p>',
+    contentType: 'markdown',
+    markdownSource: '# live',
+    markdownEditor: 'textarea',
+    progress: 1,
+    persistProgress: true,
+    originId: '7',
+  })
+  const rich = captureDirectCreativeSaveSnapshot({
+    markdownMode: false,
+    markdownContent: '# cached',
+    htmlContent: '<p>live</p>',
+    contentType: 'html',
+    markdownSource: '# cached',
+    markdownEditor: 'rich',
+    progress: 0.5,
+    persistProgress: false,
+    originId: '8',
+  })
+
+  expect(markdown).toMatchObject({
+    content: '# live', emptyContent: '# live', emptyContentType: 'markdown', progress: 1,
+  })
+  expect(rich).toMatchObject({
+    content: '<p>live</p>', emptyContent: '<p>live</p>', emptyContentType: 'html', progress: 0.5,
+  })
+})
+
+test('captures queued saves using their persisted content type', () => {
+  const markdown = captureQueuedCreativeSaveSnapshot({
+    content: '<p>rendered</p>',
+    contentType: 'markdown',
+    markdownSource: '# source',
+    markdownEditor: 'rich',
+    progress: 0.5,
+    persistProgress: true,
+    originId: '9',
+  })
+  const html = captureQueuedCreativeSaveSnapshot({
+    content: '<p>live</p>',
+    contentType: 'html',
+    markdownSource: '# stale',
+  })
+
+  expect(markdown).toMatchObject({
+    content: '<p>rendered</p>', emptyContent: '# source', emptyContentType: 'markdown',
+    markdownSource: '# source',
+  })
+  expect(html).toMatchObject({
+    content: '<p>live</p>', emptyContent: '<p>live</p>', emptyContentType: 'html',
+    markdownSource: '',
+  })
+})
+
+test('normalizes falsy snapshot strings without changing other values', () => {
+  expect(captureCreativeSaveSnapshot({ content: false, markdownSource: 0, originId: null }))
+    .toMatchObject({ content: '', markdownSource: '', originId: '' })
+})
 
 test('tests emptiness using the snapshot content format', () => {
   const html = captureCreativeSaveSnapshot({
