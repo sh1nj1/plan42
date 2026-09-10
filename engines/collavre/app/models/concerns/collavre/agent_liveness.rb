@@ -14,8 +14,11 @@ module Collavre
       llm_model == "claude-code"
     end
 
-    def claude_channel_online?
-      claude_channel_agent? && AgentSubscription.live.where(agent_id: id).exists?
+    def claude_channel_online?(live_agent_ids: nil)
+      return false unless claude_channel_agent?
+      return live_agent_ids.include?(id) if live_agent_ids
+
+      AgentSubscription.live.where(agent_id: id).exists?
     end
 
     # A gateway-backed agent is reachable when its gateway's last readiness
@@ -30,8 +33,8 @@ module Collavre
     # Only the two agent kinds that publish evidence either way. An agent on a
     # hosted vendor API publishes none, so it stays out rather than being
     # asserted online on nothing.
-    def agent_online?
-      claude_channel_online? || gateway_online?
+    def agent_online?(live_claude_agent_ids: nil)
+      claude_channel_online?(live_agent_ids: live_claude_agent_ids) || gateway_online?
     end
   end
 end

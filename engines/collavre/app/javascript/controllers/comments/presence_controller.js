@@ -327,9 +327,11 @@ export default class extends Controller {
         // screen. A dropped connection or a 500 says nothing about who the
         // participants are, so the last good snapshot stays and the open profile
         // menu with it; only an answer that refuses the read clears the strip.
-        if (preserveMenus && !ACCESS_DENIED_STATUSES.includes(error?.status)) return
+        const accessDenied = ACCESS_DENIED_STATUSES.includes(error?.status)
+        if (preserveMenus && !accessDenied) return
         this.participantsData = []
         this.canShare = false
+        if (accessDenied) this.formController?.setCommentPermission(false)
         this.renderParticipants([])
         this.renderTypingIndicator()
       })

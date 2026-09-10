@@ -149,6 +149,8 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
         controller.participantsData = [HUMAN, AGENT]
         controller.canShare = true
         controller.renderParticipants([])
+        const setCommentPermission = jest.fn()
+        jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission })
 
         global.fetch = jest.fn(() => Promise.resolve({
             ok: false, status: 403, json: () => Promise.resolve({ error: 'No permission' })
@@ -157,6 +159,7 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
 
         expect(controller.participantsData).toEqual([])
         expect(controller.canShare).toBe(false)
+        expect(setCommentPermission).toHaveBeenCalledWith(false)
         expect(controller.participantsTarget.innerHTML).toBe('')
     })
 

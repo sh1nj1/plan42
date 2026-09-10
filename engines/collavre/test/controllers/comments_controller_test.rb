@@ -1423,6 +1423,31 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
                  "a human's presence is chat presence, and does not travel here"
   end
 
+  test "participants batches Claude Channel subscription liveness" do
+    agents = 2.times.map do |index|
+      agent = Collavre::User.create!(
+        name: "Claude Agent #{index}", email: "claude-participants-#{index}@ai.local",
+        password: SecureRandom.hex(24), system_prompt: "Help", llm_vendor: "anthropic",
+        llm_model: "claude-code", created_by_id: @user.id
+      )
+      Collavre::CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+      agent
+    end
+    Collavre::AgentSubscription.create!(agent: agents.first, token: "live-participants")
+
+    subscription_queries = []
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      subscription_queries << payload[:sql] if payload[:sql].include?('FROM "agent_subscriptions"')
+    end
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    end
+
+    assert_response :success
+    assert_equal [ true, false ], agents.map { |agent| participant_json(agent)["agent_online"] }
+    assert_equal 1, subscription_queries.size, subscription_queries.join("\n")
+  end
+
   test "participants disables caching" do
     get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
 
