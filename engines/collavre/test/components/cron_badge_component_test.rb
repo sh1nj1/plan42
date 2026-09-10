@@ -40,6 +40,24 @@ class CronBadgeComponentTest < ViewComponent::TestCase
     assert_no_selector ".cron-task-delete"
   end
 
+  test "preserves a leading newline in an editable message" do
+    message = "\nDaily summary"
+    task = Task.new("cron_42_daily", "0 9 * * *", nil, [ { message: message } ])
+
+    render_inline(
+      Collavre::CronBadgeComponent.new(
+        tasks: [ task ],
+        creative_id: 42,
+        can_delete: true
+      )
+    )
+
+    textarea = Capybara.string(rendered_content).find("textarea.cron-task-message-input")
+
+    assert_equal message, textarea.value
+    assert_equal message, textarea["data-cron-saved-message"]
+  end
+
   test "renders the next run in the current user's time zone" do
     time = Time.utc(2026, 9, 5, 9)
     task = Task.new("cron_42_daily", "0 9 * * *", time, [ { message: "Daily summary" } ])

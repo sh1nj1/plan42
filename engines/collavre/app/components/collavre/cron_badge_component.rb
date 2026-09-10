@@ -27,6 +27,10 @@ module Collavre
       parse_arguments(task)["message"].to_s
     end
 
+    def textarea_message(task)
+      "\n#{task_message_value(task)}"
+    end
+
     def next_run(task)
       task.next_time
     end
