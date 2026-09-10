@@ -70,6 +70,7 @@ describe('PopupFullscreen', () => {
     expect(document.body.classList.contains('chat-fullscreen')).toBe(true)
     expect(callbacks.syncUi).toHaveBeenCalledWith(true)
     expect(window.location.pathname).toBe('/creatives/42/comments/fullscreen')
+    expect(listController.scrollToBottom).toHaveBeenCalledTimes(1)
   })
 
   test('restores the mobile popup and keeps it open in the URL', () => {
