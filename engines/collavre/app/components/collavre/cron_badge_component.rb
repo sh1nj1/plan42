@@ -28,7 +28,7 @@ module Collavre
     end
 
     def next_run_label(time)
-      time ? helpers.l(time, format: :short) : t("collavre.crons.not_available")
+      time ? helpers.l(time.in_time_zone, format: :short) : t("collavre.crons.not_available")
     end
 
     def destroy_path(task)

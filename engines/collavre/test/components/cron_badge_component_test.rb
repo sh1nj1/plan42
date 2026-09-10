@@ -36,4 +36,15 @@ class CronBadgeComponentTest < ViewComponent::TestCase
     assert_text "Not available", count: 2
     assert_no_selector ".cron-task-delete"
   end
+
+  test "renders the next run in the current user's time zone" do
+    time = Time.utc(2026, 9, 5, 9)
+    task = Task.new("cron_42_daily", "0 9 * * *", time, [ { message: "Daily summary" } ])
+
+    Time.use_zone("Asia/Seoul") do
+      render_inline(Collavre::CronBadgeComponent.new(tasks: [ task ], creative_id: 42))
+
+      assert_selector "time[datetime='#{time.iso8601}']", text: "5 Sep 18:00"
+    end
+  end
 end
