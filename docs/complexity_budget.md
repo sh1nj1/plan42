@@ -512,6 +512,14 @@ raises an error and blocks the gate. It never falls back to positional keys
 for different bodies; identical bodies with identical rule context may still
 use ordinals.
 
+ESLint also measures implicit code paths: each class field initializer and
+each static block has its own complexity. These have separate entities, such
+as `Editor#draft(initializer)` and `Editor.(static block)`, with the same twin
+disambiguation as functions. A function created by a field initializer remains
+a separate nested entity. Computed field keys stay outside the initializer's
+scope. Complexity messages select the code-path kind explicitly because an
+initializer and the function it creates may start at the same position.
+
 The general statement, which is what the next rule added to the budget should be
 checked against: **a key must determine its measurement.** For each rule, either
 the value is a function of the entity's own text, or whatever else it depends on
