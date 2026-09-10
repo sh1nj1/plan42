@@ -7,7 +7,12 @@ module Collavre
       Current.session = OpenStruct.new(user: @user)
       @agent = users(:ai_bot)
       @parent = Creative.create!(user: @user, description: "Trigger parent")
-      @child = Creative.create!(user: @user, parent: @parent, description: "Trigger child")
+      @child = Creative.create!(
+        user: @user,
+        parent: @parent,
+        description: "Trigger child",
+        data: { "trigger" => { "loop" => { "state" => "completed" } } }
+      )
       CreativeShare.create!(creative: @parent, user: @agent, permission: :write)
       @child.topics.create!(name: "Drop Trigger", user: @user)
     end
@@ -22,7 +27,12 @@ module Collavre
         dispatch_options = options
         []
       }) do
-        CreativesController.new.send(:post_restart_trigger, @child)
+        result = Creatives::TriggerActionCommand.new(
+          creative: @child,
+          user: @user,
+          action: "restart"
+        ).call
+        assert result.success?
       end
 
       assert_equal "trigger_restart", dispatch_options[:source]
