@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
+import PopupFullscreen from './popup_fullscreen'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
@@ -26,6 +27,20 @@ export default class extends Controller {
     'header',
     'typingIndicator',
   ]
+
+  initialize() {
+    this.fullscreen = new PopupFullscreen({
+      element: this.element,
+      isMobile: () => this.isMobile(),
+      isDocked: () => this.isDocked(),
+      syncUi: entering => this._syncFullscreenUI(entering),
+      syncDockedUi: () => this.syncDockedUI(),
+      getListController: () => this.listController,
+      getTopicsController: () => this.topicsController,
+      getCurrentButton: () => this.currentButton,
+      setCurrentButton: button => { this.currentButton = button },
+    })
+  }
 
   connect() {
     this.currentButton = null
@@ -60,7 +75,6 @@ export default class extends Controller {
     this._isNavigating = false
     this._headerSwipeStartX = null
     this._headerSwipeStartY = null
-
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
     document.addEventListener('creative-editing:start', this.handleEditingStart)
@@ -522,44 +536,7 @@ export default class extends Controller {
   }
 
   _exitFullscreenState() {
-    if (!this.isFullscreen()) return
-
-    if (this._enterCleanupTimer) {
-      window.clearTimeout(this._enterCleanupTimer)
-      this._enterCleanupTimer = null
-    }
-    if (this._enterCleanupFn) {
-      this.element.removeEventListener('transitionend', this._enterCleanupFn)
-      this._enterCleanupFn = null
-    }
-
-    this.element.dataset.fullscreen = 'false'
-    document.body.classList.remove('chat-fullscreen')
-    this._syncFullscreenUI(false)
-    this._savedStyles = null
-    this.element.style.transition = ''
-    this.element.style.position = ''
-    this.element.style.top = ''
-    this.element.style.left = ''
-    this.element.style.right = ''
-    this.element.style.bottom = ''
-    this.element.style.width = ''
-    this.element.style.height = ''
-    this.element.style.transform = ''
-
-    // Consume the fullscreen history entry and remove markers that could
-    // reopen the invalidated chat after a reset or close.
-    const creativeId = this.element.dataset.creativeId
-    const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-    if (backUrl) {
-      const url = new URL(backUrl, window.location.origin)
-      url.searchParams.delete('open_comments')
-      url.searchParams.delete('comment_id')
-      const cleanPath = url.pathname.replace(/\/comments\/\d+$/, '')
-      url.hash = url.hash.replace(/^#comment_\d+$/, '')
-      window.history.replaceState({ fullscreen: false }, '', cleanPath + url.search + url.hash)
-    }
-    this._previousUrl = null
+    this.fullscreen.exitState()
   }
 
   closeChildControllers() {
@@ -612,6 +589,22 @@ export default class extends Controller {
 
   isFullscreen() {
     return this.element.dataset.fullscreen === 'true'
+  }
+
+  get _savedStyles() {
+    return this.fullscreen?.savedStyles
+  }
+
+  set _savedStyles(value) {
+    if (this.fullscreen) this.fullscreen.savedStyles = value
+  }
+
+  get _previousUrl() {
+    return this.fullscreen?.previousUrl
+  }
+
+  set _previousUrl(value) {
+    if (this.fullscreen) this.fullscreen.previousUrl = value
   }
 
   isMobile() {
@@ -910,387 +903,15 @@ export default class extends Controller {
 
   // Enter fullscreen immediately without animation (for auto-fullscreen on page load)
   _enterFullscreenImmediate() {
-    const el = this.element
-
-    // Save current inline styles so exit-fullscreen can restore them
-    this._savedStyles = {
-      top: el.style.top,
-      right: el.style.right,
-      left: el.style.left,
-      width: el.style.width,
-      height: el.style.height,
-    }
-
-    el.style.transition = 'none'
-    el.dataset.fullscreen = 'true'
-    document.body.classList.add('chat-fullscreen')
-    this._syncFullscreenUI(true)
-    // Clear any inline position styles so CSS fullscreen rules apply
-    el.style.top = ''
-    el.style.left = ''
-    el.style.right = ''
-    el.style.bottom = ''
-    el.style.width = ''
-    el.style.height = ''
-    el.style.position = ''
-    // Force layout then restore transition
-    el.offsetHeight // eslint-disable-line no-unused-expressions
-    el.style.transition = ''
-
-    // URL is already /comments/fullscreen, no pushState needed
-    requestAnimationFrame(() => this.listController?.scrollToBottom())
+    this.fullscreen.enterImmediate()
   }
 
   toggleFullscreen() {
-    const entering = !this.isFullscreen()
-    const el = this.element
-
-    if (entering) {
-      // Save current inline styles for later restore
-      this._savedStyles = {
-        top: el.style.top,
-        right: el.style.right,
-        left: el.style.left,
-        width: el.style.width,
-        height: el.style.height,
-      }
-
-      // Capture current visual position
-      const rect = el.getBoundingClientRect()
-
-      // Disable transition, pin to current position as fixed
-      el.style.transition = 'none'
-      el.style.position = 'fixed'
-      el.style.top = `${rect.top}px`
-      el.style.left = `${rect.left}px`
-      el.style.right = 'auto'
-      el.style.width = `${rect.width}px`
-      el.style.height = `${rect.height}px`
-
-      // Force layout so the pinned position is applied
-      el.offsetHeight // eslint-disable-line no-unused-expressions
-
-      // Now enable transition and expand to fullscreen
-      el.style.transition = ''
-      el.dataset.fullscreen = 'true'
-      document.body.classList.add('chat-fullscreen')
-      this._syncFullscreenUI(true)
-
-      // Clear inline position so CSS fullscreen rules take over
-      el.style.top = '0'
-      el.style.left = '0'
-      el.style.right = '0'
-      el.style.bottom = '0'
-      el.style.width = '100%'
-      el.style.height = '100%'
-
-      // Update URL
-      const creativeId = el.dataset.creativeId
-      if (creativeId) {
-        this._previousUrl = window.location.href
-        const fullscreenPath = `/creatives/${creativeId}/comments/fullscreen`
-        window.history.pushState({ fullscreen: true }, '', fullscreenPath)
-      }
-
-      // Clean up inline styles after transition ends
-      this._enterCleanupFn = () => {
-        el.removeEventListener('transitionend', this._enterCleanupFn)
-        this._enterCleanupTimer = null
-        this._enterCleanupFn = null
-        el.style.top = ''
-        el.style.left = ''
-        el.style.right = ''
-        el.style.bottom = ''
-        el.style.width = ''
-        el.style.height = ''
-        el.style.position = ''
-      }
-      el.addEventListener('transitionend', this._enterCleanupFn, { once: true })
-      // Fallback if transitionend doesn't fire
-      this._enterCleanupTimer = setTimeout(this._enterCleanupFn, 300)
-
-    } else {
-      // Cancel any pending enter-fullscreen cleanup to prevent it from
-      // wiping inline styles mid-exit animation (race condition fix)
-      if (this._enterCleanupTimer) {
-        clearTimeout(this._enterCleanupTimer)
-        this._enterCleanupTimer = null
-      }
-      if (this._enterCleanupFn) {
-        el.removeEventListener('transitionend', this._enterCleanupFn)
-        this._enterCleanupFn = null
-      }
-
-      const savedStyles = this._savedStyles
-      this._savedStyles = null
-      const creativeId = el.dataset.creativeId
-
-      // Mobile: skip animation, just clear inline styles and let CSS handle positioning
-      if (this.isMobile()) {
-        el.style.transition = 'none'
-        el.dataset.fullscreen = 'false'
-        document.body.classList.remove('chat-fullscreen')
-        this._syncFullscreenUI(false)
-
-        // Clear all inline styles so CSS media query rules apply
-        el.style.position = ''
-        el.style.top = ''
-        el.style.left = ''
-        el.style.right = ''
-        el.style.bottom = ''
-        el.style.width = ''
-        el.style.height = ''
-        el.style.transform = ''
-
-        // Force layout then restore transitions
-        el.offsetHeight // eslint-disable-line no-unused-expressions
-        el.style.transition = ''
-
-        // Update URL
-        let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-        if (backUrl) {
-          const url = new URL(backUrl, window.location.origin)
-          url.searchParams.set('open_comments', 'true')
-          window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
-        }
-        this._previousUrl = null
-
-        // Scroll to bottom after layout change
-        requestAnimationFrame(() => {
-          this.listController?.scrollToBottom()
-        })
-        return
-      }
-
-      if (this.isDocked()) {
-        el.style.transition = 'none'
-        el.dataset.fullscreen = 'false'
-        document.body.classList.remove('chat-fullscreen')
-        el.style.position = ''
-        el.style.top = ''
-        el.style.left = ''
-        el.style.right = ''
-        el.style.bottom = ''
-        el.style.width = ''
-        el.style.height = ''
-        this._savedStyles = null
-        this._syncFullscreenUI(false)
-        this.syncDockedUI()
-        el.offsetHeight // eslint-disable-line no-unused-expressions
-        el.style.transition = ''
-
-        let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-        if (backUrl) {
-          const url = new URL(backUrl, window.location.origin)
-          url.searchParams.set('open_comments', 'true')
-          window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
-        }
-        this._previousUrl = null
-        requestAnimationFrame(() => this.listController?.scrollToBottom())
-        return
-      }
-
-      // Desktop: animated exit to target position
-      // Calculate target position using viewport-relative coords (popup is position: fixed)
-      let finalTop = ''      // px string (viewport-relative)
-      let finalRight = ''    // px string
-      let finalWidth = savedStyles?.width || ''
-      let finalHeight = savedStyles?.height || ''
-
-      // Animation targets (viewport-relative, same as final since popup is fixed)
-      let animTop, animLeft, animWidth, animHeight
-
-      // Try to find the comment button for precise positioning
-      let targetButton = this.currentButton
-      if (!targetButton && creativeId) {
-        const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-        targetButton = row?.querySelector('.comments-btn')
-      }
-
-      // Scroll the creative row into view instantly BEFORE calculating positions,
-      // so getBoundingClientRect returns viewport-visible coordinates
-      if (targetButton) {
-        const row = targetButton.closest('creative-tree-row')
-        if (row) {
-          row.scrollIntoView({ behavior: 'instant', block: 'center' })
-        }
-      }
-
-      if (targetButton) {
-        this.currentButton = targetButton
-        const btnRect = targetButton.getBoundingClientRect()
-        const gap = 8
-
-        animWidth = parseFloat(finalWidth) || 420
-        animHeight = parseFloat(finalHeight) || 640
-
-        // Calculate top in viewport coords — same as updatePosition
-        let top = btnRect.bottom + 4
-        const bottom = top + animHeight
-        if (bottom > window.innerHeight) {
-          top = Math.max(4, window.innerHeight - animHeight - 4)
-        }
-
-        finalTop = `${top}px`
-
-        // Right-align if enough space to the right of the button
-        const spaceRight = window.innerWidth - btnRect.right - gap
-        if (spaceRight >= animWidth) {
-          this._exitToRight = true
-          animLeft = btnRect.right + gap
-          animTop = top
-        } else {
-          this._exitToRight = false
-          const rightPx = window.innerWidth - btnRect.right + 24
-          finalRight = `${rightPx}px`
-          animTop = top
-          animLeft = window.innerWidth - rightPx - animWidth
-        }
-      } else if (savedStyles && Object.values(savedStyles).some(v => v)) {
-        // Fallback to saved styles (already viewport-relative since popup is fixed)
-        const rightVal = parseFloat(savedStyles.right) || 32
-        animWidth = parseFloat(savedStyles.width) || 420
-        animHeight = parseFloat(savedStyles.height) || 640
-        animLeft = savedStyles.left ? parseFloat(savedStyles.left) : (window.innerWidth - rightVal - animWidth)
-        animTop = parseFloat(savedStyles.top) || 100
-
-        finalTop = savedStyles.top || ''
-        finalRight = savedStyles.right || ''
-      } else {
-        // No reference at all: use CSS defaults
-        animWidth = 420
-        animHeight = 640
-        animLeft = window.innerWidth - 32 - animWidth  // right: 2em
-        animTop = 100
-      }
-
-      // Animated exit: pin at fullscreen position, then shrink to target
-      const fsRect = el.getBoundingClientRect()
-
-      el.style.transition = 'none'
-      el.style.position = 'fixed'
-      el.style.top = `${fsRect.top}px`
-      el.style.left = `${fsRect.left}px`
-      el.style.right = 'auto'
-      el.style.bottom = 'auto'
-      el.style.width = `${fsRect.width}px`
-      el.style.height = `${fsRect.height}px`
-
-      el.dataset.fullscreen = 'false'
-      document.body.classList.remove('chat-fullscreen')
-      this._syncFullscreenUI(false)
-
-      // Force layout so the pinned position is applied
-      el.offsetHeight // eslint-disable-line no-unused-expressions
-
-      // Animate to target position (fixed coordinates)
-      el.style.transition = ''
-      el.style.top = `${animTop}px`
-      el.style.left = `${animLeft}px`
-      el.style.width = `${animWidth}px`
-      el.style.height = `${animHeight}px`
-
-      let cleanupTimer = null
-      let cleanedUp = false
-      const cleanup = () => {
-        if (cleanedUp) return
-        cleanedUp = true
-        if (cleanupTimer !== null) {
-          clearTimeout(cleanupTimer)
-          cleanupTimer = null
-        }
-        el.removeEventListener('transitionend', cleanup)
-        // Popup is always position: fixed — just apply final coords
-        el.style.transition = 'none'
-        el.style.position = ''
-        el.style.bottom = ''
-
-        if (targetButton) {
-          el.style.top = finalTop
-          el.style.width = finalWidth
-          el.style.height = finalHeight
-          if (this._exitToRight) {
-            el.style.left = `${animLeft}px`
-            el.style.right = ''
-          } else {
-            el.style.right = finalRight
-            el.style.left = ''
-          }
-        } else if (savedStyles) {
-          el.style.top = ''
-          el.style.left = ''
-          el.style.right = ''
-          el.style.width = ''
-          el.style.height = ''
-          Object.assign(el.style, savedStyles)
-        } else {
-          el.style.top = ''
-          el.style.left = ''
-          el.style.right = ''
-          el.style.width = ''
-          el.style.height = ''
-        }
-
-        // Force layout then restore transitions
-        el.offsetHeight // eslint-disable-line no-unused-expressions
-        el.style.transition = ''
-
-        // Scroll active topic into view after popup has settled at final size
-        this.topicsController?.scrollToActiveTopic()
-      }
-      el.addEventListener('transitionend', cleanup, { once: true })
-      cleanupTimer = setTimeout(cleanup, 300)
-
-      // Update URL — append open_comments=true so the popup stays open on refresh
-      let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-      if (backUrl) {
-        const url = new URL(backUrl, window.location.origin)
-        url.searchParams.set('open_comments', 'true')
-        window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
-      }
-      this._previousUrl = null
-
-    }
-
-    // Scroll to bottom after layout change
-    requestAnimationFrame(() => {
-      this.listController?.scrollToBottom()
-    })
+    this.fullscreen.toggle()
   }
 
   handlePopState(event) {
-    const isFs = event.state?.fullscreen === true
-    if (isFs !== this.isFullscreen()) {
-      const el = this.element
-      // Clear any animation inline styles to avoid stale positions
-      el.style.transition = 'none'
-      el.style.position = ''
-      el.style.top = ''
-      el.style.left = ''
-      el.style.right = ''
-      el.style.bottom = ''
-      el.style.width = ''
-      el.style.height = ''
-
-      el.dataset.fullscreen = isFs ? 'true' : 'false'
-      document.body.classList.toggle('chat-fullscreen', isFs)
-      this._syncFullscreenUI(isFs)
-      if (!isFs && this.isDocked()) {
-        el.style.display = 'flex'
-        this.syncDockedUI()
-      }
-
-      if (!isFs && this._savedStyles) {
-        Object.assign(el.style, this._savedStyles)
-        this._savedStyles = null
-      }
-
-      // Restore transition
-      el.offsetHeight // eslint-disable-line no-unused-expressions
-      el.style.transition = ''
-
-      requestAnimationFrame(() => this.listController?.scrollToBottom())
-    }
+    this.fullscreen.handlePopState(event)
   }
 
   _syncFullscreenUI(entering) {
