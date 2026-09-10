@@ -488,6 +488,7 @@ export default class extends Controller {
     }
 
     renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage, sourceCreativeId = this._topicsCreativeId || this.creativeId) {
+        const cronMessageDrafts = this.captureCronMessageDrafts()
         const allMessagesLabel = this.element.dataset.topicMainText || 'All Messages'
 
         const mainTopic = this.mainTopicId ? topics.find(t => String(t.id) === String(this.mainTopicId)) : null
@@ -557,6 +558,7 @@ export default class extends Controller {
         }
 
         this.listTarget.innerHTML = html
+        this.restoreCronMessageDrafts(cronMessageDrafts)
         // Which creative the chips now on screen belong to. A click can only
         // ever be about this one, whatever this.creativeId has since become.
         this._renderedCreativeId = sourceCreativeId
@@ -565,6 +567,26 @@ export default class extends Controller {
         // The create button lives outside the scrolling strip so it stays reachable
         // without horizontal scrolling, no matter how many topics there are.
         this.renderCreationContainer(canCreateTopic)
+    }
+
+    captureCronMessageDrafts() {
+        const drafts = new Map()
+        this.listTarget.querySelectorAll('[data-cron-key]').forEach(task => {
+            const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+            if (input && input.value !== input.dataset.cronSavedMessage) {
+                drafts.set(task.dataset.cronKey, input.value)
+            }
+        })
+        return drafts
+    }
+
+    restoreCronMessageDrafts(drafts) {
+        this.listTarget.querySelectorAll('[data-cron-key]').forEach(task => {
+            if (!drafts.has(task.dataset.cronKey)) return
+
+            const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+            if (input) input.value = drafts.get(task.dataset.cronKey)
+        })
     }
 
     // Write permission is sufficient for topic creation.

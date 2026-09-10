@@ -151,6 +151,59 @@ describe('TopicsController create-button placement', () => {
     expect(controller.listTarget.querySelector('.topic-tag[data-id="1"] .creative-cron-badge')).not.toBeNull()
   })
 
+  test('preserves a dirty cron message when topics refresh', () => {
+    const cronBadge = (message) => `
+      <span class="cron-badge-wrapper">
+        <span data-cron-key="topic-1">
+          <textarea data-cron-badge-target="messageInput"
+                    data-cron-saved-message="${message}">${message}</textarea>
+        </span>
+      </span>
+    `
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Saved message') }], true, true)
+    controller.listTarget.querySelector('textarea').value = 'Half-typed message'
+
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Server message') }], true, true)
+
+    const input = controller.listTarget.querySelector('textarea')
+    expect(input.value).toBe('Half-typed message')
+    expect(input.dataset.cronSavedMessage).toBe('Server message')
+  })
+
+  test('uses a refreshed cron message when the local message is clean', () => {
+    const cronBadge = (message) => `
+      <span data-cron-key="topic-1">
+        <textarea data-cron-badge-target="messageInput"
+                  data-cron-saved-message="${message}">${message}</textarea>
+      </span>
+    `
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Saved message') }], true, true)
+
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Server message') }], true, true)
+
+    expect(controller.listTarget.querySelector('textarea').value).toBe('Server message')
+  })
+
+  test('does not restore a dirty cron message after edit access is lost', () => {
+    const editableBadge = `
+      <span data-cron-key="topic-1">
+        <textarea data-cron-badge-target="messageInput"
+                  data-cron-saved-message="Saved message">Saved message</textarea>
+      </span>
+    `
+    const readOnlyBadge = `
+      <span data-cron-key="topic-1"><span class="cron-task-message">Server message</span></span>
+    `
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: editableBadge }], true, true)
+    controller.listTarget.querySelector('textarea').value = 'Half-typed message'
+
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: readOnlyBadge }], false, false)
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: readOnlyBadge }], false, false)
+
+    expect(controller.listTarget.querySelector('textarea')).toBeNull()
+    expect(controller.listTarget.querySelector('.cron-task-message').textContent).toBe('Server message')
+  })
+
   test('reloads topics when a cron change is broadcast', () => {
     const refetch = jest.fn()
     const invalidate = jest.fn()
