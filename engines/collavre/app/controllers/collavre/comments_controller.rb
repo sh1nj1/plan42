@@ -147,10 +147,7 @@ module Collavre
       # Preloaded because agent liveness is read off the gateway row: without
       # this the strip issues one query per agent every time it refreshes.
       ActiveRecord::Associations::Preloader.new(records: users, associations: :agent_gateway).call
-      live_claude_agent_ids = AgentSubscription.live
-                                                .where(agent_id: users.filter_map { |user| user.id if user.claude_channel_agent? })
-                                                .distinct
-                                                .pluck(:agent_id)
+      live_claude_agent_ids = live_claude_agent_ids_for(users)
       user_data = users.map do |user|
         view_context.user_json(user, email: true, ai_user: true)
                     .merge(
@@ -233,6 +230,11 @@ module Collavre
     end
 
     private
+
+    def live_claude_agent_ids_for(users)
+      agent_ids = users.filter_map { |user| user.id if user.claude_channel_agent? }
+      AgentSubscription.live.where(agent_id: agent_ids).distinct.pluck(:agent_id)
+    end
 
     def github_synced_content_comment?(comment)
       return false unless comment.topic&.name == Collavre::Creative::CONTENT_TOPIC_NAME
