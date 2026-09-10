@@ -209,6 +209,27 @@ describe('TopicsController create-button placement', () => {
     expect(replacementTask.querySelector('button').disabled).toBe(true)
   })
 
+  test('preserves an in-flight cron deletion across topic refreshes', () => {
+		const cronBadge = (message) => `
+			<span data-cron-key="topic-1">
+				<textarea data-cron-badge-target="messageInput"
+					data-cron-saved-message="${message}">${message}</textarea>
+				<button data-action="click->cron-badge#destroy">Delete</button>
+			</span>
+		`
+		controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Saved message') }], true, true)
+		const task = controller.listTarget.querySelector('[data-cron-key="topic-1"]')
+		task.dataset.cronDeleteOperation = '84'
+		task.querySelector('button').disabled = true
+
+		controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Server message') }], true, true)
+
+		const replacementTask = controller.listTarget.querySelector('[data-cron-key="topic-1"]')
+		expect(replacementTask.dataset.cronDeleteOperation).toBe('84')
+		expect(replacementTask.querySelector('textarea').value).toBe('Server message')
+		expect(replacementTask.querySelector('button').disabled).toBe(true)
+  })
+
   test('does not restore a dirty cron message after edit access is lost', () => {
     const editableBadge = `
       <span data-cron-key="topic-1">

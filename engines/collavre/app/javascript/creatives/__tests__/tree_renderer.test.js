@@ -62,6 +62,53 @@ test('keeps a broadcast progress template instead of restoring stale DOM markup'
   expect(row.requestUpdate).toHaveBeenCalledTimes(1)
 })
 
+test('preserves dirty cron state while reconciling a full progress template', () => {
+	const currentProgressHtml = `
+		${TOGGLE_HTML}
+		<span data-cron-key="cron-42">
+			<textarea data-cron-badge-target="messageInput"
+				data-cron-saved-message="Saved message">Saved message</textarea>
+			<button data-action="click->cron-badge#saveMessage">Save</button>
+			<button data-action="click->cron-badge#destroy">Delete</button>
+		</span>
+		<span class="comments-btn">1</span>
+	`
+	const serverProgressHtml = `
+		<span class="creative-progress-incomplete">50%</span>
+		<span data-cron-key="cron-42">
+			<textarea data-cron-badge-target="messageInput"
+				data-cron-saved-message="Server message">Server message</textarea>
+			<button data-action="click->cron-badge#saveMessage">Save</button>
+			<button data-action="click->cron-badge#destroy">Delete</button>
+		</span>
+		<span class="comments-btn">2</span>
+	`
+	const row = document.createElement('creative-tree-row')
+	row.progressHtml = currentProgressHtml
+	row.dataset.progressHtml = currentProgressHtml
+	row.innerHTML = `<span class="creative-progress-area">${currentProgressHtml}</span>`
+	row.requestUpdate = jest.fn()
+	const currentTask = row.querySelector('[data-cron-key="cron-42"]')
+	currentTask.querySelector('textarea').value = '\nDraft message'
+	currentTask.dataset.cronSaveOperation = '6'
+	currentTask.dataset.cronDeleteOperation = '7'
+	currentTask.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
+	currentTask.querySelector('[data-action~="click->cron-badge#destroy"]').disabled = true
+
+	applyRowProperties(row, { templates: { progress_html: serverProgressHtml } })
+
+	const template = document.createElement('template')
+	template.innerHTML = row.progressHtml
+	const nextTask = template.content.querySelector('[data-cron-key="cron-42"]')
+	expect(template.content.querySelector('.creative-progress-incomplete').textContent).toBe('50%')
+	expect(template.content.querySelector('.comments-btn').textContent).toBe('2')
+	expect(nextTask.querySelector('textarea').value).toBe('\nDraft message')
+	expect(nextTask.dataset.cronSaveOperation).toBe('6')
+	expect(nextTask.dataset.cronDeleteOperation).toBe('7')
+	expect(nextTask.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled).toBe(true)
+	expect(nextTask.querySelector('[data-action~="click->cron-badge#destroy"]').disabled).toBe(true)
+})
+
 test('replaces the progress control when a remote update changes binary eligibility', () => {
   const row = document.createElement('creative-tree-row')
   row.progressHtml = TOGGLE_HTML

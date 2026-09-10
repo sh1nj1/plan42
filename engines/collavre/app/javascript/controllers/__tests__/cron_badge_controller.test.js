@@ -91,6 +91,45 @@ describe('CronBadgeController', () => {
     expect(controller.badgeTarget.getAttribute('aria-label')).toBe('1 scheduled job')
   })
 
+  test('restores a replacement delete button after a failed deletion', async () => {
+		let resolveDelete
+		confirmDialog.mockResolvedValue(true)
+		csrfFetch.mockReturnValue(new Promise(resolve => { resolveDelete = resolve }))
+		alertDialog.mockResolvedValue(undefined)
+		const button = element.querySelector('[data-cron-delete-url$="/one"]')
+
+		button.click()
+		await new Promise(resolve => setTimeout(resolve, 0))
+		const replacement = element.cloneNode(true)
+		element.replaceWith(replacement)
+		const replacementTask = replacement.querySelector('[data-cron-delete-operation]')
+
+		expect(replacementTask.querySelector('[data-cron-delete-url]').disabled).toBe(true)
+		resolveDelete({ ok: false, status: 500 })
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(replacementTask.hasAttribute('data-cron-delete-operation')).toBe(false)
+		expect(replacementTask.querySelector('[data-cron-delete-url]').disabled).toBe(false)
+  })
+
+  test('removes a replacement task after a successful deletion', async () => {
+		let resolveDelete
+		confirmDialog.mockResolvedValue(true)
+		csrfFetch.mockReturnValue(new Promise(resolve => { resolveDelete = resolve }))
+		const button = element.querySelector('[data-cron-delete-url$="/one"]')
+
+		button.click()
+		await new Promise(resolve => setTimeout(resolve, 0))
+		const replacement = element.cloneNode(true)
+		element.replaceWith(replacement)
+		resolveDelete({ ok: true, status: 204 })
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(replacement.querySelectorAll('[data-cron-badge-target="task"]')).toHaveLength(1)
+		expect(replacement.querySelector('[data-cron-badge-target="count"]').textContent).toBe('1')
+		expect(replacement.querySelector('[data-cron-badge-target="badge"]').title).toBe('1 scheduled job')
+  })
+
   test('refreshes the plural count label', () => {
     controller.refreshCount()
 

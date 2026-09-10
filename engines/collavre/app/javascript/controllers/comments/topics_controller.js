@@ -572,11 +572,18 @@ export default class extends Controller {
     captureCronMessageDrafts() {
         const drafts = new Map()
         this.listTarget.querySelectorAll('[data-cron-key]').forEach(task => {
-            const input = task.querySelector('[data-cron-badge-target="messageInput"]')
-			const operationId = task.dataset.cronSaveOperation
-			if (!input || (input.value === input.dataset.cronSavedMessage && !operationId)) return
+			const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+			const saveOperationId = task.dataset.cronSaveOperation
+			const deleteOperationId = task.dataset.cronDeleteOperation
+			const dirty = input && input.value !== input.dataset.cronSavedMessage
+			if (!input || (!dirty && !saveOperationId && !deleteOperationId)) return
 
-			drafts.set(task.dataset.cronKey, { message: input.value, operationId })
+			drafts.set(task.dataset.cronKey, {
+				message: input.value,
+				dirty,
+				saveOperationId,
+				deleteOperationId,
+			})
         })
         return drafts
     }
@@ -589,12 +596,16 @@ export default class extends Controller {
 			if (!input) return
 
 			const draft = drafts.get(task.dataset.cronKey)
-			input.value = draft.message
-			if (!draft.operationId) return
-
-			task.dataset.cronSaveOperation = draft.operationId
-			input.disabled = true
-			task.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
+			if (draft.dirty || draft.saveOperationId) input.value = draft.message
+			if (draft.saveOperationId) {
+				task.dataset.cronSaveOperation = draft.saveOperationId
+				input.disabled = true
+				task.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
+			}
+			if (draft.deleteOperationId) {
+				task.dataset.cronDeleteOperation = draft.deleteOperationId
+				task.querySelector('[data-action~="click->cron-badge#destroy"]').disabled = true
+			}
         })
     }
 

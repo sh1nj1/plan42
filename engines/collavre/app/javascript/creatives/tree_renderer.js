@@ -94,6 +94,46 @@ export function replaceProgressControl(html, controlHtml) {
   return serializeProgressHtml(template)
 }
 
+function restoreCronTaskState(currentTask, nextTask) {
+  const currentInput = currentTask.querySelector('[data-cron-badge-target="messageInput"]')
+  const nextInput = nextTask.querySelector('[data-cron-badge-target="messageInput"]')
+  if (!currentInput || !nextInput) return false
+
+  const saveOperationId = currentTask.dataset.cronSaveOperation
+  const deleteOperationId = currentTask.dataset.cronDeleteOperation
+  const dirty = currentInput.value !== currentInput.dataset.cronSavedMessage
+  if (dirty || saveOperationId) nextInput.value = currentInput.value
+  if (saveOperationId) {
+    nextTask.dataset.cronSaveOperation = saveOperationId
+    nextInput.disabled = true
+    nextTask.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
+  }
+  if (deleteOperationId) {
+    nextTask.dataset.cronDeleteOperation = deleteOperationId
+    nextTask.querySelector('[data-action~="click->cron-badge#destroy"]').disabled = true
+  }
+  return dirty || Boolean(saveOperationId) || Boolean(deleteOperationId)
+}
+
+export function mergeCronTaskState(currentHtml, nextHtml) {
+  const currentTemplate = document.createElement('template')
+  currentTemplate.innerHTML = currentHtml
+  const nextTemplate = document.createElement('template')
+  nextTemplate.innerHTML = nextHtml
+  const nextTasks = new Map(Array.from(
+    nextTemplate.content.querySelectorAll('[data-cron-key]'),
+    task => [task.dataset.cronKey, task]
+  ))
+  let changed = false
+
+  currentTemplate.content.querySelectorAll('[data-cron-key]').forEach(currentTask => {
+    const nextTask = nextTasks.get(currentTask.dataset.cronKey)
+    if (nextTask && restoreCronTaskState(currentTask, nextTask)) changed = true
+  })
+
+  return changed ? serializeProgressHtml(nextTemplate) : nextHtml
+}
+
 function applyRowProperties(row, node) {
   if (!row || !node) return
   // Preserve Turbo-mutated child markup before accepting server-side templates.
@@ -171,10 +211,15 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'descriptionHtml', templates.description_html)
     dirty = true
   }
-  if (templates.progress_html != null && row.progressHtml !== templates.progress_html) {
-    row.progressHtml = templates.progress_html
-    setDatasetValue(row, 'progressHtml', templates.progress_html)
-    dirty = true
+	if (templates.progress_html != null) {
+		const progressHtml = row.progressHtml
+			? mergeCronTaskState(row.progressHtml, templates.progress_html)
+			: templates.progress_html
+		if (row.progressHtml !== progressHtml) {
+			row.progressHtml = progressHtml
+			setDatasetValue(row, 'progressHtml', progressHtml)
+			dirty = true
+		}
   }
   if (templates.edit_icon_html != null && row.editIconHtml !== templates.edit_icon_html) {
     row.editIconHtml = templates.edit_icon_html

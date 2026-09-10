@@ -3,7 +3,7 @@ import { alertDialog, confirmDialog } from '../lib/utils/dialog'
 import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 import csrfFetch, { refreshCsrfToken } from '../lib/api/csrf_fetch'
 
-let saveOperationSequence = 0
+let cronOperationSequence = 0
 
 export default class extends Controller {
   static targets = ['badge', 'count', 'task', 'messageInput']
@@ -28,7 +28,7 @@ export default class extends Controller {
     if (!input) return
 
     const releaseTreeReload = this.holdCreativeTreeReload()
-    const operationId = String(++saveOperationSequence)
+    const operationId = String(++cronOperationSequence)
     const message = input.value
     task.dataset.cronSaveOperation = operationId
     button.disabled = true
@@ -95,21 +95,43 @@ export default class extends Controller {
 
     if (!(await confirmDialog(this.deleteConfirmValue, { danger: true }))) return
 
-    button.disabled = true
+		const task = button.closest('[data-cron-badge-target="task"]')
+		const operationId = String(++cronOperationSequence)
+		task.dataset.cronDeleteOperation = operationId
+		button.disabled = true
 
     try {
       const response = await this.deleteCron(button.dataset.cronDeleteUrl)
       if (!response.ok) throw new Error(`Cron delete failed (${response.status})`)
 
-      button.closest('[data-cron-badge-target="task"]')?.remove()
-      this.refreshCount()
+			this.deleteOperationTasks(task, operationId).forEach(candidate => {
+				const badge = candidate.closest('[data-controller~="cron-badge"]')
+				candidate.remove()
+				this.refreshCount(badge)
+			})
       invalidateCreativeTree()
     } catch (error) {
       console.error(error)
-      button.disabled = false
+			this.finishCronDelete(task, operationId)
       await alertDialog(this.deleteErrorValue)
     }
   }
+
+	finishCronDelete(task, operationId) {
+		this.deleteOperationTasks(task, operationId).forEach(candidate => {
+			delete candidate.dataset.cronDeleteOperation
+			candidate.querySelector('[data-action~="click->cron-badge#destroy"]').disabled = false
+		})
+	}
+
+	deleteOperationTasks(task, operationId) {
+		const currentTask = document.querySelector(
+			`[data-cron-delete-operation="${operationId}"]`
+		)
+		return new Set([task, currentTask].filter(candidate => (
+			candidate?.dataset.cronDeleteOperation === operationId
+		)))
+	}
 
   async deleteCron(url) {
     const options = { method: 'DELETE' }
@@ -142,17 +164,20 @@ export default class extends Controller {
     return body.trim() === ''
   }
 
-  refreshCount() {
-    const count = this.taskTargets.length
+  refreshCount(element = this.element) {
+		const tasks = element.querySelectorAll('[data-cron-badge-target="task"]')
+		const count = tasks.length
     if (count === 0) {
-      this.element.remove()
+			element.remove()
       return
     }
 
-    this.countTarget.textContent = String(count)
+		const countTarget = element.querySelector('[data-cron-badge-target="count"]')
+		const badgeTarget = element.querySelector('[data-cron-badge-target="badge"]')
+		countTarget.textContent = String(count)
     const template = count === 1 ? this.countOneValue : this.countOtherValue
     const label = template.replace('__count__', String(count))
-    this.badgeTarget.title = label
-    this.badgeTarget.setAttribute('aria-label', label)
+		badgeTarget.title = label
+		badgeTarget.setAttribute('aria-label', label)
   }
 }
