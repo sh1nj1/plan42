@@ -28,15 +28,16 @@ export default class extends Controller {
     if (!input) return
 
     const operationId = String(++saveOperationSequence)
+    const message = input.value
     task.dataset.cronSaveOperation = operationId
     button.disabled = true
     input.disabled = true
 
     try {
-      const response = await this.updateCron(button.dataset.cronUpdateUrl, input.value)
+      const response = await this.updateCron(button.dataset.cronUpdateUrl, message)
       if (!response.ok) throw new Error(`Cron update failed (${response.status})`)
 
-      input.dataset.cronSavedMessage = input.value
+      this.updateSavedMessage(task, operationId, message)
       invalidateCreativeTree()
     } catch (error) {
       console.error(error)
@@ -47,18 +48,29 @@ export default class extends Controller {
   }
 
   finishMessageSave(task, operationId) {
-    const currentTask = document.querySelector(
-      `[data-cron-save-operation="${operationId}"]`
-    )
-    new Set([task, currentTask]).forEach(candidate => {
-      if (!candidate || candidate.dataset.cronSaveOperation !== operationId) return
-
+    this.messageSaveTasks(task, operationId).forEach(candidate => {
       delete candidate.dataset.cronSaveOperation
       const input = candidate.querySelector('[data-cron-badge-target="messageInput"]')
       const button = candidate.querySelector('[data-action~="click->cron-badge#saveMessage"]')
       if (input) input.disabled = false
       if (button) button.disabled = false
     })
+  }
+
+  updateSavedMessage(task, operationId, message) {
+    this.messageSaveTasks(task, operationId).forEach(candidate => {
+      const input = candidate.querySelector('[data-cron-badge-target="messageInput"]')
+      if (input) input.dataset.cronSavedMessage = message
+    })
+  }
+
+  messageSaveTasks(task, operationId) {
+    const currentTask = document.querySelector(
+      `[data-cron-save-operation="${operationId}"]`
+    )
+    return new Set([task, currentTask].filter(candidate => (
+      candidate?.dataset.cronSaveOperation === operationId
+    )))
   }
 
   async destroy(event) {

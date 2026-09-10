@@ -175,6 +175,45 @@ describe('CronBadgeController', () => {
     expect(replacementTask.querySelector('[data-cron-update-url]').disabled).toBe(false)
   })
 
+  test('updates the saved message baseline on replacement controls after a successful update', async () => {
+    let resolveUpdate
+    csrfFetch.mockReturnValue(new Promise(resolve => { resolveUpdate = resolve }))
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const input = task.querySelector('textarea')
+    const button = task.querySelector('[data-cron-update-url]')
+    input.dataset.cronSavedMessage = 'First message'
+    input.value = 'Updated message'
+
+    button.click()
+    const replacement = element.cloneNode(true)
+    element.replaceWith(replacement)
+    const replacementInput = replacement.querySelector('textarea')
+
+    expect(replacementInput.dataset.cronSavedMessage).toBe('First message')
+
+    resolveUpdate({ ok: true, status: 200 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(replacementInput.dataset.cronSavedMessage).toBe('Updated message')
+    expect(replacementInput.disabled).toBe(false)
+  })
+
+  test('ignores stale save tasks and missing controls when finishing', () => {
+    const task = document.createElement('span')
+    task.dataset.cronSaveOperation = 'current'
+
+    controller.finishMessageSave(task, 'stale')
+    expect(task.dataset.cronSaveOperation).toBe('current')
+
+    expect(() => controller.finishMessageSave(task, 'current')).not.toThrow()
+    expect(task.hasAttribute('data-cron-save-operation')).toBe(false)
+
+    task.dataset.cronSaveOperation = 'current'
+    expect(() => {
+      controller.updateSavedMessage(task, 'current', 'Updated message')
+    }).not.toThrow()
+  })
+
   test('refreshes the CSRF token and retries a message update after a payload-less 422 response', async () => {
     csrfFetch
       .mockResolvedValueOnce(response({ ok: false, status: 422 }))
