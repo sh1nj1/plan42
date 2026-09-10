@@ -563,7 +563,7 @@ export default class extends Controller {
             this._autoResize()
             this._updateSubmitButton()
             chatDrafts.set(submittedDraftKey, newerDraft)
-            this._observeDraft(submittedDraftKey, newerDraft, submittedDraftNamespace)
+						this._observeDraft(submittedDraftKey, newerDraft, { namespace: submittedDraftNamespace })
           } else if (hasNewerStoredDraft && submittedChatStillActive) {
             this._restoreDraft()
           } else if (
@@ -573,7 +573,7 @@ export default class extends Controller {
             ownsSubmittedDraftNamespace
           ) {
             chatDrafts.clear(submittedDraftKey)
-            this._observeDraft(submittedDraftKey, null, submittedDraftNamespace)
+						this._observeDraft(submittedDraftKey, null, { namespace: submittedDraftNamespace })
           }
           if (ownsSubmittedDraftNamespace && !submittedHadReview) {
             this._clearMigratedSubmittedSources(submittedDraft)

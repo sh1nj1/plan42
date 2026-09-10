@@ -500,13 +500,13 @@ export default class extends Controller {
   }
 
   updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null, { keepalive = false } = {}) {
-    this.getCommentReadTracker().updateReadPointer(
+    this.getCommentReadTracker().updateReadPointer({
       creativeId,
       topicId,
       topicIds,
       topicWatermarks,
-      { keepalive }
-    )
+      keepalive,
+    })
   }
 
   handlePrevMsgUserInput() {
