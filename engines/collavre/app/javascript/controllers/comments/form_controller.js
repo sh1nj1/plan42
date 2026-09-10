@@ -188,7 +188,7 @@ export default class extends Controller {
   onPopupOpened({ creativeId, canComment }) {
     this.creativeId = creativeId
     this.element.dataset.creativeId = creativeId || ''
-    if (canComment) this._draftSaveSuspendedForPermission = false
+    if (canComment) this._drafts._draftSaveSuspendedForPermission = false
     // Stale topic ids from the previous creative are cleared by the popup
     // controller BEFORE topics loadTopics() dispatches comments--topics:change,
     // so by the time we get here, currentTopicId already reflects the new
@@ -198,9 +198,9 @@ export default class extends Controller {
     // Capture input entered while topics were loading before reset clears it.
     // Without a pending input timer, a blank textarea must not erase a draft
     // that is waiting in storage to be restored below.
-    if (this._draftSaveTimer) this._flushDraftSave()
+    if (this._drafts._draftSaveTimer) this._flushDraftSave()
     this.resetForm()
-    this._draftSaveSuspendedForPermission = !canComment
+    this._drafts._draftSaveSuspendedForPermission = !canComment
     if (canComment && this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
@@ -213,9 +213,9 @@ export default class extends Controller {
 
   onPopupClosed() {
     this._flushDraftSave()
-    this._activeDraftKey = null
-    this._activeDraftCreativeId = null
-    this._awaitingEffectiveDraftKeyFor = null
+    this._drafts._activeDraftKey = null
+    this._drafts._activeDraftCreativeId = null
+    this._drafts._awaitingEffectiveDraftKeyFor = null
     this.stopSpeechRecognition()
     this.resetForm()
   }
@@ -230,13 +230,13 @@ export default class extends Controller {
 
     if (!canComment) {
       this._flushDraftSave()
-      this._draftSaveSuspendedForPermission = true
+      this._drafts._draftSaveSuspendedForPermission = true
       this.stopSpeechRecognition()
       this.resetForm()
       return
     }
 
-    this._draftSaveSuspendedForPermission = false
+    this._drafts._draftSaveSuspendedForPermission = false
     this._restoreDraft()
     if (this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
@@ -285,10 +285,6 @@ export default class extends Controller {
     return this._drafts._stashedDraftBelongsToCurrentCreative()
   }
 
-  _shouldSuppressDraftSaveForStash() {
-    return this._drafts._shouldSuppressDraftSaveForStash()
-  }
-
   _restoreStashedDraft(submittedText) {
     this._drafts._restoreStashedDraft(submittedText)
   }
@@ -309,79 +305,20 @@ export default class extends Controller {
     this.textareaTarget.style.height = 'auto'
   }
 
-  get _activeDraftKey() { return this._drafts._activeDraftKey }
-  set _activeDraftKey(value) { this._drafts._activeDraftKey = value }
-  get _activeDraftCreativeId() { return this._drafts._activeDraftCreativeId }
-  set _activeDraftCreativeId(value) { this._drafts._activeDraftCreativeId = value }
-  get _awaitingEffectiveDraftKeyFor() { return this._drafts._awaitingEffectiveDraftKeyFor }
-  set _awaitingEffectiveDraftKeyFor(value) { this._drafts._awaitingEffectiveDraftKeyFor = value }
-  get _draftSaveTimer() { return this._drafts._draftSaveTimer }
-  set _draftSaveTimer(value) { this._drafts._draftSaveTimer = value }
-  get _draftSaveSuspendedForPermission() { return this._drafts._draftSaveSuspendedForPermission }
-  set _draftSaveSuspendedForPermission(value) { this._drafts._draftSaveSuspendedForPermission = value }
-  get _disabledDraftNamespaces() { return this._drafts._disabledDraftNamespaces }
-  set _disabledDraftNamespaces(value) { this._drafts._disabledDraftNamespaces = value }
-  get _draftBackupCleanupPendingNamespaces() { return this._drafts._draftBackupCleanupPendingNamespaces }
-  set _draftBackupCleanupPendingNamespaces(value) { this._drafts._draftBackupCleanupPendingNamespaces = value }
-  get _observedDraftClearNonces() { return this._drafts._observedDraftClearNonces }
-  set _observedDraftClearNonces(value) { this._drafts._observedDraftClearNonces = value }
-  get _draftRevisions() { return this._drafts._draftRevisions }
-  set _draftRevisions(value) { this._drafts._draftRevisions = value }
-  get _observedDrafts() { return this._drafts._observedDrafts }
-  set _observedDrafts(value) { this._drafts._observedDrafts = value }
-  get _observedDisplayedDrafts() { return this._drafts._observedDisplayedDrafts }
-  set _observedDisplayedDrafts(value) { this._drafts._observedDisplayedDrafts = value }
-  get _observedDraftRevisions() { return this._drafts._observedDraftRevisions }
-  set _observedDraftRevisions(value) { this._drafts._observedDraftRevisions = value }
-  get _observedStoredDraftRevisions() { return this._drafts._observedStoredDraftRevisions }
-  set _observedStoredDraftRevisions(value) { this._drafts._observedStoredDraftRevisions = value }
-  get _pendingDraftSubmissions() { return this._drafts._pendingDraftSubmissions }
-  set _pendingDraftSubmissions(value) { this._drafts._pendingDraftSubmissions = value }
-  get _stashedDraft() { return this._drafts._stashedDraft }
-  set _stashedDraft(value) { this._drafts._stashedDraft = value }
-
-  _saveDraftNow() {
-    this._drafts._saveDraftNow()
-  }
-
   _flushDraftSave() {
     this._drafts._flushDraftSave()
-  }
-
-  _currentTextIsPendingSubmission() {
-    return this._drafts._currentTextIsPendingSubmission()
-  }
-
-  _currentPendingSubmission() {
-    return this._drafts._currentPendingSubmission()
   }
 
   _restoreDraft() {
     this._drafts._restoreDraft()
   }
 
-  _restorePendingSubmittedDraft() {
-    this._drafts._restorePendingSubmittedDraft()
-  }
-
   _draftPersistenceDisabled(namespace) {
     return this._drafts._draftPersistenceDisabled(namespace)
   }
 
-  _disableDraftNamespace(namespace) {
-    this._drafts._disableDraftNamespace(namespace)
-  }
-
   _observeDraft(...args) {
     this._drafts._observeDraft(...args)
-  }
-
-  _rebindPendingDraftSubmissions(...args) {
-    this._drafts._rebindPendingDraftSubmissions(...args)
-  }
-
-  _trackPartialDraftMigration(...args) {
-    this._drafts._trackPartialDraftMigration(...args)
   }
 
   _clearMigratedSubmittedSources(submission) {
@@ -444,9 +381,9 @@ export default class extends Controller {
     // Cancel any pending input debounce before capturing the submission. A
     // write while the request is in flight looks like a newer draft and can
     // restore the already-sent text on success. Failures persist below.
-    if (this._draftSaveTimer) {
-      clearTimeout(this._draftSaveTimer)
-      this._draftSaveTimer = null
+    if (this._drafts._draftSaveTimer) {
+      clearTimeout(this._drafts._draftSaveTimer)
+      this._drafts._draftSaveTimer = null
     }
 
     // Build final content from review quotes + user text
@@ -462,7 +399,7 @@ export default class extends Controller {
     // going to the server. _restoreStashedDraft compares against it to tell a
     // failure that left the command text behind from text typed mid-flight.
     const submittedText = this.textareaTarget.value
-    const initialSubmittedDraftKey = this._activeDraftKey
+    const initialSubmittedDraftKey = this._drafts._activeDraftKey
     const submittedDraftNamespace = chatDrafts.namespace()
     const initialSubmittedDraftRevisionKey =
       `${submittedDraftNamespace}:${initialSubmittedDraftKey}`
@@ -474,22 +411,22 @@ export default class extends Controller {
       (initialSubmittedDraft.updatedAt || 0) + 1,
     )
     const observedSubmittedText =
-      this._observedDrafts?.get(initialSubmittedDraftRevisionKey)
+      this._drafts._observedDrafts?.get(initialSubmittedDraftRevisionKey)
     const observedSubmittedStoredRevision =
-      this._observedStoredDraftRevisions?.get(initialSubmittedDraftRevisionKey) || null
+      this._drafts._observedStoredDraftRevisions?.get(initialSubmittedDraftRevisionKey) || null
     const submittedTextChangedOutsideController =
       observedSubmittedText !== initialSubmittedDraft.text
     const submittedRevisionChangedOutsideController =
       observedSubmittedStoredRevision !== initialSubmittedDraft.revision
     const submittedStoredDraftChangedOutsideController =
-      this._observedDrafts?.has(initialSubmittedDraftRevisionKey) &&
+      this._drafts._observedDrafts?.has(initialSubmittedDraftRevisionKey) &&
       (submittedTextChangedOutsideController || submittedRevisionChangedOutsideController)
     const submittedDraft = {
       key: initialSubmittedDraftKey,
       namespace: submittedDraftNamespace,
       revisionKey: initialSubmittedDraftRevisionKey,
       storedChangedOutsideController: submittedStoredDraftChangedOutsideController,
-      keyRevision: this._draftRevisions?.get(initialSubmittedDraftRevisionKey) || 0,
+      keyRevision: this._drafts._draftRevisions?.get(initialSubmittedDraftRevisionKey) || 0,
       storedRevision: initialSubmittedDraft.revision,
       storedUpdatedAt: initialSubmittedDraft.updatedAt,
       backupUpdatedAt: submittedBackupUpdatedAt,
@@ -498,14 +435,14 @@ export default class extends Controller {
       backupKey: submittedBackup?.text === submittedText ? submittedBackup.key : null,
       migratedSources: [],
     }
-    this._pendingDraftSubmissions ||= new Set()
-    this._pendingDraftSubmissions.add(submittedDraft)
+    this._drafts._pendingDraftSubmissions ||= new Set()
+    this._drafts._pendingDraftSubmissions.add(submittedDraft)
     const submittedEditingId = this.editingId
     const submittedHadReview = hasQuotes
     submittedDraft.editing = Boolean(submittedEditingId)
     submittedDraft.hadReview = submittedHadReview
     if (submittedHadStash) {
-      this._stashedDraft.submittedText = submittedText
+      this._drafts._stashedDraft.submittedText = submittedText
     }
 
     const formData = new FormData(this.formTarget)
@@ -578,18 +515,18 @@ export default class extends Controller {
         const switchedChats =
           ownsSubmittedDraftNamespace &&
           submittedDraftKey &&
-          this._activeDraftKey &&
-          String(submittedDraftKey) !== String(this._activeDraftKey)
+          this._drafts._activeDraftKey &&
+          String(submittedDraftKey) !== String(this._drafts._activeDraftKey)
         const submittedChatStillActive =
           submittedDraftKey &&
-          this._activeDraftKey &&
-          String(submittedDraftKey) === String(this._activeDraftKey)
+          this._drafts._activeDraftKey &&
+          String(submittedDraftKey) === String(this._drafts._activeDraftKey)
         const hasNewerActiveDraft =
           ownsSubmittedDraftNamespace &&
           !submittedEditingId &&
           !submittedHadReview &&
           submittedChatStillActive &&
-          (this._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
+          (this._drafts._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
             submittedDraftKeyRevision
         const hasNewerStoredDraft =
           ownsSubmittedDraftNamespace &&
@@ -597,7 +534,7 @@ export default class extends Controller {
           !submittedHadReview &&
           submittedDraftKey &&
           (
-            (this._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
+            (this._drafts._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
               submittedDraftKeyRevision ||
             submittedStoredDraftChangedOutsideController ||
             chatDrafts.revision(submittedDraftKey) !== submittedDraftStoredRevision
@@ -605,14 +542,14 @@ export default class extends Controller {
         const hasNewerDraft = hasNewerActiveDraft || hasNewerStoredDraft
         const newerDraft = hasNewerActiveDraft
           ? (
-            this._draftSaveSuspendedForPermission
+            this._drafts._draftSaveSuspendedForPermission
               ? chatDrafts.get(submittedDraftKey)
               : this.textareaTarget.value
           )
           : null
         if (switchedChats) this._flushDraftSave()
-        clearTimeout(this._draftSaveTimer)
-        this._draftSaveTimer = null
+        clearTimeout(this._drafts._draftSaveTimer)
+        this._drafts._draftSaveTimer = null
         this.resetForm()
         if (submittedEditingId) {
           if (ownsSubmittedDraftNamespace) this._restoreDraft()
@@ -689,7 +626,7 @@ export default class extends Controller {
         settlementUi = alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
-        this._pendingDraftSubmissions.delete(submittedDraft)
+        this._drafts._pendingDraftSubmissions.delete(submittedDraft)
         inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
@@ -699,7 +636,7 @@ export default class extends Controller {
         ) {
           this._restoreStashedDraft(submittedText)
         } else {
-          this._stashedDraft = null
+          this._drafts._stashedDraft = null
         }
         const announceSettlement = () => {
           this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled', {

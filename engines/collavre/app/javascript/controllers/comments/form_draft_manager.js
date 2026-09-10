@@ -9,7 +9,6 @@ export default class FormDraftManager {
   get element() { return this.form.element }
   get textareaTarget() { return this.form.textareaTarget }
   get editingId() { return this.form.editingId }
-  set editingId(value) { this.form.editingId = value }
   get creativeId() { return this.form.creativeId }
   set creativeId(value) { this.form.creativeId = value }
   get _reviewStore() { return this.form._reviewStore }
