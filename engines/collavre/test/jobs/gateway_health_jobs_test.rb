@@ -53,24 +53,30 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     assert_nil @gateway.reload.health_checked_at
   end
 
-  # A backlogged queue holds probes whose verdict has already been recorded.
-  # Re-probing on those is what compounds a slow sweep into a growing backlog.
-  test "the probe skips a gateway whose verdict is still fresh" do
-    @gateway.update_columns(health_checked_at: 5.seconds.ago, health_status: 1)
+  test "the probe coalesces ready and running copies per gateway" do
+    first = Collavre::GatewayHealthProbeJob.new(@gateway.id)
+    duplicate = Collavre::GatewayHealthProbeJob.new(@gateway.id)
+    other = Collavre::GatewayHealthProbeJob.new(create_gateway.id)
+    records = [ first, duplicate, other ].map { |job| SolidQueue::Job.enqueue(job) }
 
-    Collavre::CliProxy::HealthProbe.stub(:new, ->(*) { raise "must not probe" }) do
-      assert_nothing_raised { Collavre::GatewayHealthProbeJob.perform_now(@gateway.id) }
-    end
+    assert_predicate records.first, :persisted?
+    assert_not_predicate records.second, :persisted?
+    assert_predicate records.third, :persisted?
+    assert_equal 1, first.concurrency_limit
+    assert_equal 5.minutes, first.concurrency_duration
+    assert_equal :discard, first.class.concurrency_on_conflict
   end
 
-  test "the probe runs again once the verdict has aged past the debounce" do
-    @gateway.update_columns(health_checked_at: 45.seconds.ago, health_status: 1)
+  test "the recurring sweep coalesces while an earlier sweep is pending" do
+    first = Collavre::GatewayHealthSweepJob.new
+    duplicate = Collavre::GatewayHealthSweepJob.new
+    records = [ first, duplicate ].map { |job| SolidQueue::Job.enqueue(job) }
 
-    Collavre::CliProxy::Client.stub(:new, FakeClient.new({ "status" => "down", "engines" => {} })) do
-      Collavre::GatewayHealthProbeJob.perform_now(@gateway.id)
-    end
-
-    assert_predicate @gateway.reload, :health_down?
+    assert_predicate records.first, :persisted?
+    assert_not_predicate records.second, :persisted?
+    assert_equal 1, first.concurrency_limit
+    assert_equal 5.minutes, first.concurrency_duration
+    assert_equal :discard, first.class.concurrency_on_conflict
   end
 
   # The whole point of the isolation: an unreachable host holds its thread for

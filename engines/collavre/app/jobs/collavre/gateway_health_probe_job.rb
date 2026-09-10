@@ -6,17 +6,17 @@ module Collavre
     # seconds at a time, and there is one per gateway every minute.
     queue_as :gateway_health
 
-    # The sweep enqueues unconditionally, so a queue that fell behind holds
-    # copies of probes whose verdict has since been recorded. Re-probing on
-    # those is what turns a slow sweep into a backlog that compounds; half the
-    # sweep interval is late enough to be redundant and early enough that no
-    # gateway drifts toward HEALTH_TTL waiting for its turn.
-    DEBOUNCE = 30.seconds
+    # Claim the semaphore when the probe is enqueued, not when it starts. A
+    # later sweep therefore discards a duplicate while this gateway already has
+    # a ready or running probe instead of growing the queue under overload.
+    limits_concurrency to: 1,
+      key: ->(gateway_id) { gateway_id },
+      duration: 5.minutes,
+      on_conflict: :discard
 
     def perform(gateway_id)
       gateway = AgentGateway.active.find_by(id: gateway_id)
       return unless gateway
-      return if gateway.health_checked_at.present? && gateway.health_checked_at > DEBOUNCE.ago
 
       CliProxy::HealthProbe.new(gateway: gateway).call
     rescue StandardError => e

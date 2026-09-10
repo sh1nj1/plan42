@@ -18,10 +18,12 @@ Both jobs run on their own `gateway_health` queue (`config/queue.yml`), not on
 the shared pool a handful of dead gateways would hold every default thread and
 stall mailers, broadcasts and notifications behind them.
 
-The sweep enqueues unconditionally, so a probe skips any gateway whose verdict
-is newer than `GatewayHealthProbeJob::DEBOUNCE` (30s, half the sweep interval).
-That is what keeps a queue that fell behind from compounding: the stacked-up
-copies of an already-answered probe drop instead of re-running.
+Both jobs use Solid Queue concurrency controls with `on_conflict: :discard`.
+There can be at most one ready or running probe per gateway and one ready or
+running sweep. The concurrency semaphore is claimed at enqueue time, so a slow
+gateway cannot accumulate another copy on every minute tick. The backlog is
+bounded by the active gateway count and drains fairly in queue order; a gateway
+that finishes is appended behind gateways still waiting on their first probe.
 
 Each probe calls `GET /health/ready` on the gateway
 ([contract](https://github.com/sh1nj1/cli-openai-proxy/blob/main/docs/health-monitoring.md))
