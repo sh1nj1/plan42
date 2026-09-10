@@ -4,7 +4,7 @@ module Collavre
 
     STREAMING_PLACEHOLDER_CONTENT = "..."
     # Authorless "⏳" waiting-notice system messages posted when an agent is
-    # deferred for topic concurrency. AgentOrchestrator.cleanup_waiting_notices!
+    # deferred for topic concurrency. WaitingNoticeManager.cleanup_waiting_notices!
     # matches the same prefix to remove them once the waiter is dequeued.
     WAITING_NOTICE_PREFIX = "⏳"
 
@@ -29,7 +29,7 @@ module Collavre
     #
     # It therefore comes down wherever the waiter leaves, which is why this
     # lives here beside the columns rather than in one of those callers: the
-    # promotion (AgentOrchestrator.cleanup_waiter_notice!) and the fold
+    # promotion (WaitingNoticeManager.cleanup_waiter_notice!) and the fold
     # (Orchestration::TaskCoalescer) are two doors onto the same rule, and a
     # third would otherwise write its own copy or forget.
     #
@@ -176,7 +176,7 @@ module Collavre
     attribute :skip_dispatch, :boolean, default: false
     attribute :skip_link_preview, :boolean, default: false
     attribute :skip_notification_revision, :boolean, default: false
-    # Set by AgentOrchestrator.cleanup_waiting_notices! so destroying a notice as
+    # Set by WaitingNoticeManager.cleanup_waiting_notices! so destroying a notice as
     # part of *promoting* a waiter does not run the user-delete cancel cascade
     # (which would cancel other still-queued waiters in the same topic).
     attribute :suppress_waiter_cancellation, :boolean, default: false
@@ -426,7 +426,7 @@ module Collavre
     # Cancelling one was right while each deferral posted its own notice: the
     # newest queued task was the one that notice belonged to. A topic now gets
     # exactly one deduplicated notice
-    # (Orchestration::AgentOrchestrator.with_deduped_topic_notice), and with
+    # (Orchestration::WaitingNoticeManager.with_deduped_topic_notice), and with
     # topic_max_concurrent_jobs > 1 it can stand for waiters from several agents
     # — coalescing folds same-agent siblings only. Deleting it while cancelling
     # one of them leaves the rest queued with nothing on screen representing

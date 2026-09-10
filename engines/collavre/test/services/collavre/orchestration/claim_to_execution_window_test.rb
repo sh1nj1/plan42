@@ -174,7 +174,7 @@ module Collavre
       test "the waiting notice comes down when the fold drains the queue" do
         claimed = task_for(comment("@#{@agent.name}: first"), status: "pending")
         task_for(comment("@#{@agent.name}: later"), status: "queued")
-        AgentOrchestrator.post_topic_concurrency_notice(@creative.id, @topic.id)
+        WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, @topic.id)
         assert_equal 1, notices.count, "fixture precondition: the late waiter posted a notice"
 
         AgentOrchestrator.coalesce_at_start!(claimed)
@@ -195,7 +195,7 @@ module Collavre
         task_for(comment("@#{@agent.name}: later"), status: "queued")
         other_waiter = task_for(comment("@#{other_agent.name}: hello"), status: "queued",
                                 agent: other_agent)
-        AgentOrchestrator.post_topic_concurrency_notice(@creative.id, @topic.id)
+        WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, @topic.id)
         assert_equal 1, notices.count
 
         AgentOrchestrator.coalesce_at_start!(claimed)
