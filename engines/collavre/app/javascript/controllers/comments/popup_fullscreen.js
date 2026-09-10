@@ -31,11 +31,9 @@ export default class PopupFullscreen {
   }
 
   toggle() {
-    if (this.active) {
-      this.exit()
-    } else {
-      this.enter()
-    }
+    if (this.active) return this.exit()
+
+    this.enter()
   }
 
   enterImmediate() {
@@ -90,6 +88,7 @@ export default class PopupFullscreen {
     }
 
     this.scheduleEnterCleanup()
+    this.scrollToBottom()
   }
 
   exit() {
