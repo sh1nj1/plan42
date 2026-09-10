@@ -507,6 +507,11 @@ Byte-identical and same-named, those two shared an anchor and took an ordinal.
 that type at all, so it neither pushes nor pops, and anchoring on something the
 measurement cannot see would separate twins for no reason.
 
+If distinct bodies still collide after all three digest widths, measurement
+raises an error and blocks the gate. It never falls back to positional keys
+for different bodies; identical bodies with identical rule context may still
+use ordinals.
+
 The general statement, which is what the next rule added to the budget should be
 checked against: **a key must determine its measurement.** For each rule, either
 the value is a function of the entity's own text, or whatever else it depends on
