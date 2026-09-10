@@ -6,6 +6,11 @@ import visualViewportRect from '../lib/viewport_region'
 // menu and the edge of the visible region.
 const GAP = 4
 const VIEWPORT_PADDING = 4
+// Floor for the space-derived max-height. A menu squeezed under this shows no
+// usable row at all; overhanging the anchor slightly beats rendering a sliver.
+// The region ceiling still applies on top of it, so the menu never leaves the
+// visible strip no matter how little room the button leaves.
+const MIN_MENU_HEIGHT = 120
 
 export default class extends Controller {
   static targets = ['menu', 'button']
@@ -79,20 +84,40 @@ export default class extends Controller {
   place() {
     const menu = this.menuTarget
     const btnRect = this.buttonTarget.getBoundingClientRect()
+    const region = visualViewportRect()
+
+    // Measure unconstrained. A max-height left behind by an earlier placement
+    // would make the menu report that cap as its height, so every later call
+    // would agree it "fits" wherever it was first put.
+    menu.style.maxHeight = ''
     const menuRect = menu.getBoundingClientRect()
     const menuW = menuRect.width
     const menuH = menuRect.height
-    const region = visualViewportRect()
+
+    const regionTop = region.top + VIEWPORT_PADDING
+    const regionBottom = region.bottom - VIEWPORT_PADDING
 
     // Vertical: prefer below the button, flip above if not enough space
-    const spaceBelow = region.bottom - btnRect.bottom - GAP
-    const spaceAbove = btnRect.top - GAP - region.top
-    let top
-    if (menuH <= spaceBelow || spaceBelow >= spaceAbove) {
-      top = btnRect.bottom + GAP
-    } else {
-      top = btnRect.top - GAP - menuH
-    }
+    const spaceBelow = regionBottom - (btnRect.bottom + GAP)
+    const spaceAbove = (btnRect.top - GAP) - regionTop
+    const placeBelow = menuH <= spaceBelow || spaceBelow >= spaceAbove
+
+    // Cap to the room actually available so a long menu scrolls inside itself
+    // rather than running off the bottom of the screen. Clamping the top alone
+    // is not enough: a cron popup listing many tasks is taller than the visual
+    // viewport once the keyboard is up, and .popup-menu is overflow:hidden, so
+    // everything past the fold would simply be unreachable. The region ceiling
+    // keeps the menu inside the visible strip even when the button sits outside
+    // it, which is what makes the two clamps below sufficient.
+    const available = Math.min(
+      Math.max(placeBelow ? spaceBelow : spaceAbove, MIN_MENU_HEIGHT),
+      regionBottom - regionTop
+    )
+    menu.style.maxHeight = `${available}px`
+    menu.style.overflowY = 'auto'
+    const menuHeight = Math.min(menuH, available)
+
+    let top = placeBelow ? btnRect.bottom + GAP : btnRect.top - GAP - menuHeight
 
     // Horizontal: align left edge to button, shift if overflowing
     let left
@@ -110,11 +135,11 @@ export default class extends Controller {
     if (left < region.left + VIEWPORT_PADDING) {
       left = region.left + VIEWPORT_PADDING
     }
-    if (top + menuH > region.bottom - VIEWPORT_PADDING) {
-      top = region.bottom - VIEWPORT_PADDING - menuH
+    if (top + menuHeight > regionBottom) {
+      top = regionBottom - menuHeight
     }
-    if (top < region.top + VIEWPORT_PADDING) {
-      top = region.top + VIEWPORT_PADDING
+    if (top < regionTop) {
+      top = regionTop
     }
 
     menu.style.left = `${left}px`
@@ -149,6 +174,8 @@ export default class extends Controller {
     menu.style.top = ''
     menu.style.bottom = ''
     menu.style.maxWidth = ''
+    menu.style.maxHeight = ''
+    menu.style.overflowY = ''
     menu.style.transform = ''
     if (this._initialAlignRight) {
       menu.classList.add('popup-menu-right')

@@ -167,6 +167,8 @@ describe('PopupMenuController', () => {
     expect(menu.style.left).toBe('')
     expect(menu.style.right).toBe('')
     expect(menu.style.maxWidth).toBe('')
+    expect(menu.style.maxHeight).toBe('')
+    expect(menu.style.overflowY).toBe('')
     expect(menu.style.transform).toBe('')
   })
 
@@ -235,7 +237,7 @@ describe('PopupMenuController', () => {
       expect(menu.style.top).toBe('77px')
     })
 
-    test('clamps into the visible strip when the visual viewport is offset', async () => {
+    test('caps a menu taller than the strip instead of overflowing it', async () => {
       stubVisualViewport({ width: 390, height: 300, offsetLeft: 0, offsetTop: 200 })
       jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
         top: 210, bottom: 230, left: 9, right: 29, width: 20, height: 20
@@ -247,8 +249,72 @@ describe('PopupMenuController', () => {
       controller.show()
       await new Promise(resolve => requestAnimationFrame(resolve))
 
-      // Taller than the strip either way, so it clamps to the strip's top edge
-      // (200 + 4) instead of the document's.
+      // 400px of items into a 300px strip: sit below the button (230 + 4) and
+      // cap to the space left under it (496 - 234), scrolling the rest.
+      expect(menu.style.top).toBe('234px')
+      expect(menu.style.maxHeight).toBe('262px')
+      expect(menu.style.overflowY).toBe('auto')
+    })
+
+    // A cron popup listing many tasks is taller than the visible viewport once
+    // the keyboard is up. Clamping only its top leaves the lower actions behind
+    // the keyboard with nothing to scroll, since .popup-menu is overflow:hidden.
+    test('caps the menu to the region so its lower actions stay reachable', async () => {
+      stubVisualViewport({ width: 390, height: 344, offsetLeft: 0, offsetTop: 0 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 100, bottom: 120, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 600, left: 0, right: 240, width: 240, height: 600
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      expect(menu.style.top).toBe('124px')
+      expect(menu.style.maxHeight).toBe('216px')
+      expect(menu.style.overflowY).toBe('auto')
+      // Bottom edge lands on the region's padded edge, not past it.
+      expect(124 + 216).toBe(344 - 4)
+    })
+
+    // Both sides are under the sliver floor on a short phone with the keyboard
+    // up, so the floor wins and the menu overhangs the button — then the bottom
+    // clamp slides it back up inside the strip rather than off the screen.
+    test('pulls a floored menu back inside the strip', async () => {
+      stubVisualViewport({ width: 390, height: 200, offsetLeft: 0, offsetTop: 0 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 90, bottom: 110, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 300, left: 0, right: 240, width: 240, height: 300
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      // Floor of 120 against 82px of room below: placed at 114, clamped so its
+      // bottom lands on 196 instead of 234.
+      expect(menu.style.maxHeight).toBe('120px')
+      expect(menu.style.top).toBe('76px')
+    })
+
+    // The button can sit above the strip entirely (page scrolled under a pinned
+    // sheet). The cap must respect the whole strip, not just the room below.
+    test('never grows past the strip when the button is above it', async () => {
+      stubVisualViewport({ width: 390, height: 300, offsetLeft: 0, offsetTop: 200 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 120, bottom: 140, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 400, left: 0, right: 240, width: 240, height: 400
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      // Capped to the strip (300 - 4 * 2) and clamped down to its top edge.
+      expect(menu.style.maxHeight).toBe('292px')
       expect(menu.style.top).toBe('204px')
     })
 
