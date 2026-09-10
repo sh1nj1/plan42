@@ -60,6 +60,10 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
     press_space
   end
 
+  def wait_for_progress_save
+    assert_no_selector "#{toggle_selector}.progress-toggle-saving", wait: 10
+  end
+
   test "space toggles a leaf between complete and incomplete" do
     assert_selector "#{toggle_selector}[data-current-progress='0']"
 
@@ -67,14 +71,14 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
 
     assert_selector "#{toggle_selector}[data-current-progress='1']", wait: 5
     assert_selector "#{toggle_selector} .progress-toggle-checkbox:checked", visible: :all
-    wait_for_network_idle(timeout: 10)
+    wait_for_progress_save
     assert_equal 1, @leaf.reload.progress
 
     press_space_on_checkbox
 
     assert_selector "#{toggle_selector}[data-current-progress='0']", wait: 5
     assert_no_selector "#{toggle_selector} .progress-toggle-checkbox:checked", visible: :all
-    wait_for_network_idle(timeout: 10)
+    wait_for_progress_save
     assert_equal 0, @leaf.reload.progress
   end
 
@@ -100,7 +104,7 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
     press_space
 
     assert_selector "#{toggle_selector}[data-current-progress='1']", wait: 5
-    wait_for_network_idle(timeout: 10)
+    wait_for_progress_save
     assert_equal 1, @leaf.reload.progress
     # The broadcast for this update re-renders the row a second time, after the
     # PATCH response already did, so focus has to survive both. Hold the
@@ -111,7 +115,7 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
     press_space
 
     assert_selector "#{toggle_selector}[data-current-progress='0']", wait: 5
-    wait_for_network_idle(timeout: 10)
+    wait_for_progress_save
     assert_equal 0, @leaf.reload.progress
   end
 
