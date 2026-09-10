@@ -388,18 +388,12 @@ creative-tree-row.show-edit .creative-row {
     opacity: 0;
 }
 
-/* Pointer devices keep a resting row quiet: the checkbox joins the row's other
-   hover-revealed actions (edit, comments) instead of standing in every row, and
-   keyboard focus reveals it for pointerless navigation. Touch devices have no
-   hover to reveal it, so there the checkbox stays visible. The wrap keeps its
-   width either way, so revealing the box never shifts the row. */
+/* On pointer devices, incomplete leaves keep their checkbox visible so the
+   next action is always apparent. Completed leaves stay quiet at rest and swap
+   their completion mark for the checked box when the row is hovered. */
 @media (hover: hover) {
-    .creative-row .progress-toggle-checkbox {
-        opacity: 0;
-    }
-
-    .creative-row:hover .progress-toggle-checkbox,
-    .creative-row .progress-toggle-wrap:focus-within .progress-toggle-checkbox {
+    .creative-row:hover .progress-toggle-wrap[data-current-progress="1"] .progress-toggle-checkbox,
+    .creative-row .progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-checkbox {
         opacity: 1;
     }
 
