@@ -264,31 +264,29 @@ module Collavre
       assert_not_includes @response.body, escaped("collavre.features.pages.topic_management.tagline", locale: :en)
     end
 
-    # The guide uses the landing layout, which carries no application navigation.
-    # A signed-in reader arrived from the "?" menu, so the page has to offer the
-    # way back — it is the only exit in the desktop shell, whose single webview
-    # has no back button. The hub carries it in the button row beside "Home", the
-    # guide in the breadcrumb, so the assertion names the link rather than either
-    # container.
-    test "guide pages offer signed-in readers a link back into the app" do
+    # The landing layout carries no application navigation, so it renders the way
+    # back itself — the only exit in the desktop shell, whose single webview has
+    # no back button. Asserted on the guide because that is what the "?" menu
+    # reaches, but it comes from the layout, so /landing carries it too.
+    test "landing-layout pages offer signed-in readers a link back into the app" do
       sign_in_as users(:one), password: "password"
 
-      %w[/features /features/mention_agent].each do |path|
+      %w[/features /features/mention_agent /landing].each do |path|
         get path
 
         assert_response :success
-        assert_select "a.feature-guide-back-to-app[href=?]", "/",
-                      text: I18n.t("collavre.features.nav.back_to_app", app_name: I18n.t("app.name")),
+        assert_select "a.landing-return-link[href=?]", "/",
+                      text: I18n.t("collavre.landing.nav.back_to_app", app_name: I18n.t("app.name")),
                       count: 1
       end
     end
 
-    test "guide pages omit the back-to-app link when signed out" do
-      %w[/features /features/mention_agent].each do |path|
+    test "landing-layout pages omit the back-to-app link when signed out" do
+      %w[/features /features/mention_agent /landing].each do |path|
         get path
 
         assert_response :success
-        assert_select ".feature-guide-back-to-app", count: 0
+        assert_select ".landing-return-link", count: 0
       end
     end
 

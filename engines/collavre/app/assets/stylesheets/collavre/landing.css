@@ -23,6 +23,29 @@
    a landing-layout view (the feature-guide breadcrumbs), which is the opposite
    of what it was for. Removed rather than narrowed. */
 
+/* ─── Return to the app ─────────────────────────────────────────────────────── */
+
+/* The layout renders this above <main> for signed-in readers only: it is their
+   only way back into the app from any page under this layout, since none of
+   them carry the application navigation. It sits in normal flow rather than
+   over the hero so it cannot cover content on a narrow window, and stays quiet
+   enough not to read as a second call to action. */
+.landing-return-bar {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5) 0;
+}
+
+.landing-return-link {
+  font-size: var(--text-2);
+  color: var(--color-active);
+  text-decoration: none;
+}
+
+.landing-return-link:hover {
+  text-decoration: underline;
+}
+
 .landing {
   font-family: var(--font-sans);
   color: var(--text-primary);
@@ -631,14 +654,6 @@ body.dark-mode .landing-shot-dark { display: block; }
   text-decoration: underline;
 }
 
-/* The signed-in reader's way back into the app. It carries more weight than the
-   crumbs beside it because on the desktop shell, whose single webview has no
-   back button, it is the only exit from the guide. */
-.feature-guide-breadcrumb .feature-guide-back-to-app {
-  color: var(--color-active);
-  font-weight: 500;
-}
-
 /* The whole card is the link, so strip the anchor's own presentation and let
    .landing-feature-card keep supplying it. */
 .feature-guide-link-card {
@@ -707,20 +722,6 @@ body.dark-mode .landing-shot-dark { display: block; }
 }
 
 .feature-guide-back {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
+  text-align: center;
   margin-top: var(--space-8);
-}
-
-/* On the hub this row carries two exits for a signed-in reader, and the one
-   that leads back into the app is the one that matters — on the desktop shell,
-   whose single webview has no back button, it is the only way out of the guide.
-   It takes the active colour to sit above the ghost beside it without becoming
-   a second filled button competing with the call to action below. */
-.feature-guide-back .feature-guide-back-to-app {
-  color: var(--color-active);
-  border-color: var(--color-active);
 }

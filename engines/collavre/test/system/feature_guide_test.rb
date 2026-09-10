@@ -66,9 +66,10 @@ class FeatureGuideTest < ApplicationSystemTestCase
   end
 
   # The landing layout carries no application navigation, and the desktop shell's
-  # single webview has no back button, so the return link is a signed-in reader's
-  # only visible way out of the guide. The hub carries it in the button row beside
-  # "Home" and the detail page in the breadcrumb, so both are checked here.
+  # single webview has no back button, so the return link the layout renders is a
+  # signed-in reader's only visible way out. Every page under that layout gets it
+  # from the same place, so the hub, a guide page and the marketing page are all
+  # checked against one selector.
   test "a signed-in reader can return to the app from the guide" do
     user = User.create!(
       email: "guide-reader@example.com",
@@ -80,14 +81,16 @@ class FeatureGuideTest < ApplicationSystemTestCase
     sign_in_via_ui(user)
     app_path = page.current_path
 
-    visit collavre.features_path
+    [ collavre.features_path, collavre.landing_path ].each do |path|
+      visit path
 
-    assert_selector ".feature-guide-back a.feature-guide-back-to-app", visible: :visible
+      assert_selector ".landing-return-bar a.landing-return-link", visible: :visible
+    end
 
     visit collavre.feature_path(:mention_agent)
 
-    assert_selector "nav.feature-guide-breadcrumb a.feature-guide-back-to-app", visible: :visible
-    click_link I18n.t("collavre.features.nav.back_to_app", app_name: I18n.t("app.name"))
+    assert_selector ".landing-return-bar a.landing-return-link", visible: :visible
+    click_link I18n.t("collavre.landing.nav.back_to_app", app_name: I18n.t("app.name"))
 
     assert_current_path app_path
   end

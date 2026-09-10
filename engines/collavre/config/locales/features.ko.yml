@@ -3,7 +3,6 @@ ko:
   collavre:
     features:
       nav:
-        back_to_app: "← %{app_name}(으)로 돌아가기"
         landing: "홈"
         back_home: "← 홈"
         all: "전체 기능"
