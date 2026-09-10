@@ -117,7 +117,7 @@ export function applyCreativeSaveResponse(snapshot, data, {
   }
 }
 
-export function resetCreativeSaveState(snapshot, current = null) {
+export function resetCreativeSaveState(snapshot, current = null, currentDirty = false) {
   const matchesSnapshot = !current || (
     current.content === snapshot.content &&
     current.progress === snapshot.progress &&
@@ -128,7 +128,7 @@ export function resetCreativeSaveState(snapshot, current = null) {
     originalContent: snapshot.content,
     originalProgress: snapshot.persistProgress ? snapshot.progress : undefined,
     originalOriginId: snapshot.originId,
-    isDirty: !matchesSnapshot,
+    isDirty: matchesSnapshot ? false : currentDirty,
     pendingSave: false,
   }
 }
