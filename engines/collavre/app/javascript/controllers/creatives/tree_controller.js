@@ -307,15 +307,15 @@ export default class extends Controller {
     )
     if (!isCurrent()) return
     this.restoreCronMessageDrafts(cronMessageDrafts)
+    if (this._pendingCronMessageDrafts === cronMessageDrafts) {
+      this._pendingCronMessageDrafts = null
+    }
     this.markContentLoaded()
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
     this._setupPagination(data?.pagination)
     await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
     if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
-    if (isCurrent() && this._pendingCronMessageDrafts === cronMessageDrafts) {
-      this._pendingCronMessageDrafts = null
-    }
   }
 
   captureCronMessageDrafts() {

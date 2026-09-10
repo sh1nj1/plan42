@@ -276,6 +276,62 @@ describe('CreativesTreeController cron message drafts', () => {
     application.stop()
   })
 
+  test('captures newer edits while view-state restoration is still pending', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    let releaseChildren
+    global.fetch = jest.fn((url) => {
+      if (url === '/children/1') {
+        return new Promise((resolve) => {
+          releaseChildren = () => resolve({
+            ok: true,
+            headers: new Headers(),
+            json: async () => ({ creatives: [{ id: 2 }] }),
+          })
+        })
+      }
+      return new Promise(() => {})
+    })
+    const originalDrafts = new Map([['creative-1', 'First draft']])
+    controller._pendingCronMessageDrafts = originalDrafts
+    controller._pendingViewState = {
+      scrolling: document.documentElement,
+      scrollTop: 0,
+      focus: null,
+      expansion: [{ creativeId: '1', expanded: true }],
+    }
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = `
+        <creative-tree-row creative-id="1" has-children>
+          ${cronTask('Server message')}
+        </creative-tree-row>
+        <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+      `
+    })
+
+    const restoration = controller.renderData({ creatives: [{ id: 1 }] })
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('First draft')
+    expect(controller._pendingCronMessageDrafts).toBeNull()
+
+    input.value = 'Newer draft'
+    controller.load({ preserveView: true })
+
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-1', 'Newer draft'],
+    ]))
+
+    releaseChildren()
+    await restoration
+
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-1', 'Newer draft'],
+    ]))
+    controller.stopAnimation()
+    application.stop()
+  })
+
   test('uses the refreshed cron message when the local message is clean', async () => {
     const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
     renderCreativeTree.mockImplementationOnce((element) => {
@@ -1149,6 +1205,7 @@ describe('CreativesTreeController requestReload', () => {
         return new Promise((resolve) => {
           releaseChildren = () => resolve({
             ok: true,
+            headers: new Headers(),
             json: async () => ({ creatives: [{ id: 2 }] }),
           })
         })
