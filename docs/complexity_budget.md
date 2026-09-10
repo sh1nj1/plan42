@@ -443,11 +443,37 @@ function handle(p, q, a) {
 }
 ```
 
-Those are two keys, not two slots. The number only has to *change* when ESLint's
-depth changes, not to equal it, so it counts enclosing nesting statements and
-does not model ESLint's exceptions (an `else if` chain does not count twice for
-ESLint; here it does). Over-counting keeps entities apart, which is the property
-wanted.
+Those are two keys, not two slots.
+
+The depth in the key is **ESLint's own**, mirrored from the rule. A first
+attempt merely counted enclosing nesting statements, on the argument that the
+number only had to *change* when ESLint's changed and that over-counting keeps
+entities apart. That was the fifth variant of the same bug. A key has to
+*determine* its measurement, and a count that is merely correlated with
+ESLint's does not: both `if (a) { y() }` below sit under three enclosing
+statements, yet measure 3 and 2, because ESLint does not count an `if` whose
+parent is an `if`.
+
+```js
+function handle(p, q, a) {
+  if (p) { if (p) { if (a) { y() } } }              // enclosing 3, measures 3
+  if (q) { x() } else if (q) { if (a) { y() } }     // enclosing 3, measures 2
+}
+```
+
+Byte-identical and equal-count, they shared an anchor and took an ordinal — and
+each was then compared against the other's baseline. On the engine as it stands,
+4 of the 19 real `max-depth` offenses had a key whose depth disagreed with the
+number ESLint printed.
+
+Mirroring means mirroring the rule's arithmetic rather than a tidied-up version
+of it, including one upstream quirk: every nesting statement decrements the
+counter on exit, but an `if` under an `if` never incremented it, so an
+`if`/`else if`/`else if` chain leaves the counter two *below* where it started
+and everything after it measures too shallow. Reproducing that is the point —
+the key has to match the number ESLint actually reported, not the one it should
+have. `depthsOf` is a single pass written to read like the rule, so an ESLint
+upgrade that fixes the quirk is a diff against one function.
 
 Comments are the one thing left that moves a digest without moving a measurement
 — `skipComments` is on — so editing a comment inside an over-budget twin re-keys
