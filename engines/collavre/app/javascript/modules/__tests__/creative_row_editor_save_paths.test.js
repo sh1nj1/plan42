@@ -182,3 +182,65 @@ test('persistent queue skips an empty buffer', async () => {
 
   expect(enqueue).not.toHaveBeenCalled()
 })
+
+test('persistent queue carries an unacknowledged progress toggle into the body and row dataset', async () => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'before', 'rich')
+  appendMarkdownRow('43', 'second', 'rich')
+  openRow(first.tree)
+
+  // The checkbox fires a direct save; hold it in flight so the progress
+  // baseline is still stale when the move queues the outgoing row.
+  let settleDirectSave
+  save.mockImplementation(() => new Promise((resolve) => { settleDirectSave = resolve }))
+  editorOptions.onChange({ html: '<p>outgoing edit</p>', markdown: 'outgoing edit' })
+  const progress = document.getElementById('inline-creative-progress')
+  progress.checked = true
+  progress.dispatchEvent(new Event('change'))
+  await Promise.resolve()
+
+  document.getElementById('inline-move-down').click()
+  await flushPromises()
+
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  expect(enqueue.mock.calls[0][0].body['creative[progress]']).toBe(1)
+  expect(first.rowComponent.dataset.progressValue).toBe('1')
+
+  settleDirectSave({ ok: true, text: () => Promise.resolve('{}') })
+  await flushPromises()
+})
+
+test('queued response rewrites the live textarea when the row is reopened before the ack', async () => {
+  jest.useFakeTimers()
+  const dataUri = 'data:image/png;base64,abc123'
+  const first = appendMarkdownRow('42', `before ${dataUri}`)
+  appendMarkdownRow('43', 'second')
+  openRow(first.tree)
+
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = `draft ${dataUri}`
+  textarea.dispatchEvent(new Event('input'))
+
+  document.getElementById('inline-move-down').click()
+  await flushPromises()
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  const queued = enqueue.mock.calls[0][0]
+
+  // Back on the same row before the queued PATCH is acknowledged.
+  document.getElementById('inline-move-up').click()
+  await flushPromises()
+  expect(document.getElementById('inline-edit-form-element').dataset.creativeId).toBe('42')
+
+  queued.onSuccess({ markdown_source: 'draft /blob/image.png' })
+
+  expect(textarea.value).toBe('draft /blob/image.png')
+  expect(document.getElementById('inline-markdown-source').value).toBe('draft /blob/image.png')
+  expect(first.rowComponent.dataset.markdownSource).toBe('draft /blob/image.png')
+
+  // The rewrite also moved the dirty baseline (originalContent), so simply
+  // reopening and leaving the row must not queue a second save.
+  enqueue.mockClear()
+  document.getElementById('inline-move-down').click()
+  await flushPromises()
+  expect(enqueue).not.toHaveBeenCalled()
+})

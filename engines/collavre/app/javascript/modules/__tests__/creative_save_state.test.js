@@ -67,3 +67,33 @@ test('resets baselines and keeps a newer buffer dirty', () => {
   })
   expect(resetCreativeSaveState(snapshot).isDirty).toBe(false)
 })
+
+test('leaves the live buffer alone when the rewrite cannot be reconciled', () => {
+  const dataUri = 'data:image/png;base64,abc123'
+  const snapshot = captureCreativeSaveSnapshot({
+    content: `before ${dataUri}`,
+    emptyContentType: 'markdown',
+    contentType: 'markdown',
+    markdownSource: `before ${dataUri}`,
+  })
+  const applyCurrent = jest.fn()
+  const applyCached = jest.fn()
+
+  const result = applyCreativeSaveResponse(
+    snapshot,
+    { markdown_source: 'before /blob/image' },
+    {
+      // The user dropped the uploaded image while the save was in flight, so
+      // the substitution has nowhere to land in the live buffer.
+      currentMarkdownSource: 'rewritten from scratch',
+      applyCurrentMarkdownSource: applyCurrent,
+      applyCachedMarkdownSource: applyCached,
+    }
+  )
+
+  expect(applyCached).toHaveBeenCalledWith('before /blob/image', `before ${dataUri}`)
+  expect(applyCurrent).not.toHaveBeenCalled()
+  expect(result.snapshot).toBe(snapshot)
+  expect(result.currentMarkdownSource).toBe('rewritten from scratch')
+  expect(result.currentApplied).toBe(false)
+})
