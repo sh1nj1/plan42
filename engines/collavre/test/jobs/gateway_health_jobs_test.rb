@@ -63,7 +63,7 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     assert_not_predicate records.second, :persisted?
     assert_predicate records.third, :persisted?
     assert_equal 1, first.concurrency_limit
-    assert_equal 5.minutes, first.concurrency_duration
+    assert_equal 1.day, first.concurrency_duration
     assert_equal :discard, first.class.concurrency_on_conflict
   end
 
@@ -75,7 +75,7 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     assert_predicate records.first, :persisted?
     assert_not_predicate records.second, :persisted?
     assert_equal 1, first.concurrency_limit
-    assert_equal 5.minutes, first.concurrency_duration
+    assert_equal 1.day, first.concurrency_duration
     assert_equal :discard, first.class.concurrency_on_conflict
   end
 

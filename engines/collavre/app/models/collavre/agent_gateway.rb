@@ -7,6 +7,7 @@ module Collavre
     # Must match the proxy's USER_IDENTITY_HMAC_SECRET.
     MIN_IDENTITY_SECRET_BYTES = 32
     DESKTOP_NATIVE_CREDENTIAL_ATTRIBUTES = %i[admin_key completion_key identity_secret].freeze
+    HEALTH_CONFIGURATION_ATTRIBUTES = %w[active admin_key base_url completion_key identity_secret].freeze
 
     # Three probe intervals. A verdict older than this describes a gateway
     # nothing has asked about lately, which is not the same claim as "it
@@ -48,6 +49,7 @@ module Collavre
     around_update :serialize_completion_key_removal
     before_update :validate_completion_key_removal_under_lock
     after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
+    after_update :invalidate_health_after_configuration_change, if: :health_configuration_changed?
 
     scope :active, -> { where(active: true) }
 
@@ -241,6 +243,19 @@ module Collavre
 
         AgentWorkspace.resolve!(agent: agent, user: per_user? ? agent.creator : nil)
       end
+    end
+
+    def health_configuration_changed?
+      (saved_changes.keys & HEALTH_CONFIGURATION_ATTRIBUTES).any?
+    end
+
+    def invalidate_health_after_configuration_change
+      update_columns(
+        health_status: self.class.health_statuses.fetch("unknown"),
+        health_engines: {},
+        health_error: nil,
+        health_checked_at: nil
+      )
     end
   end
 end

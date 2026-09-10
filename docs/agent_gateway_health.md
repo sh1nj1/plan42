@@ -24,12 +24,20 @@ running sweep. The concurrency semaphore is claimed at enqueue time, so a slow
 gateway cannot accumulate another copy on every minute tick. The backlog is
 bounded by the active gateway count and drains fairly in queue order; a gateway
 that finishes is appended behind gateways still waiting on their first probe.
+The semaphore's one-day failsafe exceeds the queue time for thousands of
+worst-case probes; normal job completion releases it immediately.
 
 Each probe calls `GET /health/ready` on the gateway
 ([contract](https://github.com/sh1nj1/cli-openai-proxy/blob/main/docs/health-monitoring.md))
-and writes the verdict onto the `agent_gateways` row with `update_columns`:
+and conditionally writes the verdict onto the `agent_gateways` row:
 `health_status`, `health_engines`, `health_error`, `health_checked_at`. Readers
 answer from those columns, so no request path ever waits on the proxy.
+
+The response is streamed with a 64 KiB limit before JSON parsing. Only the
+bounded fields used for routing (`mode`, counts, and at most 32 engine names and
+states) are persisted. A gateway connection or credential edit immediately
+invalidates the old verdict, and an in-flight probe writes only if the row's
+`updated_at` still matches the configuration it actually called.
 
 The probe presents the gateway's **completion key**, not its admin key. The
 endpoint is unauthenticated, but the proxy only returns per-engine detail to a
@@ -51,7 +59,9 @@ saw, reporting a dead host online until somebody noticed.
 A proxy older than the liveness/readiness split answers 404. The probe then
 falls back to `GET /health`, which every version has, and records `degraded`
 with an explanatory `health_error` — reading that 404 as `unreachable` would
-take every agent on an entirely healthy older gateway offline.
+take every agent on an entirely healthy older gateway offline. The fallback
+must identify itself as a CLI proxy liveness response; an arbitrary successful
+JSON response is recorded as `unreachable`.
 
 ## From gateway status to one agent's dot
 
@@ -84,7 +94,9 @@ untouched.
 
 The chat popup re-reads `GET /creatives/:id/comments/participants` every 60
 seconds to pick up a changed verdict, preserving the rendered menus so an open
-profile popup is not torn out from under the user.
+profile popup is not torn out from under the user. A confirmed 401/403/404 uses
+the same revocation path as the live share event: it disables the composer,
+clears or closes the chat, and invalidates the workspace tree.
 
 Agents on a hosted vendor API publish no liveness evidence either way and are
 left out rather than asserted online.

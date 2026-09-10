@@ -4,14 +4,16 @@ class CliProxyHealthProbeTest < ActiveSupport::TestCase
   class FakeClient
     attr_reader :calls
 
-    def initialize(ready:, live: { "status" => "ok" })
+    def initialize(ready:, live: { "status" => "ok", "provider" => "claude-code-cli" }, on_ready: nil)
       @ready = ready
       @live = live
+      @on_ready = on_ready
       @calls = []
     end
 
     def health_ready
       @calls << :health_ready
+      @on_ready&.call
       @ready.is_a?(Exception) ? raise(@ready) : @ready
     end
 
@@ -40,6 +42,21 @@ class CliProxyHealthProbeTest < ActiveSupport::TestCase
     assert_equal engines, @gateway.health_engines
     assert_nil @gateway.health_error
     assert_in_delta Time.current, @gateway.health_checked_at, 5
+  end
+
+  test "persists only bounded engine state fields" do
+    items = (Collavre::CliProxy::HealthProbe::ENGINE_LIMIT + 5).times.to_h do |index|
+      [ "engine_#{index}", { "state" => "authenticated", "detail" => "x" * 1_000 } ]
+    end
+    probe(ready: {
+      "status" => "ok",
+      "engines" => { "mode" => "host", "items" => items, "ignored" => "x" * 1_000 }
+    })
+
+    engines = @gateway.reload.health_engines
+    assert_equal %w[items mode], engines.keys.sort
+    assert_equal Collavre::CliProxy::HealthProbe::ENGINE_LIMIT, engines.fetch("items").size
+    assert_equal({ "state" => "authenticated" }, engines.dig("items", "engine_0"))
   end
 
   test "records down when every engine is logged out" do
@@ -88,6 +105,32 @@ class CliProxyHealthProbeTest < ActiveSupport::TestCase
     Collavre::CliProxy::HealthProbe.new(gateway: @gateway, client: client).call
 
     assert_predicate @gateway.reload, :health_unreachable?
+  end
+
+  test "does not accept an unrelated successful legacy health response" do
+    client = FakeClient.new(
+      ready: Collavre::CliProxy::Client::Error.new("Not Found", status: 404),
+      live: { "status" => "ok" }
+    )
+    Collavre::CliProxy::HealthProbe.new(gateway: @gateway, client: client).call
+
+    @gateway.reload
+    assert_predicate @gateway, :health_unreachable?
+    assert_equal "Invalid liveness response from CLI proxy", @gateway.health_error
+  end
+
+  test "discards a verdict when the gateway configuration changes during the probe" do
+    @gateway.update_columns(health_status: 1, health_checked_at: Time.current)
+    client = FakeClient.new(
+      ready: { "status" => "ok", "engines" => {} },
+      on_ready: -> { @gateway.update!(base_url: "https://replacement.example.com") }
+    )
+
+    Collavre::CliProxy::HealthProbe.new(gateway: @gateway, client: client).call
+
+    @gateway.reload
+    assert_predicate @gateway, :health_unknown?
+    assert_nil @gateway.health_checked_at
   end
 
   test "recording a verdict does not touch the row a user edits" do

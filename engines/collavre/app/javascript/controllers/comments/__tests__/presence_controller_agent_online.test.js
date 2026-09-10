@@ -150,17 +150,26 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
         controller.canShare = true
         controller.renderParticipants([])
         const setCommentPermission = jest.fn()
+        const close = jest.fn()
+        const workspaceListener = jest.fn()
         jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission })
+        jest.spyOn(controller, 'popupController', 'get').mockReturnValue({ close, isDocked: () => false })
+        document.addEventListener('workspace-tree:invalidate', workspaceListener)
 
         global.fetch = jest.fn(() => Promise.resolve({
             ok: false, status: 403, json: () => Promise.resolve({ error: 'No permission' })
         }))
         await controller.loadParticipants('42', { preserveMenus: true })
 
-        expect(controller.participantsData).toEqual([])
+        expect(controller.participantsData).toBeNull()
         expect(controller.canShare).toBe(false)
         expect(setCommentPermission).toHaveBeenCalledWith(false)
+        expect(close).toHaveBeenCalled()
+        expect(workspaceListener).toHaveBeenCalledWith(expect.objectContaining({
+            detail: { creativeIds: ['42'] },
+        }))
         expect(controller.participantsTarget.innerHTML).toBe('')
+        document.removeEventListener('workspace-tree:invalidate', workspaceListener)
     })
 
     // The initial load is user-initiated: a blank strip is the honest answer

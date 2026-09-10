@@ -329,9 +329,12 @@ export default class extends Controller {
         // menu with it; only an answer that refuses the read clears the strip.
         const accessDenied = ACCESS_DENIED_STATUSES.includes(error?.status)
         if (preserveMenus && !accessDenied) return
+        if (accessDenied) {
+          this.handleAccessRevoked()
+          return
+        }
         this.participantsData = []
         this.canShare = false
-        if (accessDenied) this.formController?.setCommentPermission(false)
         this.renderParticipants([])
         this.renderTypingIndicator()
       })
@@ -483,15 +486,7 @@ export default class extends Controller {
       }
 
       if (shareChange.has_access === false) {
-        document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
-          detail: { creativeIds: [String(this.creativeId)] },
-        }))
-        alertDialog(this.element.dataset.noPermissionText || 'No permission')
-        if (this.popupController?.isDocked()) {
-          this.popupController.resetDockedToEmpty()
-        } else {
-          this.popupController?.close()
-        }
+        this.handleAccessRevoked()
         return
       }
 
@@ -542,6 +537,22 @@ export default class extends Controller {
       }
       this.syncGlobalAgentTasks()
       this.renderTypingIndicator({ newItem: isNewAgent })
+    }
+  }
+
+  handleAccessRevoked() {
+    const creativeId = this.creativeId
+    this.formController?.setCommentPermission(false)
+    this.resetParticipantState()
+    this.renderTypingIndicator()
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: [String(creativeId)] },
+    }))
+    alertDialog(this.element.dataset.noPermissionText || 'No permission')
+    if (this.popupController?.isDocked()) {
+      this.popupController.resetDockedToEmpty()
+    } else {
+      this.popupController?.close()
     }
   }
 

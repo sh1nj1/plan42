@@ -22,6 +22,8 @@ class CliProxyClientTest < ActiveSupport::TestCase
     %i[get post delete].each do |method|
       define_method(method) do |url, body: nil, headers:|
         @requests << { method: method, url: url, body: body, headers: headers }
+        raise @response if @response.is_a?(Exception)
+
         @response
       end
     end
@@ -104,6 +106,21 @@ class CliProxyClientTest < ActiveSupport::TestCase
 
     assert_equal 404, error.status
     assert_equal "provisioning_disabled", error.code
+  end
+
+  test "maps an oversized response to a domain error" do
+    gateway = Struct.new(:admin_key) do
+      def proxy_path(path)
+        "https://proxy.example.com#{path}"
+      end
+    end.new("admin-secret")
+    http = FakeHttpClient.new(Collavre::HttpClient::ResponseTooLarge.new("too large"))
+
+    error = assert_raises(Collavre::CliProxy::Client::Error) do
+      Collavre::CliProxy::Client.new(gateway: gateway, http_client: http).health_live
+    end
+
+    assert_equal "proxy_response_too_large", error.code
   end
 
   test "sends a completion key as the mapped proxy user key" do

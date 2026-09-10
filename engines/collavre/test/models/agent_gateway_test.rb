@@ -378,6 +378,22 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_not gateway.health_reachable?, "a verdict nobody has refreshed is not evidence the gateway answers"
   end
 
+  test "connection changes invalidate the previous health verdict" do
+    gateway = build_gateway.tap(&:save!)
+
+    %i[base_url completion_key].each do |attribute|
+      gateway.update_columns(health_status: 1, health_checked_at: Time.current, health_engines: { "mode" => "host" })
+      replacement = attribute == :base_url ? "https://replacement.example.com" : SecureRandom.hex(16)
+
+      gateway.update!(attribute => replacement)
+
+      gateway.reload
+      assert_predicate gateway, :health_unknown?
+      assert_nil gateway.health_checked_at
+      assert_empty gateway.health_engines
+    end
+  end
+
   test "an unprobed or deactivated gateway is not reachable" do
     gateway = build_gateway.tap(&:save!)
     assert_predicate gateway, :health_unknown?

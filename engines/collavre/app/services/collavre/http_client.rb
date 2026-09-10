@@ -20,6 +20,7 @@ module Collavre
   class HttpClient
     class Error < StandardError; end
     class ConnectionError < Error; end
+    class ResponseTooLarge < Error; end
 
     DEFAULT_OPEN_TIMEOUT = 10
     DEFAULT_READ_TIMEOUT = 30
@@ -42,11 +43,11 @@ module Collavre
     class Response
       attr_reader :code, :message, :body, :headers
 
-      def initialize(net_response)
+      def initialize(net_response, body: net_response.body)
         @net_response = net_response
         @code = net_response.code.to_i
         @message = net_response.message
-        @body = net_response.body
+        @body = body
         @headers = net_response.to_hash
       end
 
@@ -63,11 +64,12 @@ module Collavre
     end
 
     def initialize(open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT, default_headers: {},
-                   endpoint_policy: nil)
+                   endpoint_policy: nil, max_response_bytes: nil)
       @open_timeout = open_timeout
       @read_timeout = read_timeout
       @default_headers = default_headers
       @endpoint_policy = endpoint_policy
+      @max_response_bytes = max_response_bytes
     end
 
     def get(url, headers: {})
@@ -100,7 +102,9 @@ module Collavre
       http.read_timeout = @read_timeout
 
       req = build_request(method, uri, body, headers)
-      Response.new(http.request(req))
+      return Response.new(http.request(req)) unless @max_response_bytes
+
+      bounded_response(http, req)
     rescue *TRANSPORT_ERRORS => e
       raise ConnectionError, "#{e.class}: #{e.message}"
     end
@@ -110,6 +114,26 @@ module Collavre
 
       pinned_ip = @endpoint_policy.resolve!(uri).first
       Net::HTTP.new(uri.host, uri.port, nil).tap { |http| http.ipaddr = pinned_ip }
+    end
+
+    def bounded_response(http, request)
+      body = +""
+      response = http.request(request) do |net_response|
+        reject_declared_oversize!(net_response)
+        net_response.read_body do |chunk|
+          raise ResponseTooLarge, "HTTP response exceeds #{@max_response_bytes} bytes" if body.bytesize + chunk.bytesize > @max_response_bytes
+
+          body << chunk
+        end
+      end
+      Response.new(response, body: body)
+    end
+
+    def reject_declared_oversize!(response)
+      content_length = response["Content-Length"].to_i
+      return if content_length <= @max_response_bytes
+
+      raise ResponseTooLarge, "HTTP response exceeds #{@max_response_bytes} bytes"
     end
 
     def build_request(method, uri, body, headers)

@@ -18,11 +18,12 @@ module Collavre
       DEFAULT_READ_TIMEOUT = 35
 
       def initialize(gateway:, workspace: nil, user_key: nil, http_client: nil,
-                     open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT)
+                     open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT,
+                     max_response_bytes: nil)
         @gateway = gateway
         @workspace = workspace
         @user_key = user_key
-        @http_client = http_client || default_http_client(open_timeout, read_timeout)
+        @http_client = http_client || default_http_client(open_timeout, read_timeout, max_response_bytes)
       end
 
       # Readiness rollup for the whole gateway. Unauthenticated by design — an
@@ -106,11 +107,16 @@ module Collavre
 
       private
 
-      def default_http_client(open_timeout, read_timeout)
+      def default_http_client(open_timeout, read_timeout, max_response_bytes)
         requires_endpoint_policy = !@gateway.owner.system_admin? &&
           !@gateway.desktop_loopback?
         policy = EndpointPolicy.new if requires_endpoint_policy
-        Collavre::HttpClient.new(open_timeout: open_timeout, read_timeout: read_timeout, endpoint_policy: policy)
+        Collavre::HttpClient.new(
+          open_timeout: open_timeout,
+          read_timeout: read_timeout,
+          endpoint_policy: policy,
+          max_response_bytes: max_response_bytes
+        )
       end
 
       # auth_key defaults to the admin key, which is what every route but the
@@ -141,6 +147,8 @@ module Collavre
         )
       rescue Collavre::HttpClient::ConnectionError => e
         raise Error.new(e.message, code: "proxy_unreachable")
+      rescue Collavre::HttpClient::ResponseTooLarge => e
+        raise Error.new(e.message, code: "proxy_response_too_large")
       rescue EndpointPolicy::UnsafeEndpoint
         raise Error.new(I18n.t("collavre.agent_gateways.unsafe_endpoint"), code: "unsafe_proxy_endpoint")
       end
