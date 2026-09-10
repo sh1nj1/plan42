@@ -36,6 +36,8 @@ module Collavre
 
       def call
         body = @client.health_ready
+        raise Client::Error, "Invalid readiness response from CLI proxy" unless valid_readiness?(body)
+
         record(rollup(body), engines: engines_of(body), error: nil)
       rescue Client::Error => e
         # A proxy older than the readiness split has no such route. Falling
@@ -56,6 +58,23 @@ module Collavre
         # An answer this Collavre has no name for is still an answer, but it is
         # not evidence the gateway can serve, so it must not read as ok.
         ROLLUP_STATUSES.include?(status) ? status.to_sym : :unknown
+      end
+
+      def valid_readiness?(body)
+        return false unless body.is_a?(Hash) && body["engines"].is_a?(Hash)
+
+        engines = body["engines"]
+        valid_engine_summary?(engines) || valid_engine_detail?(engines)
+      end
+
+      def valid_engine_summary?(engines)
+        ready = engines["ready"]
+        total = engines["total"]
+        ready.is_a?(Integer) && total.is_a?(Integer) && ready >= 0 && ready <= total
+      end
+
+      def valid_engine_detail?(engines)
+        engines["mode"] == "per-user" || (engines["mode"] == "host" && engines["items"].is_a?(Hash))
       end
 
       def engines_of(body)

@@ -86,10 +86,18 @@ class CliProxyHealthProbeTest < ActiveSupport::TestCase
   end
 
   test "a body this Collavre has no name for is not read as ok" do
-    probe(ready: { "status" => "brand-new-rollup" })
+    probe(ready: { "status" => "brand-new-rollup", "engines" => { "ready" => 1, "total" => 1 } })
 
     assert_predicate @gateway.reload, :health_unknown?
     assert_not @gateway.health_reachable?
+  end
+
+  test "does not accept a generic readiness response from an unrelated service" do
+    probe(ready: { "status" => "ok" })
+
+    @gateway.reload
+    assert_predicate @gateway, :health_unreachable?
+    assert_equal "Invalid readiness response from CLI proxy", @gateway.health_error
   end
 
   # A proxy older than the liveness/readiness split has no /health/ready. Reading

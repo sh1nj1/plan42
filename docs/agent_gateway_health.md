@@ -44,7 +44,10 @@ answer from those columns, so no request path ever waits on the proxy.
 
 The response is streamed with a 64 KiB limit before JSON parsing. Only the
 bounded fields used for routing (`mode`, counts, and at most 32 engine names and
-states) are persisted. Each HTTP request also has an 11-second wall-clock
+states) are persisted. A successful response must also carry the proxy's engine
+summary (`ready`/`total`) or detailed engine mode; a generic
+`{"status":"ok"}` health response is not accepted as proxy identity. Each HTTP
+request also has an 11-second wall-clock
 deadline, so a chunked response cannot hold a worker indefinitely by sending
 small chunks just inside the per-read timeout. A gateway connection or
 credential edit immediately invalidates the old verdict, and an in-flight probe
