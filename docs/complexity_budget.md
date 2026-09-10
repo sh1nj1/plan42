@@ -385,8 +385,12 @@ slot identity:
   so two callbacks differing only in where a template literal's text wraps
   measured 5 and 4 while normalising to the same string. Normalisation now
   collapses only what the rules cannot see: runs of horizontal whitespace, any
-  horizontal whitespace around a newline, and runs of newlines (the rules run
-  with `skipBlankLines`). Every newline that separates content survives.
+  horizontal whitespace around a line break, and runs of line breaks (the rules
+  run with `skipBlankLines`). Every line break that separates content survives.
+- **"Line break" meant `\n`.** ESLint splits lines on `\r\n`, `\r`, U+2028 and
+  U+2029 as well, so those count too — and U+2028 fell in the "horizontal"
+  bucket, collapsing two callbacks that measured 5 and 4 onto one anchor. The
+  set now matches ESLint's. `\v` and `\f` are not in it and stay horizontal.
 
 Comments are the one thing left that moves a digest without moving a measurement
 — `skipComments` is on — so editing a comment inside an over-budget twin re-keys
