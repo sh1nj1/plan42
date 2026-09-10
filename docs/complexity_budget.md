@@ -299,12 +299,14 @@ right answer in every case.
 
 ### Scope
 
-`engines/collavre/**/*.{js,jsx}`, minus `__tests__` and `engines/collavre/test`.
-Tests are excluded for the reason they are excluded on the Ruby side, spelled
-out under [Entity keys](#entity-keys). The satellite engines hold about 3,200
-lines of JavaScript between them against the core's 34,000 and are not measured;
-adding them is a two-line change to `include`, which the budget check allows in
-that direction.
+`engines/collavre/**/*.{js,jsx}`, minus `__tests__` and `engines/collavre/test`,
+plus `lib/js_complexity` — the measurement holds itself to the budget it
+enforces, the way `lib/complexity_ratchet` is measured by the Metrics cops it
+runs. Tests are excluded for the reason they are excluded on the Ruby side,
+spelled out under [Entity keys](#entity-keys). The satellite engines hold about
+3,200 lines of JavaScript between them against the core's 34,000 and are not
+measured; adding them is a two-line change to `include`, which the budget check
+allows in that direction.
 
 ## The engine boundary
 

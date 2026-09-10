@@ -38,6 +38,9 @@
 include:
   - "engines/collavre/**/*.js"
   - "engines/collavre/**/*.jsx"
+  # The measurement holds itself to the budget it enforces, the way the Ruby
+  # half's own lib/complexity_ratchet is measured by RuboCop's Metrics cops.
+  - "lib/js_complexity/**/*.js"
 
 exclude:
   # Tests are excluded for the same reason as on the Ruby side: a 2,000-line
