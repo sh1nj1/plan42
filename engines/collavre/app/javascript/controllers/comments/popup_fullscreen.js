@@ -1,3 +1,9 @@
+import {
+  findPopupTargetButton,
+  popupExitTarget,
+  restorePopupTargetStyles,
+} from './popup_exit_target'
+
 export default class PopupFullscreen {
   constructor({
     element,
@@ -23,7 +29,6 @@ export default class PopupFullscreen {
     this.previousUrl = null
     this.enterCleanupTimer = null
     this.enterCleanupFn = null
-    this.exitToRight = false
   }
 
   get active() {
@@ -231,7 +236,13 @@ export default class PopupFullscreen {
   }
 
   exitDesktop(savedStyles, creativeId) {
-    const target = this.desktopExitTarget(savedStyles, creativeId)
+    const targetButton = findPopupTargetButton(this.getCurrentButton(), creativeId)
+    if (targetButton) this.setCurrentButton(targetButton)
+    const target = popupExitTarget({
+      targetButton,
+      savedStyles,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    })
     const el = this.element
     const fullscreenRect = el.getBoundingClientRect()
 
@@ -259,81 +270,6 @@ export default class PopupFullscreen {
     this.pushExitUrl(creativeId)
   }
 
-  desktopExitTarget(savedStyles, creativeId) {
-    const targetButton = this.findTargetButton(creativeId)
-    let finalTop = ''
-    let finalRight = ''
-    const finalWidth = savedStyles?.width || ''
-    const finalHeight = savedStyles?.height || ''
-    let animTop
-    let animLeft
-    let animWidth
-    let animHeight
-
-    if (targetButton) {
-      this.setCurrentButton(targetButton)
-      const btnRect = targetButton.getBoundingClientRect()
-      const gap = 8
-      animWidth = parseFloat(finalWidth) || 420
-      animHeight = parseFloat(finalHeight) || 640
-
-      let top = btnRect.bottom + 4
-      if (top + animHeight > window.innerHeight) {
-        top = Math.max(4, window.innerHeight - animHeight - 4)
-      }
-      finalTop = `${top}px`
-
-      if (window.innerWidth - btnRect.right - gap >= animWidth) {
-        this.exitToRight = true
-        animLeft = btnRect.right + gap
-      } else {
-        this.exitToRight = false
-        const rightPx = window.innerWidth - btnRect.right + 24
-        finalRight = `${rightPx}px`
-        animLeft = window.innerWidth - rightPx - animWidth
-      }
-      animTop = top
-    } else if (savedStyles && Object.values(savedStyles).some(value => value)) {
-      const right = parseFloat(savedStyles.right) || 32
-      animWidth = parseFloat(savedStyles.width) || 420
-      animHeight = parseFloat(savedStyles.height) || 640
-      animLeft = savedStyles.left
-        ? parseFloat(savedStyles.left)
-        : window.innerWidth - right - animWidth
-      animTop = parseFloat(savedStyles.top) || 100
-      finalTop = savedStyles.top || ''
-      finalRight = savedStyles.right || ''
-    } else {
-      animWidth = 420
-      animHeight = 640
-      animLeft = window.innerWidth - 32 - animWidth
-      animTop = 100
-    }
-
-    return {
-      targetButton,
-      finalTop,
-      finalRight,
-      finalWidth,
-      finalHeight,
-      animTop,
-      animLeft,
-      animWidth,
-      animHeight,
-    }
-  }
-
-  findTargetButton(creativeId) {
-    let targetButton = this.getCurrentButton()
-    if (!targetButton && creativeId) {
-      const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-      targetButton = row?.querySelector('.comments-btn')
-    }
-    const row = targetButton?.closest('creative-tree-row')
-    row?.scrollIntoView({ behavior: 'instant', block: 'center' })
-    return targetButton
-  }
-
   scheduleExitCleanup(target, savedStyles) {
     const el = this.element
     let cleanupTimer = null
@@ -351,7 +287,7 @@ export default class PopupFullscreen {
       el.style.bottom = ''
 
       if (target.targetButton) {
-        this.restoreTargetButtonStyles(target)
+        restorePopupTargetStyles(el.style, target)
       } else if (savedStyles) {
         this.clearPositionStyles()
         Object.assign(el.style, savedStyles)
@@ -365,20 +301,6 @@ export default class PopupFullscreen {
     }
     el.addEventListener('transitionend', cleanup, { once: true })
     cleanupTimer = setTimeout(cleanup, 300)
-  }
-
-  restoreTargetButtonStyles(target) {
-    const { style } = this.element
-    style.top = target.finalTop
-    style.width = target.finalWidth
-    style.height = target.finalHeight
-    if (this.exitToRight) {
-      style.left = `${target.animLeft}px`
-      style.right = ''
-    } else {
-      style.right = target.finalRight
-      style.left = ''
-    }
   }
 
   pushExitUrl(creativeId) {
