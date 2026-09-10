@@ -26,7 +26,7 @@ Measured on 2026-08-11, before any of this existed:
 The Ruby ratchet landed first and left half the engine unmeasured. Measured on
 2026-09-10:
 
-- The core engine ships **35,390 lines of non-test JavaScript** across 161
+- The core engine ships **35,978 lines of non-test JavaScript** across 168
   files, against 40,153 lines of core Ruby — and the two largest source files in
   the engine are both JavaScript.
 - There was **no ESLint in the repository at all**: no config file, no lint job,
@@ -249,19 +249,19 @@ the merge base, the waivers, rules 1 to 4 — applies unchanged.
 
 Unlike the Ruby side, where RuboCop's defaults put ~90% of entities in violation
 and the budget had to be set at the 75th percentile of the violators, ESLint's
-documented defaults were already within reach. Measured over the 161 files the
+documented defaults were already within reach. Measured over the 168 files the
 budget selects, on 2026-09-10:
 
 | Rule | Budget | Entities | Over budget | Ruby counterpart |
 |------|--------|----------|-------------|------------------|
-| `complexity` | 13 | 3,083 | 88 (2.9%) | `Metrics/CyclomaticComplexity` |
-| `max-depth` | 3 | 3,402 | 19 (0.6%) | `Metrics/BlockNesting` |
-| `max-lines` | 300 | 161 | 21 (13.0%) | `Metrics/ClassLength` |
-| `max-lines-per-function` | 50 | 3,036 | 78 (2.6%) | `Metrics/MethodLength` |
-| `max-nested-callbacks` | 10 | 1,001 | 0 (0.0%) | — |
-| `max-params` | 4 | 1,880 | 8 (0.4%) | `Metrics/ParameterLists` |
+| `complexity` | 13 | 3,189 | 88 (2.8%) | `Metrics/CyclomaticComplexity` |
+| `max-depth` | 3 | 3,405 | 19 (0.6%) | `Metrics/BlockNesting` |
+| `max-lines` | 300 | 168 | 23 (13.7%) | `Metrics/ClassLength` |
+| `max-lines-per-function` | 50 | 3,142 | 78 (2.5%) | `Metrics/MethodLength` |
+| `max-nested-callbacks` | 10 | 999 | 0 (0.0%) | — |
+| `max-params` | 4 | 1,933 | 9 (0.5%) | `Metrics/ParameterLists` |
 
-214 entities are over it, against 394 on the Ruby side. They are grandfathered:
+217 entities are over it, against 388 on the Ruby side. They are grandfathered:
 they may shrink but not grow. The budget is what *new* code has to fit, and
 ordinary Stimulus controllers and modules already fit it.
 
@@ -551,7 +551,7 @@ direction.
 ### What this change touches outside the engine
 
 The guard's *target* is `engines/collavre`. Nothing under `engines/` is modified
-by this change — the gate is new, and the 214 entities already over budget are
+by this change — the gate is new, and the 217 entities already over budget are
 grandfathered. What it does add lives outside the engine, because that is where
 a repository-wide gate has to live:
 
