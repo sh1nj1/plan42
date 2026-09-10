@@ -198,6 +198,31 @@ describe('CronBadgeController', () => {
     expect(replacementInput.disabled).toBe(false)
   })
 
+  test('holds full tree reloads until an in-flight message update settles', async () => {
+    let resolveUpdate
+    csrfFetch.mockReturnValue(new Promise(resolve => { resolveUpdate = resolve }))
+    const tree = document.createElement('div')
+    tree.setAttribute('data-controller', 'creatives--tree')
+    element.before(tree)
+    tree.appendChild(element)
+    const treeController = {
+      beginReloadHold: jest.fn(),
+      endReloadHold: jest.fn(),
+    }
+    jest.spyOn(application, 'getControllerForElementAndIdentifier')
+      .mockReturnValue(treeController)
+
+    element.querySelector('[data-cron-update-url]').click()
+
+    expect(treeController.beginReloadHold).toHaveBeenCalledTimes(1)
+    expect(treeController.endReloadHold).not.toHaveBeenCalled()
+
+    resolveUpdate({ ok: true, status: 200 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(treeController.endReloadHold).toHaveBeenCalledTimes(1)
+  })
+
   test('ignores stale save tasks and missing controls when finishing', () => {
     const task = document.createElement('span')
     task.dataset.cronSaveOperation = 'current'

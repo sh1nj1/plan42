@@ -27,6 +27,7 @@ export default class extends Controller {
     const input = task?.querySelector('[data-cron-badge-target="messageInput"]')
     if (!input) return
 
+    const releaseTreeReload = this.holdCreativeTreeReload()
     const operationId = String(++saveOperationSequence)
     const message = input.value
     task.dataset.cronSaveOperation = operationId
@@ -44,7 +45,21 @@ export default class extends Controller {
       await alertDialog(this.updateErrorValue)
     } finally {
       this.finishMessageSave(task, operationId)
+      releaseTreeReload()
     }
+  }
+
+  holdCreativeTreeReload() {
+    const tree = this.element.closest('[data-controller~="creatives--tree"]')
+    const controller = tree && this.application.getControllerForElementAndIdentifier(
+      tree,
+      'creatives--tree'
+    )
+    if (typeof controller?.beginReloadHold !== 'function' ||
+        typeof controller?.endReloadHold !== 'function') return () => {}
+
+    controller.beginReloadHold()
+    return () => controller.endReloadHold()
   }
 
   finishMessageSave(task, operationId) {

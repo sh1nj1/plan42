@@ -536,6 +536,53 @@ describe('CreativesTreeController Chats pagination (load more)', () => {
     application.stop()
   })
 
+  test('restores a deferred cron draft when its paginated row is appended', async () => {
+    const page2Nodes = [{ id: 2 }]
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: page2Nodes, pagination: { has_more: false, next_page: null } }),
+      })
+    renderCreativeTree.mockImplementationOnce((container) => {
+      container.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
+    })
+    appendCreativeNodes.mockImplementationOnce((container) => {
+      const row = document.createElement('creative-tree-row')
+      row.setAttribute('creative-id', '2')
+      row.innerHTML = `
+        <span data-cron-key="creative-2">
+          <textarea data-cron-badge-target="messageInput"
+                    data-cron-saved-message="Server message">Server message</textarea>
+        </span>
+      `
+      row.updateComplete = Promise.resolve(true)
+      container.appendChild(row)
+    })
+
+    const { container, application } = installController()
+    await flush()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller._pendingCronMessageDrafts = new Map([
+      ['creative-2', 'Half-typed page 2 message'],
+    ])
+
+    MockIntersectionObserver.instances[0].triggerIntersect()
+    await flush()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed page 2 message')
+    expect(input.dataset.cronSavedMessage).toBe('Server message')
+    expect(controller._pendingCronMessageDrafts).toBeNull()
+    application.stop()
+  })
+
   test('drops a stale load-more response that resolves after a fresh load', async () => {
     let resolvePage2
     const page2Nodes = [{ id: 2 }, { id: 3 }]

@@ -316,9 +316,11 @@ export default class extends Controller {
     if (!isCurrent()) return
     await this.waitForCreativeTreeRows()
     if (!isCurrent()) return
-    this.restoreCronMessageDrafts(deferredCronMessageDrafts)
+    const remainingCronMessageDrafts = this.restoreCronMessageDrafts(deferredCronMessageDrafts)
     if (this._pendingCronMessageDrafts === deferredCronMessageDrafts) {
-      this._pendingCronMessageDrafts = null
+      this._pendingCronMessageDrafts = this._pagination?.has_more
+        ? remainingCronMessageDrafts
+        : null
     }
     if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
   }
@@ -414,7 +416,7 @@ export default class extends Controller {
         if (!response.ok) throw new Error(`Failed to load more chats: ${response.status}`)
         return response.json()
       })
-      .then((data) => {
+      .then(async (data) => {
         if (signal.aborted) return
         this._hideLoadMoreIndicator()
         const nodes = Array.isArray(data?.creatives) ? data.creatives : []
@@ -423,6 +425,11 @@ export default class extends Controller {
           // that slipped through must never sit above the rows being appended.
           hideTreeEmptyState(this.element)
           appendCreativeNodes(this.element, nodes)
+          await this.waitForCreativeTreeRows()
+          if (signal.aborted) return
+          this._pendingCronMessageDrafts = this.restoreCronMessageDrafts(
+            this._pendingCronMessageDrafts
+          )
           dispatchCreativeTreeUpdated(this.element)
           this.queueAlignmentUpdate()
         }
@@ -431,6 +438,7 @@ export default class extends Controller {
         if (this._pagination && this._pagination.has_more) {
           this._repositionSentinel()
         } else {
+          this._pendingCronMessageDrafts = null
           this._teardownPagination()
           // Last page in, and the rows that were on screen when it was requested
           // may since have been deleted. Nothing is pending any more, so an empty
