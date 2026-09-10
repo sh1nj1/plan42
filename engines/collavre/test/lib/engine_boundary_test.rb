@@ -116,6 +116,36 @@ class EngineBoundaryTest < ActiveSupport::TestCase
       "engines/#{CORE}/#{CORE}.gemspec depends on #{satellite_deps.join(', ')} — the core engine cannot require a satellite"
   end
 
+  # The engine ships as a gem — the host Gemfile switches to the published
+  # `collavre` when USE_COLLAVRE_GEM=true — so a gem its own `lib/` requires has
+  # to be reachable from its gemspec, not merely present because this
+  # repository's Gemfile happens to carry it. NavigationHelper's Addressable
+  # fallback rescues StandardError, so a constant missing under the gem install
+  # would not raise; it would quietly answer the wrong thing. This turns that
+  # into a failing test here instead.
+  #
+  # Reachable means declared, or in a declared dependency's own closure:
+  # `mail` arrives as rails -> actionmailer -> mail and cannot go missing
+  # without Rails going missing. A gem reached only through the host's
+  # dependencies is not reachable, which is the case this exists to catch.
+  test "every gem the engine requires is reachable from its gemspec" do
+    closure = gemspec_dependency_closure
+    unreachable = required_gem_names_in_core_lib.reject { |name| closure.include?(comparable_gem_name(name)) }
+
+    assert_empty unreachable,
+      "engines/#{CORE}/#{CORE}.gemspec does not reach #{unreachable.join(', ')} — the engine requires it, so declare it there rather than only in the host Gemfile"
+  end
+
+  test "the gemspec reachability check reads a require rather than a mention" do
+    source = <<~RUBY
+      require "addressable/uri"
+      # require "nokogiri"
+      log("require \\"httparty\\"")
+    RUBY
+
+    assert_equal [ "addressable/uri" ], required_paths_in(source)
+  end
+
   test "detector flags a satellite constant reference" do
     assert_equal [ "CollavreGithub::Account" ],
       constant_references_in("CollavreGithub::Account.find(id)")
@@ -266,6 +296,58 @@ class EngineBoundaryTest < ActiveSupport::TestCase
 
   def bare_receiver?(receiver)
     receiver.nil? || receiver.is_a?(Prism::SelfNode)
+  end
+
+  # Every literal `require` in the engine's entry points, mapped to the gem that
+  # would have to supply it.
+  def required_gem_names_in_core_lib
+    lib = ENGINES_ROOT.join(CORE, "lib")
+
+    Dir.glob(lib.join("**/*.rb"))
+      .flat_map { |path| required_paths_in(File.read(path)) }
+      .map { |feature| feature.split("/").first }
+      .uniq
+      .reject { |name| engine_provides?(lib, name) || default_gem?(name) }
+  end
+
+  # A gem is reachable if the gemspec names it or something the gemspec names
+  # depends on it, transitively — the same closure Bundler would install.
+  def gemspec_dependency_closure
+    closure = Set.new
+    queue = core_gemspec.dependencies.select(&:runtime?).map(&:name)
+
+    while (name = queue.shift)
+      next unless closure.add?(name)
+
+      spec = Gem::Specification.find_by_name(name) rescue next
+      queue.concat(spec.runtime_dependencies.map(&:name))
+    end
+
+    closure.map { |name| comparable_gem_name(name) }.to_set
+  end
+
+  # `require "active_support/..."` is served by `activesupport`, and
+  # `require "net/imap"` by `net-imap`: the separator in a require path is a
+  # convention, not part of the gem name. Compared without it on both sides.
+  def comparable_gem_name(name)
+    name.downcase.delete("_-")
+  end
+
+  def engine_provides?(lib, name)
+    name == CORE || File.exist?(lib.join("#{name}.rb")) || File.directory?(lib.join(name))
+  end
+
+  def default_gem?(name)
+    @default_gems ||= Gem::Specification.default_stubs.map(&:name).to_set
+    @default_gems.include?(name)
+  end
+
+  # `require` only. `require_relative` cannot name a gem, and `load`/`autoload`
+  # leave no gemspec obligation behind either.
+  def required_paths_in(source)
+    loader_calls(Prism.parse(source).value)
+      .select { |call| call.name.to_s == "require" }
+      .flat_map { |call| call.arguments&.arguments.to_a.grep(Prism::StringNode).map(&:unescaped) }
   end
 
   def satellite_for(feature)

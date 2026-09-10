@@ -1,6 +1,8 @@
 en:
   collavre:
     landing:
+      nav:
+        back_to_app: "← Back to %{app_name}"
       meta:
         title: "Where Teams Think Together"
         description: "The collaborative workspace where hierarchical blocks, AI agents, and real-time chat come together. Organize, collaborate, and ship — with AI as your teammate."
