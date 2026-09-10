@@ -38,6 +38,7 @@ Gem::Specification.new do |spec|
   # Integrations
   spec.add_dependency "httparty"               # HTTP client for link previews and APIs
   spec.add_dependency "nokogiri"               # HTML/XML parsing
+  spec.add_dependency "addressable"            # Punycode for the help-link origin check
 
   # Optional dependencies - add to your Gemfile if using these features:
   #
