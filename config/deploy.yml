@@ -94,9 +94,15 @@ env:
     # (default 5) gates admission—raise both together if needed.
     AI_AGENT_THREADS: "<%= ENV.fetch('AI_AGENT_THREADS', '12') %>"
 
+    # Threads for the dedicated gateway_health worker. The default supports at
+    # least 96 active gateways within the three-minute health TTL even if every
+    # probe takes the 22-second legacy-fallback worst case.
+    GATEWAY_HEALTH_THREADS: "<%= ENV.fetch('GATEWAY_HEALTH_THREADS', '12') %>"
+
     # Override the Active Record pool size formula in config/database.yml
-    # (RAILS_MAX_THREADS + AI_AGENT_THREADS + 10). Only passed through when set
-    # on the deploy machine, so the in-container formula stays the default.
+    # (RAILS_MAX_THREADS + AI_AGENT_THREADS + GATEWAY_HEALTH_THREADS + 10).
+    # Only passed through when set on the deploy machine, so the in-container
+    # formula stays the default.
 <% if ENV['DB_POOL'].to_s.strip != '' %>
     DB_POOL: "<%= ENV['DB_POOL'] %>"
 <% end %>

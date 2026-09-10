@@ -18,6 +18,15 @@ Both jobs run on their own `gateway_health` queue (`config/queue.yml`), not on
 the shared pool a handful of dead gateways would hold every default thread and
 stall mailers, broadcasts and notifications behind them.
 
+The dedicated worker defaults to 12 threads and can be sized with
+`GATEWAY_HEALTH_THREADS`. Capacity must drain the active-gateway count within
+`AgentGateway::HEALTH_TTL`; otherwise a healthy gateway waiting at the tail can
+look stale. Size conservatively for the legacy-fallback worst case (22 seconds):
+`ceil(active gateways * 22 / 180)`. The default therefore supports at least 96
+active gateways inside the three-minute TTL, with scheduling margin. Each
+thread may use a database connection, so the default pool formula includes this
+setting; an explicit `DB_POOL` override must include it too.
+
 Both jobs use Solid Queue concurrency controls with `on_conflict: :discard`.
 There can be at most one ready or running probe per gateway and one ready or
 running sweep. The concurrency semaphore is claimed at enqueue time, so a slow

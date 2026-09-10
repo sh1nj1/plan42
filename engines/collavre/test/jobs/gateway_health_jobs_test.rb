@@ -89,6 +89,7 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     gateway_worker = workers.find { |w| w.fetch("queues").include?("gateway_health") }
     assert gateway_worker, "gateway_health has no worker polling it"
     assert_equal [ "gateway_health" ], gateway_worker.fetch("queues")
+    assert_equal 12, gateway_worker.fetch("threads")
   end
 
   private
