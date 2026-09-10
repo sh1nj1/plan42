@@ -125,7 +125,7 @@ engines/collavre_openclaw/config/locales/
 ```bash
 # Required before every PR
 ./bin/rubocop -a          # Auto-fix style issues
-bin/complexity_check      # Complexity ratchet (~2s)
+bin/complexity_check      # Complexity ratchet, Ruby + JavaScript (~8s, needs `npm ci`)
 bin/rails test            # Unit/integration tests
 bin/rails test:system     # System tests
 ```
@@ -135,11 +135,12 @@ conventions.
 
 ### Complexity Ratchet
 
-No class, module, method, or block may grow past the size it has at the merge
-base, and anything new must fit the budget in `.rubocop_metrics.yml`. CI measures
-both sides in one run, so there is no file to keep in sync and a refactor that
-shrinks something needs no bookkeeping. The budget itself may only tighten. Run
-`bin/complexity_check` locally to see what a PR would report. See
+No class, module, function, method, or block may grow past the size it has at
+the merge base, and anything new must fit the budget — `.rubocop_metrics.yml`
+for Ruby app code, `.eslint_metrics.yml` for the core engine's JavaScript. CI
+measures both sides in one run, so there is no file to keep in sync and a
+refactor that shrinks something needs no bookkeeping. Both budgets may only
+tighten. Run `bin/complexity_check` locally to see what a PR would report. See
 [complexity_budget.md](complexity_budget.md).
 
 ## PR Merge Principles (CTO Perspective)

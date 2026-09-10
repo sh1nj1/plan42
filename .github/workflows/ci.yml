@@ -77,9 +77,11 @@ jobs:
       - name: Test shell script helpers
         run: bash script/test/lightsail_launch_test.sh
 
-  # Entity-level complexity ratchet: RuboCop's Metrics department over app code,
-  # run twice — once on this branch, once on a detached checkout of the merge
-  # base — and compared entity by entity. Adds ~5s. See docs/complexity_budget.md.
+  # Entity-level complexity ratchet: RuboCop's Metrics department over Ruby app
+  # code and ESLint's size and complexity rules over the core engine's
+  # JavaScript, run twice — once on this branch, once on a detached checkout of
+  # the merge base — and compared entity by entity. The two measurements take
+  # about 8s together. See docs/complexity_budget.md.
   complexity:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -98,8 +100,20 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
 
-      # The budget in .rubocop_metrics.yml may only tighten. The
-      # `complexity-baseline-reset` label is the way past that, for the case it
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ESLint only. The merge-base worktree gets no install of its own — it is
+      # measured with this checkout's ESLint and this branch's budget, which is
+      # the same rule the Ruby half follows for .rubocop_metrics.yml.
+      - name: Install dependencies
+        run: npm ci
+
+      # The budgets in .rubocop_metrics.yml and .eslint_metrics.yml may only
+      # tighten. The `complexity-baseline-reset` label is the way past that, for the case it
       # was written for: a deliberate, reviewed budget change. Applying a label
       # does not re-trigger CI, so re-run this job afterwards.
       - name: Check the complexity ratchet

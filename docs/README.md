@@ -25,8 +25,8 @@ thin agent entry point that indexes into this directory.
 - [rails8_patterns.md](rails8_patterns.md) — Rails 8 idioms used across the
   codebase (auth, Current, encryption, Hotwire, Solid Queue, Propshaft).
 - [complexity_budget.md](complexity_budget.md) — the three CI gates that keep
-  the codebase from diverging as it grows (complexity ratchet, engine boundary,
-  coverage patch gate) and how to work with them.
+  the codebase from diverging as it grows (Ruby + JavaScript complexity ratchet,
+  engine boundary, coverage patch gate) and how to work with them.
 - [testing.md](testing.md) — automated-test conventions.
 - [test.md](test.md) — manual QA of the live site (test accounts, credentials).
 

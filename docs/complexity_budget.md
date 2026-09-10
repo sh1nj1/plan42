@@ -1,12 +1,12 @@
 # Complexity budget
 
 Three CI gates keep the codebase from diverging as it grows. They are cheap on
-purpose — together they add roughly six seconds of CI time — because a gate that
-slows everyone down gets removed.
+purpose — the ratchet measures two languages twice each in about ten seconds —
+because a gate that slows everyone down gets removed.
 
 | Gate | What it stops | Where |
 |------|---------------|-------|
-| Complexity ratchet | Any class, module, method or block growing past the size it has at the merge base | `complexity` job, `bin/complexity_check` |
+| Complexity ratchet | Any class, module, function, method or block — Ruby or JavaScript — growing past the size it has at the merge base | `complexity` job, `bin/complexity_check` |
 | Engine boundary | The core engine taking a dependency on a satellite engine | `EngineBoundaryTest`, runs with `rake test` |
 | Coverage patch gate | Ruby diffs landing under 80% covered | Codecov, `codecov.yml` |
 
@@ -23,6 +23,17 @@ Measured on 2026-08-11, before any of this existed:
 - Not one CI gate constrained any of it: RuboCop runs omakase, which disables
   every `Metrics` cop, and Codecov was informational.
 
+The Ruby ratchet landed first and left half the engine unmeasured. Measured on
+2026-09-10:
+
+- The core engine ships **34,000 lines of non-test JavaScript** across 162 files,
+  against 40,000 lines of core Ruby — and the two largest source files in the
+  engine are both JavaScript.
+- There was **no ESLint in the repository at all**: no config file, no lint job,
+  no devDependency. Nothing measured any of it, and "no explicit configuration"
+  is not the same as "no rules" only when there is a default to fall back on.
+  There was none.
+
 The divergence is *inside* the core, not across engine boundaries — the
 `collavre` → `collavre_*` rule is clean in application code, with one recorded
 exception in a migration. So the ratchet is the primary gate and the boundary
@@ -37,11 +48,16 @@ bin/complexity_check --report     # just list what is over budget right now
 ```
 
 There is nothing to commit and nothing to keep in sync. `bin/complexity_check`
-checks out the merge base into a throwaway `git worktree`, runs RuboCop's
-`Metrics` department over both trees, and compares them entity by entity. One
-file drives it: **`.rubocop_metrics.yml`**, the budget that decides which
-entities are worth measuring. It is not used by `bin/rubocop`; the omakase house
-style stays as it is.
+checks out the merge base into a throwaway `git worktree`, measures both trees,
+and compares them entity by entity. Two files drive it:
+
+- **`.rubocop_metrics.yml`** — RuboCop's `Metrics` department over Ruby app code.
+  It is not used by `bin/rubocop`; the omakase house style stays as it is.
+- **`.eslint_metrics.yml`** — ESLint's size and complexity rules over the core
+  engine's JavaScript. See [The JavaScript half](#the-javascript-half).
+
+Both languages land in one hash of `path | rule | entity` keys, so the waiver
+format, the comparison and the reporting below are the same code for both.
 
 The rules:
 
@@ -50,7 +66,8 @@ The rules:
    New code gets no amnesty from old debt.
 3. The budget cannot be loosened. Exactly two edits to `.rubocop_metrics.yml`
    pass — lowering a `Max`, and shrinking `AllCops/Exclude` — and every other
-   change to it is reported.
+   change to it is reported. `.eslint_metrics.yml` allows three: lowering a
+   threshold, widening `include`, and shrinking `exclude`.
 4. The only escape hatch is a waiver in `.complexity_waivers.yml`, which needs a
    non-blank owner, a non-blank reason, and an expiry no more than 90 days out.
    An expired or blank-field waiver fails CI.
@@ -184,6 +201,111 @@ callers, holds no shared mutable state, and splitting it buys nothing. Test bloa
 is real, but it is a coverage-quality problem, not a coupling one, and mixing it
 in would bury the app-code signal under thousands of block-length offenses.
 
+## The JavaScript half
+
+`.eslint_metrics.yml` is the budget; `bin/js_complexity.mjs` and
+`lib/js_complexity/` are the measurement. It prints the same
+`{"path | rule | entity": value}` shape the Ruby measurement produces, and
+`bin/complexity_check` merges the two before comparing, so everything above —
+the merge base, the waivers, rules 1 to 4 — applies unchanged.
+
+### The budget
+
+Unlike the Ruby side, where RuboCop's defaults put ~90% of entities in violation
+and the budget had to be set at the 75th percentile of the violators, ESLint's
+documented defaults were already within reach. Measured over the 162 non-test
+files on 2026-09-10:
+
+| Rule | Budget | Entities | Over budget | Ruby counterpart |
+|------|--------|----------|-------------|------------------|
+| `complexity` | 13 | 3,108 | 88 (2.8%) | `Metrics/CyclomaticComplexity` |
+| `max-depth` | 3 | 3,402 | 19 (0.6%) | `Metrics/BlockNesting` |
+| `max-lines` | 300 | 162 | 21 (13.0%) | `Metrics/ClassLength` |
+| `max-lines-per-function` | 50 | 3,038 | 78 (2.6%) | `Metrics/MethodLength` |
+| `max-nested-callbacks` | 10 | 1,001 | 0 (0.0%) | — |
+| `max-params` | 4 | 1,881 | 8 (0.4%) | `Metrics/ParameterLists` |
+
+214 entities are over it, against 394 on the Ruby side. They are grandfathered:
+they may shrink but not grow. The budget is what *new* code has to fit, and
+ordinary Stimulus controllers and modules already fit it.
+
+`max-nested-callbacks` sits at ESLint's default because nothing violates it —
+the same reasoning that keeps `Metrics/BlockNesting` at RuboCop's default.
+`max-lines` and `max-lines-per-function` skip blank lines and comments, because
+RuboCop's counters do; otherwise the same file measures differently on the two
+sides and a comment block reads as growth.
+
+### The budget file holds only numbers
+
+`.eslint_metrics.yml` has three keys — `include`, `exclude` and `rules` — and
+`rules` maps a rule name to an integer. Rule options that are not thresholds
+(`skipBlankLines`, `IIFEs`) live in `lib/js_complexity/measure.js`, and there is
+no per-file override syntax at all.
+
+That is the difference between this budget and a real `eslint.config.js`, and it
+is the point. Rule 3 on the Ruby side needs a long allowlist because a `Metrics`
+cop can be silenced through `Exclude`, `Include`, `AllowedMethods`,
+`AllowedPatterns` or `CountAsOne` while its `Max` still reads as strict. Here
+there is nothing to silence a rule *with*: three keys, and all three are
+compared. Inline `eslint-disable` comments are refused as well
+(`noInlineConfig`), so a directive cannot switch the gate off from inside a
+source file either.
+
+### Why ESLint's `Linter` and not the `ESLint` class
+
+The base side of the ratchet is a detached worktree of the merge base. It has no
+`node_modules` and no ESLint config of its own, and it must not have one:
+measuring each side with its own budget is what makes a PR that *tightens* a
+threshold report every pre-existing entity as brand-new debt. `Linter#verify`
+takes the config as a value and resolves nothing from the tree it is reading, so
+this branch's ESLint and this branch's budget are applied to both sides. The
+`ESLint` class would search the measured tree for a config file.
+
+### Entity keys in JavaScript
+
+Same problem as the Ruby side, same shape of answer, different parser. Names are
+built from an ESTree walk (`lib/js_complexity/entity_map.js`):
+
+```
+engines/collavre/app/javascript/controllers/comments/topics_controller.js | max-lines | (file)
+engines/collavre/app/javascript/modules/creative_row_editor.js | max-lines-per-function | setupEditorSession
+engines/collavre/app/javascript/components/InlineLexicalEditor.jsx | max-lines-per-function | Toolbar>[useCallback](10)
+```
+
+- A class member reads `Editor#save`, a static `Editor.create`, and a getter
+  `Editor#get draft` — without the kind, a `get`/`set` pair would collide into an
+  ordinal pair that reads as two unrelated members.
+- An anonymous function takes the name it is bound to (`const submit = …` →
+  `submit`), or, if it is bound to nothing, the call it is passed to
+  (`[addEventListener]`). This is what the Ruby side does for blocks.
+- `export default class extends Controller` — every Stimulus controller in the
+  engine — is named `default`. "(anonymous class)" would be accurate and
+  useless.
+- Siblings that share a name are numbered from the second on, so a second
+  over-budget `[map]` callback in one method cannot hide behind the first. As on
+  the Ruby side, an ordinal is a position and not an identity; the trade-off is
+  discussed under [Entity keys](#entity-keys) above and is the same here.
+- `max-lines` belongs to `(file)`: it reports on the first line past the limit,
+  which belongs to no entity in particular.
+- `max-depth` reports on a statement, so it falls back to the enclosing scope
+  plus the normalised source line with a leading `~` — the same fallback the
+  Ruby side uses for `Metrics/BlockNesting`.
+
+Lookup is by containment rather than by start position, because ESLint does not
+report an offense at the node it is about: `getFunctionHeadLoc` puts a method
+offense on the method name and an arrow offense on the `=>` token. All of them
+are *inside* the entity, so the innermost scope containing the offense is the
+right answer in every case.
+
+### Scope
+
+`engines/collavre/**/*.{js,jsx}`, minus `__tests__` and `engines/collavre/test`.
+Tests are excluded for the reason they are excluded on the Ruby side, spelled
+out under [Entity keys](#entity-keys). The satellite engines hold about 3,200
+lines of JavaScript between them against the core's 34,000 and are not measured;
+adding them is a two-line change to `include`, which the budget check allows in
+that direction.
+
 ## The engine boundary
 
 `EngineBoundaryTest` fails when a core engine Ruby file names a satellite
@@ -255,8 +377,8 @@ instead: expose a hook from `collavre` and let the satellite register itself.
 
 ## What this does not do
 
-The ratchet stops *growth*. It does not shrink the 430 entities already over
-budget, and it can be routed around by adding a hundred small files instead of
+The ratchet stops *growth*. It does not shrink the 608 entities already over
+budget (394 Ruby, 214 JavaScript), and it can be routed around by adding a hundred small files instead of
 one big one. Neither is a gap a PR gate can close.
 
 For that, use the churn×complexity data — files that are both large and
@@ -269,6 +391,16 @@ blocking gate cannot make anyone delete code.
 - **A committed baseline snapshot.** Tried first, and it is what the "Why the
   merge base" section above is about. It goes stale the moment `main` moves and
   its only escape hatch launders regressions.
+- **`max-statements`.** A genuine rule, and 384 entities exceed ESLint's default
+  of 10 — but it measures nearly the same thing as `max-lines-per-function`, and
+  adding it would have nearly tripled the over-budget list for a signal already
+  covered. The gate is cheap because it is small.
+- **A standalone ESLint lint job.** ESLint is in this repository for exactly one
+  reason: it is the only thing here that can parse modern JS and JSX well enough
+  to measure it. Turning on its correctness or style rules is a separate
+  decision with a separate cost — ~34,000 lines of unlinted JavaScript would
+  produce thousands of offenses on day one — and bundling it into a complexity
+  gate is how a gate gets switched off in week two.
 - **A test-to-app LOC ratio floor.** The core already has a healthy 1.51 ratio
   *and* the god objects. Test LOC is trivially gamed with fixture style, mocks,
   and duplicated setup — it is a lagging indicator dressed as a leading one.
