@@ -3,7 +3,7 @@ require "erb"
 require "yaml"
 
 class KamalDeployConfigTest < ActiveSupport::TestCase
-  ENVIRONMENT_VARIABLES = %w[AI_AGENT_THREADS DB_POOL SOLID_QUEUE_IN_PUMA].freeze
+  ENVIRONMENT_VARIABLES = %w[AI_AGENT_THREADS DB_POOL GATEWAY_HEALTH_THREADS SOLID_QUEUE_IN_PUMA].freeze
 
   setup do
     @original_environment = ENVIRONMENT_VARIABLES.to_h { |key| [ key, ENV[key] ] }
@@ -21,18 +21,21 @@ class KamalDeployConfigTest < ActiveSupport::TestCase
     clear_environment = rendered_clear_environment
 
     assert_equal "12", clear_environment["AI_AGENT_THREADS"]
+    assert_equal "12", clear_environment["GATEWAY_HEALTH_THREADS"]
     assert_equal "true", clear_environment["SOLID_QUEUE_IN_PUMA"]
     assert_not clear_environment.key?("DB_POOL")
   end
 
   test "renders numeric and boolean-looking overrides as strings" do
     ENV["AI_AGENT_THREADS"] = "24"
+    ENV["GATEWAY_HEALTH_THREADS"] = "18"
     ENV["DB_POOL"] = "48"
     ENV["SOLID_QUEUE_IN_PUMA"] = "false"
 
     clear_environment = rendered_clear_environment
 
     assert_equal "24", clear_environment["AI_AGENT_THREADS"]
+    assert_equal "18", clear_environment["GATEWAY_HEALTH_THREADS"]
     assert_equal "48", clear_environment["DB_POOL"]
     assert_equal "false", clear_environment["SOLID_QUEUE_IN_PUMA"]
   end

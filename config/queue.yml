@@ -34,6 +34,16 @@ default: &default
       threads: 1
       processes: 1
       polling_interval: 0.1
+    # Dedicated worker for gateway readiness probes. A probe spends up to
+    # OPEN_TIMEOUT + READ_TIMEOUT blocked on an unreachable host, and the sweep
+    # enqueues one per gateway every minute, so on the default worker a handful
+    # of dead gateways would hold its threads and stall user-facing jobs. Keep
+    # enough threads to drain the supported active-gateway count within
+    # AgentGateway::HEALTH_TTL; see docs/agent_gateway_health.md.
+    - queues: [gateway_health]
+      threads: <%= ENV.fetch("GATEWAY_HEALTH_THREADS", 12) %>
+      processes: 1
+      polling_interval: 0.5
 
 development:
   <<: *default

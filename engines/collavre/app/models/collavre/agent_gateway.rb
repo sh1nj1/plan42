@@ -7,12 +7,26 @@ module Collavre
     # Must match the proxy's USER_IDENTITY_HMAC_SECRET.
     MIN_IDENTITY_SECRET_BYTES = 32
     DESKTOP_NATIVE_CREDENTIAL_ATTRIBUTES = %i[admin_key completion_key identity_secret].freeze
+    HEALTH_CONFIGURATION_ATTRIBUTES = %w[active admin_key base_url completion_key identity_secret].freeze
+
+    # Three probe intervals. A verdict older than this describes a gateway
+    # nothing has asked about lately, which is not the same claim as "it
+    # answered". Tolerating two missed sweeps keeps a single slow run from
+    # blinking every agent offline.
+    HEALTH_TTL = 3.minutes
 
     belongs_to :owner, class_name: "Collavre::User"
     has_many :agents, class_name: "Collavre::User", dependent: :restrict_with_error
     has_many :agent_workspaces, class_name: "Collavre::AgentWorkspace", dependent: :destroy
 
     enum :workspace_mode, { shared: 0, per_user: 1 }, default: :shared
+
+    # The proxy's own rollup, plus `unreachable` for the case it has no name
+    # for: nothing answered at all. `unknown` is the pre-first-probe value.
+    enum :health_status,
+         { unknown: 0, ok: 1, degraded: 2, down: 3, unreachable: 4 },
+         prefix: :health,
+         default: :unknown
 
     encrypts :admin_key, deterministic: false
     encrypts :completion_key, deterministic: false
@@ -35,11 +49,48 @@ module Collavre
     around_update :serialize_completion_key_removal
     before_update :validate_completion_key_removal_under_lock
     after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
+    after_update :invalidate_health_after_configuration_change, if: :health_configuration_changed?
 
     scope :active, -> { where(active: true) }
+    scope :health_probe_targets, -> do
+      active.joins(:agents).merge(User.where(llm_vendor: "cli_proxy")).distinct
+    end
 
     def chat_capable?
       completion_key.present?
+    end
+
+    def health_fresh?
+      health_checked_at.present? && health_checked_at > HEALTH_TTL.ago
+    end
+
+    # Both halves matter. A stale verdict is not evidence of anything, and a
+    # gateway whose probe loop stopped would otherwise keep serving whatever it
+    # last saw — reporting a dead host online for as long as nobody restarts it.
+    def health_reachable?
+      active? && health_fresh? && (health_ok? || health_degraded?)
+    end
+
+    # Whether an agent bound to `engine` can expect its runs to work.
+    #
+    # `degraded` is the normal steady state of most installs, so it cannot mean
+    # offline on its own; what decides is the state of the one engine this
+    # agent actually spends.
+    def health_serves_engine?(engine)
+      return false unless health_reachable?
+      # Per-user routing keeps engine credentials in each worker's HOME, so this
+      # process probed a machine the agent's runs never touch. It did prove the
+      # gateway routes, and calling that offline would black out every per-user
+      # agent permanently — the same fail-closed mistake `unknown` avoids.
+      return true if health_engines["mode"] == "per-user"
+
+      # Anything other than an explicit `unauthenticated` falls back to the
+      # rollup, which is already ok or degraded here: an unrecognized engine, an
+      # engine absent from `items`, and the summary response that carries only a
+      # ready count all read as nil. `unknown` is deliberately not a failure
+      # either — a healthy macOS host reports `claude` that way forever, because
+      # the credential sits in a keychain the proxy cannot read.
+      health_engines.dig("items", engine.to_s, "state") != "unauthenticated"
     end
 
     def completion_base_url
@@ -195,6 +246,19 @@ module Collavre
 
         AgentWorkspace.resolve!(agent: agent, user: per_user? ? agent.creator : nil)
       end
+    end
+
+    def health_configuration_changed?
+      (saved_changes.keys & HEALTH_CONFIGURATION_ATTRIBUTES).any?
+    end
+
+    def invalidate_health_after_configuration_change
+      update_columns(
+        health_status: self.class.health_statuses.fetch("unknown"),
+        health_engines: {},
+        health_error: nil,
+        health_checked_at: nil
+      )
     end
   end
 end

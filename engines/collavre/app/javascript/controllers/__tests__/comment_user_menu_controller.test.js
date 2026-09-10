@@ -58,6 +58,21 @@ describe('CommentUserMenuController', () => {
     expect(controller.statusLabelTarget.textContent).toBe('Offline')
   })
 
+  // A gateway-backed agent is online without being present in the chat, and the
+  // avatar on its message must not contradict the one in the participant strip.
+  test('defers to the presence controller so agent liveness reads the same everywhere', () => {
+    const presence = { isUserOnline: jest.fn(() => true) }
+    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockImplementation((_element, identifier) => (
+      identifier === 'comments--presence' ? presence : null
+    ))
+
+    popup.dispatchEvent(new CustomEvent('comments--presence:changed', { detail: { presentIds: [] } }))
+
+    expect(presence.isUserOnline).toHaveBeenCalledWith(9, [])
+    expect(controller.statusTarget.classList.contains('is-online')).toBe(true)
+    expect(controller.statusLabelTarget.textContent).toBe('Online')
+  })
+
   test('inserts a mention and focuses the composer', () => {
     const textareaTarget = { focus: jest.fn() }
     const mentionMenu = { insertMention: jest.fn(), textareaTarget }

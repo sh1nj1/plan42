@@ -3,6 +3,7 @@ module Collavre
     self.table_name = "users"
 
     include HasInboxCreative
+    include AgentLiveness
 
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
 
@@ -212,14 +213,6 @@ module Collavre
       return unless old_gateway_id
 
       agent_workspaces.where(agent_gateway_id: old_gateway_id).destroy_all
-    end
-
-    def claude_channel_agent?
-      llm_model == "claude-code"
-    end
-
-    def claude_channel_online?
-      claude_channel_agent? && AgentSubscription.live.where(agent_id: id).exists?
     end
 
     scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }

@@ -345,4 +345,52 @@ class UserTest < ActiveSupport::TestCase
     assert creative.has_permission?(viewer, :read)
     refute agent.gateway_accessible_to?(viewer)
   end
+
+  test "a gateway-backed agent is online when its gateway can still serve its engine" do
+    owner = users(:one)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner, name: "Presence proxy", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion", identity_secret: "i" * 32
+    )
+    claude_agent = create_cli_proxy_agent(owner, gateway, "paperclip/claude_local")
+    codex_agent = create_cli_proxy_agent(owner, gateway, "paperclip/codex_local")
+
+    assert_not claude_agent.agent_online?, "an unprobed gateway proves nothing"
+
+    gateway.update_columns(
+      health_status: 2,
+      health_checked_at: Time.current,
+      health_engines: {
+        "mode" => "host",
+        "items" => {
+          "claude" => { "state" => "authenticated" },
+          "codex" => { "state" => "unauthenticated" }
+        }
+      }
+    )
+
+    assert claude_agent.reload.agent_online?
+    assert_not codex_agent.reload.agent_online?,
+               "one logged-out engine must not carry the agents that do not use it"
+  end
+
+  test "agents with no liveness evidence are not asserted online" do
+    assert_not users(:ai_bot).agent_online?, "a hosted vendor API publishes nothing either way"
+    assert_not users(:one).agent_online?
+  end
+
+  private
+
+  def create_cli_proxy_agent(owner, gateway, model)
+    Collavre::User.create!(
+      name: "CLI Agent #{SecureRandom.hex(3)}",
+      email: "cli-#{SecureRandom.hex(4)}@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: model,
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+  end
 end

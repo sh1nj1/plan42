@@ -12,6 +12,14 @@ const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
 const PRESENCE_HEARTBEAT_INTERVAL = 30000
+// Agent liveness does not arrive over the presence stream: it is a gateway
+// readiness verdict the server refreshes on its own schedule, for agents nobody
+// has to be looking at. Re-reading the participant list is how it gets here.
+const AGENT_PRESENCE_REFRESH_INTERVAL = 60000
+// The only answers that are evidence the reader lost access to the creative.
+// Everything else a failed fetch can report — offline, a 500, a proxy's error
+// page — is evidence about the network, not about the participant list.
+const ACCESS_DENIED_STATUSES = [401, 403, 404]
 const PARTICIPANT_LIST_MODAL_ID = 'participant-list-modal'
 
 // agent_status values that keep a task registered. thinking/streaming are the
@@ -52,6 +60,7 @@ export default class extends Controller {
     this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
     this.presenceHeartbeatHandle = null
+    this.agentPresenceRefreshHandle = null
     this.currentUserId = document.body.dataset.currentUserId
     this.selectedTopicId = null
     this.mainTopicId = null
@@ -76,6 +85,7 @@ export default class extends Controller {
 
   disconnect() {
     this.dnd?.destroy()
+    this.stopAgentPresenceRefresh()
     this._participantLoadVersion += 1
     this._closeParticipantListPopup()
     this.unsubscribe()
@@ -160,6 +170,7 @@ export default class extends Controller {
     this.renderedAllTopicIds = null
     this.renderedAllIncludesLegacy = false
     this.loadParticipants(creativeId)
+    this.startAgentPresenceRefresh()
     this.subscribe()
     this.renderParticipants([])
     this.renderTypingIndicator()
@@ -226,6 +237,7 @@ export default class extends Controller {
 
   onPopupClosed() {
     this.unsubscribe()
+    this.stopAgentPresenceRefresh()
     this.creativeId = null
     this.resetParticipantState()
     this.resetAgentActivity()
@@ -282,7 +294,7 @@ export default class extends Controller {
     this.presenceSubscription.perform('running_agents', { topic_id: this.selectedTopicId })
   }
 
-  loadParticipants(creativeId = this.creativeId) {
+  loadParticipants(creativeId = this.creativeId, { preserveMenus = false } = {}) {
     if (!creativeId) return
     const loadVersion = ++this._participantLoadVersion
     return fetch(`/creatives/${creativeId}/comments/participants`, {
@@ -292,7 +304,9 @@ export default class extends Controller {
       .then(async (response) => {
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}))
-          throw new Error(payload.error || this.element.dataset.noPermissionText || 'No permission')
+          const error = new Error(payload.error || this.element.dataset.noPermissionText || 'No permission')
+          error.status = response.status
+          throw error
         }
         return response.json()
       })
@@ -301,16 +315,66 @@ export default class extends Controller {
         this.participantsData = data.users
         this.canShare = data.can_share
         this.formController?.setCommentPermission(data.can_comment)
-        this.renderParticipants(this.currentPresentIds)
+        this.renderParticipants(this.currentPresentIds, { preserveMenus })
+        // Agent liveness arrives with the participant list, not over the presence
+        // stream, so the avatars rendered on each message need to be told.
+        this.dispatchPresenceChanged(this.currentPresentIds)
         this.renderTypingIndicator()
       })
-      .catch(() => {
+      .catch((error) => {
         if (!this._isCurrentParticipantLoad(loadVersion, creativeId)) return
+        // A background refresh nobody asked for must not destroy what is on
+        // screen. A dropped connection or a 500 says nothing about who the
+        // participants are, so the last good snapshot stays and the open profile
+        // menu with it; only an answer that refuses the read clears the strip.
+        const accessDenied = ACCESS_DENIED_STATUSES.includes(error?.status)
+        if (preserveMenus && !accessDenied) return
+        if (accessDenied) {
+          this.handleAccessRevoked()
+          return
+        }
         this.participantsData = []
         this.canShare = false
         this.renderParticipants([])
         this.renderTypingIndicator()
       })
+  }
+
+  // A periodic reload, so it preserves the rendered menus: a user with the
+  // profile popup open must not have it torn out from under them once a minute.
+  startAgentPresenceRefresh() {
+    this.stopAgentPresenceRefresh()
+    this.agentPresenceRefreshHandle = setInterval(() => {
+      this.loadParticipants(this.creativeId, { preserveMenus: true })
+    }, AGENT_PRESENCE_REFRESH_INTERVAL)
+  }
+
+  stopAgentPresenceRefresh() {
+    if (this.agentPresenceRefreshHandle) {
+      clearInterval(this.agentPresenceRefreshHandle)
+      this.agentPresenceRefreshHandle = null
+    }
+  }
+
+  // Chat presence and agent liveness answer different questions and must stay
+  // separate: `presentIds` is who has this creative open, and it alone drives
+  // read receipts. An agent is online when its gateway says it can run, whether
+  // or not anyone is watching.
+  isParticipantOnline(user, presentIds) {
+    if (!user) return false
+    return (presentIds || []).some((id) => String(id) === String(user.id)) || user.agent_online === true
+  }
+
+  // The same answer by id, for the avatars rendered on each message: an agent in
+  // the message list and the same agent in the participant strip must not
+  // disagree about whether it is online.
+  isUserOnline(userId, presentIds = this.currentPresentIds) {
+    const user = (this.participantsData || []).find((entry) => String(entry.id) === String(userId))
+    // A comment author who is no longer a participant still gets the plain
+    // chat-presence answer: absence from the list is not evidence of anything.
+    if (!user) return (presentIds || []).some((id) => String(id) === String(userId))
+
+    return this.isParticipantOnline(user, presentIds)
   }
 
   _isCurrentParticipantLoad(loadVersion, creativeId) {
@@ -422,15 +486,7 @@ export default class extends Controller {
       }
 
       if (shareChange.has_access === false) {
-        document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
-          detail: { creativeIds: [String(this.creativeId)] },
-        }))
-        alertDialog(this.element.dataset.noPermissionText || 'No permission')
-        if (this.popupController?.isDocked()) {
-          this.popupController.resetDockedToEmpty()
-        } else {
-          this.popupController?.close()
-        }
+        this.handleAccessRevoked()
         return
       }
 
@@ -484,6 +540,22 @@ export default class extends Controller {
     }
   }
 
+  handleAccessRevoked() {
+    const creativeId = this.creativeId
+    this.formController?.setCommentPermission(false)
+    this.resetParticipantState()
+    this.renderTypingIndicator()
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: [String(creativeId)] },
+    }))
+    alertDialog(this.element.dataset.noPermissionText || 'No permission')
+    if (this.popupController?.isDocked()) {
+      this.popupController.resetDockedToEmpty()
+    } else {
+      this.popupController?.close()
+    }
+  }
+
   renderParticipants(presentIds, { preserveMenus = false } = {}) {
     if (!this.hasParticipantsTarget || !this.participantsData) {
       if (this.hasParticipantsTarget) this.participantsTarget.innerHTML = ''
@@ -497,7 +569,7 @@ export default class extends Controller {
     }
     this.participantsTarget.innerHTML = ''
     this.participantsData.forEach((user) => {
-      const online = presentIds.indexOf(user.id) !== -1
+      const online = this.isParticipantOnline(user, presentIds)
       const wrapper = createUserMenu({
         user,
         online,
@@ -530,9 +602,8 @@ export default class extends Controller {
     ))
     if (!matchesParticipants) return false
 
-    const present = new Set(presentIds.map(String))
-    menus.forEach((menu) => {
-      const online = present.has(menu.dataset.commentUserMenuUserIdValue)
+    menus.forEach((menu, index) => {
+      const online = this.isParticipantOnline(this.participantsData[index], presentIds)
       menu.querySelector('.comment-presence-avatar')?.classList.toggle('inactive', !online)
       const status = menu.querySelector('.comment-user-popup-status')
       status?.classList.toggle('is-online', online)
@@ -659,17 +730,20 @@ export default class extends Controller {
 
   participantListItems(presentIds = this.currentPresentIds) {
     const present = presentIds || []
-    return (this.participantsData || []).map((user) => ({
-      id: user.id,
-      label: user.name,
-      avatarUrl: user.avatar_url,
-      iconKey: user.avatar_url ? null : 'user',
+    return (this.participantsData || []).map((user) => {
       // Offline reads the same here as it does on the avatar strip.
-      muted: present.indexOf(user.id) === -1,
-      statusLabel: present.indexOf(user.id) === -1
-        ? (this.element.dataset.participantOfflineText || 'Offline')
-        : (this.element.dataset.participantOnlineText || 'Online')
-    }))
+      const online = this.isParticipantOnline(user, present)
+      return {
+        id: user.id,
+        label: user.name,
+        avatarUrl: user.avatar_url,
+        iconKey: user.avatar_url ? null : 'user',
+        muted: !online,
+        statusLabel: online
+          ? (this.element.dataset.participantOnlineText || 'Online')
+          : (this.element.dataset.participantOfflineText || 'Offline')
+      }
+    })
   }
 
   // Selecting from the searchable list opens the same profile menu as the avatar strip.

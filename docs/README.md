@@ -37,6 +37,8 @@ thin agent entry point that indexes into this directory.
 - [google-auth.md](google-auth.md)
 - [mcp-configuration.md](mcp-configuration.md)
 - [linked_creative.md](linked_creative.md)
+- [agent_gateway_health.md](agent_gateway_health.md) — how a CLI proxy
+  gateway's `/health/ready` verdict becomes an agent's online dot.
 
 ## Operations & Infrastructure
 
