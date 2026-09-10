@@ -3,7 +3,12 @@
  */
 import { jest } from '@jest/globals'
 
-import { applyRowProperties, replaceProgressControl, updateProgressHtml } from '../tree_renderer'
+import {
+  applyRowProperties,
+  replaceProgressControl,
+  syncProgressHtmlFromDom,
+  updateProgressHtml,
+} from '../tree_renderer'
 
 const TOGGLE_HTML = '<span class="progress-toggle-wrap" data-progress-toggle="true" data-current-progress="0" data-new-progress="1" data-mark-complete="Mark complete" data-mark-incomplete="Mark incomplete" title="Mark complete"><input type="checkbox" class="progress-toggle-checkbox" aria-label="Mark complete"></span>'
 
@@ -104,4 +109,32 @@ test('preserves a dirty cron message when an incremental progress update rerende
   const input = template.content.querySelector('textarea')
   expect(input.value).toBe('\nHalf-typed message')
   expect(input.dataset.cronSavedMessage).toBe('Saved message')
+})
+
+test('does not persist transient disabled cron controls during DOM synchronization', () => {
+  const progressHtml = `
+    <span data-cron-badge-target="task" data-cron-key="cron-42">
+      <textarea data-cron-badge-target="messageInput"
+                data-cron-saved-message="Saved message">Saved message</textarea>
+      <button data-action="click->cron-badge#saveMessage">Save</button>
+    </span>
+    ${TOGGLE_HTML}
+  `
+  const row = document.createElement('creative-tree-row')
+  row.progressHtml = progressHtml
+  row.dataset.progressHtml = progressHtml
+  row.innerHTML = `<span class="creative-progress-area">${progressHtml}</span>`
+  const input = row.querySelector('textarea')
+  const button = row.querySelector('button[data-action]')
+  input.value = 'Half-typed message'
+  input.disabled = true
+  button.disabled = true
+
+  syncProgressHtmlFromDom(row)
+
+  const template = document.createElement('template')
+  template.innerHTML = row.progressHtml
+  expect(template.content.querySelector('textarea').value).toBe('Half-typed message')
+  expect(template.content.querySelector('textarea').disabled).toBe(false)
+  expect(template.content.querySelector('button').disabled).toBe(false)
 })

@@ -36,9 +36,10 @@ const COMPLETE_TOGGLE = INCOMPLETE_TOGGLE
 
 const progressWithCron = (control, message = 'Saved message') => `
   <div class="creative-row-end">
-    <span data-cron-key="cron-42">
+    <span data-cron-badge-target="task" data-cron-key="cron-42">
       <textarea data-cron-badge-target="messageInput"
                 data-cron-saved-message="${message}">\n${message}</textarea>
+      <button class="cron-task-save">Save</button>
     </span>
     ${control}
   </div>
@@ -188,7 +189,11 @@ test('preserves a dirty cron message after toggling progress on the same row', a
     }),
   })
   const row = await mountRow(progressWithCron(INCOMPLETE_TOGGLE))
-  row.querySelector('textarea').value = '\nHalf-typed message'
+  const savingInput = row.querySelector('textarea')
+  const savingButton = row.querySelector('.cron-task-save')
+  savingInput.value = '\nHalf-typed message'
+  savingInput.disabled = true
+  savingButton.disabled = true
 
   row.querySelector('[data-progress-toggle]').click()
   await Promise.resolve()
@@ -198,6 +203,8 @@ test('preserves a dirty cron message after toggling progress on the same row', a
   const input = row.querySelector('textarea')
   expect(input.value).toBe('\nHalf-typed message')
   expect(input.dataset.cronSavedMessage).toBe('Saved message')
+  expect(input.disabled).toBe(false)
+  expect(row.querySelector('.cron-task-save').disabled).toBe(false)
 })
 
 test('preserves an ancestor cron draft after a descendant progress toggle', async () => {
