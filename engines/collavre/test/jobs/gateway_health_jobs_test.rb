@@ -25,7 +25,8 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
   end
 
   test "the probe records a verdict for the gateway it names" do
-    Collavre::CliProxy::Client.stub(:new, FakeClient.new({ "status" => "ok", "engines" => {} })) do
+    body = { "status" => "ok", "engines" => { "ready" => 1, "total" => 1 } }
+    Collavre::CliProxy::Client.stub(:new, FakeClient.new(body)) do
       Collavre::GatewayHealthProbeJob.perform_now(@gateway.id)
     end
 
