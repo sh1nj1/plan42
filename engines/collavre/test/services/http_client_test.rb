@@ -16,6 +16,8 @@ module Collavre
     end
 
     FakeStreamingHttp = Struct.new(:response) do
+      attr_accessor :use_ssl, :open_timeout, :read_timeout
+
       def request(_request)
         yield response
         response
@@ -116,6 +118,24 @@ module Collavre
       result = client.send(:bounded_response, FakeStreamingHttp.new(response), Net::HTTP::Get.new("/"))
 
       assert_equal({ "ok" => true }, result.json)
+    end
+
+    test "enforces an overall deadline while a response keeps streaming" do
+      response = FakeStreamingResponse.new([], nil)
+      response.define_singleton_method(:read_body) do |&block|
+        loop do
+          sleep 0.01
+          block.call("x")
+        end
+      end
+      client = HttpClient.new(max_response_bytes: 1.megabyte, request_timeout: 0.05)
+      http = FakeStreamingHttp.new(response)
+
+      error = assert_raises(HttpClient::ConnectionError) do
+        client.stub(:build_connection, http) { client.get(ENDPOINT) }
+      end
+
+      assert_match(/Timeout::Error/, error.message)
     end
 
     test "pins policy-protected requests to the validated address" do

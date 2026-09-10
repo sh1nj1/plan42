@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "net/http"
+require "timeout"
 require "uri"
 require "json"
 
@@ -64,12 +65,13 @@ module Collavre
     end
 
     def initialize(open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT, default_headers: {},
-                   endpoint_policy: nil, max_response_bytes: nil)
+                   endpoint_policy: nil, max_response_bytes: nil, request_timeout: nil)
       @open_timeout = open_timeout
       @read_timeout = read_timeout
       @default_headers = default_headers
       @endpoint_policy = endpoint_policy
       @max_response_bytes = max_response_bytes
+      @request_timeout = request_timeout
     end
 
     def get(url, headers: {})
@@ -95,6 +97,12 @@ module Collavre
     private
 
     def request(method, url, body: nil, headers: {})
+      with_request_timeout { perform_request(method, url, body: body, headers: headers) }
+    rescue *TRANSPORT_ERRORS => e
+      raise ConnectionError, "#{e.class}: #{e.message}"
+    end
+
+    def perform_request(method, url, body:, headers:)
       uri = URI.parse(url)
       http = build_connection(uri)
       http.use_ssl = uri.scheme == "https"
@@ -105,8 +113,12 @@ module Collavre
       return Response.new(http.request(req)) unless @max_response_bytes
 
       bounded_response(http, req)
-    rescue *TRANSPORT_ERRORS => e
-      raise ConnectionError, "#{e.class}: #{e.message}"
+    end
+
+    def with_request_timeout(&block)
+      return yield unless @request_timeout
+
+      Timeout.timeout(@request_timeout, &block)
     end
 
     def build_connection(uri)

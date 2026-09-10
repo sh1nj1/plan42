@@ -12,6 +12,7 @@ module Collavre
       # waiting on one unreachable host.
       OPEN_TIMEOUT = 3
       READ_TIMEOUT = 8
+      REQUEST_TIMEOUT = OPEN_TIMEOUT + READ_TIMEOUT
       MAX_RESPONSE_BYTES = 64 * 1024
 
       ROLLUP_STATUSES = %w[ok degraded down].freeze
@@ -28,6 +29,7 @@ module Collavre
           gateway: gateway,
           open_timeout: OPEN_TIMEOUT,
           read_timeout: READ_TIMEOUT,
+          request_timeout: REQUEST_TIMEOUT,
           max_response_bytes: MAX_RESPONSE_BYTES
         )
       end

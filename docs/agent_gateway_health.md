@@ -44,9 +44,12 @@ answer from those columns, so no request path ever waits on the proxy.
 
 The response is streamed with a 64 KiB limit before JSON parsing. Only the
 bounded fields used for routing (`mode`, counts, and at most 32 engine names and
-states) are persisted. A gateway connection or credential edit immediately
-invalidates the old verdict, and an in-flight probe writes only if the row's
-`updated_at` still matches the configuration it actually called.
+states) are persisted. Each HTTP request also has an 11-second wall-clock
+deadline, so a chunked response cannot hold a worker indefinitely by sending
+small chunks just inside the per-read timeout. A gateway connection or
+credential edit immediately invalidates the old verdict, and an in-flight probe
+writes only if the row's `updated_at` still matches the configuration it
+actually called.
 
 The probe presents the gateway's **completion key**, not its admin key. The
 endpoint is unauthenticated, but the proxy only returns per-engine detail to a

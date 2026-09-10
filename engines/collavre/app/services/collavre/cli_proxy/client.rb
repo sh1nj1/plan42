@@ -19,11 +19,13 @@ module Collavre
 
       def initialize(gateway:, workspace: nil, user_key: nil, http_client: nil,
                      open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT,
-                     max_response_bytes: nil)
+                     max_response_bytes: nil, request_timeout: nil)
         @gateway = gateway
         @workspace = workspace
         @user_key = user_key
-        @http_client = http_client || default_http_client(open_timeout, read_timeout, max_response_bytes)
+        @http_client = http_client || default_http_client(
+          open_timeout, read_timeout, max_response_bytes, request_timeout
+        )
       end
 
       # Readiness rollup for the whole gateway. Unauthenticated by design — an
@@ -107,7 +109,7 @@ module Collavre
 
       private
 
-      def default_http_client(open_timeout, read_timeout, max_response_bytes)
+      def default_http_client(open_timeout, read_timeout, max_response_bytes, request_timeout)
         requires_endpoint_policy = !@gateway.owner.system_admin? &&
           !@gateway.desktop_loopback?
         policy = EndpointPolicy.new if requires_endpoint_policy
@@ -115,7 +117,8 @@ module Collavre
           open_timeout: open_timeout,
           read_timeout: read_timeout,
           endpoint_policy: policy,
-          max_response_bytes: max_response_bytes
+          max_response_bytes: max_response_bytes,
+          request_timeout: request_timeout
         )
       end
 

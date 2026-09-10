@@ -44,6 +44,15 @@ class CliProxyHealthProbeTest < ActiveSupport::TestCase
     assert_in_delta Time.current, @gateway.health_checked_at, 5
   end
 
+  test "bounds the complete health request by the open and read timeout budget" do
+    probe = Collavre::CliProxy::HealthProbe.new(gateway: @gateway)
+    client = probe.instance_variable_get(:@client)
+    http_client = client.instance_variable_get(:@http_client)
+
+    assert_equal Collavre::CliProxy::HealthProbe::REQUEST_TIMEOUT,
+                 http_client.instance_variable_get(:@request_timeout)
+  end
+
   test "persists only bounded engine state fields" do
     items = (Collavre::CliProxy::HealthProbe::ENGINE_LIMIT + 5).times.to_h do |index|
       [ "engine_#{index}", { "state" => "authenticated", "detail" => "x" * 1_000 } ]
