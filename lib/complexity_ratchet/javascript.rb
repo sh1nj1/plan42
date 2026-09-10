@@ -7,7 +7,7 @@ module ComplexityRatchet
   # The JavaScript half of the ratchet.
   #
   # The Ruby half has been gating the core engine's ~40,000 lines of app code
-  # since the `complexity` job landed. The same engine ships ~34,000 lines of
+  # since the `complexity` job landed. The same engine ships ~35,000 lines of
   # non-test JavaScript that nothing measured at all: the repository has no
   # ESLint config, no lint job for it and no devDependency, and RuboCop
   # obviously does not read `.js`. That is where the two largest source files in

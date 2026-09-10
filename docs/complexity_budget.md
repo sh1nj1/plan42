@@ -26,9 +26,9 @@ Measured on 2026-08-11, before any of this existed:
 The Ruby ratchet landed first and left half the engine unmeasured. Measured on
 2026-09-10:
 
-- The core engine ships **34,000 lines of non-test JavaScript** across 162 files,
-  against 40,000 lines of core Ruby — and the two largest source files in the
-  engine are both JavaScript.
+- The core engine ships **35,390 lines of non-test JavaScript** across 161
+  files, against 40,153 lines of core Ruby — and the two largest source files in
+  the engine are both JavaScript.
 - There was **no ESLint in the repository at all**: no config file, no lint job,
   no devDependency. Nothing measured any of it, and "no explicit configuration"
   is not the same as "no rules" only when there is a default to fall back on.
@@ -213,17 +213,17 @@ the merge base, the waivers, rules 1 to 4 — applies unchanged.
 
 Unlike the Ruby side, where RuboCop's defaults put ~90% of entities in violation
 and the budget had to be set at the 75th percentile of the violators, ESLint's
-documented defaults were already within reach. Measured over the 162 non-test
-files on 2026-09-10:
+documented defaults were already within reach. Measured over the 163 files the
+budget selects, on 2026-09-10:
 
 | Rule | Budget | Entities | Over budget | Ruby counterpart |
 |------|--------|----------|-------------|------------------|
-| `complexity` | 13 | 3,108 | 88 (2.8%) | `Metrics/CyclomaticComplexity` |
-| `max-depth` | 3 | 3,402 | 19 (0.6%) | `Metrics/BlockNesting` |
-| `max-lines` | 300 | 162 | 21 (13.0%) | `Metrics/ClassLength` |
-| `max-lines-per-function` | 50 | 3,038 | 78 (2.6%) | `Metrics/MethodLength` |
-| `max-nested-callbacks` | 10 | 1,001 | 0 (0.0%) | — |
-| `max-params` | 4 | 1,881 | 8 (0.4%) | `Metrics/ParameterLists` |
+| `complexity` | 13 | 3,123 | 88 (2.8%) | `Metrics/CyclomaticComplexity` |
+| `max-depth` | 3 | 3,448 | 19 (0.6%) | `Metrics/BlockNesting` |
+| `max-lines` | 300 | 163 | 21 (12.9%) | `Metrics/ClassLength` |
+| `max-lines-per-function` | 50 | 3,076 | 78 (2.5%) | `Metrics/MethodLength` |
+| `max-nested-callbacks` | 10 | 1,006 | 0 (0.0%) | — |
+| `max-params` | 4 | 1,920 | 8 (0.4%) | `Metrics/ParameterLists` |
 
 214 entities are over it, against 394 on the Ruby side. They are grandfathered:
 they may shrink but not grow. The budget is what *new* code has to fit, and
@@ -304,7 +304,7 @@ plus `lib/js_complexity` — the measurement holds itself to the budget it
 enforces, the way `lib/complexity_ratchet` is measured by the Metrics cops it
 runs. Tests are excluded for the reason they are excluded on the Ruby side,
 spelled out under [Entity keys](#entity-keys). The satellite engines hold about
-3,200 lines of JavaScript between them against the core's 34,000 and are not
+2,800 lines of JavaScript between them against the core's 35,000 and are not
 measured; adding them is a two-line change to `include`, which the budget check
 allows in that direction.
 
@@ -400,7 +400,7 @@ blocking gate cannot make anyone delete code.
 - **A standalone ESLint lint job.** ESLint is in this repository for exactly one
   reason: it is the only thing here that can parse modern JS and JSX well enough
   to measure it. Turning on its correctness or style rules is a separate
-  decision with a separate cost — ~34,000 lines of unlinted JavaScript would
+  decision with a separate cost — ~35,000 lines of unlinted JavaScript would
   produce thousands of offenses on day one — and bundling it into a complexity
   gate is how a gate gets switched off in week two.
 - **A test-to-app LOC ratio floor.** The core already has a healthy 1.51 ratio
