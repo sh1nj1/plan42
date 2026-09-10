@@ -455,87 +455,17 @@ module Collavre
 
     def trigger_action
       action = params[:action_name] || (request.content_type&.include?("json") ? request.request_parameters["action"] : params[:action])
+      enabled = request.content_type&.include?("json") ? request.request_parameters["enabled"] : params[:enabled]
+      result = Creatives::TriggerActionCommand.new(
+        creative: @creative,
+        user: Current.user,
+        action: action,
+        enabled: enabled
+      ).call
 
-      case action
-      when "toggle_container"
-        # Container toggle operates on effective_origin (where trigger config lives)
-        creative = @creative.effective_origin(Set.new)
-        unless creative.has_permission?(Current.user, :write)
-          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
-          return
-        end
+      return head :ok if result.success?
 
-        enabled = ActiveModel::Type::Boolean.new.cast(
-          request.content_type&.include?("json") ? request.request_parameters["enabled"] : params[:enabled]
-        )
-        data = creative.data || {}
-        trigger = data["trigger"] || {}
-        trigger["on_child_enter"] = enabled
-        data["trigger"] = trigger
-        previous_enabled = creative.drop_trigger_enabled?
-        creative.update!(data: data)
-        notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
-      when "start"
-        # Start trigger: fires DropTriggerJob as if the child was just dropped into the container
-        creative = @creative
-        unless creative.has_permission?(Current.user, :write)
-          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
-          return
-        end
-
-        parent = creative.parent
-        unless parent&.drop_trigger_enabled?
-          render json: { error: t("collavre.drop_trigger.not_a_container") }, status: :unprocessable_entity
-          return
-        end
-
-        DropTriggerJob.perform_later(parent.id, creative.id)
-
-      when "pause", "resume", "restart"
-        # Loop actions operate on the creative itself (where loop state lives)
-        creative = @creative
-        unless creative.has_permission?(Current.user, :write)
-          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
-          return
-        end
-
-        data = creative.data || {}
-        trigger = data["trigger"] || {}
-        loop_data = trigger["loop"]
-
-        case action
-        when "pause"
-          if loop_data && %w[running pending_verification].include?(loop_data["state"])
-            loop_data["state"] = "paused"
-            trigger["loop"] = loop_data
-            data["trigger"] = trigger
-            creative.update!(data: data)
-          end
-        when "resume"
-          if loop_data && %w[paused idle stuck awaiting_user].include?(loop_data["state"])
-            loop_data["state"] = "running"
-            trigger["loop"] = loop_data
-            data["trigger"] = trigger
-            creative.update!(data: data)
-            post_continue_to_agent(creative, loop_data)
-          end
-        when "restart"
-          if loop_data && %w[completed max_reached stuck].include?(loop_data["state"])
-            loop_data["state"] = "running"
-            loop_data["current_iteration"] = 0
-            loop_data["infra_retry_count"] = 0
-            trigger["loop"] = loop_data
-            data["trigger"] = trigger
-            creative.update!(data: data)
-            post_restart_trigger(creative)
-          end
-        end
-      else
-        render json: { error: "Unknown action" }, status: :unprocessable_entity
-        return
-      end
-
-      head :ok
+      render json: { error: result.error }, status: result.status
     end
 
     def archive
@@ -726,93 +656,8 @@ module Collavre
         @reorderer ||= ::Creatives::Reorderer.new(user: Current.user)
       end
 
-      # Resume: post a continue instruction so the agent picks up where it left off.
-      # Creates a comment that triggers dispatch via after_create_commit.
-      def post_continue_to_agent(creative, loop_data)
-        parent = creative.parent
-        unless parent
-          Rails.logger.warn("[TriggerAction] resume: no parent for creative #{creative.id}")
-          return
-        end
-
-        topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.find_ai_agent(:write)
-        unless topic && agent
-          Rails.logger.warn("[TriggerAction] resume: missing topic=#{topic&.id} or agent for creative #{creative.id}")
-          return
-        end
-
-        iteration = loop_data["current_iteration"] || 0
-        max = loop_data["max_iterations"] || 10
-        content = "@#{agent.name}: #{t(
-          'collavre.trigger_loop.continue',
-          iteration: iteration,
-          max: max
-        )}"
-
-        # Use Current.user (human who clicked resume) as comment author
-        # so dispatch_to_orchestration doesn't skip it (it skips ai_user? authors)
-        comment = creative.comments.create!(
-          content: content,
-          topic_id: topic.id,
-          private: false,
-          user: Current.user,
-          skip_dispatch: false
-        )
-        Rails.logger.info("[TriggerAction] resume: posted continue comment #{comment.id} for creative #{creative.id}")
-      end
-
-      # Restart: create a fresh trigger comment and dispatch it explicitly.
-      # Uses skip_dispatch:true + manual SystemEvents dispatch to bypass
-      # after_create_commit (which would skip if user is ai_user?).
-      def post_restart_trigger(creative)
-        parent = creative.parent
-        unless parent
-          Rails.logger.warn("[TriggerAction] restart: no parent for creative #{creative.id}")
-          return
-        end
-
-        topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.find_ai_agent(:write)
-        unless topic && agent
-          Rails.logger.warn("[TriggerAction] restart: missing topic=#{topic&.id} or agent for creative #{creative.id}")
-          return
-        end
-
-        trigger_text = t(
-          "collavre.drop_trigger.child_entered",
-          child_description: creative.creative_snippet,
-          child_id: creative.id,
-          parent_description: parent.creative_snippet
-        )
-        loop_instructions = t("collavre.trigger_loop.instructions")
-        content = "@#{agent.name}: #{trigger_text}\n\n#{loop_instructions}"
-
-        comment = creative.comments.create!(
-          content: content,
-          topic_id: topic.id,
-          private: false,
-          user: Current.user,
-          skip_dispatch: true
-        )
-
-        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "trigger_restart")
-        Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
-      end
-
       def notify_drop_trigger_missing_agent!(creative)
-        return if creative.find_ai_agent(:write)
-
-        topic = creative.topics.find_or_create_by!(name: "Drop Trigger") do |t|
-          t.user = creative.user
-        end
-
-        creative.comments.create!(
-          content: t("collavre.drop_trigger.no_agent", parent_description: creative.creative_snippet),
-          topic_id: topic.id,
-          private: false,
-          skip_default_user: true
-        )
+        Creatives::DropTriggerMissingAgentNotifier.new(creative: creative).call
       end
 
       def enforce_creatives_login_policy
