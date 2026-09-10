@@ -152,6 +152,29 @@ describe('CronBadgeController', () => {
     expect(input.disabled).toBe(false)
   })
 
+  test('keeps replacement controls disabled until an in-flight update settles', async () => {
+    let resolveUpdate
+    csrfFetch.mockReturnValue(new Promise(resolve => { resolveUpdate = resolve }))
+    alertDialog.mockResolvedValue(undefined)
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const button = task.querySelector('[data-cron-update-url]')
+
+    button.click()
+    const replacement = element.cloneNode(true)
+    element.replaceWith(replacement)
+    const replacementTask = replacement.querySelector('[data-cron-badge-target="task"]')
+
+    expect(replacementTask.querySelector('textarea').disabled).toBe(true)
+    expect(replacementTask.querySelector('[data-cron-update-url]').disabled).toBe(true)
+
+    resolveUpdate({ ok: false, status: 500 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(replacementTask.hasAttribute('data-cron-save-operation')).toBe(false)
+    expect(replacementTask.querySelector('textarea').disabled).toBe(false)
+    expect(replacementTask.querySelector('[data-cron-update-url]').disabled).toBe(false)
+  })
+
   test('refreshes the CSRF token and retries a message update after a payload-less 422 response', async () => {
     csrfFetch
       .mockResolvedValueOnce(response({ ok: false, status: 422 }))

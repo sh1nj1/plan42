@@ -203,8 +203,8 @@ test('preserves a dirty cron message after toggling progress on the same row', a
   const input = row.querySelector('textarea')
   expect(input.value).toBe('\nHalf-typed message')
   expect(input.dataset.cronSavedMessage).toBe('Saved message')
-  expect(input.disabled).toBe(false)
-  expect(row.querySelector('.cron-task-save').disabled).toBe(false)
+  expect(input.disabled).toBe(true)
+  expect(row.querySelector('.cron-task-save').disabled).toBe(true)
 })
 
 test('preserves an ancestor cron draft after a descendant progress toggle', async () => {

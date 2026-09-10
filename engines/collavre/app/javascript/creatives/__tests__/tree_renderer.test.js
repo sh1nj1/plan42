@@ -111,7 +111,7 @@ test('preserves a dirty cron message when an incremental progress update rerende
   expect(input.dataset.cronSavedMessage).toBe('Saved message')
 })
 
-test('does not persist transient disabled cron controls during DOM synchronization', () => {
+test('keeps in-flight cron controls disabled during DOM synchronization', () => {
   const progressHtml = `
     <span data-cron-badge-target="task" data-cron-key="cron-42">
       <textarea data-cron-badge-target="messageInput"
@@ -135,6 +135,6 @@ test('does not persist transient disabled cron controls during DOM synchronizati
   const template = document.createElement('template')
   template.innerHTML = row.progressHtml
   expect(template.content.querySelector('textarea').value).toBe('Half-typed message')
-  expect(template.content.querySelector('textarea').disabled).toBe(false)
-  expect(template.content.querySelector('button').disabled).toBe(false)
+  expect(template.content.querySelector('textarea').disabled).toBe(true)
+  expect(template.content.querySelector('button').disabled).toBe(true)
 })

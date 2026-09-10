@@ -3,6 +3,8 @@ import { alertDialog, confirmDialog } from '../lib/utils/dialog'
 import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 import csrfFetch, { refreshCsrfToken } from '../lib/api/csrf_fetch'
 
+let saveOperationSequence = 0
+
 export default class extends Controller {
   static targets = ['badge', 'count', 'task', 'messageInput']
   static values = {
@@ -21,10 +23,12 @@ export default class extends Controller {
     event.preventDefault()
     event.stopPropagation()
     const button = event.currentTarget
-    const input = button.closest('[data-cron-badge-target="task"]')
-      ?.querySelector('[data-cron-badge-target="messageInput"]')
+    const task = button.closest('[data-cron-badge-target="task"]')
+    const input = task?.querySelector('[data-cron-badge-target="messageInput"]')
     if (!input) return
 
+    const operationId = String(++saveOperationSequence)
+    task.dataset.cronSaveOperation = operationId
     button.disabled = true
     input.disabled = true
 
@@ -38,9 +42,23 @@ export default class extends Controller {
       console.error(error)
       await alertDialog(this.updateErrorValue)
     } finally {
-      button.disabled = false
-      input.disabled = false
+      this.finishMessageSave(task, operationId)
     }
+  }
+
+  finishMessageSave(task, operationId) {
+    const currentTask = document.querySelector(
+      `[data-cron-save-operation="${operationId}"]`
+    )
+    new Set([task, currentTask]).forEach(candidate => {
+      if (!candidate || candidate.dataset.cronSaveOperation !== operationId) return
+
+      delete candidate.dataset.cronSaveOperation
+      const input = candidate.querySelector('[data-cron-badge-target="messageInput"]')
+      const button = candidate.querySelector('[data-action~="click->cron-badge#saveMessage"]')
+      if (input) input.disabled = false
+      if (button) button.disabled = false
+    })
   }
 
   async destroy(event) {

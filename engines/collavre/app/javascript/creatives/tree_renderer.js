@@ -30,9 +30,6 @@ export function syncProgressHtmlFromDom(row) {
   const wrapper = row.querySelector('.creative-progress-area')
   if (!wrapper) return
   const clone = wrapper.cloneNode(true)
-  clone.querySelectorAll('[data-cron-badge-target="task"] [disabled]').forEach(control => {
-    control.removeAttribute('disabled')
-  })
   const inputs = wrapper.querySelectorAll('[data-cron-badge-target="messageInput"]')
   const clonedInputs = clone.querySelectorAll('[data-cron-badge-target="messageInput"]')
   inputs.forEach((input, index) => {
