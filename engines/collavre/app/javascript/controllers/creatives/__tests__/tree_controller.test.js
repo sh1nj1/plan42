@@ -157,6 +157,99 @@ describe('CreativesTreeController retry on transient network errors', () => {
   })
 })
 
+describe('CreativesTreeController cron message drafts', () => {
+  let originalFetch
+
+  const cronRow = (message, { editable = true } = {}) => `
+    <creative-tree-row creative-id="1">
+      <span data-cron-key="creative-1">
+        ${editable
+          ? `<textarea data-cron-badge-target="messageInput"
+                       data-cron-saved-message="${message}">${message}</textarea>`
+          : `<span class="cron-task-message">${message}</span>`}
+      </span>
+    </creative-tree-row>
+  `
+
+  const installCachedTree = async (html) => {
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
+    container.dataset.loaded = 'true'
+    container.innerHTML = html
+    document.body.appendChild(container)
+
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    return { container, application, controller }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ creatives: [{ id: 1 }] }),
+    })
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    renderCreativeTree.mockReset()
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('preserves a dirty cron message across a preserved tree reload', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'Half-typed message'
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = cronRow('Server message')
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed message')
+    expect(input.dataset.cronSavedMessage).toBe('Server message')
+    application.stop()
+  })
+
+  test('uses the refreshed cron message when the local message is clean', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = cronRow('Server message')
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea').value).toBe('Server message')
+    application.stop()
+  })
+
+  test('does not restore a dirty cron message after edit access is lost', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'Half-typed message'
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = cronRow('Server message', { editable: false })
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea')).toBeNull()
+    expect(container.querySelector('.cron-task-message').textContent).toBe('Server message')
+    application.stop()
+  })
+})
+
 describe('CreativesTreeController Chats pagination (load more)', () => {
   let originalFetch
   let originalIO

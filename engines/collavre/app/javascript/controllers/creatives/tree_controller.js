@@ -40,6 +40,7 @@ export default class extends Controller {
     this._loadMoreAbort = null
     this._loadMoreIndicator = null
     this._pendingViewState = null
+    this._pendingCronMessageDrafts = null
     this._viewRestoreGeneration = 0
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
@@ -225,6 +226,9 @@ export default class extends Controller {
     this._pendingViewState = preserveView
       ? (this._pendingViewState || captureCreativeTreeViewState(this.element))
       : null
+    this._pendingCronMessageDrafts = preserveView
+      ? (this._pendingCronMessageDrafts || this.captureCronMessageDrafts())
+      : null
 
     // A fresh load replaces the whole list (filter change, archive toggle, sync
     // refetch), so any active load-more session is stale — tear it down before
@@ -280,6 +284,7 @@ export default class extends Controller {
   async renderData(data, viewRestoreGeneration = this._viewRestoreGeneration) {
     const nodes = Array.isArray(data?.creatives) ? data.creatives : []
     const viewState = this._pendingViewState
+    const cronMessageDrafts = this._pendingCronMessageDrafts
     const isCurrent = () => viewRestoreGeneration === this._viewRestoreGeneration
 
     if (nodes.length === 0) {
@@ -287,16 +292,45 @@ export default class extends Controller {
       dispatchCreativeTreeUpdated(this.element)
       await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
       if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
+      if (isCurrent() && this._pendingCronMessageDrafts === cronMessageDrafts) {
+        this._pendingCronMessageDrafts = null
+      }
       return
     }
 
     renderCreativeTree(this.element, nodes)
+    this.restoreCronMessageDrafts(cronMessageDrafts)
     this.markContentLoaded()
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
     this._setupPagination(data?.pagination)
     await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
     if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
+    if (isCurrent() && this._pendingCronMessageDrafts === cronMessageDrafts) {
+      this._pendingCronMessageDrafts = null
+    }
+  }
+
+  captureCronMessageDrafts() {
+    const drafts = new Map()
+    this.element.querySelectorAll('[data-cron-key]').forEach(task => {
+      const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+      if (input && input.value !== input.dataset.cronSavedMessage) {
+        drafts.set(task.dataset.cronKey, input.value)
+      }
+    })
+    return drafts
+  }
+
+  restoreCronMessageDrafts(drafts) {
+    if (!drafts) return
+
+    this.element.querySelectorAll('[data-cron-key]').forEach(task => {
+      if (!drafts.has(task.dataset.cronKey)) return
+
+      const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+      if (input) input.value = drafts.get(task.dataset.cronKey)
+    })
   }
 
   // --- Load-more (paginated "Chats" feed) -------------------------------------
