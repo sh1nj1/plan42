@@ -350,8 +350,8 @@ above) between them name all but a handful: of the engine's 214 over-budget
 entities, thirteen needed a position before those rules and four after — the
 worst being an eleven-way `useCallback` group in one component.
 
-What is left is anchored to an **FNV digest of its own source**, whitespace
-collapsed, so reindenting does not move a key but editing does:
+What is left is anchored to an **FNV digest of its own source**, normalised so
+that reindenting does not move a key but editing does:
 
 ```
 Row#connect>[items.map]#2842ca41
@@ -368,6 +368,30 @@ Only **byte-identical** twins still take an ordinal — `#2842ca41(1/2)` — and
 those measure identically, so any permutation of them is a no-op. One entity in
 the engine is in that position; the other three are distinct and now keyed
 apart.
+
+"Byte-identical" has to be meant literally, and two rounds of review on #1651
+found it was not. Both holes ended the same way — two entities that measure
+differently sharing an anchor, falling back on an ordinal, and landing back on
+slot identity:
+
+- **The digest was the grouping key.** One 32-bit FNV word collides often enough
+  that a brute-force search turns up a pair of ordinary-looking callbacks in
+  seconds; `(row) => { total += 91098 }` and `(row) => { total += 802942 }` are
+  one such pair. Twins are grouped by their **source text** now, and the digest
+  widens a word at a time until distinct bodies have distinct anchors. The first
+  width is a plain FNV-1a, so a group that does not actually collide keeps
+  exactly the key it always had.
+- **Normalisation collapsed newlines.** `max-lines-per-function` counts lines,
+  so two callbacks differing only in where a template literal's text wraps
+  measured 5 and 4 while normalising to the same string. Normalisation now
+  collapses only what the rules cannot see: runs of horizontal whitespace, any
+  horizontal whitespace around a newline, and runs of newlines (the rules run
+  with `skipBlankLines`). Every newline that separates content survives.
+
+Comments are the one thing left that moves a digest without moving a measurement
+— `skipComments` is on — so editing a comment inside an over-budget twin re-keys
+it. That is the loud direction, and telling comments from their look-alikes
+inside strings needs the token stream, which is a lot of machinery for a twin.
 
 The costs, both of which are the gate being loud about something it cannot
 attribute rather than quiet about something it can:
