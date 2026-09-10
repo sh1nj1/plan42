@@ -428,8 +428,19 @@ slot identity:
   bucket, collapsing two callbacks that measured 5 and 4 onto one anchor. The
   set now matches ESLint's. `\v` and `\f` are not in it and stay horizontal.
 
-One more, in the statement fallback rather than the digest: **`max-depth` is the
-only measurement here that is not a property of the entity's own text.** Two
+Two more, in what the digest covers rather than in how it normalises. **Two of
+these rules do not measure what the entity says.** Every other one — `complexity`,
+`max-params`, `max-lines-per-function` — is a function of the entity's own text,
+so a digest of that text determines it. These two are not, and each of them
+produced a pair of byte-identical same-named twins that shared an anchor while
+measuring differently:
+
+| Rule | What it actually measures | Carried in the anchor by |
+|---|---|---|
+| `max-depth` | where a statement *sits* | `depthsOf` |
+| `max-nested-callbacks` | how deep a function is in callbacks | `callbackDepthsOf` |
+
+Taking `max-depth` first: **it is not a property of the entity's own text.** Two
 byte-identical `if (a) { y() }` statements in one function sit at different
 depths when one of them is inside another guard, so they measure differently —
 and being byte-identical, they shared an anchor and fell back on the ordinal.
@@ -474,6 +485,32 @@ and everything after it measures too shallow. Reproducing that is the point —
 the key has to match the number ESLint actually reported, not the one it should
 have. `depthsOf` is a single pass written to read like the rule, so an ESLint
 upgrade that fixes the quirk is a diff against one function.
+
+`max-nested-callbacks` is the same shape, and it is the one I argued could not
+have the problem: twins sit in one scope by construction, so surely they nest
+identically. They do not. The rule pops on **every** function exit but pushes
+only for a function whose parent is a call, so a function expression that is
+not a callback pops a level it never added, and everything after it in the
+scope counts one lower:
+
+```js
+a(function () {
+  items.map((row) => { total += row.n })   // 2
+  const helper = function () { return 1 }  // pops without having pushed
+  items.map((row) => { total += row.n })   // 1 — same name, same source
+})
+```
+
+Byte-identical and same-named, those two shared an anchor and took an ordinal.
+`callbackDepthsOf` mirrors the rule and the height goes into the digest.
+`FunctionDeclaration` is deliberately absent from it — the rule does not handle
+that type at all, so it neither pushes nor pops, and anchoring on something the
+measurement cannot see would separate twins for no reason.
+
+The general statement, which is what the next rule added to the budget should be
+checked against: **a key must determine its measurement.** For each rule, either
+the value is a function of the entity's own text, or whatever else it depends on
+belongs in the anchor.
 
 Comments are the one thing left that moves a digest without moving a measurement
 — `skipComments` is on — so editing a comment inside an over-budget twin re-keys
