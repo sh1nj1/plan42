@@ -92,29 +92,31 @@ export default class extends Controller {
     event.preventDefault()
     event.stopPropagation()
     const button = event.currentTarget
+    const releaseTreeReload = this.holdCreativeTreeReload()
 
-    if (!(await confirmDialog(this.deleteConfirmValue, { danger: true }))) return
+    try {
+      if (!(await confirmDialog(this.deleteConfirmValue, { danger: true }))) return
 
-		const releaseTreeReload = this.holdCreativeTreeReload()
 		const task = button.closest('[data-cron-badge-target="task"]')
 		const operationId = String(++cronOperationSequence)
 		task.dataset.cronDeleteOperation = operationId
 		button.disabled = true
 
-    try {
-      const response = await this.deleteCron(button.dataset.cronDeleteUrl)
-      if (!response.ok) throw new Error(`Cron delete failed (${response.status})`)
+		try {
+			const response = await this.deleteCron(button.dataset.cronDeleteUrl)
+			if (!response.ok) throw new Error(`Cron delete failed (${response.status})`)
 
 			this.deleteOperationTasks(task, operationId).forEach(candidate => {
 				const badge = candidate.closest('[data-controller~="cron-badge"]')
 				candidate.remove()
 				this.refreshCount(badge)
 			})
-      invalidateCreativeTree()
-    } catch (error) {
-      console.error(error)
+			invalidateCreativeTree()
+		} catch (error) {
+			console.error(error)
 			this.finishCronDelete(task, operationId)
-      await alertDialog(this.deleteErrorValue)
+			await alertDialog(this.deleteErrorValue)
+		}
 		} finally {
 			releaseTreeReload()
     }
