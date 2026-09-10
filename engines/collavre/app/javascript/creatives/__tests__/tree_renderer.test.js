@@ -78,3 +78,30 @@ test('replaces the progress control when a remote update changes binary eligibil
 
   expect(row.progressHtml).toBe(TOGGLE_HTML)
 })
+
+test('preserves a dirty cron message when an incremental progress update rerenders the row', () => {
+  const progressHtml = `
+    <span data-cron-key="cron-42">
+      <textarea data-cron-badge-target="messageInput"
+                data-cron-saved-message="Saved message">Saved message</textarea>
+    </span>
+    ${TOGGLE_HTML}
+  `
+  const row = document.createElement('creative-tree-row')
+  row.progressHtml = progressHtml
+  row.dataset.progressHtml = progressHtml
+  row.innerHTML = `<span class="creative-progress-area">${progressHtml}</span>`
+  row.requestUpdate = jest.fn()
+  row.querySelector('textarea').value = '\nHalf-typed message'
+
+  applyRowProperties(row, {
+    inline_editor_payload: { progress: 0.5 },
+    progress_control_html: '<span class="creative-progress-incomplete">50%</span>',
+  })
+
+  const template = document.createElement('template')
+  template.innerHTML = row.progressHtml
+  const input = template.content.querySelector('textarea')
+  expect(input.value).toBe('\nHalf-typed message')
+  expect(input.dataset.cronSavedMessage).toBe('Saved message')
+})

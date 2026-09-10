@@ -299,6 +299,13 @@ export default class extends Controller {
     }
 
     renderCreativeTree(this.element, nodes)
+    await Promise.all(
+      Array.from(
+        this.element.querySelectorAll('creative-tree-row'),
+        row => row.updateComplete
+      )
+    )
+    if (!isCurrent()) return
     this.restoreCronMessageDrafts(cronMessageDrafts)
     this.markContentLoaded()
     dispatchCreativeTreeUpdated(this.element)

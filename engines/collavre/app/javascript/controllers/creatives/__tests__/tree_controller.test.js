@@ -160,15 +160,17 @@ describe('CreativesTreeController retry on transient network errors', () => {
 describe('CreativesTreeController cron message drafts', () => {
   let originalFetch
 
-  const cronRow = (message, { editable = true } = {}) => `
-    <creative-tree-row creative-id="1">
-      <span data-cron-key="creative-1">
-        ${editable
-          ? `<textarea data-cron-badge-target="messageInput"
-                       data-cron-saved-message="${message}">${message}</textarea>`
-          : `<span class="cron-task-message">${message}</span>`}
-      </span>
-    </creative-tree-row>
+  const cronTask = (message, { editable = true } = {}) => `
+    <span data-cron-key="creative-1">
+      ${editable
+        ? `<textarea data-cron-badge-target="messageInput"
+                     data-cron-saved-message="${message}">${message}</textarea>`
+        : `<span class="cron-task-message">${message}</span>`}
+    </span>
+  `
+
+  const cronRow = (message, options = {}) => `
+    <creative-tree-row creative-id="1">${cronTask(message, options)}</creative-tree-row>
   `
 
   const installCachedTree = async (html) => {
@@ -216,6 +218,61 @@ describe('CreativesTreeController cron message drafts', () => {
     const input = container.querySelector('textarea')
     expect(input.value).toBe('Half-typed message')
     expect(input.dataset.cronSavedMessage).toBe('Server message')
+    application.stop()
+  })
+
+  test('waits for Lit rows to render before restoring a dirty cron message', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'Half-typed message'
+    let finishRowUpdate
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
+      const row = element.querySelector('creative-tree-row')
+      row.updateComplete = new Promise((resolve) => {
+        finishRowUpdate = () => {
+          row.innerHTML = cronTask('Server message')
+          resolve(true)
+        }
+      })
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea')).toBeNull()
+    finishRowUpdate()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed message')
+    expect(input.dataset.cronSavedMessage).toBe('Server message')
+    application.stop()
+  })
+
+  test('does not restore a dirty cron message into a superseded Lit render', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    const drafts = new Map([['creative-1', 'Half-typed message']])
+    controller._pendingCronMessageDrafts = drafts
+    let finishRowUpdate
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
+      const row = element.querySelector('creative-tree-row')
+      row.updateComplete = new Promise((resolve) => {
+        finishRowUpdate = () => {
+          row.innerHTML = cronTask('Server message')
+          resolve(true)
+        }
+      })
+    })
+
+    const rendering = controller.renderData({ creatives: [{ id: 1 }] })
+    controller._viewRestoreGeneration += 1
+    finishRowUpdate()
+    await rendering
+
+    expect(container.querySelector('textarea').value).toBe('Server message')
+    expect(controller._pendingCronMessageDrafts).toBe(drafts)
     application.stop()
   })
 
@@ -1125,6 +1182,7 @@ describe('CreativesTreeController requestReload', () => {
     })
 
     const restoration = controller.renderData({ creatives: [{ id: 1 }] })
+    await flush()
     expect(controller._pendingViewState).toBe(viewState)
 
     controller.load({ preserveView: true })
