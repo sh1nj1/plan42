@@ -1109,16 +1109,49 @@ creative-tree-row.is-being-edited .creative-tree {
     white-space: pre-wrap;
 }
 
+.cron-task-message-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 5em;
+    padding: var(--space-2);
+    border: var(--border-1) solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-input);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-0);
+    resize: vertical;
+}
+
+.cron-task-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.cron-task-save,
 .cron-task-delete {
     display: inline-flex;
+    flex: 1;
     justify-content: center;
-    width: 100%;
     padding: var(--space-2);
-    border: var(--border-1) solid var(--color-danger);
     border-radius: var(--radius-2);
     background: transparent;
-    color: var(--color-danger);
     cursor: pointer;
+}
+
+.cron-task-save {
+    border: var(--border-1) solid var(--color-active);
+    color: var(--color-active);
+}
+
+.cron-task-save:hover,
+.cron-task-save:focus-visible {
+    background: color-mix(in srgb, var(--color-active) 12%, transparent);
+}
+
+.cron-task-delete {
+    border: var(--border-1) solid var(--color-danger);
+    color: var(--color-danger);
 }
 
 .cron-task-delete:hover,

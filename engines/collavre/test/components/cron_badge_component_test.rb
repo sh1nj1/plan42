@@ -21,8 +21,9 @@ class CronBadgeComponentTest < ViewComponent::TestCase
     assert_selector "[data-cron-badge-count-one-value='__count__ scheduled job']"
     assert_selector "button.creative-cron-badge[data-cron-badge-target='badge']", text: "1"
     assert_selector ".cron-task code", text: "0 9 * * *"
-    assert_selector ".cron-task-message", text: "Daily summary"
+    assert_selector "textarea.cron-task-message-input[data-cron-badge-target='messageInput'][data-cron-saved-message='Daily summary']", text: "Daily summary"
     assert_selector "time[datetime='#{time.iso8601}']"
+    assert_selector "button.cron-task-save[data-cron-update-url='/creatives/42/crons/cron_42_daily']", text: "Save"
     assert_selector "button.cron-task-delete[data-cron-delete-url='/creatives/42/crons/cron_42_daily']"
   end
 
@@ -34,6 +35,8 @@ class CronBadgeComponentTest < ViewComponent::TestCase
     )
 
     assert_text "Not available", count: 2
+    assert_no_selector ".cron-task-message-input"
+    assert_no_selector ".cron-task-save"
     assert_no_selector ".cron-task-delete"
   end
 

@@ -32,15 +32,20 @@ describe('CronBadgeController', () => {
       <span data-controller="cron-badge"
             data-cron-badge-delete-confirm-value="Delete it?"
             data-cron-badge-delete-error-value="Delete failed"
+            data-cron-badge-update-error-value="Update failed"
             data-cron-badge-count-one-value="__count__ scheduled job"
             data-cron-badge-count-other-value="__count__ scheduled jobs">
         <button data-cron-badge-target="badge" title="2 scheduled jobs" aria-label="2 scheduled jobs">
           <span data-cron-badge-target="count">2</span>
         </button>
         <span data-cron-badge-target="task">
+          <textarea data-cron-badge-target="messageInput">First message</textarea>
+          <button data-action="click->cron-badge#saveMessage" data-cron-update-url="/creatives/42/crons/one">Save</button>
           <button data-action="click->cron-badge#destroy" data-cron-delete-url="/creatives/42/crons/one">Delete</button>
         </span>
         <span data-cron-badge-target="task">
+          <textarea data-cron-badge-target="messageInput">Second message</textarea>
+          <button data-action="click->cron-badge#saveMessage" data-cron-update-url="/creatives/42/crons/two">Save</button>
           <button data-action="click->cron-badge#destroy" data-cron-delete-url="/creatives/42/crons/two">Delete</button>
         </span>
       </span>
@@ -76,6 +81,79 @@ describe('CronBadgeController', () => {
     expect(controller.countTarget.textContent).toBe('1')
     expect(controller.badgeTarget.title).toBe('1 scheduled job')
     expect(controller.badgeTarget.getAttribute('aria-label')).toBe('1 scheduled job')
+  })
+
+  test('refreshes the plural count label', () => {
+    controller.refreshCount()
+
+    expect(controller.countTarget.textContent).toBe('2')
+    expect(controller.badgeTarget.title).toBe('2 scheduled jobs')
+    expect(controller.badgeTarget.getAttribute('aria-label')).toBe('2 scheduled jobs')
+  })
+
+  test('updates a task message and refreshes creative trees', async () => {
+    const refetch = jest.fn()
+    const invalidate = jest.fn()
+    document.addEventListener('creative-sync:refetch', refetch)
+    document.addEventListener('workspace-tree:invalidate', invalidate)
+    csrfFetch.mockResolvedValue({ ok: true, status: 200 })
+
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+    const button = task.querySelector('[data-cron-update-url]')
+    input.value = 'Updated message'
+    button.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(csrfFetch).toHaveBeenCalledWith('/creatives/42/crons/one', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Updated message' }),
+    })
+    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    expect(input.dataset.cronSavedMessage).toBe('Updated message')
+    expect(button.disabled).toBe(false)
+    expect(input.disabled).toBe(false)
+    document.removeEventListener('creative-sync:refetch', refetch)
+    document.removeEventListener('workspace-tree:invalidate', invalidate)
+  })
+
+  test('ignores a message update when its input is missing', async () => {
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    task.querySelector('[data-cron-badge-target="messageInput"]').remove()
+
+    task.querySelector('[data-cron-update-url]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(csrfFetch).not.toHaveBeenCalled()
+  })
+
+  test('reports a failed message update and restores the controls', async () => {
+    csrfFetch.mockResolvedValue({ ok: false, status: 500 })
+    alertDialog.mockResolvedValue(undefined)
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+    const button = task.querySelector('[data-cron-update-url]')
+
+    button.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(alertDialog).toHaveBeenCalledWith('Update failed')
+    expect(button.disabled).toBe(false)
+    expect(input.disabled).toBe(false)
+  })
+
+  test('refreshes the CSRF token and retries a message update after a 422 response', async () => {
+    csrfFetch
+      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+
+    element.querySelector('[data-cron-update-url]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(refreshCsrfToken).toHaveBeenCalledTimes(1)
+    expect(csrfFetch).toHaveBeenCalledTimes(2)
   })
 
   test('removes the badge after deleting its last task', async () => {

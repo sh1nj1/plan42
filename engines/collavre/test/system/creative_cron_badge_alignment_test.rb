@@ -47,4 +47,16 @@ class CreativeCronBadgeAlignmentTest < ApplicationSystemTestCase
 
     assert_in_delta positions.fetch("checkbox"), positions.fetch("badge"), 1
   end
+
+  test "edits the scheduled message from the cron badge popup" do
+    visit collavre.creatives_path(has_cron: "true")
+    row_selector = "#creative-#{@creative.id}"
+
+    find("#{row_selector} .creative-cron-badge").click
+    find("#{row_selector} .cron-task-message-input").set("Updated scheduled message")
+    find("#{row_selector} .cron-task-save").click
+
+    assert_selector "#{row_selector} .cron-task-message-input[data-cron-saved-message='Updated scheduled message']", visible: :all
+    assert_equal "Updated scheduled message", @task.class.find(@task.id).arguments.first.stringify_keys.fetch("message")
+  end
 end

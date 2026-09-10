@@ -2,6 +2,7 @@
       data-controller="popup-menu cron-badge"
       data-cron-badge-delete-confirm-value="<%= t('collavre.crons.delete_confirm') %>"
       data-cron-badge-delete-error-value="<%= t('collavre.crons.delete_error') %>"
+      data-cron-badge-update-error-value="<%= t('collavre.crons.update_error') %>"
       data-cron-badge-count-one-value="<%= t('collavre.crons.count_one') %>"
       data-cron-badge-count-other-value="<%= t('collavre.crons.count_other') %>">
   <button type="button"
@@ -30,10 +31,20 @@
           <span class="cron-task-label"><%= t('collavre.crons.schedule') %></span>
           <code><%= task.schedule %></code>
         </span>
-        <span class="cron-task-field">
-          <span class="cron-task-label"><%= t('collavre.crons.message') %></span>
-          <span class="cron-task-message"><%= task_message(task) %></span>
-        </span>
+        <% if can_manage? %>
+          <label class="cron-task-field">
+            <span class="cron-task-label"><%= t('collavre.crons.message') %></span>
+            <textarea class="cron-task-message-input"
+                      rows="3"
+                      data-cron-badge-target="messageInput"
+                      data-cron-saved-message="<%= task_message_value(task) %>"><%= task_message_value(task) %></textarea>
+          </label>
+        <% else %>
+          <span class="cron-task-field">
+            <span class="cron-task-label"><%= t('collavre.crons.message') %></span>
+            <span class="cron-task-message"><%= task_message(task) %></span>
+          </span>
+        <% end %>
         <span class="cron-task-field">
           <span class="cron-task-label"><%= t('collavre.crons.next_run') %></span>
           <% if task_next_run %>
@@ -42,13 +53,21 @@
             <span><%= next_run_label(task_next_run) %></span>
           <% end %>
         </span>
-        <% if can_delete? %>
-          <button type="button"
-                  class="cron-task-delete"
-                  data-action="click->cron-badge#destroy"
-                  data-cron-delete-url="<%= destroy_path(task) %>">
-            <%= t('collavre.crons.delete') %>
-          </button>
+        <% if can_manage? %>
+          <span class="cron-task-actions">
+            <button type="button"
+                    class="cron-task-save"
+                    data-action="click->cron-badge#saveMessage"
+                    data-cron-update-url="<%= update_path(task) %>">
+              <%= t('app.save') %>
+            </button>
+            <button type="button"
+                    class="cron-task-delete"
+                    data-action="click->cron-badge#destroy"
+                    data-cron-delete-url="<%= destroy_path(task) %>">
+              <%= t('collavre.crons.delete') %>
+            </button>
+          </span>
         <% end %>
       </span>
     <% end %>
