@@ -299,6 +299,83 @@ describe('PopupMenuController', () => {
       expect(menu.style.top).toBe('76px')
     })
 
+    // Pinch zoom shrinks the visual viewport below the menu's stylesheet floor
+    // (220px, 240px for the comment user popup). CSS resolves min-width over
+    // max-width, so capping the width alone leaves the menu wider than the
+    // screen with its right edge off in the part you cannot scroll to.
+    const stubStylesheetMinWidth = (value) => {
+      const style = document.createElement('style')
+      style.textContent = `.popup-menu { min-width: ${value}; }`
+      document.head.appendChild(style)
+      menu.classList.add('popup-menu')
+      return style
+    }
+
+    test('drops the stylesheet minimum when the strip is narrower than it', async () => {
+      const style = stubStylesheetMinWidth('240px')
+      stubVisualViewport({ width: 195, height: 400, offsetLeft: 0, offsetTop: 0 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 40, bottom: 60, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 153, left: 0, right: 240, width: 240, height: 153
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      // 195 - 4 * 2 of usable width: the floor has to come down with the cap,
+      // otherwise the menu stays 240px wide however narrow the screen gets.
+      expect(menu.style.maxWidth).toBe('187px')
+      expect(menu.style.minWidth).toBe('187px')
+
+      style.remove()
+    })
+
+    test('leaves the stylesheet minimum alone when there is room for it', async () => {
+      const style = stubStylesheetMinWidth('240px')
+      stubVisualViewport({ width: 390, height: 400, offsetLeft: 0, offsetTop: 0 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 40, bottom: 60, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 153, left: 0, right: 240, width: 240, height: 153
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      expect(menu.style.minWidth).toBe('')
+
+      style.remove()
+    })
+
+    // Pinching back out has to give the menu its designed width again, and a
+    // menu left narrow after hide() would open wrong on the next click.
+    test('restores the minimum when the strip widens again', async () => {
+      const style = stubStylesheetMinWidth('240px')
+      const { listeners } = stubVisualViewport({ width: 195, height: 400, offsetLeft: 0, offsetTop: 0 })
+      jest.spyOn(button, 'getBoundingClientRect').mockReturnValue({
+        top: 40, bottom: 60, left: 9, right: 29, width: 20, height: 20
+      })
+      jest.spyOn(menu, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 153, left: 0, right: 240, width: 240, height: 153
+      })
+
+      controller.show()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      expect(menu.style.minWidth).toBe('187px')
+
+      window.visualViewport.width = 390
+      listeners.resize()
+      expect(menu.style.minWidth).toBe('')
+
+      controller.hide()
+      expect(menu.style.minWidth).toBe('')
+
+      style.remove()
+    })
+
     // The button can sit above the strip entirely (page scrolled under a pinned
     // sheet). The cap must respect the whole strip, not just the room below.
     test('never grows past the strip when the button is above it', async () => {

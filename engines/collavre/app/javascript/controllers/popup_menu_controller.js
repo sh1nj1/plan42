@@ -60,7 +60,7 @@ export default class extends Controller {
     menu.style.top = '0'
     menu.style.bottom = 'auto'
     menu.style.transform = ''
-    menu.style.maxWidth = `${visualViewportRect().width - VIEWPORT_PADDING * 2}px`
+    this.constrainWidth()
     menu.classList.remove('popup-menu-right')
     // Render invisible while we compute position
     menu.style.visibility = 'hidden'
@@ -75,6 +75,24 @@ export default class extends Controller {
 
     this.addOutsideClickListener()
     this.addViewportListeners()
+  }
+
+  // Fit the menu to the width that is actually on screen. CSS resolves
+  // min-width over max-width, so the cap alone cannot shrink a menu whose
+  // stylesheet floor is wider than the strip -- .popup-menu sets 220px and the
+  // comment user popup 240px, while a pinch-zoomed visual viewport is nearer
+  // 195px. Left as is, the menu keeps its designed width with the right edge
+  // parked outside the visible region, and the scroll listener re-pins it there
+  // every frame so that edge can never be reached. Clearing the inline minimum
+  // first is what lets the stylesheet value be read back, so pinching out
+  // restores the designed width instead of leaving the menu stuck narrow.
+  constrainWidth() {
+    const menu = this.menuTarget
+    const available = visualViewportRect().width - VIEWPORT_PADDING * 2
+    menu.style.minWidth = ''
+    const floor = parseFloat(getComputedStyle(menu).minWidth) || 0
+    if (floor > available) menu.style.minWidth = `${available}px`
+    menu.style.maxWidth = `${available}px`
   }
 
   // Place the menu against the button, inside the region that is actually on
@@ -150,7 +168,7 @@ export default class extends Controller {
   // scrolls it. Both move the button out from under an open menu.
   handleViewportChange() {
     if (!this.isOpen()) return
-    this.menuTarget.style.maxWidth = `${visualViewportRect().width - VIEWPORT_PADDING * 2}px`
+    this.constrainWidth()
     this.place()
   }
 
@@ -173,6 +191,7 @@ export default class extends Controller {
     menu.style.right = ''
     menu.style.top = ''
     menu.style.bottom = ''
+    menu.style.minWidth = ''
     menu.style.maxWidth = ''
     menu.style.maxHeight = ''
     menu.style.overflowY = ''
