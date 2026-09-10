@@ -11,8 +11,12 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     @gateway = create_gateway
   end
 
-  test "the sweep enqueues one probe per active gateway" do
+  test "the sweep enqueues one probe per active gateway assigned to a CLI proxy agent" do
+    assign_gateway
+    assign_gateway
+    unassigned = create_gateway
     inactive = create_gateway
+    assign_gateway(inactive)
     inactive.update_columns(active: false)
 
     probed = []
@@ -20,11 +24,13 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
       Collavre::GatewayHealthSweepJob.perform_now
     end
 
-    assert_includes probed, @gateway.id
+    assert_equal 1, probed.count(@gateway.id)
+    assert_not_includes probed, unassigned.id
     assert_not_includes probed, inactive.id
   end
 
   test "the probe records a verdict for the gateway it names" do
+    assign_gateway
     body = { "status" => "ok", "engines" => { "ready" => 1, "total" => 1 } }
     Collavre::CliProxy::Client.stub(:new, FakeClient.new(body)) do
       Collavre::GatewayHealthProbeJob.perform_now(@gateway.id)
@@ -33,20 +39,25 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     assert_predicate @gateway.reload, :health_ok?
   end
 
-  # A row deactivated or deleted between the sweep and the probe must not be
-  # probed: the sweep's snapshot is already a minute old by the time it runs.
-  test "the probe skips a gateway that is gone or deactivated" do
-    @gateway.update_columns(active: false)
+  # A row deactivated, unassigned, or deleted between the sweep and the probe
+  # must not be probed: the sweep's snapshot is already stale when it runs.
+  test "the probe skips a gateway that is gone, deactivated, or unassigned" do
+    assigned = create_gateway
+    assign_gateway(assigned)
+    assigned.update_columns(active: false)
 
+    Collavre::GatewayHealthProbeJob.perform_now(assigned.id)
     Collavre::GatewayHealthProbeJob.perform_now(@gateway.id)
     Collavre::GatewayHealthProbeJob.perform_now(-1)
 
+    assert_nil assigned.reload.health_checked_at
     assert_nil @gateway.reload.health_checked_at
   end
 
   # The probe turns every transport failure into a recorded verdict, so anything
   # reaching the job is a bug here. It must not take the sweep down with it.
   test "the probe swallows an unexpected failure instead of failing the sweep" do
+    assign_gateway
     Collavre::CliProxy::HealthProbe.stub(:new, ->(*) { raise "boom" }) do
       assert_nothing_raised { Collavre::GatewayHealthProbeJob.perform_now(@gateway.id) }
     end
@@ -101,7 +112,21 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
       name: "Sweep proxy #{SecureRandom.hex(3)}",
       base_url: "https://proxy.example.com",
       admin_key: "admin",
-      completion_key: "completion"
+      completion_key: "completion",
+      identity_secret: "i" * 32
+    )
+  end
+
+  def assign_gateway(gateway = @gateway)
+    Collavre::User.create!(
+      name: "Sweep agent #{SecureRandom.hex(3)}",
+      email: "sweep-agent-#{SecureRandom.hex(6)}@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/codex_local",
+      created_by_id: gateway.owner_id,
+      agent_gateway: gateway
     )
   end
 end

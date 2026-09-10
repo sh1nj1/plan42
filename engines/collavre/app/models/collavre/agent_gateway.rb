@@ -52,6 +52,9 @@ module Collavre
     after_update :invalidate_health_after_configuration_change, if: :health_configuration_changed?
 
     scope :active, -> { where(active: true) }
+    scope :health_probe_targets, -> do
+      active.joins(:agents).merge(User.where(llm_vendor: "cli_proxy")).distinct
+    end
 
     def chat_capable?
       completion_key.present?

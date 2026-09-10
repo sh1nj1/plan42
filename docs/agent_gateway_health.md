@@ -8,9 +8,12 @@ gateway and turns the answer into the online dot next to that agent's avatar.
 
 `Collavre::GatewayHealthSweepJob` runs every minute
 (`config/recurring.yml`) and enqueues one `Collavre::GatewayHealthProbeJob` per
-**active** gateway. Fanned out rather than looped in one job so a single
-unreachable host cannot spend the whole interval and leave the gateways behind
-it in the loop unprobed.
+**active gateway assigned to a CLI proxy agent**. Unassigned gateway rows are
+configuration, not a reason for the server to make a perpetual outbound
+request. Fanned out rather than looped in one job so a single unreachable host
+cannot spend the whole interval and leave the gateways behind it in the loop
+unprobed. The probe re-checks the same assignment scope when it starts, so a
+gateway unassigned after the sweep does not make a stale outbound request.
 
 Both jobs run on their own `gateway_health` queue (`config/queue.yml`), not on
 `default`. A probe blocks on an unreachable host for up to
@@ -19,13 +22,13 @@ the shared pool a handful of dead gateways would hold every default thread and
 stall mailers, broadcasts and notifications behind them.
 
 The dedicated worker defaults to 12 threads and can be sized with
-`GATEWAY_HEALTH_THREADS`. Capacity must drain the active-gateway count within
-`AgentGateway::HEALTH_TTL`; otherwise a healthy gateway waiting at the tail can
-look stale. Size conservatively for the legacy-fallback worst case (22 seconds):
-`ceil(active gateways * 22 / 180)`. The default therefore supports at least 96
-active gateways inside the three-minute TTL, with scheduling margin. Each
-thread may use a database connection, so the default pool formula includes this
-setting; an explicit `DB_POOL` override must include it too.
+`GATEWAY_HEALTH_THREADS`. Capacity must drain the assigned active-gateway count
+within `AgentGateway::HEALTH_TTL`; otherwise a healthy gateway waiting at the
+tail can look stale. Size conservatively for the legacy-fallback worst case (22 seconds):
+`ceil(assigned active gateways * 22 / 180)`. The default therefore supports at
+least 96 assigned active gateways inside the three-minute TTL, with scheduling
+margin. Each thread may use a database connection, so the default pool formula
+includes this setting; an explicit `DB_POOL` override must include it too.
 
 Both jobs use Solid Queue concurrency controls with `on_conflict: :discard`.
 There can be at most one ready or running probe per gateway and one ready or

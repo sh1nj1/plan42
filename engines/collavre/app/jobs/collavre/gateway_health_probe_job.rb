@@ -4,7 +4,7 @@ module Collavre
   class GatewayHealthProbeJob < ApplicationJob
     CONCURRENCY_DURATION = 1.day
     # Isolated from the default pool: a probe blocks on an unreachable host for
-    # seconds at a time, and there is one per gateway every minute.
+    # seconds at a time, and there is one per assigned gateway every minute.
     queue_as :gateway_health
 
     # Claim the semaphore when the probe is enqueued, not when it starts. A
@@ -18,7 +18,7 @@ module Collavre
       on_conflict: :discard
 
     def perform(gateway_id)
-      gateway = AgentGateway.active.find_by(id: gateway_id)
+      gateway = AgentGateway.health_probe_targets.find_by(id: gateway_id)
       return unless gateway
 
       CliProxy::HealthProbe.new(gateway: gateway).call
