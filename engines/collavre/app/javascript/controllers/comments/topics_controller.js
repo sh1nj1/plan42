@@ -573,9 +573,10 @@ export default class extends Controller {
         const drafts = new Map()
         this.listTarget.querySelectorAll('[data-cron-key]').forEach(task => {
             const input = task.querySelector('[data-cron-badge-target="messageInput"]')
-            if (input && input.value !== input.dataset.cronSavedMessage) {
-                drafts.set(task.dataset.cronKey, input.value)
-            }
+			const operationId = task.dataset.cronSaveOperation
+			if (!input || (input.value === input.dataset.cronSavedMessage && !operationId)) return
+
+			drafts.set(task.dataset.cronKey, { message: input.value, operationId })
         })
         return drafts
     }
@@ -585,7 +586,15 @@ export default class extends Controller {
             if (!drafts.has(task.dataset.cronKey)) return
 
             const input = task.querySelector('[data-cron-badge-target="messageInput"]')
-            if (input) input.value = drafts.get(task.dataset.cronKey)
+			if (!input) return
+
+			const draft = drafts.get(task.dataset.cronKey)
+			input.value = draft.message
+			if (!draft.operationId) return
+
+			task.dataset.cronSaveOperation = draft.operationId
+			input.disabled = true
+			task.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
         })
     }
 

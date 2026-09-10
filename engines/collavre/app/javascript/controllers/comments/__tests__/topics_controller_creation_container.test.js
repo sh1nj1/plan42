@@ -184,6 +184,31 @@ describe('TopicsController create-button placement', () => {
     expect(controller.listTarget.querySelector('textarea').value).toBe('Server message')
   })
 
+  test('preserves an in-flight cron message save across topic refreshes', () => {
+    const cronBadge = (message) => `
+      <span data-cron-key="topic-1">
+		<textarea data-cron-badge-target="messageInput"
+			data-cron-saved-message="${message}">${message}</textarea>
+		<button data-action="click->cron-badge#saveMessage">Save</button>
+      </span>
+    `
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Saved message') }], true, true)
+    const task = controller.listTarget.querySelector('[data-cron-key="topic-1"]')
+    const input = task.querySelector('textarea')
+    task.dataset.cronSaveOperation = '42'
+    input.value = 'Submitted message'
+    input.disabled = true
+    task.querySelector('button').disabled = true
+
+    controller.renderTopics([{ id: 1, name: 'Main', cron_badge_html: cronBadge('Server message') }], true, true)
+
+    const replacementTask = controller.listTarget.querySelector('[data-cron-key="topic-1"]')
+    expect(replacementTask.dataset.cronSaveOperation).toBe('42')
+    expect(replacementTask.querySelector('textarea').value).toBe('Submitted message')
+    expect(replacementTask.querySelector('textarea').disabled).toBe(true)
+    expect(replacementTask.querySelector('button').disabled).toBe(true)
+  })
+
   test('does not restore a dirty cron message after edit access is lost', () => {
     const editableBadge = `
       <span data-cron-key="topic-1">
