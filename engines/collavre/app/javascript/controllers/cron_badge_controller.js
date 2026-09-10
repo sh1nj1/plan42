@@ -93,14 +93,15 @@ export default class extends Controller {
     event.stopPropagation()
     const button = event.currentTarget
     const releaseTreeReload = this.holdCreativeTreeReload()
-
-    try {
-      if (!(await confirmDialog(this.deleteConfirmValue, { danger: true }))) return
-
 		const task = button.closest('[data-cron-badge-target="task"]')
 		const operationId = String(++cronOperationSequence)
+		let confirmed = false
 		task.dataset.cronDeleteOperation = operationId
 		button.disabled = true
+
+    try {
+		confirmed = await confirmDialog(this.deleteConfirmValue, { danger: true })
+		if (!confirmed) return
 
 		try {
 			const response = await this.deleteCron(button.dataset.cronDeleteUrl)
@@ -118,6 +119,7 @@ export default class extends Controller {
 			await alertDialog(this.deleteErrorValue)
 		}
 		} finally {
+			if (!confirmed) this.finishCronDelete(task, operationId)
 			releaseTreeReload()
     }
   }

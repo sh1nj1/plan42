@@ -285,6 +285,8 @@ describe('CronBadgeController', () => {
 		expect(treeController.endReloadHold).not.toHaveBeenCalled()
 		const replacement = element.cloneNode(true)
 		element.replaceWith(replacement)
+		const replacementTask = replacement.querySelector('[data-cron-delete-operation]')
+		expect(replacementTask.querySelector('[data-cron-delete-url]').disabled).toBe(true)
 		resolveConfirmation(true)
 		await new Promise(resolve => setTimeout(resolve, 0))
 
@@ -295,6 +297,7 @@ describe('CronBadgeController', () => {
 		await new Promise(resolve => setTimeout(resolve, 0))
 
 		expect(treeController.endReloadHold).toHaveBeenCalledTimes(1)
+		expect(replacement.querySelectorAll('[data-cron-badge-target="task"]')).toHaveLength(1)
 	})
 
   test('ignores stale save tasks and missing controls when finishing', () => {
@@ -387,6 +390,8 @@ describe('CronBadgeController', () => {
 
     expect(csrfFetch).not.toHaveBeenCalled()
     expect(controller.taskTargets).toHaveLength(2)
+		expect(element.querySelector('[data-cron-delete-url$="/one"]').disabled).toBe(false)
+		expect(element.querySelector('[data-cron-delete-operation]')).toBeNull()
 		expect(treeController.beginReloadHold).toHaveBeenCalledTimes(1)
 		expect(treeController.endReloadHold).toHaveBeenCalledTimes(1)
   })
