@@ -1,3 +1,4 @@
+import * as previousMessageNavigation from './previous_message_navigation'
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
@@ -23,6 +24,8 @@ export default class extends Controller {
   connect() {
     this.selection = new Set()
     this.loadingOlder = false
+    this.loadingOlderPromise = null
+    this.pendingPreviousMessageNavigation = null
     this.loadingNewer = false
     this.allOlderLoaded = false // Reached the beginning of time
     this.allNewerLoaded = true  // Reached current time (initially true until we scroll up)
@@ -182,11 +185,13 @@ export default class extends Controller {
     this.selection.clear()
     this.notifySelectionChange()
     this.loadingOlder = false
+    this.loadingOlderPromise = null
     this.loadingNewer = false
     this.allOlderLoaded = false
     this.allNewerLoaded = true
     this.movingComments = false
     this.manualSearchQuery = null
+    this.pendingPreviousMessageNavigation = null
   }
 
   resetToLatest() {
@@ -203,11 +208,13 @@ export default class extends Controller {
 
     // The list is about to be replaced wholesale; any anchor we hold is stale.
     this.prevMsgNavigator.reset()
+    this.pendingPreviousMessageNavigation = null
 
     const requestVersion = ++this._loadCommentsVersion
     const params = {}
-    if (this.highlightAfterLoad) {
-      params.around_comment_id = this.highlightAfterLoad
+    const requestedHighlightId = this.highlightAfterLoad
+    if (requestedHighlightId) {
+      params.around_comment_id = requestedHighlightId
     }
 
     const requestTopicId = this.currentTopicId || ""
@@ -232,10 +239,10 @@ export default class extends Controller {
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
 
-      if (this.highlightAfterLoad) {
+      if (requestedHighlightId) {
         // We are deep linking
         this.allNewerLoaded = false // We are likely in middle
-        this.highlightComment(this.highlightAfterLoad)
+	this.highlightComment(requestedHighlightId)
         this.highlightAfterLoad = null
         this.highlightCreativeId = null
       } else {
@@ -270,42 +277,7 @@ export default class extends Controller {
   }
 
   loadOlderComments() {
-    if (this.loadingOlder || this.allOlderLoaded || !this.creativeId) return
-    const minId = this.getMinId()
-    if (!minId) return
-
-    const requestContext = this.paginationRequestContext()
-    this.loadingOlder = true
-
-    // Standard Column: Older messages are at Top.
-    // We Prepend them.
-    const currentScrollHeight = this.listTarget.scrollHeight
-
-    this.fetchComments({ before_id: minId }, { pagination: true })
-      .then((html) => {
-        if (!this.isCurrentPaginationContext(requestContext)) return
-        if (html.trim() === '') {
-          this.allOlderLoaded = true
-          return
-        }
-        // Prepend to start (Visual Top)
-        this.listTarget.insertAdjacentHTML('afterbegin', html)
-        renderMarkdownInContainer(this.listTarget)
-        const addedTopic = this.recordRenderedAllTopicWatermarks(
-          this.listTarget.querySelectorAll('.comment-item'),
-          { includeNewTopics: true },
-        )
-        if (addedTopic) this.reportRenderedAllTopics()
-        this.markCommentsRead()
-
-        // Restore scroll position
-        const newScrollHeight = this.listTarget.scrollHeight
-        this.listTarget.scrollTop = this.listTarget.scrollTop + (newScrollHeight - currentScrollHeight)
-
-      })
-      .finally(() => {
-        if (this.isCurrentPaginationContext(requestContext)) this.loadingOlder = false
-      })
+    return previousMessageNavigation.loadOlderComments.call(this)
   }
 
   loadNewerComments() {
@@ -510,6 +482,7 @@ export default class extends Controller {
   }
 
   handlePrevMsgUserInput() {
+    this.pendingPreviousMessageNavigation = null
     this.prevMsgNavigator.notifyUserInput()
   }
 
@@ -1290,32 +1263,23 @@ export default class extends Controller {
   }
 
   scrollToPreviousMessage() {
-    const list = this.listTarget
-    const elements = Array.from(list.querySelectorAll('.comment-item'))
-    if (elements.length === 0) return
+    return previousMessageNavigation.scrollToPreviousMessage.call(this)
+  }
 
-    const viewportTop = list.getBoundingClientRect().top
-    const measured = elements.map((el) => ({
-      id: el.dataset.commentId,
-      top: el.getBoundingClientRect().top,
-    }))
+  loadAndNavigateToPreviousMessage(anchorId) {
+    return previousMessageNavigation.loadAndNavigateToPreviousMessage.call(this, anchorId)
+  }
 
-    const targetIdx = this.prevMsgNavigator.resolveTargetIndex(measured, viewportTop)
-    if (targetIdx < 0) {
-      if (!this.allOlderLoaded) {
-        this.loadOlderComments()
-      }
-      return
-    }
+  navigateToPreviousSibling(anchorId) {
+    return previousMessageNavigation.navigateToPreviousSibling.call(this, anchorId)
+  }
 
-    const target = elements[targetIdx]
-    const targetTop = target.offsetTop - list.offsetTop
-    this.prevMsgNavigator.commit(measured[targetIdx].id, measured[targetIdx].top)
-    list.scrollTo({ top: targetTop, behavior: 'smooth' })
-    this.stickToBottom = false
+  fulfillPendingPreviousMessageNavigation() {
+    return previousMessageNavigation.fulfillPendingPreviousMessageNavigation.call(this)
+  }
 
-    target.classList.add('highlight-flash')
-    setTimeout(() => target.classList.remove('highlight-flash'), 2000)
+  navigateToMessage(target) {
+    return previousMessageNavigation.navigateToMessage.call(this, target)
   }
 
   // UI Helpers
@@ -1374,6 +1338,8 @@ export default class extends Controller {
     this.listObserver = new MutationObserver((mutations) => {
       const hasAdded = mutations.some(m => m.addedNodes.length > 0)
       if (hasAdded) {
+	if (this.fulfillPendingPreviousMessageNavigation()) return
+
         // If we are sticking to bottom, force scroll to bottom on new content
         // BUT NOT if we are explicitly loading newer pagination (infinite scroll down)
         if (this.stickToBottom && !this.loadingNewer) {

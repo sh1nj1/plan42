@@ -1,3 +1,4 @@
+import { handleCreativeChatClick } from './creative_chat_navigation'
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
@@ -225,49 +226,7 @@ export default class extends Controller {
   }
 
   handleCreativeClick(event) {
-    const button = event.detail?.button
-    const creativeId = event.detail?.creativeId
-    const highlightId = event.detail?.highlightId
-    if (!button) return
-    if (event.detail?.workspaceSync && !this.isDocked()) {
-      const nextCreativeId = creativeId || button.dataset.creativeId || ''
-      if (
-        this.element.style.display === 'flex' &&
-        this.element.dataset.creativeId !== String(nextCreativeId)
-      ) {
-        this.close()
-      }
-      return
-    }
-    if (!creativeId && button.dataset.workspaceNavigationState === 'true' && this.isDocked()) {
-      this.resetDockedToEmpty()
-      return
-    }
-    // A collapsed docked chat is a 3rem rail, so an explicit chat-icon click has
-    // to expand it. Workspace tree navigation must not: the user collapsed the
-    // chat on purpose and moving around the tree should leave it that way.
-    const userRequestedOpen = !event.detail?.workspaceSync
-    if (
-      this.element.style.display === 'flex' &&
-      this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
-    ) {
-      if (this.isDocked()) {
-        if (userRequestedOpen) {
-          // Already loaded for this creative — expand only, so the draft and
-          // subscriptions survive.
-          this.expandDocked()
-        } else if (highlightId) {
-          this.reloadDockedHighlight(creativeId, highlightId)
-        }
-        return
-      }
-      this.close()
-      return
-    }
-    if (userRequestedOpen) this.expandDocked()
-    const openOptions = { creativeId }
-    if (highlightId) openOptions.highlightId = highlightId
-    this.open(button, openOptions)
+    handleCreativeChatClick(this, event.detail || {})
   }
 
   reloadDockedHighlight(creativeId, highlightId) {
@@ -668,14 +627,14 @@ export default class extends Controller {
     this._syncWakeLock()
   }
 
-  expandDocked() {
+  expandDocked({ scrollToBottom = true } = {}) {
     if (!this.isDocked()) return
     if (!this.element.classList.contains('docked-collapsed')) return
 
     this.element.classList.remove('docked-collapsed')
     this.syncDockedUI()
     this._syncWakeLock()
-    requestAnimationFrame(() => this.listController?.scrollToBottom())
+    if (scrollToBottom) requestAnimationFrame(() => this.listController?.scrollToBottom())
   }
 
   syncDockedUI() {
