@@ -53,6 +53,8 @@ Later source/card withdrawal cannot rewrite those historical claims as abandoned
 Only the reply task drives loop completion; settled login cards never do.
 A second authentication failure or a failed provider handoff is not successful
 completion, and turns waiting for tool approval keep their claims pending.
+Repeated authentication carries every ancestor login claim into the next admitted
+replay, so its eventual success or failure settles the entire chain of cards.
 Settled cards remain readable by reply viewers even after source invalidation,
 without enabling session actions. Coalescing queued turns
 transfers all login claims to the survivor in the same transaction; superseded

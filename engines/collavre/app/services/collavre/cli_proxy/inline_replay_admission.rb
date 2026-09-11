@@ -13,7 +13,7 @@ module Collavre
         # Another connection's edits do not invalidate that cache.
         Task.uncached do
           with_locked_login(identity) do |login|
-            yield login.replay_payload.merge("inline_login_task_id" => login.task.id)
+            yield ReplayClaims.attach(login.replay_payload, login.task.id)
           end
         end
       end

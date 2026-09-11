@@ -1189,6 +1189,50 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, @task.trigger_event_payload.dig("engine_login", "replay_completed")
   end
 
+  [ :done, :cancelled, :failed ].each do |ending|
+    test "repeated authentication settles every ancestor claim when the final replay is #{ending}" do
+      logins = [ @task ]
+      2.times do
+        advance_reauthentication
+        logins << @task
+      end
+      logins.each do |login|
+        assert_equal true, login.reload.trigger_event_payload.dig("engine_login", "retryable")
+        assert_not login.trigger_event_payload.dig("engine_login", "replay_completed")
+      end
+
+      queue_delayed_replay
+      if ending == :done
+        client = Object.new
+        client.define_singleton_method(:chat) { |*, **, &block| block.call("Authenticated response") }
+        client.define_singleton_method(:last_handoff_failed?) { false }
+        client.define_singleton_method(:handed_off?) { true }
+        Collavre::AiClient.stub(:new, client) { perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob) }
+        result = @creative.comments.find_by!(content: "Authenticated response")
+        assert result.task.done?
+        payload = result.task.trigger_event_payload
+      else
+        Collavre::Orchestration::TopicSlot.stub(:available_for?, false) do
+          Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, nil) { assert_empty execute_replay_payloads }
+        end
+        replay = Collavre::Task.where(agent: @agent, status: "queued").sole
+        payload = replay.trigger_event_payload
+        replay.update!(status: ending)
+      end
+      assert_equal logins.map(&:id).sort, Collavre::CliProxy::ReplayClaims.ids(payload).sort
+      assert_equal @task.id, payload["inline_login_task_id"]
+      snapshots = logins.map do |login|
+        data = login.reload.trigger_event_payload.fetch("engine_login")
+        assert_equal false, data["retryable"]
+        assert_equal ending == :done, data["resumed"]
+        assert_equal true, data[ending == :done ? "replay_completed" : "replay_abandoned"]
+        data.deep_dup
+      end
+      @original.destroy!
+      assert_equal snapshots, logins.map { |login| login.reload.trigger_event_payload.fetch("engine_login") }
+    end
+  end
+
   test "successful replay does not abandon its original login" do
     queue_delayed_replay
     assert_equal 1, execute_replay_payloads.size
@@ -1244,6 +1288,23 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  def advance_reauthentication
+    queue_delayed_replay
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: @workspace)
+    client = Object.new
+    client.define_singleton_method(:chat) { |*, **| raise error }
+    client.define_singleton_method(:last_handoff_failed?) { true }
+    client.define_singleton_method(:handed_off?) { false }
+    Collavre::AiClient.stub(:new, client) do
+      perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+    end
+    @task = Collavre::Task.where(agent: @agent).order(:id).last
+    @reply = @task.reply_comment
+    assert @task.done?
+    assert @reply
+    assert_equal true, @task.trigger_event_payload.dig("engine_login", "retryable")
+  end
 
   def revoke_replay_source(change)
     case change

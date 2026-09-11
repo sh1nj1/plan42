@@ -11,6 +11,15 @@ module Collavre
         (Array(payload&.fetch(KEYS.first, nil)) + Array(payload&.fetch(KEYS.last, nil))).compact.uniq
       end
 
+      # Reauthentication adds a new card without losing claims inherited from
+      # earlier attempts or queued-turn coalescing.
+      def self.attach(payload, task_id)
+        inherited = ids(payload)
+        payload = payload.merge(KEYS.first => task_id)
+        payload[KEYS.last] = inherited if inherited.any?
+        payload
+      end
+
       # The reply task owns loop completion; settling its historical login card
       # must not evaluate that card's authentication notice as another result.
       def self.complete!(task)
