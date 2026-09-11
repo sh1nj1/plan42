@@ -5,7 +5,11 @@ export default class extends Controller {
 
   connect() {
     this.disconnected = false
-    this.refresh()
+    if (this.liveSession?.status === "pending") {
+      this.resumePolling(this.liveSession, this.sessionGeneration)
+    } else {
+      this.refresh()
+    }
   }
 
   disconnect() {
@@ -24,9 +28,8 @@ export default class extends Controller {
         body: JSON.stringify({ flow })
       })
       if (this.disconnected || generation !== this.sessionGeneration) return
-      this.renderSession(data)
+      this.restoreSession(data, generation)
       if (data.status === "authorized") await this.authorized()
-      if (data.status === "pending" && data.flow === "device-code") this.poll(engine, data.sessionId, data.expiresAt, generation)
     } catch (error) {
       this.showError(error.message)
     }
@@ -63,6 +66,7 @@ export default class extends Controller {
     try {
       await this.request(this.sessionDetailUrl(event.params.engine, event.params.session), { method: "DELETE" })
       this.sessionGeneration = (this.sessionGeneration || 0) + 1
+      this.liveSession = null
       this.sessionTarget.replaceChildren()
       this.refresh()
     } catch (error) {
@@ -70,7 +74,19 @@ export default class extends Controller {
     }
   }
 
+  restoreSession(session, generation = this.sessionGeneration = (this.sessionGeneration || 0) + 1) {
+    this.renderSession(session)
+    this.resumePolling(session, generation)
+  }
+
+  resumePolling(session, generation) {
+    if (session.status === "pending" && session.flow === "device-code") {
+      this.poll(session.engine, session.sessionId, session.expiresAt, generation)
+    }
+  }
+
   renderSession(session) {
+    this.liveSession = session
     const panel = document.createElement("div")
     panel.className = "alert alert-info mt-2"
     const title = document.createElement("strong")
@@ -154,6 +170,7 @@ export default class extends Controller {
   async poll(engine, sessionId, expiresAt, generation) {
     if (!this.currentSession(generation)) return
     if (!Number.isFinite(Date.parse(expiresAt)) || Date.now() >= Date.parse(expiresAt)) {
+      this.liveSession = null
       this.sessionTarget.replaceChildren()
       this.showError(this.expiredValue || this.errorValue)
       return

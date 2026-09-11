@@ -1,0 +1,40 @@
+module Collavre
+  module AiAgent
+    module WorkspaceAuthentication
+      private
+
+      def stream_with_handoff(resolved)
+        stream_response(@client, resolved)
+      ensure
+        # Preserve acceptance even when cancellation or authentication leaves by exception.
+        Orchestration::DeliveryRecord.mark_handed_off!(@task) if @client.handed_off?
+      end
+
+      def handle_engine_login(error)
+        @lifecycle_manager.check_cancelled!(force: true)
+        CliProxy::InlineLogin.record!(@task, @reply_comment, error, content: @streamer.content,
+                                    retryable: !@client.handed_off?)
+        @lifecycle_manager.broadcast_status("idle")
+        nil
+      end
+
+      def workspace_user
+        @workspace_user ||= begin
+          carried_principal = @context.key?("workspace_user_id")
+          carried_user = User.find_by(id: @context["workspace_user_id"])
+          comment_user = @original_comment&.user
+
+          if carried_user && !carried_user.ai_user?
+            carried_user
+          elsif carried_principal
+            nil
+          elsif comment_user && !comment_user.ai_user?
+            comment_user
+          else
+            @agent.creator
+          end
+        end
+      end
+    end
+  end
+end

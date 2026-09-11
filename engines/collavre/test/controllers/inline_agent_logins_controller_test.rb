@@ -12,6 +12,8 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       system_prompt: "Help", llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", created_by_id: @owner.id, agent_gateway: @gateway)
     Collavre::Contact.ensure(user: @requester, contact_user: @agent)
     @creative = Collavre::Creative.create!(user: @requester, description: "Inline test")
+    Collavre::CreativeShare.create!(creative: @creative, user: @agent, permission: :feedback)
+    Collavre::CreativeSharesCache.find_or_create_by!(creative: @creative, user: @agent, permission: :feedback)
     @original = @creative.comments.create!(user: @requester, content: "Hello", skip_dispatch: true)
     @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @requester)
     @task = Collavre::Task.create!(name: "Login turn", agent: @agent, status: :done, creative: @creative,
@@ -145,6 +147,64 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     @task.update!(status: :cancelled)
     post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     assert_response :conflict
+  end
+
+  test "status restores a pending session only to its initiating user" do
+    set_data("session_id" => "pending", "session_user_id" => @requester.id)
+    fake = Minitest::Mock.new
+    fake.expect(:engines, { "data" => [ { "engine" => "codex", "flow" => "api-key", "flows" => [ "api-key", "custom" ], "base_url_flows" => [ "custom" ] } ] })
+    fake.expect(:auth_session, { "status" => "pending", "userCode" => "PRIVATE-CODE" }, [ "codex", "pending" ])
+    Collavre::CliProxy::Client.stub(:new, fake) { get inline_agent_login_status_path(comment_id: @reply.id), as: :json }
+    assert_response :success
+    assert_equal "PRIVATE-CODE", response.parsed_body.dig("session", "userCode")
+    assert_equal [ "api-key" ], response.parsed_body["engines"].first["flows"]
+    assert_not_includes @task.reload.trigger_event_payload.to_json, "PRIVATE-CODE"
+    fake.verify
+  end
+
+  test "expired session recovery leaves an error and login controls" do
+    set_data("session_id" => "expired", "session_user_id" => @requester.id)
+    fake = Object.new
+    fake.define_singleton_method(:engines) { { "data" => [ { "engine" => "codex", "flow" => "api-key" } ] } }
+    fake.define_singleton_method(:auth_session) { |*| raise Collavre::CliProxy::Client::Error.new("Expired", status: 404, code: "unknown_session") }
+    Collavre::CliProxy::Client.stub(:new, fake) { get inline_agent_login_status_path(comment_id: @reply.id), as: :json }
+    assert_response :success
+    assert_equal "failed", response.parsed_body.dig("session", "status")
+    assert_equal "Expired", response.parsed_body.dig("session", "error", "message")
+  end
+
+  test "scheduler rejection rolls back the replay claim" do
+    set_data("authorized" => true, "session_user_id" => @requester.id)
+    fake = Minitest::Mock.new
+    fake.expect(:schedule, [ { timing: :rejected } ], [ [ @agent ] ])
+    Collavre::Orchestration::Scheduler.stub(:new, fake) do
+      assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+        post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+      end
+    end
+    assert_response :conflict
+    assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+    fake.verify
+  end
+
+  test "removed agent access prevents replay even after login succeeds" do
+    set_data("authorized" => true, "session_user_id" => @requester.id)
+    Collavre::CreativeShare.where(creative: @creative, user: @agent).destroy_all
+    Collavre::CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
+    assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+    end
+    assert_response :conflict
+    assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+  end
+
+  test "deleted or moved source messages cannot be replayed" do
+    @original.update!(topic_id: @creative.topics.create!(name: "Moved", user: @requester).id)
+    get inline_agent_login_path(comment_id: @reply.id)
+    assert_response :not_found
+    @original.destroy!
+    post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+    assert_response :not_found
   end
 
   private

@@ -57,6 +57,15 @@ module Collavre
         @client ||= Client.new(gateway: workspace.agent_gateway, workspace: workspace)
       end
 
+      def session_snapshot
+        return unless data["session_id"] && data["session_user_id"] == @user.id && !data["authorized"]
+
+        id = data["session_id"]
+        observe_session!(client.auth_session(engine, id), id)
+      rescue Client::Error => error
+        { "engine" => engine, "status" => "failed", "error" => { "message" => error.message } }
+      end
+
       def remember_session!(response)
         update_data! { |value| value.merge("session_id" => response.fetch("sessionId"), "session_user_id" => @user.id,
                                          "authorized" => response["status"] == "authorized") }
@@ -85,7 +94,7 @@ module Collavre
 
           payload = retry_payload
           task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" => data.merge("resumed" => true)))
-          AiAgentJob.perform_later(agent.id, task.trigger_event_name, payload)
+          enqueue_retry(payload)
         end
       end
 
@@ -96,12 +105,19 @@ module Collavre
         comment.creative.comments.visible_to(@user).find_by(id: id, topic_id: comment.topic_id)
       end
 
+      def enqueue_retry(payload)
+        fail_with!("cannot_retry") unless Orchestration::Matcher.permits_creative_access?(payload, agent) &&
+          Orchestration::Matcher.permits_assignment?(payload, agent)
+        decision = Orchestration::Scheduler.new(payload).schedule([ agent ]).first
+        fail_with!("cannot_retry") if decision.nil? || decision[:timing] == :rejected
+
+        job = decision[:timing] == :delayed ? AiAgentJob.set(wait: decision[:delay]) : AiAgentJob
+        job.perform_later(agent.id, task.trigger_event_name, payload)
+      end
+
       def retry_payload
-        keys = Orchestration::DeliveryRecord.constants.filter_map do |key|
-          Orchestration::DeliveryRecord.const_get(key) if key.to_s.end_with?("KEY")
-        end
-        task.trigger_event_payload.except("engine_login", *keys).merge("workspace_user_id" => workspace.user_id ||
-          task.trigger_event_payload["workspace_user_id"])
+        task.trigger_event_payload.except("engine_login", *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
+            .merge("workspace_user_id" => workspace.user_id || task.trigger_event_payload["workspace_user_id"])
       end
 
       def update_data!

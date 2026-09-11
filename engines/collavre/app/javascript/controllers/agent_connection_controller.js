@@ -29,10 +29,12 @@ export default class extends AgentAuthController {
     this.hideError()
     try {
       const data = await this.request(this.statusUrlValue)
+      if (this.disconnected) return
       const engines = data.engines || []
       this.baseUrlFlows = new Map(engines.map((engine) => [engine.engine, engine.base_url_flows || []]))
       this.renderEngines(engines)
       if (this.hasProvisionTarget) this.renderProvision(data.provision || {})
+      if (data.session) this.restoreSession(data.session)
       if (data.resumed) this.enginesTarget.replaceChildren(document.createTextNode(this.resumedValue))
       else if (data.authorized && this.hasResumeUrlValue) await this.authorized()
     } catch (error) {

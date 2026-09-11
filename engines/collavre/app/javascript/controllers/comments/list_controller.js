@@ -1,3 +1,4 @@
+import { replaceCommentsPreservingLogins } from "./inline_login_preservation"
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
@@ -227,8 +228,7 @@ export default class extends Controller {
       if (!this.isServerResolvedTopic(requestVersion) &&
           String(this.currentTopicId || "") !== String(requestTopicId)) return
 
-      this.listTarget.innerHTML = html
-      this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
+      replaceCommentsPreservingLogins(this.listTarget, html, this.currentTopicId)
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
 

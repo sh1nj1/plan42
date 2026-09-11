@@ -17,7 +17,8 @@ module Collavre
         engine = engine.merge("flows" => Array(engine["flows"]).presence || [ engine["flow"] ])
         engine["flows"] -= Array(engine["base_url_flows"])
       end
-      render json: { engines: Array.wrap(engine), resumed: @login.data["resumed"], authorized: @login.data["authorized"] }
+      snapshot = @login.session_snapshot
+      render json: { engines: Array.wrap(engine), session: snapshot, resumed: @login.data["resumed"], authorized: @login.data["authorized"] }
     end
 
     def create_session
