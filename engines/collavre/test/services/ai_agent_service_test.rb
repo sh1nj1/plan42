@@ -717,6 +717,25 @@ class AiAgentServiceTest < ActiveSupport::TestCase
                "an externally failed turn must not enter response finalization"
   end
 
+  [ { private: true }, { action: '{"tool":"approval"}' } ].each do |change|
+    test "source revocation #{change.keys.first} after prompt preparation prevents provider handoff" do
+      source = @comment
+      client = Object.new
+      client.define_singleton_method(:chat) { |*| raise "revoked source must not reach the provider" }
+      client.define_singleton_method(:handed_off?) { false }
+      service = AiAgentService.new(@task)
+      service.define_singleton_method(:build_ai_client) do |_prompt|
+        source.update!(change)
+        client
+      end
+
+      assert_raises(Collavre::CancelledError) { service.call }
+      assert @task.reload.cancelled?
+      assert_not @task.task_actions.exists?(action_type: "completion")
+      assert_not Collavre::Orchestration::DeliveryRecord.handed_off?(@task.trigger_event_payload)
+    end
+  end
+
   test "force-checks terminal status immediately before starting the provider call" do
     task_id = @task.id
     provider_called = false

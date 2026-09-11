@@ -145,11 +145,11 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     @original.update!(private: true)
     @creative.update!(user: @owner)
     sign_in_as(@owner, password: "password")
-    get inline_agent_login_path(comment_id: @reply.id)
+    get inline_agent_login_status_path(comment_id: @reply.id)
     assert_response :not_found
     sign_in_as(@requester, password: "password")
     @gateway.update!(active: false)
-    get inline_agent_login_path(comment_id: @reply.id)
+    get inline_agent_login_status_path(comment_id: @reply.id)
     assert_response :not_found
   end
 
@@ -535,7 +535,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       "trigger_topic_id" => @original.topic_id, "stuck_conditions" => [ "Login required" ]
     } } })
     queue_delayed_replay
-    @original.destroy!
+    @gateway.update!(active: false)
     clear_enqueued_jobs
 
     2.times do |attempt|
@@ -728,10 +728,12 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       end
       queue_delayed_replay
       args = enqueued_jobs.find { |entry| entry[:job] == Collavre::InlineAgentReplayJob }[:args]
-      missing == :user ? @requester.destroy! : @reply.destroy!
       clear_enqueued_jobs
+      assert_enqueued_jobs(missing == :card ? 1 : 0, only: Collavre::TriggerLoopCheckJob) do
+        missing == :user ? @requester.destroy! : @reply.destroy!
+      end
       2.times do |attempt|
-        expected = attempt.zero? ? 1 : 0
+        expected = missing == :user && attempt.zero? ? 1 : 0
         assert_enqueued_jobs expected, only: Collavre::TriggerLoopCheckJob do
           assert_enqueued_jobs(missing == :card ? 0 : expected, only: Turbo::Streams::ActionBroadcastJob) do
             Collavre::AiAgentJob.stub(:perform_now, ->(*) { flunk "missing identity cannot run" }) do
@@ -824,6 +826,65 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       get inline_agent_login_path(comment_id: @reply.id)
       assert_response :not_found
     end
+  end
+
+  [ :source, :card ].each do |deleted|
+    test "deleting #{deleted} before resume abandons the login and completes the loop once" do
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => @original.topic_id
+      } } })
+      clear_enqueued_jobs
+      target = deleted == :source ? @original : @reply
+      assert_enqueued_jobs 1, only: Collavre::TriggerLoopCheckJob do
+        target.destroy!
+      end
+      data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal false, data["retryable"]
+      assert_equal false, data["resumed"]
+      assert_equal true, data["replay_abandoned"]
+      assert_no_enqueued_jobs only: Collavre::TriggerLoopCheckJob do
+        target.send(:abandon_pending_logins)
+      end
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+        perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+      end
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+      if deleted == :source
+        get inline_agent_login_path(comment_id: @reply.id)
+        assert_response :success
+        assert_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+      end
+    end
+  end
+
+  test "source revocation after replay admission cancels dispatch and settles the original login" do
+    queue_delayed_replay
+    client = Object.new
+    client.define_singleton_method(:chat) { |*| raise "withdrawn source reached the provider" }
+    client.define_singleton_method(:handed_off?) { false }
+    Collavre::AiClient.stub(:new, ->(*) { @original.update!(private: true); client }) do
+      perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+    end
+    replay = Collavre::Task.where(agent: @agent).where.not(id: @task.id).order(:id).last
+    assert replay.cancelled?
+    data = @task.reload.trigger_event_payload.fetch("engine_login")
+    assert_equal false, data["resumed"]
+    assert_equal false, data["retryable"]
+    assert_equal true, data["replay_abandoned"]
+  end
+
+  test "status preserves an explicitly empty list after filtering every custom flow" do
+    proxy = Object.new
+    proxy.define_singleton_method(:engines) do
+      { "data" => [ { "engine" => "codex", "flow" => "custom", "flows" => [ "custom" ], "base_url_flows" => [ "custom" ] } ] }
+    end
+    Collavre::CliProxy::Client.stub(:new, proxy) { get inline_agent_login_status_path(comment_id: @reply.id), as: :json }
+    assert_response :success
+    assert_empty response.parsed_body["engines"].first["flows"]
   end
 
   private

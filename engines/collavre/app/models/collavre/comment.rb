@@ -184,6 +184,7 @@ module Collavre
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
     include TopicMembership
+    include DispatchRevocation
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
@@ -191,8 +192,6 @@ module Collavre
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative
     validate :images_must_be_images
-
-    after_destroy_commit :cancel_pending_tasks
 
     def next_version_number
       (comment_versions.maximum(:version_number) || 0) + 1

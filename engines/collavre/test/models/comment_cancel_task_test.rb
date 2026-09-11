@@ -17,6 +17,33 @@ module Collavre
       )
     end
 
+    test "ordinary source edits leave active tasks running" do
+      task = Task.create!(name: "Active turn", status: :running, agent: @agent,
+        trigger_event_payload: { "comment" => { "id" => @comment.id } })
+      @comment.update!(content: "Updated request")
+      assert task.reload.running?
+    end
+
+    test "private waiting notices do not cancel sibling waiters" do
+      task = Task.create!(name: "Queued turn", status: :queued, agent: @agent, creative: @creative,
+        topic_id: @comment.topic_id, trigger_event_payload: { "comment" => { "id" => @comment.id } })
+      notice = @creative.comments.create!(content: "⏳ Waiting", topic_id: @comment.topic_id,
+        skip_default_user: true, topic_concurrency_defer: true)
+      notice.update!(private: true)
+      assert task.reload.queued?
+    end
+
+    [ :private, :action ].each do |attribute|
+      test "revoking #{attribute} cancels only tasks anchored to the withdrawn source" do
+        task = Task.create!(name: "Active turn", status: :running, agent: @agent,
+          trigger_event_payload: { "comment" => { "id" => @comment.id } })
+        other = Task.create!(name: "Other turn", status: :running, agent: @agent, trigger_event_payload: {})
+        @comment.update!(attribute => (attribute == :private ? true : '{"tool":"approval"}'))
+        assert task.reload.cancelled?
+        assert other.reload.running?
+      end
+    end
+
     test "destroying comment cancels running tasks triggered by that comment" do
       task = Task.create!(
         name: "Response to comment_created",

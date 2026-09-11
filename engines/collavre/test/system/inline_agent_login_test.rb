@@ -24,6 +24,20 @@ class InlineAgentLoginTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  test "chat card does not offer flows requiring a custom provider URL" do
+    proxy = Object.new
+    proxy.define_singleton_method(:engines) do
+      { "data" => [ { "engine" => "claude", "flow" => "custom", "flows" => [ "custom" ], "base_url_flows" => [ "custom" ] } ] }
+    end
+    Collavre::CliProxy::Client.stub(:new, proxy) do
+      visit collavre.creative_path(@creative, open_comments: true)
+      within("#inline_agent_login_#{@reply.id}") do
+        assert_selector "table", text: "claude"
+        assert_no_selector '[data-action="agent-connection#login"]'
+      end
+    end
+  end
+
   test "chat card submits a paste code privately and resumes the original request once" do
     submitted = nil
     resumed = []

@@ -62,6 +62,20 @@ describe("AgentConnectionController", () => {
     delete global.fetch
   })
 
+  test.each([
+    [{ flow: "custom", flows: [] }, []],
+    [{ flow: "api-key" }, ["api-key"]],
+    [{ flow: "custom", flows: ["device-code"] }, ["device-code"]]
+  ])("honors explicit flow availability %j", async (engine, expected) => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'), "agent-connection"
+    )
+    controller.renderEngines([{ engine: "codex", ...engine }])
+    expect([...document.querySelectorAll('[data-action="agent-connection#login"]')]
+      .map((button) => button.dataset.flow)).toEqual(expected)
+  })
+
   test("renders engine, provisioning, and session states with localized labels", async () => {
     await mount()
 

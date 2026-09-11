@@ -92,7 +92,7 @@ export default class extends AgentAuthController {
         state.append(detail)
       }
       const action = document.createElement("td")
-      const flows = engine.flows?.length ? engine.flows : [engine.flow].filter(Boolean)
+      const flows = Array.isArray(engine.flows) ? engine.flows : [engine.flow].filter(Boolean)
       flows.forEach((flow) => {
         const button = document.createElement("button")
         button.type = "button"

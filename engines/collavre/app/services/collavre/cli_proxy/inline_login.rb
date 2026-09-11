@@ -129,10 +129,10 @@ module Collavre
       end
 
       # Cleanup must survive deletion of the reply card or initiating user.
-      def self.abandon_replay!(task)
+      def self.abandon_replay!(task, pending: false)
         task.with_lock do
-          data = task.trigger_event_payload.fetch("engine_login", {})
-          return unless data["resumed"]
+          data = task.trigger_event_payload&.fetch("engine_login", {}) || {}
+          return unless data["resumed"] || (pending && data["retryable"])
 
           task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" =>
             data.merge("retryable" => false, "resumed" => false, "replay_abandoned" => true)))
