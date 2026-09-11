@@ -72,7 +72,10 @@ export default class TouchDragHandler {
     this._onTouchStart = this._handleTouchStart.bind(this)
     this._onTouchMove = this._handleTouchMove.bind(this)
     this._onTouchEnd = this._handleTouchEnd.bind(this)
-    this._onContextMenu = this._handleContextMenu.bind(this)
+    this._onNativeGesture = this._handleNativeGesture.bind(this)
+    for (const type of ['contextmenu', 'selectstart', 'dragstart']) {
+      document.addEventListener(type, this._onNativeGesture, { capture: true })
+    }
 
     this.container.addEventListener('touchstart', this._onTouchStart, { passive: false })
     this.container.addEventListener('touchmove', this._onTouchMove, { passive: false })
@@ -92,6 +95,9 @@ export default class TouchDragHandler {
     this.container.removeEventListener('touchmove', this._onTouchMove)
     this.container.removeEventListener('touchend', this._onTouchEnd)
     this.container.removeEventListener('touchcancel', this._onTouchEnd)
+    for (const type of ['contextmenu', 'selectstart', 'dragstart']) {
+      document.removeEventListener(type, this._onNativeGesture, { capture: true })
+    }
   }
 
   // ── Private ───────────────────────────────────────────────
@@ -181,11 +187,13 @@ export default class TouchDragHandler {
     }
   }
 
-  _handleContextMenu(e) {
-    // Suppress native context menu during drag
-    if (this._dragging || this._timer) {
-      e.preventDefault()
-    }
+  _handleNativeGesture(e) {
+    if (!this._dragging && !this._timer) return
+    // The bridge dispatches an untrusted dragstart to serialize the gesture.
+    // A browser drag would serialize it again and can cancel the touch stream.
+    if (e.type === 'dragstart' && !e.isTrusted) return
+    e.preventDefault()
+    if (e.type === 'dragstart') e.stopImmediatePropagation()
   }
 
   _startDrag(touch) {
@@ -201,9 +209,6 @@ export default class TouchDragHandler {
     if (this.onDragStart && this.onDragStart(items, touch) === false) return
 
     this._dragging = true
-
-    // Suppress context menu while dragging
-    document.addEventListener('contextmenu', this._onContextMenu, { capture: true })
 
     // Vibrate for haptic feedback (if supported)
     if (navigator.vibrate) navigator.vibrate(30)
@@ -311,8 +316,6 @@ export default class TouchDragHandler {
     if (this._frame !== null) cancelAnimationFrame(this._frame)
     this._frame = null
     this._cancelLongPress()
-
-    document.removeEventListener('contextmenu', this._onContextMenu, { capture: true })
 
     this.container.classList.remove(this.draggingClass)
 

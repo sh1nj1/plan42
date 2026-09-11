@@ -245,3 +245,49 @@ test('default selected-item mode keeps native menus after cancellation and can s
   expect(onDragStart).toHaveBeenCalledTimes(2)
   expect(document.querySelectorAll('.touch-drag-proxy')).toHaveLength(1)
 })
+
+
+test.each(['contextmenu', 'selectstart'])('blocks native %s only while a long press is pending or active', type => {
+  setup({ preserveNativeGestures: true })
+  const dispatch = () => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    container.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+  expect(dispatch()).toBe(false)
+  expect(touch('touchstart').defaultPrevented).toBe(false)
+  expect(dispatch()).toBe(true)
+  jest.advanceTimersByTime(400)
+  expect(dispatch()).toBe(true)
+  touch('touchcancel')
+  expect(dispatch()).toBe(false)
+  touch('touchstart')
+  touch('touchmove', 50, 80)
+  expect(dispatch()).toBe(false)
+  touch('touchstart')
+  handler.destroy()
+  expect(dispatch()).toBe(false)
+})
+
+test.each([0, 400])('native dragstart cannot take over a touch gesture at %sms', elapsed => {
+  const addListener = jest.spyOn(document, 'addEventListener')
+  setup({ preserveNativeGestures: true })
+  const listener = addListener.mock.calls.find(([type]) => type === 'dragstart')?.[1]
+  addListener.mockRestore()
+  expect(listener).toEqual(expect.any(Function))
+  touch('touchstart')
+  jest.advanceTimersByTime(elapsed)
+  const native = { type: 'dragstart', isTrusted: true,
+    preventDefault: jest.fn(), stopImmediatePropagation: jest.fn() }
+  listener(native)
+  expect(native.preventDefault).toHaveBeenCalledTimes(1)
+  expect(native.stopImmediatePropagation).toHaveBeenCalledTimes(1)
+  const synthetic = { ...native, isTrusted: false, preventDefault: jest.fn(), stopImmediatePropagation: jest.fn() }
+  listener(synthetic)
+  expect(synthetic.preventDefault).not.toHaveBeenCalled()
+  expect(synthetic.stopImmediatePropagation).not.toHaveBeenCalled()
+  touch('touchcancel')
+  native.preventDefault.mockClear()
+  listener(native)
+  expect(native.preventDefault).not.toHaveBeenCalled()
+})
