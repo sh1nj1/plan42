@@ -123,7 +123,7 @@ class UserTest < ActiveSupport::TestCase
       name: "Invalid CLI agent",
       email: "invalid-cli-agent@ai.local",
       password: SecureRandom.hex(24),
-      llm_vendor: "cli_proxy",
+      llm_vendor: " CLI_PROXY ",
       llm_model: "paperclip/claude_local",
       created_by_id: owner.id,
       agent_gateway: gateway
@@ -145,7 +145,7 @@ class UserTest < ActiveSupport::TestCase
       name: "Keyless CLI agent",
       email: "keyless-cli-agent@ai.local",
       password: SecureRandom.hex(24),
-      llm_vendor: "cli_proxy",
+      llm_vendor: " CLI_PROXY ",
       llm_model: "paperclip/claude_local",
       created_by_id: owner.id,
       agent_gateway: gateway
