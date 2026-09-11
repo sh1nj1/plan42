@@ -32,7 +32,10 @@
       </div>
     </div>
 
-    <a href="<%= profile_path %>" class="popup-menu-item" role="menuitem">
+    <a href="<%= profile_path %>"
+       class="popup-menu-item"
+       data-action="click->comment-user-menu#visitProfile"
+       role="menuitem">
       <%= t('collavre.comments.user_menu.view_profile') %>
     </a>
     <button type="button"

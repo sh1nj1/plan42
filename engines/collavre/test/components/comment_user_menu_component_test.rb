@@ -11,8 +11,9 @@ class CommentUserMenuComponentTest < ViewComponent::TestCase
     assert_selector ".comment-user-popup-identity strong", text: user.display_name
     assert_selector ".comment-user-popup-email", text: user.email
     assert_selector ".comment-user-popup-status", text: I18n.t("collavre.comments.participant_offline")
-    assert_selector "a.popup-menu-item[href='#{Collavre::Engine.routes.url_helpers.user_path(user)}']",
-      text: I18n.t("collavre.comments.user_menu.view_profile")
+    profile_selector = "a.popup-menu-item[href='#{Collavre::Engine.routes.url_helpers.user_path(user)}']" \
+      "[data-action='click->comment-user-menu#visitProfile']"
+    assert_selector profile_selector, text: I18n.t("collavre.comments.user_menu.view_profile")
     assert_selector "button[data-action='click->comment-user-menu#mention']",
       text: I18n.t("collavre.comments.user_menu.mention")
     assert_no_selector "[draggable='true']"

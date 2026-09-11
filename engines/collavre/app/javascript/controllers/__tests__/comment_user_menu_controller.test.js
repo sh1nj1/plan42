@@ -76,20 +76,36 @@ describe('CommentUserMenuController', () => {
   test('inserts a mention and focuses the composer', () => {
     const textareaTarget = { focus: jest.fn() }
     const mentionMenu = { insertMention: jest.fn(), textareaTarget }
-    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockImplementation((_element, identifier) => (
-      identifier === 'comments--mention-menu' ? mentionMenu : null
-    ))
+    const popupMenu = { hide: jest.fn() }
+    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockImplementation((_element, identifier) => {
+      if (identifier === 'comments--mention-menu') return mentionMenu
+      if (identifier === 'popup-menu') return popupMenu
+      return null
+    })
+    const event = { stopPropagation: jest.fn() }
 
-    controller.mention()
+    controller.mention(event)
 
+    expect(event.stopPropagation).toHaveBeenCalled()
     expect(mentionMenu.insertMention).toHaveBeenCalledWith({ id: 9, name: 'Agent One' })
     expect(textareaTarget.focus).toHaveBeenCalled()
+    expect(popupMenu.hide).toHaveBeenCalled()
   })
 
-  test('does nothing when the mention controller is unavailable', () => {
+  test('keeps the menu open when the mention controller is unavailable', () => {
     jest.spyOn(application, 'getControllerForElementAndIdentifier').mockReturnValue(null)
+    const event = { stopPropagation: jest.fn() }
 
-    expect(() => controller.mention()).not.toThrow()
+    expect(() => controller.mention(event)).not.toThrow()
+    expect(event.stopPropagation).toHaveBeenCalled()
+  })
+
+  test('keeps profile navigation from being interrupted by the popup close handler', () => {
+    const event = { stopPropagation: jest.fn() }
+
+    controller.visitProfile(event)
+
+    expect(event.stopPropagation).toHaveBeenCalled()
   })
 
   test('removes the presence listener when disconnected', () => {

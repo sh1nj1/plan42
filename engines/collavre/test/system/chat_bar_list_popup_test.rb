@@ -176,4 +176,73 @@ class ChatBarListPopupTest < ApplicationSystemTestCase
 
     assert_operator bottom, :<=, keyboard_top
   end
+
+  test "message author menu actions work on mobile" do
+    comment = Comment.create!(creative: @creative, user: @user, content: "Mobile menu actions")
+    resize_window_to(390, 844)
+    open_comments_popup
+
+    trigger_selector = "#comment_#{comment.id} .comment-user-menu-trigger"
+    menu_selector = "#user_menu_comment_#{comment.id}"
+
+    touch = page.driver.browser.action
+    touch.add_pointer_input(:touch, "finger")
+    touch.click(find(trigger_selector).native, device: "finger").perform
+    within menu_selector do
+      touch = page.driver.browser.action
+      touch.add_pointer_input(:touch, "finger")
+      touch.click(find_button(I18n.t("collavre.comments.user_menu.mention")).native, device: "finger").perform
+    end
+    assert_equal "@#{@user.name}: ", find("#new-comment-form textarea").value
+
+    touch = page.driver.browser.action
+    touch.add_pointer_input(:touch, "finger")
+    touch.click(find(trigger_selector).native, device: "finger").perform
+    within menu_selector do
+      touch = page.driver.browser.action
+      touch.add_pointer_input(:touch, "finger")
+      touch.click(find_link(I18n.t("collavre.comments.user_menu.view_profile")).native, device: "finger").perform
+    end
+    assert_current_path Collavre::Engine.routes.url_helpers.user_path(@user)
+  end
+
+  test "draggable agent menu actions work on mobile" do
+    agent = User.create!(
+      email: "chat-bar-agent@ai.local",
+      password: SystemHelpers::PASSWORD,
+      name: "ChatBarAgent",
+      email_verified_at: Time.current,
+      notifications_enabled: false,
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash",
+      system_prompt: "Test agent"
+    )
+    CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+    resize_window_to(390, 844)
+    open_comments_popup
+
+    trigger_selector = "[data-comment-user-menu-user-id-value='#{agent.id}'] .comment-user-menu-trigger"
+    menu_selector = "#participant-user-menu-#{agent.id}"
+    assert_selector trigger_selector, wait: 10
+
+    touch = page.driver.browser.action
+    touch.add_pointer_input(:touch, "finger")
+    touch.click(find(trigger_selector).native, device: "finger").perform
+    within menu_selector do
+      touch = page.driver.browser.action
+      touch.add_pointer_input(:touch, "finger")
+      touch.click(find_button(I18n.t("collavre.comments.user_menu.mention")).native, device: "finger").perform
+    end
+    assert_equal "@#{agent.name}: ", find("#new-comment-form textarea").value
+
+    touch = page.driver.browser.action
+    touch.add_pointer_input(:touch, "finger")
+    touch.click(find(trigger_selector).native, device: "finger").perform
+    within menu_selector do
+      touch = page.driver.browser.action
+      touch.add_pointer_input(:touch, "finger")
+      touch.click(find_link(I18n.t("collavre.comments.user_menu.view_profile")).native, device: "finger").perform
+    end
+    assert_current_path Collavre::Engine.routes.url_helpers.user_path(agent)
+  end
 end
