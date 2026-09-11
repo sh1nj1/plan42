@@ -6,7 +6,10 @@ export default class extends ImageLightboxController {
     const image = event.target.closest("img")
     const content = image?.closest(".creative-content, .creative-title-content")
     if (!content || image.closest('[contenteditable="true"], .inline-edit-form')) return
-    if (this._selectionActive(content)) return
+    if (this._selectionActive(content)) {
+      if (image.closest("a")) event.preventDefault()
+      return
+    }
 
     const images = Array.from(content.querySelectorAll("img[src]")).filter((img) => img.getAttribute("src"))
     const index = images.indexOf(image)

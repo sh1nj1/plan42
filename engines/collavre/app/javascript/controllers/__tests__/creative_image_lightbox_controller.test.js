@@ -108,6 +108,13 @@ test('toolbar selection selects the image row without opening the viewer, then r
   click('#title')
   expect(dialog()).toBeNull()
 
+  const onClick = jest.fn()
+  content.addEventListener('click', onClick)
+  expect(click('#second')).toBe(false)
+  expect(onClick).toHaveBeenCalledTimes(1)
+  expect(content.querySelector('input').checked).toBe(true)
+  expect(dialog()).toBeNull()
+
   click('#select')
   expect(content.querySelector('input').checked).toBe(false)
   click('#first')
