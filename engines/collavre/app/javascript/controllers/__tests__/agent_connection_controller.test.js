@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import { Application } from "@hotwired/stimulus"
+import { jest } from "@jest/globals"
 
 const { default: AgentConnectionController } = await import("../agent_connection_controller")
 
@@ -54,6 +55,7 @@ describe("AgentConnectionController", () => {
   })
 
   afterEach(() => {
+    jest.useRealTimers()
     application?.stop()
     application = null
     document.body.innerHTML = ""
@@ -264,4 +266,194 @@ describe("AgentConnectionController", () => {
     expect(controller.sessionTarget.childElementCount).toBe(0)
   })
 
+  describe("authentication session recovery", () => {
+    let controller
+    const session = {
+      engine: "codex", flow: "device-code", status: "pending", sessionId: "device",
+      expiresAt: "2099-01-01T00:00:00Z"
+    }
+    const event = { params: { engine: "codex", session: "device" } }
+    const response = (data, ok = true) => ({ ok, text: async () => JSON.stringify(data) })
+
+    beforeEach(async () => {
+      await mount()
+      controller = application.getControllerForElementAndIdentifier(
+        document.querySelector('[data-controller="agent-connection"]'), "agent-connection"
+      )
+      controller.sessionGeneration = 1
+      controller.resumeUrlValue = "/resume"
+      controller.resumedValue = "Request queued again"
+      jest.useFakeTimers()
+    })
+
+    test("polls a pending device session until authorized, then resumes exactly once", async () => {
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({ ...session, status: "authorized" }))
+        .mockResolvedValueOnce(response({ resumed: true }))
+
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+      expect(controller.sessionTarget.textContent).toContain("pending")
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+        "/auth/codex/device", "/auth/codex/device", "/resume"
+      ])
+      expect(global.fetch.mock.calls[2][1].method).toBe("POST")
+      expect(controller.sessionTarget.textContent).toBe("Request queued again")
+      expect(controller.enginesTarget.childElementCount).toBe(0)
+      expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test("reconnecting a pending device session continues polling without starting a new login", async () => {
+      controller.renderSession(session)
+      controller.disconnect()
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response({ ...session, status: "authorized" }))
+        .mockResolvedValueOnce(response({ resumed: true }))
+
+      controller.connect()
+      await jest.advanceTimersByTimeAsync(3000)
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/resume"])
+      expect(controller.sessionTarget.textContent).toBe("Request queued again")
+    })
+
+    test("failed device authorization shows the reason and refreshes status without resuming", async () => {
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response({ ...session, status: "failed", error: { message: "Access denied" } }))
+        .mockResolvedValueOnce(response({ engines: [] }))
+
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(controller.sessionTarget.textContent).toContain("Access denied")
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/status"])
+      expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test("poll transport errors stay visible without resuming or continuing to poll", async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error("Session superseded"))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(controller.errorTarget.hidden).toBe(false)
+      expect(controller.errorTarget.textContent).toContain("Session superseded")
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+      expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test("disconnecting during a poll delay prevents the HTTP request", async () => {
+      global.fetch = jest.fn()
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      controller.disconnect()
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test.each(["authorized", "error"])("a late %s poll response cannot overwrite a replacement session", async (outcome) => {
+      let finish, fail
+      global.fetch = jest.fn(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      controller.sessionGeneration++
+      controller.renderSession({ ...session, sessionId: "replacement", flow: "api-key" })
+      const form = controller.sessionTarget.firstElementChild
+      if (outcome === "error") fail(new Error("Old session failed"))
+      else finish(response({ ...session, status: "authorized" }))
+      await polling
+
+      expect(controller.sessionTarget.firstElementChild).toBe(form)
+      expect(controller.liveSession.sessionId).toBe("replacement")
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test("cancelling stops pending polling, clears the session and refreshes login choices", async () => {
+      controller.renderSession(session)
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, text: async () => "" })
+        .mockResolvedValueOnce(response({ engines: [] }))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+
+      await controller.cancel(event)
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/status"])
+      expect(global.fetch.mock.calls[0][1].method).toBe("DELETE")
+      expect(controller.liveSession).toBeNull()
+      expect(controller.sessionTarget.childElementCount).toBe(0)
+    })
+
+    test("a failed cancellation keeps the session available for retry and displays a fallback error", async () => {
+      controller.renderSession(session)
+      global.fetch = jest.fn().mockResolvedValue(response({}, false))
+
+      await controller.cancel(event)
+
+      expect(controller.liveSession).toEqual(session)
+      expect(controller.sessionTarget.childElementCount).toBe(1)
+      expect(controller.errorTarget.hidden).toBe(false)
+      expect(controller.errorTarget.textContent).toContain("CLI Proxy 오류")
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test("rejected code submissions display an error and clear the password input", async () => {
+      controller.renderSession({ ...session, flow: "api-key" })
+      const secret = controller.sessionTarget.querySelector('[data-role="secret"]')
+      secret.value = "private-key"
+      global.fetch = jest.fn().mockRejectedValue(new Error("Submission rejected"))
+
+      await controller.submit(event)
+
+      expect(secret.value).toBe("")
+      expect(controller.errorTarget.textContent).toContain("Submission rejected")
+      expect(controller.errorTarget.hidden).toBe(false)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test("connection settings refresh after authorization when there is no chat to resume", async () => {
+      controller.element.removeAttribute("data-agent-connection-resume-url-value")
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response({ ...session, status: "authorized" }))
+        .mockResolvedValueOnce(response({ engines: [{ engine: "codex", status: { state: "authenticated" } }] }))
+
+      await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "api-key" } } })
+      await jest.advanceTimersByTimeAsync(0)
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex", "/status"])
+      expect(controller.enginesTarget.textContent).toContain("authenticated")
+    })
+
+    test.each(["authorized", "error"])("a late %s submission clears its secret without affecting the new login", async (outcome) => {
+      controller.renderSession({ ...session, flow: "api-key" })
+      const secret = controller.sessionTarget.querySelector('[data-role="secret"]')
+      secret.value = "private-key"
+      let finish, fail
+      global.fetch = jest.fn(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+      const submission = controller.submit(event)
+      controller.sessionGeneration++
+      controller.renderSession({ ...session, sessionId: "replacement", flow: "api-key" })
+      const replacement = controller.sessionTarget.querySelector('[data-role="secret"]')
+      replacement.value = "new-key"
+
+      if (outcome === "error") fail(new Error("Old submission failed"))
+      else finish(response({ ...session, status: "authorized" }))
+      await submission
+
+      expect(secret.value).toBe("")
+      expect(replacement.value).toBe("new-key")
+      expect(controller.liveSession.sessionId).toBe("replacement")
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+  })
 })
