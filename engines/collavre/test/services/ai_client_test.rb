@@ -266,6 +266,17 @@ class AiClientTest < ActiveSupport::TestCase
     assert mock_config.verify
   end
 
+  test "vendor options normalize values and avoid duplicates" do
+    AiClient.register_vendor_option("Test", " Test-Vendor ")
+    AiClient.register_vendor_option("Duplicate", "TEST-VENDOR")
+    AiClient.register_vendor_option("Built-in", " OpenAI ")
+
+    assert_equal [ [ "Test", "test-vendor" ] ], AiClient.vendor_options.select { |_label, value| value == "test-vendor" }
+    assert_equal [ [ "OpenAI", "openai" ] ], AiClient.vendor_options.select { |_label, value| value == "openai" }
+  ensure
+    AiClient.registered_vendor_options.reject! { |_label, value| value == "test-vendor" }
+  end
+
   test "build_conversation normalizes vendor whitespace and case" do
     client = AiClient.new(
       vendor: " OpenAI ",

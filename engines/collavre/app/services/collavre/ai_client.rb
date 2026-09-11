@@ -58,7 +58,7 @@ module Collavre
 
       # Append a vendor <select> option ([label, value]). Idempotent by value.
       def register_vendor_option(label, value)
-        value = value.to_s
+        value = value.to_s.strip.downcase
         return if BASE_VENDOR_OPTIONS.any? { |_l, v| v == value }
         return if registered_vendor_options.any? { |_l, v| v == value }
 
@@ -77,11 +77,11 @@ module Collavre
       end
 
       def register_session_vendor(vendor)
-        session_vendors << vendor.to_s.downcase
+        session_vendors << vendor.to_s.strip.downcase
       end
 
       def vendor_supports_session?(vendor)
-        session_vendors.include?(vendor.to_s.downcase)
+        session_vendors.include?(vendor.to_s.strip.downcase)
       end
     end
 
