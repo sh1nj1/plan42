@@ -1600,6 +1600,11 @@ body.chat-fullscreen {
 .ai-agent-draggable:active,
 .ai-agent-draggable.dragging {
     cursor: grabbing;
+}
+
+.ai-agent-draggable.dragging {
+    /* Opacity on :active traps the fixed profile menu in a stacking context
+       during a tap, redirecting the native click to content beneath it. */
     opacity: 0.5;
 }
 
