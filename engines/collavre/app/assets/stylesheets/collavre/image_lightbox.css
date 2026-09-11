@@ -73,6 +73,10 @@
   gap: var(--space-1, 0.25rem);
 }
 
+.image-lightbox-btn[hidden] {
+  display: none;
+}
+
 .image-lightbox-btn:hover {
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
@@ -138,4 +142,11 @@
   .image-lightbox-image {
     max-width: 96%;
   }
+}
+
+/* Keep keyboard focus visible on images that open the shared viewer. */
+.creative-content img[role="button"]:focus-visible,
+.creative-title-content img[role="button"]:focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 3px;
 }

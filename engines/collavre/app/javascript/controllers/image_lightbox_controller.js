@@ -1,19 +1,11 @@
 import { Controller } from "@hotwired/stimulus"
+import imageLightboxValues from "./image_lightbox_values"
 import { confirmDialog } from "../lib/utils/dialog"
 
 // Connects to data-controller="image-lightbox"
 // Provides a fullscreen image carousel with navigation, download, and zoom
 export default class extends Controller {
-  static values = {
-    downloadAllUrl: String,
-    i18nClose: { type: String, default: "Close" },
-    i18nPrevious: { type: String, default: "Previous" },
-    i18nNext: { type: String, default: "Next" },
-    i18nDownload: { type: String, default: "Download" },
-    i18nDownloadAll: { type: String, default: "Download all" },
-    i18nDelete: { type: String, default: "Delete" },
-    i18nDeleteConfirm: { type: String, default: "Delete this image?" }
-  }
+  static values = imageLightboxValues
 
   connect() {
     this._boundKeydown = this._handleKeydown.bind(this)
@@ -28,8 +20,12 @@ export default class extends Controller {
     event.stopPropagation()
 
     const link = event.currentTarget
-    this._images = this._collectImages()
-    this._currentIndex = parseInt(link.dataset.imageLightboxIndexParam, 10) || 0
+    this._openImages(this._collectImages(), parseInt(link.dataset.imageLightboxIndexParam, 10) || 0)
+  }
+
+  _openImages(images, index) {
+    this._images = images
+    this._currentIndex = index
 
     this._createDialog()
     this._showImage()
@@ -200,12 +196,12 @@ export default class extends Controller {
         <div class="image-lightbox-toolbar">
           <span class="image-lightbox-counter"></span>
           <div class="image-lightbox-toolbar-actions">
-            <button class="image-lightbox-btn image-lightbox-zoom-in" type="button" title="Zoom in">🔍+</button>
-            <button class="image-lightbox-btn image-lightbox-zoom-out" type="button" title="Zoom out">🔍−</button>
-            <button class="image-lightbox-btn image-lightbox-zoom-reset" type="button" title="Reset zoom">1:1</button>
-            <button class="image-lightbox-btn image-lightbox-download-one" type="button" title="${this.i18nDownloadValue}">⬇ <span class="image-lightbox-btn-label">${this.i18nDownloadValue}</span></button>
+            <button class="image-lightbox-btn image-lightbox-zoom-in" type="button" title="${this.i18nZoomInValue}">🔍+</button>
+            <button class="image-lightbox-btn image-lightbox-zoom-out" type="button" title="${this.i18nZoomOutValue}">🔍−</button>
+            <button class="image-lightbox-btn image-lightbox-zoom-reset" type="button" title="${this.i18nZoomResetValue}">1:1</button>
+            <button ${this.hasDownloadAllUrlValue ? "" : "hidden"} class="image-lightbox-btn image-lightbox-download-one" type="button" title="${this.i18nDownloadValue}">⬇ <span class="image-lightbox-btn-label">${this.i18nDownloadValue}</span></button>
             ${this.hasDownloadAllUrlValue ? `<button class="image-lightbox-btn image-lightbox-download-all" type="button" title="${this.i18nDownloadAllValue}">📥 <span class="image-lightbox-btn-label">${this.i18nDownloadAllValue}</span></button>` : ""}
-            <button class="image-lightbox-btn image-lightbox-delete" type="button" title="${this.i18nDeleteValue}">🗑 <span class="image-lightbox-btn-label">${this.i18nDeleteValue}</span></button>
+            <button ${this.hasDownloadAllUrlValue ? "" : "hidden"} class="image-lightbox-btn image-lightbox-delete" type="button" title="${this.i18nDeleteValue}">🗑 <span class="image-lightbox-btn-label">${this.i18nDeleteValue}</span></button>
             <button class="image-lightbox-btn image-lightbox-close" type="button" title="${this.i18nCloseValue}">✕ <span class="image-lightbox-btn-label">${this.i18nCloseValue}</span></button>
           </div>
         </div>
@@ -239,6 +235,7 @@ export default class extends Controller {
     this._resetZoom()
 
     imgEl.src = img.fullSrc
+    imgEl.alt = img.alt || ""
 
     // Show image once loaded (or immediately if cached)
     const showImg = () => { imgEl.style.opacity = "1" }
