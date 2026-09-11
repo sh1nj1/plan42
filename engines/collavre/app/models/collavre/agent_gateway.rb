@@ -53,7 +53,8 @@ module Collavre
 
     scope :active, -> { where(active: true) }
     scope :health_probe_targets, -> do
-      active.joins(:agents).merge(User.where(llm_vendor: "cli_proxy")).distinct
+      assigned_gateway_ids = User.where(llm_vendor: "cli_proxy").select(:agent_gateway_id)
+      active.where(id: assigned_gateway_ids)
     end
 
     def chat_capable?

@@ -29,6 +29,16 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
     assert_not_includes probed, inactive.id
   end
 
+  test "the target relation loads whole gateway rows without distinct" do
+    assign_gateway
+    assign_gateway
+    relation = Collavre::AgentGateway.health_probe_targets
+
+    assert_equal @gateway, relation.find_by(id: @gateway.id)
+    assert_no_match(/SELECT\s+DISTINCT/i, relation.to_sql,
+      "PostgreSQL cannot apply DISTINCT to the gateway health_engines json column")
+  end
+
   test "the probe records a verdict for the gateway it names" do
     assign_gateway
     body = { "status" => "ok", "engines" => { "ready" => 1, "total" => 1 } }
