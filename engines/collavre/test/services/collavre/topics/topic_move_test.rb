@@ -5,6 +5,41 @@ require "test_helper"
 module Collavre
   module Topics
     class TopicMoveTest < ActiveSupport::TestCase
+      [ :commit, :rollback ].each do |outcome|
+        test "login abandonment follows the outer move transaction #{outcome}" do
+          user = users(:one)
+          source = Creative.create!(description: "Source", user: user)
+          destination = Creative.create!(description: "Destination", user: user)
+          topic = source.topics.create!(name: "Moving login", user: user)
+          other_topic = source.topics.create!(name: "Staying login", user: user)
+          login = { "engine_login" => { "retryable" => true } }
+          moving = Task.create!(name: "Moving", agent: user, creative: source, topic_id: topic.id,
+                                status: :done, trigger_event_payload: login)
+          staying = Task.create!(name: "Staying", agent: user, creative: source, topic_id: other_topic.id,
+                                 status: :done, trigger_event_payload: login)
+          foreign = Task.create!(name: "Other scope", agent: user, creative: destination, topic_id: topic.id,
+                                 status: :done, trigger_event_payload: login)
+
+          ApplicationRecord.transaction do
+            ApplicationRecord.transaction(requires_new: true) do
+              TopicMove.new(topic: topic, target_creative: destination).call
+            end
+            assert_equal login, moving.reload.trigger_event_payload
+            raise ActiveRecord::Rollback if outcome == :rollback
+          end
+
+          if outcome == :commit
+            assert_equal false, moving.reload.trigger_event_payload.dig("engine_login", "retryable")
+            assert_equal true, moving.trigger_event_payload.dig("engine_login", "replay_abandoned")
+          else
+            assert_equal login, moving.reload.trigger_event_payload
+            assert_equal source.id, topic.reload.creative_id
+          end
+          assert_equal login, staying.reload.trigger_event_payload
+          assert_equal login, foreign.reload.trigger_event_payload
+        end
+      end
+
       test "locks the topic and creatives before relocating its comments" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)

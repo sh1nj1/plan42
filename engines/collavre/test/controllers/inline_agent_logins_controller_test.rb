@@ -909,6 +909,47 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  [ false, true ].each do |claimed|
+    test "moving a topic abandons its #{claimed ? 'claimed' : 'pending'} login and completes the original loop" do
+      queue_delayed_replay if claimed
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => nil
+      } } })
+      destination = Collavre::Creative.create!(user: @requester, description: "Moved login")
+      topic = @original.topic
+      topic.update!(name: "Moving login")
+      clear_enqueued_jobs
+
+      assert_enqueued_jobs 1, only: Collavre::TriggerLoopCheckJob do
+        Collavre::Topics::TopicMove.new(topic: topic, target_creative: destination).call
+      end
+
+      assert_equal destination.id, @original.reload.creative_id
+      assert_equal destination.id, @reply.reload.creative_id
+      assert_equal @creative.id, @task.reload.creative_id
+      data = @task.trigger_event_payload.fetch("engine_login")
+      assert_equal false, data["retryable"]
+      assert_equal false, data["resumed"]
+      assert_equal true, data["replay_abandoned"]
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+        perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+      end
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+      notice = @creative.comments.where(user_id: nil).last
+      assert_equal I18n.t("collavre.inline_agent_login.replay_abandoned"), notice.content
+      assert_equal @creative.main_topic.id, notice.topic_id
+      get inline_agent_login_path(comment_id: @reply.id)
+      assert_response :success
+      assert_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+      assert_response :not_found
+    end
+  end
+
   [ :source, :card ].each do |deleted|
     test "deleting #{deleted} before resume abandons the login and completes the loop once" do
       parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })

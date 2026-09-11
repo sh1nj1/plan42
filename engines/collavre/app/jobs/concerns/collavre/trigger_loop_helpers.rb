@@ -21,7 +21,8 @@ module Collavre
       return true if newer_loop_completion_task?(task, creative, topic)
 
       update_loop_data(creative, state: "awaiting_user", infra_retry_count: 0)
-      post_system_notice(creative, topic, I18n.t("collavre.inline_agent_login.replay_abandoned"))
+      notice_topic = topic.creative_id == creative.id ? topic : creative.main_topic
+      post_system_notice(creative, notice_topic, I18n.t("collavre.inline_agent_login.replay_abandoned"))
       true
     end
 

@@ -47,7 +47,9 @@ for tool approval retain the normal completion path.
 Withdrawing a source (deletion, privacy change, creative/topic move, or
 conversion to an approval surface) also cancels approval-paused replays, releases
 their held resources, and drains the topic queue. Their remaining approval cards cannot execute tools
-or enqueue a continuation after cancellation.
+or enqueue a continuation after cancellation. Bulk topic moves settle pending login
+turns only after the move commits. If their topic has left the original creative,
+the loop abandonment notice stays in that creative's main topic.
 After restoring access or authentication, the requester must send a new message.
 
 Verification covers HTTP/SSE classification with RubyLLM's real parser,
