@@ -17,6 +17,9 @@ module Collavre
     # Abandonment has no agent result to evaluate, and its card may be gone.
     def finish_abandoned_replay(task, creative, topic)
       return false unless task.trigger_event_payload&.dig("engine_login", "replay_abandoned")
+      # A newer turn owns completion; do not evaluate the stale login card either.
+      latest_task_id = Task.where(creative_id: creative.id, topic_id: topic.id).order(created_at: :desc, id: :desc).pick(:id)
+      return true unless latest_task_id == task.id
 
       update_loop_data(creative, state: "awaiting_user", infra_retry_count: 0)
       post_system_notice(creative, topic, I18n.t("collavre.inline_agent_login.replay_abandoned"))

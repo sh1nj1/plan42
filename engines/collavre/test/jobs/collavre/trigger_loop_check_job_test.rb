@@ -62,6 +62,63 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    [ 0.seconds, 1.second ].each do |delay|
+      test "stale abandoned replay leaves the newer turn in control with #{delay} timestamp offset" do
+        @task.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        @child.data["trigger"]["loop"]["current_iteration"] = 1
+        @child.save!
+        newer = @task.dup
+        newer.assign_attributes(status: "running", trigger_event_payload: {}, created_at: @task.created_at + delay)
+        newer.save!
+        @child.comments.create!(
+          content: "Login required", topic: @topic, user: @ai_bot, task: @task,
+          created_at: @task.created_at + 2.seconds
+        )
+        before_loop = @child.reload.data.dig("trigger", "loop").deep_dup
+
+        assert_no_difference -> { @child.comments.count } do
+          AiClient.stub(:new, ->(*) { flunk "Stale login cards must not be evaluated" }) do
+            TriggerLoopCheckJob.perform_now(@task.id)
+          end
+        end
+        assert_equal before_loop, @child.reload.data.dig("trigger", "loop")
+
+        @child.comments.create!(
+          content: "Finished [STATUS: DONE]", topic: @topic, user: @ai_bot, task: newer,
+          created_at: @task.created_at + 3.seconds
+        )
+        verification = Minitest::Mock.new
+        verification.expect(:call, nil, [ newer.id ])
+        TriggerLoopVerifyJob.stub(:perform_later, verification) do
+          TriggerLoopCheckJob.perform_now(newer.id)
+        end
+        verification.verify
+        assert_equal "pending_verification", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+      end
+    end
+
+    [ :older, :other_topic, :other_creative ].each do |scope|
+      test "latest abandoned replay still stops when a #{scope} task exists" do
+        @task.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        other = @task.dup
+        other.assign_attributes(status: "running", trigger_event_payload: {}, created_at: @task.created_at + 1.second)
+        case scope
+        when :older then other.created_at = @task.created_at - 1.second
+        when :other_topic then other.topic_id = @child.topics.create!(name: "Other", user: @human).id
+        when :other_creative then other.creative = @parent
+        end
+        other.save!
+
+        assert_difference -> { @child.comments.count }, 1 do
+          TriggerLoopCheckJob.perform_now(@task.id)
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+        assert_equal I18n.t("collavre.inline_agent_login.replay_abandoned"), @child.comments.last.content
+      end
+    end
+
     test "transitions to pending_verification when agent reports STATUS: DONE" do
       @child.comments.create!(
         content: "All done! [STATUS: DONE]",
