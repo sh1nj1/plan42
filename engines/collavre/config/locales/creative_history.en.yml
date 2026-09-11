@@ -9,6 +9,9 @@ en:
         one: 1 creative
         other: "%{count} creatives"
       inline: Inline diff
+      skipped_lines:
+        one: "… 1 unchanged line"
+        other: "… %{count} unchanged lines"
       split: Split diff
       before: Before
       after: After

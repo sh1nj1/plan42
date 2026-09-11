@@ -6,6 +6,9 @@ module Collavre
   module Creatives
     class ChangeSetDiff
       BLOCK_SEPARATOR = "\n\n---\n\n"
+      # Git-style hunks: only lines within this many lines of a change are rendered.
+      CONTEXT_LINES = 3
+      GAP_ACTION = "~"
 
       def initialize(change_set, user:)
         @change_set = change_set
@@ -14,6 +17,7 @@ module Collavre
         @changes_by_id = @changes.index_by(&:creative_id)
         @candidate_nodes = nil
         @parent_ids = {}
+        @node_markdown = {}
       end
 
       def groups
@@ -79,17 +83,18 @@ module Collavre
       def build_group(root_id)
         before = visible_document(root_id, :before)
         after = visible_document(root_id, :after)
-        additions, deletions = line_counts(before, after)
+        line_diff = Diff::LCS.sdiff(before.lines, after.lines)
+        rows = hunk_rows(line_diff)
         {
           root_id: root_id,
           label: label_for(root_id),
           before: before,
           after: after,
-          additions: additions,
-          deletions: deletions,
+          additions: line_diff.count { |change| %w[+ !].include?(change.action) },
+          deletions: line_diff.count { |change| %w[- !].include?(change.action) },
           moved: moved_in_group?(root_id),
-          inline_html: inline_html(before, after),
-          split_rows: split_rows(before, after)
+          inline_html: inline_html(rows),
+          split_rows: rows
         }
       end
 
@@ -116,15 +121,30 @@ module Collavre
       end
 
       def document(root_id, state)
-        nodes = candidate_nodes(root_id).to_h { |creative| [ creative.id, History.snapshot(creative) ] }
+        nodes = base_snapshots.dup
         @changes.each do |change|
           snapshot = change.public_send(state)
           snapshot.empty? ? nodes.delete(change.creative_id) : nodes[change.creative_id] = snapshot
         end
-        ordered_node_ids(root_id, nodes).filter_map { |id| markdown_for(nodes[id]) }.join(BLOCK_SEPARATOR)
+        ordered_node_ids(root_id, nodes)
+          .filter_map { |id| node_markdown(id, nodes[id], state) }
+          .join(BLOCK_SEPARATOR)
       end
 
-      def candidate_nodes(_root_id)
+      def base_snapshots
+        @base_snapshots ||= candidate_nodes.to_h { |creative| [ creative.id, History.snapshot(creative) ] }
+      end
+
+      # Untouched nodes render identically in both states and in every group, so
+      # convert each one to markdown once instead of per document rebuild.
+      def node_markdown(id, snapshot, state)
+        return nil if snapshot.nil?
+
+        key = [ id, @changes_by_id.key?(id) ? state : :base ]
+        @node_markdown[key] ||= markdown_for(snapshot)
+      end
+
+      def candidate_nodes
         @candidate_nodes ||= begin
           root_ids = [ @change_set.anchor_creative_id, *@changes_by_id.keys ].compact.select(&:positive?)
           descendant_ids = CreativeHierarchy.where(ancestor_id: root_ids).pluck(:descendant_id)
@@ -161,7 +181,52 @@ module Collavre
         markdown_for(snapshot || {}).lines.first.to_s.sub(/\A#+\s*/, "").strip.presence || "##{root_id}"
       end
 
-      def inline_html(before, after)
+      # Renders changed lines plus CONTEXT_LINES around them. Documents are whole
+      # subtrees, so emitting every unchanged line grows the payload without bound.
+      def hunk_rows(line_diff)
+        kept = kept_line_indexes(line_diff)
+        rows = []
+        skipped = 0
+        line_diff.each_with_index do |change, index|
+          next skipped += 1 unless kept.include?(index)
+
+          rows << gap_row(skipped) if skipped.positive?
+          skipped = 0
+          rows << { action: change.action, before: change.old_element.to_s, after: change.new_element.to_s }
+        end
+        rows << gap_row(skipped) if skipped.positive?
+        rows
+      end
+
+      def kept_line_indexes(line_diff)
+        last = line_diff.size - 1
+        line_diff.each_index.reduce(Set.new) do |kept, index|
+          next kept if line_diff[index].action == "="
+
+          kept.merge([ index - CONTEXT_LINES, 0 ].max..[ index + CONTEXT_LINES, last ].min)
+        end
+      end
+
+      def gap_row(skipped)
+        { action: GAP_ACTION, before: "", after: "", skipped: skipped }
+      end
+
+      def inline_html(rows)
+        rows.map { |row| inline_row_html(row) }.join
+      end
+
+      def inline_row_html(row)
+        return gap_html(row[:skipped]) if row[:action] == GAP_ACTION
+        return ERB::Util.html_escape(row[:before]) if row[:action] == "="
+
+        token_html(row[:before], row[:after])
+      end
+
+      def gap_html(skipped)
+        ERB::Util.html_escape("#{I18n.t('collavre.creative_history.skipped_lines', count: skipped)}\n")
+      end
+
+      def token_html(before, after)
         Diff::LCS.sdiff(tokens(before), tokens(after)).map do |change|
           old_value = ERB::Util.html_escape(change.old_element.to_s)
           new_value = ERB::Util.html_escape(change.new_element.to_s)
@@ -172,19 +237,6 @@ module Collavre
           else "<del>#{old_value}</del><ins>#{new_value}</ins>"
           end
         end.join
-      end
-
-      def split_rows(before, after)
-        Diff::LCS.sdiff(before.lines, after.lines).map do |change|
-          { action: change.action, before: change.old_element.to_s, after: change.new_element.to_s }
-        end
-      end
-
-      def line_counts(before, after)
-        changes = Diff::LCS.sdiff(before.lines, after.lines)
-        additions = changes.count { |change| %w[+ !].include?(change.action) }
-        deletions = changes.count { |change| %w[- !].include?(change.action) }
-        [ additions, deletions ]
       end
 
       def tokens(markdown)

@@ -1776,6 +1776,13 @@ body.chat-fullscreen {
   color: var(--text-primary);
 }
 
+.creative-history-split .diff-gap td {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+  width: auto;
+}
+
 .creative-history-revert {
   margin-top: 10px;
 }

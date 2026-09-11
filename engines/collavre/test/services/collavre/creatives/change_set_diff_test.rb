@@ -40,6 +40,97 @@ module Collavre
         assert_equal 1, group.fetch(:deletions)
       end
 
+      test "renders only changed hunks with surrounding context for a large document" do
+        before_lines = Array.new(400) { |index| "line #{index}" }
+        after_lines = before_lines.dup
+        after_lines[200] = "line 200 edited"
+        large = Creative.create!(
+          description: after_lines.join("\n"), user: @user, parent: @root,
+          data: { "content_type" => "markdown", "markdown_source" => after_lines.join("\n") }
+        )
+        @change_set.creative_changes.create!(
+          creative: large, operation: "update",
+          before: History.snapshot(large).merge("markdown_source" => before_lines.join("\n")),
+          after: History.snapshot(large), position: 1
+        )
+
+        group = ChangeSetDiff.new(@change_set, user: @user).groups.sole
+        rows = group.fetch(:split_rows)
+
+        assert_operator rows.size, :<, 40, "unchanged lines must not be rendered"
+        assert rows.any? { |row| row.fetch(:after).include?("line 200 edited") }
+        assert_not rows.any? { |row| row.fetch(:before).include?("line 10 ") || row.fetch(:before).strip == "line 10" }
+        assert_not_includes group.fetch(:inline_html), "line 10\n"
+        assert_includes group.fetch(:inline_html), "edited"
+      end
+
+      test "marks elided regions with a gap row carrying the skipped line count" do
+        before_lines = Array.new(400) { |index| "line #{index}" }
+        after_lines = before_lines.dup
+        after_lines[200] = "line 200 edited"
+        large = Creative.create!(
+          description: after_lines.join("\n"), user: @user, parent: @root,
+          data: { "content_type" => "markdown", "markdown_source" => after_lines.join("\n") }
+        )
+        @change_set.creative_changes.create!(
+          creative: large, operation: "update",
+          before: History.snapshot(large).merge("markdown_source" => before_lines.join("\n")),
+          after: History.snapshot(large), position: 1
+        )
+
+        group = ChangeSetDiff.new(@change_set, user: @user).groups.sole
+        gaps = group.fetch(:split_rows).select { |row| row.fetch(:action) == ChangeSetDiff::GAP_ACTION }
+
+        rendered = group.fetch(:split_rows).size - gaps.size
+        assert_operator gaps.size, :>=, 2
+        assert gaps.all? { |gap| gap.fetch(:skipped).positive? }
+        # Every line of the document is either rendered or accounted for by a gap.
+        assert_equal group.fetch(:after).lines.size,
+                     rendered + gaps.sum { |gap| gap.fetch(:skipped) }
+        assert_includes group.fetch(:inline_html),
+                        I18n.t("collavre.creative_history.skipped_lines", count: gaps.first.fetch(:skipped))
+      end
+
+      test "still counts additions and deletions across the whole document" do
+        before_lines = Array.new(400) { |index| "line #{index}" }
+        after_lines = before_lines.dup
+        after_lines[10] = "line 10 edited"
+        after_lines[300] = "line 300 edited"
+        large = Creative.create!(
+          description: after_lines.join("\n"), user: @user, parent: @root,
+          data: { "content_type" => "markdown", "markdown_source" => after_lines.join("\n") }
+        )
+        @change_set.creative_changes.create!(
+          creative: large, operation: "update",
+          before: History.snapshot(large).merge("markdown_source" => before_lines.join("\n")),
+          after: History.snapshot(large), position: 1
+        )
+
+        group = ChangeSetDiff.new(@change_set, user: @user).groups.sole
+
+        # Two edited lines here plus the single-line edit recorded in setup.
+        assert_equal 3, group.fetch(:additions)
+        assert_equal 3, group.fetch(:deletions)
+      end
+
+      test "converts an untouched node to markdown once across both document states" do
+        4.times { |index| Creative.create!(description: "<p>Stable #{index}</p>", user: @user, parent: @root) }
+        conversions = Hash.new(0)
+        converter = MarkdownConverter.method(:html_to_markdown)
+        counting = lambda do |html|
+          conversions[html] += 1
+          converter.call(html)
+        end
+        group = MarkdownConverter.stub(:html_to_markdown, counting) do
+          ChangeSetDiff.new(@change_set, user: @user).groups.sole
+        end
+
+        assert_includes group.fetch(:before), "Stable 0"
+        # before and after rebuild the same document; untouched nodes convert once.
+        assert_equal 1, conversions["<p>Stable 0</p>"]
+        assert_equal 1, conversions["<p>Stable 3</p>"]
+      end
+
       test "renders touched roots outside the anchor as separate groups" do
         outside = Creative.create!(description: "Outside", user: @user)
         @change_set.creative_changes.create!(
