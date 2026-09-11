@@ -111,7 +111,10 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     get inline_agent_login_path(comment_id: @reply.id)
     assert_select "[data-controller=agent-connection]"
     set_data("authorized" => true, "session_user_id" => @owner.id)
-    assert_enqueued_with(job: Collavre::AiAgentJob, args: [ @agent.id, "comment_created", @task.reload.trigger_event_payload.except("engine_login") ]) do
+    expected = @task.reload.trigger_event_payload.except("engine_login").merge(
+      "comment" => @original.dispatch_payload[:comment].deep_stringify_keys, "chat" => { "content" => @original.content }
+    )
+    assert_enqueued_with(job: Collavre::AiAgentJob, args: [ @agent.id, "comment_created", expected ]) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :success
@@ -181,6 +184,58 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       2.times { post inline_agent_login_resume_path(comment_id: @reply.id), as: :json; assert_response :success }
     end
     assert @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+  end
+
+  test "resume rebuilds edited content and mentions before scheduling" do
+    set_data("authorized" => true, "session_user_id" => @requester.id)
+    payload = @task.reload.trigger_event_payload.merge(
+      "comment" => { "id" => @original.id, "content" => "Removed secret", "quoted_comment_id" => 999 },
+      "chat" => { "content" => "Removed secret", "mentioned_user" => { "id" => @owner.id } }
+    )
+    @task.update!(trigger_event_payload: payload)
+    @original.update!(content: "@#{@agent.name}: Updated request")
+    expected = payload.except("engine_login").merge(
+      "comment" => @original.dispatch_payload[:comment].deep_stringify_keys,
+      "chat" => Collavre::SystemEvents::ContextBuilder.reanchor_chat(@original.content)
+    )
+    assert_enqueued_with(job: Collavre::AiAgentJob, args: [ @agent.id, "comment_created", expected ]) do
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+    end
+    assert_response :success
+    assert_not_includes expected.to_json, "Removed secret"
+    assert_equal @agent.id, expected.dig("chat", "mentioned_user", "id")
+    assert_not expected["comment"].key?("quoted_comment_id")
+  end
+
+  test "removing a mention cannot bypass the current topic assignment on replay" do
+    set_data("authorized" => true, "session_user_id" => @requester.id)
+    @task.update!(trigger_event_payload: @task.trigger_event_payload.merge(
+      "chat" => Collavre::SystemEvents::ContextBuilder.reanchor_chat("@#{@agent.name}: Old request")
+    ))
+    @original.topic.update!(primary_agent_id: users(:ai_bot).id)
+    @original.update!(content: "Updated request without mention")
+    assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+    end
+    assert_response :conflict
+    assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+  end
+
+  [ { private: true }, { action: '{"tool":"test"}' },
+    { action: '{"tool":"test"}', action_executed_at: Time.current } ].each_with_index do |attributes, index|
+    test "source changed to a non-dispatchable comment blocks its author from replay #{index}" do
+      set_data("authorized" => true, "session_user_id" => @requester.id)
+      login = Collavre::CliProxy::InlineLogin.new(@reply, @requester)
+      assert login.accessible?
+      @original.update!(attributes)
+      assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+        error = assert_raises(Collavre::CliProxy::Client::Error) { login.resume! }
+        assert_equal "cannot_retry", error.code
+        post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+      end
+      assert_response :not_found
+      assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+    end
   end
 
   test "partial and cancelled turns cannot be automatically replayed" do

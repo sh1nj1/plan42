@@ -90,9 +90,10 @@ module Collavre
         task.with_lock do
           return if data["resumed"]
           fail_with!("not_authorized") unless data["authorized"] && data["session_user_id"] == @user.id
-          fail_with!("cannot_retry") unless data["retryable"] && task.done? && original_comment
+          source = original_comment
+          fail_with!("cannot_retry") unless data["retryable"] && task.done? && source
 
-          payload = retry_payload
+          payload = retry_payload(source)
           task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" => data.merge("resumed" => true)))
           enqueue_retry(payload)
         end
@@ -102,7 +103,8 @@ module Collavre
 
       def original_comment
         id = task&.trigger_event_payload&.dig("comment", "id")
-        comment.creative.comments.visible_to(@user).find_by(id: id, topic_id: comment.topic_id)
+        source = comment.creative.comments.visible_to(@user).find_by(id: id, topic_id: comment.topic_id)
+        source unless source&.private? || source&.approval_action?
       end
 
       def enqueue_retry(payload)
@@ -115,8 +117,10 @@ module Collavre
         job.perform_later(agent.id, task.trigger_event_name, payload)
       end
 
-      def retry_payload
-        task.trigger_event_payload.except("engine_login", *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
+      def retry_payload(source)
+        # Rebuild content and mentions after login, before assignment checks.
+        Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, source)
+            .except("engine_login", *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
             .merge("workspace_user_id" => workspace.user_id || task.trigger_event_payload["workspace_user_id"])
       end
 

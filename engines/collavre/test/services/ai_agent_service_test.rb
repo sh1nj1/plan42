@@ -39,8 +39,30 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     reply = @task.reload.reply_comment
     assert_includes reply.content, "codex"
     assert_nil reply.action
+    assert_not reply.private?, "Login cards require public reply broadcasts"
     assert @task.trigger_event_payload["handoff_failed"]
     assert_equal({ "engine" => "codex", "workspace_id" => 42, "retryable" => true }, @task.trigger_event_payload["engine_login"])
+  end
+
+  [ true, false ].each do |with_comment|
+    test "login requirement is logged with safe identifiers #{with_comment ? 'with' : 'without'} a reply" do
+      unless with_comment
+        @task.update!(trigger_event_name: "creative_updated", trigger_event_payload: @task.trigger_event_payload.except("comment"))
+      end
+      workspace = Struct.new(:id).new(42)
+      error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)
+      client = Object.new
+      client.define_singleton_method(:chat) { |*args, **kwargs| raise error }
+      client.define_singleton_method(:handed_off?) { false }
+      messages = []
+      Rails.logger.stub(:info, ->(message = nil, &block) { messages << (message || block&.call) }) do
+        AiClient.stub(:new, client) { assert_nil AiAgentService.new(@task).call }
+      end
+      reply = @task.reload.reply_comment
+      assert_nil reply unless with_comment
+      assert_includes messages, "[AiAgent] engine_unauthenticated task_id=#{@task.id} agent_id=#{@agent.id} " \
+                                "engine=codex workspace_id=42 reply_comment_id=#{reply&.id || 'none'}"
+    end
   end
 
   test "login failure after partial output preserves content without allowing automatic replay" do

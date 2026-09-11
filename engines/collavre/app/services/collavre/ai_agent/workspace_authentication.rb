@@ -14,6 +14,8 @@ module Collavre
         @lifecycle_manager.check_cancelled!(force: true)
         CliProxy::InlineLogin.record!(@task, @reply_comment, error, content: @streamer.content,
                                     retryable: !@client.handed_off?)
+        Rails.logger.info "[AiAgent] engine_unauthenticated task_id=#{@task.id} agent_id=#{@agent.id} " \
+                          "engine=#{error.engine} workspace_id=#{error.workspace.id} reply_comment_id=#{@reply_comment&.id || 'none'}"
         @lifecycle_manager.broadcast_status("idle")
         nil
       end
