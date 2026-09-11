@@ -119,6 +119,11 @@ module Collavre
         MentionParser.extract_all_names("@John Doe: report\n@GitHub PR Analyzer: review")
     end
 
+    test "extract_all_names keeps at signs inside canonical names" do
+      assert_equal [ "ops@example.com", "Astra" ],
+        MentionParser.extract_all_names("@ops@example.com: investigate\n@Astra: review")
+    end
+
     test "extract_all_names stops a canonical name at a newline" do
       # Without a newline boundary the lazy name match swallows the whole first
       # line plus the next "@", yielding one unresolvable name instead of two.
@@ -150,6 +155,12 @@ module Collavre
       resolved = MentionParser.resolve_all_users("@OrderFirst done\n@OrderSecond: your turn")
 
       assert_equal [ first.id, second.id ], resolved.map(&:id)
+    end
+
+    test "resolve_all_users finds a canonical mention whose name contains an at sign" do
+      user = User.create!(name: "ops@example.com", email: "ops_mention@example.com", password: "password")
+
+      assert_equal [ user.id ], MentionParser.resolve_all_users("@ops@example.com: investigate").map(&:id)
     end
   end
 end

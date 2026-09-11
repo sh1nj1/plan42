@@ -7,11 +7,12 @@ module Collavre
     MENTION_PREFIX_CHARS = /[\s:.,;\n\r]/
 
     # The name part of a canonical mention. Spaces are allowed (agents are named
-    # things like "GitHub PR Analyzer"), but "@" and line breaks are not: a lazy
+    # things like "GitHub PR Analyzer"), but line breaks are not: a lazy
     # "anything up to the next colon" would let a colon-free mention on one line
     # swallow the rest of the line plus the next line's "@", collapsing two
-    # mentions into one unresolvable name.
-    MENTION_NAME = /[^:@\n\r]+?/
+    # mentions into one unresolvable name. At signs remain valid because user
+    # names have no corresponding model restriction.
+    MENTION_NAME = /[^:\n\r]+?/
 
     # Canonical mention: @name: (with colon separator)
     # Matches at start of text or after whitespace/punctuation/newline
