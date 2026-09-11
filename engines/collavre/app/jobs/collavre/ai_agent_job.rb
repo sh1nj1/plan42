@@ -3,7 +3,7 @@ module Collavre
     queue_as :ai_agents
 
     # Allow resuming a task that was pending approval
-    def perform(agent_id_or_task, event_name = nil, context = nil)
+    def perform(agent_id_or_task, event_name = nil, context = nil, replay_identity = nil)
       if agent_id_or_task.is_a?(Task)
         # Resume existing task
         task = agent_id_or_task
@@ -157,7 +157,7 @@ module Collavre
         # empty topic and are all judged :immediate — several turns run at once
         # in a topic limited to one. Re-check at the moment the row is created,
         # where the answer is authoritative, and defer into the queue instead.
-        task = admit_or_defer!(agent, event_name, context)
+        task = admit_dispatch!(agent, event_name, context, replay_identity)
         return if task.nil?
       end
 
@@ -265,6 +265,13 @@ module Collavre
         raise CancelledError unless task.status == "running"
 
         task.update!(attributes)
+      end
+    end
+
+    def admit_dispatch!(agent, event_name, context, replay_identity)
+      CliProxy::InlineReplayAdmission.call(context, replay_identity) do |current_context|
+        agent.reload if replay_identity
+        admit_or_defer!(agent, event_name, current_context)
       end
     end
 

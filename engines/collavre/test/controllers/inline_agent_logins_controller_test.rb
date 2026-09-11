@@ -462,7 +462,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
       assert_response :success
       payload = nil
-      Collavre::AiAgentJob.stub(:perform_now, ->(_agent, _event, context) { payload = context }) do
+      Collavre::AiAgentJob.stub(:perform_now, ->(_agent, _event, context, _identity) { payload = context }) do
         perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
       end
       assert_not payload.key?("engine_login")
@@ -607,6 +607,76 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  [ :deleted, :private, :approval, :moved, :agent_access, :edited, :card, :task, :detached_card ].each do |change|
+    test "dispatch admission revalidates #{change} after replay payload preparation" do
+      queue_delayed_replay
+      dispatch = Collavre::AiAgentJob.method(:perform_now)
+      mutate_then_dispatch = lambda do |*args|
+        case change
+        when :deleted then @original.destroy!
+        when :private then @original.update!(private: true)
+        when :approval then @original.update!(action: '{"tool":"test"}')
+        when :moved then @original.update!(topic_id: @creative.topics.create!(name: "Moved at dispatch", user: @requester).id)
+        when :agent_access
+          Collavre::CreativeShare.where(creative: @creative, user: @agent).destroy_all
+          Collavre::CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
+        when :edited then @original.update!(content: "Current dispatch text")
+        when :card then @reply.destroy!
+        when :task then @task.destroy!
+        when :detached_card then @reply.update!(task: nil)
+        end
+        dispatch.call(*args)
+      end
+      Collavre::AiAgentJob.stub(:perform_now, mutate_then_dispatch) do
+        if change == :edited
+          payloads = execute_replay_payloads
+          assert_equal [ "Current dispatch text" ], payloads.map { |payload| payload.dig("comment", "content") }
+          assert_equal "Current dispatch text", payloads.first.dig("chat", "content")
+        else
+          assert_difference "Collavre::Task.count", change == :task ? -1 : 0 do
+            assert_empty execute_replay_payloads
+          end
+          assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned") unless change == :task
+        end
+      end
+    end
+  end
+
+  test "dispatch admission ignores cached source text from earlier validation" do
+    queue_delayed_replay
+    dispatch = Collavre::AiAgentJob.method(:perform_now)
+    Collavre::Comment.cache do
+      Collavre::AiAgentJob.stub(:perform_now, lambda { |*args|
+        connection = Collavre::Comment.connection
+        table = connection.quote_table_name(Collavre::Comment.table_name)
+        # Bypass AR cache invalidation to model an edit on another connection.
+        sql = "UPDATE #{table} SET content = 'Uncached current request' WHERE id = #{@original.id}"
+        raw = connection.raw_connection
+        raw.respond_to?(:exec) ? raw.exec(sql) : raw.execute(sql)
+        dispatch.call(*args)
+      }) do
+        payloads = execute_replay_payloads
+        assert_equal [ "Uncached current request" ], payloads.map { |payload| payload.dig("comment", "content") }
+      end
+    end
+  end
+
+  test "replay admission rolls back its task and source changes together on failure" do
+    queue_delayed_replay
+    identity = [ @reply.id, @requester.id, @task.id ]
+    assert_no_difference "Collavre::Task.count" do
+      assert_raises(RuntimeError) do
+        Collavre::CliProxy::InlineReplayAdmission.call({}, identity) do |payload|
+          @original.update!(content: "Uncommitted edit")
+          Collavre::Task.create!(name: "Uncommitted replay", agent: @agent, status: :running,
+            creative: @creative, topic_id: @original.topic_id, trigger_event_payload: payload)
+          raise "Admission failed"
+        end
+      end
+    end
+    assert_equal "Hello", @original.reload.content
+  end
+
   test "replay queue contains only ids and keeps the scheduler delay" do
     queue_delayed_replay
     job = enqueued_jobs.find { |entry| entry[:job] == Collavre::InlineAgentReplayJob }
@@ -619,7 +689,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     queue_delayed_replay
     clear_enqueued_jobs
     payloads = []
-    Collavre::AiAgentJob.stub(:perform_now, ->(_agent, _event, payload) { payloads << payload }) do
+    Collavre::AiAgentJob.stub(:perform_now, ->(_agent, _event, payload, _identity) { payloads << payload }) do
       Collavre::InlineAgentReplayJob.perform_now(@reply.id, @requester.id)
     end
     assert_equal [ @original.id ], payloads.map { |payload| payload.dig("comment", "id") }

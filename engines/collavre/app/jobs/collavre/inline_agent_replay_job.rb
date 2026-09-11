@@ -17,22 +17,15 @@ module Collavre
       end
 
       login = CliProxy::InlineLogin.new(comment, user)
-      payload = current_payload(login)
-      return unless payload
+      payload = login.replay_payload
 
-      # Start inline so another delayed job cannot retain this text snapshot.
-      # AiAgentJob still owns topic admission, resource tracking and completion.
-      AiAgentJob.perform_now(login.agent.id, login.task.trigger_event_name, payload)
-    end
-
-    private
-
-    def current_payload(login)
-      login.replay_payload
+      # Carry identity into admission: validation and Task creation must share
+      # the source lock, not just run consecutively in this worker.
+      AiAgentJob.perform_now(login.agent.id, login.task.trigger_event_name, payload, [ comment.id, user.id, task.id ])
     rescue CliProxy::Client::Error => error
-      Rails.logger.info("[InlineAgentReplayJob] Skipping reply=#{login.comment.id} code=#{error.code}")
-      login.abandon_replay!
-      nil
+      Rails.logger.info("[InlineAgentReplayJob] Skipping task=#{task.id} code=#{error.code}")
+      task = Task.find_by(id: task.id)
+      CliProxy::InlineLogin.abandon_replay!(task) if task
     end
   end
 end

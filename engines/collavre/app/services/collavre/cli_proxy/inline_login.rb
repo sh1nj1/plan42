@@ -123,10 +123,6 @@ module Collavre
         end
       end
 
-      def abandon_replay!
-        self.class.abandon_replay!(task)
-      end
-
       # Cleanup must survive deletion of the reply card or initiating user.
       def self.abandon_replay!(task)
         task.with_lock do
