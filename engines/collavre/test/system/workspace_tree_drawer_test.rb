@@ -30,6 +30,10 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  teardown do
+    page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
+  end
+
   [ MOBILE_WIDTH, TWO_PANEL_WIDTH ].each do |width|
     test "the tree collapses to a reachable drawer at #{width}px" do
       visit_workspace(width)
@@ -122,9 +126,47 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     end
   end
 
-  # The handle is a fixed overlay. In the two-panel band it lands in the gutter
-  # main leaves itself, but one-panel main runs flush to the left edge, so the
-  # same offset would sit on top of the breadcrumb row and eat taps meant for it.
+  [ 375, MOBILE_WIDTH, 767 ].each do |width|
+    test "scrolled row controls stay clear of the mobile drawer handle at #{width}px" do
+      branches = Array.new(35) do |index|
+        branch = Creative.create!(description: "Scroll branch #{index}", user: @user)
+        Creative.create!(description: "Scroll leaf #{index}", user: @user, parent: branch)
+        branch
+      end
+      visit_workspace(width)
+      row_selector = "#creative-#{branches[20].id}"
+      control = find("#{row_selector} .creative-toggle-btn")
+
+      # Align a real row control with the fixed handle after document scrolling.
+      # Initial-position checks with a short list cannot exercise this overlap.
+      page.execute_script(<<~JS, control)
+        const rect = arguments[0].getBoundingClientRect();
+        const handle = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
+        window.scrollBy(0, rect.top + rect.height / 2 - handle.top - handle.height / 2);
+      JS
+      assert_operator page.evaluate_script("window.scrollY"), :>, 0
+      assert_selector "#{row_selector} .creative-toggle-btn" do |button|
+        page.evaluate_script(<<~JS, button)
+          (() => {
+            const rect = arguments[0].getBoundingClientRect();
+            const handle = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
+            const centerY = rect.top + rect.height / 2;
+            return centerY > handle.top && centerY < handle.bottom && rect.left >= handle.right &&
+              arguments[0].contains(document.elementFromPoint(rect.left + rect.width / 2, centerY));
+          })();
+        JS
+      end
+
+      control.click
+      assert_selector "creative-tree-row[dom-id='creative-#{branches[20].id}'][expanded]"
+      assert_no_selector ".creative-workspace-tree-region.is-open"
+      assert_toggle_within_viewport
+      find(".creative-workspace-tree-toggle").click
+      assert_selector ".creative-workspace-tree-region.is-open"
+    end
+  end
+
+  # Check initial placement too, including the unchanged two-panel gutter.
   [ MOBILE_WIDTH, TWO_PANEL_WIDTH ].each do |width|
     test "the closed drawer handle covers no control in the content column at #{width}px" do
       visit_workspace(width)
@@ -183,7 +225,11 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
 
   def visit_workspace(width)
     resize_window_to(width, 800)
+    # Chrome can clamp desktop windows to 500px; pin the actual CSS viewport.
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride",
+      width: width, height: 800, deviceScaleFactor: 1, mobile: false)
     visit collavre.creatives_path
+    assert_equal width, page.evaluate_script("window.innerWidth")
     assert_selector ".creative-workspace-shell"
   end
 

@@ -318,6 +318,13 @@ body.creative-workspace .indent3 {
         max-width: var(--max-width);
     }
 
+    /* Reserve the handle's width outside the scrolling content so row controls
+       never pass underneath it, including in long creative lists. */
+    .creative-workspace-shell > main {
+        margin-left: 2.75rem;
+        width: calc(100% - 2.75rem);
+    }
+
     /* Keep the drawer handle in easy thumb reach on one-panel screens while
        clearing the device's bottom safe area. */
     .creative-workspace-tree-toggle {
