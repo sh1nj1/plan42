@@ -258,13 +258,13 @@ module Collavre
     def cancel_pending_tasks
       stranded_scopes = []
 
-      # Cancel tasks triggered by this comment (no creative_id scoping —
+      # Cancel tasks anchored to or rendering this merged comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
       # existing tasks, so scoping would miss moved-comment tasks).
       # Include approval-paused and delegated work: both can resume side effects
       # after withdrawal and keep holding the topic/agent slot without a worker.
       Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
-        next unless task.trigger_event_payload&.dig("comment", "id") == id
+        next unless dispatch_source_ids(task).include?(id)
 
         # An un-started task can be the survivor of a coalesced burst, answering
         # several comments at once. Cancelling it because its anchor was deleted
@@ -362,8 +362,7 @@ module Collavre
       return false unless %w[queued pending].include?(task.status)
 
       payload = task.trigger_event_payload || {}
-      merged = Array(payload[Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY])
-                 .compact.map(&:to_i).uniq - [ id ]
+      merged = dispatch_source_ids(task) - [ id ]
       return false if merged.empty?
 
       # Anything else in the merge window may have been deleted too. Newest by id:
@@ -394,7 +393,8 @@ module Collavre
                    .in_turn(merged, "creative" => { "id" => task.creative_id },
                                     "topic" => { "id" => task.topic_id })
                    .order(:id).to_a
-      replacement = in_scope.last
+      # Withdrawing a merged source need not move a still-valid anchor.
+      replacement = in_scope.find { |comment| comment.id == payload.dig("comment", "id").to_i } || in_scope.last
       return false unless replacement
 
       # Through the same door the refresh uses, so the promotion is recorded as

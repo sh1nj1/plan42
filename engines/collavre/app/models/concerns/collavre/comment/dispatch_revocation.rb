@@ -14,6 +14,12 @@ module Collavre
 
       private
 
+      def dispatch_source_ids(task)
+        payload = task.trigger_event_payload || {}
+        (Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) + [ payload.dig("comment", "id") ])
+          .compact.map(&:to_i).uniq
+      end
+
       def dispatch_revoked?
         saved_change_to_creative_id? || saved_change_to_topic_id? ||
           (saved_change_to_private? && private?) || (saved_change_to_action? && approval_action?)

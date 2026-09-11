@@ -46,6 +46,32 @@ module Collavre
       end
     end
 
+    %w[pending queued].product([ :private, :action, :destroy ]).each do |status, withdrawal|
+      test "#{withdrawal} merged source keeps the valid #{status} anchor and remaining content" do
+        anchor = @creative.comments.create!(user: @owner, content: "Anchor", skip_dispatch: true)
+        sibling = @creative.comments.create!(user: @owner, content: "Newer sibling", skip_dispatch: true)
+        task = Task.create!(name: "Coalesced turn", status: status, agent: @agent, creative: @creative,
+          topic_id: anchor.topic_id, trigger_event_payload: {
+            "comment" => { "id" => anchor.id }, "workspace_user_id" => @owner.id,
+            "merged_comment_ids" => [ @comment.id.to_s, sibling.id ]
+          })
+        other = Task.create!(name: "Unrelated turn", status: :running, agent: @agent, trigger_event_payload: {})
+        Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(*) { flunk "Surviving turn was cancelled" }) do
+          if withdrawal == :destroy
+            @comment.destroy!
+          else
+            @comment.update!(withdrawal => (withdrawal == :private ? true : '{"tool":"approval"}'))
+          end
+        end
+        assert_equal status, task.reload.status
+        assert_equal anchor.id, task.trigger_event_payload.dig("comment", "id")
+        assert_equal "Anchor", task.trigger_event_payload.dig("chat", "content")
+        assert_equal [ sibling.id ], task.trigger_event_payload["merged_comment_ids"]
+        assert_equal @owner.id, task.trigger_event_payload["workspace_user_id"]
+        assert other.reload.running?
+      end
+    end
+
     test "withdrawal does not overwrite a task completed after the active scan" do
       task = Task.create!(name: "Paused turn", status: :pending_approval, agent: @agent, creative: @creative,
         trigger_event_payload: { "comment" => { "id" => @comment.id } })

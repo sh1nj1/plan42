@@ -78,11 +78,14 @@ module Collavre
             final.update!(trigger_event_payload: final.trigger_event_payload.merge("inline_login_task_id" => originals.first.id))
             TaskCoalescer.coalesce!(final)
             assert_equal originals.map(&:id).sort, final.reload.trigger_event_payload["inline_login_task_ids"].sort
+            final.task_actions.create!(action_type: "reply_created", status: "done") if ending == "done"
             final.update!(status: ending)
             originals.each do |original|
               state = original.reload.trigger_event_payload.fetch("engine_login")
               assert_equal ending == "done", state["resumed"]
               assert_equal ending != "done", !!state["replay_abandoned"]
+              assert_equal ending == "done", !!state["replay_completed"]
+              assert_equal false, state["retryable"]
             end
           end
         end

@@ -68,8 +68,9 @@ Completion requires a persisted reply or review result. An empty response abando
 its linked claims and cannot retain loop completion ownership. Newer ordinary turns
 also need finalized output to supersede abandonment; if one finishes empty after
 an abandonment check deferred to it, completion rechecks the abandoned turn.
-A second authentication failure or a failed provider handoff is not successful
-completion, and turns waiting for tool approval keep their claims pending.
+A failed provider handoff abandons all linked claims, even if its error is saved
+as a reply; that error cannot take over loop completion. A second authentication
+failure and turns waiting for tool approval keep their claims pending.
 Repeated authentication carries every ancestor login claim into the next admitted
 replay, so its eventual success or failure settles the entire chain of cards.
 Settled cards remain readable by reply viewers even after source invalidation,
@@ -77,9 +78,11 @@ without enabling session actions. Coalescing queued turns
 transfers all login claims to the survivor in the same transaction; superseded
 waiters do not abandon requests that remain queued. The survivor settles every
 inherited claim if it later ends without a result.
-Withdrawing a source (deletion, privacy change, creative/topic move, or
-conversion to an approval surface) also cancels approval-paused replays, releases
-their held resources, and drains the topic queue. Their remaining approval cards cannot execute tools
+Withdrawing an anchor or merged source (deletion, privacy change, creative/topic
+move, or conversion to an approval surface) cancels running and approval-paused
+replays, including after trigger rendering. Unstarted turns retain their valid
+anchor and remaining sources, or re-anchor if the anchor was withdrawn. Cancellation
+releases held resources and drains the topic queue. Remaining approval cards cannot execute tools
 or enqueue a continuation after cancellation. Bulk topic moves settle pending login
 turns only after the move commits. If their topic has left the original creative,
 the loop abandonment notice stays in that creative's main topic.

@@ -218,6 +218,44 @@ module Collavre
       end
     end
 
+    [ false, true ].product([ false, true ]).each do |external, error_reply|
+      test "failed handoff settles all claims via #{external ? 'external claim' : 'callback'} with error_reply=#{error_reply}" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+        second = @task.dup
+        second.save!
+        replay = @task.dup
+        replay.assign_attributes(status: "running", trigger_event_payload: {
+          "inline_login_task_ids" => [ @task.id, second.id ], Orchestration::DeliveryRecord::HANDOFF_FAILED_KEY => true
+        })
+        replay.save!
+        if error_reply
+          @child.comments.create!(content: "⚠️ AI Error: connection failed", user: @ai_bot, topic: @topic,
+            task: replay, skip_dispatch: true)
+          replay.task_actions.create!(action_type: "reply_created", status: "done")
+        end
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          external ? replay.update_columns(status: "done") : replay.done!
+          replay.fire_completion_callbacks_after_external_claim
+        end
+        assert_equal [ @task.id, second.id ], checks
+        [ @task, second ].each do |original|
+          data = original.reload.trigger_event_payload.fetch("engine_login")
+          assert_equal true, data["replay_abandoned"]
+          assert_equal false, data["retryable"]
+          assert_equal false, data["resumed"]
+          assert_not data["replay_completed"]
+        end
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+          assert_difference -> { @child.comments.count }, 1 do
+            checks.each { |id| TriggerLoopCheckJob.perform_now(id) }
+          end
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+      end
+    end
+
     test "a finalized review without a reply placeholder completes its login claim" do
       @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
       replay = @task.dup
@@ -235,10 +273,10 @@ module Collavre
       replay.reload.done!
       assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_completed")
       assert_equal false, @task.trigger_event_payload.dig("engine_login", "retryable")
-      assert_not replay.empty_loop_response?
+      assert_not replay.unsuccessful_loop_response?
     end
 
-    [ :login, :undelivered, :approval, :unclaimed ].each do |ending|
+    [ :login, :approval, :unclaimed ].each do |ending|
       test "#{ending} replay does not settle a claim as successfully completed" do
         @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => ending != :unclaimed } })
         replay = @task.dup
@@ -246,7 +284,6 @@ module Collavre
         replay.save!
         payload = replay.trigger_event_payload
         payload["engine_login"] = { "retryable" => true } if ending == :login
-        payload[Orchestration::DeliveryRecord::HANDOFF_FAILED_KEY] = true if ending == :undelivered
         replay.update!(status: ending == :approval ? "pending_approval" : "done", trigger_event_payload: payload)
         data = @task.reload.trigger_event_payload.fetch("engine_login")
         assert_equal true, data["retryable"]

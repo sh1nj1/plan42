@@ -12,8 +12,10 @@ module Collavre
       end
 
       # Finished turns need output to own completion; login waits still delegate it.
-      def empty_loop_response?
-        done? && !trigger_event_payload&.key?("engine_login") && !finalized_response?
+      # An error reply from a failed replay handoff is not successful output.
+      def unsuccessful_loop_response?
+        done? && !trigger_event_payload&.key?("engine_login") &&
+          ((finished_inline_replay? && ended_undelivered?) || !finalized_response?)
       end
 
       private
@@ -40,10 +42,10 @@ module Collavre
         login && (login["retryable"] || login["replay_completed"])
       end
 
-      def completed_inline_replay?
+      def finished_inline_replay?
         return false if CliProxy::ReplayClaims.ids(trigger_event_payload).empty?
 
-        done? && !trigger_event_payload&.key?("engine_login") && !ended_undelivered?
+        done? && !trigger_event_payload&.key?("engine_login")
       end
 
       def finalized_response?
@@ -52,11 +54,11 @@ module Collavre
       end
 
       def recheck_abandonment_candidate?
-        trigger_event_name == "comment_created" && (status.in?(%w[failed cancelled escalated]) || empty_loop_response?)
+        trigger_event_name == "comment_created" && (status.in?(%w[failed cancelled escalated]) || unsuccessful_loop_response?)
       end
 
       def recheck_abandoned_replays
-        return settle_inline_replay(completed: finalized_response?) if completed_inline_replay?
+        return settle_inline_replay(completed: !ended_undelivered? && finalized_response?) if finished_inline_replay?
         return unless recheck_abandonment_candidate?
         return if !done? && settle_inline_replay
         return unless creative&.parent&.drop_trigger_enabled?

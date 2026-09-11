@@ -1258,6 +1258,40 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  [ :private, :action, :destroy, :topic, :creative ].product([ false, true ]).each do |withdrawal, approval|
+    test "#{withdrawal} merged source withdrawal cancels #{approval ? 'approval paused' : 'rendered'} replay" do
+      mention = prepare_merged_replay
+      queue_delayed_replay
+      replay = nil
+      client = Object.new
+      client.define_singleton_method(:chat) { |*| raise "Withdrawn merged source reached the provider" }
+      client.define_singleton_method(:handed_off?) { false }
+      factory = lambda do |*|
+        replay = Collavre::Task.where(agent: @agent, status: :running).sole
+        prompt = replay.task_actions.find_by!(action_type: "prompt_generated").payload.to_json
+        assert_includes prompt, "Merged request"
+        if approval
+          replay.update!(status: :pending_approval)
+          raise Collavre::ApprovalPendingError
+        end
+        revoke_replay_source(withdrawal, source: mention)
+        client
+      end
+      Collavre::AiClient.stub(:new, factory) { perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob) }
+      if approval
+        assert replay.reload.pending_approval?
+        revoke_replay_source(withdrawal, source: mention)
+      end
+      assert replay.reload.cancelled?
+      assert_equal 0, Collavre::Orchestration::ResourceTracker.for(@agent).active_jobs
+      data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal true, data["replay_abandoned"]
+      assert_equal false, data["retryable"]
+      assert_equal false, data["resumed"]
+      assert Collavre::Comment.exists?(@original.id), "The anchor was not withdrawn"
+    end
+  end
+
   test "stopping a deferred replay settles its original claim even with both comments intact" do
     queue_delayed_replay
     Collavre::Orchestration::TopicSlot.stub(:available_for?, false) do
@@ -1412,6 +1446,30 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "provider failure before a replay chunk persists an error but abandons the login" do
+    queue_delayed_replay
+    constructor = Collavre::AiClient.method(:new)
+    factory = lambda do |*args, **kwargs|
+      client = constructor.call(*args, **kwargs)
+      client.define_singleton_method(:build_conversation) { |*| raise IOError, "connection reset before response" }
+      client
+    end
+    Collavre::AiClient.stub(:new, factory) { perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob) }
+    replay = Collavre::Task.where(agent: @agent).where.not(id: @task.id).sole
+    assert replay.done?
+    assert replay.ended_undelivered?
+    assert_includes replay.reply_comment.content, "AI Error: [IOError] connection reset before response"
+    assert replay.task_actions.exists?(action_type: "reply_created", status: "done")
+    data = @task.reload.trigger_event_payload.fetch("engine_login")
+    assert_equal true, data["replay_abandoned"]
+    assert_equal false, data["retryable"]
+    assert_equal false, data["resumed"]
+    assert_not data["replay_completed"]
+    get inline_agent_login_path(comment_id: @reply.id)
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+  end
+
   test "successful replay does not abandon its original login" do
     queue_delayed_replay
     assert_equal 1, execute_replay_payloads.size
@@ -1497,16 +1555,16 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, @task.trigger_event_payload.dig("engine_login", "retryable")
   end
 
-  def revoke_replay_source(change)
+  def revoke_replay_source(change, source: @original)
     case change
-    when :destroy then @original.destroy!
-    when :private then @original.update!(private: true)
-    when :action then @original.update!(action: '{"tool":"approval"}')
+    when :destroy then source.destroy!
+    when :private then source.update!(private: true)
+    when :action then source.update!(action: '{"tool":"approval"}')
     when :topic, :creative
       destination = change == :creative ? Collavre::Creative.create!(user: @requester, description: "Private destination") : @creative
       topic = destination.topics.create!(name: "Destination", user: @requester)
       options = change == :creative ? { target_creative_id: destination.id } : { target_topic_id: topic.id }
-      Collavre::CommentMoveService.new(creative: @creative, user: @requester).call(comment_ids: [ @original.id ], **options)
+      Collavre::CommentMoveService.new(creative: @creative, user: @requester).call(comment_ids: [ source.id ], **options)
     end
   end
 
