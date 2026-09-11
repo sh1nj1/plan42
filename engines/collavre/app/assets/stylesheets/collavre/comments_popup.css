@@ -385,6 +385,14 @@ body.chat-fullscreen {
     background: var(--color-success);
 }
 
+.comment-user-popup-status.is-check_error .comment-user-popup-status-dot {
+    background: var(--color-danger);
+}
+
+.comment-user-popup-status.is-unknown .comment-user-popup-status-dot {
+    background: var(--color-warning);
+}
+
 .comment-user-popup-guide {
     margin: var(--space-2) var(--space-2) var(--space-1);
     padding-top: var(--space-2);

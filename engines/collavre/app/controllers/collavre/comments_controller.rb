@@ -149,10 +149,12 @@ module Collavre
       ActiveRecord::Associations::Preloader.new(records: users, associations: :agent_gateway).call
       live_claude_agent_ids = live_claude_agent_ids_for(users)
       user_data = users.map do |user|
+        liveness_status = user.agent_liveness_status(live_claude_agent_ids: live_claude_agent_ids)
         view_context.user_json(user, email: true, ai_user: true)
                     .merge(
                       profile_url: user_path(user),
-                      agent_online: user.agent_online?(live_claude_agent_ids: live_claude_agent_ids)
+                      agent_online: liveness_status == :online,
+                      agent_health_status: user.ai_user? ? liveness_status : nil
                     )
       end
       response.headers["Cache-Control"] = "no-store"

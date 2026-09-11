@@ -379,6 +379,53 @@ class UserTest < ActiveSupport::TestCase
     assert_not users(:one).agent_online?
   end
 
+  test "a registered endpoint checker contributes fresh liveness state" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "openai")
+
+    assert_equal :unknown, agent.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    assert_equal :online, agent.reload.agent_liveness_status
+    assert_predicate agent, :agent_online?
+
+    agent.update_columns(endpoint_health_status: 2, endpoint_health_checked_at: Time.current)
+    assert_equal :offline, agent.reload.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 3, endpoint_health_checked_at: Time.current)
+    assert_equal :check_error, agent.reload.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: 4.minutes.ago)
+    assert_equal :unknown, agent.reload.agent_liveness_status
+    assert_not agent.agent_online?
+  end
+
+  test "an unregistered checker stays unknown and never makes an agent online" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "vendor-without-checker")
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+
+    assert_not agent.endpoint_health_supported?
+    assert_equal :unknown, agent.reload.agent_liveness_status
+    assert_not agent.agent_online?
+  end
+
+  test "changing endpoint configuration invalidates the cached verdict" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "openai", gateway_url: "https://old.example.test/v1")
+    agent.update_columns(
+      endpoint_health_status: 1,
+      endpoint_health_checked_at: Time.current,
+      endpoint_health_error: "old"
+    )
+
+    agent.update!(gateway_url: "https://new.example.test/v1")
+
+    assert_predicate agent, :endpoint_health_unknown?
+    assert_nil agent.endpoint_health_checked_at
+    assert_nil agent.endpoint_health_error
+  end
+
   private
 
   def create_cli_proxy_agent(owner, gateway, model)

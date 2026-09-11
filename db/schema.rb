@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_10_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_11_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1024,6 +1024,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_10_000000) do
     t.json "dismissed_notices"
     t.string "email", null: false
     t.datetime "email_verified_at"
+    t.datetime "endpoint_health_checked_at"
+    t.string "endpoint_health_error"
+    t.integer "endpoint_health_status", default: 0, null: false
     t.integer "failed_login_attempts", default: 0, null: false
     t.string "gateway_url"
     t.string "google_access_token"

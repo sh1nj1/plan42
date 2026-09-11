@@ -1,4 +1,53 @@
-# Agent gateway health and agent presence
+# Agent endpoint health and agent presence
+
+Vendor health checks are optional extensions registered through
+`Collavre::AgentHealth.register(vendor, checker)`. A missing checker means
+Collavre has no liveness evidence for that vendor; it does not block or skip an
+agent call. Checker results are cached on the agent row and are read only for
+status presentation.
+
+A checker implements `initialize(agent:)` and `call`, returning an
+`AgentHealth::Result` with `online`, `offline`, or `unknown`. It may be supplied
+by a satellite engine without adding a dependency from core back to that
+engine:
+
+```ruby
+class VendorEndpointChecker
+  def initialize(agent:)
+    @agent = agent
+  end
+
+  def call
+    Collavre::AgentHealth::Result.new(status: :online)
+  end
+end
+
+Collavre::AgentHealth.register("vendor_name", VendorEndpointChecker)
+```
+
+The probe owns `check_error`; a checker should raise when its own implementation
+cannot produce a valid verdict. The probe contains that exception, records the
+error state, and never changes dispatch behavior.
+
+Core registers an OpenAI-compatible checker. Once a minute it sends
+`GET {gateway_url}/models`, or `GET https://api.openai.com/v1/models` when the
+agent has no custom base URL. It uses the same agent or integration API key as
+the normal OpenAI client. This proves endpoint reachability and, where the
+route supports it, authentication; it deliberately does not make a completion
+request and therefore does not claim that inference for a particular model
+will succeed.
+
+The endpoint checker records `online`, `offline`, `unknown`, or `check_error`.
+An unexpected checker exception is contained and displayed as a health-check
+error. Results expire after three minutes, and changing the vendor, base URL,
+or API key invalidates the cached verdict immediately. Non-administrator URLs
+use the same DNS pinning and private-network rejection policy as CLI proxy
+requests; redirects are not followed.
+
+Endpoint probes share the dedicated `gateway_health` worker with CLI proxy
+probes. For capacity planning, provision at least
+`ceil((gateways * 22 + endpoint agents * 11) / 180)` threads: a legacy gateway
+can consume two 11-second requests, while one endpoint agent consumes one.
 
 An agent whose runs go through a CLI proxy gateway is only usable while that
 gateway can still reach the CLI behind it. Collavre polls each registered
@@ -116,5 +165,5 @@ profile popup is not torn out from under the user. A confirmed 401/403/404 uses
 the same revocation path as the live share event: it disables the composer,
 clears or closes the chat, and invalidates the workspace tree.
 
-Agents on a hosted vendor API publish no liveness evidence either way and are
-left out rather than asserted online.
+Agents for a vendor with no registered checker publish no liveness evidence
+either way and are shown as unknown rather than asserted online or offline.

@@ -32,6 +32,8 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
                data-close-label="Close"
                data-participant-online-text="Online"
                data-participant-offline-text="Offline"
+               data-participant-health-unknown-text="Health status unavailable"
+               data-participant-health-check-error-text="Health check error"
                data-participant-search-placeholder-text="Search users..."
                data-user-menu-open-text="Open %{name}'s profile menu"
                data-user-menu-view-profile-text="View profile"
@@ -78,6 +80,19 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
         expect(isMenuOnline(2)).toBe(false)
     })
 
+    test('checker errors and unsupported checkers have distinct status labels', () => {
+        controller.participantsData = [
+            { ...AGENT, agent_online: false, agent_health_status: 'check_error' },
+            { ...AGENT, id: 3, agent_online: false, agent_health_status: 'unknown' }
+        ]
+        controller.renderParticipants([])
+
+        const statuses = Array.from(controller.participantsTarget
+            .querySelectorAll('[data-comment-user-menu-target="statusLabel"]'))
+            .map((label) => label.textContent)
+        expect(statuses).toEqual(['Health check error', 'Health status unavailable'])
+    })
+
     // Read receipts answer "who has seen this", which an agent nobody is sitting
     // in front of has not. Gateway liveness must not leak into that answer.
     test('agent liveness is kept out of read receipts and the presence event', () => {
@@ -99,6 +114,20 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
         expect(controller.updateRenderedParticipantPresence([])).toBe(true)
         expect(isMenuOnline(2)).toBe(true)
         expect(isMenuOnline(1)).toBe(false)
+    })
+
+    test('an in-place refresh changes the status kind without replacing the menu', () => {
+        controller.participantsData = [{ ...AGENT, agent_online: false, agent_health_status: 'unknown' }]
+        controller.renderParticipants([])
+        const menu = controller.participantsTarget.querySelector('.comment-user-menu')
+
+        controller.participantsData = [{ ...AGENT, agent_online: false, agent_health_status: 'check_error' }]
+        expect(controller.updateRenderedParticipantPresence([])).toBe(true)
+
+        expect(controller.participantsTarget.querySelector('.comment-user-menu')).toBe(menu)
+        expect(menu.querySelector('.comment-user-popup-status').classList.contains('is-check_error')).toBe(true)
+        expect(menu.querySelector('[data-comment-user-menu-target="statusLabel"]').textContent)
+            .toBe('Health check error')
     })
 
     test('the refresh timer runs while the chat is open and stops when it closes', () => {

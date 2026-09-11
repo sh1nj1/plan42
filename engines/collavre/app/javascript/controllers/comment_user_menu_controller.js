@@ -64,12 +64,20 @@ export default class extends Controller {
     // gateway-backed agent reads the same on its message avatar as it does on
     // the participant strip. Without a presence controller (this menu rendered
     // outside the chat popup) chat presence is all there is.
-    const online = this.presenceController
-      ? this.presenceController.isUserOnline(this.userIdValue, presentIds)
-      : presentIds.some((id) => String(id) === String(this.userIdValue))
-    this.statusTarget.classList.toggle('is-online', online)
-    this.statusLabelTarget.textContent = online
-      ? this.statusTarget.dataset.onlineText
-      : this.statusTarget.dataset.offlineText
+    const state = this.presenceController
+      ? this.presenceController.userHealthState(this.userIdValue, presentIds)
+      : this.fallbackHealthState(presentIds)
+    this.statusTarget.classList.remove('is-online', 'is-offline', 'is-unknown', 'is-check_error')
+    this.statusTarget.classList.add(`is-${state.kind}`)
+    this.statusLabelTarget.textContent = state.label
+  }
+
+  fallbackHealthState(presentIds) {
+    const online = presentIds.some((id) => String(id) === String(this.userIdValue))
+    return {
+      online,
+      kind: online ? 'online' : 'offline',
+      label: online ? this.statusTarget.dataset.onlineText : this.statusTarget.dataset.offlineText,
+    }
   }
 }

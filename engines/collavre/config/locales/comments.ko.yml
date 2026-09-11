@@ -167,6 +167,8 @@ ko:
       participant_search_placeholder: 사용자 검색...
       participant_online: 온라인
       participant_offline: 오프라인
+      participant_health_unknown: 상태 확인 불가
+      participant_health_check_error: 헬스 체크 오류
       user_menu:
         open: "%{name} 프로필 메뉴 열기"
         view_profile: 프로필 보기

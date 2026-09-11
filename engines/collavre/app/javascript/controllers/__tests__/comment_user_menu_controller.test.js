@@ -61,16 +61,32 @@ describe('CommentUserMenuController', () => {
   // A gateway-backed agent is online without being present in the chat, and the
   // avatar on its message must not contradict the one in the participant strip.
   test('defers to the presence controller so agent liveness reads the same everywhere', () => {
-    const presence = { isUserOnline: jest.fn(() => true) }
+    const presence = {
+      userHealthState: jest.fn(() => ({ online: true, kind: 'online', label: 'Online' }))
+    }
     jest.spyOn(application, 'getControllerForElementAndIdentifier').mockImplementation((_element, identifier) => (
       identifier === 'comments--presence' ? presence : null
     ))
 
     popup.dispatchEvent(new CustomEvent('comments--presence:changed', { detail: { presentIds: [] } }))
 
-    expect(presence.isUserOnline).toHaveBeenCalledWith(9, [])
+    expect(presence.userHealthState).toHaveBeenCalledWith(9, [])
     expect(controller.statusTarget.classList.contains('is-online')).toBe(true)
     expect(controller.statusLabelTarget.textContent).toBe('Online')
+  })
+
+  test('shows a checker error returned by the presence controller', () => {
+    const presence = {
+      userHealthState: jest.fn(() => ({ online: false, kind: 'check_error', label: 'Health check error' }))
+    }
+    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockImplementation((_element, identifier) => (
+      identifier === 'comments--presence' ? presence : null
+    ))
+
+    controller.updatePresence([])
+
+    expect(controller.statusTarget.classList.contains('is-check_error')).toBe(true)
+    expect(controller.statusLabelTarget.textContent).toBe('Health check error')
   })
 
   test('inserts a mention and focuses the composer', () => {

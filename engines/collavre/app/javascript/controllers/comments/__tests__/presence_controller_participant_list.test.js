@@ -183,7 +183,7 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
             },
             {
                 id: 2, label: 'Grace', avatarUrl: '/avatars/2.png', iconKey: null,
-                muted: true, statusLabel: 'Offline'
+                muted: true, statusLabel: 'Health status unavailable'
             }
         ])
     })
