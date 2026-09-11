@@ -224,6 +224,17 @@ test('editable controls retain native touch behavior', () => {
   expect(jest.getTimerCount()).toBe(0)
 })
 
+test.each(['a', 'button'])('popup menu %s actions never start a long-press drag', (tagName) => {
+  const action = document.createElement(tagName)
+  action.setAttribute('role', 'menuitem')
+  source.appendChild(action)
+
+  expect(touch('touchstart', 50, action).defaultPrevented).toBe(false)
+  expect(jest.getTimerCount()).toBe(0)
+  jest.advanceTimersByTime(400)
+  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+})
+
 test('hit tests receive the actual nested pointer target instead of its zone ancestor', () => {
   const form = document.createElement('form')
   zone.appendChild(form)

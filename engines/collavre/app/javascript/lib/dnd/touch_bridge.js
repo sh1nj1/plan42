@@ -52,7 +52,7 @@ function attachTouchBridge({ root, registry }) {
       if (!registry.getDragSource(touch.target)) return false
       // Editing keeps native focus and selection. Other sources retain native
       // taps and swipes until the long press commits; no synthetic click replay.
-      if (touch.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return false
+      if (touch.target.closest('input, textarea, select, [role="menuitem"], [contenteditable]:not([contenteditable="false"])')) return false
       return true
     },
     getDropTargets: () => registry.getDropTargets(),
