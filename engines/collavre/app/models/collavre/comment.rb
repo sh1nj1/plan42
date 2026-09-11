@@ -409,6 +409,8 @@ module Collavre
         Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY =>
           (in_scope.map(&:id) - [ replacement.id ]).sort
       )
+      return false unless replay_route_preserved?(task, payload)
+
       task.update!(trigger_event_payload: payload)
 
       Rails.logger.info(

@@ -1292,6 +1292,57 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  %w[pending queued].product([ :private, :action, :destroy, :topic, :creative ]).each do |status, withdrawal|
+    test "#{withdrawal} of sole merged mention abandons #{status} replay addressed to another agent" do
+      mention = prepare_merged_replay
+      @original.update!(content: "@#{users(:ai_bot).name}: Only for another agent")
+      queue_delayed_replay
+      payload = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester).replay_payload
+      replay = Collavre::Task.create!(name: "Waiting replay", agent: @agent, creative: @creative,
+        topic_id: @original.topic_id, status: status, trigger_event_name: "comment_created",
+        trigger_event_payload: Collavre::CliProxy::ReplayClaims.attach(payload, @task.id))
+      tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+      tracker.reserve!(replay.id) if status == "pending"
+      drains = []
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(*scope) { drains << scope }) do
+        revoke_replay_source(withdrawal, source: mention)
+      end
+      assert replay.reload.cancelled?
+      assert_equal 0, tracker.active_jobs
+      assert_equal(status == "pending" ? [ [ @original.topic_id, @creative.id ] ] : [], drains)
+      data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal true, data["replay_abandoned"]
+      assert_equal false, data["retryable"]
+      assert_equal false, data["resumed"]
+    end
+  end
+
+  [ :anchor, :merged, :primary, :expression ].each do |route|
+    test "withdrawal preserves an unstarted replay still selected by #{route}" do
+      mention = prepare_merged_replay
+      case route
+      when :anchor then @original.update!(content: "@#{@agent.name}: Still requested")
+      when :primary then @original.topic.update!(primary_agent: @agent)
+      when :expression then @agent.update!(routing_expression: "true")
+      when :merged
+        sibling = @creative.comments.create!(user: @requester, topic: @original.topic,
+          content: "@#{@agent.name}: Another request", skip_dispatch: true)
+        @task.update!(trigger_event_payload: @task.trigger_event_payload.merge("merged_comment_ids" => [ mention.id, sibling.id ]))
+      end
+      queue_delayed_replay
+      payload = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester).replay_payload
+      replay = Collavre::Task.create!(name: "Waiting replay", agent: @agent, creative: @creative,
+        topic_id: @original.topic_id, status: :queued, trigger_event_name: "comment_created",
+        trigger_event_payload: Collavre::CliProxy::ReplayClaims.attach(payload, @task.id))
+      mention.destroy!
+      assert replay.reload.queued?
+      assert_equal @original.id, replay.trigger_event_payload.dig("comment", "id")
+      assert_not_includes replay.trigger_event_payload["merged_comment_ids"], mention.id
+      assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+      assert_not @task.trigger_event_payload.dig("engine_login", "replay_abandoned")
+    end
+  end
+
   test "stopping a deferred replay settles its original claim even with both comments intact" do
     queue_delayed_replay
     Collavre::Orchestration::TopicSlot.stub(:available_for?, false) do

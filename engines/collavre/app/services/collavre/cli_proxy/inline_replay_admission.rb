@@ -3,7 +3,7 @@
 module Collavre
   module CliProxy
     # Revalidate at the point where a cancellable replay Task becomes visible.
-    # The source row stays locked until admission commits; provider I/O starts
+    # All source rows stay locked until admission commits; provider I/O starts
     # only after these locks are released. Ordinary dispatches are unchanged.
     class InlineReplayAdmission
       def self.call(context, identity)
@@ -34,13 +34,22 @@ module Collavre
           # so a move/delete cannot slip between reading the source and creating
           # its Task. SQLite serializes the writes in this transaction instead.
           Orchestration::TopicSlot.lock!(task.topic_id, task.creative_id)
-          Comment.lock.find(task.trigger_event_payload.dig("comment", "id"))
+          lock_sources!(task.trigger_event_payload)
           yield InlineLogin.new(comment, User.find(user_id))
         end
       rescue ActiveRecord::RecordNotFound
         reject!
       end
-      private_class_method :with_locked_login
+      def self.lock_sources!(payload)
+        anchor_id = payload.dig("comment", "id").to_i
+        ids = Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) + [ anchor_id ]
+        # Lock even a currently withdrawn sibling: its concurrent update must
+        # commit before validation, or wait until the replay Task is visible.
+        # A single ID order avoids inversion when different turns share sources.
+        sources = Comment.where(id: ids.compact.map(&:to_i).uniq).order(:id).lock.to_a
+        reject! unless sources.any? { |source| source.id == anchor_id }
+      end
+      private_class_method :with_locked_login, :lock_sources!
     end
   end
 end

@@ -181,20 +181,7 @@ module Collavre
       end
 
       def validate_retry_routing!(payload)
-        return if retry_routing_matches?(payload)
-
-        # A coalesced mention may live outside the anchor. Only current, public
-        # siblings in the recorded turn can still authorize this replay.
-        ids = Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]).compact
-        permitted = AiAgent::MergedTriggerComments.in_turn(ids, payload).pluck(:content).any? do |content|
-          retry_routing_matches?(payload.merge("chat" => { "content" => content }))
-        end
-        fail_with!("cannot_retry") unless permitted
-      end
-
-      def retry_routing_matches?(payload)
-        context = SystemEvents::ContextBuilder.new(payload).build
-        Orchestration::Matcher.new(context).match.include?(agent)
+        fail_with!("cannot_retry") unless ReplayRouting.permitted?(payload, agent)
       end
 
       def retry_payload(source)

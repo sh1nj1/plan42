@@ -40,7 +40,9 @@ still in the recorded creative/topic also participate in matching; a mention in
 one of those comments can select the recorded agent even when the anchor does not.
 Merged comment IDs survive replay so the normal trigger renderer delivers their
 current text and attachments with the anchor. Deleted, private, approval, or moved
-comments cannot authorize the replay or contribute to its trigger.
+comments cannot authorize the replay or contribute to its trigger. Admission locks
+all recorded sources in ID order through task creation, so source withdrawal either
+precedes validation or sees the committed replay in its cancellation callback.
 The recorded agent must still be selected; scheduler rejection leaves the claim available
 for another attempt. The retry carries the original human workspace principal
 and strips turn-scoped delivery metadata. An explicit principal (including nil)
@@ -81,7 +83,9 @@ inherited claim if it later ends without a result.
 Withdrawing an anchor or merged source (deletion, privacy change, creative/topic
 move, or conversion to an approval surface) cancels running and approval-paused
 replays, including after trigger rendering. Unstarted turns retain their valid
-anchor and remaining sources, or re-anchor if the anchor was withdrawn. Cancellation
+anchor and remaining sources, or re-anchor if the anchor was withdrawn. Replay-linked
+turns re-match that remaining request before preservation; removing their last routing
+justification cancels the turn and abandons its login claims. Cancellation
 releases held resources and drains the topic queue. Remaining approval cards cannot execute tools
 or enqueue a continuation after cancellation. Bulk topic moves settle pending login
 turns only after the move commits. If their topic has left the original creative,

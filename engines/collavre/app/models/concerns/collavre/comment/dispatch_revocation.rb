@@ -20,6 +20,10 @@ module Collavre
           .compact.map(&:to_i).uniq
       end
 
+      def replay_route_preserved?(task, payload)
+        CliProxy::ReplayClaims.ids(payload).empty? || CliProxy::ReplayRouting.permitted?(payload, task.agent)
+      end
+
       def dispatch_revoked?
         saved_change_to_creative_id? || saved_change_to_topic_id? ||
           (saved_change_to_private? && private?) || (saved_change_to_action? && approval_action?)
