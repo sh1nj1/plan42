@@ -1343,8 +1343,9 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  %i[promotion resumed approval delayed].product([ false, true ]).each do |gate, edited|
-    test "#{gate} rechecks #{edited ? 'edited' : 'retained'} merged mention before replay execution" do
+  %i[promotion resumed approval delayed].product(%i[retained edited revoked]).each do |gate, change|
+    test "#{gate} rechecks #{change} replay routing before execution" do
+      rejected = change != :retained
       mention = prepare_merged_replay
       @original.update!(content: "@#{users(:ai_bot).name}: Only for another agent")
       queue_delayed_replay
@@ -1359,7 +1360,17 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       end
       tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
       tracker.reserve!(replay.id) if gate == :approval
-      mention.update!(content: "Never mind, no mention here") if edited
+      mention.update!(content: "Never mind, no mention here") if change == :edited
+      if change == :revoked
+        assert @creative.reload.has_permission?(@agent, :feedback)
+        perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+          Collavre::CreativeShare.find_by!(creative: @creative, user: @agent).update!(permission: :read)
+        end
+        assert @creative.reload.has_permission?(@agent, :read)
+        assert_not @creative.has_permission?(@agent, :feedback)
+        # Losing permission does not itself cancel the admitted task.
+        assert_equal status.fetch(gate).to_s, replay.reload.status if replay
+      end
       clear_enqueued_jobs
       calls = []
       service = Object.new
@@ -1372,18 +1383,18 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
         case gate
         when :promotion
           Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(@original.topic_id, @creative.id)
-          assert_equal(edited ? "cancelled" : "pending", replay.reload.status)
+          assert_equal(rejected ? "cancelled" : "pending", replay.reload.status)
           perform_enqueued_jobs(only: Collavre::AiAgentJob)
         when :delayed
           result = Collavre::AiAgentJob.perform_now(@agent.id, "comment_created", payload)
-          assert_equal :rejected, result if edited
+          assert_equal :rejected, result if rejected
         else
           Collavre::AiAgentJob.perform_now(replay)
         end
       end
-      assert_equal(edited ? 0 : 1, calls.size)
+      assert_equal(rejected ? 0 : 1, calls.size)
       assert_equal 0, tracker.active_jobs
-      if edited
+      if rejected
         if replay
           assert replay.reload.cancelled?
           data = @task.reload.trigger_event_payload.fetch("engine_login")
