@@ -46,6 +46,29 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("collavre.creative_history.read_only"), response.parsed_body["error"]
   end
 
+  test "History keeps JSON snapshots out of the distinct change set query" do
+    Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: @creative) do
+      @creative.update!(progress: 0.75)
+    end
+    history_topic = @creative.reload.history_topic
+    history_queries = []
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      sql = payload[:sql].to_s
+      history_queries << sql if sql.include?("SELECT DISTINCT") && sql.include?('FROM "creative_change_sets"')
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      get creative_comments_path(@creative), params: { topic_id: history_topic.id }
+    end
+
+    assert_response :success
+    assert_not_empty history_queries
+    history_queries.each do |query|
+      assert_not_includes query, '"creative_changes"."before"'
+      assert_not_includes query, '"creative_changes"."after"'
+    end
+  end
+
   test "History hides revert and restore controls from a read-only viewer" do
     Collavre::Creatives::History.track(actor: @user, origin: :tool, anchor: @creative) do
       @creative.update!(progress: 0.75)
