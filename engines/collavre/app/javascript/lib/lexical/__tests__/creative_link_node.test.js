@@ -54,6 +54,24 @@ describe('CreativeLinkNode', () => {
     expect(creativeIdFromUrl('/creatives/not-a-number')).toBeNull()
   })
 
+  test.each([
+    ['/creatives/?id=42', ''],
+    ['/collavre/creatives/?open_comments=true&id=42', '/collavre'],
+    ['/apps/collavre/creatives/?id=42#comment_456', '/apps/collavre'],
+  ])('extracts the creative id from trailing-slash index URL %s', (url, mountPath) => {
+    expect(creativeIdFromUrl(url, mountPath)).toBe(42)
+  })
+
+  test.each([
+    ['/creatives//?id=42', ''],
+    ['/creatives/?id=invalid', ''],
+    ['/creatives/?search=target', ''],
+    ['/creatives/topics/?id=42', ''],
+    ['/admin/creatives/?id=42', '/collavre'],
+  ])('rejects invalid or unrelated index URL %s', (url, mountPath) => {
+    expect(creativeIdFromUrl(url, mountPath)).toBeNull()
+  })
+
   test('keeps unrelated anchors as regular links', () => {
     const element = document.createElement('a')
     element.setAttribute('href', '/admin/creatives/42')

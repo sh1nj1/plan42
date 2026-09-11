@@ -24,8 +24,8 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
     JS
   end
 
-  def assert_frame_navigation_to_target
-    assert_current_path collavre.creatives_path(id: @target.id)
+  def assert_frame_navigation_to_target(expected_path = collavre.creatives_path(id: @target.id))
+    assert_current_path expected_path
     navigation_state = "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{@target.id}']"
     assert_selector navigation_state, visible: :all, wait: 10
     assert_selector ".creative-workspace-shell[data-creative-link-marker='mounted']"
@@ -47,8 +47,8 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
     assert_frame_navigation_to_target
   end
 
-  test "description creative link advances the URL within the workspace frame" do
-    target_path = collavre.creatives_path(id: @target.id)
+  test "trailing-slash canonical description link advances the URL within the workspace frame" do
+    target_path = "#{collavre.creatives_path}/?id=#{@target.id}"
     @source.update!(
       description: %(<p><a href="#{target_path}" data-creative-id="#{@target.id}">Open target</a></p>)
     )
@@ -60,7 +60,7 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
 
     find(link_selector, text: "Open target").click
 
-    assert_frame_navigation_to_target
+    assert_frame_navigation_to_target(target_path)
   end
 
   test "chat creative link opens the target chat on mobile" do

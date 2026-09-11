@@ -28,7 +28,7 @@ export function creativeIdFromUrl(url, mountPath = collavreMountPath()) {
   const showMatch = showPath.match(/^\/(\d+)\/?$/)
   if (showMatch) return Number(showMatch[1])
 
-  if (parsed.pathname !== creativeBasePath) return null
+  if (parsed.pathname.replace(/\/$/, "") !== creativeBasePath) return null
 
   const id = parsed.searchParams.get("id")
   return /^\d+$/.test(id || "") ? Number(id) : null

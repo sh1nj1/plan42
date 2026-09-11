@@ -56,6 +56,8 @@ describe("creative link navigation", () => {
   test.each([
     "/creatives/42/",
     "/creatives?id=42",
+    "/creatives/?id=42",
+    "/creatives/?id=42#comment_456",
   ])("navigates the canonical workspace link %s through the workspace frame", (href) => {
     const anchor = document.getElementById("creative-link")
     anchor.setAttribute("href", href)
@@ -69,8 +71,10 @@ describe("creative link navigation", () => {
     })
   })
 
-  test("navigates a canonical workspace link under the engine mount path", () => {
-    const href = "/collavre/creatives?open_comments=true&id=42"
+  test.each([
+    "/collavre/creatives?open_comments=true&id=42",
+    "/collavre/creatives/?open_comments=true&id=42",
+  ])("navigates the mounted canonical workspace link %s", (href) => {
     const anchor = document.getElementById("creative-link")
     document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
     anchor.setAttribute("href", href)
@@ -136,6 +140,7 @@ describe("creative link navigation", () => {
 
   test.each([
     "/admin/creatives/42",
+    "/admin/creatives/?id=42",
     "/admin/creatives/42/comments/456/",
     "/collavre/creatives/42/comments/456/download_images/",
     "/creatives/42",
@@ -167,6 +172,7 @@ describe("creative link navigation", () => {
     ["a creative slide view", { href: "/creatives/42/slide_view" }, {}],
     ["a nested creative route", { href: "/creatives/42/topics" }, {}],
     ["a creative index without an id", { href: "/creatives?search=target" }, {}],
+    ["a creative index with two trailing slashes", { href: "/creatives//?id=42" }, {}],
     ["a creative index with an invalid id", { href: "/creatives?id=target" }, {}],
     ["a double trailing slash", { href: "/creatives/42/comments/456//" }, {}],
     ["a nested comment action with a trailing slash", { href: "/creatives/42/comments/456/download_images/" }, {}],
