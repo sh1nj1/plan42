@@ -37,7 +37,8 @@
 <% end %>
 
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal creative-image-lightbox"
-     data-action="click->creative-image-lightbox#open:capture"
+     data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
+     data-creative-image-lightbox-i18n-open-value="<%= t('collavre.comments.lightbox.open_image') %>"
      data-creative-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
      data-creative-image-lightbox-i18n-previous-value="<%= t('collavre.comments.lightbox.previous') %>"
      data-creative-image-lightbox-i18n-next-value="<%= t('collavre.comments.lightbox.next') %>"

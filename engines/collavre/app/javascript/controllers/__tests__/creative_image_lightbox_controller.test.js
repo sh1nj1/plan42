@@ -15,8 +15,8 @@ beforeEach(async () => {
   window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   window.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   document.body.innerHTML = `
-    <main data-controller="creative-image-lightbox" data-action="click->creative-image-lightbox#open:capture"
-      data-creative-image-lightbox-i18n-close-value="닫기" data-creative-image-lightbox-i18n-zoom-in-value="확대">
+    <main data-controller="creative-image-lightbox" data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
+      data-creative-image-lightbox-i18n-open-value="이미지 열기" data-creative-image-lightbox-i18n-close-value="닫기" data-creative-image-lightbox-i18n-zoom-in-value="확대">
       <creative-tree-row id="row"><div class="creative-content">
         <p id="text">Text</p><img id="first" src="/first.png" alt="First">
         <a href="/unwanted-navigation"><img id="second" src="/second.png" alt="Second"></a>
@@ -132,6 +132,9 @@ test('toolbar selection selects the image row without opening the viewer, then r
   expect(onClick).toHaveBeenCalledTimes(1)
   expect(content.querySelector('input').checked).toBe(true)
   expect(dialog()).toBeNull()
+  expect(keydown('.creative-content a', 'Enter')).toBe(false)
+  keydown('#first', ' ')
+  expect(dialog()).toBeNull()
 
   click('#select')
   expect(content.querySelector('input').checked).toBe(false)
@@ -172,4 +175,77 @@ test('chat attachments retain their index, download and delete controls', async 
   expect(document.querySelector('iframe').getAttribute('src')).toBe('/comments/1/download_images?index=1')
   jest.runOnlyPendingTimers()
   jest.useRealTimers()
+})
+
+const keydown = (selector, key) => document.querySelector(selector).dispatchEvent(
+  new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+
+test('makes non-linked list and title images accessible without duplicate link tab stops', () => {
+  for (const selector of ['#first', '#title']) {
+    const image = document.querySelector(selector)
+    expect(image.tabIndex).toBe(0)
+    expect(image.getAttribute('role')).toBe('button')
+    expect(image.getAttribute('aria-haspopup')).toBe('dialog')
+    image.focus()
+    expect(document.activeElement).toBe(image)
+  }
+  expect(document.querySelector('#first').getAttribute('aria-label')).toBe('First')
+  expect(document.querySelector('#title').getAttribute('aria-label')).toBe('이미지 열기')
+  expect(document.querySelector('#second').hasAttribute('tabindex')).toBe(false)
+  expect(document.querySelector('#second').closest('a').getAttribute('aria-haspopup')).toBe('dialog')
+  for (const selector of ['#empty', '#missing', '#editor', '#form', '#avatar']) {
+    expect(document.querySelector(selector).hasAttribute('tabindex')).toBe(false)
+  }
+})
+
+test.each(['Enter', ' '])('opens a focused image with %s without triggering row editing', (key) => {
+  const onKeydown = jest.fn()
+  document.querySelector('#row').addEventListener('keydown', onKeydown)
+  document.querySelector('#first').focus()
+  expect(keydown('#first', key)).toBe(false)
+  expect(onKeydown).not.toHaveBeenCalled()
+  expect(dialog().querySelector('img').alt).toBe('First')
+})
+
+test('opens a linked image on the native keyboard click from its anchor', () => {
+  expect(click('.creative-content a')).toBe(false)
+  expect(dialog().querySelector('img').alt).toBe('Second')
+})
+
+test('ignores unrelated keys and ordinary text links', () => {
+  expect(keydown('#first', 'Tab')).toBe(true)
+  expect(keydown('#text', 'Enter')).toBe(true)
+  document.querySelector('.creative-content').insertAdjacentHTML('beforeend', '<a id="text-link">Text link</a>')
+  expect(click('#text-link')).toBe(true)
+  expect(dialog()).toBeNull()
+})
+
+test('prepares streamed images and updated descriptions for keyboard activation', async () => {
+  const content = document.querySelector('.creative-content')
+  content.innerHTML = '<img id="fresh" src="/fresh.png" alt="Fresh">'
+  await settle()
+  expect(document.querySelector('#fresh').tabIndex).toBe(0)
+  document.querySelector('#fresh').alt = 'Updated'
+  await settle()
+  expect(document.querySelector('#fresh').getAttribute('aria-label')).toBe('Updated')
+  expect(keydown('#fresh', 'Enter')).toBe(false)
+  expect(dialog().querySelector('img').alt).toBe('Updated')
+})
+
+test('preserves pointer navigation on the text portion of a mixed image link', () => {
+  const link = document.querySelector('.creative-content a')
+  link.href = '#original'
+  link.insertAdjacentHTML('beforeend', '<span id="link-caption">Visit original</span>')
+  expect(document.querySelector('#link-caption').dispatchEvent(
+    new window.MouseEvent('click', { detail: 1, bubbles: true, cancelable: true }))).toBe(true)
+  expect(dialog()).toBeNull()
+})
+
+test('makes an image keyboard accessible when its source arrives later', async () => {
+  document.querySelector('#missing').src = '/loaded.png'
+  await settle()
+  document.querySelector('#missing').focus()
+  expect(document.activeElement.id).toBe('missing')
+  expect(keydown('#missing', 'Enter')).toBe(false)
+  expect(dialog().querySelector('img').src).toBe('http://localhost/loaded.png')
 })

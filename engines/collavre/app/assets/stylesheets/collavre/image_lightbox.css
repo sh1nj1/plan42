@@ -143,3 +143,10 @@
     max-width: 96%;
   }
 }
+
+/* Keep keyboard focus visible on images that open the shared viewer. */
+.creative-content img[role="button"]:focus-visible,
+.creative-title-content img[role="button"]:focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 3px;
+}
