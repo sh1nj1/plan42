@@ -7,7 +7,7 @@ export function commentIdFromUrl(value) {
   const pathCommentId = url.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)?.[1]
   if (pathCommentId) return pathCommentId
 
-  return url.hash.match(/comment_(\d+)/)?.[1]
+  return url.hash.match(/^#comment_(\d+)$/)?.[1]
 }
 
 export function commentsRequestedFromUrl(value) {

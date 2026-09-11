@@ -905,6 +905,33 @@ describe('WorkspaceTreeController', () => {
     document.removeEventListener('creative-comments-click', chatListener)
   })
 
+  test.each([
+    ['#comment_456', '456', true],
+    ['#release_comment_456', undefined, false],
+    ['#comment_456_suffix', undefined, false],
+    ['#comment_4567extra', undefined, false],
+    ['#comment_', undefined, false],
+  ])('handles only exact comment fragments on frame load: %s', (fragment, highlightId, openRequested) => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    const requestEvent = new CustomEvent('turbo:before-fetch-request', {
+      bubbles: true,
+      detail: { url: new URL(`/creatives?id=2${fragment}`, window.location.origin) },
+    })
+    const expectedEvent = expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', highlightId, openRequested }),
+    })
+
+    try {
+      frame.dispatchEvent(requestEvent)
+      frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+      expect(chatListener).toHaveBeenLastCalledWith(expectedEvent)
+    } finally {
+      document.removeEventListener('creative-comments-click', chatListener)
+    }
+  })
+
   test('forwards explicit chat-open requests only from authoritative frame loads', () => {
     const chatListener = jest.fn()
     document.addEventListener('creative-comments-click', chatListener)
