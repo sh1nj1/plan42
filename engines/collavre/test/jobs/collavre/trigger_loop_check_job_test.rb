@@ -119,6 +119,52 @@ module Collavre
       end
     end
 
+    {
+      failed: { status: "failed" },
+      cancelled: { status: "cancelled" },
+      escalated: { status: "escalated" },
+      non_comment_done: { status: "done", trigger_event_name: "creative_updated" },
+      non_comment_running: { status: "running", trigger_event_name: "creative_updated" },
+      awaiting_login: { status: "done", trigger_event_payload: { "engine_login" => { "retryable" => true } } }
+    }.each do |reason, attributes|
+      test "abandoned replay finishes when the newer task is ineligible: #{reason}" do
+        @task.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        newer = @task.dup
+        newer.assign_attributes(trigger_event_payload: {}, created_at: @task.created_at + 1.second)
+        newer.assign_attributes(attributes)
+        newer.save!
+
+        assert_difference -> { @child.comments.count }, 1 do
+          AiClient.stub(:new, ->(*) { flunk "Login notices must not be evaluated as results" }) do
+            TriggerLoopCheckJob.perform_now(@task.id)
+          end
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+        assert_equal I18n.t("collavre.inline_agent_login.replay_abandoned"), @child.comments.last.content
+      end
+    end
+
+    (Task::ACTIVE_STATUSES + [ "done" ]).each do |status|
+      test "newer #{status} comment task retains loop completion despite a later failed task" do
+        @task.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        newer = @task.dup
+        newer.assign_attributes(status: status, trigger_event_payload: {}, created_at: @task.created_at + 1.second)
+        newer.save!
+        failed = newer.dup
+        failed.assign_attributes(status: "failed", created_at: @task.created_at + 2.seconds)
+        failed.save!
+        before_loop = @child.reload.data.dig("trigger", "loop").deep_dup
+
+        assert_no_difference -> { @child.comments.count } do
+          AiClient.stub(:new, ->(*) { flunk "Stale login cards must not be evaluated" }) do
+            TriggerLoopCheckJob.perform_now(@task.id)
+          end
+        end
+        assert_equal before_loop, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
     test "transitions to pending_verification when agent reports STATUS: DONE" do
       @child.comments.create!(
         content: "All done! [STATUS: DONE]",
