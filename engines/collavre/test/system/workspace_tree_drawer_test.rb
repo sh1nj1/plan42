@@ -88,6 +88,40 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     assert_tree_covers_floating_chat
   end
 
+  [ MOBILE_WIDTH, 600 ].each do |width|
+    test "the mobile chat receives taps over the closed drawer handle at #{width}px" do
+      visit_workspace(width)
+      assert_toggle_within_viewport
+
+      within("#creative-#{@creative.id}") { find(".comments-btn").click }
+      assert_selector "#comments-popup.open"
+
+      # Hit-test the overlap itself: visibility alone cannot detect a button
+      # intercepting taps intended for the bottom sheet's form.
+      assert_selector "#comments-popup.open" do |popup|
+        page.evaluate_script(<<~JS, popup)
+          (() => {
+            const rect = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
+            const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return arguments[0].contains(target);
+          })();
+        JS
+      end
+
+      find("#new-comment-form textarea").set("Mobile comment")
+      check "comment-private"
+      assert_checked_field "comment-private"
+
+      find("#close-comments-btn").click
+      assert_no_selector "#comments-popup.open"
+      assert_toggle_within_viewport
+      find(".creative-workspace-tree-toggle").click
+      assert_selector ".creative-workspace-tree-region.is-open"
+      assert_drawer_settled(open: true)
+      assert_toggle_within_viewport
+    end
+  end
+
   # The handle is a fixed overlay. In the two-panel band it lands in the gutter
   # main leaves itself, but one-panel main runs flush to the left edge, so the
   # same offset would sit on top of the breadcrumb row and eat taps meant for it.
