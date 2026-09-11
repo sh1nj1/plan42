@@ -81,6 +81,44 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_not @task.trigger_event_payload["handoff_failed"]
   end
 
+  %w[cancelled failed].each do |status|
+    [ "", "Partial response" ].each do |content|
+      test "#{status} before login recording preserves #{content.empty? ? 'empty' : 'partial'} cancellation cleanup" do
+        error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: Struct.new(:id).new(42))
+        client = Object.new
+        client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+          block.call(content) if content.present?
+          raise error
+        end
+        client.define_singleton_method(:handed_off?) { content.present? }
+        record = Collavre::CliProxy::InlineLogin.method(:record!)
+        # Settle a separate instance after the lifecycle check but before the row lock.
+        interrupted_record = lambda do |task, *args, **kwargs|
+          Task.find(task.id).update!(status: status)
+          assert task.running?, "The worker must still hold a stale running instance"
+          record.call(task, *args, **kwargs)
+        end
+
+        AiClient.stub(:new, client) do
+          Collavre::CliProxy::InlineLogin.stub(:record!, interrupted_record) do
+            assert_raises(Collavre::CancelledError) { AiAgentService.new(@task).call }
+          end
+        end
+
+        assert_equal status, @task.reload.status
+        assert_nil @task.trigger_event_payload["engine_login"]
+        assert_nil @task.trigger_event_payload["handoff_failed"]
+        assert @task.task_actions.exists?(action_type: status)
+        if content.empty?
+          assert_nil @task.reply_comment
+        else
+          assert_equal content, @task.reply_comment.content
+          assert @task.trigger_event_payload["handed_off"]
+        end
+      end
+    end
+  end
+
   test "creates placeholder and streams content into it" do
     mock_client = Minitest::Mock.new
 

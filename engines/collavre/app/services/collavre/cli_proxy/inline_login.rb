@@ -8,19 +8,22 @@ module Collavre
       attr_reader :comment, :task, :workspace, :agent
 
       def self.record!(task, comment, error, content:, retryable:)
-        retryable &&= !task.reload.trigger_event_payload[Orchestration::DeliveryRecord::HANDED_OFF_KEY]
-        Orchestration::DeliveryRecord.mark_handoff_failed!(task) if retryable
         task.with_lock do
+          # Stop and stuck recovery share this lock; preserve whichever transition won.
+          raise CancelledError unless task.running?
+
+          retryable &&= !task.trigger_event_payload[Orchestration::DeliveryRecord::HANDED_OFF_KEY]
+          Orchestration::DeliveryRecord.mark_handoff_failed!(task) if retryable
           task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" => {
             "engine" => error.engine, "workspace_id" => error.workspace.id, "retryable" => retryable
           }))
-        end
-        return unless comment
+          next unless comment
 
-        text = I18n.t("collavre.inline_agent_login.required", engine: error.engine)
-        # The commit callback broadcasts the card once. An immediate broadcast
-        # would let users start a form that the queued replacement then discards.
-        comment.update!(content: [ content.presence, text ].compact.join("\n\n"))
+          text = I18n.t("collavre.inline_agent_login.required", engine: error.engine)
+          # The commit callback broadcasts the card once. An immediate broadcast
+          # would let users start a form that the queued replacement then discards.
+          comment.update!(content: [ content.presence, text ].compact.join("\n\n"))
+        end
       end
 
       def initialize(comment, user)

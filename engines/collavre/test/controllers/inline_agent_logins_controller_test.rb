@@ -59,6 +59,26 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "failed card persistence rolls back login metadata and handoff failure together" do
+    @task.update!(status: :running, trigger_event_payload: @task.trigger_event_payload.except("engine_login"))
+    payload = @task.trigger_event_payload.deep_dup
+    content = @reply.content
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: @workspace)
+    clear_enqueued_jobs
+
+    @reply.stub(:update!, ->(*) { raise ActiveRecord::RecordInvalid.new(@reply) }) do
+      assert_no_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob) do
+        assert_raises(ActiveRecord::RecordInvalid) do
+          Collavre::CliProxy::InlineLogin.record!(@task, @reply, error, content: "", retryable: true)
+        end
+      end
+    end
+
+    assert_equal payload, @task.reload.trigger_event_payload
+    assert_equal content, @reply.reload.content
+    assert @task.running?
+  end
+
   test "ordinary replies still replace the comment to remove the stop button when the task finishes" do
     @task.update!(status: :running, trigger_event_payload: @task.trigger_event_payload.except("engine_login"))
     broadcasts = []
