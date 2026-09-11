@@ -6,6 +6,7 @@ export default class extends ImageLightboxController {
 
   connect() {
     super.connect()
+    this._generatedLinkLabels ||= new WeakMap()
     this._prepareImages()
     this._imageObserver = new MutationObserver(() => this._prepareImages())
     this._imageObserver.observe(this.element, {
@@ -34,6 +35,7 @@ export default class extends ImageLightboxController {
   }
 
   _prepareLink(link) {
+    this._clearGeneratedLinkLabel(link)
     if (link.textContent.trim()) {
       link.removeAttribute("aria-haspopup")
       return
@@ -41,7 +43,18 @@ export default class extends ImageLightboxController {
     link.setAttribute("aria-haspopup", "dialog")
     const named = ["aria-label", "aria-labelledby", "title"].some((name) => link.getAttribute(name)?.trim()) ||
       Array.from(link.querySelectorAll("img")).some((image) => image.alt.trim())
-    if (!named) link.setAttribute("aria-label", this.i18nOpenValue)
+    if (!named) {
+      link.setAttribute("aria-label", this.i18nOpenValue)
+      this._generatedLinkLabels.set(link, this.i18nOpenValue)
+    }
+  }
+
+  _clearGeneratedLinkLabel(link) {
+    // Recompute only our fallback; preserve names supplied by the content author.
+    if (link.getAttribute("aria-label") === this._generatedLinkLabels.get(link)) {
+      link.removeAttribute("aria-label")
+    }
+    this._generatedLinkLabels.delete(link)
   }
 
   openFromKeyboard(event) {

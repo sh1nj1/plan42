@@ -281,6 +281,57 @@ test.each([
   expect(link.getAttribute('aria-label')).toBe(attributes.startsWith('aria-label=') ? 'Original image' : null)
 })
 
+test.each(['alt', 'caption'])('releases generated link labels when %s arrives and restores them when removed', async (source) => {
+  const image = document.querySelector('#second')
+  const link = image.closest('a')
+  image.alt = ''
+  await settle()
+  expect(link.getAttribute('aria-label')).toBe('이미지 열기')
+
+  if (source === 'alt') image.alt = 'Updated description'
+  else link.insertAdjacentHTML('beforeend', '<span>Documentation</span>')
+  await settle()
+  expect(link.hasAttribute('aria-label')).toBe(false)
+  expect(link.getAttribute('aria-haspopup')).toBe(source === 'alt' ? 'dialog' : null)
+
+  if (source === 'alt') image.alt = ''
+  else link.querySelector('span').remove()
+  await settle()
+  expect(link.getAttribute('aria-label')).toBe('이미지 열기')
+  expect(link.getAttribute('aria-haspopup')).toBe('dialog')
+})
+
+test('preserves an authored label that replaces the generated fallback', async () => {
+  const image = document.querySelector('#second')
+  const link = image.closest('a')
+  image.alt = ''
+  await settle()
+  expect(link.getAttribute('aria-label')).toBe('이미지 열기')
+  link.setAttribute('aria-label', 'Author supplied name')
+  image.alt = 'Updated description'
+  await settle()
+  expect(link.getAttribute('aria-label')).toBe('Author supplied name')
+  link.insertAdjacentHTML('beforeend', '<span>Documentation</span>')
+  await settle()
+  expect(link.getAttribute('aria-label')).toBe('Author supplied name')
+})
+
+test('keeps generated label ownership across controller reconnection', async () => {
+  const image = document.querySelector('#second')
+  const link = image.closest('a')
+  const main = document.querySelector('main')
+  image.alt = ''
+  await settle()
+  main.remove()
+  await settle()
+  document.body.append(main)
+  await settle()
+  expect(link.getAttribute('aria-label')).toBe('이미지 열기')
+  image.alt = 'Description after reconnect'
+  await settle()
+  expect(link.hasAttribute('aria-label')).toBe(false)
+})
+
 test('makes an image keyboard accessible when its source arrives later', async () => {
   document.querySelector('#missing').src = '/loaded.png'
   await settle()
