@@ -33,7 +33,7 @@ module Collavre
 
       def render_history
         change_sets = CreativeChangeSet.for_creative_scope(@history_scope_creative)
-          .visible_by_default.includes(:creative_changes, :user)
+          .visible_by_default.preload(:creative_changes, :user)
         change_sets = Creatives::HistoryPage.new(
           scope: change_sets,
           user: Current.user,
