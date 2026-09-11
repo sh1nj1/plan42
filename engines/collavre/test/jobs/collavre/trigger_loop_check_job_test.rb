@@ -193,7 +193,7 @@ module Collavre
       escalated: { status: "escalated" },
       non_comment_done: { status: "done", trigger_event_name: "creative_updated" },
       non_comment_running: { status: "running", trigger_event_name: "creative_updated" },
-      awaiting_login: { status: "done", trigger_event_payload: { "engine_login" => { "retryable" => true } } }
+      abandoned_login: { status: "done", trigger_event_payload: { "engine_login" => { "retryable" => false, "replay_abandoned" => true } } }
     }.each do |reason, attributes|
       test "abandoned replay finishes when the newer task is ineligible: #{reason}" do
         @task.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
@@ -210,6 +210,43 @@ module Collavre
         assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
         assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
         assert_equal I18n.t("collavre.inline_agent_login.replay_abandoned"), @child.comments.last.content
+      end
+    end
+
+    [ :response, :abandonment ].each do |outcome|
+      test "newer login waiting turn owns the loop until #{outcome}" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        newer = @task.dup
+        newer.assign_attributes(created_at: @task.created_at + 1.second,
+                                trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+        newer.save!
+        before_loop = @child.reload.data.dig("trigger", "loop").deep_dup
+
+        assert_no_difference -> { @child.comments.count } do
+          TriggerLoopCheckJob.perform_now(@task.id)
+        end
+        assert_equal before_loop, @child.reload.data.dig("trigger", "loop")
+
+        replay = nil
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          if outcome == :abandonment
+            CliProxy::InlineLogin.abandon_replay!(newer)
+          else
+            replay = newer.dup
+            replay.assign_attributes(status: "running", trigger_event_payload: {}, created_at: newer.created_at + 1.second)
+            replay.save!
+            @child.comments.create!(content: "More work [STATUS: CONTINUE]", topic: @topic, user: @ai_bot,
+                                    task: replay, created_at: replay.created_at + 1.second, skip_dispatch: true)
+            replay.done!
+          end
+        end
+        assert_equal [ outcome == :abandonment ? newer.id : replay.id ], checks
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+          checks.each { |id| TriggerLoopCheckJob.perform_now(id) }
+        end
+        assert_equal outcome == :abandonment ? "awaiting_user" : "running", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal outcome == :abandonment ? 0 : 1, @child.data.dig("trigger", "loop", "current_iteration")
       end
     end
 
