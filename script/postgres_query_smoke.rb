@@ -57,5 +57,12 @@ check(failures, "AgentResolver.call(name, creative:)") do
     raise("expected the searchable agent to resolve")
 end
 
+# Reached by each queued gateway health probe. Agent gateways carry a json
+# health_engines column, so this relation must not select whole rows with
+# DISTINCT either.
+check(failures, "AgentGateway.health_probe_targets") do
+  Collavre::AgentGateway.health_probe_targets.find_by(id: -1)
+end
+
 abort "\n#{failures.size} PostgreSQL-incompatible query/queries:\n- #{failures.join("\n- ")}" if failures.any?
 puts "\nAll guarded queries execute on PostgreSQL."
