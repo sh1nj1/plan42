@@ -241,6 +241,46 @@ test('preserves pointer navigation on the text portion of a mixed image link', (
   expect(dialog()).toBeNull()
 })
 
+test('preserves keyboard navigation on mixed image links', async () => {
+  const link = document.querySelector('#second').closest('a')
+  link.href = '#documentation'
+  link.insertAdjacentHTML('beforeend', '<span>Documentation</span>')
+  await settle()
+  expect(keydown('.creative-content a', 'Enter')).toBe(true)
+  expect(click('.creative-content a')).toBe(true)
+  expect(dialog()).toBeNull()
+  expect(link.hasAttribute('aria-haspopup')).toBe(false)
+  expect(click('#second')).toBe(false)
+  expect(dialog().querySelector('img').alt).toBe('Second')
+})
+
+test.each(['', null])('names otherwise unnamed image links with alt %s', async (alt) => {
+  const image = document.querySelector('#second')
+  if (alt === null) image.removeAttribute('alt')
+  else image.alt = alt
+  await settle()
+  const link = image.closest('a')
+  expect(link.getAttribute('aria-label')).toBe('이미지 열기')
+  expect(link.getAttribute('aria-haspopup')).toBe('dialog')
+  expect(click('.creative-content a')).toBe(false)
+  expect(dialog()).not.toBeNull()
+})
+
+test.each([
+  ['aria-label="Original image"', '<img src="/named.png" alt="">'],
+  ['aria-labelledby="text"', '<img src="/named.png">'],
+  ['title="Original image"', '<img src="/named.png">'],
+  ['', '<img src="/named.png" alt="Description">'],
+  ['', '<img src="/named.png"><span>Documentation</span>'],
+  ['', '<img src="/named.png"><img src="/other.png" alt="Other description">']
+])('preserves existing link names: %s %s', async (attributes, content) => {
+  document.querySelector('.creative-content').insertAdjacentHTML('beforeend',
+    `<a id="named-link" href="/original" ${attributes}>${content}</a>`)
+  await settle()
+  const link = document.querySelector('#named-link')
+  expect(link.getAttribute('aria-label')).toBe(attributes.startsWith('aria-label=') ? 'Original image' : null)
+})
+
 test('makes an image keyboard accessible when its source arrives later', async () => {
   document.querySelector('#missing').src = '/loaded.png'
   await settle()

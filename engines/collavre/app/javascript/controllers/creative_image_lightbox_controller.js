@@ -23,7 +23,7 @@ export default class extends ImageLightboxController {
       if (!image.getAttribute("src") || image.closest('[contenteditable="true"], .inline-edit-form')) return
       const link = image.closest("a[href]")
       if (link) {
-        link.setAttribute("aria-haspopup", "dialog")
+        this._prepareLink(link)
         return
       }
       image.tabIndex = 0
@@ -31,6 +31,17 @@ export default class extends ImageLightboxController {
       image.setAttribute("aria-haspopup", "dialog")
       image.setAttribute("aria-label", image.alt || this.i18nOpenValue)
     })
+  }
+
+  _prepareLink(link) {
+    if (link.textContent.trim()) {
+      link.removeAttribute("aria-haspopup")
+      return
+    }
+    link.setAttribute("aria-haspopup", "dialog")
+    const named = ["aria-label", "aria-labelledby", "title"].some((name) => link.getAttribute(name)?.trim()) ||
+      Array.from(link.querySelectorAll("img")).some((image) => image.alt.trim())
+    if (!named) link.setAttribute("aria-label", this.i18nOpenValue)
   }
 
   openFromKeyboard(event) {
@@ -41,7 +52,10 @@ export default class extends ImageLightboxController {
     const image = event.target.closest("img")
     if (image) return image
     // Native keyboard/assistive-technology clicks target the link, not its image.
-    if (event.detail === 0) return event.target.closest("a")?.querySelector('img[src]:not([src=""])')
+    if (event.detail !== 0) return null
+    const link = event.target.closest("a")
+    // Mixed text/image links retain keyboard navigation to their destination.
+    return link && !link.textContent.trim() ? link.querySelector('img[src]:not([src=""])') : null
   }
 
   open(event) {
