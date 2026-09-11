@@ -132,9 +132,22 @@ test('toolbar selection selects the image row without opening the viewer, then r
   expect(onClick).toHaveBeenCalledTimes(1)
   expect(content.querySelector('input').checked).toBe(true)
   expect(dialog()).toBeNull()
-  expect(keydown('.creative-content a', 'Enter')).toBe(false)
-  keydown('#first', ' ')
-  expect(dialog()).toBeNull()
+  const onDocumentKeydown = jest.fn()
+  document.addEventListener('keydown', onDocumentKeydown)
+  try {
+    for (const selector of ['#first', '#title', '.creative-content a']) {
+      for (const key of ['Enter', ' ']) {
+        expect(keydown(selector, key)).toBe(false)
+        expect(onDocumentKeydown).not.toHaveBeenCalled()
+        expect(dialog()).toBeNull()
+        expect(content.querySelector('input').checked).toBe(true)
+      }
+    }
+    expect(keydown('#first', 'Tab')).toBe(true)
+    expect(onDocumentKeydown).toHaveBeenCalledTimes(1)
+  } finally {
+    document.removeEventListener('keydown', onDocumentKeydown)
+  }
 
   click('#select')
   expect(content.querySelector('input').checked).toBe(false)

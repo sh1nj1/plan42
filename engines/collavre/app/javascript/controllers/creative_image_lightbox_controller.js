@@ -76,7 +76,11 @@ export default class extends ImageLightboxController {
     const content = image?.closest(".creative-content, .creative-title-content")
     if (!content || image.closest('[contenteditable="true"], .inline-edit-form')) return
     if (this._selectionActive(content)) {
-      if (image.closest("a")) event.preventDefault()
+      if (event.type === "keydown") {
+        // Suppress document shortcuts while preserving pointer row selection.
+        event.preventDefault()
+        event.stopPropagation()
+      } else if (image.closest("a")) event.preventDefault()
       return
     }
 

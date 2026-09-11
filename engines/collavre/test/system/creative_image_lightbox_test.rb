@@ -28,6 +28,15 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     assert_selector "#creative-#{@creative.id} .select-creative-checkbox:checked"
     assert_no_selector ".image-lightbox-dialog"
 
+    first = find("#creative-#{@creative.id} img[alt='First']")
+    page.execute_script("arguments[0].focus()", first)
+    [ :enter, :space ].each do |key|
+      page.driver.browser.action.send_keys(key).perform
+      assert_no_selector "#inline-edit-form"
+      assert_no_selector ".image-lightbox-dialog"
+      assert_selector "#creative-#{@creative.id} .select-creative-checkbox:checked"
+    end
+
     find('[aria-controls="creative-overflow-menu"]').click
     find("#select-creative-btn").click
     assert_no_selector "#creative-#{@creative.id} .select-creative-checkbox:checked", visible: :all
