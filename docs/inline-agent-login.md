@@ -22,7 +22,9 @@ preserve the live login form, and a rebuilt card can recover its pending
 session from the proxy. Custom provider base URLs remain on the full connection
 screen. Session starts claim an attempt ID before contacting the proxy; only
 the latest initiated attempt can store its response. Starting another attempt
-also invalidates the previous session and its authorization.
+also invalidates the previous session and its authorization. Cancellation revokes
+the local session before contacting the proxy, so stale polls and submissions
+cannot authorize a replay even if the proxy cancellation fails.
 
 After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Permissions and topic
@@ -43,7 +45,10 @@ remains, without evaluating the login notice as an agent result.
 Admitted replays, including queued waiters, retain their original login task ID.
 If they are cancelled, fail, or escalate without completing, their terminal
 callback abandons that login claim as well. Successful replies and turns waiting
-for tool approval retain the normal completion path.
+for tool approval retain the normal completion path. Coalescing queued turns
+transfers all login claims to the survivor in the same transaction; superseded
+waiters do not abandon requests that remain queued. The survivor settles every
+inherited claim if it later ends without a result.
 Withdrawing a source (deletion, privacy change, creative/topic move, or
 conversion to an approval surface) also cancels approval-paused replays, releases
 their held resources, and drains the topic queue. Their remaining approval cards cannot execute tools

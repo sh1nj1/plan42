@@ -17,15 +17,15 @@ module Collavre
       # Settle before looking for abandoned predecessors to avoid a duplicate
       # completion check; abandon_replay! handles repeated terminal callbacks.
       def settle_inline_replay
-        original_id = trigger_event_payload&.fetch("inline_login_task_id", nil)
-        return false unless original_id
+        original_ids = CliProxy::ReplayClaims.ids(trigger_event_payload)
+        return false if original_ids.empty?
 
-        original = Task.where(agent_id: agent_id, creative_id: creative_id, topic_id: topic_id, status: "done")
-                       .where("id < ?", id).find_by(id: original_id)
-        return false unless original
-
-        CliProxy::InlineLogin.abandon_replay!(original)
-        true
+        # Promotion may fold a newer replay into an older waiter, so the login
+        # task need not predate the survivor. Scope and non-self checks still apply.
+        originals = Task.where(agent_id: agent_id, creative_id: creative_id, topic_id: topic_id, status: "done")
+                        .where.not(id: id).where(id: original_ids).to_a
+        originals.each { |original| CliProxy::InlineLogin.abandon_replay!(original) }
+        originals.any?
       end
 
       def recheck_abandoned_replays

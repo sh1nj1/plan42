@@ -42,9 +42,9 @@ module Collavre
     end
 
     def cancel
-      response = @login.client.cancel_auth_session(@login.engine, params[:session_id])
+      # Revoke locally before I/O so an in-flight poll cannot authorize a replay.
       @login.observe_session!({ "status" => "cancelled" }, params[:session_id])
-      render json: response
+      render json: @login.client.cancel_auth_session(@login.engine, params[:session_id])
     end
 
     def resume

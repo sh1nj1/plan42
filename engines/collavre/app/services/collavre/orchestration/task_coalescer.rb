@@ -208,15 +208,7 @@ module Collavre
           siblings = reject_other_workspace_principals(keep, siblings)
           comment_ids = siblings.flat_map { |t| trigger_comment_ids(t) }
 
-          siblings.each do |task|
-            task.task_actions.create!(
-              action_type: "superseded",
-              status: "done",
-              payload: { "superseded_by_task_id" => @keep.id }
-            )
-            task.update!(status: "cancelled")
-            absorbed_ids << task.id
-          end
+          absorbed_ids = supersede!(keep, siblings)
 
           # A waiter absorbed here may have parked with a per-deferral notice of
           # its own — the policy only has to have been off when it deferred and
@@ -253,6 +245,16 @@ module Collavre
       end
 
       private
+
+      def supersede!(keep, siblings)
+        CliProxy::ReplayClaims.transfer!(keep, siblings)
+        siblings.map do |task|
+          task.task_actions.create!(action_type: "superseded", status: "done",
+            payload: { "superseded_by_task_id" => keep.id })
+          task.update!(status: "cancelled")
+          task.id
+        end
+      end
 
       # Only `queued` tasks are safe to supersede. A `pending` task may already
       # be riding an enqueued AiAgentJob; cancelling it makes that job return

@@ -106,6 +106,32 @@ module Collavre
       end
     end
 
+    test "a failed survivor settles multiple inherited login claims and ends the loop once" do
+      @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+      second = @task.dup
+      second.save!
+      replay = @task.dup
+      replay.assign_attributes(status: "running", trigger_event_payload: {
+        "inline_login_task_id" => @task.id, "inline_login_task_ids" => [ @task.id, second.id ]
+      })
+      replay.save!
+      checks = []
+      TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+        replay.failed!
+        replay.fire_completion_callbacks_after_external_claim
+      end
+      assert_equal [ @task.id, second.id ].sort, checks.sort
+      [ @task, second ].each do |original|
+        assert_equal true, original.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+      end
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+        assert_difference "@child.comments.count", 1 do
+          checks.each { |id| TriggerLoopCheckJob.perform_now(id) }
+        end
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     [ :missing, :agent, :creative, :topic, :self ].each do |mismatch|
       test "replay settlement ignores an invalid original linkage: #{mismatch}" do
         @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })

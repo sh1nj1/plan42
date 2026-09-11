@@ -736,7 +736,7 @@ module Collavre
       def self.restored_context(payload, comment)
         # Restoring a different dropped dispatch does not inherit the covering
         # turn's authentication replay claim.
-        TaskCoalescer.reanchor_payload(payload, comment).except("inline_login_task_id", *TURN_SCOPED_KEYS)
+        TaskCoalescer.reanchor_payload(payload, comment).except(*CliProxy::ReplayClaims::KEYS, *TURN_SCOPED_KEYS)
       end
       private_class_method :restored_context
 

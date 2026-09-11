@@ -471,10 +471,11 @@ module Collavre
       test "restoring a dropped dispatch does not inherit the covering replay login claim" do
         anchor = comment("Login replay")
         dropped = comment("Separate request")
-        payload = context_for(anchor).merge("inline_login_task_id" => 123)
+        payload = context_for(anchor).merge("inline_login_task_id" => 123, "inline_login_task_ids" => [ 456 ])
         restored = DeliveryRecord.send(:restored_context, payload, dropped)
         assert_equal dropped.id, restored.dig("comment", "id")
         assert_not restored.key?("inline_login_task_id")
+        assert_not restored.key?("inline_login_task_ids")
         assert_equal 123, payload["inline_login_task_id"]
       end
 

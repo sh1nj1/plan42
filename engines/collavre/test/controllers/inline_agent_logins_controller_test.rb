@@ -221,7 +221,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       method = { poll: :auth_session, submit: :submit_auth_session, cancel: :cancel_auth_session, status: :auth_session }.fetch(operation)
       proxy.define_singleton_method(method) { |*args| handler.call(*args) }
       Collavre::CliProxy::Client.stub(:new, proxy) { request_login_session(operation) }
-      assert_response(operation == :status ? :success : :conflict)
+      assert_response(operation.in?([ :status, :cancel ]) ? :success : :conflict)
       state = @task.reload.trigger_event_payload.fetch("engine_login")
       assert_nil state["session_id"]
       assert_equal false, state["authorized"]
@@ -248,6 +248,54 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     Collavre::CliProxy::Client.stub(:new, proxy) { request_login_session(:create) }
     assert_response :created
     assert_equal "fresh-session", @task.reload.trigger_event_payload.dig("engine_login", "session_id")
+  end
+
+  [ false, true ].each do |proxy_failure|
+    test "cancel invalidates in-flight authorization before proxy IO even when DELETE fails #{proxy_failure}" do
+      set_data("session_id" => "device-session", "session_user_id" => @requester.id)
+      stale_login = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester)
+      proxy = Object.new
+      handler = ->(*) do
+        error = assert_raises(Collavre::CliProxy::Client::Error) do
+          stale_login.observe_session!({ "status" => "authorized" }, "device-session")
+        end
+        assert_equal "session_superseded", error.code
+        error = assert_raises(Collavre::CliProxy::Client::Error) { stale_login.resume! }
+        assert_equal "not_authorized", error.code
+        state = @task.reload.trigger_event_payload.fetch("engine_login")
+        assert_nil state["session_id"]
+        assert_equal false, state["authorized"]
+        raise Collavre::CliProxy::Client::Error.new("Unavailable", status: 502, code: "proxy_unreachable") if proxy_failure
+
+        { "status" => "cancelled" }
+      end
+      proxy.define_singleton_method(:cancel_auth_session) { |*args| handler.call(*args) }
+      assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
+        Collavre::CliProxy::Client.stub(:new, proxy) do
+          delete inline_agent_login_session_path(comment_id: @reply.id, session_id: "device-session"), as: :json
+        end
+      end
+      assert_response(proxy_failure ? :bad_gateway : :success)
+    end
+  end
+
+  test "a slow cancellation response preserves a newer successful login" do
+    set_data("session_id" => "device-session", "session_user_id" => @requester.id)
+    proxy = Object.new
+    handler = ->(*) do
+      login = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester)
+      attempt = login.begin_session!
+      login.remember_session!({ "sessionId" => "new-session", "status" => "authorized" }, attempt: attempt)
+      { "status" => "cancelled" }
+    end
+    proxy.define_singleton_method(:cancel_auth_session) { |*args| handler.call(*args) }
+    Collavre::CliProxy::Client.stub(:new, proxy) do
+      delete inline_agent_login_session_path(comment_id: @reply.id, session_id: "device-session"), as: :json
+    end
+    assert_response :success
+    state = @task.reload.trigger_event_payload.fetch("engine_login")
+    assert_equal "new-session", state["session_id"]
+    assert_equal true, state["authorized"]
   end
 
   test "polling device login records authorization and cancellation revokes it" do
@@ -296,7 +344,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     proxy.verify
   end
 
-  [ :create, :poll, :submit, :cancel, :status ].each do |operation|
+  [ :create, :poll, :submit, :status ].each do |operation|
     test "late #{operation} response cannot overwrite a committed replay claim" do
       set_data("session_id" => "authorized-session", "session_user_id" => @requester.id)
       proxy = Object.new
@@ -1038,6 +1086,35 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
     assert Collavre::Comment.exists?(@original.id)
     assert Collavre::Comment.exists?(@reply.id)
+  end
+
+  test "coalescing an admitted replay keeps its card resumed until the survivor is stopped" do
+    queue_delayed_replay
+    Collavre::Orchestration::TopicSlot.stub(:available_for?, false) do
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, nil) do
+        assert_empty execute_replay_payloads
+      end
+    end
+    replay = Collavre::Task.where(agent: @agent, status: "queued").sole
+    source = @creative.comments.create!(user: @requester, content: "Follow up", topic_id: @original.topic_id, skip_dispatch: true)
+    survivor = replay.dup
+    survivor.trigger_event_payload = Collavre::Orchestration::TaskCoalescer.reanchor_payload(
+      replay.trigger_event_payload.except("inline_login_task_id"), source)
+    survivor.save!
+    clear_enqueued_jobs
+    assert_no_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob) do
+      assert_equal [ replay.id ], Collavre::Orchestration::TaskCoalescer.coalesce!(survivor)
+    end
+    assert_equal [ @task.id ], survivor.reload.trigger_event_payload["inline_login_task_ids"]
+    assert_includes survivor.trigger_event_payload["merged_comment_ids"], @original.id
+    assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+    get inline_agent_login_path(comment_id: @reply.id)
+    assert_response :success
+    assert_not_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+    assert_enqueued_jobs 1, only: Turbo::Streams::ActionBroadcastJob do
+      survivor.cancel_if_active!
+    end
+    assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
   end
 
   test "successful replay does not abandon its original login" do
