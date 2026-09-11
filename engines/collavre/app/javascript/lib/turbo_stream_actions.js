@@ -1,5 +1,11 @@
 import { Turbo } from "@hotwired/turbo-rails"
-import { createRow, applyRowProperties, replaceProgressControl, updateProgressHtml } from "../creatives/tree_renderer"
+import {
+    createRow,
+    applyRowProperties,
+    replaceProgressControl,
+    syncProgressHtmlFromDom,
+    updateProgressHtml,
+} from "../creatives/tree_renderer"
 import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
 import { invalidateCreativeTree } from "./creative_tree_invalidation"
 
@@ -338,6 +344,7 @@ function handleDestroyed(creative) {
 
 export function updateProgressForRow(row, progress, progressText, progressHtml = null) {
     if (progress == null) return
+    syncProgressHtmlFromDom(row)
     const pct = Math.round(progress * 100)
     // progressText from server: completion mark string, empty string (=complete but no mark), or null
     const displayText = progressText != null ? (progressText || '\u00a0\u00a0') : `${pct}%`

@@ -11,17 +11,31 @@ function setDatasetValue(element, key, value) {
   }
 }
 
+function serializeProgressHtml(element) {
+  const root = element.content || element
+  root.querySelectorAll('[data-cron-badge-target="messageInput"]').forEach(input => {
+    input.textContent = `\n${input.value}`
+  })
+  return element.innerHTML
+}
+
 // Capture current DOM state of the progress area back into Lit's progressHtml
 // so that Turbo Streams DOM mutations (e.g. badge count updates) survive Lit re-renders.
 // Lit renders progressHtml via unsafeHTML() inside a .creative-progress-area wrapper.
 // Turbo may directly replace child elements (e.g. comment-badge span) in the DOM,
 // but Lit's progressHtml string remains stale. On next re-render, Lit would overwrite
 // the Turbo-updated DOM with the stale string, losing badge updates.
-function syncProgressHtmlFromDom(row) {
+export function syncProgressHtmlFromDom(row) {
   if (!row.progressHtml) return
   const wrapper = row.querySelector('.creative-progress-area')
   if (!wrapper) return
-  const currentHtml = wrapper.innerHTML
+  const clone = wrapper.cloneNode(true)
+  const inputs = wrapper.querySelectorAll('[data-cron-badge-target="messageInput"]')
+  const clonedInputs = clone.querySelectorAll('[data-cron-badge-target="messageInput"]')
+  inputs.forEach((input, index) => {
+    clonedInputs[index].value = input.value
+  })
+  const currentHtml = serializeProgressHtml(clone)
   if (currentHtml && currentHtml !== row.progressHtml) {
     row.progressHtml = currentHtml
     row.dataset.progressHtml = currentHtml
@@ -48,7 +62,7 @@ export function updateProgressHtml(html, progress, displayText) {
         checkbox.setAttribute('aria-label', label)
       }
     }
-    return template.innerHTML
+    return serializeProgressHtml(template)
   }
 
   const progressElement = template.content.querySelector(
@@ -59,7 +73,7 @@ export function updateProgressHtml(html, progress, displayText) {
   progressElement.textContent = displayText
   progressElement.classList.toggle('creative-progress-complete', complete)
   progressElement.classList.toggle('creative-progress-incomplete', !complete)
-  return template.innerHTML
+  return serializeProgressHtml(template)
 }
 
 export function replaceProgressControl(html, controlHtml) {
@@ -77,7 +91,47 @@ export function replaceProgressControl(html, controlHtml) {
   if (!currentControl || !replacementControl) return html
 
   currentControl.replaceWith(replacementControl.cloneNode(true))
-  return template.innerHTML
+  return serializeProgressHtml(template)
+}
+
+function restoreCronTaskState(currentTask, nextTask) {
+  const currentInput = currentTask.querySelector('[data-cron-badge-target="messageInput"]')
+  const nextInput = nextTask.querySelector('[data-cron-badge-target="messageInput"]')
+  if (!currentInput || !nextInput) return false
+
+  const saveOperationId = currentTask.dataset.cronSaveOperation
+  const deleteOperationId = currentTask.dataset.cronDeleteOperation
+  const dirty = currentInput.value !== currentInput.dataset.cronSavedMessage
+  if (dirty || saveOperationId) nextInput.value = currentInput.value
+  if (saveOperationId) {
+    nextTask.dataset.cronSaveOperation = saveOperationId
+    nextInput.disabled = true
+    nextTask.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
+  }
+  if (deleteOperationId) {
+    nextTask.dataset.cronDeleteOperation = deleteOperationId
+    nextTask.querySelector('[data-action~="click->cron-badge#destroy"]').disabled = true
+  }
+  return dirty || Boolean(saveOperationId) || Boolean(deleteOperationId)
+}
+
+export function mergeCronTaskState(currentHtml, nextHtml) {
+  const currentTemplate = document.createElement('template')
+  currentTemplate.innerHTML = currentHtml
+  const nextTemplate = document.createElement('template')
+  nextTemplate.innerHTML = nextHtml
+  const nextTasks = new Map(Array.from(
+    nextTemplate.content.querySelectorAll('[data-cron-key]'),
+    task => [task.dataset.cronKey, task]
+  ))
+  let changed = false
+
+  currentTemplate.content.querySelectorAll('[data-cron-key]').forEach(currentTask => {
+    const nextTask = nextTasks.get(currentTask.dataset.cronKey)
+    if (nextTask && restoreCronTaskState(currentTask, nextTask)) changed = true
+  })
+
+  return changed ? serializeProgressHtml(nextTemplate) : nextHtml
 }
 
 function applyRowProperties(row, node) {
@@ -157,10 +211,15 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'descriptionHtml', templates.description_html)
     dirty = true
   }
-  if (templates.progress_html != null && row.progressHtml !== templates.progress_html) {
-    row.progressHtml = templates.progress_html
-    setDatasetValue(row, 'progressHtml', templates.progress_html)
-    dirty = true
+	if (templates.progress_html != null) {
+		const progressHtml = row.progressHtml
+			? mergeCronTaskState(row.progressHtml, templates.progress_html)
+			: templates.progress_html
+		if (row.progressHtml !== progressHtml) {
+			row.progressHtml = progressHtml
+			setDatasetValue(row, 'progressHtml', progressHtml)
+			dirty = true
+		}
   }
   if (templates.edit_icon_html != null && row.editIconHtml !== templates.edit_icon_html) {
     row.editIconHtml = templates.edit_icon_html

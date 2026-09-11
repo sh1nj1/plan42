@@ -3,7 +3,12 @@
  */
 import { jest } from '@jest/globals'
 
-import { applyRowProperties, replaceProgressControl, updateProgressHtml } from '../tree_renderer'
+import {
+  applyRowProperties,
+  replaceProgressControl,
+  syncProgressHtmlFromDom,
+  updateProgressHtml,
+} from '../tree_renderer'
 
 const TOGGLE_HTML = '<span class="progress-toggle-wrap" data-progress-toggle="true" data-current-progress="0" data-new-progress="1" data-mark-complete="Mark complete" data-mark-incomplete="Mark incomplete" title="Mark complete"><input type="checkbox" class="progress-toggle-checkbox" aria-label="Mark complete"></span>'
 
@@ -57,6 +62,53 @@ test('keeps a broadcast progress template instead of restoring stale DOM markup'
   expect(row.requestUpdate).toHaveBeenCalledTimes(1)
 })
 
+test('preserves dirty cron state while reconciling a full progress template', () => {
+	const currentProgressHtml = `
+		${TOGGLE_HTML}
+		<span data-cron-key="cron-42">
+			<textarea data-cron-badge-target="messageInput"
+				data-cron-saved-message="Saved message">Saved message</textarea>
+			<button data-action="click->cron-badge#saveMessage">Save</button>
+			<button data-action="click->cron-badge#destroy">Delete</button>
+		</span>
+		<span class="comments-btn">1</span>
+	`
+	const serverProgressHtml = `
+		<span class="creative-progress-incomplete">50%</span>
+		<span data-cron-key="cron-42">
+			<textarea data-cron-badge-target="messageInput"
+				data-cron-saved-message="Server message">Server message</textarea>
+			<button data-action="click->cron-badge#saveMessage">Save</button>
+			<button data-action="click->cron-badge#destroy">Delete</button>
+		</span>
+		<span class="comments-btn">2</span>
+	`
+	const row = document.createElement('creative-tree-row')
+	row.progressHtml = currentProgressHtml
+	row.dataset.progressHtml = currentProgressHtml
+	row.innerHTML = `<span class="creative-progress-area">${currentProgressHtml}</span>`
+	row.requestUpdate = jest.fn()
+	const currentTask = row.querySelector('[data-cron-key="cron-42"]')
+	currentTask.querySelector('textarea').value = '\nDraft message'
+	currentTask.dataset.cronSaveOperation = '6'
+	currentTask.dataset.cronDeleteOperation = '7'
+	currentTask.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
+	currentTask.querySelector('[data-action~="click->cron-badge#destroy"]').disabled = true
+
+	applyRowProperties(row, { templates: { progress_html: serverProgressHtml } })
+
+	const template = document.createElement('template')
+	template.innerHTML = row.progressHtml
+	const nextTask = template.content.querySelector('[data-cron-key="cron-42"]')
+	expect(template.content.querySelector('.creative-progress-incomplete').textContent).toBe('50%')
+	expect(template.content.querySelector('.comments-btn').textContent).toBe('2')
+	expect(nextTask.querySelector('textarea').value).toBe('\nDraft message')
+	expect(nextTask.dataset.cronSaveOperation).toBe('6')
+	expect(nextTask.dataset.cronDeleteOperation).toBe('7')
+	expect(nextTask.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled).toBe(true)
+	expect(nextTask.querySelector('[data-action~="click->cron-badge#destroy"]').disabled).toBe(true)
+})
+
 test('replaces the progress control when a remote update changes binary eligibility', () => {
   const row = document.createElement('creative-tree-row')
   row.progressHtml = TOGGLE_HTML
@@ -77,4 +129,59 @@ test('replaces the progress control when a remote update changes binary eligibil
   })
 
   expect(row.progressHtml).toBe(TOGGLE_HTML)
+})
+
+test('preserves a dirty cron message when an incremental progress update rerenders the row', () => {
+  const progressHtml = `
+    <span data-cron-key="cron-42">
+      <textarea data-cron-badge-target="messageInput"
+                data-cron-saved-message="Saved message">Saved message</textarea>
+    </span>
+    ${TOGGLE_HTML}
+  `
+  const row = document.createElement('creative-tree-row')
+  row.progressHtml = progressHtml
+  row.dataset.progressHtml = progressHtml
+  row.innerHTML = `<span class="creative-progress-area">${progressHtml}</span>`
+  row.requestUpdate = jest.fn()
+  row.querySelector('textarea').value = '\nHalf-typed message'
+
+  applyRowProperties(row, {
+    inline_editor_payload: { progress: 0.5 },
+    progress_control_html: '<span class="creative-progress-incomplete">50%</span>',
+  })
+
+  const template = document.createElement('template')
+  template.innerHTML = row.progressHtml
+  const input = template.content.querySelector('textarea')
+  expect(input.value).toBe('\nHalf-typed message')
+  expect(input.dataset.cronSavedMessage).toBe('Saved message')
+})
+
+test('keeps in-flight cron controls disabled during DOM synchronization', () => {
+  const progressHtml = `
+    <span data-cron-badge-target="task" data-cron-key="cron-42">
+      <textarea data-cron-badge-target="messageInput"
+                data-cron-saved-message="Saved message">Saved message</textarea>
+      <button data-action="click->cron-badge#saveMessage">Save</button>
+    </span>
+    ${TOGGLE_HTML}
+  `
+  const row = document.createElement('creative-tree-row')
+  row.progressHtml = progressHtml
+  row.dataset.progressHtml = progressHtml
+  row.innerHTML = `<span class="creative-progress-area">${progressHtml}</span>`
+  const input = row.querySelector('textarea')
+  const button = row.querySelector('button[data-action]')
+  input.value = 'Half-typed message'
+  input.disabled = true
+  button.disabled = true
+
+  syncProgressHtmlFromDom(row)
+
+  const template = document.createElement('template')
+  template.innerHTML = row.progressHtml
+  expect(template.content.querySelector('textarea').value).toBe('Half-typed message')
+  expect(template.content.querySelector('textarea').disabled).toBe(true)
+  expect(template.content.querySelector('button').disabled).toBe(true)
 })

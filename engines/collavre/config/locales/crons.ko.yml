@@ -11,4 +11,6 @@ ko:
       delete: 예약 작업 삭제
       delete_confirm: 이 예약 작업을 삭제하시겠습니까?
       delete_error: 예약 작업을 삭제하지 못했습니다. 다시 시도해 주세요.
+      update_error: 예약 작업 메시지를 수정하지 못했습니다. 다시 시도해 주세요.
+      message_required: 예약 작업 메시지를 입력해 주세요.
       not_available: 정보 없음

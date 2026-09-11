@@ -40,6 +40,7 @@ export default class extends Controller {
     this._loadMoreAbort = null
     this._loadMoreIndicator = null
     this._pendingViewState = null
+    this._pendingCronMessageDrafts = null
     this._viewRestoreGeneration = 0
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
@@ -225,6 +226,12 @@ export default class extends Controller {
     this._pendingViewState = preserveView
       ? (this._pendingViewState || captureCreativeTreeViewState(this.element))
       : null
+    this._pendingCronMessageDrafts = preserveView
+      ? new Map([
+        ...(this._pendingCronMessageDrafts || []),
+        ...this.captureCronMessageDrafts(),
+      ])
+      : null
 
     // A fresh load replaces the whole list (filter change, archive toggle, sync
     // refetch), so any active load-more session is stale — tear it down before
@@ -280,6 +287,7 @@ export default class extends Controller {
   async renderData(data, viewRestoreGeneration = this._viewRestoreGeneration) {
     const nodes = Array.isArray(data?.creatives) ? data.creatives : []
     const viewState = this._pendingViewState
+    const cronMessageDrafts = this._pendingCronMessageDrafts
     const isCurrent = () => viewRestoreGeneration === this._viewRestoreGeneration
 
     if (nodes.length === 0) {
@@ -287,16 +295,72 @@ export default class extends Controller {
       dispatchCreativeTreeUpdated(this.element)
       await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
       if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
+      if (isCurrent() && this._pendingCronMessageDrafts === cronMessageDrafts) {
+        this._pendingCronMessageDrafts = null
+      }
       return
     }
 
     renderCreativeTree(this.element, nodes)
+    await this.waitForCreativeTreeRows()
+    if (!isCurrent()) return
+    const deferredCronMessageDrafts = this.restoreCronMessageDrafts(cronMessageDrafts)
+    if (this._pendingCronMessageDrafts === cronMessageDrafts) {
+      this._pendingCronMessageDrafts = deferredCronMessageDrafts
+    }
     this.markContentLoaded()
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
     this._setupPagination(data?.pagination)
     await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
+    if (!isCurrent()) return
+    await this.waitForCreativeTreeRows()
+    if (!isCurrent()) return
+    const remainingCronMessageDrafts = this.restoreCronMessageDrafts(deferredCronMessageDrafts)
+    if (this._pendingCronMessageDrafts === deferredCronMessageDrafts) {
+      this._pendingCronMessageDrafts = this._pagination?.has_more
+        ? remainingCronMessageDrafts
+        : null
+    }
     if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
+  }
+
+  waitForCreativeTreeRows() {
+    return Promise.all(
+      Array.from(
+        this.element.querySelectorAll('creative-tree-row'),
+        row => row.updateComplete
+      )
+    )
+  }
+
+  captureCronMessageDrafts() {
+    const drafts = new Map()
+    this.element.querySelectorAll('[data-cron-key]').forEach(task => {
+      const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+      if (input && input.value !== input.dataset.cronSavedMessage) {
+        drafts.set(task.dataset.cronKey, input.value)
+      }
+    })
+    return drafts
+  }
+
+  restoreCronMessageDrafts(drafts) {
+    if (!drafts) return null
+
+    const deferredDrafts = new Map(drafts)
+
+    this.element.querySelectorAll('[data-cron-key]').forEach(task => {
+      if (!drafts.has(task.dataset.cronKey)) return
+
+      const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+      if (!input) return
+
+      input.value = drafts.get(task.dataset.cronKey)
+      deferredDrafts.delete(task.dataset.cronKey)
+    })
+
+    return deferredDrafts.size > 0 ? deferredDrafts : null
   }
 
   // --- Load-more (paginated "Chats" feed) -------------------------------------
@@ -352,7 +416,7 @@ export default class extends Controller {
         if (!response.ok) throw new Error(`Failed to load more chats: ${response.status}`)
         return response.json()
       })
-      .then((data) => {
+      .then(async (data) => {
         if (signal.aborted) return
         this._hideLoadMoreIndicator()
         const nodes = Array.isArray(data?.creatives) ? data.creatives : []
@@ -361,6 +425,11 @@ export default class extends Controller {
           // that slipped through must never sit above the rows being appended.
           hideTreeEmptyState(this.element)
           appendCreativeNodes(this.element, nodes)
+          await this.waitForCreativeTreeRows()
+          if (signal.aborted) return
+          this._pendingCronMessageDrafts = this.restoreCronMessageDrafts(
+            this._pendingCronMessageDrafts
+          )
           dispatchCreativeTreeUpdated(this.element)
           this.queueAlignmentUpdate()
         }
@@ -369,6 +438,7 @@ export default class extends Controller {
         if (this._pagination && this._pagination.has_more) {
           this._repositionSentinel()
         } else {
+          this._pendingCronMessageDrafts = null
           this._teardownPagination()
           // Last page in, and the rows that were on screen when it was requested
           // may since have been deleted. Nothing is pending any more, so an empty

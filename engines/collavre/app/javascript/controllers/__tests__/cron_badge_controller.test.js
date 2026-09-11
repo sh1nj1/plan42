@@ -21,6 +21,14 @@ jest.unstable_mockModule('../../lib/api/csrf_fetch', () => ({
 
 const { default: CronBadgeController } = await import('../cron_badge_controller')
 
+function response({ ok, status, body = '' }) {
+  return {
+    ok,
+    status,
+    clone: () => ({ text: async () => body }),
+  }
+}
+
 describe('CronBadgeController', () => {
   let application
   let element
@@ -32,15 +40,20 @@ describe('CronBadgeController', () => {
       <span data-controller="cron-badge"
             data-cron-badge-delete-confirm-value="Delete it?"
             data-cron-badge-delete-error-value="Delete failed"
+            data-cron-badge-update-error-value="Update failed"
             data-cron-badge-count-one-value="__count__ scheduled job"
             data-cron-badge-count-other-value="__count__ scheduled jobs">
         <button data-cron-badge-target="badge" title="2 scheduled jobs" aria-label="2 scheduled jobs">
           <span data-cron-badge-target="count">2</span>
         </button>
         <span data-cron-badge-target="task">
+          <textarea data-cron-badge-target="messageInput">First message</textarea>
+          <button data-action="click->cron-badge#saveMessage" data-cron-update-url="/creatives/42/crons/one">Save</button>
           <button data-action="click->cron-badge#destroy" data-cron-delete-url="/creatives/42/crons/one">Delete</button>
         </span>
         <span data-cron-badge-target="task">
+          <textarea data-cron-badge-target="messageInput">Second message</textarea>
+          <button data-action="click->cron-badge#saveMessage" data-cron-update-url="/creatives/42/crons/two">Save</button>
           <button data-action="click->cron-badge#destroy" data-cron-delete-url="/creatives/42/crons/two">Delete</button>
         </span>
       </span>
@@ -78,6 +91,259 @@ describe('CronBadgeController', () => {
     expect(controller.badgeTarget.getAttribute('aria-label')).toBe('1 scheduled job')
   })
 
+  test('restores a replacement delete button after a failed deletion', async () => {
+		let resolveDelete
+		confirmDialog.mockResolvedValue(true)
+		csrfFetch.mockReturnValue(new Promise(resolve => { resolveDelete = resolve }))
+		alertDialog.mockResolvedValue(undefined)
+		const button = element.querySelector('[data-cron-delete-url$="/one"]')
+
+		button.click()
+		await new Promise(resolve => setTimeout(resolve, 0))
+		const replacement = element.cloneNode(true)
+		element.replaceWith(replacement)
+		const replacementTask = replacement.querySelector('[data-cron-delete-operation]')
+
+		expect(replacementTask.querySelector('[data-cron-delete-url]').disabled).toBe(true)
+		resolveDelete({ ok: false, status: 500 })
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(replacementTask.hasAttribute('data-cron-delete-operation')).toBe(false)
+		expect(replacementTask.querySelector('[data-cron-delete-url]').disabled).toBe(false)
+  })
+
+  test('removes a replacement task after a successful deletion', async () => {
+		let resolveDelete
+		confirmDialog.mockResolvedValue(true)
+		csrfFetch.mockReturnValue(new Promise(resolve => { resolveDelete = resolve }))
+		const button = element.querySelector('[data-cron-delete-url$="/one"]')
+
+		button.click()
+		await new Promise(resolve => setTimeout(resolve, 0))
+		const replacement = element.cloneNode(true)
+		element.replaceWith(replacement)
+		resolveDelete({ ok: true, status: 204 })
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(replacement.querySelectorAll('[data-cron-badge-target="task"]')).toHaveLength(1)
+		expect(replacement.querySelector('[data-cron-badge-target="count"]').textContent).toBe('1')
+		expect(replacement.querySelector('[data-cron-badge-target="badge"]').title).toBe('1 scheduled job')
+  })
+
+  test('refreshes the plural count label', () => {
+    controller.refreshCount()
+
+    expect(controller.countTarget.textContent).toBe('2')
+    expect(controller.badgeTarget.title).toBe('2 scheduled jobs')
+    expect(controller.badgeTarget.getAttribute('aria-label')).toBe('2 scheduled jobs')
+  })
+
+  test('updates a task message and refreshes creative trees', async () => {
+    const refetch = jest.fn()
+    const invalidate = jest.fn()
+    document.addEventListener('creative-sync:refetch', refetch)
+    document.addEventListener('workspace-tree:invalidate', invalidate)
+    csrfFetch.mockResolvedValue({ ok: true, status: 200 })
+
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+    const button = task.querySelector('[data-cron-update-url]')
+    input.value = 'Updated message'
+    button.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(csrfFetch).toHaveBeenCalledWith('/creatives/42/crons/one', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Updated message' }),
+    })
+    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    expect(input.dataset.cronSavedMessage).toBe('Updated message')
+    expect(button.disabled).toBe(false)
+    expect(input.disabled).toBe(false)
+    document.removeEventListener('creative-sync:refetch', refetch)
+    document.removeEventListener('workspace-tree:invalidate', invalidate)
+  })
+
+  test('ignores a message update when its input is missing', async () => {
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    task.querySelector('[data-cron-badge-target="messageInput"]').remove()
+
+    task.querySelector('[data-cron-update-url]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(csrfFetch).not.toHaveBeenCalled()
+  })
+
+  test('reports a failed message update and restores the controls', async () => {
+    csrfFetch.mockResolvedValue({ ok: false, status: 500 })
+    alertDialog.mockResolvedValue(undefined)
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+    const button = task.querySelector('[data-cron-update-url]')
+
+    button.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(alertDialog).toHaveBeenCalledWith('Update failed')
+    expect(button.disabled).toBe(false)
+    expect(input.disabled).toBe(false)
+  })
+
+  test('keeps replacement controls disabled until an in-flight update settles', async () => {
+    let resolveUpdate
+    csrfFetch.mockReturnValue(new Promise(resolve => { resolveUpdate = resolve }))
+    alertDialog.mockResolvedValue(undefined)
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const button = task.querySelector('[data-cron-update-url]')
+
+    button.click()
+    const replacement = element.cloneNode(true)
+    element.replaceWith(replacement)
+    const replacementTask = replacement.querySelector('[data-cron-badge-target="task"]')
+
+    expect(replacementTask.querySelector('textarea').disabled).toBe(true)
+    expect(replacementTask.querySelector('[data-cron-update-url]').disabled).toBe(true)
+
+    resolveUpdate({ ok: false, status: 500 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(replacementTask.hasAttribute('data-cron-save-operation')).toBe(false)
+    expect(replacementTask.querySelector('textarea').disabled).toBe(false)
+    expect(replacementTask.querySelector('[data-cron-update-url]').disabled).toBe(false)
+  })
+
+  test('updates the saved message baseline on replacement controls after a successful update', async () => {
+    let resolveUpdate
+    csrfFetch.mockReturnValue(new Promise(resolve => { resolveUpdate = resolve }))
+    const task = element.querySelector('[data-cron-badge-target="task"]')
+    const input = task.querySelector('textarea')
+    const button = task.querySelector('[data-cron-update-url]')
+    input.dataset.cronSavedMessage = 'First message'
+    input.value = 'Updated message'
+
+    button.click()
+    const replacement = element.cloneNode(true)
+    element.replaceWith(replacement)
+    const replacementInput = replacement.querySelector('textarea')
+
+    expect(replacementInput.dataset.cronSavedMessage).toBe('First message')
+
+    resolveUpdate({ ok: true, status: 200 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(replacementInput.dataset.cronSavedMessage).toBe('Updated message')
+    expect(replacementInput.disabled).toBe(false)
+  })
+
+  test('holds full tree reloads until an in-flight message update settles', async () => {
+    let resolveUpdate
+    csrfFetch.mockReturnValue(new Promise(resolve => { resolveUpdate = resolve }))
+    const tree = document.createElement('div')
+    tree.setAttribute('data-controller', 'creatives--tree')
+    element.before(tree)
+    tree.appendChild(element)
+    const treeController = {
+      beginReloadHold: jest.fn(),
+      endReloadHold: jest.fn(),
+    }
+    jest.spyOn(application, 'getControllerForElementAndIdentifier')
+      .mockReturnValue(treeController)
+
+    element.querySelector('[data-cron-update-url]').click()
+
+    expect(treeController.beginReloadHold).toHaveBeenCalledTimes(1)
+    expect(treeController.endReloadHold).not.toHaveBeenCalled()
+
+    resolveUpdate({ ok: true, status: 200 })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(treeController.endReloadHold).toHaveBeenCalledTimes(1)
+  })
+
+	test('holds full tree reloads until an in-flight deletion settles', async () => {
+		let resolveConfirmation
+		let resolveDelete
+		confirmDialog.mockReturnValue(new Promise(resolve => { resolveConfirmation = resolve }))
+		csrfFetch.mockReturnValue(new Promise(resolve => { resolveDelete = resolve }))
+		const tree = document.createElement('div')
+		tree.setAttribute('data-controller', 'creatives--tree')
+		element.before(tree)
+		tree.appendChild(element)
+		const treeController = {
+			beginReloadHold: jest.fn(),
+			endReloadHold: jest.fn(),
+		}
+		jest.spyOn(application, 'getControllerForElementAndIdentifier')
+			.mockReturnValue(treeController)
+
+		element.querySelector('[data-cron-delete-url$="/one"]').click()
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(treeController.beginReloadHold).toHaveBeenCalledTimes(1)
+		expect(treeController.endReloadHold).not.toHaveBeenCalled()
+		const replacement = element.cloneNode(true)
+		element.replaceWith(replacement)
+		const replacementTask = replacement.querySelector('[data-cron-delete-operation]')
+		expect(replacementTask.querySelector('[data-cron-delete-url]').disabled).toBe(true)
+		resolveConfirmation(true)
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(csrfFetch).toHaveBeenCalledTimes(1)
+		expect(treeController.endReloadHold).not.toHaveBeenCalled()
+
+		resolveDelete({ ok: true, status: 204 })
+		await new Promise(resolve => setTimeout(resolve, 0))
+
+		expect(treeController.endReloadHold).toHaveBeenCalledTimes(1)
+		expect(replacement.querySelectorAll('[data-cron-badge-target="task"]')).toHaveLength(1)
+	})
+
+  test('ignores stale save tasks and missing controls when finishing', () => {
+    const task = document.createElement('span')
+    task.dataset.cronSaveOperation = 'current'
+
+    controller.finishMessageSave(task, 'stale')
+    expect(task.dataset.cronSaveOperation).toBe('current')
+
+    expect(() => controller.finishMessageSave(task, 'current')).not.toThrow()
+    expect(task.hasAttribute('data-cron-save-operation')).toBe(false)
+
+    task.dataset.cronSaveOperation = 'current'
+    expect(() => {
+      controller.updateSavedMessage(task, 'current', 'Updated message')
+    }).not.toThrow()
+  })
+
+  test('refreshes the CSRF token and retries a message update after a payload-less 422 response', async () => {
+    csrfFetch
+      .mockResolvedValueOnce(response({ ok: false, status: 422 }))
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+
+    element.querySelector('[data-cron-update-url]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(refreshCsrfToken).toHaveBeenCalledTimes(1)
+    expect(csrfFetch).toHaveBeenCalledTimes(2)
+  })
+
+  test('does not retry a message update after a semantic 422 response', async () => {
+    csrfFetch.mockResolvedValue(response({
+      ok: false,
+      status: 422,
+      body: JSON.stringify({ error: 'Message cannot be blank' }),
+    }))
+    alertDialog.mockResolvedValue(undefined)
+
+    element.querySelector('[data-cron-update-url]').click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(refreshCsrfToken).not.toHaveBeenCalled()
+    expect(csrfFetch).toHaveBeenCalledTimes(1)
+    expect(alertDialog).toHaveBeenCalledWith('Update failed')
+  })
+
   test('removes the badge after deleting its last task', async () => {
     element.querySelectorAll('[data-cron-badge-target="task"]')[1].remove()
     confirmDialog.mockResolvedValue(true)
@@ -108,12 +374,26 @@ describe('CronBadgeController', () => {
 
   test('does not request deletion when confirmation is cancelled', async () => {
     confirmDialog.mockResolvedValue(false)
+		const tree = document.createElement('div')
+		tree.setAttribute('data-controller', 'creatives--tree')
+		element.before(tree)
+		tree.appendChild(element)
+		const treeController = {
+			beginReloadHold: jest.fn(),
+			endReloadHold: jest.fn(),
+		}
+		jest.spyOn(application, 'getControllerForElementAndIdentifier')
+			.mockReturnValue(treeController)
 
     element.querySelector('[data-cron-delete-url$="/one"]').click()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(csrfFetch).not.toHaveBeenCalled()
     expect(controller.taskTargets).toHaveLength(2)
+		expect(element.querySelector('[data-cron-delete-url$="/one"]').disabled).toBe(false)
+		expect(element.querySelector('[data-cron-delete-operation]')).toBeNull()
+		expect(treeController.beginReloadHold).toHaveBeenCalledTimes(1)
+		expect(treeController.endReloadHold).toHaveBeenCalledTimes(1)
   })
 
   test('reports a failed deletion and restores the button', async () => {
@@ -130,10 +410,10 @@ describe('CronBadgeController', () => {
     expect(controller.taskTargets).toHaveLength(2)
   })
 
-  test('refreshes the CSRF token and retries once after a 422 response', async () => {
+  test('refreshes the CSRF token and retries once after a payload-less 422 response', async () => {
     confirmDialog.mockResolvedValue(true)
     csrfFetch
-      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValueOnce(response({ ok: false, status: 422 }))
       .mockResolvedValueOnce({ ok: true, status: 204 })
 
     element.querySelector('[data-cron-delete-url$="/one"]').click()

@@ -15,10 +15,11 @@ beforeAll(() => {
   }
 })
 
-async function mountRow(progressHtml) {
+async function mountRow(progressHtml, creativeId = '7') {
   await import('../creative_tree_row.js')
   const row = document.createElement('creative-tree-row')
-  row.creativeId = '7'
+  row.creativeId = creativeId
+  row.setAttribute('creative-id', creativeId)
   row.progressHtml = progressHtml
   document.body.appendChild(row)
   await row.updateComplete
@@ -32,6 +33,17 @@ const COMPLETE_TOGGLE = INCOMPLETE_TOGGLE
   .replace('title="Mark complete"', 'title="Mark incomplete"')
   .replace('<input type="checkbox"', '<input type="checkbox" checked')
   .replace('aria-label="Mark complete"', 'aria-label="Mark incomplete"')
+
+const progressWithCron = (control, message = 'Saved message') => `
+  <div class="creative-row-end">
+    <span data-cron-badge-target="task" data-cron-key="cron-42">
+      <textarea data-cron-badge-target="messageInput"
+                data-cron-saved-message="${message}">\n${message}</textarea>
+      <button class="cron-task-save">Save</button>
+    </span>
+    ${control}
+  </div>
+`
 
 afterEach(() => {
   csrfFetch.mockReset()
@@ -166,6 +178,64 @@ test('keeps focus on the checkbox after the server re-renders the toggle', async
   const rendered = row.querySelector('.progress-toggle-checkbox')
   expect(document.activeElement).toBe(rendered)
   expect(rendered.checked).toBe(true)
+})
+
+test('preserves a dirty cron message after toggling progress on the same row', async () => {
+  csrfFetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      progress: 1,
+      progress_html: `<div class="creative-row-end">${COMPLETE_TOGGLE}</div>`,
+    }),
+  })
+  const row = await mountRow(progressWithCron(INCOMPLETE_TOGGLE))
+  const savingInput = row.querySelector('textarea')
+  const savingButton = row.querySelector('.cron-task-save')
+  savingInput.value = '\nHalf-typed message'
+  savingInput.disabled = true
+  savingButton.disabled = true
+
+  row.querySelector('[data-progress-toggle]').click()
+  await Promise.resolve()
+  await row.updateComplete
+  await row.updateComplete
+
+  const input = row.querySelector('textarea')
+  expect(input.value).toBe('\nHalf-typed message')
+  expect(input.dataset.cronSavedMessage).toBe('Saved message')
+  expect(input.disabled).toBe(true)
+  expect(row.querySelector('.cron-task-save').disabled).toBe(true)
+})
+
+test('preserves an ancestor cron draft after a descendant progress toggle', async () => {
+  csrfFetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      progress: 1,
+      ancestors: [{
+        id: '42',
+        progress: 0.5,
+        progress_html: '<div class="creative-row-end"><span class="creative-progress-incomplete">50%</span></div>',
+      }],
+    }),
+  })
+  const ancestor = await mountRow(
+    progressWithCron('<span class="creative-progress-incomplete">0%</span>'),
+    '42'
+  )
+  ancestor.querySelector('textarea').value = 'Half-typed ancestor message'
+  const row = await mountRow(INCOMPLETE_TOGGLE)
+
+  row.querySelector('[data-progress-toggle]').click()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  await row.updateComplete
+  await ancestor.updateComplete
+
+  const input = ancestor.querySelector('textarea')
+  expect(input.value).toBe('Half-typed ancestor message')
+  expect(input.dataset.cronSavedMessage).toBe('Saved message')
+  expect(ancestor.progressHtml).toContain('50%')
+  expect(ancestor.querySelector('.creative-progress-incomplete').textContent).toBe('50%')
 })
 
 test('restores checkbox metadata when a toggle request fails', async () => {

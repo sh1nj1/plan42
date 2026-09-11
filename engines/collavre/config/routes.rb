@@ -94,7 +94,7 @@ Collavre::Engine.routes.draw do
     end
   end
   resources :creatives do
-    resources :crons, only: [ :destroy ], param: :key
+    resources :crons, only: %i[update destroy], param: :key
     post "history/:id/apply", to: "creative_change_sets#apply", as: :apply_change_set
     resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]

@@ -13,7 +13,7 @@ module Collavre
 
     attr_reader :tasks, :creative_id, :menu_id
 
-    def can_delete? = @can_delete
+    def can_manage? = @can_delete
 
     def count_label
       t("collavre.creatives.index.cron_count", count: tasks.size)
@@ -21,6 +21,14 @@ module Collavre
 
     def task_message(task)
       parse_arguments(task)["message"].presence || t("collavre.crons.not_available")
+    end
+
+    def task_message_value(task)
+      parse_arguments(task)["message"].to_s
+    end
+
+    def textarea_message(task)
+      "\n#{task_message_value(task)}"
     end
 
     def next_run(task)
@@ -32,6 +40,10 @@ module Collavre
     end
 
     def destroy_path(task)
+      helpers.collavre.creative_cron_path(creative_id, task.key)
+    end
+
+    def update_path(task)
       helpers.collavre.creative_cron_path(creative_id, task.key)
     end
   end

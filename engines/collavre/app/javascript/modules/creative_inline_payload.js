@@ -13,6 +13,7 @@ import {
   hasDatasetValue,
   setRowDatasetValue,
 } from './creative_row_editor_helpers'
+import { replaceProgressControl, syncProgressHtmlFromDom } from '../creatives/tree_renderer'
 
 export function updateRowFromData(row, data) {
   if (!row || !data) return;
@@ -22,8 +23,12 @@ export function updateRowFromData(row, data) {
   setRowDatasetValue(row, 'descriptionHtml', descriptionHtml);
   setRowDatasetValue(row, 'descriptionRawHtml', rawHtml);
   if (data.progress_html != null) {
-    row.progressHtml = data.progress_html;
-    setRowDatasetValue(row, 'progressHtml', data.progress_html);
+		syncProgressHtmlFromDom(row);
+		const progressHtml = row.progressHtml
+			? replaceProgressControl(row.progressHtml, data.progress_html)
+			: data.progress_html;
+		row.progressHtml = progressHtml;
+		setRowDatasetValue(row, 'progressHtml', progressHtml);
   }
   if (Object.prototype.hasOwnProperty.call(data, 'progress')) {
     setRowDatasetValue(row, 'progressValue', data.progress ?? '');
