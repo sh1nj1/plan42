@@ -1,4 +1,4 @@
-import { getCaretClientRect } from '../utils/caret_position'
+import { caretAnchor } from '../utils/caret_position'
 
 const MARKDOWN_SPECIAL = /[\\`*_\[\]()<>~]/g
 
@@ -46,9 +46,8 @@ export function openCreativeLinkPicker(textarea, {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
   controller.open(
-    caretRect,
+    caretAnchor(textarea),
     (item) => insertMarkdownCreativeLink(textarea, item),
     () => textarea.focus(),
     { allowCreate }

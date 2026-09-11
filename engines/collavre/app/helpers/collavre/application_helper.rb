@@ -83,6 +83,12 @@ module Collavre
         !@auto_fullscreen
     end
 
+    # Identifies requests made by the packaged Tauri shell. Desktop-only UI
+    # fallbacks should use this rather than attempting platform browser checks.
+    def desktop?
+      request.user_agent.to_s.start_with?("CollavreDesktop/")
+    end
+
     # Renders CSS for admin-configured default themes (light/dark mode)
     # Only applies when the user has no personal theme set
     def default_theme_styles

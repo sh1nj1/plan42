@@ -1,3 +1,13 @@
+// Anchor provider for a popup hung off the caret of `input`, for CommonPopup's
+// showAt. The caret has no element to hold on to, so its rect has to be
+// re-derived from the input's live geometry every time placement runs.
+export function caretAnchor(input) {
+  return () => {
+    if (!input?.isConnected) return null
+    return getCaretClientRect(input) || input.getBoundingClientRect()
+  }
+}
+
 export function getCaretClientRect(input) {
   if (!input || typeof input.selectionStart !== 'number') return null
 

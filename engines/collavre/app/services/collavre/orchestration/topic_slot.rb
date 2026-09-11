@@ -34,6 +34,17 @@ module Collavre
         nil
       end
 
+      def self.matches_context?(locked_scope, topic_id, creative_id)
+        expected_class = topic_id ? Topic : Creative
+        expected_id = topic_id || creative_id
+        locked_scope.is_a?(expected_class) && locked_scope.id.to_s == expected_id.to_s &&
+          (topic_id.nil? || locked_scope.creative_id.to_s == creative_id.to_s)
+      end
+
+      def self.lock_matches_context?(topic_id, creative_id)
+        matches_context?(lock!(topic_id, creative_id), topic_id, creative_id)
+      end
+
       # May `agent_id` take a slot in this topic scope right now?
       #
       # Deliberately NOT gated on coalesce_pending_tasks?: that switch governs

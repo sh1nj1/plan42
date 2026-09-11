@@ -103,12 +103,6 @@ en:
     comment_content_unavailable: "(comment unavailable)"
     tool_approval_needed: "Tool '%{tool_name}' has been detected/updated. Please approve it to activate."
 
-  inbox_mailer:
-    daily_summary:
-      subject: "Your inbox summary"
-      greeting: "Here are your unread messages:"
-      view: "View"
-
   users:
     sessions:
       new:

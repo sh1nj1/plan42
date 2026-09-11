@@ -17,7 +17,7 @@ jest.unstable_mockModule('../../../utils/emoji_parser', () => ({
 
 const { Application } = await import('@hotwired/stimulus')
 const TreeController = (await import('../tree_controller')).default
-const { appendCreativeNodes } = await import('../../../creatives/tree_renderer')
+const { appendCreativeNodes, renderCreativeTree } = await import('../../../creatives/tree_renderer')
 const { restoreTreeEmptyState } = await import('../../../modules/creative_tree_empty_state')
 
 const TRANSIENT_RETRY_DELAYS = [200, 600]
@@ -77,6 +77,38 @@ describe('CreativesTreeController retry on transient network errors', () => {
     application.stop()
   })
 
+  test('ignores a queued network retry after a new reload takes ownership', async () => {
+    global.fetch = jest.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue({ ok: true, json: async () => ({ creatives: [{ id: 2 }] }) })
+    const { container, application } = installController()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.load({ preserveView: true })
+    await flush()
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+    expect(renderCreativeTree).toHaveBeenLastCalledWith(container, [{ id: 2 }])
+    application.stop()
+  })
+
+  test('discards a late JSON response even when the transport ignores abort', async () => {
+    let releaseJson
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: () => new Promise(resolve => { releaseJson = resolve }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ creatives: [{ id: 2 }] }) })
+    const { container, application } = installController()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.load({ preserveView: true })
+    await flush()
+    releaseJson({ creatives: [{ id: 1 }] })
+    await flush()
+    expect(renderCreativeTree).toHaveBeenLastCalledWith(container, [{ id: 2 }])
+    expect(renderCreativeTree.mock.calls.filter(([target, nodes]) => target === container && nodes[0]?.id === 1)).toEqual([])
+    application.stop()
+  })
+
   test('does NOT schedule retry on HTTP error responses', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = jest.fn().mockResolvedValue({
@@ -113,12 +145,300 @@ describe('CreativesTreeController retry on transient network errors', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {})
     global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'))
 
-    const { application } = installController()
+    const { container, application } = installController()
     // Allow time for both retries to complete (200 + 600 = 800ms)
     await new Promise((resolve) => setTimeout(resolve, 1500))
 
     expect(collectRetryDelays(setTimeoutSpy)).toEqual(TRANSIENT_RETRY_DELAYS)
+    expect(container.dataset.loadState).toBe('error')
+    expect(container.dataset.loaded).toBe('true')
 
+    application.stop()
+  })
+})
+
+describe('CreativesTreeController cron message drafts', () => {
+  let originalFetch
+
+  const cronTask = (message, { editable = true } = {}) => `
+    <span data-cron-key="creative-1">
+      ${editable
+        ? `<textarea data-cron-badge-target="messageInput"
+                     data-cron-saved-message="${message}">${message}</textarea>`
+        : `<span class="cron-task-message">${message}</span>`}
+    </span>
+  `
+
+  const cronRow = (message, options = {}) => `
+    <creative-tree-row creative-id="1">${cronTask(message, options)}</creative-tree-row>
+  `
+
+  const installCachedTree = async (html) => {
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
+    container.dataset.loaded = 'true'
+    container.innerHTML = html
+    document.body.appendChild(container)
+
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    return { container, application, controller }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ creatives: [{ id: 1 }] }),
+    })
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    renderCreativeTree.mockReset()
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('preserves a dirty cron message across a preserved tree reload', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'Half-typed message'
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = cronRow('Server message')
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed message')
+    expect(input.dataset.cronSavedMessage).toBe('Server message')
+    application.stop()
+  })
+
+  test('waits for Lit rows to render before restoring a dirty cron message', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'Half-typed message'
+    let finishRowUpdate
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
+      const row = element.querySelector('creative-tree-row')
+      row.updateComplete = new Promise((resolve) => {
+        finishRowUpdate = () => {
+          row.innerHTML = cronTask('Server message')
+          resolve(true)
+        }
+      })
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea')).toBeNull()
+    finishRowUpdate()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed message')
+    expect(input.dataset.cronSavedMessage).toBe('Server message')
+    application.stop()
+  })
+
+  test('does not restore a dirty cron message into a superseded Lit render', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    const drafts = new Map([['creative-1', 'Half-typed message']])
+    controller._pendingCronMessageDrafts = drafts
+    let finishRowUpdate
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
+      const row = element.querySelector('creative-tree-row')
+      row.updateComplete = new Promise((resolve) => {
+        finishRowUpdate = () => {
+          row.innerHTML = cronTask('Server message')
+          resolve(true)
+        }
+      })
+    })
+
+    const rendering = controller.renderData({ creatives: [{ id: 1 }] })
+    controller._viewRestoreGeneration += 1
+    finishRowUpdate()
+    await rendering
+
+    expect(container.querySelector('textarea').value).toBe('Server message')
+    expect(controller._pendingCronMessageDrafts).toBe(drafts)
+    application.stop()
+  })
+
+  test('captures newer edits while view-state restoration is still pending', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    let releaseChildren
+    global.fetch = jest.fn((url) => {
+      if (url === '/children/1') {
+        return new Promise((resolve) => {
+          releaseChildren = () => resolve({
+            ok: true,
+            headers: new Headers(),
+            json: async () => ({ creatives: [{ id: 2 }] }),
+          })
+        })
+      }
+      return new Promise(() => {})
+    })
+    const originalDrafts = new Map([['creative-1', 'First draft']])
+    controller._pendingCronMessageDrafts = originalDrafts
+    controller._pendingViewState = {
+      scrolling: document.documentElement,
+      scrollTop: 0,
+      focus: null,
+      expansion: [{ creativeId: '1', expanded: true }],
+    }
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = `
+        <creative-tree-row creative-id="1" has-children>
+          ${cronTask('Server message')}
+        </creative-tree-row>
+        <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+      `
+    })
+
+    const restoration = controller.renderData({ creatives: [{ id: 1 }] })
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('First draft')
+    expect(controller._pendingCronMessageDrafts).toBeNull()
+
+    input.value = 'Newer draft'
+    controller.load({ preserveView: true })
+
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-1', 'Newer draft'],
+    ]))
+
+    releaseChildren()
+    await restoration
+
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-1', 'Newer draft'],
+    ]))
+    controller.stopAnimation()
+    application.stop()
+  })
+
+  test('restores a dirty cron message after loading an expanded branch', async () => {
+    const { container, application, controller } = await installCachedTree(`
+      <creative-tree-row creative-id="1" has-children expanded></creative-tree-row>
+      <div id="creative-children-1" data-loaded="true">
+        <creative-tree-row creative-id="2">${cronTask('Saved message')}</creative-tree-row>
+      </div>
+    `)
+    const draftInput = container.querySelector('textarea')
+    draftInput.closest('[data-cron-key]').dataset.cronKey = 'creative-2'
+    draftInput.value = 'Half-typed child message'
+    let finishChildUpdate
+    global.fetch = jest.fn((url) => {
+      if (url === '/children/1') {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({ creatives: [{ id: 2 }] }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }] }),
+      })
+    })
+    renderCreativeTree
+      .mockImplementationOnce((element) => {
+        element.innerHTML = `
+          <creative-tree-row creative-id="1" has-children></creative-tree-row>
+          <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+        `
+      })
+      .mockImplementationOnce((element) => {
+        element.innerHTML = '<creative-tree-row creative-id="2"></creative-tree-row>'
+        const row = element.querySelector('creative-tree-row')
+        row.updateComplete = new Promise((resolve) => {
+          finishChildUpdate = () => {
+            row.innerHTML = cronTask('Server child message')
+            row.querySelector('[data-cron-key]').dataset.cronKey = 'creative-2'
+            resolve(true)
+          }
+        })
+      })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea')).toBeNull()
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-2', 'Half-typed child message'],
+    ]))
+
+    finishChildUpdate()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed child message')
+    expect(input.dataset.cronSavedMessage).toBe('Server child message')
+    expect(controller._pendingCronMessageDrafts).toBeNull()
+    application.stop()
+  })
+
+  test('keeps deferred branch drafts when a newer preserved load starts', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'New root draft'
+    controller._pendingCronMessageDrafts = new Map([
+      ['creative-2', 'Deferred child draft'],
+    ])
+    global.fetch = jest.fn(() => new Promise(() => {}))
+
+    controller.load({ preserveView: true })
+
+    expect(controller._pendingCronMessageDrafts).toEqual(new Map([
+      ['creative-2', 'Deferred child draft'],
+      ['creative-1', 'New root draft'],
+    ]))
+    controller.stopAnimation()
+    application.stop()
+  })
+
+  test('uses the refreshed cron message when the local message is clean', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = cronRow('Server message')
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea').value).toBe('Server message')
+    application.stop()
+  })
+
+  test('does not restore a dirty cron message after edit access is lost', async () => {
+    const { container, application, controller } = await installCachedTree(cronRow('Saved message'))
+    container.querySelector('textarea').value = 'Half-typed message'
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = cronRow('Server message', { editable: false })
+    })
+
+    controller.load({ preserveView: true })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('textarea')).toBeNull()
+    expect(container.querySelector('.cron-task-message').textContent).toBe('Server message')
     application.stop()
   })
 })
@@ -213,6 +533,53 @@ describe('CreativesTreeController Chats pagination (load more)', () => {
     // has_more:false on page 2 tears the observer down.
     expect(observer.disconnected).toBe(true)
 
+    application.stop()
+  })
+
+  test('restores a deferred cron draft when its paginated row is appended', async () => {
+    const page2Nodes = [{ id: 2 }]
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: page2Nodes, pagination: { has_more: false, next_page: null } }),
+      })
+    renderCreativeTree.mockImplementationOnce((container) => {
+      container.innerHTML = '<creative-tree-row creative-id="1"></creative-tree-row>'
+    })
+    appendCreativeNodes.mockImplementationOnce((container) => {
+      const row = document.createElement('creative-tree-row')
+      row.setAttribute('creative-id', '2')
+      row.innerHTML = `
+        <span data-cron-key="creative-2">
+          <textarea data-cron-badge-target="messageInput"
+                    data-cron-saved-message="Server message">Server message</textarea>
+        </span>
+      `
+      row.updateComplete = Promise.resolve(true)
+      container.appendChild(row)
+    })
+
+    const { container, application } = installController()
+    await flush()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller._pendingCronMessageDrafts = new Map([
+      ['creative-2', 'Half-typed page 2 message'],
+    ])
+
+    MockIntersectionObserver.instances[0].triggerIntersect()
+    await flush()
+    await flush()
+
+    const input = container.querySelector('textarea')
+    expect(input.value).toBe('Half-typed page 2 message')
+    expect(input.dataset.cronSavedMessage).toBe('Server message')
+    expect(controller._pendingCronMessageDrafts).toBeNull()
     application.stop()
   })
 
@@ -449,9 +816,20 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     await flush()
     await flush()
 
+    expect(container.dataset.loadState).toBe('error')
     expect(container.querySelector('.creative-tree-error')).not.toBeNull()
     expect(container.querySelector('.creative-empty-state')).toBeNull()
     expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ creatives: [] }) })
+    controller.load()
+    expect(container.dataset.loadState).toBeUndefined()
+    expect(container.dataset.loaded).toBeUndefined()
+    await flush()
+    await flush()
+    expect(container.dataset.loadState).toBe('success')
+    expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
 
     application.stop()
   })
@@ -470,6 +848,7 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     await flush()
     await flush()
 
+    expect(container.dataset.loadState).toBe('error')
     expect(container.querySelector('.creative-tree-error')).not.toBeNull()
     expect(container.querySelector('.creative-empty-state')).toBeNull()
     expect(container.querySelector('.new-root-creative-btn')).toBeNull()
@@ -510,6 +889,7 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     await flush()
 
     expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
+    expect(container.dataset.loadState).toBe('success')
     expect(container.querySelector('.creative-tree-error')).toBeNull()
 
     application.stop()
@@ -730,6 +1110,45 @@ describe('CreativesTreeController requestReload', () => {
     jest.advanceTimersByTime(300)
 
     expect(load).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledWith({ preserveView: true })
+
+    application.stop()
+  })
+
+  test('reloads with view preservation after a creative drop completes', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller._handleCreativeDrop()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledWith({ preserveView: true })
+
+    application.stop()
+  })
+
+  // The listener has to be removed by the same reference connect() registered,
+  // or every reconnect leaves another tree reloading off a window-wide event.
+  test('stops listening for drop completions once disconnected', async () => {
+    const { application, controller } = await installConnected()
+    const removeEventListener = jest.spyOn(window, 'removeEventListener')
+
+    controller.disconnect()
+
+    expect(removeEventListener).toHaveBeenCalledWith(
+      'collavre:creative-drop-complete',
+      controller._handleCreativeDrop
+    )
+
+    application.stop()
+  })
+
+  test('replaces the view outright when the caller does not ask to preserve it', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.debouncedLoad()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledWith({ preserveView: false })
 
     application.stop()
   })
@@ -870,6 +1289,94 @@ describe('CreativesTreeController requestReload', () => {
     jest.advanceTimersByTime(300)
     expect(load).toHaveBeenCalledTimes(1)
 
+    application.stop()
+  })
+
+  test('keeps captured view state when a preserved load supersedes an in-flight load', async () => {
+    jest.useRealTimers()
+    global.fetch = jest.fn(() => new Promise(() => {}))
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
+    container.dataset.loaded = 'true'
+    container.innerHTML = `
+<creative-tree-row creative-id="1" expanded>
+<button id="focused-control">Creative 1</button>
+</creative-tree-row>
+`
+    document.body.appendChild(container)
+    document.getElementById('focused-control').focus()
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+
+    controller.load({ preserveView: true })
+    const capturedState = controller._pendingViewState
+    controller.load({ preserveView: true })
+
+    expect(controller._pendingViewState).toBe(capturedState)
+    expect(capturedState.expansion).toEqual([{ creativeId: '1', expanded: true }])
+    expect(capturedState.focus).toEqual(expect.objectContaining({ creativeId: '1' }))
+
+    controller.stopAnimation()
+    application.stop()
+  })
+
+  test('keeps pending view state when a reload supersedes asynchronous restoration', async () => {
+    jest.useRealTimers()
+    let releaseChildren
+    global.fetch = jest.fn((url) => {
+      if (url === '/children/1') {
+        return new Promise((resolve) => {
+          releaseChildren = () => resolve({
+            ok: true,
+            headers: new Headers(),
+            json: async () => ({ creatives: [{ id: 2 }] }),
+          })
+        })
+      }
+      return new Promise(() => {})
+    })
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
+    container.dataset.loaded = 'true'
+    document.body.appendChild(container)
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    const viewState = {
+      scrolling: document.documentElement,
+      scrollTop: 120,
+      focus: { creativeId: '1', controlId: 'focused-control', controlIndex: 0 },
+      expansion: [{ creativeId: '1', expanded: true }],
+    }
+    controller._pendingViewState = viewState
+    renderCreativeTree.mockImplementationOnce((element) => {
+      element.innerHTML = `
+        <creative-tree-row creative-id="1" has-children>
+          <button id="focused-control">Creative 1</button>
+        </creative-tree-row>
+        <div id="creative-children-1" data-loaded="false" data-load-url="/children/1"></div>
+      `
+    })
+
+    const restoration = controller.renderData({ creatives: [{ id: 1 }] })
+    await flush()
+    expect(controller._pendingViewState).toBe(viewState)
+
+    controller.load({ preserveView: true })
+    expect(controller._pendingViewState).toBe(viewState)
+    releaseChildren()
+    await restoration
+
+    expect(controller._pendingViewState).toBe(viewState)
+
+    controller.stopAnimation()
     application.stop()
   })
 })

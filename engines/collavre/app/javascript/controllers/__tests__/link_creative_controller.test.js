@@ -158,6 +158,68 @@ describe('LinkCreativeController picker', () => {
     application.stop()
   })
 
+  test.each([
+    ['root shell', { 9: [900] }],
+    ['nested shell with another ancestor shell', { 1: [50, 100], 9: [60, 70, 900] }],
+  ])('search selects the %s placement only in destination mode', async (_label, revealPath) => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([{
+      id: 9, description: 'Shared destination', progress: 0,
+      path: [{ id: 1, description: 'Shared root' }], reveal_path: revealPath,
+    }])
+    const { application, controller } = await installController()
+    const onSelect = jest.fn()
+    try {
+      controller.open(rect, onSelect, jest.fn(), { selectOrigin: false })
+      await flush()
+      controller.inputTarget.value = 'shared'
+      controller.search()
+      await flush()
+      document.querySelector('.link-result-item').click()
+      expect(onSelect).toHaveBeenLastCalledWith({ id: 900, label: 'Shared destination' })
+
+      // Reopening the same picker for ordinary linking resets destination mode.
+      controller.open(rect, onSelect, jest.fn())
+      await flush()
+      controller.inputTarget.value = 'shared'
+      controller.search()
+      await flush()
+      controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      expect(onSelect).toHaveBeenLastCalledWith({ id: 9, label: 'Shared destination' })
+      expect(onSelect).toHaveBeenCalledTimes(2)
+    } finally {
+      controller.close()
+      application.stop()
+    }
+  })
+
+  test.each([
+    ['no linked placement', undefined],
+    ['ancestor placement only', { 1: [50, 100] }],
+    ['empty placement path', { 9: [] }],
+    ['invalid placement path', { 9: 900 }],
+  ])('destination search retains the hit id with %s', async (_label, revealPath) => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([{
+      id: 9, description: 'Descendant destination', progress: 0,
+      path: [{ id: 1, description: 'Shared root' }], reveal_path: revealPath,
+    }])
+    const { application, controller } = await installController()
+    const onSelect = jest.fn()
+    try {
+      controller.open(rect, onSelect, jest.fn(), { selectOrigin: false })
+      await flush()
+      controller.inputTarget.value = 'descendant'
+      controller.search()
+      await flush()
+      controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      expect(onSelect).toHaveBeenCalledWith({ id: 9, label: 'Descendant destination' })
+    } finally {
+      controller.close()
+      application.stop()
+    }
+  })
+
   test('creates a creative from a non-matching query when creation is enabled', async () => {
     browse.mockResolvedValue([])
     search.mockResolvedValue([])
@@ -466,6 +528,23 @@ describe('LinkCreativeController picker', () => {
     application.stop()
   })
 
+  test('placement selection preserves a linked shell id and resets for link consumers', async () => {
+    browse.mockResolvedValue([
+      { id: 100, description: 'Shared', has_children: false, origin_id: 1 },
+    ])
+    const onSelect = jest.fn()
+    const { application, controller } = await installController()
+    controller.open(rect, onSelect, jest.fn(), { selectOrigin: false })
+    await flush()
+    document.querySelector('.link-tree-row').click()
+    expect(onSelect).toHaveBeenLastCalledWith({ id: 100, label: 'Shared' })
+    controller.open(rect, onSelect, jest.fn())
+    await flush()
+    document.querySelector('.link-tree-row').click()
+    expect(onSelect).toHaveBeenLastCalledWith({ id: 1, label: 'Shared' })
+    application.stop()
+  })
+
   test('selecting a linked shell row emits the effective origin id', async () => {
     // Shell row (id 100) whose effective origin is 1; selecting it must hand the
     // origin id to consumers so a new link is based on the real shared creative,
@@ -554,5 +633,167 @@ describe('LinkCreativeController picker', () => {
     expect(tab.defaultPrevented).toBe(true)
 
     application.stop()
+  })
+
+  // The popup is placed one frame after open(), while the list is still the
+  // "Loading…" placeholder. Anchored to a caret in a bottom-pinned composer,
+  // that measurement is what left only one tree row visible, so every render
+  // that resizes the list has to ask the popup to place itself again.
+  describe('re-placing the popup as its content changes', () => {
+    const openWithSpy = async () => {
+      const installed = await installController()
+      const reposition = jest.spyOn(installed.controller.popup, 'reposition')
+      return { ...installed, reposition }
+    }
+
+    test('re-places after the browse tree renders', async () => {
+      browse.mockResolvedValue([{ id: 1, description: 'Root', progress: 0, has_children: false }])
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      expect(document.querySelectorAll('.link-tree-item')).toHaveLength(1)
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places after the loading and empty placeholders render', async () => {
+      browse.mockResolvedValue([])
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      // "Loading…" then "Empty" — two renders, both resizing the list.
+      expect(document.querySelector('.link-popup-message').textContent).toBe('Empty')
+      expect(reposition.mock.calls.length).toBeGreaterThanOrEqual(2)
+
+      application.stop()
+    })
+
+    test('re-places after search results render', async () => {
+      browse.mockResolvedValue([])
+      search.mockResolvedValue([{ id: 9, description: 'Found', progress: 0, path: [] }])
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+      reposition.mockClear()
+
+      controller.inputTarget.value = 'fo'
+      controller.search()
+      await flush()
+
+      expect(document.querySelectorAll('.link-result-item')).toHaveLength(1)
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places when a node is expanded, re-expanded from cache, and collapsed', async () => {
+      browse.mockImplementation((parentId) => {
+        if (parentId === null) {
+          return Promise.resolve([{ id: 1, description: 'Root', progress: 0, has_children: true }])
+        }
+        return Promise.resolve([{ id: 2, description: 'Child', progress: 0, has_children: false }])
+      })
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      const item = document.querySelector('.link-tree-item[data-id="1"]')
+
+      reposition.mockClear()
+      await controller._expandNode(item)
+      await flush()
+      expect(document.querySelectorAll('.link-tree-item[data-id="2"]')).toHaveLength(1)
+      expect(reposition).toHaveBeenCalled()
+
+      // Collapsing removes the children from the flow.
+      reposition.mockClear()
+      controller._collapseNode(item)
+      expect(reposition).toHaveBeenCalled()
+
+      // Re-expanding serves the already-loaded children without a fetch.
+      reposition.mockClear()
+      await controller._expandNode(item)
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places when an expanded node turns out to have no children', async () => {
+      browse.mockImplementation((parentId) =>
+        Promise.resolve(
+          parentId === null
+            ? [{ id: 1, description: 'Root', progress: 0, has_children: true }]
+            : [],
+        ),
+      )
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      const item = document.querySelector('.link-tree-item[data-id="1"]')
+      reposition.mockClear()
+      await controller._expandNode(item)
+      await flush()
+
+      expect(item.querySelector('.link-tree-empty').textContent).toBe('Empty')
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+
+    test('re-places when loading a node\'s children fails', async () => {
+      browse.mockImplementation((parentId) => {
+        if (parentId === null) {
+          return Promise.resolve([{ id: 1, description: 'Root', progress: 0, has_children: true }])
+        }
+        return Promise.reject(new Error('boom'))
+      })
+
+      const { application, controller, reposition } = await openWithSpy()
+      controller.open(rect, jest.fn(), jest.fn())
+      await flush()
+
+      const item = document.querySelector('.link-tree-item[data-id="1"]')
+      reposition.mockClear()
+      await controller._expandNode(item)
+      await flush()
+
+      // The failed load is retryable and the placeholder row is gone, so the
+      // popup is a different size than it was mid-fetch.
+      expect(item.dataset.loaded).toBe('0')
+      expect(reposition).toHaveBeenCalled()
+
+      application.stop()
+    })
+  })
+})
+
+describe('destination picker cancellation callbacks', () => {
+  test.each(['close', 'Escape', 'outside', 'touch'])('%s closes and calls back exactly once', async method => {
+    browse.mockResolvedValue([])
+    const { application, controller, element } = await installController()
+    const onClose = jest.fn()
+    const onSelect = jest.fn()
+    controller.open(rect, onSelect, onClose, { allowCreate: false })
+    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)))
+    if (method === 'close') controller.closeTarget.click()
+    if (method === 'Escape') controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (method === 'outside') document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    if (method === 'touch') document.body.dispatchEvent(new Event('touchstart', { bubbles: true }))
+    expect(element.style.display).toBe('none')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onSelect).not.toHaveBeenCalled()
+    controller.close()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    application.stop()
+    document.body.innerHTML = ''
   })
 })

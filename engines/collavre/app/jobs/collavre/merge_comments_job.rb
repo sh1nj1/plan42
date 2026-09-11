@@ -24,7 +24,7 @@ module Collavre
         .includes(:user, images_attachments: :blob)
         .to_a
 
-      return if comments.size < 2
+      return unless mergeable_selection?(comments)
 
       target_comment = comments.first
       topic_id = target_comment.topic_id
@@ -68,24 +68,41 @@ module Collavre
         return
       end
 
-      # Update the first comment and delete the rest atomically
-      remaining_ids = comments[1..].map(&:id)
-      ActiveRecord::Base.transaction do
-        # Save snapshot for recovery before modifying/deleting originals
-        CommentSnapshot.create!(
-          creative: creative,
-          topic_id: topic_id,
-          user_id: user_id,
-          operation: "merge",
-          comments_data: serialize_comments(comments),
-          result_comment: target_comment
-        )
-
-        target_comment.update!(content: merged_content)
-        creative.comments.where(id: remaining_ids).destroy_all
+      Comments::TopicMutation.call(topic_id, creative_id) do
+        current_comments = lock_current_comments(comments, creative_id, topic_id)
+        persist_merge(current_comments, merged_content, user_id) if current_comments
       end
     rescue ActiveRecord::RecordNotFound => e
       Rails.logger.error("[MergeCommentsJob] Record not found: #{e.message}")
+    end
+
+    private
+
+    def mergeable_selection?(comments)
+      comments.size >= 2 && comments.map(&:topic_id).uniq.size == 1
+    end
+
+    def lock_current_comments(comments, creative_id, topic_id)
+      current_comments = Comment.where(id: comments.map(&:id)).order(created_at: :asc).lock.to_a
+      return unless current_comments.size == comments.size
+      return unless current_comments.all? { |comment| comment.creative_id == creative_id && comment.topic_id == topic_id }
+
+      current_comments
+    end
+
+    def persist_merge(comments, merged_content, user_id)
+      target_comment = comments.first
+      creative = target_comment.creative
+      CommentSnapshot.create!(
+        creative: creative,
+        topic_id: target_comment.topic_id,
+        user_id: user_id,
+        operation: "merge",
+        comments_data: serialize_comments(comments),
+        result_comment: target_comment
+      )
+      target_comment.update!(content: merged_content)
+      creative.comments.where(id: comments[1..].map(&:id)).destroy_all
     end
   end
 end

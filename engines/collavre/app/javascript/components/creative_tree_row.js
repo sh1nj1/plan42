@@ -1,10 +1,12 @@
-import { LitElement, html, svg, nothing } from "lit";
+import { LitElement, html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from "../utils/chevron_icons";
 import { parseEmojis } from "../utils/emoji_parser";
 import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
+import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -77,8 +79,24 @@ class CreativeTreeRow extends LitElement {
     this._extractTemplates();
   }
 
+  // `progressHtml` is committed through unsafeHTML, so every render that changes
+  // it discards the toggle — including the broadcast that lands after the PATCH
+  // this row already applied. A keyboard user would toggle once and then Space
+  // would scroll the page, so remember focus here and restore it in updated().
+  update(changedProperties) {
+    this._progressHadFocus = this._progressToggle != null &&
+      this._progressToggle.contains(document.activeElement);
+    super.update(changedProperties);
+  }
+
   updated(changedProperties) {
     this._attachHandlers();
+
+    if (this._progressHadFocus) {
+      this._progressHadFocus = false;
+      const checkbox = this.querySelector(".progress-toggle-checkbox");
+      if (checkbox && checkbox !== document.activeElement) checkbox.focus();
+    }
 
     // Re-tokenize the server-rendered description code blocks with hljs so they
     // match the editor's palette and follow light/dark theme. Idempotent: only
@@ -221,9 +239,6 @@ class CreativeTreeRow extends LitElement {
 
     const dragEnabled = !this.selectMode || this.canWrite;
     const draggableAttr = dragEnabled ? "true" : nothing;
-    const dragActions = dragEnabled
-      ? "dragstart->creatives--drag-drop#start dragover->creatives--drag-drop#over drop->creatives--drag-drop#drop dragleave->creatives--drag-drop#leave"
-      : nothing;
 
     return html`
       <div
@@ -233,7 +248,6 @@ class CreativeTreeRow extends LitElement {
         data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
         draggable=${draggableAttr}
-        data-action=${dragActions}
       >
         <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
           <div class="creative-row-start">
@@ -485,14 +499,7 @@ class CreativeTreeRow extends LitElement {
   }
 
   _toggleIcon() {
-    if (this.expanded) {
-      return svg`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 9L12 15L18 9"/>
-      </svg>`;
-    }
-    return svg`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M9 6L15 12L9 18"/>
-    </svg>`;
+    return unsafeHTML(this.expanded ? CHEVRON_EXPANDED : CHEVRON_COLLAPSED);
   }
 
   _handleToggleClick(event) {
@@ -546,20 +553,45 @@ class CreativeTreeRow extends LitElement {
   }
 
   async _handleProgressToggle(event) {
-    event.preventDefault();
-    event.stopPropagation();
     const wrap = event.currentTarget;
+    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
+    // Activating the input itself (Space, or a click landing on the box) flips
+    // `checked` before the click reaches this handler, and preventDefault would
+    // flip it back once dispatch finishes. Leave that activation alone and set
+    // the state explicitly below; cancel the default for every other target.
+    const nativeActivation = checkbox != null && event.target === checkbox;
+    if (!nativeActivation) event.preventDefault();
+    event.stopPropagation();
+    // `pointer-events: none` on the saving row stops the mouse but not a
+    // checkbox that already holds focus, so Space can re-enter here while a
+    // PATCH is in flight. The dataset is already inverted at that point, so a
+    // second request would carry the opposite value and the two could settle
+    // out of order. Drop the activation and put the box back on the dataset.
+    if (wrap.classList.contains("progress-toggle-saving")) {
+      if (checkbox) checkbox.checked = wrap.dataset.currentProgress === "1";
+      return;
+    }
     const creativeId = wrap.dataset.creativeId;
     const newProgress = wrap.dataset.newProgress;
-    if (!creativeId || newProgress == null) return;
+    // The dataset is the source of truth: `checked` may already be flipped.
+    const wasComplete = wrap.dataset.currentProgress === "1";
+    if (!creativeId || newProgress == null) {
+      if (checkbox) checkbox.checked = wasComplete;
+      return;
+    }
 
-    // Optimistic UI: toggle checkbox and class immediately
-    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
-    const progressSpan = wrap.querySelector("[class^='creative-progress-']");
-    const wasComplete = checkbox?.checked;
+    // Optimistic UI: toggle the always-visible checkbox immediately.
+    const previousCurrentProgress = wrap.dataset.currentProgress;
+    const previousNewProgress = wrap.dataset.newProgress;
+    const previousTitle = wrap.title;
     if (checkbox) checkbox.checked = !wasComplete;
-    if (progressSpan) {
-      progressSpan.className = newProgress === "1" ? "creative-progress-complete" : "creative-progress-incomplete";
+    const complete = newProgress === "1";
+    wrap.dataset.currentProgress = newProgress;
+    wrap.dataset.newProgress = complete ? "0" : "1";
+    const label = complete ? wrap.dataset.markIncomplete : wrap.dataset.markComplete;
+    if (label) {
+      wrap.title = label;
+      if (checkbox) checkbox.setAttribute("aria-label", label);
     }
     wrap.classList.add("progress-toggle-saving");
 
@@ -575,8 +607,7 @@ class CreativeTreeRow extends LitElement {
       const data = await response.json();
       // Update this row's progressHtml from server response
       if (data.progress_html) {
-        this.progressHtml = data.progress_html;
-        this.dataset.progressHtml = data.progress_html;
+        this._applyProgressHtml(this, data.progress_html);
       }
       // Update progressValue for inline editor
       if (data.progress != null) {
@@ -592,8 +623,7 @@ class CreativeTreeRow extends LitElement {
           const row = document.querySelector(`creative-tree-row[creative-id="${ancestor.id}"]`);
           if (row) {
             if (ancestor.progress_html) {
-              row.progressHtml = ancestor.progress_html;
-              row.dataset.progressHtml = ancestor.progress_html;
+              this._applyProgressHtml(row, ancestor.progress_html);
             }
             if (ancestor.progress != null) {
               row.dataset.progressValue = String(ancestor.progress);
@@ -604,13 +634,22 @@ class CreativeTreeRow extends LitElement {
     } catch (err) {
       // Revert optimistic UI
       if (checkbox) checkbox.checked = wasComplete;
-      if (progressSpan) {
-        progressSpan.className = wasComplete ? "creative-progress-complete" : "creative-progress-incomplete";
-      }
+      wrap.dataset.currentProgress = previousCurrentProgress;
+      wrap.dataset.newProgress = previousNewProgress;
+      wrap.title = previousTitle;
+      if (checkbox) checkbox.setAttribute("aria-label", previousTitle);
       console.error("Progress toggle failed:", err);
     } finally {
       wrap.classList.remove("progress-toggle-saving");
     }
+  }
+
+  _applyProgressHtml(row, serverHtml) {
+    syncProgressHtmlFromDom(row);
+    row.progressHtml = row.progressHtml
+      ? replaceProgressControl(row.progressHtml, serverHtml)
+      : serverHtml;
+    row.dataset.progressHtml = row.progressHtml;
   }
 
   _handleContentClick(event) {

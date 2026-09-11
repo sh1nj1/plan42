@@ -94,6 +94,57 @@ module Collavre
         assert_empty result
       end
 
+      test "selects agents after arbitration without scheduling" do
+        other_agent = User.create!(
+          email: "dispatcher_other_agent@example.com",
+          name: "Dispatcher Other Agent",
+          password: "password",
+          llm_vendor: "google",
+          llm_model: "gemini-1.5-flash",
+          searchable: true
+        )
+        context = { "creative" => { "id" => @creative.id } }
+        selected_agent = @ai_agent
+        matcher = Object.new
+        matcher.define_singleton_method(:match) { [ selected_agent, other_agent ] }
+        arbiter = Object.new
+        arbiter.define_singleton_method(:select) { |_candidates, **| [ selected_agent ] }
+        arbiter.define_singleton_method(:commit_selection!) { }
+        Matcher.stub(:new, matcher) do
+          Arbiter.stub(:new, arbiter) do
+            assert_equal [ @ai_agent ], AgentOrchestrator.select("comment_created", context)
+          end
+        end
+      end
+
+      test "reports only scheduler-accepted agents before enqueue" do
+        accepted = @ai_agent
+        rejected = User.create!(
+          email: "rejected_scheduled_agent@example.com", name: "Rejected Scheduled Agent",
+          password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash"
+        )
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) do |_agents, **_options|
+          [
+            { agent: accepted, timing: :immediate },
+            { agent: rejected, timing: :rejected, reason: :quota_exceeded }
+          ]
+        end
+        scheduled = nil
+
+        Scheduler.stub(:new, scheduler) do
+          hooks = SchedulingHooks.new(
+            interaction_callback: nil, scheduled_callback: ->(agents) { scheduled = agents }
+          )
+          AgentOrchestrator.dispatch(
+            "comment_created", { "creative" => { "id" => @creative.id } },
+            selected_agents: [ accepted, rejected ], scheduling_hooks: hooks
+          )
+        end
+
+        assert_equal [ accepted ], scheduled
+      end
+
       # Deferred enqueue
       test "deferred decision creates queued task" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
@@ -120,6 +171,51 @@ module Collavre
         queued_task = queued_tasks.last
         assert_equal @ai_agent.id, queued_task.agent_id
         assert_equal topic.id, queued_task.topic_id
+      end
+
+      test "deferred decision creates no waiter after its topic moves" do
+        topic = Topic.create!(name: "Moved deferred topic", creative: @creative, user: @user)
+        destination = Creative.create!(description: "Deferred destination", user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "content" => "stale deferred dispatch" }
+        }
+        orchestrator = AgentOrchestrator.new(event_name: "comment_created", context: context)
+        Topics::TopicMove.new(topic: topic, target_creative: destination).call
+
+        assert_no_difference -> { Task.where(topic_id: topic.id).count } do
+          assert_nil orchestrator.send(:park_waiter, @ai_agent, context)
+        end
+      end
+
+      test "delayed enqueue survives a topic move before its waiting notice" do
+        topic = Topic.create!(name: "Moved delayed topic", creative: @creative, user: @user)
+        destination = Creative.create!(description: "Delayed destination", user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "content" => "stale delayed dispatch" }
+        }
+        orchestrator = AgentOrchestrator.new(event_name: "comment_created", context: context)
+        queued_job = Object.new
+        queued_job.define_singleton_method(:perform_later) do |*|
+          Topics::TopicMove.new(topic: topic, target_creative: destination).call
+        end
+
+        result = nil
+        assert_no_difference -> { Comment.where(topic_id: topic.id, user_id: nil).count } do
+          AiAgentJob.stub(:set, ->(**) { queued_job }) do
+            result = orchestrator.send(
+              :enqueue_jobs,
+              [ { agent: @ai_agent, timing: :delayed, delay: 1.minute, reason: :busy } ],
+              context_for: nil
+            )
+          end
+        end
+
+        assert_equal [ @ai_agent ], result
+        assert_equal destination, topic.reload.creative
       end
 
       # The "⏳" waiting notice must name the agent holding the running slot, so a
@@ -172,11 +268,11 @@ module Collavre
         check_depth = nil
 
         Topic.stub(:lock, lock_relation) do
-          AgentOrchestrator.stub(:topic_concurrency_notice_exists?, ->(*) {
+          WaitingNoticeManager.stub(:topic_concurrency_notice_exists?, ->(*) {
             check_depth ||= Comment.connection.open_transactions
             false
           }) do
-            AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id)
+            WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, topic.id)
           end
         end
 
@@ -193,7 +289,7 @@ module Collavre
         Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
                      agent: @ai_agent, topic_id: topic.id, creative: @creative)
 
-        2.times { AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id) }
+        2.times { WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, topic.id) }
 
         notices = @creative.comments.where(topic_id: topic.id, topic_concurrency_defer: true)
                            .select { |c| c.content.start_with?(Comment::WAITING_NOTICE_PREFIX) }
@@ -343,6 +439,49 @@ module Collavre
         assert_equal latest_comment.id, refreshed.dig("comment", "id")
         assert_equal "2", refreshed.dig("comment", "content")
         assert_equal "2", refreshed.dig("chat", "content")
+      end
+
+      test "refresh keeps a per-user proxy turn on its original human workspace principal" do
+        owner = @user
+        gateway = AgentGateway.create!(
+          owner: owner,
+          name: "Principal-bound proxy",
+          base_url: "https://proxy.example.com",
+          admin_key: "admin",
+          completion_key: "completion",
+          identity_secret: "p" * 32,
+          workspace_mode: :per_user
+        )
+        @ai_agent.update!(
+          llm_vendor: "cli_proxy",
+          llm_model: "paperclip/claude_local",
+          creator: owner,
+          agent_gateway: gateway
+        )
+        topic = Topic.create!(name: "Principal-bound topic", creative: @creative, user: @user)
+        original_comment = Comment.create!(
+          creative: @creative, user: @user, content: "from A", topic: topic
+        )
+        queued_task = Task.create!(
+          name: "Queued task", status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => topic.id },
+            "comment" => { "id" => original_comment.id, "content" => original_comment.content },
+            "chat" => { "content" => original_comment.content }
+          },
+          agent: @ai_agent, topic_id: topic.id
+        )
+        other_user = users(:two)
+        Comment.create!(creative: @creative, user: other_user, content: "from B", topic: topic)
+
+        AgentOrchestrator.send(:refresh_deferred_context!, queued_task)
+
+        refreshed = queued_task.reload.trigger_event_payload
+        assert_equal original_comment.id, refreshed.dig("comment", "id")
+        assert_equal "from A", refreshed.dig("comment", "content")
+        assert_not_includes Array(refreshed[TaskCoalescer::PAYLOAD_KEY]), original_comment.id
       end
 
       test "refresh_deferred_context skips agent's own comments" do

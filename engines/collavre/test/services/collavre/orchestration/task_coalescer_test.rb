@@ -53,6 +53,74 @@ module Collavre
         assert_equal [ 11, 12 ], third.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
       end
 
+      test "does not absorb a queued comment from another human workspace principal" do
+        per_user_agent = create_per_user_agent
+        other_user = users(:two)
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: other_user, topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id, agent: per_user_agent)
+        second = create_waiter(comment_id: second_comment.id, agent: per_user_agent)
+
+        assert_empty TaskCoalescer.coalesce!(second)
+        assert_equal "queued", first.reload.status
+        assert_equal "queued", second.reload.status
+        assert_nil second.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "still absorbs queued comments from the same human workspace principal" do
+        per_user_agent = create_per_user_agent
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: @user, topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id, agent: per_user_agent)
+        second = create_waiter(comment_id: second_comment.id, agent: per_user_agent)
+
+        assert_equal [ first.id ], TaskCoalescer.coalesce!(second)
+        assert_equal "cancelled", first.reload.status
+        assert_equal [ first_comment.id ], second.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "shared proxy agents keep human principals separate before a per-user mode change" do
+        shared_agent = create_proxy_agent(workspace_mode: :shared)
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: users(:two), topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id, agent: shared_agent)
+        second = create_waiter(comment_id: second_comment.id, agent: shared_agent)
+
+        assert_empty TaskCoalescer.coalesce!(second)
+        shared_agent.agent_gateway.update!(workspace_mode: :per_user)
+
+        assert_equal "queued", first.reload.status
+        assert_equal "queued", second.reload.status
+        assert_nil second.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "agents without a gateway keep human principals separate before configuration" do
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: users(:two), topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id)
+        second = create_waiter(comment_id: second_comment.id)
+
+        assert_empty TaskCoalescer.coalesce!(second)
+        assert_equal "queued", first.reload.status
+        assert_equal "queued", second.reload.status
+      end
+
       test "keeps the newest comment as the trigger anchor" do
         create_waiter(comment_id: 11)
         newest = create_waiter(comment_id: 12)
@@ -215,6 +283,113 @@ module Collavre
         result = TaskCoalescer.absorb_into_payload({}, [ 2, 1 ])
 
         assert_equal [ 1, 2 ], result[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "re-anchoring onto another person's comment replaces the workspace principal" do
+        other_user = users(:two)
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: other_user, topic: @topic, skip_dispatch: true
+        )
+        payload = original.dispatch_payload.deep_stringify_keys.merge(
+          "workspace_user_id" => @user.id
+        )
+
+        moved = TaskCoalescer.reanchor_payload(payload, replacement)
+
+        assert_equal other_user.id, moved["workspace_user_id"]
+      end
+
+      test "re-anchoring an ordinary dispatch does not add a workspace principal" do
+        other_user = users(:two)
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: other_user, topic: @topic, skip_dispatch: true
+        )
+
+        moved = TaskCoalescer.reanchor_payload(
+          original.dispatch_payload.deep_stringify_keys, replacement
+        )
+
+        assert_not moved.key?("workspace_user_id")
+      end
+
+      test "re-anchoring onto an AI comment marks the workspace principal as unprovable" do
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: @other_agent, topic: @topic, skip_dispatch: true
+        )
+        payload = original.dispatch_payload.deep_stringify_keys.merge(
+          "workspace_user_id" => @user.id
+        )
+
+        moved = TaskCoalescer.reanchor_payload(payload, replacement)
+
+        assert moved.key?("workspace_user_id")
+        assert_nil moved["workspace_user_id"]
+      end
+
+      test "re-anchoring an ordinary dispatch onto an AI comment marks the principal as unprovable" do
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: @other_agent, topic: @topic, skip_dispatch: true
+        )
+
+        moved = TaskCoalescer.reanchor_payload(
+          original.dispatch_payload.deep_stringify_keys, replacement
+        )
+
+        assert moved.key?("workspace_user_id")
+        assert_nil moved["workspace_user_id"]
+      end
+
+      test "a no-op re-anchor keeps the carried A2A workspace principal" do
+        anchor = @creative.comments.create!(
+          content: "A2A", user: @other_agent, topic: @topic, skip_dispatch: true
+        )
+        payload = anchor.dispatch_payload.deep_stringify_keys.merge(
+          "workspace_user_id" => @user.id
+        )
+
+        unchanged = TaskCoalescer.reanchor_payload(payload, anchor)
+
+        assert_equal @user.id, unchanged["workspace_user_id"]
+      end
+
+      private
+
+      def create_per_user_agent
+        create_proxy_agent(workspace_mode: :per_user)
+      end
+
+      def create_proxy_agent(workspace_mode:)
+        owner = users(:one)
+        gateway = AgentGateway.create!(
+          owner: owner,
+          name: "Coalescer proxy #{SecureRandom.hex(3)}",
+          base_url: "https://proxy.example.com",
+          admin_key: "admin",
+          completion_key: "completion",
+          identity_secret: "c" * 32,
+          workspace_mode: workspace_mode
+        )
+        User.create!(
+          name: "per-user-agent-#{SecureRandom.hex(3)}",
+          email: "per-user-#{SecureRandom.hex(4)}@agent.test",
+          password: "password123",
+          llm_vendor: "cli_proxy",
+          llm_model: "paperclip/claude_local",
+          created_by_id: owner.id,
+          agent_gateway: gateway
+        )
       end
     end
   end

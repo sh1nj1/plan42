@@ -24,6 +24,9 @@ thin agent entry point that indexes into this directory.
   engines and integrate external services (integration-engine pattern).
 - [rails8_patterns.md](rails8_patterns.md) — Rails 8 idioms used across the
   codebase (auth, Current, encryption, Hotwire, Solid Queue, Propshaft).
+- [complexity_budget.md](complexity_budget.md) — the three CI gates that keep
+  the codebase from diverging as it grows (Ruby + JavaScript complexity ratchet,
+  engine boundary, coverage patch gate) and how to work with them.
 - [testing.md](testing.md) — automated-test conventions.
 - [test.md](test.md) — manual QA of the live site (test accounts, credentials).
 
@@ -34,6 +37,8 @@ thin agent entry point that indexes into this directory.
 - [google-auth.md](google-auth.md)
 - [mcp-configuration.md](mcp-configuration.md)
 - [linked_creative.md](linked_creative.md)
+- [agent_gateway_health.md](agent_gateway_health.md) — how optional vendor
+  endpoint checks and CLI proxy readiness become an agent's online status.
 
 ## Operations & Infrastructure
 

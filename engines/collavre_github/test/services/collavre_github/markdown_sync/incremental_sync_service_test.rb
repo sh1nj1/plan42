@@ -96,6 +96,33 @@ module CollavreGithub
 
         assert_not_includes synced.values, @no_source
       end
+
+      test "resequence_affected_parents records every changed sibling" do
+        parent = Collavre::Creative.create!(description: "Ordered", user: @user)
+        file = sourced_creative(parent, "a.md", 0)
+        directory = sourced_creative(parent, "z/", 1)
+
+        Collavre::Creatives::History.track(actor: nil, origin: :sync) do
+          @service.send(:resequence_affected_parents, [ file, directory ])
+        end
+
+        assert_equal 0, directory.reload.sequence
+        assert_equal 1, file.reload.sequence
+        assert_equal [ file.id, directory.id ].sort,
+                     Collavre::CreativeChangeSet.sole.creative_changes.pluck(:creative_id).sort
+      end
+
+      private
+
+      def sourced_creative(parent, path, sequence)
+        Collavre::Creative.create!(
+          description: path,
+          parent: parent,
+          user: @user,
+          sequence: sequence,
+          data: { "source" => { "path" => path } }
+        )
+      end
     end
   end
 end

@@ -1,5 +1,8 @@
 ---
 en:
+  time:
+    formats:
+      collavre_users_joined_at: "%b %-d, %Y %H:%M"
   collavre:
     users:
       app_header:
@@ -31,6 +34,10 @@ en:
           Stored encrypted.
         gateway_url_label: Gateway URL
         gateway_url_help: Required for OpenClaw. The URL of your OpenClaw gateway.
+        agent_gateway_label: Agent Gateway
+        agent_gateway_blank: Select a gateway for CLI Proxy
+        agent_gateway_help: Required only when LLM Vendor is CLI Proxy.
+        manage_gateways: Manage gateways
         searchable_label: Allow this AI to be searchable and mentionable
         searchable_help: When enabled, others can find and mention this AI by name.
         submit: Add AI Agent
@@ -55,6 +62,9 @@ en:
         not_an_ai: This user is not an AI agent.
         tools_title: Available Tools
         tools_description: These tools are available for the agent to use.
+        meta_skills_title: Collavre meta-skills
+        meta_skills_description: The single provisioned collavre-cli skill runs the selected tools as meta-skills. These selections are not enforced as callback-token permissions yet.
+        gateway_mode: "Workspace mode: %{mode}. Change it in the selected gateway's settings."
         no_tools_found: No tools found.
         clear_api_key_label: Remove stored API key
         clear_api_key_help: After saving, the agent will use the system default or
@@ -129,20 +139,6 @@ en:
         en: English
         ko: Korean
       timezone: Timezone
-      typo_correction:
-        legend: Typo correction
-        manage: Typo correction settings
-        description: Automatically suggest and fix typos as you type. Suggestions run only when both the typing device and the input location below are enabled.
-        enabled: Enable typo correction
-        threshold: Auto-apply threshold
-        threshold_hint: Edits at or above this confidence (0-100) are applied automatically; lower-confidence edits are only suggested.
-        device_legend: Typing devices
-        on_voice: Voice input
-        on_soft_keyboard: On-screen (soft) keyboard
-        on_physical_keyboard: Physical keyboard (Bluetooth/wired)
-        location_legend: Input locations
-        in_chat: Chat message input
-        in_editor: Creative editor
       profile_updated: Profile updated successfully.
       avatar_updated: Avatar updated successfully.
       password_updated: Password updated successfully.
@@ -183,6 +179,7 @@ en:
         avatar: Avatar
         name: Name
         email: Email
+        joined_at: Joined
         last_login_at: Last login
         last_login_unknown: Never
         push_token: Push token
@@ -193,6 +190,11 @@ en:
         actions: Actions
         current_user: This is you
         system_admin: System admin
+      pagination:
+        label: User list pages
+        prev: Previous
+        next: Next
+        page_info: Page %{current} of %{total}
     user_mailer:
       email_verification:
         subject: Verify your email

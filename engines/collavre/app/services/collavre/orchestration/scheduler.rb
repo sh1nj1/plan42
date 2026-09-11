@@ -31,10 +31,10 @@ module Collavre
       # @param agents [Array<User>] Agents selected by Arbiter
       # @return [Array<Hash>] Scheduling decisions
       #   Each decision: { agent:, timing:, delay: (optional), reason: (optional) }
-      def schedule(agents)
+      def schedule(agents, scheduling_hooks: nil)
         topic_immediate_count = 0
         agents.map do |agent|
-          decision = evaluate(agent, topic_immediate_count: topic_immediate_count)
+          decision = evaluate(agent, topic_immediate_count: topic_immediate_count, scheduling_hooks: scheduling_hooks)
           topic_immediate_count += 1 if decision[:timing] == :immediate
           decision
         end
@@ -42,13 +42,13 @@ module Collavre
 
       private
 
-      def evaluate(agent, topic_immediate_count: 0)
+      def evaluate(agent, topic_immediate_count: 0, scheduling_hooks: nil)
         tracker = ResourceTracker.for(agent)
         config = @policy_resolver.scheduling_config_for(agent)
 
         # Check 0: Loop breaker
         if @policy_resolver.loop_breaker_enabled?
-          loop_result = LoopBreaker.new(@context, policy_resolver: @policy_resolver).check
+          loop_result = loop_breaker_result(agent, scheduling_hooks)
           if loop_result.should_break?
             return loop_broken_decision(agent, loop_result)
           end
@@ -84,6 +84,12 @@ module Collavre
 
         # All checks passed - immediate execution
         immediate_decision(agent)
+      end
+
+      def loop_breaker_result(agent, scheduling_hooks)
+        LoopBreaker.new(@context, policy_resolver: @policy_resolver).check(
+          prospective_interaction: scheduling_hooks&.interaction_for(agent)
+        )
       end
 
       def immediate_decision(agent)

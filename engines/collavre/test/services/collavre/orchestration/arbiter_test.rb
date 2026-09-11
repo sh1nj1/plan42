@@ -113,6 +113,28 @@ module Collavre
         assert_equal [ @agent3 ], selected
       end
 
+      test "multi-mention routing bypasses arbitration in a pinned topic" do
+        @topic.set_primary_agent!(@agent1)
+        context = @context.merge(
+          "chat" => { "mentioned_users" => [ { "id" => @agent2.id }, { "id" => @agent3.id } ] }
+        )
+
+        selected = Arbiter.new(context).select([ @agent2, @agent3 ])
+
+        # Both were explicitly invited; primary_first would otherwise drop both
+        # for not being @agent1.
+        assert_equal [ @agent2, @agent3 ], selected
+      end
+
+      test "a mention naming only humans does not bypass arbitration" do
+        @topic.set_primary_agent!(@agent1)
+        context = @context.merge("chat" => { "mentioned_users" => [ { "id" => @user.id } ] })
+
+        selected = Arbiter.new(context).select([ @agent2, @agent3 ])
+
+        assert_empty selected
+      end
+
       test "topic primary agent takes the floor over other candidates" do
         @topic.set_primary_agent!(@agent2)
 
@@ -183,6 +205,25 @@ module Collavre
 
         # Should start from beginning since agent2 is not in candidates
         assert_equal [ @agent1 ], selected
+      end
+
+      test "round_robin can defer its cache update until selection commits" do
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: { "strategy" => "round_robin" }
+        )
+        cache_key = "orchestrator:round_robin:topic:#{@topic.id}"
+        Rails.cache.delete(cache_key)
+        arbiter = Arbiter.new(@context)
+
+        selected = arbiter.select(@candidates, commit: false)
+
+        assert_equal [ @agent1 ], selected
+        assert_nil Rails.cache.read(cache_key)
+
+        arbiter.commit_selection!
+
+        assert_equal @agent1.id, Rails.cache.read(cache_key)
       end
 
       # Edge cases

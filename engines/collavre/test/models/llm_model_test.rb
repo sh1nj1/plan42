@@ -1,6 +1,32 @@
 require "test_helper"
+require Rails.root.join("engines/collavre/db/migrate/20260810000001_seed_codex_custom_proxy_llm_models")
 
 class LlmModelTest < ActiveSupport::TestCase
+  test "migration seeds complete codex custom proxy model suggestions" do
+    SeedCodexCustomProxyLlmModels::DEFAULT_MODELS.each do |name|
+      Collavre::LlmModel.where(llm_vendor: "cli_proxy", name:).delete_all
+    end
+
+    SeedCodexCustomProxyLlmModels.new.up
+
+    suggestions = Collavre::LlmModel.where(llm_vendor: "cli_proxy").pluck(:name)
+    assert_includes suggestions, "paperclip/codex_custom/anthropic/claude-sonnet-4.5"
+    assert_includes suggestions, "paperclip/codex_custom/openai/gpt-5"
+    refute_includes suggestions, "paperclip/codex_custom"
+  end
+
+  test "seeds complete codex custom proxy model suggestions for fresh installs" do
+    Collavre::LlmModel::DEFAULT_SUGGESTIONS.each do |vendor, name|
+      Collavre::LlmModel.where(llm_vendor: vendor, name:).delete_all
+    end
+
+    Collavre::LlmModel.seed_default_suggestions!
+
+    suggestions = Collavre::LlmModel.where(llm_vendor: "cli_proxy").pluck(:name)
+    assert_includes suggestions, "paperclip/codex_custom/anthropic/claude-sonnet-4.5"
+    assert_includes suggestions, "paperclip/codex_custom/openai/gpt-5"
+  end
+
   test "normalizes vendor and model name" do
     model = Collavre::LlmModel.create!(
       llm_vendor: " Anthropic ",

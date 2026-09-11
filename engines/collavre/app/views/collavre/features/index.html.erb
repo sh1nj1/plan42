@@ -6,10 +6,6 @@
 <div class="landing">
   <section class="landing-section landing-features">
     <div class="landing-container">
-      <nav class="feature-guide-breadcrumb">
-        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name) %>
-      </nav>
-
       <h1 class="landing-section-title"><%= t('collavre.features.index.title') %></h1>
       <p class="landing-section-sub"><%= t('collavre.features.index.subtitle') %></p>
 
@@ -23,6 +19,10 @@
           <% end %>
         <% end %>
       </div>
+
+      <p class="feature-guide-back">
+        <%= link_to t('collavre.features.nav.back_home'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name), class: "landing-btn landing-btn-ghost" %>
+      </p>
     </div>
   </section>
 

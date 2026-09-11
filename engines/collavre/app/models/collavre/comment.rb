@@ -4,7 +4,7 @@ module Collavre
 
     STREAMING_PLACEHOLDER_CONTENT = "..."
     # Authorless "⏳" waiting-notice system messages posted when an agent is
-    # deferred for topic concurrency. AgentOrchestrator.cleanup_waiting_notices!
+    # deferred for topic concurrency. WaitingNoticeManager.cleanup_waiting_notices!
     # matches the same prefix to remove them once the waiter is dequeued.
     WAITING_NOTICE_PREFIX = "⏳"
 
@@ -29,7 +29,7 @@ module Collavre
     #
     # It therefore comes down wherever the waiter leaves, which is why this
     # lives here beside the columns rather than in one of those callers: the
-    # promotion (AgentOrchestrator.cleanup_waiter_notice!) and the fold
+    # promotion (WaitingNoticeManager.cleanup_waiter_notice!) and the fold
     # (Orchestration::TaskCoalescer) are two doors onto the same rule, and a
     # third would otherwise write its own copy or forget.
     #
@@ -161,7 +161,6 @@ module Collavre
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
     has_many :comment_versions, class_name: "Collavre::CommentVersion", dependent: :destroy
     has_many :review_versions, class_name: "Collavre::CommentVersion", foreign_key: :review_comment_id, dependent: :nullify
-    has_many :inbox_items, class_name: "Collavre::InboxItem", dependent: :nullify
     has_many :quoting_comments, class_name: "Collavre::Comment", foreign_key: :quoted_comment_id, dependent: :destroy
     has_one :snapshot_as_result, class_name: "Collavre::CommentSnapshot", foreign_key: :result_comment_id, dependent: :nullify
     belongs_to :selected_version, class_name: "Collavre::CommentVersion", optional: true
@@ -177,14 +176,14 @@ module Collavre
     attribute :skip_dispatch, :boolean, default: false
     attribute :skip_link_preview, :boolean, default: false
     attribute :skip_notification_revision, :boolean, default: false
-    # Set by AgentOrchestrator.cleanup_waiting_notices! so destroying a notice as
+    # Set by WaitingNoticeManager.cleanup_waiting_notices! so destroying a notice as
     # part of *promoting* a waiter does not run the user-delete cancel cascade
     # (which would cancel other still-queued waiters in the same topic).
     attribute :suppress_waiter_cancellation, :boolean, default: false
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
-    before_validation :assign_main_topic, on: :create
+    include TopicMembership
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
@@ -304,17 +303,6 @@ module Collavre
         next unless was_delegated
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
-        end
-        if task.parent_task_id.present?
-          begin
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task, error_message: "Triggering comment was deleted"
-            )
-          rescue StandardError => e
-            Rails.logger.error(
-              "[Comment#cancel_pending_tasks] fail_subtask! failed for task #{task.id}: #{e.message}"
-            )
-          end
         end
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
@@ -438,7 +426,7 @@ module Collavre
     # Cancelling one was right while each deferral posted its own notice: the
     # newest queued task was the one that notice belonged to. A topic now gets
     # exactly one deduplicated notice
-    # (Orchestration::AgentOrchestrator.with_deduped_topic_notice), and with
+    # (Orchestration::WaitingNoticeManager.with_deduped_topic_notice), and with
     # topic_max_concurrent_jobs > 1 it can stand for waiters from several agents
     # — coalescing folds same-agent siblings only. Deleting it while cancelling
     # one of them leaves the rest queued with nothing on screen representing
@@ -577,7 +565,7 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
+      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback")
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \
@@ -655,14 +643,6 @@ module Collavre
         "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
         "#{e.class} #{e.message}"
       )
-    end
-
-    def assign_main_topic
-      return if topic_id.present?
-      return unless creative
-
-      fallback = user || Collavre.current_user || creative.user
-      self.topic = creative.main_topic(fallback_user: fallback)
     end
 
     def use_origin_creative

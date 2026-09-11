@@ -141,7 +141,7 @@ module Collavre
       }
 
       assert_no_difference notices do
-        Orchestration::AgentOrchestrator.post_topic_concurrency_notice(@creative.id, @topic.id)
+        Orchestration::WaitingNoticeManager.post_topic_concurrency_notice(@creative.id, @topic.id)
       end
     end
 
@@ -164,6 +164,29 @@ module Collavre
                    "an empty topic must not defer"
       assert Task.where(agent: @agent, topic_id: @topic.id).exists?,
              "a task should have been created and executed"
+    end
+
+    test "drops a scheduled job whose topic moved before task admission" do
+      c = comment("scheduled before move")
+      stale_context = context_for(c)
+      destination = Creative.create!(description: "Moved destination", user: @user)
+      Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+      matcher = Struct.new(:agent) do
+        def assignment_permits?(_candidate)
+          true
+        end
+      end.new(@agent)
+      service_started = false
+
+      Orchestration::Matcher.stub(:new, matcher) do
+        AiAgentService.stub(:new, ->(*) { service_started = true }) do
+          AiAgentJob.new.perform(@agent.id, "comment_created", stale_context)
+        end
+      end
+
+      assert_not service_started
+      assert_not Task.where(topic_id: @topic.id, creative_id: @creative.id).exists?
+      assert_equal destination.id, @topic.reload.creative_id
     end
 
     test "does not defer when the context carries no topic" do
@@ -243,12 +266,12 @@ module Collavre
     # slot before either inserts — the TOCTOU race this check exists to close.
     test "admission counts and claims the slot inside one locked transaction" do
       locked_topic_ids = []
-      lock_relation = Struct.new(:sink) do
+      lock_relation = Struct.new(:sink, :record) do
         def find_by(id:)
           sink << id
-          nil
+          record
         end
-      end.new(locked_topic_ids)
+      end.new(locked_topic_ids, @topic)
 
       # The suite already runs inside a transaction, so `transaction_open?` is
       # always true — compare the nesting depth against the ambient one instead.
@@ -282,12 +305,12 @@ module Collavre
     # both read a free slot before either inserts.
     test "admission on the Main topic serializes on the creative row" do
       locked_creative_ids = []
-      lock_relation = Struct.new(:sink) do
+      lock_relation = Struct.new(:sink, :record) do
         def find_by(id:)
           sink << id
-          nil
+          record
         end
-      end.new(locked_creative_ids)
+      end.new(locked_creative_ids, @creative)
 
       baseline_depth = Task.connection.open_transactions
       check_depth = nil
@@ -491,7 +514,7 @@ module Collavre
         "another task is running"
       end
 
-      Orchestration::AgentOrchestrator.stub :waiting_reason_text, delete_shared_in_window do
+      Orchestration::WaitingNoticeManager.stub :waiting_reason_text, delete_shared_in_window do
         AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("opt-out")))
       end
 
@@ -521,7 +544,7 @@ module Collavre
         "another task is running"
       end
 
-      Orchestration::AgentOrchestrator.stub :waiting_reason_text, delete_anchor_in_window do
+      Orchestration::WaitingNoticeManager.stub :waiting_reason_text, delete_anchor_in_window do
         AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(anchor))
       end
 
@@ -629,7 +652,7 @@ module Collavre
         "another task is running"
       end
 
-      Orchestration::AgentOrchestrator.stub :waiting_reason_text, promote_in_window do
+      Orchestration::WaitingNoticeManager.stub :waiting_reason_text, promote_in_window do
         AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("mine")))
       end
 
@@ -1084,7 +1107,7 @@ module Collavre
       )
 
       payload = nil
-      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent) { payload = sent; [] }) do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent, **_options) { payload = sent; [] }) do
         CronActionJob.perform_now(
           creative_id: @creative.id, topic_id: nil,
           agent_id: @user.id, message: "@#{@agent.name}: scheduled check-in"

@@ -7,11 +7,11 @@ module Collavre
   class AgentSessionAbort
     class << self
       def register(vendor, handler)
-        registry[vendor.to_s.downcase] = handler
+        registry[vendor.to_s.strip.downcase] = handler
       end
 
       def call(agent:, task:, creative: nil, comment: nil)
-        handler = registry[agent&.llm_vendor&.downcase]
+        handler = registry[agent&.llm_vendor&.strip&.downcase]
         return unless handler
 
         handler.call(agent: agent, task: task, creative: creative, comment: comment)

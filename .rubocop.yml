@@ -6,3 +6,13 @@ inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 # # Use `[a, [b, c]]` not `[ a, [ b, c ] ]`
 # Layout/SpaceInsideArrayLiteralBrackets:
 #   Enabled: false
+
+# Omakase leaves the whole Lint department off, which is the right default for a
+# style-only lint job. This one cop is not a style opinion: a second `def` of the
+# same name silently discards the first body, so the failure is a method that
+# quietly does something else rather than an error anyone can see. It had already
+# happened twice in this repository — once in the engine boundary detector, where
+# the shadowed definition was the one carrying line numbers, and the tests still
+# passed because the surviving method answered a compatible shape.
+Lint/DuplicateMethods:
+  Enabled: true

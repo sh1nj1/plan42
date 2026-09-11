@@ -36,6 +36,19 @@ class I18nCompletenessTest < ActiveSupport::TestCase
   # Locales to verify
   LOCALES = %i[en ko].freeze
 
+  # Rails ships ActiveModel/ActiveRecord validation messages for :en only and this
+  # app does not use rails-i18n. Without an explicit block per locale every model
+  # validation error renders "Translation missing" in development/test and silently
+  # falls back to English in production (where config.i18n.fallbacks is enabled).
+  # The scans above deliberately ignore the `errors.` / `activerecord.` namespaces,
+  # so this is the check that keeps those defaults present.
+  MODEL_ERROR_MESSAGE_KEYS = %w[
+    accepted blank confirmation empty equal_to even exclusion greater_than
+    greater_than_or_equal_to inclusion invalid less_than less_than_or_equal_to
+    not_a_number not_an_integer odd other_than present required taken too_long
+    too_short wrong_length
+  ].freeze
+
   test "all translation keys used in code are defined" do
     missing_keys = {}
 
@@ -83,6 +96,25 @@ class I18nCompletenessTest < ActiveSupport::TestCase
     else
       assert true, "All engine translation keys have 'collavre.' prefix"
     end
+  end
+
+  test "model validation error messages are defined in every locale" do
+    expected = MODEL_ERROR_MESSAGE_KEYS.map { |key| "errors.messages.#{key}" } +
+      %w[
+        errors.format
+        activerecord.errors.messages.record_invalid
+        activerecord.errors.messages.restrict_dependent_destroy.has_many
+        activerecord.errors.messages.restrict_dependent_destroy.has_one
+      ]
+
+    missing = LOCALES.flat_map do |locale|
+      expected.reject { |key| I18n.exists?(key, locale) }.map { |key| "#{locale}: #{key}" }
+    end
+
+    assert_empty missing,
+      "Missing model validation error translations:\n  #{missing.join("\n  ")}\n" \
+      "Add them to config/locales/<locale>.yml — validation errors render as " \
+      "\"Translation missing\" without them."
   end
 
   private

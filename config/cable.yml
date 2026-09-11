@@ -15,6 +15,17 @@ production: &production
       writing: cable
   polling_interval: 0.1.seconds
   message_retention: 1.day
+  # Backoff (seconds) between retries when the listener thread hits an
+  # ActiveRecord connection error. solid_cable defaults to a single immediate
+  # retry, after which the polling thread exits silently and the process stops
+  # delivering every broadcast until it is restarted. The attempt counter
+  # resets after any successful poll, so this list is effectively an unlimited
+  # retry with a 30s ceiling.
+  #
+  # `SolidCableListenerResilience` normally catches these first (and covers
+  # non-connection errors too); this is the fallback if that patch is ever
+  # removed or fails to install.
+  reconnect_attempts: [ 0.1, 0.5, 1, 2, 5, 10, 30 ]
 
 # Desktop app reuses the production Solid Cable setup verbatim.
 desktop: *production

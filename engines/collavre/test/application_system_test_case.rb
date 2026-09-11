@@ -47,13 +47,14 @@ end
 
 at_exit { SystemTestChromeLocator.cleanup_temp_dirs }
 
-Capybara.register_driver :custom_headless_chrome do |app|
+BUILD_CHROME_DRIVER = lambda do |app, extra_arguments|
   options = Selenium::WebDriver::Chrome::Options.new
   options.add_argument "--headless"
   options.add_argument "--disable-gpu"
   options.add_argument "--no-sandbox"
   options.add_argument "--disable-dev-shm-usage"
   options.add_argument "--window-size=1920,1080"
+  extra_arguments.each { |argument| options.add_argument argument }
   user_data_dir = File.join(Dir.tmpdir, "chrome-profile-#{SecureRandom.uuid}")
   FileUtils.mkdir_p(user_data_dir)
   options.add_argument "--user-data-dir=#{user_data_dir}"
@@ -66,6 +67,21 @@ Capybara.register_driver :custom_headless_chrome do |app|
   driver_options[:service] = driver_service if driver_service
 
   Capybara::Selenium::Driver.new(app, **driver_options)
+end
+
+Capybara.register_driver(:custom_headless_chrome) { |app| BUILD_CHROME_DRIVER.call(app, []) }
+
+# A headless run inherits whatever pointer the host reports, and CI runners
+# report none — `@media (hover: hover)` rules would silently never apply there.
+# Blink settings pin a fine, hovering pointer (hover types: 1 none, 2 hover;
+# pointer types: 1 none, 2 coarse, 4 fine) so tests covering hover-revealed UI
+# see what a desktop browser sees. DevTools touch emulation still overrides it
+# per test, which is how the touch branch is covered.
+Capybara.register_driver(:hovering_pointer_headless_chrome) do |app|
+  BUILD_CHROME_DRIVER.call(
+    app,
+    [ "--blink-settings=availableHoverTypes=2,primaryHoverType=2,availablePointerTypes=4,primaryPointerType=4" ]
+  )
 end
 
 DRIVER_ENV_KEY = "SYSTEM_TEST_DRIVER".freeze

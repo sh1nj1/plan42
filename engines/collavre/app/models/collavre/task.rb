@@ -4,8 +4,6 @@ module Collavre
 
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy
-    belongs_to :parent_task, class_name: "Collavre::Task", optional: true
-    has_many :sub_tasks, class_name: "Collavre::Task", foreign_key: :parent_task_id, dependent: :destroy
     belongs_to :creative, class_name: "Collavre::Creative", optional: true
     has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
@@ -68,6 +66,19 @@ module Collavre
 
     def active?
       ACTIVE_STATUSES.include?(status)
+    end
+
+    # Cancellation callers often select an active row before waiting on another
+    # request's task lock. Reload under that lock so a completed reply cannot be
+    # overwritten by a stale running/delegated instance.
+    def cancel_if_active!(statuses: ACTIVE_STATUSES, **attributes)
+      with_lock do
+        next unless status.in?(statuses)
+
+        previous_status = status
+        update!(attributes.merge(status: "cancelled"))
+        previous_status
+      end
     end
 
     # Check if agent already has an in-flight task triggered by the same comment.

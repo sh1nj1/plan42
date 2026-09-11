@@ -1,0 +1,510 @@
+/**
+ * @jest-environment jsdom
+ */
+import { jest } from '@jest/globals'
+import { Application } from '@hotwired/stimulus'
+import PresenceController from '../presence_controller'
+import EntityListController from '../../entity_list_controller'
+
+describe('CommentsPresenceController — pinned add/list buttons', () => {
+    let application, controller
+
+    const USERS = [
+        {
+            id: 1, name: 'Ada', email: 'ada@example.com', avatar_url: '/avatars/1.png',
+            profile_url: '/users/1', ai_user: false, default_avatar: false, initial: 'A'
+        },
+        {
+            id: 2, name: 'Grace', email: 'grace@example.com', avatar_url: '/avatars/2.png',
+            profile_url: '/users/2', ai_user: true, default_avatar: false, initial: 'G'
+        }
+    ]
+
+    beforeEach(async () => {
+        global.requestAnimationFrame = (fn) => { fn(); return 0 }
+        global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }))
+
+        document.body.innerHTML = `
+          <div id="comments-popup" data-controller="comments--presence"
+               data-close-label="Close"
+               data-participant-online-text="Online"
+               data-participant-offline-text="Offline"
+               data-participant-search-placeholder-text="Search users..."
+               data-user-menu-open-text="Open %{name}'s profile menu"
+               data-user-menu-view-profile-text="View profile"
+               data-user-menu-mention-text="Mention"
+               data-user-menu-agent-drag-guide-text="Drag this avatar to a topic.">
+            <div data-comments--presence-target="participants"></div>
+            <button class="add-participant-btn" data-comments--presence-target="addParticipantButton" style="display:none;">+</button>
+            <button class="bar-list-btn" data-comments--presence-target="participantListButton"
+                    aria-expanded="false" style="display:none;"></button>
+            <div data-comments--presence-target="typingIndicator"></div>
+            <textarea data-comments--presence-target="textarea"></textarea>
+            <input type="checkbox" data-comments--presence-target="privateCheckbox" />
+          </div>
+        `
+        application = Application.start()
+        application.register('comments--presence', PresenceController)
+        application.register('entity-list', EntityListController)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        controller = application.getControllerForElementAndIdentifier(
+            document.getElementById('comments-popup'), 'comments--presence'
+        )
+        controller.creativeId = '42'
+        jest.spyOn(controller, 'updateReadReceiptPresence').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+        document.body.innerHTML = ''
+        application.stop()
+        jest.restoreAllMocks()
+    })
+
+    const anchorEvent = () => ({ currentTarget: controller.participantListButtonTarget })
+
+    test('renders no add button inside the scrolling avatar strip', () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([1])
+
+        expect(controller.participantsTarget.querySelector('.add-participant-btn')).toBeNull()
+    })
+
+    test('renders the same profile menu for participant avatars', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([1])
+
+        const menus = controller.participantsTarget.querySelectorAll('.comment-user-menu')
+        const humanMenu = menus[0]
+        const agentMenu = menus[1]
+        expect(menus).toHaveLength(2)
+        expect(humanMenu.querySelector('.comment-user-popup-email').textContent).toBe('ada@example.com')
+        expect(humanMenu.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(true)
+        expect(humanMenu.querySelector('a.popup-menu-item').getAttribute('href')).toBe('/users/1')
+        expect(humanMenu.querySelector('.comment-user-popup-guide')).toBeNull()
+        expect(agentMenu.classList.contains('ai-agent-draggable')).toBe(true)
+        expect(agentMenu.draggable).toBe(true)
+        expect(agentMenu.querySelector('.comment-user-popup-guide').textContent)
+            .toBe('Drag this avatar to a topic.')
+    })
+
+    test('preserves an open participant menu while presence changes', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([1])
+        const root = controller.participantsTarget.querySelector('[data-comment-user-menu-user-id-value="1"]')
+        const popup = root.querySelector('.comment-user-popup')
+        popup.style.display = 'block'
+
+        controller.handlePresenceMessage({ ids: ['2'] })
+
+        expect(root.isConnected).toBe(true)
+        expect(popup.style.display).toBe('block')
+        expect(root.querySelector('.comment-presence-avatar').classList.contains('inactive')).toBe(true)
+        expect(root.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(false)
+    })
+
+    test('rebuilds participant menus when the rendered roster is stale', () => {
+        controller.participantsData = USERS
+        controller.participantsTarget.innerHTML = '<div class="comment-user-menu"></div>'
+
+        controller.renderParticipants([1], { preserveMenus: true })
+
+        expect(controller.participantsTarget.querySelectorAll('.comment-user-menu')).toHaveLength(2)
+    })
+
+    test('delegated agent dragging retains avatar metadata and cleans feedback', () => {
+        controller.participantsData = [USERS[1]]
+        controller.renderParticipants([])
+        const wrapper = controller.participantsTarget.querySelector('.ai-agent-draggable')
+        const values = {}
+        const event = new Event('dragstart', { bubbles: true, cancelable: true })
+        Object.assign(event, { dataTransfer: { setData: (type, value) => { values[type] = value } } })
+        wrapper.dispatchEvent(event)
+        expect(JSON.parse(values['application/x-agent-drop'])).toEqual({
+            id: String(USERS[1].id), name: USERS[1].name, avatar_url: USERS[1].avatar_url
+        })
+        expect(wrapper.classList.contains('dragging')).toBe(true)
+        document.dispatchEvent(new Event('dragend'))
+        expect(wrapper.classList.contains('dragging')).toBe(false)
+    })
+
+    test('tapping an AI participant avatar opens its menu without intercepting menu controls', () => {
+        window.ontouchstart = null
+        controller.participantsData = [USERS[1]]
+        controller.renderParticipants([])
+        const trigger = controller.participantsTarget.querySelector('.comment-user-menu-trigger')
+        const click = jest.fn()
+        trigger.addEventListener('click', click)
+        const touchStart = new Event('touchstart', { bubbles: true, cancelable: true })
+        Object.defineProperty(touchStart, 'touches', { value: [{ clientX: 10, clientY: 10, target: trigger }] })
+        trigger.dispatchEvent(touchStart)
+        const touchEnd = new Event('touchend', { bubbles: true, cancelable: true })
+        Object.defineProperty(touchEnd, 'touches', { value: [] })
+        trigger.dispatchEvent(touchEnd)
+
+        expect(touchStart.defaultPrevented).toBe(false)
+        expect(touchEnd.defaultPrevented).toBe(false)
+        expect(click).not.toHaveBeenCalled()
+        trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        expect(click).toHaveBeenCalledTimes(1)
+        delete window.ontouchstart
+    })
+
+    test('shows the pinned add button only when the user can share', () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+        expect(controller.addParticipantButtonTarget.style.display).toBe('')
+        expect(controller.addParticipantButtonTarget.dataset.shareModalUrlParam).toBe('/creatives/42/creative_shares')
+
+        controller.canShare = false
+        controller.renderParticipants([])
+        expect(controller.addParticipantButtonTarget.style.display).toBe('none')
+    })
+
+    test('hides the list button until there are participants', () => {
+        controller.participantsData = null
+        controller.renderParticipants([])
+        expect(controller.participantListButtonTarget.style.display).toBe('none')
+
+        controller.participantsData = USERS
+        controller.renderParticipants([])
+        expect(controller.participantListButtonTarget.style.display).toBe('')
+    })
+
+    test('builds list items with avatars, marking absent users as muted', () => {
+        controller.participantsData = USERS
+        controller.currentPresentIds = [1]
+
+        expect(controller.participantListItems()).toEqual([
+            {
+                id: 1, label: 'Ada', avatarUrl: '/avatars/1.png', iconKey: null,
+                muted: false, statusLabel: 'Online'
+            },
+            {
+                id: 2, label: 'Grace', avatarUrl: '/avatars/2.png', iconKey: null,
+                muted: true, statusLabel: 'Health status unavailable'
+            }
+        ])
+    })
+
+    test('creates the entity-list modal caged inside the chat box', () => {
+        controller.participantsData = USERS
+        controller.openParticipantListPopup(anchorEvent())
+
+        const modal = document.getElementById('participant-list-modal')
+        expect(modal).not.toBeNull()
+        expect(modal.dataset.controller).toBe('entity-list')
+        expect(modal.parentElement).toBe(controller.element)
+        expect(modal.querySelector('[data-entity-list-target="input"]').placeholder).toBe('Search users...')
+        expect(modal.querySelector('[data-entity-list-target="list"]')).not.toBeNull()
+        expect(modal.querySelector('[data-entity-list-target="close"]')).not.toBeNull()
+    })
+
+    test('gives the popup close button the localized accessible label', async () => {
+        controller.participantsData = USERS
+        controller.openParticipantListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(document.querySelector('#participant-list-modal .popup-close-btn').getAttribute('aria-label')).toBe('Close')
+    })
+
+    test('toggles an open popup closed and clears the button state', () => {
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => true }, close: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.openParticipantListPopup(anchorEvent())
+
+        expect(popup.close).toHaveBeenCalled()
+        expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('marks the button expanded while open and clears it on close', () => {
+        controller.participantsData = USERS
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.openParticipantListPopup(anchorEvent())
+        expect(popup.openForItems).toHaveBeenCalledWith(
+            expect.any(Array), expect.any(Function), expect.any(Function), controller.element
+        )
+        expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('true')
+
+        modal.dispatchEvent(new CustomEvent('entity-list:close', { bubbles: true }))
+        expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('routes popup selection through the participant-list handler', () => {
+	controller.participantsData = USERS
+	const modal = document.createElement('div')
+	modal.id = 'participant-list-modal'
+	controller.element.appendChild(modal)
+	const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+	jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+	const select = jest.spyOn(controller, 'selectParticipantListItem').mockImplementation(() => {})
+
+	controller.openParticipantListPopup(anchorEvent())
+	popup.openForItems.mock.calls[0][2]({ id: 1 })
+
+	expect(select).toHaveBeenCalledWith({ id: 1 })
+    })
+
+    test('ignores close events from another popup sharing the entity-list controller', () => {
+        controller.setParticipantListButtonExpanded(true)
+        const other = document.createElement('div')
+        other.id = 'context-list-modal'
+        controller.element.appendChild(other)
+
+        other.dispatchEvent(new CustomEvent('entity-list:close', { bubbles: true }))
+
+        expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('true')
+    })
+
+    test('a pointerdown that closed the popup swallows the following click', () => {
+        controller.participantsData = USERS
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => true }, close: jest.fn(), openForItems: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.prepareParticipantListToggle({
+            isPrimary: true, button: 0, pointerId: 1, currentTarget: controller.participantListButtonTarget
+        })
+        controller.openParticipantListPopup(anchorEvent())
+
+        expect(popup.openForItems).not.toHaveBeenCalled()
+    })
+
+    test('a pointerdown with no popup open lets the click through', () => {
+        controller.participantsData = USERS
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.prepareParticipantListToggle({
+            isPrimary: true, button: 0, pointerId: 1, currentTarget: controller.participantListButtonTarget
+        })
+        controller.openParticipantListPopup(anchorEvent())
+
+        expect(popup.openForItems).toHaveBeenCalled()
+    })
+
+    test('releasing the pointer outside the button re-arms the click', () => {
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => true }, close: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+        jest.spyOn(controller.participantListButtonTarget, 'getBoundingClientRect')
+            .mockReturnValue({ left: 10, right: 20, top: 10, bottom: 20 })
+
+        controller.prepareParticipantListToggle({
+            isPrimary: true, button: 0, pointerId: 1, currentTarget: controller.participantListButtonTarget
+        })
+        controller.finishParticipantListToggle({
+            currentTarget: controller.participantListButtonTarget, clientX: 99, clientY: 99, pointerId: 1
+        })
+        controller.openParticipantListPopup(anchorEvent())
+
+        expect(popup.close).toHaveBeenCalled()
+    })
+
+    test('cancelling the gesture lets the next click through', () => {
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => true }, close: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.prepareParticipantListToggle({
+            isPrimary: true, button: 0, pointerId: 1, currentTarget: controller.participantListButtonTarget
+        })
+        controller.cancelParticipantListToggle({ pointerId: 1 })
+        controller.openParticipantListPopup(anchorEvent())
+
+        expect(popup.close).toHaveBeenCalled()
+    })
+
+    test('selecting a user opens the same profile menu as the avatar strip', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([])
+        const show = jest.fn()
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue({ show })
+
+        controller.selectParticipantListItem({ id: 2 })
+
+        expect(show).toHaveBeenCalled()
+    })
+
+    test('selecting a user who is no longer listed is a no-op', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([])
+        const show = jest.fn()
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue({ show })
+
+        controller.selectParticipantListItem({ id: 99 })
+
+        expect(show).not.toHaveBeenCalled()
+    })
+
+    test('passes a live list-button anchor to the popup', () => {
+        const firstRect = { top: 10, left: 20, bottom: 30, right: 40 }
+        const secondRect = { top: 110, left: 120, bottom: 130, right: 140 }
+        const getRect = jest.spyOn(controller.participantListButtonTarget, 'getBoundingClientRect')
+            .mockReturnValueOnce(firstRect)
+            .mockReturnValue(secondRect)
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => false }, openForItems: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.openParticipantListPopup(anchorEvent())
+        const anchor = popup.openForItems.mock.calls[0][1]
+
+        expect(anchor()).toBe(firstRect)
+        expect(anchor()).toBe(secondRect)
+        expect(getRect).toHaveBeenCalledTimes(2)
+    })
+
+    test('re-rendering refreshes an open popup so presence changes are reflected', () => {
+        const modal = document.createElement('div')
+        modal.id = 'participant-list-modal'
+        controller.element.appendChild(modal)
+        const popup = { popup: { isOpen: () => true }, updateItems: jest.fn() }
+        jest.spyOn(controller.application, 'getControllerForElementAndIdentifier').mockReturnValue(popup)
+
+        controller.participantsData = USERS
+        controller.renderParticipants([1, 2])
+
+        expect(popup.updateItems).toHaveBeenCalledWith([
+            expect.objectContaining({ id: 1, muted: false }),
+            expect.objectContaining({ id: 2, muted: false })
+        ])
+    })
+
+    test('switching creatives clears the old popup, participants, and share URL', async () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+        controller.openParticipantListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        jest.spyOn(controller, 'loadParticipants').mockImplementation(() => {})
+        jest.spyOn(controller, 'subscribe').mockImplementation(() => {})
+        jest.spyOn(controller, 'bootstrapChannelChips').mockImplementation(() => {})
+
+        controller.onPopupOpened({ creativeId: '77' })
+
+        expect(document.getElementById('participant-list-modal')).toBeNull()
+        expect(controller.participantsData).toBeNull()
+        expect(controller.canShare).toBe(false)
+        expect(controller.addParticipantButtonTarget.style.display).toBe('none')
+        expect(controller.addParticipantButtonTarget.dataset.shareModalUrlParam).toBeUndefined()
+        expect(controller.participantListButtonTarget.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('preparing a creative switch clears stale participants before starting the next load', async () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+        controller.openParticipantListPopup(anchorEvent())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        const loadParticipants = jest.spyOn(controller, 'loadParticipants')
+
+        controller.onChatWillOpen({ creativeId: '77' })
+
+        expect(controller.creativeId).toBe('77')
+        expect(document.getElementById('participant-list-modal')).toBeNull()
+        expect(controller.participantsData).toBeNull()
+        expect(controller.canShare).toBe(false)
+        expect(loadParticipants).not.toHaveBeenCalled()
+    })
+
+    test('unsubscribes from the previous creative before assigning the next creative id', () => {
+        controller.creativeId = '42'
+        const creativeIdsAtUnsubscribe = []
+        jest.spyOn(controller, 'unsubscribe').mockImplementation(() => {
+            creativeIdsAtUnsubscribe.push(controller.creativeId)
+        })
+
+        controller.onChatWillOpen({ creativeId: '77' })
+
+        expect(creativeIdsAtUnsubscribe).toEqual(['42'])
+        expect(controller.creativeId).toBe('77')
+    })
+
+    test('closing an empty dock clears the previous creative share state', () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+
+        controller.onPopupClosed()
+
+        expect(controller.creativeId).toBeNull()
+        expect(controller.canShare).toBe(false)
+        expect(controller.addParticipantButtonTarget.style.display).toBe('none')
+        expect(controller.addParticipantButtonTarget.dataset.shareModalUrlParam).toBeUndefined()
+    })
+
+    test('ignores a participants response from the creative that was left', async () => {
+        let resolveOld
+        let resolveCurrent
+        global.fetch
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveCurrent = resolve }))
+
+        const oldLoad = controller.loadParticipants('42')
+        controller.creativeId = '77'
+        const currentLoad = controller.loadParticipants('77')
+        resolveCurrent({
+            ok: true,
+            json: async () => ({ users: [USERS[1]], can_share: true, can_comment: true })
+        })
+        await currentLoad
+        resolveOld({
+            ok: true,
+            json: async () => ({ users: [USERS[0]], can_share: false, can_comment: false })
+        })
+        await oldLoad
+
+        expect(controller.participantsData).toEqual([USERS[1]])
+        expect(controller.canShare).toBe(true)
+    })
+
+    test('clears participant controls when the current load fails', async () => {
+        controller.participantsData = USERS
+        controller.canShare = true
+        controller.renderParticipants([])
+        global.fetch.mockRejectedValueOnce(new Error('network failed'))
+
+        await controller.loadParticipants('42')
+
+        expect(controller.participantsData).toEqual([])
+        expect(controller.canShare).toBe(false)
+        expect(controller.addParticipantButtonTarget.style.display).toBe('none')
+        expect(controller.participantListButtonTarget.style.display).toBe('none')
+    })
+    test('a stale agent avatar cannot start a drag after its participant is removed', () => {
+        controller.participantsData = USERS
+        controller.renderParticipants([1])
+        const wrapper = controller.participantsTarget.querySelector('.ai-agent-draggable')
+        controller.participantsData = []
+        const setData = jest.fn()
+        const event = new Event('dragstart', { bubbles: true, cancelable: true })
+        Object.assign(event, { dataTransfer: { setData } })
+        wrapper.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+        expect(setData).not.toHaveBeenCalled()
+        expect(wrapper.classList.contains('dragging')).toBe(false)
+    })
+
+})

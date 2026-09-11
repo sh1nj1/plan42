@@ -62,6 +62,9 @@ Rails.application.configure do
   # user is granted system_admin (the default build is loopback-only, so that
   # first signup is the local owner; open mode is opt-in and set up afterwards).
   config.x.bootstrap_first_admin = true
+  # Desktop-only native setup endpoints must never bootstrap an administrator
+  # in a web deployment that happens to be reached through a loopback proxy.
+  config.x.desktop_proxy_setup = true
 
   # Boot must not depend on a checked-in master key. The desktop launcher
   # provisions and persists SECRET_KEY_BASE on first run (see

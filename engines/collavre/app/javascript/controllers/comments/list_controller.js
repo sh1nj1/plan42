@@ -1,11 +1,15 @@
+import * as previousMessageNavigation from './previous_message_navigation'
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
 import { copyTextToClipboard } from '../../utils/clipboard'
-import { attachBundleDragImage } from '../../utils/drag_bundle_image'
+import { attachBundleDragImage } from '../../lib/dnd/bundle_image'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
+import CommentReadTracker from './comment_read_tracker'
 import PrevMessageNavigator from './prev_message_navigator'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
@@ -31,6 +35,7 @@ export default class extends Controller {
     this.highlightCreativeId = null
     this._loadCommentsVersion = 0
     this.markReadTimeout = null
+    this.commentReadTracker = new CommentReadTracker(this)
     this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
@@ -68,11 +73,11 @@ export default class extends Controller {
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
 
     // Drag and drop handlers for moving comments to topics
-    this.handleDragStart = this.handleDragStart.bind(this)
-    this.handleDragEnd = this.handleDragEnd.bind(this)
     this.handleMoveToTopic = this.handleMoveToTopic.bind(this)
-    this.listTarget.addEventListener('dragstart', this.handleDragStart)
-    this.listTarget.addEventListener('dragend', this.handleDragEnd)
+    this.dnd = createDragDropRegistry({ root: this.listTarget, getKind: getDragKind, readData: readDragData })
+    this.dnd.registerDragSource({ selector: '.comment-item[draggable="true"]',
+      onDragStart: ({ event }) => this.handleDragStart(event),
+      onDragEnd: () => this.listTarget.classList.remove('dragging-comments') })
     this.element.addEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
 
   }
@@ -88,9 +93,11 @@ export default class extends Controller {
     // onPopupOpened sets up highlightAfterLoad. Suppress these to avoid a
     // race where a non-highlight load overwrites the deep-link highlight load.
     if (this.suppressTopicChangeLoad) {
+      this.flushPendingRead()
       this.currentTopicId = nextTopicId
       return
     }
+    this.flushPendingRead()
     this.currentTopicId = nextTopicId
     // A user-selected topic supersedes any outstanding deep-link window.
     // The old request is discarded by the topic/version guards below, while
@@ -101,7 +108,7 @@ export default class extends Controller {
   }
 
   disconnect() {
-    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
+    this.flushPendingRead({ keepalive: true })
     this.listTarget.removeEventListener('scroll', this.handleScroll)
     PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
       this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
@@ -109,8 +116,7 @@ export default class extends Controller {
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
     this.listTarget.removeEventListener('submit', this.handleSubmit)
-    this.listTarget.removeEventListener('dragstart', this.handleDragStart)
-    this.listTarget.removeEventListener('dragend', this.handleDragEnd)
+    this.dnd?.destroy()
     document.removeEventListener('turbo:before-stream-render', this.handleStreamRender)
     if (this.listObserver) {
       this.listObserver.disconnect()
@@ -137,11 +143,13 @@ export default class extends Controller {
   }
 
   onPopupOpened({ creativeId, highlightId, topicId } = {}) {
+    this.flushPendingRead()
     const normalizedCreativeId = String(creativeId || '')
     const pendingHighlight = String(this.highlightCreativeId || '') === normalizedCreativeId
       ? this.highlightAfterLoad
       : null
     this.creativeId = creativeId
+    this.getCommentReadTracker().resetRenderedSnapshot()
     this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
     this.highlightAfterLoad = highlightId || pendingHighlight || this.deepLinkCommentId
@@ -161,12 +169,10 @@ export default class extends Controller {
   }
 
   onPopupClosed() {
-    if (this.markReadTimeout) {
-      window.clearTimeout(this.markReadTimeout)
-      this.markReadTimeout = null
-    }
+    this.flushPendingRead()
     this._loadCommentsVersion += 1
     this.creativeId = null
+    this.getCommentReadTracker().resetRenderedSnapshot()
     this.highlightAfterLoad = null
     this.highlightCreativeId = null
     this.suppressTopicChangeLoad = false
@@ -179,6 +185,7 @@ export default class extends Controller {
     this.selection.clear()
     this.notifySelectionChange()
     this.loadingOlder = false
+    this.loadingOlderPromise = null
     this.loadingNewer = false
     this.allOlderLoaded = false
     this.allNewerLoaded = true
@@ -213,16 +220,19 @@ export default class extends Controller {
     const requestTopicId = this.currentTopicId || ""
     const requestCreativeId = this.creativeId
 
-    this.fetchComments(params).then((html) => {
+    this.fetchComments(params, { loadVersion: requestVersion }).then((html) => {
       // Discard stale responses if creative or topic changed while fetching.
       // This prevents a race condition where switching creatives causes
       // the old creative's comments to overwrite the new creative's list.
       if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
-      // An around-comment request may legitimately move from the saved topic
-      // to the topic containing the target comment. User-selected topic changes
-      // still invalidate this request by incrementing _loadCommentsVersion.
-      if (!requestedHighlightId && String(this.currentTopicId || "") !== String(requestTopicId)) return
+      // A server-resolved deep link moves currentTopicId off the topic this
+      // request asked for. That is this request's own answer, not a stale one,
+      // so the topic guard has to let it through — otherwise the list sits on
+      // "Loading..." forever for every comment link pointing outside the
+      // restored topic.
+      if (!this.isServerResolvedTopic(requestVersion) &&
+          String(this.currentTopicId || "") !== String(requestTopicId)) return
 
       this.listTarget.innerHTML = html
       this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
@@ -246,60 +256,28 @@ export default class extends Controller {
         this.formController.focusTextarea()
       }
       this.element.dispatchEvent(new CustomEvent('comments--list:loaded', { bubbles: true }))
+      this.reportRenderedAllTopics()
       this.markCommentsRead()
 
     }).catch((error) => {
       if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
-      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
+      if (!this.isServerResolvedTopic(requestVersion) &&
+          String(this.currentTopicId || "") !== String(requestTopicId)) return
       this.listTarget.innerHTML = `<div class="comments-list-error">${error.message}</div>`
     })
   }
 
+  // fetchComments stamps the version of the request whose own response carried
+  // an X-Topic-Id that moved the selection. Only that request may ignore the
+  // stale-topic guard; every other load compares unequal and stays guarded.
+  isServerResolvedTopic(requestVersion) {
+    return this._serverTopicRequestVersion !== undefined &&
+      this._serverTopicRequestVersion === requestVersion
+  }
+
   loadOlderComments() {
-    if (this.loadingOlder) return this.loadingOlderPromise || Promise.resolve(false)
-    if (this.allOlderLoaded || !this.creativeId) return Promise.resolve(false)
-    const minId = this.getMinId()
-    if (!minId) return Promise.resolve(false)
-
-    this.loadingOlder = true
-
-    // Standard Column: Older messages are at Top.
-    // We Prepend them.
-    const currentScrollHeight = this.listTarget.scrollHeight
-
-    this.loadingOlderPromise = this.fetchComments({ before_id: minId })
-      .then((html) => {
-	if (html.trim() === '') {
-	  this.allOlderLoaded = true
-	  return false
-        }
-        // Prepend to start (Visual Top)
-        this.listTarget.insertAdjacentHTML('afterbegin', html)
-        renderMarkdownInContainer(this.listTarget)
-
-        // Restore scroll position
-        const newScrollHeight = this.listTarget.scrollHeight
-        this.listTarget.scrollTop = this.listTarget.scrollTop + (newScrollHeight - currentScrollHeight)
-
-	// Prepending changes element geometry without user input. Keep the
-	// previous-message anchor based on its new position so the next click
-	// continues into the newly loaded page instead of dropping the anchor.
-	const anchorId = this.prevMsgNavigator.anchorId
-	const anchor = anchorId && Array.from(this.listTarget.querySelectorAll('.comment-item'))
-	  .find((item) => item.dataset.commentId === anchorId)
-	if (anchor) this.prevMsgNavigator.commit(anchorId, anchor.getBoundingClientRect().top)
-
-	this.fulfillPendingPreviousMessageNavigation()
-
-	return true
-      })
-      .finally(() => {
-	this.loadingOlder = false
-	this.loadingOlderPromise = null
-      })
-
-    return this.loadingOlderPromise
+    return previousMessageNavigation.loadOlderComments.call(this)
   }
 
   loadNewerComments() {
@@ -310,10 +288,12 @@ export default class extends Controller {
       return
     }
 
+    const requestContext = this.paginationRequestContext()
     this.loadingNewer = true
 
-    this.fetchComments({ after_id: maxId })
+    this.fetchComments({ after_id: maxId }, { pagination: true })
       .then((html) => {
+        if (!this.isCurrentPaginationContext(requestContext)) return
         if (html.trim() === '') {
 
           this.allNewerLoaded = true
@@ -322,13 +302,34 @@ export default class extends Controller {
         // Append to end (Visual Bottom)
         this.listTarget.insertAdjacentHTML('beforeend', html)
         renderMarkdownInContainer(this.listTarget)
+        const addedTopic = this.recordRenderedAllTopicWatermarks(
+          this.listTarget.querySelectorAll('.comment-item'),
+          { includeNewTopics: true },
+        )
+        if (addedTopic) this.reportRenderedAllTopics()
+        this.markCommentsRead()
       })
       .finally(() => {
-        this.loadingNewer = false
+        if (this.isCurrentPaginationContext(requestContext)) this.loadingNewer = false
       })
   }
 
-  fetchComments(params = {}) {
+  paginationRequestContext() {
+    return {
+      creativeId: this.creativeId,
+      topicId: this.currentTopicId || null,
+      loadVersion: this._loadCommentsVersion,
+    }
+  }
+
+  isCurrentPaginationContext({ creativeId, topicId, loadVersion }) {
+    return this.element.isConnected &&
+      this.creativeId === creativeId &&
+      (this.currentTopicId || null) === topicId &&
+      this._loadCommentsVersion === loadVersion
+  }
+
+  fetchComments(params = {}, { loadVersion, pagination = false } = {}) {
     const urlParams = new URLSearchParams(params)
     if (this.manualSearchQuery) {
       urlParams.set('search', this.manualSearchQuery)
@@ -353,7 +354,23 @@ export default class extends Controller {
       }
 
       const serverTopicId = response.headers.get("X-Topic-Id")
-      if (serverTopicId !== null && serverTopicId !== undefined) {
+      const renderedTopicIds = response.headers.get("X-Rendered-Topic-Ids")
+      const renderedTopicWatermarks = response.headers.get("X-Rendered-Topic-Watermarks")
+      const superseded = loadVersion !== undefined && loadVersion !== this._loadCommentsVersion
+      // Only replace this snapshot for a full list load. Pagination requests
+      // happen later and may observe a topic-strip archive change without
+      // rendering that topic's existing history.
+      if (loadVersion !== undefined && !pagination && !superseded && !this.currentTopicId && renderedTopicIds !== null) {
+        this.getCommentReadTracker().captureRenderedSnapshot(
+          renderedTopicIds,
+          renderedTopicWatermarks
+        )
+      }
+      // A load superseded while in flight must not retopic anything: its own HTML
+      // is dropped, so moving currentTopicId (and the strip, and the form) to its
+      // answer would leave the surviving load rendering into a selection it never
+      // asked for.
+      if (serverTopicId !== null && serverTopicId !== undefined && !pagination && !superseded) {
         // Server says we are in this topic. 
         // If it differs from current, update state.
 
@@ -363,6 +380,12 @@ export default class extends Controller {
 
         if (currentStr !== serverStr) {
           this.currentTopicId = serverTopicId
+          // Tell loadInitialComments' stale-topic guard that this switch is the
+          // answer to the load it is still awaiting. Stamp the version of the
+          // request that actually carried the header, not the controller's
+          // latest: reading the latest would hand the exemption to a newer load
+          // that never asked for a topic switch.
+          this._serverTopicRequestVersion = loadVersion
           // Notify topics controller to update UI
           const event = new CustomEvent("comments--topics:update-selection", { detail: { topicId: serverTopicId } })
           window.dispatchEvent(event)
@@ -372,8 +395,15 @@ export default class extends Controller {
             // Deep link / around_comment_id resolution from server must win over
             // saved topic state for the current popup session.
             this.popupController.topicsController.setOverrideTopicId(serverTopicId)
-            // Update UI and local state without dispatching change event (to avoid loop)
-            this.popupController.topicsController.updateSelectionUI(serverTopicId)
+            // Go through selectTopic, not updateSelectionUI: a deep link can resolve
+            // to an archived topic, whose chip exists only while the archived section
+            // is expanded, and form_controller learns the active topic solely from the
+            // change event — without it a reply posts into the previously selected
+            // conversation. The reload this event would normally trigger is already
+            // ruled out: this.currentTopicId was set to serverTopicId just above, so
+            // handleTopicChange's equality guard returns before resetToLatest() can
+            // discard the highlight window.
+            this.popupController.topicsController.selectTopic(serverTopicId)
 
             // Also update data attribute for CSS scoping
             this.listTarget.dataset.currentTopicId = serverTopicId || ""
@@ -388,6 +418,7 @@ export default class extends Controller {
   }
 
   applySearchQuery(query) {
+    this.flushPendingRead()
     this.resetState()
     this.manualSearchQuery = query
     this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
@@ -396,18 +427,23 @@ export default class extends Controller {
 
   getMinId() {
     // Standard: First element is oldest
-    const items = this.listTarget.querySelectorAll('.comment-item')
+    const items = this.paginationItems()
     if (items.length === 0) return null
     const first = items[0]
-    return parseInt(first.dataset.commentId)
+    return parseInt(first.dataset.commentId || first.dataset.changeSetId)
   }
 
   getMaxId() {
     // Standard: Last element is newest
-    const items = this.listTarget.querySelectorAll('.comment-item')
+    const items = this.paginationItems()
     if (items.length === 0) return null
     const last = items[items.length - 1]
-    return parseInt(last.dataset.commentId)
+    return parseInt(last.dataset.commentId || last.dataset.changeSetId)
+  }
+
+  paginationItems() {
+    const comments = this.listTarget.querySelectorAll('.comment-item')
+    return comments.length > 0 ? comments : this.listTarget.querySelectorAll('.creative-history-item')
   }
 
   // Public seam for sibling controllers that scroll the list on their own
@@ -428,22 +464,21 @@ export default class extends Controller {
   }
 
   markCommentsRead() {
-    if (!this.creativeId) return
-    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
-    const creativeId = this.creativeId
-    this.markReadTimeout = window.setTimeout(() => {
-      this.markReadTimeout = null
-      if (!this.element.isConnected || this.creativeId !== creativeId) return
+    this.getCommentReadTracker().markCommentsRead()
+  }
 
-      fetch('/comment_read_pointers/update', {
-        method: 'POST',
-        headers: {
-          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ creative_id: creativeId }),
-      }).catch(() => { /* ignore — creative may have been deleted */ })
-    }, 2000);
+  flushPendingRead({ keepalive = false } = {}) {
+    this.getCommentReadTracker().flushPendingRead({ keepalive })
+  }
+
+  updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null, { keepalive = false } = {}) {
+    this.getCommentReadTracker().updateReadPointer({
+      creativeId,
+      topicId,
+      topicIds,
+      topicWatermarks,
+      keepalive,
+    })
   }
 
   handlePrevMsgUserInput() {
@@ -553,12 +588,78 @@ export default class extends Controller {
     // Actually form_controller handleSubmit calls this list controller? No, distinct.
   }
 
+  // A comment with no topic is never archived, so the empty check also keeps
+  // this off the topics controller for the common case.
+  isArchivedTopicMessage(topicId) {
+    if (!topicId) return false
+    return Boolean(this.popupController?.topicsController?.isArchivedTopic?.(topicId))
+  }
+
+  // All Messages sends a bounded per-topic snapshot so a later archive change
+  // cannot mark comments the list did not render as read. A visible live append
+  // extends that bound for its already-rendered topic before the read debounce
+  // captures it. Only pagination may add a new topic: its comment is already
+  // visible in the DOM. Live streams still fence topics outside the initial
+  // snapshot because older history for those topics may be unseen.
+  recordRenderedAllTopicWatermarks(comments, { includeNewTopics = false } = {}) {
+    return this.getCommentReadTracker().recordRenderedAllTopicWatermarks(comments, { includeNewTopics })
+  }
+
+  reportRenderedAllTopics() {
+    this.getCommentReadTracker().reportRenderedAllTopics()
+  }
+
+  isOutsideRenderedAllTopics(topicId) {
+    return this.getCommentReadTracker().isOutsideRenderedAllTopics(topicId)
+  }
+
+  getCommentReadTracker() {
+    this.commentReadTracker ||= new CommentReadTracker(this)
+    return this.commentReadTracker
+  }
+
   handleStreamRender(event) {
     // Only care about streams targeting our list
     if (event.target.target !== 'comments-list') return
 
     // Deduplication: If manually appended by form_controller, block the stream echo.
+    let appendedComment = null
     if (event.target.action === 'append') {
+      const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
+      const firstChild = templateContent?.firstElementChild
+      appendedComment = firstChild
+
+      // Check for topic context mismatch. Runs ahead of the search block below:
+      // both block the append, but only this one badges, and the badge is the
+      // sole notice that an out-of-view conversation moved. Search suppressing
+      // it would hide an archived topic's traffic completely, since the archived
+      // section carries no other signal.
+      if (firstChild && firstChild.dataset.topicId !== undefined) {
+        const messageTopicId = firstChild.dataset.topicId
+        const currentTopicId = this.currentTopicId || ""
+
+        // If we are in a specific topic (currentTopicId is set)
+        // AND the message is for a different topic.
+        //
+        // All Messages (currentTopicId === "") takes everything except archived
+        // topics: CommentsController#index filters those out of this view, so
+        // letting a live one in would show a message that vanishes on reload.
+        // Both cases badge the topic instead of appending.
+        const isForeignTopic = currentTopicId
+          ? String(currentTopicId) !== String(messageTopicId)
+          : this.isArchivedTopicMessage(messageTopicId) || this.isOutsideRenderedAllTopics(messageTopicId)
+
+        if (isForeignTopic) {
+          event.preventDefault()
+          // Dispatch event for topics controller to show badge
+          const customEvent = new CustomEvent("comments--topics:new-message", {
+            detail: { topicId: messageTopicId }
+          })
+          window.dispatchEvent(customEvent)
+          return
+        }
+      }
+
       // A search-filtered list is the result set of a query, and the match runs
       // server-side over the raw content. A live append carries no verdict on
       // whether it matches, so letting it in drops an unrelated message into the
@@ -568,27 +669,6 @@ export default class extends Controller {
       if (this.manualSearchQuery) {
         event.preventDefault()
         return
-      }
-
-      const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
-      const firstChild = templateContent?.firstElementChild
-
-      // Check for topic context mismatch
-      if (firstChild && firstChild.dataset.topicId !== undefined) {
-        const messageTopicId = firstChild.dataset.topicId
-        const currentTopicId = this.currentTopicId || ""
-
-        // If we are in a specific topic (currentTopicId is set)
-        // AND the message is for a different topic
-        if (currentTopicId && String(currentTopicId) !== String(messageTopicId)) {
-          event.preventDefault()
-          // Dispatch event for topics controller to show badge
-          const customEvent = new CustomEvent("comments--topics:new-message", {
-            detail: { topicId: messageTopicId }
-          })
-          window.dispatchEvent(customEvent)
-          return
-        }
       }
 
       if (firstChild && firstChild.id && document.getElementById(firstChild.id)) {
@@ -606,7 +686,13 @@ export default class extends Controller {
       // Optional: Show a "New messages" indicator?
       // For now, strict requirement: "do not add to DOM".
     } else {
-
+      // The append is about to become visible. Mark it read after the existing
+      // debounce, so a reconnect or popup close cannot turn a viewed live
+      // message back into an unread one.
+      if (event.target.action === 'append') {
+        this.recordRenderedAllTopicWatermarks(appendedComment)
+        this.markCommentsRead()
+      }
     }
   }
 
@@ -801,9 +887,8 @@ export default class extends Controller {
         btnRect,
         (topic) => {
           if (topic.created) {
-            // Topic was just created with comments moved — refresh
             this.clearSelection()
-            this.loadInitialComments()
+            this.switchToTopic(topic.id)
           } else {
             this.handleMoveToTopic({ detail: { commentIds, targetTopicId: topic.id } })
           }
@@ -873,7 +958,7 @@ export default class extends Controller {
 
     // Include all selected comment IDs
     const commentIds = Array.from(this.selection)
-    event.dataTransfer.setData('application/x-comment-ids', JSON.stringify(commentIds))
+    writeDragData(event.dataTransfer, { kind: 'comments', ids: commentIds, payload: {} })
     event.dataTransfer.effectAllowed = 'move'
 
     // Add visual feedback
@@ -885,10 +970,6 @@ export default class extends Controller {
       const text = bodyEl ? bodyEl.textContent.trim() : ''
       attachBundleDragImage(event, commentIds.length, text)
     }
-  }
-
-  handleDragEnd(event) {
-    this.listTarget.classList.remove('dragging-comments')
   }
 
   async handleMoveToTopic(event) {
@@ -995,7 +1076,7 @@ export default class extends Controller {
     if (!topicId) return
     const topicsController = this.popupController?.topicsController
     if (topicsController?.selectTopic) {
-      topicsController.selectTopic(topicId)
+      topicsController.selectTopic(topicId, { userInitiated: true })
     } else {
       this.currentTopicId = topicId
       this.resetToLatest()
@@ -1182,71 +1263,23 @@ export default class extends Controller {
   }
 
   scrollToPreviousMessage() {
-    const list = this.listTarget
-    const elements = Array.from(list.querySelectorAll('.comment-item'))
-    if (elements.length === 0) return
-
-    const anchorId = this.prevMsgNavigator.anchorId
-    const anchorIdx = anchorId === null
-      ? -1
-      : elements.findIndex((item) => item.dataset.commentId === anchorId)
-    if (anchorIdx >= 0) {
-	if (anchorIdx > 0) {
-	  this.navigateToMessage(elements[anchorIdx - 1])
-	  return
-      }
-      return this.loadAndNavigateToPreviousMessage(anchorId)
-    }
-
-    const viewportTop = list.getBoundingClientRect().top
-    const measured = elements.map((el) => ({
-      id: el.dataset.commentId,
-      top: el.getBoundingClientRect().top,
-    }))
-
-    const targetIdx = this.prevMsgNavigator.resolveTargetIndex(measured, viewportTop)
-    if (targetIdx < 0) {
-      return this.loadAndNavigateToPreviousMessage(elements[0].dataset.commentId)
-    }
-
-    this.navigateToMessage(elements[targetIdx])
+    return previousMessageNavigation.scrollToPreviousMessage.call(this)
   }
 
   loadAndNavigateToPreviousMessage(anchorId) {
-    if (this.navigateToPreviousSibling(anchorId)) return Promise.resolve(true)
-    if (this.allOlderLoaded) return Promise.resolve(false)
-
-    this.pendingPreviousMessageAnchorId = anchorId
-    return this.loadOlderComments().then(() => this.fulfillPendingPreviousMessageNavigation())
+    return previousMessageNavigation.loadAndNavigateToPreviousMessage.call(this, anchorId)
   }
 
   navigateToPreviousSibling(anchorId) {
-    const comments = Array.from(this.listTarget.querySelectorAll('.comment-item'))
-    const anchorIdx = comments.findIndex((item) => item.dataset.commentId === anchorId)
-    if (anchorIdx <= 0) return false
-
-    this.navigateToMessage(comments[anchorIdx - 1])
-    return true
+    return previousMessageNavigation.navigateToPreviousSibling.call(this, anchorId)
   }
 
   fulfillPendingPreviousMessageNavigation() {
-    const anchorId = this.pendingPreviousMessageAnchorId
-    if (!anchorId || !this.navigateToPreviousSibling(anchorId)) return false
-
-    this.pendingPreviousMessageAnchorId = null
-    return true
+    return previousMessageNavigation.fulfillPendingPreviousMessageNavigation.call(this)
   }
 
   navigateToMessage(target) {
-    const list = this.listTarget
-    const targetTop = target.offsetTop - list.offsetTop
-    this.prevMsgNavigator.commit(target.dataset.commentId, target.getBoundingClientRect().top)
-    list.scrollTo({ top: targetTop, behavior: 'smooth' })
-    this.stickToBottom = false
-
-    target.classList.add('highlight-flash')
-    target.dataset.highlighted = 'true'
-    setTimeout(() => target.classList.remove('highlight-flash'), 2000)
+    return previousMessageNavigation.navigateToMessage.call(this, target)
   }
 
   // UI Helpers

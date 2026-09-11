@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = "https://github.com/sh1nj1/plan42"
 
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
-    Dir["{app,config,db,lib}/**/*", "Rakefile", "README.md"]
+    Dir["{app,config,db,lib,skills}/**/*", "Rakefile", "README.md"].select { |path| File.file?(path) }
   end
 
   # Core dependencies - required for the engine to function
@@ -33,10 +33,12 @@ Gem::Specification.new do |spec|
 
   # Markdown rendering
   spec.add_dependency "commonmarker"           # GitHub-flavored Markdown to HTML
+  spec.add_dependency "diff-lcs"               # Word and line diffs for Creative history
 
   # Integrations
   spec.add_dependency "httparty"               # HTTP client for link previews and APIs
   spec.add_dependency "nokogiri"               # HTML/XML parsing
+  spec.add_dependency "addressable"            # Punycode for the help-link origin check
 
   # Optional dependencies - add to your Gemfile if using these features:
   #

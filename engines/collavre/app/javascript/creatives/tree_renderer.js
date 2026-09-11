@@ -11,25 +11,135 @@ function setDatasetValue(element, key, value) {
   }
 }
 
+function serializeProgressHtml(element) {
+  const root = element.content || element
+  root.querySelectorAll('[data-cron-badge-target="messageInput"]').forEach(input => {
+    input.textContent = `\n${input.value}`
+  })
+  return element.innerHTML
+}
+
 // Capture current DOM state of the progress area back into Lit's progressHtml
 // so that Turbo Streams DOM mutations (e.g. badge count updates) survive Lit re-renders.
 // Lit renders progressHtml via unsafeHTML() inside a .creative-progress-area wrapper.
 // Turbo may directly replace child elements (e.g. comment-badge span) in the DOM,
 // but Lit's progressHtml string remains stale. On next re-render, Lit would overwrite
 // the Turbo-updated DOM with the stale string, losing badge updates.
-function syncProgressHtmlFromDom(row) {
+export function syncProgressHtmlFromDom(row) {
   if (!row.progressHtml) return
   const wrapper = row.querySelector('.creative-progress-area')
   if (!wrapper) return
-  const currentHtml = wrapper.innerHTML
+  const clone = wrapper.cloneNode(true)
+  const inputs = wrapper.querySelectorAll('[data-cron-badge-target="messageInput"]')
+  const clonedInputs = clone.querySelectorAll('[data-cron-badge-target="messageInput"]')
+  inputs.forEach((input, index) => {
+    clonedInputs[index].value = input.value
+  })
+  const currentHtml = serializeProgressHtml(clone)
   if (currentHtml && currentHtml !== row.progressHtml) {
     row.progressHtml = currentHtml
     row.dataset.progressHtml = currentHtml
   }
 }
 
+export function updateProgressHtml(html, progress, displayText) {
+  const complete = Number(progress) === 1
+  const template = document.createElement('template')
+  template.innerHTML = html
+
+  const checkbox = template.content.querySelector('input.progress-toggle-checkbox')
+  if (checkbox) {
+    checkbox.toggleAttribute('checked', complete)
+    if (complete) checkbox.setAttribute('checked', 'checked')
+
+    const toggle = template.content.querySelector('[data-progress-toggle="true"]')
+    if (toggle) {
+      const label = complete ? toggle.dataset.markIncomplete : toggle.dataset.markComplete
+      toggle.dataset.currentProgress = String(progress)
+      toggle.dataset.newProgress = complete ? '0' : '1'
+      if (label) {
+        toggle.title = label
+        checkbox.setAttribute('aria-label', label)
+      }
+    }
+    return serializeProgressHtml(template)
+  }
+
+  const progressElement = template.content.querySelector(
+    '.creative-progress-complete, .creative-progress-incomplete'
+  )
+  if (!progressElement) return html
+
+  progressElement.textContent = displayText
+  progressElement.classList.toggle('creative-progress-complete', complete)
+  progressElement.classList.toggle('creative-progress-incomplete', !complete)
+  return serializeProgressHtml(template)
+}
+
+export function replaceProgressControl(html, controlHtml) {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const replacementTemplate = document.createElement('template')
+  replacementTemplate.innerHTML = controlHtml
+
+  const currentControl = template.content.querySelector(
+    '[data-progress-toggle="true"], .creative-progress-complete, .creative-progress-incomplete'
+  )
+  const replacementControl = replacementTemplate.content.querySelector(
+    '[data-progress-toggle="true"], .creative-progress-complete, .creative-progress-incomplete'
+  )
+  if (!currentControl || !replacementControl) return html
+
+  currentControl.replaceWith(replacementControl.cloneNode(true))
+  return serializeProgressHtml(template)
+}
+
+function restoreCronTaskState(currentTask, nextTask) {
+  const currentInput = currentTask.querySelector('[data-cron-badge-target="messageInput"]')
+  const nextInput = nextTask.querySelector('[data-cron-badge-target="messageInput"]')
+  if (!currentInput || !nextInput) return false
+
+  const saveOperationId = currentTask.dataset.cronSaveOperation
+  const deleteOperationId = currentTask.dataset.cronDeleteOperation
+  const dirty = currentInput.value !== currentInput.dataset.cronSavedMessage
+  if (dirty || saveOperationId) nextInput.value = currentInput.value
+  if (saveOperationId) {
+    nextTask.dataset.cronSaveOperation = saveOperationId
+    nextInput.disabled = true
+    nextTask.querySelector('[data-action~="click->cron-badge#saveMessage"]').disabled = true
+  }
+  if (deleteOperationId) {
+    nextTask.dataset.cronDeleteOperation = deleteOperationId
+    nextTask.querySelector('[data-action~="click->cron-badge#destroy"]').disabled = true
+  }
+  return dirty || Boolean(saveOperationId) || Boolean(deleteOperationId)
+}
+
+export function mergeCronTaskState(currentHtml, nextHtml) {
+  const currentTemplate = document.createElement('template')
+  currentTemplate.innerHTML = currentHtml
+  const nextTemplate = document.createElement('template')
+  nextTemplate.innerHTML = nextHtml
+  const nextTasks = new Map(Array.from(
+    nextTemplate.content.querySelectorAll('[data-cron-key]'),
+    task => [task.dataset.cronKey, task]
+  ))
+  let changed = false
+
+  currentTemplate.content.querySelectorAll('[data-cron-key]').forEach(currentTask => {
+    const nextTask = nextTasks.get(currentTask.dataset.cronKey)
+    if (nextTask && restoreCronTaskState(currentTask, nextTask)) changed = true
+  })
+
+  return changed ? serializeProgressHtml(nextTemplate) : nextHtml
+}
+
 function applyRowProperties(row, node) {
   if (!row || !node) return
+  // Preserve Turbo-mutated child markup before accepting server-side templates.
+  // This must run first: synchronizing after assignment would overwrite a new
+  // progress control with the stale DOM from the previous render.
+  syncProgressHtmlFromDom(row)
   let dirty = false
 
   if (node.id != null && row.creativeId !== node.id) {
@@ -101,10 +211,15 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'descriptionHtml', templates.description_html)
     dirty = true
   }
-  if (templates.progress_html != null && row.progressHtml !== templates.progress_html) {
-    row.progressHtml = templates.progress_html
-    setDatasetValue(row, 'progressHtml', templates.progress_html)
-    dirty = true
+	if (templates.progress_html != null) {
+		const progressHtml = row.progressHtml
+			? mergeCronTaskState(row.progressHtml, templates.progress_html)
+			: templates.progress_html
+		if (row.progressHtml !== progressHtml) {
+			row.progressHtml = progressHtml
+			setDatasetValue(row, 'progressHtml', progressHtml)
+			dirty = true
+		}
   }
   if (templates.edit_icon_html != null && row.editIconHtml !== templates.edit_icon_html) {
     row.editIconHtml = templates.edit_icon_html
@@ -134,24 +249,17 @@ function applyRowProperties(row, node) {
     setDatasetValue(row, 'progressValue', rawProgress)
     // Update progress percentage in existing progressHtml without replacing full HTML
     // (preserves chat badges, comment counts, etc.)
-    if (templates.progress_html == null) {
-      const cssClass = pct >= 100 ? 'creative-progress-complete' : 'creative-progress-incomplete'
+    if (node.progress_control_html != null) {
+      const updated = replaceProgressControl(row.progressHtml || '', node.progress_control_html)
+      if (updated !== (row.progressHtml || '')) {
+        row.progressHtml = updated
+        setDatasetValue(row, 'progressHtml', updated)
+        dirty = true
+      }
+    } else if (templates.progress_html == null) {
       let updated = row.progressHtml || ''
       if (updated) {
-        // Try regex replacement first (preserves chat buttons etc.)
-        const replaced = updated.replace(
-          /(<span[^>]*class="creative-progress-(?:in)?complete"[^>]*>)[^<]*(<\/span>)/,
-          `$1${displayText}$2`
-        )
-        if (replaced !== updated) {
-          // Also update ONLY the first progress class (not chat buttons etc.)
-          updated = replaced.replace(
-            /class="creative-progress-(?:in)?complete"/,
-            `class="${cssClass}"`
-          )
-        }
-        // If regex didn't match, do NOT create fresh HTML — preserve existing progressHtml
-        // (it contains chat buttons, comment badges, etc.)
+        updated = updateProgressHtml(updated, rawProgress, displayText)
       }
       if (updated !== (row.progressHtml || '')) {
         row.progressHtml = updated
@@ -174,12 +282,6 @@ function applyRowProperties(row, node) {
   }
 
   if (dirty && typeof row.requestUpdate === 'function') {
-    // Before Lit re-renders, sync progressHtml from current DOM.
-    // Turbo Streams may have replaced badge elements directly in the DOM
-    // (e.g. comment badge count), but the Lit progressHtml string still
-    // holds the stale initial HTML. On re-render, Lit would overwrite
-    // the Turbo-updated DOM with the stale string, losing badges.
-    syncProgressHtmlFromDom(row)
     row.requestUpdate()
   }
 }

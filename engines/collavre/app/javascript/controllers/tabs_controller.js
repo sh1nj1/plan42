@@ -38,6 +38,10 @@ export default class extends Controller {
     if (tab !== "contacts") {
       url.searchParams.delete("contact_page")
     }
-    window.history.replaceState({}, "", url)
+    // Keep the entry's existing state: Turbo Drive stores its
+    // restorationIdentifier there and only restores a popped entry that still
+    // carries one. Dropping it makes back navigation change the URL while the
+    // page the user backed out of stays on screen.
+    window.history.replaceState(window.history.state, "", url)
   }
 }

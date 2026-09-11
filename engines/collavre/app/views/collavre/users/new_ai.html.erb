@@ -1,7 +1,9 @@
 <%= stylesheet_link_tag 'collavre/mention_menu', media: 'all' %>
 <h1 class="text-center" style="margin-top: 0;"><%= t('collavre.users.new_ai.title') %></h1>
 
-<%= form_with url: collavre.create_ai_users_path, class: "stacked-form" do |form| %>
+<%= form_with url: collavre.create_ai_users_path,
+              class: "stacked-form",
+              data: { controller: "agent-vendor", agent_vendor_default_model_value: "paperclip/claude_local" } do |form| %>
   <% if params[:creative_id].present? %>
     <%= form.hidden_field :creative_id, value: params[:creative_id] %>
     <% creative = Collavre::Creative.find_by(id: params[:creative_id]) %>
@@ -31,23 +33,25 @@
   <%= render "collavre/users/llm_fields",
              form: form,
              selected_vendor: @user&.llm_vendor || @copy_source&.llm_vendor || "google",
-             selected_model: @user&.llm_model || @copy_source&.llm_model %>
+             selected_model: @user&.llm_model || @copy_source&.llm_model,
+             selected_gateway_id: @user&.agent_gateway_id || @copy_source&.agent_gateway_id,
+             selected_gateway: @user&.agent_gateway || @copy_source&.agent_gateway %>
 
-  <div class="form-group">
+  <div class="form-group" data-agent-vendor-target="legacyCredential">
     <%= form.label :llm_api_key, t('collavre.users.new_ai.api_key_label') %>
     <%= masked_secret_field form, :llm_api_key, class: "stacked-form-control", placeholder: "sk-..." %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.api_key_help') %></small>
   </div>
 
-  <div class="form-group">
+  <div class="form-group" data-agent-vendor-target="legacyCredential">
     <%= form.label :gateway_url, t('collavre.users.new_ai.gateway_url_label', default: 'Gateway URL') %>
     <%= form.text_field :gateway_url, class: "stacked-form-control", placeholder: "http://localhost:18789", value: @copy_source&.gateway_url %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.gateway_url_help', default: 'Gateway/Base URL. Required for OpenClaw. For OpenAI-compatible providers, enter the base URL (e.g. https://api.openai.com/v1).') %></small>
   </div>
 
   <div class="form-group">
-    <label class="form-label"><%= t('collavre.users.edit_ai.tools_title') %></label>
-    <p class="text-muted small"><%= t('collavre.users.edit_ai.tools_description') %></p>
+    <label class="form-label"><%= t('collavre.users.edit_ai.meta_skills_title') %></label>
+    <p class="text-muted small"><%= t('collavre.users.edit_ai.meta_skills_description') %></p>
 
     <% if @available_tools.any? %>
       <div class="tools-selection">

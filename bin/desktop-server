@@ -7,7 +7,7 @@
 # runnable directly from a dev checkout to validate the desktop env without
 # packaging:
 #
-#   PORT=4000 bin/desktop-server
+#   PORT=45173 bin/desktop-server
 #
 # Env knobs:
 #   COLLAVRE_DATA_DIR   where DBs/blobs/secrets/logs live
@@ -35,13 +35,19 @@ cd "$APP_ROOT"
 DATA_DIR="${COLLAVRE_DATA_DIR:-$HOME/Library/Application Support/Collavre}"
 mkdir -p "$DATA_DIR"
 
-# Pick the Ruby runtime: an explicit override, then a vendored portable Ruby
-# (present in packaged builds), then whatever `ruby` is on PATH (dev checkout).
+# Packaged apps must always use their vendored portable Ruby. Falling back to a
+# user's system Ruby makes the bundled Gemfile and gems incompatible with the
+# target Mac (and can silently select macOS's legacy Ruby 2.6). Development
+# checkouts have no vendor directory, so they may still use an explicit override
+# or `ruby` on PATH.
 VENDOR_DIR="$APP_ROOT/tools/desktop-app/vendor"
 VENDORED_RUBY="$VENDOR_DIR/ruby/bin/ruby"
-if [ -n "${COLLAVRE_RUBY:-}" ]; then
-  RUBY_BIN="$COLLAVRE_RUBY"
-elif [ -x "$VENDORED_RUBY" ]; then
+PACKAGED_APP=false
+case "$APP_ROOT" in
+  */Contents/Resources/app) PACKAGED_APP=true ;;
+esac
+
+if [ -x "$VENDORED_RUBY" ]; then
   RUBY_BIN="$VENDORED_RUBY"
   # Point Bundler at the vendored gems by absolute path resolved at runtime, so
   # the bundle works regardless of where the .app was installed (no reliance on
@@ -51,6 +57,16 @@ elif [ -x "$VENDORED_RUBY" ]; then
   export BUNDLE_PATH="$VENDOR_DIR/bundle"
   export BUNDLE_WITHOUT="development:test:production"
   export BUNDLE_WITH="desktop"
+
+  # The packaged runtime is self-relocating, so prevent caller-supplied paths
+  # from loading standard-library or gem code outside the signed app bundle.
+  unset RUBYLIB
+  unset RUBYOPT
+elif [ "$PACKAGED_APP" = true ]; then
+  echo "[desktop-server] bundled Ruby is missing or not executable: $VENDORED_RUBY" >&2
+  exit 1
+elif [ -n "${COLLAVRE_RUBY:-}" ]; then
+  RUBY_BIN="$COLLAVRE_RUBY"
 else
   RUBY_BIN="ruby"
 fi
@@ -72,6 +88,7 @@ export BOOTSNAP_CACHE_DIR="$DATA_DIR/tmp/cache"
 export SOLID_QUEUE_IN_PUMA=true
 export PORT="${PORT:-3000}"
 BIND_HOST="${COLLAVRE_BIND_HOST:-127.0.0.1}"
+export PIDFILE="$DATA_DIR/tmp/pids/desktop-server.pid"
 
 # In open mode the app is reached over LAN/Tailscale, so generated mail links
 # (share invites, password resets) must point at the externally reachable host —
@@ -86,7 +103,7 @@ if [ -z "${DEFAULT_URL_HOST:-}" ] && [ "$BIND_HOST" = "0.0.0.0" ] && [ -n "${COL
   [ -n "$DEFAULT_URL_HOST" ] && export DEFAULT_URL_HOST
 fi
 
-mkdir -p "$ACTIVE_STORAGE_DISK_ROOT" "$FLOCK_DIR" "$BOOTSNAP_CACHE_DIR"
+mkdir -p "$ACTIVE_STORAGE_DISK_ROOT" "$FLOCK_DIR" "$BOOTSNAP_CACHE_DIR" "$(dirname "$PIDFILE")"
 
 echo "[desktop-server] root=$APP_ROOT data=$DATA_DIR ruby=$RUBY_BIN bind=$BIND_HOST:$PORT" >&2
 
@@ -123,5 +140,7 @@ if [ -z "$SEED_FINGERPRINT" ] || [ "$(cat "$SEED_MARKER" 2>/dev/null || true)" !
   printf '%s\n' "$SEED_FINGERPRINT" > "$SEED_MARKER"
 fi
 
-# Hand off to Puma (Solid Queue runs in-process via SOLID_QUEUE_IN_PUMA).
-exec "$RUBY_BIN" "$APP_ROOT/bin/rails" server -b "$BIND_HOST" -p "$PORT"
+# `rails server` unconditionally creates Rails.root/tmp, which is inside the
+# read-only .app bundle. Running Puma directly avoids that Rails CLI setup; the
+# configured PID file and all desktop runtime state live under DATA_DIR.
+exec "$RUBY_BIN" -S bundle exec puma -C "$APP_ROOT/config/puma.rb" -b "tcp://$BIND_HOST:$PORT"

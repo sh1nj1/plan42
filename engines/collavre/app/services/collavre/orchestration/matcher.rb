@@ -5,9 +5,10 @@ module Collavre
     # Matcher determines which AI agents are qualified to respond to an event.
     #
     # Matching strategies (in priority order):
-    # 1. Mention-based: If a user is @mentioned, route exclusively to that user
-    #    - If mentioned user is AI agent → route to that agent only
-    #    - If mentioned user is human → no AI agents respond
+    # 1. Mention-based: If any user is @mentioned, route exclusively to the
+    #    mentioned users
+    #    - Every mentioned AI agent responds, in mention order
+    #    - If only humans are mentioned → no AI agents respond
     # 2. Primary-agent assignment: If the topic has a primary_agent, that agent is
     #    the topic's sole ambient responder (see #match_by_primary_agent)
     # 3. Expression-based: Evaluate each agent's routing_expression (Liquid)
@@ -105,9 +106,7 @@ module Collavre
         return true if matched_comment&.review_message? &&
           matched_comment.quoted_comment&.user_id == agent.id
 
-        mentioned_id = @context.dig("chat", "mentioned_user", "id") ||
-          @context.dig(:chat, :mentioned_user, :id)
-        mentioned_id.present? && mentioned_id.to_i == agent.id
+        SystemEvents::ContextBuilder.mentioned_ids_in(@context).include?(agent.id)
       end
 
       # Public because #match is not the only door onto a dispatch: a restore
@@ -160,26 +159,48 @@ module Collavre
 
       # Returns Array of agents if mention found, nil if no mention
       # When mention IS found, this is exclusive routing
+      #
+      # Every mentioned agent is routed to, not just the first: "@someone:
+      # report / @agent: your turn" is the shape the agent system prompt asks
+      # for, and reading one mention makes the exclusivity below hinge on which
+      # name happened to come first — a leading human silently swallowing the
+      # handoff that follows it.
+      #
+      # So exclusivity keys on "no AI was mentioned" rather than "the mention
+      # was a human": a mention that names only people still blocks every agent,
+      # and an agent named alongside them is still invited.
       def match_by_mention
-        mentioned_user_data = @context.dig("chat", "mentioned_user")
-        return nil unless mentioned_user_data && mentioned_user_data["id"]
-
-        mentioned_user = User.find_by(id: mentioned_user_data["id"])
-        return nil unless mentioned_user
+        mentioned_users = mentioned_users_in_order
+        return nil if mentioned_users.empty?
 
         # Mention found — exclusive routing
-        # If mentioned user is not an AI agent, no AI agents should receive it
-        return [] unless mentioned_user.ai_user?
+        # If no mentioned user is an AI agent, no AI agents should receive it
+        agents = mentioned_users.select(&:ai_user?)
+        return [] if agents.empty?
 
-        # Permission check for mentioned AI agent
-        return [] unless has_creative_permission?(mentioned_user)
+        # Permission check for mentioned AI agents, plus inbox confinement: a
+        # live Claude Channel session agent must not be pulled into an ordinary
+        # inbox topic, even by an explicit @mention (see #eligible_in_inbox?).
+        #
+        # Dropping the ineligible ones still leaves this exclusive — an empty
+        # result blocks rather than falling through, so an unroutable mention
+        # cannot turn into an ambient event answered by someone else entirely.
+        agents.select { |agent| has_creative_permission?(agent) && eligible_in_inbox?(agent) }
+      end
 
-        # Inbox confinement applies to mentions too: a live Claude Channel
-        # session agent must not be pulled into an ordinary inbox topic, even by
-        # an explicit @mention (see #eligible_in_inbox?).
-        return [] unless eligible_in_inbox?(mentioned_user)
+      # The mentioned users, in mention order — empty when nobody was mentioned
+      # or no mentioned name resolves to a user (which falls through to the next
+      # routing strategy, exactly as an unresolvable single mention always has).
+      #
+      # Ordered explicitly: `where(id:)` returns rows in whatever order the
+      # planner picks, and the order agents are matched in is the order they
+      # take the floor.
+      def mentioned_users_in_order
+        ids = SystemEvents::ContextBuilder.mentioned_ids_in(@context)
+        return [] if ids.empty?
 
-        [ mentioned_user ]
+        by_id = User.where(id: ids).index_by(&:id)
+        ids.filter_map { |id| by_id[id] }
       end
 
       # Returns [primary_agent] when the topic has one, nil when it does not.
@@ -211,25 +232,31 @@ module Collavre
       end
 
       def match_by_expression
-        # Find all AI agents with routing expressions
-        # Order by id for consistent ordering (important for round_robin strategy)
-        agents = User.where.not(llm_vendor: nil).where.not(routing_expression: [ nil, "" ]).order(:id)
+        # A Claude Channel agent is ambiently routable only while its cable
+        # subscription has a live presence row. Its routing_expression remains
+        # available for an explicitly configured Liquid rule, but is never used
+        # as a session-liveness flag.
+        live_claude_agent_ids = AgentSubscription.live.pluck(:agent_id)
+        expression_agents = User.where.not(llm_vendor: nil)
+                                .where.not(routing_expression: [ nil, "" ])
+        agents = expression_agents.or(User.where(id: live_claude_agent_ids)).order(:id)
 
         agents.select do |agent|
           next false unless has_creative_permission?(agent)
           next false unless eligible_in_inbox?(agent)
+          next false if agent.claude_channel_agent? && !live_claude_agent_ids.include?(agent.id)
 
-          evaluate_routing_expression(agent)
+          agent.routing_expression.blank? || evaluate_routing_expression(agent)
         end
       end
 
       # A Claude Channel session agent holds inbox-wide :feedback +
-      # routing_expression="true", so within the user's Inbox it would otherwise
+      # a live presence row, so within the user's Inbox it would otherwise
       # match EVERY topic. Confine it to its own registered session topic (the
       # topic it is primary_agent on, carrying a session_id) so ordinary inbox
       # topics — Main, Content, user threads — stay identical to a normal topic
       # and are never absorbed by a live session. Only the inbox is affected: on
-      # work/project creatives the agent still matches via routing_expression.
+      # work/project creatives the agent still matches while it is live.
       def eligible_in_inbox?(agent)
         return true unless matched_creative&.inbox?
         return true unless agent.claude_channel_agent?

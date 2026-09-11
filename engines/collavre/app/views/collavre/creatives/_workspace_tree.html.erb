@@ -1,14 +1,19 @@
 <section class="creative-workspace-tree-region"
          data-controller="workspace-tree"
          data-workspace-tree-url-value="<%= creatives_path(format: :json, workspace_tree: 1) %>"
+         data-workspace-tree-last-visited-creative-url-value="<%= creatives_path %>"
+         data-workspace-tree-last-visited-creative-visit-token-value="<%= @last_visited_creative_token %>"
+         data-workspace-tree-last-visited-creative-visit-sequence-value="<%= @last_visited_creative_visit_sequence %>"
          data-workspace-tree-current-path-value="<%= @workspace_path_ids.to_json %>"
          data-workspace-tree-loading-text-value="<%= t('app.loading') %>"
          data-workspace-tree-empty-text-value="<%= t('collavre.creatives.workspace.empty') %>"
-         data-workspace-tree-error-text-value="<%= t('collavre.creatives.workspace.load_error') %>">
+         data-workspace-tree-error-text-value="<%= t('collavre.creatives.workspace.load_error') %>"
+         data-workspace-tree-partial-failure-text-value="<%= t('collavre.creatives.drag_drop.partial_failure') %>">
   <%# Keep the stream source inside the tree region: as a direct child of the
       grid shell it would become a grid item with its own implicit row and
       push all three columns down. %>
   <%= turbo_stream_from Current.user, :creative_tree %>
+  <div id="creative-history-toast-container" class="creative-history-toast-container"></div>
   <button type="button"
           class="creative-workspace-tree-toggle"
           data-workspace-tree-target="panelToggle"

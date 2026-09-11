@@ -1,0 +1,54 @@
+<div class="flex-row-center-between">
+  <div>
+    <h1 class="no-top-margin"><%= t("collavre.agent_gateways.title") %></h1>
+    <p class="text-muted"><%= t("collavre.agent_gateways.description") %></p>
+  </div>
+  <%= link_to t("collavre.agent_gateways.add"), collavre.new_agent_gateway_path, class: "primary-action-button" %>
+</div>
+
+<div class="table-responsive" data-controller="gateway-check"
+     data-gateway-check-checking-value="<%= t('collavre.agent_gateways.checking') %>"
+     data-gateway-check-success-value="<%= t('collavre.agent_gateways.connected') %>"
+     data-gateway-check-failed-value="<%= t('collavre.agent_gateways.connection_failed') %>">
+  <table class="settings-table" style="width: 100%; min-width: 760px;">
+    <thead>
+      <tr>
+        <th><%= t("collavre.agent_gateways.name") %></th>
+        <th><%= t("collavre.agent_gateways.base_url") %></th>
+        <th><%= t("collavre.agent_gateways.workspace_mode.label") %></th>
+        <th><%= t("collavre.agent_gateways.agents") %></th>
+        <th><%= t("collavre.agent_gateways.actions") %></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @agent_gateways.each do |gateway| %>
+        <tr>
+          <td>
+            <strong><%= gateway.name %></strong>
+            <% unless gateway.active? %><span class="badge"><%= t("collavre.agent_gateways.inactive") %></span><% end %>
+          </td>
+          <td><code><%= gateway.base_url %></code></td>
+          <td><span class="badge"><%= t("collavre.agent_gateways.workspace_mode.#{gateway.workspace_mode}") %></span></td>
+          <td><%= gateway.agents.count %></td>
+          <td>
+            <button type="button" class="btn btn-sm btn-secondary"
+                    data-action="gateway-check#check"
+                    data-gateway-check-url-param="<%= collavre.check_agent_gateway_path(gateway) %>">
+              <%= t("collavre.agent_gateways.check") %>
+            </button>
+            <span data-gateway-check-target="result" class="small text-muted"></span>
+            <%= link_to t("collavre.agent_gateways.edit"), collavre.edit_agent_gateway_path(gateway), class: "btn btn-sm btn-secondary" %>
+            <%= button_to t("collavre.agent_gateways.delete"), collavre.agent_gateway_path(gateway), method: :delete,
+                          class: "btn btn-sm btn-danger",
+                          form: { style: "display:inline", data: { turbo_confirm: t("collavre.agent_gateways.confirm_delete") } } %>
+          </td>
+        </tr>
+      <% end %>
+      <% if @agent_gateways.empty? %>
+        <tr><td colspan="5" class="text-muted"><%= t("collavre.agent_gateways.empty") %></td></tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+
+<p><%= link_to t("app.back_to_profile"), collavre.user_path(Current.user) %></p>

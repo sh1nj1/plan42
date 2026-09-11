@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "net/http"
+require "timeout"
 require "uri"
 require "json"
 
@@ -20,6 +21,7 @@ module Collavre
   class HttpClient
     class Error < StandardError; end
     class ConnectionError < Error; end
+    class ResponseTooLarge < Error; end
 
     DEFAULT_OPEN_TIMEOUT = 10
     DEFAULT_READ_TIMEOUT = 30
@@ -42,11 +44,11 @@ module Collavre
     class Response
       attr_reader :code, :message, :body, :headers
 
-      def initialize(net_response)
+      def initialize(net_response, body: net_response.body)
         @net_response = net_response
         @code = net_response.code.to_i
         @message = net_response.message
-        @body = net_response.body
+        @body = body
         @headers = net_response.to_hash
       end
 
@@ -62,10 +64,14 @@ module Collavre
       end
     end
 
-    def initialize(open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT, default_headers: {})
+    def initialize(open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT, default_headers: {},
+                   endpoint_policy: nil, max_response_bytes: nil, request_timeout: nil)
       @open_timeout = open_timeout
       @read_timeout = read_timeout
       @default_headers = default_headers
+      @endpoint_policy = endpoint_policy
+      @max_response_bytes = max_response_bytes
+      @request_timeout = request_timeout
     end
 
     def get(url, headers: {})
@@ -91,16 +97,55 @@ module Collavre
     private
 
     def request(method, url, body: nil, headers: {})
+      with_request_timeout { perform_request(method, url, body: body, headers: headers) }
+    rescue *TRANSPORT_ERRORS => e
+      raise ConnectionError, "#{e.class}: #{e.message}"
+    end
+
+    def perform_request(method, url, body:, headers:)
       uri = URI.parse(url)
-      http = Net::HTTP.new(uri.host, uri.port)
+      http = build_connection(uri)
       http.use_ssl = uri.scheme == "https"
       http.open_timeout = @open_timeout
       http.read_timeout = @read_timeout
 
       req = build_request(method, uri, body, headers)
-      Response.new(http.request(req))
-    rescue *TRANSPORT_ERRORS => e
-      raise ConnectionError, "#{e.class}: #{e.message}"
+      return Response.new(http.request(req)) unless @max_response_bytes
+
+      bounded_response(http, req)
+    end
+
+    def with_request_timeout(&block)
+      return yield unless @request_timeout
+
+      Timeout.timeout(@request_timeout, &block)
+    end
+
+    def build_connection(uri)
+      return Net::HTTP.new(uri.host, uri.port) unless @endpoint_policy
+
+      pinned_ip = @endpoint_policy.resolve!(uri).first
+      Net::HTTP.new(uri.host, uri.port, nil).tap { |http| http.ipaddr = pinned_ip }
+    end
+
+    def bounded_response(http, request)
+      body = +""
+      response = http.request(request) do |net_response|
+        reject_declared_oversize!(net_response)
+        net_response.read_body do |chunk|
+          raise ResponseTooLarge, "HTTP response exceeds #{@max_response_bytes} bytes" if body.bytesize + chunk.bytesize > @max_response_bytes
+
+          body << chunk
+        end
+      end
+      Response.new(response, body: body)
+    end
+
+    def reject_declared_oversize!(response)
+      content_length = response["Content-Length"].to_i
+      return if content_length <= @max_response_bytes
+
+      raise ResponseTooLarge, "HTTP response exceeds #{@max_response_bytes} bytes"
     end
 
     def build_request(method, uri, body, headers)

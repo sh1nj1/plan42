@@ -2,6 +2,8 @@
 ko:
   collavre:
     creatives:
+      drag_drop:
+        partial_failure: 일부 링크만 생성되었습니다. 누락된 링크만 다시 시도해 주세요.
       workspace:
         tree_title: 크리에이티브 트리
         tree_label: 크리에이티브 탐색 트리
@@ -26,6 +28,8 @@ ko:
         unarchive: 복원
         show_archived: 아카이브 표시
         hide_archived: 아카이브 숨기기
+        cron_count: "예약 작업 %{count}개"
+        cron_schedule: "%{schedule} · 다음 실행 %{next_run}"
         delete_only_this: 이 항목만 삭제
         delete_with_children: 이 항목과 모든 하위 항목 삭제
         are_you_sure: 정말 삭제하시겠습니까?
@@ -71,7 +75,6 @@ ko:
         link_creating: 크리에이티브를 만드는 중…
         link_create_failed: 크리에이티브를 만들지 못했습니다.
         link_expand: 펼치기
-        recommend_parent: 카테고리 추천
         import_uploading: 업로드 중...
         import_success: 가져오기 성공! 새로고침 중...
         import_failed: 가져오기 실패

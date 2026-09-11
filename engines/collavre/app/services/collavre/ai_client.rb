@@ -47,7 +47,8 @@ module Collavre
     BASE_VENDOR_OPTIONS = [
       [ "Google (Gemini)", "google" ],
       [ "OpenAI", "openai" ],
-      [ "Anthropic", "anthropic" ]
+      [ "Anthropic", "anthropic" ],
+      [ "CLI Proxy", "cli_proxy" ]
     ].freeze
 
     class << self
@@ -57,7 +58,7 @@ module Collavre
 
       # Append a vendor <select> option ([label, value]). Idempotent by value.
       def register_vendor_option(label, value)
-        value = value.to_s
+        value = value.to_s.strip.downcase
         return if BASE_VENDOR_OPTIONS.any? { |_l, v| v == value }
         return if registered_vendor_options.any? { |_l, v| v == value }
 
@@ -76,18 +77,16 @@ module Collavre
       end
 
       def register_session_vendor(vendor)
-        session_vendors << vendor.to_s.downcase
+        session_vendors << vendor.to_s.strip.downcase
       end
 
       def vendor_supports_session?(vendor)
-        session_vendors.include?(vendor.to_s.downcase)
+        session_vendors.include?(vendor.to_s.strip.downcase)
       end
     end
 
     # log_interactions: persist each call to ActivityLog. Default true. Pass false
-    # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
-    # inline typo correction on debounced typing) so private drafts are never
-    # written to server-side activity logs.
+    # when a caller must not persist sensitive request or response content.
     #
     # before_tool_call: callable run before every tool execution, on every
     # iteration of the request->tools->request loop. This is the only
@@ -97,7 +96,7 @@ module Collavre
     # propagates out of #chat as a cancellation, not an "⚠️ AI Error" delta.
     def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {},
                    log_interactions: true, before_tool_call: nil, request_timeout_seconds: nil)
-      @vendor = vendor
+      @vendor = vendor.to_s.strip.downcase
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
@@ -188,12 +187,9 @@ module Collavre
       # both as undelivered — so it has to be impossible to record both.
       @last_handoff_failed = !@handed_off
       error_message = "[#{e.class.name}] #{e.message}"
-      # When log_interactions is false (inline typo correction runs on the user's
-      # *unsubmitted* draft), the LLM error message can echo the request text. Log
-      # only the error class to app logs so private drafts never leak — matching the
-      # no-log guarantee already enforced on the parse path (TypoCorrector) and the
-      # ActivityLog gate below. error_message stays intact for the gated ensure log
-      # and the streamed yield (which goes back to the same user).
+      # When log_interactions is false, an LLM error message can echo request text.
+      # Log only the error class so sensitive content never leaks. error_message
+      # stays intact for the gated ensure log and streamed yield to the caller.
       Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
       log_error_response(e) if @log_interactions
       Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
@@ -281,6 +277,7 @@ module Collavre
 
     VENDOR_TO_PROVIDER = {
       "openai" => :openai,
+      "cli_proxy" => :openai,
       "anthropic" => :anthropic,
       "google" => :gemini,
       "gemini" => :gemini
@@ -290,9 +287,32 @@ module Collavre
       normalized_vendor = @vendor.to_s.downcase
 
       context_block = case normalized_vendor
-      when "openai"
-        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
-        base_url = @gateway_url.presence
+      when "openai", "cli_proxy"
+        if normalized_vendor == "cli_proxy"
+          agent = context[:user]
+          gateway = agent&.agent_gateway
+          raise ArgumentError, "CLI Proxy agent has no active gateway" unless gateway&.active?
+
+          if context.key?(:workspace_user)
+            workspace_user = context[:workspace_user]
+          else
+            comment_user = context[:comment]&.user
+            workspace_user = comment_user unless comment_user&.ai_user?
+            workspace_user ||= agent.creator
+          end
+          if gateway.per_user? && workspace_user.nil?
+            raise ArgumentError, "CLI Proxy per-user workspace requires a verified human principal"
+          end
+          workspace_user = nil if gateway.shared?
+          workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
+          gateway = workspace.agent_gateway
+          @cli_proxy_identity = { gateway: gateway, workspace: workspace }
+          api_key = gateway.completion_key
+          base_url = gateway.completion_base_url
+        else
+          api_key = OpenaiEndpoint.api_key(base_url: @gateway_url, api_key: @llm_api_key)
+          base_url = @gateway_url.presence
+        end
         # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
         # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
         # if openai_api_key is blank. Supply a placeholder so keyless local gateways
@@ -301,6 +321,9 @@ module Collavre
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
+          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin? && !gateway.desktop_loopback?
+            config.faraday_adapter = Collavre::CliProxy::SafeNetHttpAdapter
+          end
         end
       when "anthropic"
         api_key = @llm_api_key.presence || IntegrationSettings.fetch(:anthropic_api_key)
@@ -325,8 +348,7 @@ module Collavre
 
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
-        session_id = build_session_id
-        chat.with_headers("X-Session-Id" => session_id) if session_id
+        apply_request_headers!(chat)
         chat.on_tool_call do |tool_call|
           # Cancellation ahead of the approval gate: a turn that already
           # reached a terminal status or its deadline must end, not park
@@ -336,11 +358,11 @@ module Collavre
           @before_tool_call&.call(true)
           check_tool_approval!(tool_call)
         end
-        if @request_timeout_seconds
+        if @request_timeout_seconds || @cli_proxy_identity
           chat.after_tool_result do |_result|
             # A tool can consume much of the turn. Recheck the deadline and
-            # rebuild RubyLLM's provider connection with the new remaining
-            # timeout before the loop starts its next request.
+            # refresh request-scoped state before the loop starts its next
+            # provider request.
             refresh_turn_boundary!(chat)
           end
         end
@@ -353,11 +375,31 @@ module Collavre
     end
 
     def refresh_turn_boundary!(conversation)
-      @before_tool_call&.call(true)
-      return unless @request_timeout_seconds && @ruby_llm_context
+      if @request_timeout_seconds
+        @before_tool_call&.call(true)
+        if @ruby_llm_context
+          @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
+          conversation.with_context(@ruby_llm_context)
+        end
+      end
 
-      @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
-      conversation.with_context(@ruby_llm_context)
+      apply_request_headers!(conversation)
+    end
+
+    def apply_request_headers!(conversation)
+      headers = {}
+      session_id = build_session_id
+      headers["X-Session-Id"] = session_id if session_id
+
+      if @cli_proxy_identity
+        headers.merge!(Collavre::CliProxy::Identity.headers(
+          **@cli_proxy_identity,
+          method: :post,
+          path: "/v1/chat/completions"
+        ))
+      end
+
+      conversation.with_headers(**headers) if headers.present?
     end
 
     def effective_request_timeout_seconds

@@ -144,11 +144,6 @@ module Collavre
         raise
       end
 
-      # Keep legacy method for backward compatibility during transition
-      def create_inbox_item(owner, key, params = {})
-        create_inbox_comment(owner, key, params)
-      end
-
       def creative_markdown_link(target_creative = creative)
         path = Collavre::Engine.routes.url_helpers.creative_path(target_creative, comment_id: id)
         "[#{target_creative.creative_snippet_markdown}](#{path})"

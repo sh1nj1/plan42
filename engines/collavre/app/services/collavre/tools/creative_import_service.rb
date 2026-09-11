@@ -15,10 +15,10 @@ module Collavre
                        "Example input:\n" \
                        "```\n# Project Plan\n## Phase 1\n- Setup infrastructure\n- Configure CI\n## Phase 2\n- Build features\n```\n\n" \
                        "This creates a tree under the specified parent Creative.\n\n" \
-                       "This tool requires approval before execution."
+                       "A parent with inherited ai_write_policy=review stores a draft in History for approval instead of applying immediately."
 
       def self.requires_approval?
-        true
+        false
       end
 
       tool_param :markdown, description: "The markdown text to import. Headings and bullet lists define the tree structure.", required: true
@@ -32,7 +32,30 @@ module Collavre
         return { error: "Parent Creative not found", id: parent_id } unless parent
         return { error: "No write permission on parent Creative", id: parent_id } unless parent.has_permission?(Current.user, :write)
 
-        created = MarkdownImporter.import(markdown, parent: parent, user: Current.user)
+        Creatives::AiWritePolicy.capture(
+          creatives: review_targets(parent), anchor: parent, origin: :import
+        ) { perform_import(markdown, parent, parent_id) }
+      end
+
+      private
+
+      def review_targets(parent)
+        [
+          parent,
+          parent.effective_origin,
+          *Creatives::ProgressPropagationTargets.new(parent.effective_origin).call
+        ]
+      end
+
+      def perform_import(markdown, parent, parent_id)
+        created = Creatives::History.track(
+          actor: Current.user,
+          origin: :import,
+          anchor: parent,
+          anchor_source: :import_target
+        ) do
+          MarkdownImporter.import(markdown, parent: parent, user: Current.user)
+        end
 
         {
           success: true,

@@ -15,7 +15,11 @@ RubyLLM.configure do |config|
   rescue StandardError
     1800
   end
-  config.log_file = Rails.root.join("log", "ruby_llm.log").to_s
+  # A packaged desktop app keeps its Rails source tree inside the read-only
+  # application bundle. Put the LLM log alongside the other writable desktop
+  # logs instead of trying to create `Contents/Resources/app/log` at boot.
+  log_root = ENV["COLLAVRE_DATA_DIR"].presence || Rails.root
+  config.log_file = File.join(log_root, "log", "ruby_llm.log")
   # Mirror the app's log level instead of hardcoding DEBUG. At DEBUG the Faraday
   # :logger middleware writes full request/response bodies to ruby_llm.log
   # (connection.rb: `bodies: RubyLLM.logger.debug?`). Provider error bodies arrive

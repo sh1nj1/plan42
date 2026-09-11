@@ -1,0 +1,8 @@
+# Allows the trusted loopback setup page to submit a user-approved registration
+# grant. The native command independently validates that short-lived grant
+# before it can create credentials, start the proxy, or register a gateway.
+
+[[permission]]
+identifier = "allow-desktop-proxy-complete-setup"
+description = "Allows completing the user-approved local proxy setup."
+commands.allow = ["desktop_proxy_complete_setup"]

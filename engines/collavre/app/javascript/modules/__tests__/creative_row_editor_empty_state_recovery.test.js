@@ -112,6 +112,21 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(saveStatus()).toBe('error')
   })
 
+  test('submits the observed history anchor and editing-session token', async () => {
+    document.getElementById('inline-history-anchor-id').value = '42'
+    document.getElementById('inline-change-group-token').value = 'edit-session-1'
+    saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+    await startFirstRowWithContent()
+
+    document.getElementById('inline-close').click()
+    await flush()
+
+    const submittedForm = saveMock.mock.calls[0][2]
+    const submittedData = new FormData(submittedForm)
+    expect(submittedData.get('history_anchor_id')).toBe('42')
+    expect(submittedData.get('change_group_token')).toBe('edit-session-1')
+  })
+
   test('keeps the failed first draft when the save resolves with a non-ok response', async () => {
     saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
     const emptyState = await startFirstRowWithContent()

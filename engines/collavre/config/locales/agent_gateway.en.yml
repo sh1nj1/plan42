@@ -1,0 +1,217 @@
+---
+en:
+  activerecord:
+    attributes:
+      collavre/agent_gateway:
+        name: Name
+        base_url: Base URL
+        admin_key: Admin key
+        completion_key: Completion key
+        identity_secret: Identity secret
+        tenant_id: Tenant ID
+        workspace_mode: Workspace mode
+        active: Availability
+        agents: AI agents
+    errors:
+      models:
+        collavre/agent_gateway:
+          attributes:
+            base_url:
+              invalid: "must be an http(s) origin without credentials, query or fragment"
+              unsafe: "must use HTTPS and cannot target a local, private, or reserved network address"
+              immutable: "cannot be changed for a desktop-managed gateway"
+            admin_key:
+              immutable: "cannot be changed for a desktop-managed gateway"
+            completion_key:
+              immutable: "cannot be changed for a desktop-managed gateway"
+              required_for_agents: "is required while the gateway is assigned to an AI agent"
+            workspace_mode:
+              desktop_shared_only: "must remain shared for a desktop-managed gateway"
+            tenant_id:
+              invalid: "may only contain letters, digits and . _ : @ / -"
+            identity_secret:
+              immutable: "cannot be changed for a desktop-managed gateway"
+              blank: "is required for per-user mode or a gateway assigned to multiple AI agents"
+              too_short: "must contain at least %{count} bytes"
+        collavre/user:
+          attributes:
+            agent_gateway:
+              identity_required: "requires an identity secret when shared with another AI agent"
+              completion_key_required: "requires a completion key for AI agent chat"
+  collavre:
+    agent_gateways:
+      title: My Agent Gateways
+      manage: Agent gateway settings
+      description: Register CLI OpenAI proxies you own. Keys remain server-side and are never sent to the browser.
+      add: Add gateway
+      new_title: Add Agent Gateway
+      edit_title: Edit Agent Gateway
+      name: Name
+      name_placeholder: Team CLI Proxy
+      base_url: Base URL
+      base_url_help: Enter a public HTTPS proxy origin without an API path. Local, private, and reserved network addresses are blocked.
+      base_url_help_admin: Enter the proxy origin without an API path. System administrators may use HTTP and private network addresses.
+      admin_key: Admin key
+      admin_key_help: A value from the proxy AUTH_ADMIN_KEYS setting. Used only by the Collavre server.
+      completion_key: Completion key
+      completion_key_help: Optional. Required only for AI agent chat completions.
+      clear_completion_key_label: Remove stored completion key
+      clear_completion_key_help: After saving, this gateway can be used only for provisioning until a new completion key is added.
+      identity_secret: Identity secret
+      identity_secret_help: Must match USER_IDENTITY_HMAC_SECRET and contain at least 32 bytes. Required for per-user mode or multiple AI agents.
+      tenant_id: Tenant ID
+      tenant_id_help: Changing this value creates different proxy workspaces for every connected agent.
+      secret_unchanged: Leave blank to keep the current secret
+      active: Available to AI agents
+      inactive: Inactive
+      workspace_mode:
+        label: Workspace mode
+        shared: Shared
+        shared_help: One provider login and Linux workspace are shared by everyone using each AI agent.
+        per_user: Per user
+        per_user_help: Each Collavre user gets a separate Linux workspace and must connect providers personally.
+      agents: AI agents
+      actions: Actions
+      check: Check connection
+      checking: Checking…
+      connected: Connected
+      connection_failed: Connection failed
+      identity_unverified: The admin connection succeeded, but no mapped completion key or existing workspace was available to verify user identity
+      unsafe_endpoint: This gateway was blocked because it does not resolve exclusively to public HTTPS addresses
+      edit: Edit
+      delete: Delete
+      confirm_delete: Delete this gateway? Gateways assigned to an AI agent cannot be deleted.
+      empty: No agent gateways have been registered.
+      created: Agent gateway was created.
+      updated: Agent gateway was updated.
+      destroyed: Agent gateway was deleted.
+      in_use: This gateway is assigned to an AI agent and cannot be deleted.
+    desktop_setup:
+      kicker: First-run setup
+      title: Set up local AI agents
+      subtitle: A guided first-run experience for the Collavre Desktop app.
+      progress_label: Setup progress
+      back: Back
+      next: Continue
+      steps:
+        account: Administrator account
+        install: Install
+        adapters: CLI guidance
+        ready: Ready
+      account:
+        kicker: First-run setup
+        title: Create the first administrator account
+        body: Set up the local Collavre administrator before installing the AI gateway. No administrator account is seeded with the app.
+        name_label: Name
+        name_placeholder: Your name
+        email_label: Email
+        email_placeholder: you@example.com
+        password_label: Password
+        password_placeholder: Choose a password
+        password_confirmation_label: Confirm password
+        password_confirmation_placeholder: Enter the password again
+        hint: This account is created only on this Mac and signs you in immediately.
+        notice: Your password stays on this Mac. The wizard does not send it to an AI provider or use it to access existing CLI accounts.
+        continue: Create administrator account
+        existing: An administrator account already exists on this Mac. Sign in to continue setup.
+        already_created: An administrator account already exists on this Mac.
+      install:
+        kicker: Explicit consent
+        title: Install and register the local proxy
+        body: Your confirmation starts one bundled, loopback-only proxy and registers it to your local administrator account.
+        items:
+          installation:
+            title: Installation
+            body: Install cli-openai-proxy as a single local service for this Mac.
+          keys:
+            title: Secure keys
+            body: Generate one administrator key and one API key, then retain them only for the local gateway.
+          registration:
+            title: Registration
+            body: Register that gateway automatically with the Collavre administrator account.
+        consent: I understand that continuing will install and configure one local CLI Proxy service.
+        hint: The proxy generates its credentials in macOS Keychain. Existing Claude Code and Codex credentials are not read or changed.
+        continue: Install and continue
+        unavailable: This action is available only in Collavre Desktop.
+        failed: The local proxy could not be installed. No gateway was registered; try again after reviewing the desktop log.
+      adapters:
+        kicker: Existing CLI tools
+        title: Use the CLI tools you already signed in to
+        body: Collavre will create suitable agent presets after checking whether the CLI executable is available.
+        detected: Detected — agent preset created
+        not_detected: Not detected — no preset created
+        claude:
+          title: Claude Code
+          body: Uses your existing local Claude Code session. The wizard does not log in or read its credentials.
+        codex:
+          title: Codex
+          body: Uses your existing local Codex session. The wizard does not log in or read its credentials.
+        notice: Only executable availability is checked. Existing credentials and configuration are neither read nor sent externally.
+      ready:
+        kicker: Setup complete
+        title: Your local AI gateway is ready
+        body: The local proxy and gateway are ready. Open Collavre to start using your configured agents.
+        items:
+          proxy: One local cli-openai-proxy instance is installed.
+          gateway: The generated local gateway is registered to the Collavre administrator.
+          agents: Ready-to-use Claude Code and Codex agent presets are available when supported.
+        notice: You can manage the gateway later from Agent Gateway settings. Removing it does not alter your Claude Code or Codex installation.
+        open: Open Collavre
+    agent_connections:
+      title: "%{agent} connection"
+      card_title: Engine connection and provisioning
+      card_help: Provider login is scoped according to the selected gateway's workspace mode. The Collavre skill and workspace config are provisioned together.
+      profile_help:
+        shared: This agent uses one shared CLI Proxy workspace. Its owner manages the shared provider connection.
+        per_user: This agent uses per-user CLI Proxy workspaces. Connect your own providers before using it.
+      manage: Manage connection
+      credential_axis: 'Login:'
+      workspace_axis: 'Workspace:'
+      axis_help:
+        shared: Provider login and provisioning are both shared by every user of this agent. Logging in once here covers everyone.
+        per_user: Provider login is yours and is reused by every agent you connect to this gateway — log in once per provider, not once per agent. Skills and workspace config stay separate per agent.
+      engines: Agent providers
+      loading: Loading…
+      refresh: Refresh
+      login: Log in
+      submit: Submit
+      base_url:
+        label: Provider base URL
+        help: Enter an HTTPS Responses API base URL, such as OpenRouter's https://openrouter.ai/api/v1. It must resolve only to a public address.
+      open_url: Open verification page
+      error: CLI Proxy error
+      errors:
+        insecure_base_url: The provider base URL must use HTTPS and resolve only to a public address.
+      provisioning: Provisioning
+      provisioning_help: Collavre always provisions one collavre-cli skill and one workspace-specific config containing the callback URL and token. "Sync now" re-registers this workspace's manifest first, so it also repairs provisioning that never ran or failed — no new login needed.
+      sync: Sync now
+      manifest_unregistered: No manifest is registered with this workspace yet. Press "Sync now" to register it and provision.
+      last_error: Last provisioning error
+      item: Item
+      kind: Type
+      state: Status
+      actions: Actions
+      approve: Approve
+      revoke: Revoke approval
+      item_types:
+        skill: Skill
+        config: Configuration
+      statuses:
+        authenticated: Authenticated
+        unauthenticated: Not authenticated
+        unknown: Unknown
+        pending: Pending
+        authorized: Authorized
+        failed: Failed
+        cancelled: Cancelled
+        not_synced: Not synced
+        pending_approval: Pending approval
+        installed: Installed
+        unsupported: Unsupported
+        removed: Removed
+      meta_skills: Enabled meta-skills
+      meta_skills_help: The AI agent owner selects these Collavre tools. They are run by the single collavre-cli skill; token-level enforcement will be added later.
+      rotate_tokens: Rotate callback token
+      rotate_confirm: Rotate the Collavre callback token? The registered manifest URL remains unchanged, and the workspace must sync again.
+      tokens_rotated: The callback token was rotated.
+      back: Back

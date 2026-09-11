@@ -26,18 +26,40 @@ command -v ruby-build >/dev/null 2>&1 || {
 mkdir -p "$VENDOR_DIR"
 
 if [ -x "$RUBY_PREFIX/bin/ruby" ]; then
-  echo "[bundle-ruby] reusing existing vendored Ruby at $RUBY_PREFIX"
-else
-  echo "[bundle-ruby] building Ruby $RUBY_VERSION into $RUBY_PREFIX (this is slow)…"
-  ruby-build "$RUBY_VERSION" "$RUBY_PREFIX"
+  ruby_build_is_portable="$("$RUBY_PREFIX/bin/ruby" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE") == "yes"')"
+  if [ "$ruby_build_is_portable" = "true" ]; then
+    echo "[bundle-ruby] reusing portable vendored Ruby at $RUBY_PREFIX"
+  else
+    echo "[bundle-ruby] replacing non-relocating vendored Ruby at $RUBY_PREFIX"
+    rm -rf "$RUBY_PREFIX" "$VENDOR_DIR/bundle"
+  fi
 fi
 
+if [ ! -x "$RUBY_PREFIX/bin/ruby" ]; then
+  echo "[bundle-ruby] building Ruby $RUBY_VERSION into $RUBY_PREFIX (this is slow)…"
+  RUBY_CONFIGURE_OPTS="${RUBY_CONFIGURE_OPTS:-} --enable-load-relative" ruby-build "$RUBY_VERSION" "$RUBY_PREFIX"
+fi
+
+"$SCRIPT_DIR/relocate-ruby.sh" "$RUBY_PREFIX"
+
 VENDORED_RUBY="$RUBY_PREFIX/bin/ruby"
+load_relative="$("$VENDORED_RUBY" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE")')"
+[ "$load_relative" = "yes" ] || {
+  echo "[bundle-ruby] Ruby was not built with --enable-load-relative" >&2
+  exit 1
+}
 export PATH="$RUBY_PREFIX/bin:$PATH"
 export GEM_HOME="$VENDOR_DIR/bundle"
 export GEM_PATH="$VENDOR_DIR/bundle"
 
 echo "[bundle-ruby] $("$VENDORED_RUBY" -v)"
+
+# A release bundle must not retain platform gems from an earlier install: when
+# source-only resolution replaces one, its stale native extension can still be
+# staged and reintroduce an unavailable dependency. This directory is generated
+# output, so rebuild it deterministically for every desktop package.
+rm -rf "$VENDOR_DIR/bundle"
+mkdir -p "$VENDOR_DIR/bundle"
 
 # Install bundler into the vendored Ruby, then install the app's gems there.
 "$VENDORED_RUBY" -S gem install bundler --no-document
@@ -52,6 +74,14 @@ export BUNDLE_GEMFILE="$APP_ROOT/Gemfile"
 export BUNDLE_PATH="$VENDOR_DIR/bundle"
 export BUNDLE_WITHOUT="development:test:production"
 export BUNDLE_WITH="desktop"
+# The lockfile retains the macOS platform gems for extensions such as Nokogiri.
+# relocate-ruby.sh rewrites their native dependencies after installation so the
+# precompiled package cannot retain a release-builder library path.
 "$VENDORED_RUBY" -S bundle install --jobs 4
+
+# Native gem extensions are compiled after the initial Ruby relocation and keep
+# the Ruby build prefix in their Mach-O load commands. Rewrite them as well so
+# the staged .app never depends on the build checkout.
+"$SCRIPT_DIR/relocate-ruby.sh" "$RUBY_PREFIX" "$VENDOR_DIR/bundle"
 
 echo "[bundle-ruby] done. Ruby: $RUBY_PREFIX  Gems: $VENDOR_DIR/bundle"

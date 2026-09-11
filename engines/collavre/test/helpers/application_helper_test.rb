@@ -36,4 +36,16 @@ class Collavre::ApplicationHelperTest < ActionView::TestCase
     Current.user = nil
     assert_equal "", body_theme_class
   end
+
+  test "desktop? recognizes the packaged desktop user agent" do
+    @request.headers["HTTP_USER_AGENT"] = "CollavreDesktop/0.1.0"
+
+    assert_predicate self, :desktop?
+  end
+
+  test "desktop? ignores browser user agents" do
+    @request.headers["HTTP_USER_AGENT"] = "Mozilla/5.0"
+
+    assert_not desktop?
+  end
 end

@@ -18,9 +18,10 @@ module Collavre
       dispatched_event = nil
       dispatched_context = nil
 
-      SystemEvents::Dispatcher.stub(:dispatch, ->(event, context) {
+      SystemEvents::Dispatcher.stub(:dispatch, ->(event, context, **options) {
         dispatched_event = event
         dispatched_context = context
+        @dispatch_options = options
         []
       }) do
         @creative.comments.create!(content: "test dispatch", user: @user)
@@ -29,6 +30,7 @@ module Collavre
       assert_equal "comment_created", dispatched_event
       assert_equal "test dispatch", dispatched_context.dig(:comment, :content)
       assert_equal @creative.id, dispatched_context.dig(:creative, :id)
+      assert_equal "comment_callback", @dispatch_options[:source]
     end
 
     test "does not dispatch for private comments" do

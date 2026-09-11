@@ -12,6 +12,8 @@
     <input type="hidden" id="inline-after-id" name="after_id" />
     <input type="hidden" id="inline-child-id" name="child_id" />
     <input type="hidden" id="inline-origin-id" name="creative[origin_id]" />
+    <input type="hidden" id="inline-history-anchor-id" name="history_anchor_id" value="<%= @parent_creative&.id %>" />
+    <input type="hidden" id="inline-change-group-token" name="change_group_token" value="<%= SecureRandom.uuid %>" />
     <div id="lexical-inline-editor"
          data-lexical-editor-root
          class="lexical-inline-editor"
@@ -134,8 +136,6 @@
           &nbsp;<%= svg_tag 'close.svg',class: 'icon-svg', width: 24, height: 24 %>
         </button>
       </div>
-      <button type="button" id="inline-recommend-parent" class="creative-action-btn" style="margin-top:0.5em;" title="<%= t('collavre.creatives.index.recommend_parent') %>">✨<%= t('collavre.creatives.index.recommend_parent') %></button>
-      <select id="parent-suggestions" size="5" style="display:none;margin-top:0.5em;width:100%;"></select>
       <div id="metadata-popup" style="display:none;" class="metadata-popup">
         <div class="metadata-popup-header">
           <span><%= t('collavre.creatives.index.metadata_title') %></span>
@@ -149,4 +149,3 @@
     </div>
   </form>
 </div>
-

@@ -13,19 +13,35 @@ export const BUTTON_IDS = [
   'inline-metadata-btn', 'inline-toggle-markdown', 'inline-move-up', 'inline-move-down',
   'inline-add', 'inline-level-down', 'inline-level-up', 'inline-archive', 'inline-delete',
   'inline-delete-with-children', 'inline-link', 'inline-unconvert', 'inline-unlink',
-  'inline-close', 'inline-recommend-parent', 'metadata-popup-close', 'metadata-save-btn',
+  'inline-close', 'metadata-popup-close', 'metadata-save-btn',
 ]
 
 export const HIDDEN_INPUT_IDS = [
   'inline-method', 'inline-creative-description', 'inline-content-type',
   'inline-markdown-editor', 'inline-markdown-source', 'inline-parent-id',
   'inline-before-id', 'inline-after-id', 'inline-child-id', 'inline-origin-id',
+  'inline-history-anchor-id', 'inline-change-group-token',
 ]
 
 export const DIV_IDS = [
   'markdown-editor-wrapper', 'markdown-preview', 'inline-progress-value',
   'inline-save-status', 'metadata-popup',
 ]
+
+const INPUT_NAMES = {
+  'inline-method': '_method',
+  'inline-creative-description': 'creative[description]',
+  'inline-content-type': 'creative[content_type_input]',
+  'inline-markdown-editor': 'creative[markdown_editor]',
+  'inline-markdown-source': 'creative[markdown_source]',
+  'inline-parent-id': 'creative[parent_id]',
+  'inline-before-id': 'before_id',
+  'inline-after-id': 'after_id',
+  'inline-child-id': 'child_id',
+  'inline-origin-id': 'creative[origin_id]',
+  'inline-history-anchor-id': 'history_anchor_id',
+  'inline-change-group-token': 'change_group_token',
+}
 
 export function buildEditorDom(container, {
   saveFailedMessage,
@@ -48,11 +64,19 @@ export function buildEditorDom(container, {
     const input = document.createElement('input')
     input.type = 'hidden'
     input.id = id
+    input.name = INPUT_NAMES[id]
     form.appendChild(input)
   })
+  const hiddenProgress = document.createElement('input')
+  hiddenProgress.type = 'hidden'
+  hiddenProgress.name = 'creative[progress]'
+  hiddenProgress.value = '0'
+  form.appendChild(hiddenProgress)
   const progress = document.createElement('input')
   progress.type = 'checkbox'
   progress.id = 'inline-creative-progress'
+  progress.name = 'creative[progress]'
+  progress.value = '1'
   form.appendChild(progress)
 
   const editorRoot = document.createElement('div')
@@ -66,10 +90,6 @@ export function buildEditorDom(container, {
   const metadataTextarea = document.createElement('textarea')
   metadataTextarea.id = 'metadata-yaml-editor'
   form.appendChild(metadataTextarea)
-  const suggestions = document.createElement('select')
-  suggestions.id = 'parent-suggestions'
-  form.appendChild(suggestions)
-
   BUTTON_IDS.forEach((id) => {
     const button = document.createElement('button')
     button.type = 'button'

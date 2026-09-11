@@ -72,6 +72,113 @@ module Collavre
         assert_empty result
       end
 
+      # --- Multi-mention routing ---
+
+      test "routes to the AI agent mentioned after a human" do
+        # The shape the agent system prompt asks for: report to the requester,
+        # then hand off. Keeping only the first mention drops the handoff.
+        other = build_agent(routing_expression: nil)
+        grant_feedback(other)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "chat" => {
+            "mentioned_users" => [ { "id" => @user.id }, { "id" => other.id } ]
+          }
+        }
+
+        assert_equal [ other ], Matcher.new(context).match
+      end
+
+      test "routes to every mentioned AI agent, in mention order" do
+        other = build_agent(routing_expression: nil)
+        grant_feedback(other)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "chat" => {
+            "mentioned_users" => [ { "id" => other.id }, { "id" => @ai_agent.id } ]
+          }
+        }
+
+        assert_equal [ other, @ai_agent ], Matcher.new(context).match
+      end
+
+      test "returns empty array when only humans are mentioned" do
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "chat" => {
+            "mentioned_users" => [ { "id" => @user.id }, { "id" => users(:two).id } ]
+          }
+        }
+
+        assert_empty Matcher.new(context).match
+      end
+
+      test "drops only the mentioned agents that lack permission" do
+        other = build_agent(routing_expression: nil)  # no feedback on @creative
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "chat" => {
+            "mentioned_users" => [ { "id" => other.id }, { "id" => @ai_agent.id } ]
+          }
+        }
+
+        assert_equal [ @ai_agent ], Matcher.new(context).match
+      end
+
+      test "returns empty array when no mentioned AI agent is permitted" do
+        # Blocked, not fallen through: an unroutable mention must not become an
+        # ambient event that some other agent answers.
+        other = build_agent(routing_expression: "true")
+        grant_feedback(other)
+        unpermitted = build_agent(routing_expression: nil)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "chat" => {
+            "mentioned_users" => [ { "id" => unpermitted.id } ]
+          }
+        }
+
+        assert_empty Matcher.new(context).match
+      end
+
+      test "falls through when no mentioned name resolves to a user" do
+        @ai_agent.update!(routing_expression: "true")
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "chat" => { "mentioned_users" => [ { "id" => -1 } ] }
+        }
+
+        assert_equal [ @ai_agent ], Matcher.new(context).match
+      end
+
+      test "assignment_permits? allows any agent named in a multi-mention" do
+        other = build_agent(routing_expression: nil)
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Assigned yet co-mentioned", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "chat" => { "mentioned_users" => [ { "id" => @user.id }, { "id" => other.id } ] }
+        )
+
+        # Without this the second-named agent's deferred task is cancelled the
+        # moment a pin lands, even though it was explicitly invited.
+        assert matcher.assignment_permits?(other)
+      end
+
       # --- Expression-based routing ---
 
       test "matches agent with matching routing expression" do
@@ -319,8 +426,8 @@ module Collavre
 
       # --- Inbox mention confinement (live Claude Channel session) ---
       #
-      # A live Claude Channel session agent holds inbox-wide :feedback +
-      # routing_expression="true". The expression path confines it to its own
+      # A live Claude Channel session agent holds inbox-wide :feedback + a live
+      # presence row. The expression path confines it to its own
       # registered session topic so ordinary inbox topics stay identical to a
       # normal topic. The mention path must apply the SAME confinement —
       # otherwise @mentioning the session agent in an ordinary inbox topic would
@@ -333,14 +440,59 @@ module Collavre
           password: "password",
           llm_vendor: "anthropic",
           llm_model: "claude-code",
-          routing_expression: "true",
           created_by_id: @user.id
         )
+        AgentSubscription.create!(agent_id: claude.id, token: SecureRandom.hex(8))
         CreativeShare.find_or_create_by!(creative: inbox, user: claude).update!(permission: "feedback")
         CreativeSharesCache.find_or_create_by!(
           creative_id: inbox.id, user_id: claude.id, permission: :feedback
         )
         claude
+      end
+
+      test "matches a live Claude Channel agent without a routing expression" do
+        agent = build_claude_inbox_session_agent(@creative)
+        project_topic = @creative.topics.create!(name: "Project work", user: @user)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => project_topic.id },
+          "chat" => {}
+        }
+
+        assert_equal [ agent ], Matcher.new(context).match
+      end
+
+      test "does not match a live Claude Channel agent whose expression is false" do
+        agent = build_claude_inbox_session_agent(@creative)
+        agent.update!(routing_expression: 'event_name == "other_event"')
+        project_topic = @creative.topics.create!(name: "Project work", user: @user)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => project_topic.id },
+          "chat" => {}
+        }
+
+        assert_empty Matcher.new(context).match
+      end
+
+      test "does not match an offline Claude Channel agent whose expression is true" do
+        agent = build_claude_inbox_session_agent(@creative)
+        agent.update!(routing_expression: "true")
+        AgentSubscription.where(agent_id: agent.id).delete_all
+        project_topic = @creative.topics.create!(name: "Project work", user: @user)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => project_topic.id },
+          "chat" => {}
+        }
+
+        assert_empty Matcher.new(context).match
       end
 
       test "mentioned Claude session agent is confined out of an ordinary inbox topic" do

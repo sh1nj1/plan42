@@ -212,6 +212,67 @@ describe('list_controller previous-message navigation', () => {
     expect(h.controller.prevMsgNavigator.anchorId).toBe('19')
   })
 
+  test('an old page response does not clear or fulfill a newer navigation request', async () => {
+    const h = buildController()
+    h.list.innerHTML = '<div class="comment-item" data-comment-id="20"></div>'
+    h.controller.creativeId = '1'
+    h.controller.currentTopicId = '7'
+    const responses = []
+    h.controller.fetchComments = jest.fn(() => new Promise((resolve) => responses.push(resolve)))
+
+    await Promise.resolve() // Settle the fixture's initial list mutation.
+    const oldNavigation = h.controller.loadAndNavigateToPreviousMessage('20')
+    Object.defineProperty(h.controller, 'formController', { value: null })
+    h.controller.resetState()
+    h.controller._loadCommentsVersion += 1
+    h.controller.currentTopicId = '8'
+    const newNavigation = h.controller.loadAndNavigateToPreviousMessage('20')
+    const newPromise = h.controller.loadingOlderPromise
+    const fulfill = jest.spyOn(h.controller, 'fulfillPendingPreviousMessageNavigation')
+
+    responses[0]('<div id="comment_18" class="comment-item" data-comment-id="18"></div>')
+    await oldNavigation
+
+    expect(h.list.querySelector('#comment_18')).toBeNull()
+    expect(fulfill).not.toHaveBeenCalled()
+    expect(h.controller.loadingOlder).toBe(true)
+    expect(h.controller.loadingOlderPromise).toBe(newPromise)
+    expect(h.controller.pendingPreviousMessageAnchorId).toBe('20')
+
+    responses[1]('<div id="comment_19" class="comment-item" data-comment-id="19"></div>')
+    await newNavigation
+    expect(h.list.querySelector('#comment_19').classList).toContain('highlight-flash')
+    expect(h.controller.loadingOlder).toBe(false)
+    expect(h.controller.loadingOlderPromise).toBeNull()
+  })
+
+  test('uses an already loaded previous message and expires its highlight', async () => {
+    jest.useFakeTimers()
+    try {
+      const h = buildController()
+      await expect(h.controller.loadAndNavigateToPreviousMessage('c1')).resolves.toBe(true)
+      const target = h.list.querySelector('[data-comment-id="c0"]')
+      expect(target.classList).toContain('highlight-flash')
+      jest.advanceTimersByTime(2000)
+      expect(target.classList).not.toContain('highlight-flash')
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  test.each(['loading', 'exhausted', 'no creative', 'no messages'])(
+    'does not request an older page with %s', async (state) => {
+      const h = buildController({ itemCount: 0 })
+      h.controller.creativeId = state === 'no creative' ? null : '1'
+      h.controller.loadingOlder = state === 'loading'
+      h.controller.allOlderLoaded = state === 'exhausted'
+      h.controller.fetchComments = jest.fn()
+
+      await expect(h.controller.loadOlderComments()).resolves.toBe(false)
+      expect(h.controller.fetchComments).not.toHaveBeenCalled()
+    }
+  )
+
   test('stops at the oldest message when everything is already loaded', () => {
     const h = buildController()
     h.controller.allOlderLoaded = true

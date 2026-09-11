@@ -10,19 +10,6 @@ module Collavre
       Collavre::Current.user = @user
     end
 
-    test "destroying comment nullifies inbox_items comment_id" do
-      comment = Collavre::Comment.create!(creative: @creative, content: "test", user: @user)
-      inbox_item = Collavre::InboxItem.create!(
-        owner: @user, creative: @creative, comment: comment,
-        message_key: "inbox.test", link: "/test"
-      )
-
-      comment.destroy!
-
-      inbox_item.reload
-      assert_nil inbox_item.comment_id
-    end
-
     test "destroying comment also destroys quoting comments" do
       original = Collavre::Comment.create!(creative: @creative, content: "original", user: @user)
       quoting = Collavre::Comment.create!(creative: @creative, content: "reply", user: @user, quoted_comment_id: original.id)

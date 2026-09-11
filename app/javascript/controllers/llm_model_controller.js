@@ -1,5 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
-import CommonPopup from 'collavre/lib/common_popup.js'
+import CommonPopup, { elementAnchor } from 'collavre/lib/common_popup.js'
 import csrfFetch, { refreshCsrfToken } from 'collavre/lib/api/csrf_fetch.js'
 import { alertDialog } from 'collavre/lib/utils/dialog.js'
 
@@ -96,7 +96,7 @@ export default class extends Controller {
 
         this.popup.setItems(filtered)
         this.bindDeleteButtons()
-        this.popup.showAt(this.inputTarget.getBoundingClientRect())
+        this.popup.showAt(elementAnchor(this.inputTarget))
     }
 
     hide() {

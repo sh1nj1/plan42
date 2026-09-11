@@ -1,3 +1,8 @@
+## v0.2.3 (2026-09-02)
+
+### Changes
+- 2a8e508a perf(comments): move link previews and notifications off the request (#1441)
+
 ## v0.2.2 (2026-07-21)
 
 ### Changes

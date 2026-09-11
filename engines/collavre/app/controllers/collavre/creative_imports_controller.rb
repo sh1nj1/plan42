@@ -14,7 +14,15 @@ module Collavre
         render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
       end
 
-      created = ::Creatives::Importer.new(file: params[:markdown], user: Current.user, parent: parent).call
+      created = Creatives::History.track(
+        actor: Current.user,
+        origin: :import,
+        anchor: parent,
+        anchor_source: :import_target,
+        change_group_token: params[:change_group_token]
+      ) do
+        ::Creatives::Importer.new(file: params[:markdown], user: Current.user, parent: parent).call
+      end
 
       if created.any?
         render json: { success: true, created: created.map(&:id) }

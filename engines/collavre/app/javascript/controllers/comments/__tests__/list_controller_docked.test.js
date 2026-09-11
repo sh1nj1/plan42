@@ -103,7 +103,8 @@ describe('CommentsListController docked startup', () => {
     controller._loadCommentsVersion = 0
     controller.selection = new Set()
     controller.prevMsgNavigator = { reset: jest.fn() }
-    controller.fetchComments = jest.fn(async () => {
+    controller.fetchComments = jest.fn(async (_params, { loadVersion }) => {
+      controller._serverTopicRequestVersion = loadVersion
       controller.currentTopicId = '9'
       return '<div id="comment_34">Earlier message</div>'
     })
@@ -118,8 +119,30 @@ describe('CommentsListController docked startup', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(controller.fetchComments).toHaveBeenCalledWith({ around_comment_id: '34' })
+    expect(controller.fetchComments).toHaveBeenCalledWith({ around_comment_id: '34' }, { loadVersion: 1 })
     expect(controller.highlightComment).toHaveBeenCalledWith('34')
     expect(controller.initialLoadComplete).toBe(true)
+  })
+
+  test('flushes a pending read safely when the CSRF meta tag is absent', () => {
+    const controller = Object.create(CommentsListController.prototype)
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    controller.creativeId = '12'
+    controller.currentTopicId = ''
+    controller.pendingRead = { creativeId: '12', topicId: null, topicIds: null, topicWatermarks: null }
+    Object.defineProperty(controller, 'element', { value: element })
+    const originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: new Headers() })
+    document.querySelector('meta[name="csrf-token"]')?.remove()
+
+    expect(() => controller.flushPendingRead()).not.toThrow()
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/comment_read_pointers/update',
+      expect.objectContaining({ method: 'POST' })
+    )
+
+    global.fetch = originalFetch
+    element.remove()
   })
 })

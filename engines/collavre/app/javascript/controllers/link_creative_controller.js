@@ -1,16 +1,10 @@
 import CommonPopupController from './common_popup_controller'
 import creativesApi from '../lib/api/creatives'
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
 
 // Minimum characters before a text search fires. Below this the popup shows the
 // browsable mini-tree instead (empty input => tree, >= MIN_QUERY chars => search).
 const MIN_QUERY = 2
-
-// Chevron icons matched to the main creative tree (creative_tree_row.js#_toggleIcon)
-// so the mini-tree expand/collapse affordance is visually identical.
-const CHEVRON_COLLAPSED =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6L15 12L9 18"/></svg>'
-const CHEVRON_EXPANDED =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9L12 15L18 9"/></svg>'
 
 export default class extends CommonPopupController {
     static targets = ['input', 'list', 'close']
@@ -40,11 +34,12 @@ export default class extends CommonPopupController {
         super.disconnect()
     }
 
-    open(anchorRect, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
+    open(anchor, onSelectCallback, onCloseCallback, { allowCreate = false, selectOrigin = true } = {}) {
         this._openGeneration++
         this.onSelectCallback = onSelectCallback
         this.onCloseCallback = onCloseCallback
         this._allowCreate = allowCreate
+        this._selectOrigin = selectOrigin
         this._creating = false
         this._mode = 'tree'
         this._rootNodes = null
@@ -52,7 +47,7 @@ export default class extends CommonPopupController {
         this.inputTarget.value = ''
         // Clear any CommonPopup item state; we render our own DOM into the list.
         this.popup.setItems([])
-        super.open(anchorRect)
+        super.open(anchor)
 
         requestAnimationFrame(() => {
             this.inputTarget.focus()
@@ -185,6 +180,16 @@ export default class extends CommonPopupController {
         }
         nodes.forEach((node) => this.listTarget.appendChild(this._buildTreeItem(node, 0)))
         this._resetActive()
+        this._reposition()
+    }
+
+    // The popup is positioned one frame after open(), while the list still shows
+    // "Loading…". Every render that changes the list's height has to re-run that
+    // placement, or the popup keeps the size the placeholder implied — which,
+    // with the caret near the bottom of the screen, leaves a single tree row
+    // visible under the search box.
+    _reposition() {
+        this.popup?.reposition()
     }
 
     _buildTreeItem(node, level) {
@@ -260,6 +265,7 @@ export default class extends CommonPopupController {
         if (childrenUl) childrenUl.hidden = true
         const toggle = li.querySelector(':scope > .link-tree-row > .link-tree-toggle')
         if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.innerHTML = CHEVRON_COLLAPSED
+        this._reposition()
     }
 
     // Returns a promise that resolves once the node is expanded (children loaded
@@ -274,7 +280,10 @@ export default class extends CommonPopupController {
         childrenUl.hidden = false
         if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.innerHTML = CHEVRON_EXPANDED
 
-        if (li.dataset.loaded === '1') return Promise.resolve()
+        if (li.dataset.loaded === '1') {
+            this._reposition()
+            return Promise.resolve()
+        }
 
         const level = parseInt(li.dataset.level, 10) + 1
         li.dataset.loaded = '1'
@@ -286,13 +295,15 @@ export default class extends CommonPopupController {
                 const list = Array.isArray(nodes) ? nodes : []
                 if (list.length === 0) {
                     childrenUl.innerHTML = `<li class="link-tree-empty">${this._escape(this._text('emptyText'))}</li>`
-                    return
+                } else {
+                    list.forEach((child) => childrenUl.appendChild(this._buildTreeItem(child, level)))
                 }
-                list.forEach((child) => childrenUl.appendChild(this._buildTreeItem(child, level)))
+                this._reposition()
             })
             .catch(() => {
                 li.dataset.loaded = '0'
                 childrenUl.innerHTML = ''
+                this._reposition()
             })
     }
 
@@ -308,7 +319,11 @@ export default class extends CommonPopupController {
             const li = document.createElement('li')
             li.className = 'link-result-item'
             li.setAttribute('data-pick-row', '')
-            li.dataset.id = String(result.id)
+            // Search returns origins. Only the hit's own reveal entry identifies
+            // its placement; an ancestor's shell is not this hit's destination.
+            const placementPath = result.reveal_path?.[String(result.id)]
+            const placementId = Array.isArray(placementPath) ? placementPath.at(-1) : null
+            li.dataset.id = String((!this._selectOrigin && placementId) || result.id)
 
             const label = document.createElement('div')
             label.className = 'link-result-label'
@@ -333,6 +348,7 @@ export default class extends CommonPopupController {
             this.listTarget.appendChild(this._buildCreateItem(query))
         }
         this._resetActive()
+        this._reposition()
     }
 
     _buildCreateItem(query) {
@@ -482,10 +498,12 @@ export default class extends CommonPopupController {
         // For a linked-creative shell row, emit the effective origin id, not the
         // shell id: consumers use the selected id as the new link's origin, and
         // linking to the shell (rather than the real shared creative) would make
-        // PermissionChecker treat the shell as the permission base. Flat search
-        // rows already carry the origin creative's id, so they pass through.
+        // PermissionChecker treat the shell as the permission base. Search rows
+        // already carry the id resolved for the picker's selection mode.
         const item = row.closest('.link-tree-item')
-        const id = Number((item && item.dataset.originId) || row.dataset.id)
+        // Placement commands target the chosen shell, while link creation
+        // continues to resolve its effective origin by default.
+        const id = Number((this._selectOrigin && item?.dataset.originId) || row.dataset.id)
         const labelEl = row.querySelector('.link-tree-label, .link-result-label')
         const label = labelEl ? labelEl.textContent : ''
         this.select({ id, label })
@@ -554,6 +572,7 @@ export default class extends CommonPopupController {
         this.listTarget.innerHTML = ''
         this._appendMessage(text)
         this._activeEl = null
+        this._reposition()
     }
 
     _appendMessage(text) {

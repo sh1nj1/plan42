@@ -41,7 +41,7 @@ module Collavre
 
     test "dispatches exactly once via explicit call, not callback" do
       dispatch_calls = []
-      dispatcher = ->(*args) { dispatch_calls << args; [ @ai_bot ] }
+      dispatcher = ->(*args, **options) { dispatch_calls << [ args, options ]; [ @ai_bot ] }
 
       SystemEvents::Dispatcher.stub(:dispatch, dispatcher) do
         DropTriggerJob.perform_now(@parent.id, @child.id)
@@ -51,6 +51,7 @@ module Collavre
       # - after_create_commit callback is suppressed (skip_dispatch: true)
       # - Job dispatches explicitly in Step 3
       assert_equal 1, dispatch_calls.size, "Should dispatch exactly once (job only, not callback)"
+      assert_equal "drop_trigger", dispatch_calls.first.last[:source]
     end
 
     test "reuses existing Drop Trigger topic" do
@@ -63,6 +64,21 @@ module Collavre
           DropTriggerJob.perform_now(@parent.id, @child.id)
         end
       end
+    end
+
+    test "does not initialize a trigger loop after its topic moves" do
+      topic = @child.topics.create!(name: DropTriggerJob::DROP_TRIGGER_TOPIC_NAME, user: @owner)
+      dispatched = false
+
+      Orchestration::TopicSlot.stub(:lock_matches_context?, false) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [ @ai_bot ] }) do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+      end
+
+      assert_nil @child.reload.data&.dig("trigger", "loop")
+      assert_empty @child.comments.where(topic_id: topic.id)
+      refute dispatched
     end
 
     test "finds existing comment and retries dispatch on retry" do
@@ -296,6 +312,76 @@ module Collavre
       assert_includes copied_contents, visible.content
       refute(copied_contents.any? { |c| c.include?("private from other user") },
         "Other users' private Main comments must not leak into the branched topic")
+    end
+
+    test "skips approval prompts in Main when branching" do
+      main = @child.main_topic(fallback_user: @owner)
+      visible = @child.comments.create!(
+        content: "ordinary history",
+        topic_id: main.id,
+        user: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      approval = @child.comments.create!(
+        content: "approve this tool",
+        topic_id: main.id,
+        user: @ai_bot,
+        approver: @owner,
+        action: JSON.generate(action: "approve_tool"),
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+      end
+
+      topic = @child.topics.find_by(name: "Drop Trigger")
+      assert topic, "Drop Trigger should be created when Main contains an approval prompt"
+      copied_contents = topic.comments.pluck(:content)
+      assert_includes copied_contents, visible.content
+      refute_includes copied_contents, approval.content
+    end
+
+    test "skips a Main message that becomes an approval prompt after selection" do
+      main = @child.main_topic(fallback_user: @owner)
+      visible = @child.comments.create!(
+        content: "ordinary history",
+        topic_id: main.id,
+        user: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      raced = @child.comments.create!(
+        content: "changes after selection",
+        topic_id: main.id,
+        user: @ai_bot,
+        approver: @owner,
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      constructor = TopicBranchService.method(:new)
+      mutate_after_selection = lambda do |**arguments|
+        service = constructor.call(**arguments)
+        branch = service.method(:call)
+        service.define_singleton_method(:call) do |**options|
+          raced.update!(action: JSON.generate(action: "approve_tool"))
+          branch.call(**options)
+        end
+        service
+      end
+
+      TopicBranchService.stub(:new, mutate_after_selection) do
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+      end
+
+      topic = @child.topics.find_by!(name: "Drop Trigger")
+      copied_contents = topic.comments.pluck(:content)
+      assert_includes copied_contents, visible.content
+      refute_includes copied_contents, raced.content
     end
 
     test "branches more than MAX_BRANCH_COMMENTS Main messages without truncation" do

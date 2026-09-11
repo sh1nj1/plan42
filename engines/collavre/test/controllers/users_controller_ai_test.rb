@@ -16,6 +16,8 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", create_ai_users_path
     assert_select "input[name='llm_model'][maxlength=?]", Collavre::LlmModel::MAX_NAME_LENGTH.to_s
     assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
+    assert_select "a[href=?][data-turbo='false']", agent_gateways_path,
+                  text: I18n.t("collavre.users.new_ai.manage_gateways")
     assert_select "[data-controller='llm-model']" do |nodes|
       models = JSON.parse(nodes.first["data-llm-model-models-value"])
       assert_includes models, {
@@ -25,8 +27,12 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         "delete_url" => llm_model_path(model)
       }
     end
+    form_groups = css_select("form .form-group")
+    vendor_group = form_groups.index { |group| group.at_css("select[name='llm_vendor']") }
+    gateway_group = form_groups.index { |group| group.at_css("select[name='agent_gateway_id']") }
+    assert_equal vendor_group + 1, gateway_group
     # Verify tools section is rendered
-    assert_select "label", I18n.t("collavre.users.edit_ai.tools_title")
+    assert_select "label", I18n.t("collavre.users.edit_ai.meta_skills_title")
   end
 
   test "should get new_ai page and display available tools" do
@@ -67,13 +73,187 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "existing-secret-key"
   end
 
+  test "creates a CLI Proxy agent with one of the current user's gateways" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Create agent proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+
+    assert_difference("Collavre::User.count", 1) do
+      post create_ai_users_url, params: {
+        ai_id: "proxy_bot",
+        name: "Proxy Bot",
+        system_prompt: "Help",
+        llm_vendor: " CLI_PROXY ",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: gateway.id
+      }
+    end
+
+    agent = Collavre::User.find_by!(email: "proxy_bot@ai.local")
+    assert_equal gateway, agent.agent_gateway
+    assert_equal @admin.id, agent.created_by_id
+    assert agent.cli_proxy_agent?
+    assert_includes Collavre::AgentGateway.health_probe_targets, gateway
+
+    patch update_ai_user_url(agent), params: {
+      user: { name: "Renamed proxy", llm_vendor: " CLI_PROXY ", agent_gateway_id: gateway.id }
+    }
+    assert_redirected_to user_path(@admin, tab: "contacts")
+    assert_equal gateway, agent.reload.agent_gateway
+
+    patch update_ai_user_url(agent), params: {
+      user: { name: "Preserved proxy", llm_vendor: " CLI_PROXY " }
+    }
+    assert_redirected_to user_path(@admin, tab: "contacts")
+    assert_equal gateway, agent.reload.agent_gateway
+  end
+
+  test "does not offer or assign a provisioning-only gateway to a CLI Proxy agent" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Provisioning-only proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin"
+    )
+
+    get new_ai_users_url
+    assert_response :success
+    assert_select "select[name='agent_gateway_id'] option[value='#{gateway.id}']", count: 0
+
+    assert_no_difference("Collavre::User.count") do
+      post create_ai_users_url, params: {
+        ai_id: "keyless_proxy_bot",
+        name: "Keyless Proxy Bot",
+        system_prompt: "Help",
+        llm_vendor: "cli_proxy",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: gateway.id
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "rejects another user's gateway for a CLI Proxy agent" do
+    foreign_gateway = Collavre::AgentGateway.create!(
+      owner: users(:two),
+      name: "Foreign proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+
+    assert_no_difference("Collavre::User.count") do
+      post create_ai_users_url, params: {
+        ai_id: "foreign_proxy_bot",
+        name: "Foreign Proxy Bot",
+        system_prompt: "Help",
+        llm_vendor: "cli_proxy",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: foreign_gateway.id
+      }
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  test "preserves the assigned inactive gateway while editing a CLI Proxy agent" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Inactive assigned proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    @ai_user.update!(
+      created_by_id: @admin.id,
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      agent_gateway: gateway
+    )
+    gateway.update!(active: false)
+
+    get edit_ai_user_url(@ai_user)
+
+    assert_response :success
+    assert_select "select[name='user[agent_gateway_id]'] option[value='#{gateway.id}'][selected]", gateway.name
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        name: "Renamed inactive proxy agent",
+        llm_vendor: "cli_proxy",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: gateway.id
+      }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+    assert_equal "Renamed inactive proxy agent", @ai_user.reload.name
+    assert_equal gateway, @ai_user.agent_gateway
+  end
+
+  test "profile shows connection help for the gateway workspace mode in both locales" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Profile help proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32
+    )
+    @ai_user.update!(
+      created_by_id: @admin.id,
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      agent_gateway: gateway
+    )
+
+    get user_url(@ai_user)
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.agent_connections.profile_help.shared", locale: :en)
+    assert_not_includes response.body, I18n.t("collavre.agent_connections.profile_help.per_user", locale: :en)
+
+    gateway.update!(workspace_mode: :per_user)
+    @admin.update!(locale: "ko")
+    get user_url(@ai_user)
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.agent_connections.profile_help.per_user", locale: :ko)
+    assert_not_includes response.body, I18n.t("collavre.agent_connections.profile_help.shared", locale: :ko)
+  end
+
+  test "does not assign a different inactive gateway while editing" do
+    inactive_gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Inactive unassigned proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      active: false
+    )
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        llm_vendor: "cli_proxy",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: inactive_gateway.id
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_nil @ai_user.reload.agent_gateway
+  end
+
   test "should not get edit_ai for normal user" do
     get edit_ai_user_url(@admin)
     assert_redirected_to user_path(@admin)
     assert_equal "This user is not an AI agent.", flash[:alert]
   end
 
-  test "should update ai user" do
+  test "should update ai user and redirect to contacts" do
     patch update_ai_user_url(@ai_user), params: {
       user: {
         name: "Updated Bot Name",
@@ -82,7 +262,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         searchable: true
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal "Updated Bot Name", @ai_user.name
     assert_equal "New prompt", @ai_user.system_prompt
@@ -212,7 +392,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { name: "Updated Bot Name", llm_api_key: "" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "existing-secret-key", @ai_user.reload.llm_api_key
   end
 
@@ -223,7 +403,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { llm_api_key: "", clear_llm_api_key: "1" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_nil @ai_user.reload.llm_api_key
   end
 
@@ -247,7 +427,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
       user: { llm_api_key: "replacement-secret-key" }
     }
 
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     assert_equal "replacement-secret-key", @ai_user.reload.llm_api_key
   end
 
@@ -274,7 +454,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         routing_expression: 'chat.content contains "help"'
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal 'chat.content contains "help"', @ai_user.routing_expression
   end
@@ -285,7 +465,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         routing_expression: 'event_name == "comment_created"'
       }
     }
-    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_redirected_to user_path(@admin, tab: "contacts")
     @ai_user.reload
     assert_equal 'event_name == "comment_created"', @ai_user.routing_expression
   end
@@ -299,5 +479,101 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_equal "Name can't be blank", flash[:alert]
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
+  end
+
+  test "edit_ai keeps the originating list so saving returns there" do
+    get edit_ai_user_url(@ai_user), headers: { "HTTP_REFERER" => users_url }
+
+    assert_response :success
+    assert_select "form[data-turbo-action='replace']"
+    assert_select "input[type='hidden'][name='return_to'][value=?]", users_path
+  end
+
+  test "edit_ai ignores an off-site origin" do
+    get edit_ai_user_url(@ai_user), headers: { "HTTP_REFERER" => "https://evil.example.com/users" }
+
+    assert_response :success
+    assert_select "input[name='return_to']", false
+  end
+
+  test "edit_ai ignores itself as an origin" do
+    get edit_ai_user_url(@ai_user), headers: { "HTTP_REFERER" => edit_ai_user_url(@ai_user) }
+
+    assert_response :success
+    assert_select "input[name='return_to']", false
+  end
+
+  test "updating an ai user returns to the originating list" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: users_path,
+      user: { name: "Back To List Bot" }
+    }
+
+    assert_redirected_to users_path
+    assert_equal "Back To List Bot", @ai_user.reload.name
+  end
+
+  test "updating an ai user keeps the origin query string" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "#{user_path(@admin)}?tab=contacts",
+      user: { name: "Contacts Tab Bot" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects an off-site return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "https://evil.example.com/steal",
+      user: { name: "Safe Bot" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects a protocol relative return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "//evil.example.com/steal",
+      user: { name: "Safe Bot 2" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects a non http return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "javascript:alert(1)",
+      user: { name: "Safe Bot 3" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects a malformed return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: "http://[bad",
+      user: { name: "Safe Bot 4" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "updating an ai user rejects the edit page as return_to" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: edit_ai_user_path(@ai_user),
+      user: { name: "No Loop Bot" }
+    }
+
+    assert_redirected_to user_path(@admin, tab: "contacts")
+  end
+
+  test "a failed ai user update keeps the originating list" do
+    patch update_ai_user_url(@ai_user), params: {
+      return_to: users_path,
+      user: { name: "" }
+    }
+
+    assert_response :unprocessable_entity
+    assert_select "input[type='hidden'][name='return_to'][value=?]", users_path
   end
 end

@@ -1,6 +1,31 @@
 require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
+  test "collapses line breaks in name to a single line" do
+    user = User.create!(email: "multiline_name@example.com", password: "password123", name: "Line\nBreak Agent")
+
+    assert_equal "Line Break Agent", user.name
+  end
+
+  test "collapses a line break run with surrounding spaces to one space" do
+    user = User.create!(email: "multiline_padded@example.com", password: "password123", name: "Line \r\n  Break")
+
+    assert_equal "Line Break", user.name
+  end
+
+  test "strips surrounding whitespace from name" do
+    user = User.create!(email: "padded_name@example.com", password: "password123", name: "  Padded Agent  ")
+
+    assert_equal "Padded Agent", user.name
+  end
+
+  test "keeps a blank name invalid rather than normalizing it into one" do
+    user = User.new(email: "blank_name@example.com", password: "password123", name: "\n \n")
+
+    assert_not user.valid?
+    assert_includes user.errors[:name], "can't be blank"
+  end
+
   test "requires valid email" do
     user = User.new(email: "bad", password: "password123", password_confirmation: "password123", name: "Bad")
     assert_not user.valid?
@@ -108,5 +133,336 @@ class UserTest < ActiveSupport::TestCase
 
     assert_nothing_raised { sharer.destroy! }
     assert_nil share.reload.shared_by_id
+  end
+
+  test "CLI Proxy agents require a gateway owned by their creator" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: users(:three),
+      name: "Foreign gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    agent = Collavre::User.new(
+      name: "Invalid CLI agent",
+      email: "invalid-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: " CLI_PROXY ",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    assert_not agent.valid?
+    assert agent.errors.of_kind?(:agent_gateway, :invalid)
+  end
+
+  test "CLI Proxy agents require a gateway completion key" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Provisioning-only gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin"
+    )
+    agent = Collavre::User.new(
+      name: "Keyless CLI agent",
+      email: "keyless-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: " CLI_PROXY ",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    assert_not agent.valid?
+    assert agent.errors.of_kind?(:agent_gateway, :completion_key_required)
+  end
+
+  test "CLI Proxy agent assignment rechecks its completion key while saving" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Concurrent provisioning gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    agent = Collavre::User.new(
+      name: "Concurrent CLI agent",
+      email: "concurrent-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    gateway.update!(completion_key: nil)
+
+    assert_not agent.save(validate: false)
+    assert agent.errors.of_kind?(:agent_gateway, :completion_key_required)
+  end
+
+  test "a secretless shared gateway cannot be assigned to a second CLI Proxy agent" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Single-agent gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    first_agent = Collavre::User.create!(
+      name: "First CLI agent",
+      email: "first-secretless-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    second_agent = first_agent.dup
+    second_agent.email = "second-secretless-cli-agent@ai.local"
+
+    assert_not second_agent.valid?
+    assert second_agent.errors.of_kind?(:agent_gateway, :identity_required)
+  end
+
+  test "gateway access follows inherited creative permissions" do
+    owner = users(:two)
+    viewer = Collavre::User.create!(
+      email: "inherited-gateway-viewer@example.com",
+      password: TEST_PASSWORD,
+      name: "Inherited Gateway Viewer"
+    )
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Inherited permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Inherited permission agent",
+      email: "inherited-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    child = perform_enqueued_jobs do
+      root = Collavre::Creative.create!(user: owner, description: "Shared root")
+      nested = Collavre::Creative.create!(user: owner, parent: root, description: "Nested agent creative")
+      Collavre::CreativeShare.create!(creative: root, user: viewer, permission: :read)
+      Collavre::CreativeShare.create!(creative: nested, user: agent, permission: :feedback)
+      nested
+    end
+
+    assert child.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "gateway access includes creatives owned by the agent" do
+    owner = users(:two)
+    viewer = Collavre::User.create!(
+      email: "agent-owned-gateway-viewer@example.com",
+      password: TEST_PASSWORD,
+      name: "Agent-owned Gateway Viewer"
+    )
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Agent-owned creative gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Agent-owned creative agent",
+      email: "agent-owned-creative-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: agent, description: "Agent-owned root")
+      Collavre::CreativeShare.create!(creative: creative, user: viewer, permission: :read)
+      creative
+    end
+
+    assert creative.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "gateway access follows public feedback permission for the agent" do
+    owner = users(:two)
+    viewer = users(:three)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Public permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Public permission agent",
+      email: "public-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: owner, description: "Public feedback creative")
+      Collavre::CreativeShare.create!(creative: creative, user: nil, permission: :feedback)
+      creative
+    end
+
+    assert creative.has_permission?(agent, :feedback)
+    assert creative.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "explicit agent denial overrides public feedback for gateway access" do
+    owner = users(:two)
+    viewer = users(:three)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Denied public permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Denied public permission agent",
+      email: "denied-public-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: owner, description: "Denied public creative")
+      Collavre::CreativeShare.create!(creative: creative, user: nil, permission: :feedback)
+      Collavre::CreativeShare.create!(creative: creative, user: agent, permission: :no_access)
+      creative
+    end
+
+    refute creative.has_permission?(agent, :feedback)
+    assert creative.has_permission?(viewer, :read)
+    refute agent.gateway_accessible_to?(viewer)
+  end
+
+  test "a gateway-backed agent is online when its gateway can still serve its engine" do
+    owner = users(:one)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner, name: "Presence proxy", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion", identity_secret: "i" * 32
+    )
+    claude_agent = create_cli_proxy_agent(owner, gateway, "paperclip/claude_local")
+    codex_agent = create_cli_proxy_agent(owner, gateway, "paperclip/codex_local")
+
+    assert_not claude_agent.agent_online?, "an unprobed gateway proves nothing"
+
+    gateway.update_columns(
+      health_status: 2,
+      health_checked_at: Time.current,
+      health_engines: {
+        "mode" => "host",
+        "items" => {
+          "claude" => { "state" => "authenticated" },
+          "codex" => { "state" => "unauthenticated" }
+        }
+      }
+    )
+
+    assert claude_agent.reload.agent_online?
+    assert_not codex_agent.reload.agent_online?,
+               "one logged-out engine must not carry the agents that do not use it"
+  end
+
+  test "agents with no liveness evidence are not asserted online" do
+    assert_not users(:ai_bot).agent_online?, "a hosted vendor API publishes nothing either way"
+    assert_not users(:one).agent_online?
+  end
+
+  test "a registered endpoint checker contributes fresh liveness state" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "openai")
+
+    assert_equal :unknown, agent.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    assert_equal :online, agent.reload.agent_liveness_status
+    assert_predicate agent, :agent_online?
+
+    agent.update_columns(endpoint_health_status: 2, endpoint_health_checked_at: Time.current)
+    assert_equal :offline, agent.reload.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 3, endpoint_health_checked_at: Time.current)
+    assert_equal :check_error, agent.reload.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: 4.minutes.ago)
+    assert_equal :unknown, agent.reload.agent_liveness_status
+    assert_not agent.agent_online?
+  end
+
+  test "an unregistered checker stays unknown and never makes an agent online" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "vendor-without-checker")
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+
+    assert_not agent.endpoint_health_supported?
+    assert_equal :unknown, agent.reload.agent_liveness_status
+    assert_not agent.agent_online?
+  end
+
+  test "changing endpoint configuration invalidates the cached verdict" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "openai", gateway_url: "https://old.example.test/v1")
+    agent.update_columns(
+      endpoint_health_status: 1,
+      endpoint_health_checked_at: Time.current,
+      endpoint_health_error: "old"
+    )
+
+    agent.update!(gateway_url: "https://new.example.test/v1")
+
+    assert_predicate agent, :endpoint_health_unknown?
+    assert_nil agent.endpoint_health_checked_at
+    assert_nil agent.endpoint_health_error
+  end
+
+  private
+
+  def create_cli_proxy_agent(owner, gateway, model)
+    Collavre::User.create!(
+      name: "CLI Agent #{SecureRandom.hex(3)}",
+      email: "cli-#{SecureRandom.hex(4)}@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: model,
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
   end
 end

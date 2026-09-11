@@ -28,9 +28,30 @@ body.creative-workspace > nav {
     min-width: 0;
 }
 
-body.creative-workspace .creative-content {
+body.creative-workspace .creative-content,
+body.creative-workspace .creative-title-content {
     min-width: 0;
     max-width: none;
+}
+
+/* The rule above drops the viewport-based max-width that used to cap row width.
+   Without it, the flex wrappers between the grid column and .creative-content
+   keep their default min-width: auto, so they refuse to shrink below the
+   min-content width of their contents. Text still wraps (min-content is one
+   word), but unbreakable blocks -- code blocks and tables -- overflow the
+   column. Zeroing min-width lets the flex chain shrink to the column.
+
+   The title row (the root creative) has its own chain: .creative-row-start >
+   h1.page-title > .creative-title-content. Shrinking only .creative-row-start
+   would let the title's min-content width paint through the shrunken parent,
+   so .page-title belongs in the same list. */
+body.creative-workspace .creative-row-start,
+body.creative-workspace .creative-tree-li,
+body.creative-workspace .page-title,
+body.creative-workspace .indent1,
+body.creative-workspace .indent2,
+body.creative-workspace .indent3 {
+    min-width: 0;
 }
 
 .creative-workspace-tree-region {
@@ -65,6 +86,7 @@ body.creative-workspace .creative-content {
     min-height: 0;
     padding: var(--space-2);
     overflow: auto;
+    overscroll-behavior-y: contain;
     background: transparent;
     border: 0;
 }
@@ -81,8 +103,26 @@ body.creative-workspace .creative-content {
 
 .creative-workspace-tree-row {
     display: flex;
+    position: relative;
     align-items: center;
     min-width: 0;
+}
+
+.creative-workspace-tree-row.is-dragging {
+    opacity: 0.55;
+}
+
+.creative-workspace-tree-row.drag-over-top {
+    box-shadow: inset 0 2px 0 var(--color-active);
+}
+
+.creative-workspace-tree-row.drag-over-bottom {
+    box-shadow: inset 0 -2px 0 var(--color-active);
+}
+
+.creative-workspace-tree-row.drag-over-child {
+    background: color-mix(in srgb, var(--color-active) 12%, transparent);
+    border-radius: var(--radius-2);
 }
 
 .creative-workspace-tree-branch-toggle,
@@ -197,7 +237,13 @@ body.creative-workspace .creative-content {
     .creative-workspace-shell:has(#comments-popup.docked-collapsed) {
         grid-template-columns: minmax(0, 1fr) 3rem;
     }
+}
 
+/* Below the three-column breakpoint the tree gives up its own column and
+   becomes an off-canvas drawer with a toggle handle. Shared by the two-panel
+   band and the one-panel (mobile) band so both collapse the same way — and so
+   the tree stays mounted in both, preserving its expansion state. */
+@media (max-width: 1279px) {
     .creative-workspace-tree-region {
         position: fixed;
         top: 0;
@@ -252,6 +298,17 @@ body.creative-workspace .creative-content {
         overflow: visible;
     }
 
+    /* Keep the closed handle below the floating chat so it cannot intercept
+       taps on the comment form. Raise only the opened tree above the chat so
+       its rows and close handle remain tappable on one-panel screens. */
+    .creative-workspace-tree-region {
+        z-index: calc(var(--layer-modal) - 1);
+    }
+
+    .creative-workspace-tree-region.is-open {
+        z-index: calc(var(--layer-modal) + 1);
+    }
+
     .creative-workspace-shell {
         display: block;
     }
@@ -261,8 +318,17 @@ body.creative-workspace .creative-content {
         max-width: var(--max-width);
     }
 
-    .creative-workspace-tree-region {
-        display: none;
+    /* Reserve the handle's width outside the scrolling content so row controls
+       never pass underneath it, including in long creative lists. */
+    .creative-workspace-shell > main {
+        margin-left: 2.75rem;
+        width: calc(100% - 2.75rem);
     }
 
+    /* Keep the drawer handle in easy thumb reach on one-panel screens while
+       clearing the device's bottom safe area. */
+    .creative-workspace-tree-toggle {
+        top: auto;
+        bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    }
 }

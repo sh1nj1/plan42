@@ -194,6 +194,9 @@ body.chat-fullscreen {
     color: var(--color-text);
     cursor: pointer;
     padding: 0;
+    width: var(--space-px-5);
+    height: var(--space-px-5);
+    flex: 0 0 var(--space-px-5);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -201,9 +204,16 @@ body.chat-fullscreen {
     line-height: 1;
 }
 
+.comments-popup-action > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .comments-popup-action-icon {
-    width: 16px;
-    height: 16px;
+    display: block;
+    width: var(--space-px-3);
+    height: var(--space-px-3);
     fill: currentColor;
 }
 
@@ -284,7 +294,7 @@ body.chat-fullscreen {
     /* Prevent iOS zoom on focus */
 }
 
-#new-comment-form.creative-drop-hover textarea {
+#new-comment-form.dnd-over-into textarea {
     border-color: var(--link);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 25%, transparent);
 }
@@ -310,6 +320,86 @@ body.chat-fullscreen {
     border-color: var(--color-border);
     -webkit-user-select: none;
     user-select: none;
+}
+
+.comment-user-menu {
+    vertical-align: middle;
+}
+
+.comment-user-menu-trigger {
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.comment-user-menu-trigger:focus-visible {
+    outline: 2px solid var(--color-active);
+    outline-offset: 2px;
+}
+
+.comment-user-popup {
+    min-width: 240px;
+    padding: var(--space-2);
+}
+
+.comment-user-popup-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2) var(--space-2);
+}
+
+.comment-user-popup-identity {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.comment-user-popup-email {
+    overflow: hidden;
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
+    text-overflow: ellipsis;
+}
+
+.comment-user-popup-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
+}
+
+.comment-user-popup-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-text-muted);
+}
+
+.comment-user-popup-status.is-online .comment-user-popup-status-dot {
+    background: var(--color-success);
+}
+
+.comment-user-popup-status.is-check_error .comment-user-popup-status-dot {
+    background: var(--color-danger);
+}
+
+.comment-user-popup-status.is-unknown .comment-user-popup-status-dot {
+    background: var(--color-warning);
+}
+
+.comment-user-popup-guide {
+    margin: var(--space-2) var(--space-2) var(--space-1);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
+    line-height: 1.4;
 }
 
 .comment-select {
@@ -1010,7 +1100,7 @@ body.chat-fullscreen {
     }
 
     #comments-popup.open {
-        transform: translateY(0);
+        transform: none;
     }
 
     #comments-popup[data-fullscreen="true"] {
@@ -1032,13 +1122,33 @@ body.chat-fullscreen {
     }
 }
 
+.comment-participants-bar,
+.comment-contexts-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.comment-participants-bar #comment-participants,
+.comment-contexts-bar .comment-contexts-list {
+    flex: 1;
+    min-width: 0;
+}
+
 #comment-participants {
     padding: var(--space-1) 0;
     min-height: 20px;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     gap: 0.2em;
+}
+
+#comment-participants::-webkit-scrollbar {
+    display: none;
 }
 
 #comment-participants .avatar-wrapper {
@@ -1047,7 +1157,9 @@ body.chat-fullscreen {
     justify-content: center;
 }
 
-.add-participant-btn {
+.add-participant-btn,
+.add-context-btn,
+.add-topic-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1064,7 +1176,9 @@ body.chat-fullscreen {
     flex-shrink: 0;
 }
 
-.add-participant-btn:hover {
+.add-participant-btn:hover,
+.add-context-btn:hover,
+.add-topic-btn:hover {
     background: var(--color-section-bg);
     color: var(--color-text);
 }
@@ -1327,17 +1441,19 @@ body.chat-fullscreen {
     opacity: 0.5;
 }
 
-.context-chip.context-drag-over-left {
+.context-chip.dnd-over-left,
+.topic-tag.dnd-over-left {
     border-left: 3px solid var(--color-active);
     margin-left: -1px;
 }
 
-.context-chip.context-drag-over-right {
+.context-chip.dnd-over-right,
+.topic-tag.dnd-over-right {
     border-right: 3px solid var(--color-active);
     margin-right: -1px;
 }
 
-.comment-contexts-list.context-drop-active {
+.comment-contexts-list.dnd-over-into {
     outline: 2px dashed var(--color-link);
     outline-offset: -2px;
     background-color: color-mix(in srgb, var(--color-link) 8%, transparent);
@@ -1379,27 +1495,6 @@ body.chat-fullscreen {
 
 .delete-context-btn:hover {
     color: var(--color-danger);
-}
-
-.add-context-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--color-secondary-background);
-    border: 1px dashed var(--color-border);
-    color: var(--color-text-muted);
-    font-size: 0.85em;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.add-context-btn:hover {
-    background: var(--color-border);
-    color: var(--color-text);
 }
 
 /* Context toggle button in header */
@@ -1505,10 +1600,15 @@ body.chat-fullscreen {
 .ai-agent-draggable:active,
 .ai-agent-draggable.dragging {
     cursor: grabbing;
+}
+
+.ai-agent-draggable.dragging {
+    /* Opacity on :active traps the fixed profile menu in a stacking context
+       during a tap, redirecting the native click to content beneath it. */
     opacity: 0.5;
 }
 
-.topic-creation-container.drag-over {
+.topic-creation-container.dnd-over-into {
     background: var(--color-active);
     border-radius: 12px;
     opacity: 0.8;
@@ -1522,6 +1622,21 @@ body.chat-fullscreen {
     background: var(--color-secondary-active);
     color: var(--color-badge-text);
     border-color: var(--color-secondary-active);
+}
+
+.topic-unread-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.3em;
+    height: 1.3em;
+    padding: 0 0.35em;
+    border-radius: 999px;
+    background: var(--color-danger);
+    color: var(--color-badge-text);
+    font-size: 0.75em;
+    font-weight: bold;
+    line-height: 1;
 }
 
 .topic-tag.has-new-messages {
@@ -1543,7 +1658,7 @@ body.chat-fullscreen {
 }
 
 /* Drag and drop styles for moving comments to topics */
-.topic-tag.drag-over {
+.topic-tag.dnd-over-into {
     background-color: var(--color-active);
     color: var(--color-badge-text);
     border-color: var(--color-active);
@@ -1568,14 +1683,108 @@ body.chat-fullscreen {
     opacity: 0.5;
 }
 
-.topic-tag.topic-drag-over-left {
-    border-left: 3px solid var(--color-active);
-    margin-left: -1px;
+.creative-history-list {
+  --creative-history-addition-bg: color-mix(in srgb, var(--color-success) 18%, var(--surface-section));
+  --creative-history-addition-text: color-mix(in srgb, var(--color-success) 65%, var(--text-primary));
+  --creative-history-deletion-bg: color-mix(in srgb, var(--color-danger) 18%, var(--surface-section));
+  --creative-history-deletion-text: color-mix(in srgb, var(--color-danger) 65%, var(--text-primary));
+
+  display: grid;
+  gap: 12px;
+  padding: 12px;
 }
 
-.topic-tag.topic-drag-over-right {
-    border-right: 3px solid var(--color-active);
-    margin-right: -1px;
+.creative-history-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.creative-history-header,
+.creative-history-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.creative-history-summary {
+  margin: 8px 0 4px;
+}
+
+.creative-history-stats {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.creative-history-stats ins {
+  color: var(--creative-history-addition-text);
+  text-decoration: none;
+}
+
+.creative-history-stats del {
+  color: var(--creative-history-deletion-text);
+  text-decoration: none;
+}
+
+.creative-history-diff {
+  margin-top: 8px;
+}
+
+.creative-history-inline {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.creative-history-inline ins {
+  background: var(--creative-history-addition-bg);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.creative-history-inline del {
+  background: var(--creative-history-deletion-bg);
+  color: var(--text-primary);
+}
+
+.creative-history-split {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.creative-history-split :is(th, td) {
+  overflow-wrap: anywhere;
+  padding: 2px 6px;
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+  width: 50%;
+}
+
+.creative-history-split th {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.creative-history-split .diff-changed td:first-child {
+  background: var(--creative-history-deletion-bg);
+  color: var(--text-primary);
+}
+
+.creative-history-split .diff-changed td:last-child {
+  background: var(--creative-history-addition-bg);
+  color: var(--text-primary);
+}
+
+.creative-history-split .diff-gap td {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+  width: auto;
+}
+
+.creative-history-revert {
+  margin-top: 10px;
 }
 
 .comment-item[draggable="true"] {
@@ -1648,28 +1857,6 @@ body.chat-fullscreen {
     display: none;
 }
 
-.add-topic-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 1px solid var(--color-border);
-    background: transparent;
-    cursor: pointer;
-    color: var(--color-muted);
-    font-size: 1.2em;
-    line-height: 1;
-    padding: 0;
-}
-
-.add-topic-btn:hover {
-    background: var(--color-section-bg);
-    color: var(--color-text);
-}
-
-
 .topic-input {
     display: inline-block;
     padding: 0.2em 0.6em;
@@ -1709,9 +1896,33 @@ body.chat-fullscreen {
 .topic-archived-toggle:hover {
     opacity: 1;
 }
+/* Archived topics still receive messages. When the section is collapsed there is
+   no chip to badge, so the toggle carries the unread dot instead. */
+.topic-archived-toggle.has-new-messages {
+    position: relative;
+    opacity: 1;
+    border-color: var(--color-active);
+}
+.topic-archived-toggle.has-new-messages::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--color-danger);
+}
 .topic-tag.topic-archived {
     opacity: 0.5;
     font-style: italic;
+    cursor: pointer;
+}
+/* Archived topics are readable and selectable — the dimming marks them as
+   archived, it must not make the one you are reading illegible. */
+.topic-tag.topic-archived:hover,
+.topic-tag.topic-archived.active {
+    opacity: 1;
 }
 
 /* Topic list popup button (pinned right of the scrolling tab bar) */
@@ -1724,7 +1935,8 @@ body.chat-fullscreen {
     flex: 1;
     min-width: 0;
 }
-.topic-list-btn {
+.topic-list-btn,
+.bar-list-btn {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -1738,20 +1950,79 @@ body.chat-fullscreen {
     color: var(--color-muted);
     padding: 0;
 }
-.topic-list-btn:hover {
+.topic-list-btn:hover,
+.bar-list-btn:hover {
+    background: var(--color-section-bg);
+    color: var(--color-text);
+}
+.topic-list-btn[aria-expanded="true"],
+.bar-list-btn[aria-expanded="true"] {
     background: var(--color-section-bg);
     color: var(--color-text);
 }
 
-/* Archived entries inside the topic list popup */
-.topic-list-item {
-    display: inline-flex;
+/* Rows inside the shared entity list popup (contexts, users) */
+.entity-list-item {
+    display: flex;
     align-items: center;
     gap: 0.3em;
+    width: 100%;
+}
+.entity-list-item--muted {
+    font-style: italic;
+}
+.entity-list-item--muted > svg,
+.entity-list-item--muted > .entity-list-item-avatar,
+.entity-list-item--muted > .entity-list-item-label {
+    opacity: 0.5;
+}
+.entity-list-item-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    object-fit: cover;
+}
+.entity-list-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.entity-list-item-badge {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: 0.75em;
+    opacity: 0.6;
+}
+.entity-list-item-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Archived entries inside the topic list popup */
+.topic-list-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+    width: 100%;
 }
 .topic-list-item--archived {
-    opacity: 0.5;
     font-style: italic;
+}
+.topic-list-item--archived > svg,
+.topic-list-item--archived > .topic-list-item-label {
+    opacity: 0.5;
+}
+.topic-list-item .topic-unread-badge {
+    flex-shrink: 0;
+    margin-left: auto;
 }
 .topic-branch-icon {
     font-size: 0.75em;
@@ -1980,115 +2251,6 @@ li:hover .topic-create-option {
     text-decoration: underline;
 }
 
-/* ── Inline typo correction (volatile overlay; never serialized) ───────────── */
-/* The backdrop mirrors the textarea text exactly and paints <mark> spans over
-   it. The backdrop sits ON TOP of the textarea (higher z-index) but is
-   pointer-events:none, so clicks pass through to the textarea everywhere EXCEPT
-   over a <mark> (pointer-events:auto) — that's what makes the marks clickable.
-   If the textarea were on top, the browser would hit-test it first and the mark
-   click handlers would never fire. The backdrop's text is transparent, so the
-   textarea's real (opaque) glyphs show through and only the underlines paint. */
-.typo-input-wrap {
-    position: relative;
-    display: block;
-}
-
-.typo-input-wrap > textarea {
-    position: relative;
-    background: transparent;
-    z-index: 0;
-}
-
-.typo-backdrop {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    z-index: 1;
-}
-
-.typo-highlights {
-    margin: 0;
-    color: transparent;
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
-    word-break: break-word;
-}
-
-/* Two states, distinguished by BOTH shape and colour (colour-blind safe). */
-.typo-mark {
-    background: transparent;
-    color: transparent;
-    pointer-events: auto;
-    cursor: pointer;
-    border-radius: 2px;
-}
-
-/* Auto-applied (>= threshold): faint straight underline — resolved, dim. */
-.typo-mark-applied {
-    text-decoration: underline solid var(--color-link);
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
-    opacity: 0.55;
-}
-
-/* Candidate (< threshold): wavy dotted amber underline — needs a decision. */
-.typo-mark-candidate {
-    text-decoration: underline wavy var(--color-warning);
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
-}
-
-/* Creatable combobox reusing CommonPopup positioning. */
-.typo-popup {
-    position: absolute;
-    z-index: 100000;
-    min-width: 180px;
-    max-width: 320px;
-    background: var(--surface-section);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
-    padding: 6px;
-}
-
-.typo-popup-input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 6px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    font: inherit;
-    margin-bottom: 6px;
-}
-
-.typo-popup-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-.typo-popup-list .common-popup-item {
-    padding: 6px 8px;
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.typo-popup-list .common-popup-item.active,
-.typo-popup-list .common-popup-item:hover {
-    background: var(--surface-hover);
-}
-
-.typo-popup-role {
-    color: var(--text-muted);
-    font-size: 0.85em;
-}
-
 /* Empty chat state — feature discovery cards */
 #no-comments {
     padding: 24px 16px;
@@ -2199,4 +2361,39 @@ li:hover .topic-create-option {
 .chat-empty-restore-btn:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
+}
+
+.creative-history-toast-container {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 1200;
+    display: grid;
+    gap: 8px;
+}
+
+.creative-history-undo-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(420px, calc(100vw - 40px));
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-3);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
+    color: var(--text-primary);
+}
+
+.creative-history-undo-toast .creative-history-revert {
+    margin-top: 0;
+    white-space: nowrap;
+}
+
+.creative-history-undo-dismiss {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.2rem;
 }

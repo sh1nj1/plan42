@@ -84,6 +84,24 @@ module Collavre
       assert linked.archived?, "Linked creative should be archived when origin is archived"
     end
 
+    test "archive! recalculates every linked placement parent" do
+      foreign_parent = Creative.create!(description: "Foreign parent", user: users(:two), progress: 0)
+      Creative.create!(description: "Incomplete", user: users(:two), parent: foreign_parent, progress: 0)
+      linked = Creative.create!(user: users(:two), parent: foreign_parent, origin: @child1)
+      foreign_parent.reload
+      assert_in_delta 0.5, foreign_parent.progress, 0.01
+
+      @child1.archive!
+
+      assert linked.reload.archived?
+      assert_in_delta 0, foreign_parent.reload.progress, 0.01
+
+      @child1.unarchive!
+
+      assert_not linked.reload.archived?
+      assert_in_delta 0.5, foreign_parent.reload.progress, 0.01
+    end
+
     test "unarchive! on linked creative also unarchives origin" do
       origin = Creative.create!(description: "Origin", user: @user)
       linked = Creative.create!(description: "Linked", user: @user, parent: @parent, origin_id: origin.id)

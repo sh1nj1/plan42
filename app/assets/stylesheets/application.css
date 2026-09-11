@@ -383,18 +383,30 @@ input[type="password"] {
     overflow-x: auto;
 }
 
-.contacts-table {
+.contacts-table,
+.users-table {
     width: 100%;
     min-width: 720px;
     border-collapse: collapse;
 }
 
 .contacts-table th,
-.contacts-table td {
+.contacts-table td,
+.users-table th,
+.users-table td {
     padding: 0.5em;
     text-align: left;
     border-bottom: 1px solid var(--color-border);
     vertical-align: top;
+}
+
+.users-table {
+    min-width: 960px;
+}
+
+.users-table th:last-child,
+.users-table td:last-child {
+    min-width: 280px;
 }
 
 .contacts-table th:nth-child(1),

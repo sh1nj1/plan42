@@ -3,6 +3,10 @@ module Collavre
     MAX_SUGGESTIONS = 100
     MAX_VENDOR_LENGTH = 255
     MAX_NAME_LENGTH = 255
+    DEFAULT_SUGGESTIONS = [
+      [ "cli_proxy", "paperclip/codex_custom/anthropic/claude-sonnet-4.5" ],
+      [ "cli_proxy", "paperclip/codex_custom/openai/gpt-5" ]
+    ].freeze
 
     self.table_name = "llm_models"
 
@@ -43,6 +47,10 @@ module Collavre
       model.touch
       prune_excess!
       model
+    end
+
+    def self.seed_default_suggestions!
+      DEFAULT_SUGGESTIONS.each { |vendor, name| remember!(vendor:, name:) }
     end
 
     def self.prune_excess!
