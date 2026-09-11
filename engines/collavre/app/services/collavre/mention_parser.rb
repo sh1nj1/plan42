@@ -6,30 +6,49 @@ module Collavre
     # Characters allowed before @ in mentions (besides start-of-text)
     MENTION_PREFIX_CHARS = /[\s:.,;\n\r]/
 
+    # The name part of a canonical mention. Spaces are allowed (agents are named
+    # things like "GitHub PR Analyzer"), but "@" and line breaks are not: a lazy
+    # "anything up to the next colon" would let a colon-free mention on one line
+    # swallow the rest of the line plus the next line's "@", collapsing two
+    # mentions into one unresolvable name.
+    MENTION_NAME = /[^:@\n\r]+?/
+
     # Canonical mention: @name: (with colon separator)
     # Matches at start of text or after whitespace/punctuation/newline
-    MENTION_PATTERN = /(?:\A|(?<=#{MENTION_PREFIX_CHARS}))@([^:]+?):\s*/
+    MENTION_PATTERN = /(?:\A|(?<=#{MENTION_PREFIX_CHARS}))@(#{MENTION_NAME}):\s*/
 
     # Mention without colon: @name followed by whitespace (start-of-text only
-    # to avoid false positives like email addresses)
-    MENTION_LOOSE_PATTERN = /\A@(\S+)\s+/
+    # to avoid false positives like email addresses). The name excludes ":" so
+    # a canonical "@name:" is never also read as the loose name "name:".
+    MENTION_LOOSE_PATTERN = /\A@([^:\s]+)\s+/
 
     # Scan pattern: finds all @name: mentions anywhere in text
-    MENTION_SCAN_PATTERN = /(?:^|(?<=#{MENTION_PREFIX_CHARS}))@([^:]+?):/
+    MENTION_SCAN_PATTERN = /(?:^|(?<=#{MENTION_PREFIX_CHARS}))@(#{MENTION_NAME}):/
+
+    # A canonical mention occupying start-of-text, where the loose form would
+    # otherwise also match and truncate the name at its first space.
+    MENTION_CANONICAL_AT_START = /\A@#{MENTION_NAME}:/
 
     # Extract the first mentioned name from text (returns nil if no mention found)
     def self.extract_name(text)
-      return nil if text.blank?
-
-      match = text.match(MENTION_PATTERN) || text.match(MENTION_LOOSE_PATTERN)
-      match ? match[1].strip : nil
+      extract_all_names(text).first
     end
 
-    # Extract all mentioned names from text
+    # Extract all mentioned names from text, in the order they appear.
     def self.extract_all_names(text)
       return [] if text.blank?
 
-      text.scan(MENTION_SCAN_PATTERN).flatten.map(&:strip).uniq
+      names = text.scan(MENTION_SCAN_PATTERN).flatten
+
+      # The loose form only ever matches at start-of-text, so whatever it finds
+      # precedes every canonical mention — unless a canonical one already owns
+      # that position, in which case it has the more complete name.
+      unless text.match?(MENTION_CANONICAL_AT_START)
+        loose = text.match(MENTION_LOOSE_PATTERN)
+        names.unshift(loose[1]) if loose
+      end
+
+      names.map(&:strip).reject(&:blank?).uniq
     end
 
     # Find a User by case-insensitive name match
@@ -41,11 +60,10 @@ module Collavre
 
     # Extract mention and resolve to a User in one step
     def self.resolve_user(text)
-      name = extract_name(text)
-      name ? find_user_by_name(name) : nil
+      resolve_all_users(text).first
     end
 
-    # Resolve all mentioned users from text (finds mentions anywhere)
+    # Resolve all mentioned users from text, in mention order.
     def self.resolve_all_users(text)
       extract_all_names(text).filter_map { |name| find_user_by_name(name) }.uniq
     end
