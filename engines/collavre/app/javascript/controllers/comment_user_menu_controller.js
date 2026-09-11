@@ -18,7 +18,18 @@ export default class extends Controller {
     this.popupElement?.removeEventListener('comments--presence:changed', this.handlePresenceChanged)
   }
 
-  mention() {
+  visitProfile(event) {
+    // Keep the link in the document until its native navigation runs. The
+    // parent popup's delegated click handler otherwise hides it during the
+    // same event, which can cancel the link activation in some browsers.
+    event.stopPropagation()
+  }
+
+  mention(event) {
+    // This action owns both the command and its close behavior. If the chat
+    // composer is unavailable, leave the menu open instead of making a failed
+    // mention look successful.
+    event?.stopPropagation()
     const mentionMenu = this.application.getControllerForElementAndIdentifier(
       this.popupElement,
       'comments--mention-menu'
@@ -27,6 +38,7 @@ export default class extends Controller {
 
     mentionMenu.insertMention({ id: this.userIdValue, name: this.userNameValue })
     mentionMenu.textareaTarget?.focus()
+    this.popupMenuController?.hide()
   }
 
   handlePresenceChanged(event) {
@@ -39,6 +51,10 @@ export default class extends Controller {
 
   get presenceController() {
     return this.application.getControllerForElementAndIdentifier(this.popupElement, 'comments--presence')
+  }
+
+  get popupMenuController() {
+    return this.application.getControllerForElementAndIdentifier(this.element, 'popup-menu')
   }
 
   updatePresence(presentIds) {

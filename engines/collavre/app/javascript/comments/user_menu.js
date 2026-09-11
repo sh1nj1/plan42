@@ -94,6 +94,7 @@ export function createUserMenu({ user, online, labels, menuId, draggable = false
   const profile = document.createElement('a')
   profile.href = user.profile_url
   profile.className = 'popup-menu-item'
+  profile.dataset.action = 'click->comment-user-menu#visitProfile'
   profile.setAttribute('role', 'menuitem')
   profile.textContent = labels.viewProfile
   menu.appendChild(profile)

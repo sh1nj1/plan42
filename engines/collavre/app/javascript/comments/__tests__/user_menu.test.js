@@ -43,6 +43,8 @@ describe('createUserMenu', () => {
     expect(menu.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(true)
     expect(menu.querySelector('[data-comment-user-menu-target="statusLabel"]').textContent).toBe('Online')
     expect(menu.querySelector('a.popup-menu-item').getAttribute('href')).toBe('/users/9')
+    expect(menu.querySelector('a.popup-menu-item').dataset.action)
+      .toBe('click->comment-user-menu#visitProfile')
     expect(menu.querySelector('button.popup-menu-item').textContent).toBe('Mention')
     expect(menu.querySelector('.comment-user-popup-guide')).toBeNull()
   })
