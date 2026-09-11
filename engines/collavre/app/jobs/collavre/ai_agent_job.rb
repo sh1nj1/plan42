@@ -68,9 +68,7 @@ module Collavre
         # as long as the human takes to approve. Re-check at the moment of
         # execution so a demoted agent cannot answer in a topic that is now
         # exclusively someone else's.
-        resumed_context = task.trigger_event_payload
-        if resumed_context&.key?("topic") &&
-           !Orchestration::Matcher.permits_waiting_task?(resumed_context, agent)
+        unless Orchestration::Matcher.prepare_waiting_task!(task)
           Rails.logger.info(
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
             "no longer permits the recorded agent (agent=#{agent.id})"
@@ -115,7 +113,8 @@ module Collavre
         # in a topic that now belongs to someone else. Unlike a queued waiter
         # there is no Task yet to cancel, so cancelling on assignment change
         # cannot cover this path — the check has to happen here.
-        if context && !Orchestration::Matcher.permits_waiting_task?(context, agent)
+        prepared_context = context && Orchestration::Matcher.prepare_waiting_payload(context, agent)
+        if context && !prepared_context
           Rails.logger.info(
             "[AiAgentJob] Skipping job for agent #{agent.id}: topic " \
             "#{context.dig('topic', 'id')} no longer permits the recorded agent " \
@@ -123,6 +122,8 @@ module Collavre
           )
           return :rejected
         end
+
+        context = prepared_context
 
         # Guard: skip if there's already a running task for the same agent + comment
         comment_id = context&.dig("comment", "id")

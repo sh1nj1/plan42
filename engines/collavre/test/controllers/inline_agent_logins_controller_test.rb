@@ -1343,11 +1343,15 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  %i[promotion resumed approval delayed].product(%i[retained edited revoked]).each do |gate, change|
+  %i[promotion resumed approval delayed].product(%i[retained edited revoked anchor_edited anchor_retained]).each do |gate, change|
     test "#{gate} rechecks #{change} replay routing before execution" do
-      rejected = change != :retained
+      rejected = !%i[retained anchor_retained].include?(change)
       mention = prepare_merged_replay
       @original.update!(content: "@#{users(:ai_bot).name}: Only for another agent")
+      if %i[anchor_edited anchor_retained].include?(change)
+        mention.update!(content: "Additional details without a mention")
+        @original.update!(content: "@#{@agent.name}: Stale anchor request")
+      end
       queue_delayed_replay
       payload = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester).replay_payload
       # Coalescing can leave only the plural claim key on a survivor.
@@ -1361,6 +1365,8 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
       tracker.reserve!(replay.id) if gate == :approval
       mention.update!(content: "Never mind, no mention here") if change == :edited
+      @original.update!(content: "@#{users(:ai_bot).name}: Only for another agent") if change == :anchor_edited
+      @original.update!(content: "@#{@agent.name}: Updated anchor request") if change == :anchor_retained
       if change == :revoked
         assert @creative.reload.has_permission?(@agent, :feedback)
         perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
@@ -1377,6 +1383,18 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       service.define_singleton_method(:call) { nil }
       Collavre::AiAgentService.stub(:new, ->(task) {
         calls << task
+        if change == :anchor_retained
+          current_payload = task.reload.trigger_event_payload
+          assert_equal @original.content, current_payload.dig("chat", "content")
+          assert_equal [ @agent.id ], Collavre::SystemEvents::ContextBuilder.mentioned_ids_in(current_payload)
+          assert_equal @requester.id, current_payload["workspace_user_id"]
+          assert_equal [ mention.id ], current_payload["merged_comment_ids"]
+          assert_equal [ @task.id ], Collavre::CliProxy::ReplayClaims.ids(current_payload)
+          messages = Collavre::AiAgent::MessageBuilder.new(agent: @agent, context: current_payload,
+            original_comment: @original.reload).build.fetch(:messages).to_json
+          assert_includes messages, "Updated anchor request"
+          assert_not_includes messages, "Stale anchor request"
+        end
         task.task_actions.create!(action_type: "reply_created", status: "done", payload: { content: "Replayed response" })
         service
       }) do

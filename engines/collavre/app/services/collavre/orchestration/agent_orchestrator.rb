@@ -418,7 +418,7 @@ module Collavre
 
         agent = task.agent
         return unless agent
-        return if Matcher.permits_waiting_task?(context, agent)
+        return if Matcher.prepare_waiting_task!(task)
 
         Rails.logger.info(
           "[AgentOrchestrator] Cancelling queued task #{task.id}: topic #{task.topic_id} " \

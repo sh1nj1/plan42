@@ -35,7 +35,11 @@ or a new attempt clears authorization.
 After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Current routing is matched
 again before scheduling, admission, queue promotion, delayed execution, and
-approval resumption, including permissions, mentions, topic
+approval resumption. At each execution gate, the anchor is reloaded from its current
+public, non-approval row in the recorded creative/topic; its text and mentions are
+rebuilt before matching, and the validated payload is saved for delivery. Edits
+that retain the recorded agent deliver the updated text; edits that remove its
+selection cancel the replay. Validation includes permissions, mentions, topic
 assignment and routing expressions. For coalesced turns, current public comments
 still in the recorded creative/topic also participate in matching; a mention in
 one of those comments can select the recorded agent even when the anchor does not.
