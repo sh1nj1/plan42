@@ -11,6 +11,11 @@ module Collavre
         after_update_commit :recheck_abandoned_replays, if: :saved_change_to_status?
       end
 
+      # A handed-off replay with no finalized output cannot own loop completion.
+      def empty_inline_replay?
+        completed_inline_replay? && !finalized_inline_replay?
+      end
+
       private
 
       # Admission persists this link on both running turns and queued waiters.
@@ -36,11 +41,18 @@ module Collavre
       end
 
       def completed_inline_replay?
+        return false if CliProxy::ReplayClaims.ids(trigger_event_payload).empty?
+
         done? && !trigger_event_payload&.key?("engine_login") && !ended_undelivered?
       end
 
+      def finalized_inline_replay?
+        task_actions.where(status: "done", action_type: %w[reply_created review_updated]).exists? ||
+          reply_comment&.content.present?
+      end
+
       def recheck_abandoned_replays
-        return settle_inline_replay(completed: true) if completed_inline_replay?
+        return settle_inline_replay(completed: finalized_inline_replay?) if completed_inline_replay?
         return unless status.in?(%w[failed cancelled escalated]) && trigger_event_name == "comment_created"
         return if settle_inline_replay
         return unless creative&.parent&.drop_trigger_enabled?

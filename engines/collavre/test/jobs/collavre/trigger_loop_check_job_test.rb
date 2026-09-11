@@ -148,6 +148,57 @@ module Collavre
       end
     end
 
+    [ false, true ].each do |external|
+      test "empty survivor abandons all login claims via #{external ? 'external claim' : 'callback'} and releases the loop" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+        second = @task.dup
+        second.save!
+        replay = @task.dup
+        replay.assign_attributes(status: "running", trigger_event_payload: {
+          "inline_login_task_ids" => [ @task.id, second.id ], Orchestration::DeliveryRecord::HANDED_OFF_KEY => true
+        })
+        replay.save!
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          external ? replay.update_columns(status: "done") : replay.done!
+          replay.fire_completion_callbacks_after_external_claim
+        end
+        assert_equal [ @task.id, second.id ], checks
+        [ @task, second ].each do |original|
+          data = original.reload.trigger_event_payload.fetch("engine_login")
+          assert_equal true, data["replay_abandoned"]
+          assert_equal false, data["retryable"]
+          assert_not data["replay_completed"]
+        end
+        notices = @child.comments.count
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+          checks.each { |id| TriggerLoopCheckJob.perform_now(id) }
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal notices + 1, @child.comments.count
+      end
+    end
+
+    test "a finalized review without a reply placeholder completes its login claim" do
+      @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+      replay = @task.dup
+      replay.assign_attributes(status: "running", trigger_event_payload: { "inline_login_task_id" => @task.id })
+      replay.save!
+      quoted = @child.comments.create!(content: "Draft", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      source = @child.comments.create!(content: "Review", user: @human, topic: @topic, quoted_comment: quoted, skip_dispatch: true)
+      placeholder = @child.comments.create!(content: "Thinking...", user: @ai_bot, topic: @topic, task: replay, skip_dispatch: true)
+      source.stub(:review_message?, true) do
+        result = AiAgent::ResponseFinalizer.new(task: replay, agent: @ai_bot, original_comment: source,
+          reply_comment: placeholder, response_content: "Reviewed response").finalize
+        assert_equal quoted, result
+      end
+      assert_not Comment.exists?(placeholder.id)
+      replay.reload.done!
+      assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_completed")
+      assert_equal false, @task.trigger_event_payload.dig("engine_login", "retryable")
+      assert_not replay.empty_inline_replay?
+    end
+
     [ :login, :undelivered, :approval, :unclaimed ].each do |ending|
       test "#{ending} replay does not settle a claim as successfully completed" do
         @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => ending != :unclaimed } })

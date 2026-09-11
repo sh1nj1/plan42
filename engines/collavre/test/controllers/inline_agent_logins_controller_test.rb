@@ -270,6 +270,31 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  [ :poll, :status ].product(%w[pending failed]).each do |operation, status|
+    test "late #{status} #{operation} preserves authorization observed by an overlapping poll" do
+      set_data("session_id" => "authorized-session", "session_user_id" => @requester.id)
+      proxy = Object.new
+      proxy.define_singleton_method(:engines) { { "data" => [] } }
+      handler = ->(*) do
+        current = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester)
+        current.observe_session!({ "status" => "authorized" }, "authorized-session")
+        { "sessionId" => "authorized-session", "status" => status }
+      end
+      proxy.define_singleton_method(:auth_session) { |*args| handler.call(*args) }
+      Collavre::CliProxy::Client.stub(:new, proxy) { request_login_session(operation) }
+      assert_response :success
+      assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "authorized")
+      scheduler = Object.new
+      scheduler.define_singleton_method(:schedule) { |*| [ { timing: :delayed, delay: 30 } ] }
+      Collavre::Orchestration::Scheduler.stub(:new, scheduler) do
+        assert_enqueued_jobs 1, only: Collavre::InlineAgentReplayJob do
+          post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+        end
+      end
+      assert_response :success
+    end
+  end
+
   test "failed session start keeps old authorization revoked and permits a fresh attempt" do
     set_data("session_id" => "authorized-session", "session_user_id" => @requester.id, "authorized" => true)
     proxy = Object.new
@@ -1356,6 +1381,37 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  [ "", "   " ].each do |content|
+    test "empty authenticated replay #{content.inspect} abandons its claim and finishes its trigger loop" do
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => @original.topic_id
+      } } })
+      queue_delayed_replay
+      client = Object.new
+      client.define_singleton_method(:chat) { |*, **, &block| block.call(content) }
+      client.define_singleton_method(:last_handoff_failed?) { false }
+      client.define_singleton_method(:handed_off?) { true }
+      Collavre::AiClient.stub(:new, client) { perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob) }
+      replay = Collavre::Task.where(agent: @agent).where.not(id: @task.id).sole
+      assert replay.done?
+      assert_nil replay.reply_comment
+      data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal true, data["replay_abandoned"]
+      assert_equal false, data["retryable"]
+      assert_not data["replay_completed"]
+      checks = enqueued_jobs.select { |job| job[:job] == Collavre::TriggerLoopCheckJob }
+      assert_equal [ [ @task.id ] ], checks.map { |job| job[:args] }
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+        perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+      end
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+    end
+  end
+
   test "successful replay does not abandon its original login" do
     queue_delayed_replay
     assert_equal 1, execute_replay_payloads.size
@@ -1480,7 +1536,11 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     payloads = []
     service = Object.new
     service.define_singleton_method(:call) { nil }
-    Collavre::AiAgentService.stub(:new, ->(task) { payloads << task.trigger_event_payload; service }) do
+    Collavre::AiAgentService.stub(:new, ->(task) {
+      payloads << task.trigger_event_payload
+      task.task_actions.create!(action_type: "reply_created", status: "done", payload: { content: "Replayed response" })
+      service
+    }) do
       perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
     end
     payloads

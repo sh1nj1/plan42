@@ -28,7 +28,9 @@ invalidates browser polling immediately, before sending DELETE,
 and revokes the server session before contacting the proxy, so stale polls and
 submissions cannot authorize a replay even if the proxy cancellation fails.
 Superseded login and cancellation responses, including errors, cannot replace
-the current session or its polling.
+the current session or its polling. Within a matching session, observed authorization
+is monotonic: a late pending/failed snapshot cannot revoke it. Only cancellation
+or a new attempt clears authorization.
 
 After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Current routing is matched
@@ -62,6 +64,8 @@ callback abandons that login claim as well. Successful replies mark their linked
 login claims completed and disable retry while preserving the resumed notice.
 Later source/card withdrawal cannot rewrite those historical claims as abandoned.
 Only the reply task drives loop completion; settled login cards never do.
+Completion requires a persisted reply or review result. An empty response abandons
+its linked claims and cannot retain loop completion ownership.
 A second authentication failure or a failed provider handoff is not successful
 completion, and turns waiting for tool approval keep their claims pending.
 Repeated authentication carries every ancestor login claim into the next admitted

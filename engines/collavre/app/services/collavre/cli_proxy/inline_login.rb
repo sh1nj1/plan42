@@ -105,7 +105,8 @@ module Collavre
       def observe_session!(response, id)
         update_data! do |value|
           fail_with!("session_superseded") unless value["session_id"] == id && value["session_user_id"] == @user.id
-          value.merge("authorized" => response["status"] == "authorized",
+          authorized = response["status"] != "cancelled" && (value["authorized"] == true || response["status"] == "authorized")
+          value.merge("authorized" => authorized,
                       "session_id" => response["status"] == "cancelled" ? nil : id)
         end
         response

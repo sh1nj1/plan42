@@ -31,7 +31,7 @@ module Collavre
           .where(status: Task::ACTIVE_STATUSES + [ "done" ])
           .where("created_at > :time OR (created_at = :time AND id > :id)", time: task.created_at, id: task.id)
           .any? do |newer|
-        newer.active? || !newer.trigger_event_payload&.dig("engine_login", "replay_abandoned")
+        newer.active? || (!newer.empty_inline_replay? && !newer.trigger_event_payload&.dig("engine_login", "replay_abandoned"))
       end
     end
 
