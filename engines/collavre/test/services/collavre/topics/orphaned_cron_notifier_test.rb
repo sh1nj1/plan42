@@ -19,7 +19,7 @@ module Collavre
         @topic = @creative.topics.create!(name: "Counseling", user: @user)
       end
 
-      def create_cron(creative_id:, topic_id:, message: "@Ming: do the thing", description: nil)
+      def create_cron(creative_id:, topic_id:, message: "@Ming: do the thing", description: nil, once: false)
         SolidQueue::RecurringTask.create!(
           key: "cron_#{creative_id}_#{SecureRandom.hex(4)}",
           class_name: "Collavre::CronActionJob",
@@ -31,7 +31,8 @@ module Collavre
             creative_id: creative_id,
             topic_id: topic_id,
             agent_id: @user.id,
-            message: message
+            message: message,
+            once: once
           } ]
         )
       end
@@ -83,6 +84,20 @@ module Collavre
           OrphanedCronNotifier.new(topic_id: deleted_id, topic_name: "Counseling").call
         end
         assert SolidQueue::RecurringTask.exists?(key: cron.key)
+      end
+
+      test "preserves the run-once option in the recreation command" do
+        create_cron(creative_id: @creative.id, topic_id: @topic.id, once: true)
+        deleted_name = @topic.name
+        deleted_id = @topic.id
+        @topic.destroy!
+
+        OrphanedCronNotifier.new(topic_id: deleted_id, topic_name: deleted_name).call
+
+        notice = @creative.comments.where(user_id: nil).order(:created_at).last
+        command = notice.content.lines.find { |line| line.start_with?("/cron_create ") }
+        payload = JSON.parse(command.delete_prefix("/cron_create "))
+        assert_equal true, payload.fetch("once")
       end
 
       test "deletes every matching cron before posting notices" do

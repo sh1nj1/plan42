@@ -33,7 +33,8 @@ module Collavre
         next unless schedule_matches?(task, now)
         next if already_dispatched?(task, now)
 
-        enqueue_task(task)
+        next unless dispatch_task(task)
+
         mark_dispatched(task, now)
       end
     ensure
@@ -69,12 +70,12 @@ module Collavre
       job_class = task.class_name.safe_constantize
       unless job_class
         Rails.logger.warn("[CronScheduler] Unknown job class: #{task.class_name} for task #{task.key}")
-        return
+        return false
       end
 
       args = task.arguments || []
       if args.is_a?(Array) && args.first.is_a?(Hash)
-        job_class.perform_later(**args.first.symbolize_keys)
+        job_class.perform_later(**args.first.symbolize_keys.except(:once))
       elsif args.is_a?(Array)
         job_class.perform_later(*args)
       else
@@ -82,8 +83,38 @@ module Collavre
       end
 
       Rails.logger.info("[CronScheduler] Enqueued #{task.class_name} for task #{task.key}")
+      true
     rescue StandardError => e
       Rails.logger.error("[CronScheduler] Failed to enqueue #{task.key}: #{e.message}")
+      false
+    end
+
+    def dispatch_task(task)
+      return enqueue_task(task) unless run_once?(task)
+
+      creative = once_task_creative(task)
+      enqueued = task.with_lock do
+        next false unless enqueue_task(task)
+
+        task.destroy!
+        true
+      end
+      Crons::ChangeBroadcaster.call(creative) if enqueued && creative
+      enqueued
+    rescue ActiveRecord::RecordNotFound
+      false
+    end
+
+    def run_once?(task)
+      args = task.arguments
+      return false unless args.is_a?(Array) && args.first.is_a?(Hash)
+
+      args.first.with_indifferent_access[:once] == true
+    end
+
+    def once_task_creative(task)
+      args = task.arguments.first.with_indifferent_access
+      Creative.find_by(id: args[:creative_id])
     end
 
     def reschedule

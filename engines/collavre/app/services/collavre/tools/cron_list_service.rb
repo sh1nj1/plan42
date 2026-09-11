@@ -40,7 +40,7 @@ module Tools
           creative_id: task_creative_id,
           topic_id: args["topic_id"],
           agent_id: args["agent_id"],
-          message: args["message"],
+          message: args["message"], once: args["once"] == true,
           created_at: task.created_at&.iso8601
         }
       end

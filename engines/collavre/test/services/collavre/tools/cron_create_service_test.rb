@@ -90,6 +90,24 @@ module Collavre
         assert_equal @topic.id, args[:topic_id]
         assert_equal @user.id, args[:agent_id]
         assert_equal "Test message", args[:message]
+        assert_equal false, args[:once]
+        assert_equal false, result[:once]
+      end
+
+      test "creates a job that runs once" do
+        result = CronCreateService.new.call(
+          creative_id: @creative.id,
+          topic_name: "Cron Test Topic",
+          schedule: "0 9 * * *",
+          message: "One-time message",
+          once: true
+        )
+
+        assert result[:success]
+        assert_equal true, result[:once]
+
+        task = SolidQueue::RecurringTask.find_by!(key: result[:key])
+        assert_equal true, task.arguments.first[:once]
       end
 
       test "rejects invalid cron schedule" do
