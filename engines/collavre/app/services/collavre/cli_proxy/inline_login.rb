@@ -114,7 +114,8 @@ module Collavre
         fail_with!("cannot_retry") if decision.nil? || decision[:timing] == :rejected
 
         job = decision[:timing] == :delayed ? AiAgentJob.set(wait: decision[:delay]) : AiAgentJob
-        job.perform_later(agent.id, task.trigger_event_name, payload)
+        result = job.perform_later(agent.id, task.trigger_event_name, payload)
+        fail_with!("cannot_retry") unless result && result.successfully_enqueued?
       end
 
       def retry_payload(source)

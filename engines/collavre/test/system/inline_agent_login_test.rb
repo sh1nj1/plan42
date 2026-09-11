@@ -42,7 +42,7 @@ class InlineAgentLoginTest < ApplicationSystemTestCase
       { "engine" => engine, "flow" => "paste-code", "sessionId" => id, "status" => "authorized" }
     end
     Collavre::CliProxy::Client.stub(:new, proxy) do
-      Collavre::AiAgentJob.stub(:perform_later, ->(*args) { resumed << args }) do
+      Collavre::AiAgentJob.stub(:perform_later, ->(*args) { resumed << args; Collavre::AiAgentJob.new.tap { |job| job.successfully_enqueued = true } }) do
         visit collavre.creative_path(@creative, open_comments: true)
         assert_selector "#comments-popup", visible: :visible
         within("#inline_agent_login_#{@reply.id}") do
@@ -92,7 +92,7 @@ class InlineAgentLoginTest < ApplicationSystemTestCase
         "verificationUrl" => "https://auth.openai.com/codex/device", "userCode" => "ABCD-EFGH", "expiresAt" => 10.minutes.from_now.iso8601 }
     end
     Collavre::CliProxy::Client.stub(:new, proxy) do
-      Collavre::AiAgentJob.stub(:perform_later, ->(*args) { resumed << args }) do
+      Collavre::AiAgentJob.stub(:perform_later, ->(*args) { resumed << args; Collavre::AiAgentJob.new.tap { |job| job.successfully_enqueued = true } }) do
         visit collavre.creative_path(@creative, open_comments: true)
         within("#inline_agent_login_#{@reply.id}") do
           click_button "Log in (device-code)"

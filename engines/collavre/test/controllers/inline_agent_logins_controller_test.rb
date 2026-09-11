@@ -290,6 +290,88 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     fake.verify
   end
 
+  [ :immediate, :delayed ].each do |timing|
+    [ :false, :nil, :unsuccessful ].each do |failure|
+      test "#{timing} enqueue returning #{failure} rolls back the replay claim and allows another attempt" do
+        set_data("authorized" => true, "session_user_id" => @requester.id)
+        result = case failure
+        when :false then false
+        when :nil then nil
+        else Collavre::AiAgentJob.new
+        end
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) { |*| [ { timing: timing, delay: 30 } ] }
+        failed_enqueue = ->(*_args) { result }
+
+        Collavre::Orchestration::Scheduler.stub(:new, scheduler) do
+          # Exercise both perform_later entry points without bypassing the scheduler.
+          if timing == :delayed
+            configured_job = Collavre::AiAgentJob.set(wait: 30)
+            Collavre::AiAgentJob.stub(:set, configured_job) do
+              configured_job.stub(:perform_later, failed_enqueue) do
+                post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+              end
+            end
+          else
+            Collavre::AiAgentJob.stub(:perform_later, failed_enqueue) do
+              post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+            end
+          end
+          assert_response :conflict
+          assert_equal "cannot_retry", response.parsed_body.dig("error", "code")
+          assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+          assert @task.trigger_event_payload.dig("engine_login", "authorized")
+
+          assert_enqueued_jobs 1, only: Collavre::AiAgentJob do
+            2.times do
+              post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+              assert_response :success
+            end
+          end
+          assert @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+        end
+      end
+    end
+  end
+
+  [ :callback, :external_claim ].each do |completion|
+    test "#{completion} leaves the trigger loop running until the authenticated replay completes" do
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      # Avoid dispatching a drop event while preparing the active loop.
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => @original.topic_id
+      } } })
+      @task.update!(status: :running)
+      assert_no_enqueued_jobs(only: Collavre::TriggerLoopCheckJob) do
+        if completion == :callback
+          @task.done!
+        else
+          @task.update_columns(status: "done")
+          @task.reload.fire_completion_callbacks_after_external_claim
+        end
+      end
+      assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+
+      set_data("authorized" => true, "session_user_id" => @requester.id)
+      clear_enqueued_jobs
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+      assert_response :success
+      payload = enqueued_jobs.find { |job| job[:job] == Collavre::AiAgentJob }[:args][2]
+      assert_not payload.key?("engine_login")
+      replay = Collavre::Task.create!(name: "Authenticated replay", agent: @agent, creative: @creative,
+        topic_id: @original.topic_id, status: :running, trigger_event_name: "comment_created", trigger_event_payload: payload)
+      @creative.comments.create!(user: @agent, topic_id: @original.topic_id, task: replay,
+        content: "Done [STATUS: DONE]", skip_dispatch: true)
+      assert_enqueued_with(job: Collavre::TriggerLoopCheckJob, args: [ replay.id ]) { replay.done! }
+      perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+      assert_equal "pending_verification", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+    end
+  end
+
   test "removed agent access prevents replay even after login succeeds" do
     set_data("authorized" => true, "session_user_id" => @requester.id)
     Collavre::CreativeShare.where(creative: @creative, user: @agent).destroy_all
