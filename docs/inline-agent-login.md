@@ -65,7 +65,9 @@ login claims completed and disable retry while preserving the resumed notice.
 Later source/card withdrawal cannot rewrite those historical claims as abandoned.
 Only the reply task drives loop completion; settled login cards never do.
 Completion requires a persisted reply or review result. An empty response abandons
-its linked claims and cannot retain loop completion ownership.
+its linked claims and cannot retain loop completion ownership. Newer ordinary turns
+also need finalized output to supersede abandonment; if one finishes empty after
+an abandonment check deferred to it, completion rechecks the abandoned turn.
 A second authentication failure or a failed provider handoff is not successful
 completion, and turns waiting for tool approval keep their claims pending.
 Repeated authentication carries every ancestor login claim into the next admitted

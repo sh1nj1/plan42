@@ -88,6 +88,45 @@ module Collavre
       end
     end
 
+    [ false, true ].product([ false, true ]).each do |external, finish_first|
+      test "blank ordinary turn releases abandonment via #{external ? 'external claim' : 'callback'} with finish_first=#{finish_first}" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        newer = @task.dup
+        newer.assign_attributes(status: "running", created_at: @task.created_at + 1.second,
+          trigger_event_payload: { Orchestration::DeliveryRecord::HANDED_OFF_KEY => true })
+        newer.save!
+        placeholder = @child.comments.create!(content: "Thinking...", user: @ai_bot, topic: @topic,
+          task: newer, skip_dispatch: true)
+        unless finish_first
+          TriggerLoopCheckJob.perform_now(@task.id)
+          assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+        end
+        assert_nil AiAgent::ResponseFinalizer.new(task: newer, agent: @ai_bot, original_comment: nil,
+          reply_comment: placeholder, response_content: " \n").finalize
+        assert_not Comment.exists?(placeholder.id)
+        assert_empty CliProxy::ReplayClaims.ids(newer.trigger_event_payload)
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          if external
+            newer.update_columns(status: "done")
+            newer.fire_completion_callbacks_after_external_claim
+          else
+            newer.done!
+          end
+        end
+        assert_equal [ @task.id ], checks
+        before = @child.comments.count
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+          TriggerLoopCheckJob.perform_now(@task.id) if finish_first
+          checks.each { |id| TriggerLoopCheckJob.perform_now(id) }
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+        assert_equal before + 1, @child.comments.count
+        assert_equal I18n.t("collavre.inline_agent_login.replay_abandoned"), @child.comments.last.content
+      end
+    end
+
     %w[cancelled failed escalated].each do |ending|
       test "external #{ending} replay settles its original login exactly once" do
         @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
@@ -196,7 +235,7 @@ module Collavre
       replay.reload.done!
       assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_completed")
       assert_equal false, @task.trigger_event_payload.dig("engine_login", "retryable")
-      assert_not replay.empty_inline_replay?
+      assert_not replay.empty_loop_response?
     end
 
     [ :login, :undelivered, :approval, :unclaimed ].each do |ending|
@@ -281,8 +320,8 @@ module Collavre
       assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
     end
 
-    [ :topic, :creative, :event, :earlier, :not_abandoned, :completed ].each do |scope|
-      test "failed turn does not recheck an unrelated abandoned replay: #{scope}" do
+    [ :topic, :creative, :event, :earlier, :not_abandoned, :completed ].product(%w[failed done]).each do |scope, ending|
+      test "#{ending} turn without output does not recheck an unrelated abandoned replay: #{scope}" do
         @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
         newer = @task.dup
         newer.assign_attributes(status: "running", trigger_event_payload: {}, created_at: @task.created_at + 1.second)
@@ -298,7 +337,7 @@ module Collavre
         end
         newer.save!
         TriggerLoopCheckJob.stub(:perform_later, ->(*) { flunk "Unrelated failure cannot take ownership" }) do
-          newer.failed!
+          newer.update!(status: ending)
         end
         assert_equal scope == :completed ? "completed" : "running", @child.reload.data.dig("trigger", "loop", "state")
       end
@@ -362,6 +401,7 @@ module Collavre
     end
 
     {
+      empty_ordinary: { status: "done" },
       failed: { status: "failed" },
       cancelled: { status: "cancelled" },
       escalated: { status: "escalated" },
@@ -430,6 +470,10 @@ module Collavre
         newer = @task.dup
         newer.assign_attributes(status: status, trigger_event_payload: {}, created_at: @task.created_at + 1.second)
         newer.save!
+        if status == "done"
+          @child.comments.create!(content: "More work [STATUS: CONTINUE]", topic: @topic, user: @ai_bot,
+            task: newer, skip_dispatch: true)
+        end
         failed = newer.dup
         failed.assign_attributes(status: "failed", created_at: @task.created_at + 2.seconds)
         failed.save!
@@ -441,6 +485,30 @@ module Collavre
           end
         end
         assert_equal before_loop, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    %w[reply_created review_updated].product([ false, true ]).each do |action_type, external|
+      test "ordinary #{action_type} retains completion via #{external ? 'external claim' : 'callback'}" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        newer = @task.dup
+        newer.assign_attributes(status: "running", trigger_event_payload: {}, created_at: @task.created_at + 1.second)
+        newer.save!
+        newer.task_actions.create!(action_type: action_type, status: "done", payload: { content: "Final result" })
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          if external
+            newer.update_columns(status: "done")
+            newer.fire_completion_callbacks_after_external_claim
+          else
+            newer.done!
+          end
+        end
+        assert_equal [ newer.id ], checks
+        assert_no_difference -> { @child.comments.count } do
+          TriggerLoopCheckJob.perform_now(@task.id)
+        end
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
       end
     end
 

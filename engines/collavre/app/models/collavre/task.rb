@@ -149,7 +149,7 @@ module Collavre
     def trigger_loop_completion_eligible?
       return false unless status == "done"
       # Pending and completed replays own completion instead of the login card.
-      return false if loop_completion_delegated_to_replay? || empty_inline_replay?
+      return false if loop_completion_delegated_to_replay? || empty_loop_response?
       return false unless trigger_event_name == "comment_created"
       return false unless creative&.parent&.drop_trigger_enabled?
 
