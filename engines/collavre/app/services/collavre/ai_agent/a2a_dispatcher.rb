@@ -26,15 +26,25 @@ module Collavre
 
         creative = @reply_comment.creative
         record_interactions(mentioned_agents, creative)
-        dispatch_event(creative)
+        dispatch_event(creative, mentioned_agents)
       rescue StandardError => e
         Rails.logger.error("[AiAgent::A2aDispatcher] A2A dispatch failed: #{e.message}")
       end
 
       private
 
+      # The agents this reply hands off to: every mentioned AI agent except the
+      # one that wrote it.
+      #
+      # Excluding the author matters now that the dispatch names its targets
+      # instead of leaving them to be re-derived downstream. An agent quoting
+      # its own name — echoing the mention it was addressed by, signing off —
+      # would otherwise be handed its own reply as a fresh trigger, and unlike a
+      # real handoff nothing else in the chain can tell that apart from work.
       def find_mentioned_agents
-        MentionParser.resolve_all_users(@reply_comment.content).select(&:ai_user?)
+        MentionParser.resolve_all_users(@reply_comment.content)
+                     .select(&:ai_user?)
+                     .reject { |user| user.id == @agent.id }
       end
 
       def record_interactions(mentioned_agents, creative)
@@ -53,7 +63,7 @@ module Collavre
         end
       end
 
-      def dispatch_event(creative)
+      def dispatch_event(creative, mentioned_agents)
         payload = {
           comment: {
             id: @reply_comment.id,
@@ -65,7 +75,15 @@ module Collavre
             description: creative&.description
           },
           topic: { id: @reply_comment.topic_id },
-          chat: { content: @reply_comment.content }
+          chat: {
+            content: @reply_comment.content,
+            # The targets this dispatch already resolved, rather than the content
+            # alone. Re-deriving them downstream re-runs the same name lookup
+            # against a different clock and a different roster, and any answer it
+            # reaches that differs from this one silently drops an agent we have
+            # already recorded a handoff to.
+            mentioned_users: mentioned_agents.map { |user| user.as_json(only: [ :id, :name, :email ]) }
+          }
         }
         # Always carry the resolved principal, including an explicit nil. Nil
         # means the current anchor could not prove a human identity; omitting the

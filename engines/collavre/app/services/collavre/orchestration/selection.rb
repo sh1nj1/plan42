@@ -30,13 +30,30 @@ module Collavre
       private
 
       def candidates_for_contexts
-        candidates = Matcher.new(@context).match
+        base = Matcher.new(@context).match
+        candidates = base
         @candidate_overrides.each do |agent_id, override|
           candidates = candidates.reject { |agent| agent.id == agent_id }
           overridden = Matcher.new(@context.deep_merge(override.deep_stringify_keys)).match
           candidates.concat(overridden.select { |agent| agent.id == agent_id })
         end
-        candidates.uniq(&:id).sort_by(&:id)
+        restore_match_order(candidates.uniq(&:id), base)
+      end
+
+      # The Matcher's order is the floor order: Scheduler#schedule walks the
+      # array and, under topic_max_concurrent_jobs, admits whom it reaches
+      # first. For mentions that order is the order the names were written, so
+      # sorting by id here would let "@second: your turn" answer ahead of
+      # "@first:" purely for having the smaller id.
+      #
+      # Rebuilding an override's candidate appends it, so restore each agent to
+      # its position in the unoverridden match. An agent the base match did not
+      # produce has no such position and sorts last, by id for determinism —
+      # every Matcher path already returns a stable order (mention order, or
+      # `order(:id)` for expression routing), so nothing else needs sorting.
+      def restore_match_order(candidates, base)
+        base_order = base.each_with_index.to_h { |agent, index| [ agent.id, index ] }
+        candidates.sort_by { |agent| [ base_order[agent.id] || base_order.size, agent.id ] }
       end
     end
   end

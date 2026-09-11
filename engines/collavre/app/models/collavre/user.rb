@@ -241,6 +241,12 @@ module Collavre
     end
 
     normalizes :email, with: ->(e) { e.strip.downcase }
+    # A name is written back as the canonical mention "@name:", and mention
+    # parsing stops a name at a line break so that a colon-free mention on one
+    # line cannot swallow the next line's mention. A stored line break would
+    # therefore make that user's own canonical mention unresolvable, so names
+    # are kept to a single line.
+    normalizes :name, with: ->(n) { n.to_s.gsub(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/, " ").strip }
     normalizes :timezone, with: ->(tz) do
       tz = tz.to_s.strip
       next if tz.blank?
@@ -280,12 +286,10 @@ module Collavre
       return yield unless gateway
 
       gateway.with_lock do
-        begin
-          @cli_proxy_gateway_assignment_lock = gateway
-          yield
-        ensure
-          @cli_proxy_gateway_assignment_lock = nil
-        end
+        @cli_proxy_gateway_assignment_lock = gateway
+        yield
+      ensure
+        @cli_proxy_gateway_assignment_lock = nil
       end
     end
 

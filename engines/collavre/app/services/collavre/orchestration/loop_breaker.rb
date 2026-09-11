@@ -239,15 +239,20 @@ module Collavre
         return {} if interactions.size < 2
 
         pair_counts = Hash.new(0)
+        previous_by_pair = {}
         sorted = interactions.sort_by { |i| i[:at] }
 
-        sorted.each_cons(2) do |prev, curr|
-          # Count as exchange if direction reversed (A→B then B→A)
-          if prev[:from] == curr[:to] && prev[:to] == curr[:from]
-            # Normalize pair key (smaller id first)
-            pair = [ prev[:from], prev[:to] ].sort
+        sorted.each do |interaction|
+          pair = [ interaction[:from], interaction[:to] ].sort
+          previous = previous_by_pair[pair]
+
+          # Count direction reversals within this pair. Unrelated fan-out edges
+          # must not hide an otherwise consecutive exchange between two agents.
+          if previous && previous[:from] == interaction[:to] && previous[:to] == interaction[:from]
             pair_counts[pair] += 1
           end
+
+          previous_by_pair[pair] = interaction
         end
 
         pair_counts

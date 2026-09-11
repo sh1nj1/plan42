@@ -1,6 +1,31 @@
 require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
+  test "collapses line breaks in name to a single line" do
+    user = User.create!(email: "multiline_name@example.com", password: "password123", name: "Line\nBreak Agent")
+
+    assert_equal "Line Break Agent", user.name
+  end
+
+  test "collapses a line break run with surrounding spaces to one space" do
+    user = User.create!(email: "multiline_padded@example.com", password: "password123", name: "Line \r\n  Break")
+
+    assert_equal "Line Break", user.name
+  end
+
+  test "strips surrounding whitespace from name" do
+    user = User.create!(email: "padded_name@example.com", password: "password123", name: "  Padded Agent  ")
+
+    assert_equal "Padded Agent", user.name
+  end
+
+  test "keeps a blank name invalid rather than normalizing it into one" do
+    user = User.new(email: "blank_name@example.com", password: "password123", name: "\n \n")
+
+    assert_not user.valid?
+    assert_includes user.errors[:name], "can't be blank"
+  end
+
   test "requires valid email" do
     user = User.new(email: "bad", password: "password123", password_confirmation: "password123", name: "Bad")
     assert_not user.valid?
