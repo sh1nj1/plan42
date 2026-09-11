@@ -73,6 +73,24 @@ test('opens title images and preserves zoom, keyboard navigation and close', () 
   expect(dialog()).toBeNull()
 })
 
+test('preserves image descriptions on every carousel entry and clears missing or empty alt text', () => {
+  const description = 'Architecture: "Client" < API & 서버'
+  document.querySelector('#second').alt = description
+  document.querySelector('.creative-content').insertAdjacentHTML('beforeend', `
+    <img src="/decorative.png" alt=""><img src="/undescribed.png">`)
+
+  click('#second')
+  expect(dialog().querySelector('img').alt).toBe(description)
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('First')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe(description)
+})
+
 test.each(['#text', '#empty', '#missing', '#editor', '#form', '#avatar'])('ignores %s', (selector) => {
   expect(click(selector)).toBe(true)
   expect(dialog()).toBeNull()
@@ -145,6 +163,7 @@ test('chat attachments retain their index, download and delete controls', async 
   await settle()
   click('#chat-second')
   expect(dialog().querySelector('img').src).toBe('http://localhost/chat-second.png')
+  expect(dialog().querySelector('img').alt).toBe('')
   expect(dialog().querySelector('.image-lightbox-delete').hidden).toBe(false)
   expect(dialog().querySelector('.image-lightbox-download-one').hidden).toBe(false)
   expect(dialog().querySelector('.image-lightbox-download-all')).not.toBeNull()

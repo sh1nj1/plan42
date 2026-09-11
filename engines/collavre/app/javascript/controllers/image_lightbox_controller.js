@@ -235,6 +235,7 @@ export default class extends Controller {
     this._resetZoom()
 
     imgEl.src = img.fullSrc
+    imgEl.alt = img.alt || ""
 
     // Show image once loaded (or immediately if cached)
     const showImg = () => { imgEl.style.opacity = "1" }

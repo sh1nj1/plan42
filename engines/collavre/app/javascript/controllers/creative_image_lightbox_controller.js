@@ -17,7 +17,7 @@ export default class extends ImageLightboxController {
 
     event.preventDefault()
     event.stopPropagation()
-    this._openImages(images.map((img) => ({ fullSrc: img.src, filename: img.alt })), index)
+    this._openImages(images.map((img) => ({ fullSrc: img.src, alt: img.alt })), index)
   }
 
   _selectionActive(content) {
