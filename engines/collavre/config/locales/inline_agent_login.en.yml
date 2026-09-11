@@ -14,6 +14,7 @@ en:
         or access changed. Check your connection and permissions, then send a new message.
       expired: Login expired. Start a new login.
       errors:
+        already_resumed: The original request is already queued. Its login session can no longer be changed.
         session_superseded: This login was replaced. Start a new login.
         not_authorized: Complete login before retrying.
         cannot_retry: This turn cannot be retried yet. Refresh and try again.

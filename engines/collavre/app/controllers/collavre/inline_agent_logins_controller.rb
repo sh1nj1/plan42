@@ -4,6 +4,7 @@ module Collavre
   class InlineAgentLoginsController < ApplicationController
     before_action :set_login
     before_action :require_manager, except: :show
+    before_action :require_mutable_session, only: [ :create_session, :session, :submit, :cancel ]
     before_action :check_session, only: [ :session, :submit, :cancel ]
     rescue_from CliProxy::Client::Error, with: :render_proxy_error
 
@@ -61,6 +62,10 @@ module Collavre
 
     def require_manager
       head :forbidden unless @login.manageable?
+    end
+
+    def require_mutable_session
+      @login.check_session_mutable!
     end
 
     def check_session

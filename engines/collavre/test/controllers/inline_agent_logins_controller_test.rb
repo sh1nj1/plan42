@@ -134,7 +134,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     expected = @task.reload.trigger_event_payload.except("engine_login").merge(
       "comment" => @original.dispatch_payload[:comment].deep_stringify_keys, "chat" => { "content" => @original.content }
     )
-    assert_enqueued_with(job: Collavre::InlineAgentReplayJob, args: [ @reply.id, @owner.id ]) do
+    assert_enqueued_with(job: Collavre::InlineAgentReplayJob, args: [ @reply.id, @owner.id, @task.id ]) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :success
@@ -188,6 +188,59 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     fake.verify
   end
 
+  [ :create, :poll, :submit, :cancel ].each do |operation|
+    test "claimed replay rejects #{operation} before contacting the proxy" do
+      set_data("session_id" => "authorized-session")
+      queue_delayed_replay
+      before = @task.reload.trigger_event_payload.deep_dup
+      Collavre::CliProxy::Client.stub(:new, ->(*) { flunk "claimed replay must not mutate proxy sessions" }) do
+        request_login_session(operation)
+      end
+      assert_response :conflict
+      assert_equal "already_resumed", response.parsed_body.dig("error", "code")
+      assert_equal before, @task.reload.trigger_event_payload
+      assert_equal 1, execute_replay_payloads.size
+    end
+  end
+
+  test "claimed replay status stays readable without polling its old session" do
+    set_data("session_id" => "authorized-session")
+    queue_delayed_replay
+    proxy = Minitest::Mock.new
+    proxy.expect(:engines, { "data" => [] })
+    Collavre::CliProxy::Client.stub(:new, proxy) do
+      get inline_agent_login_status_path(comment_id: @reply.id), as: :json
+    end
+    assert_response :success
+    assert_equal true, response.parsed_body["resumed"]
+    assert_equal true, response.parsed_body["authorized"]
+    assert_nil response.parsed_body["session"]
+    proxy.verify
+  end
+
+  [ :create, :poll, :submit, :cancel, :status ].each do |operation|
+    test "late #{operation} response cannot overwrite a committed replay claim" do
+      set_data("session_id" => "authorized-session", "session_user_id" => @requester.id)
+      proxy = Object.new
+      method = { create: :create_auth_session, poll: :auth_session, submit: :submit_auth_session,
+                 cancel: :cancel_auth_session, status: :auth_session }.fetch(operation)
+      proxy.define_singleton_method(:engines) { { "data" => [] } }
+      handler = ->(*) do
+        set_data("authorized" => true, "resumed" => true)
+        { "sessionId" => "late-session", "status" => "cancelled" }
+      end
+      proxy.define_singleton_method(method) { |*args| handler.call(*args) }
+      Collavre::CliProxy::Client.stub(:new, proxy) do
+        request_login_session(operation)
+      end
+      assert_response(operation == :status ? :success : :conflict)
+      state = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal true, state["resumed"]
+      assert_equal true, state["authorized"]
+      assert_equal "authorized-session", state["session_id"]
+    end
+  end
+
   test "session identifiers from another card or a superseded attempt are rejected before proxy access" do
     set_data("session_id" => "new-session", "session_user_id" => @requester.id)
     get inline_agent_login_session_path(comment_id: @reply.id, session_id: "old-session"), as: :json
@@ -219,7 +272,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       "comment" => @original.dispatch_payload[:comment].deep_stringify_keys,
       "chat" => Collavre::SystemEvents::ContextBuilder.reanchor_chat(@original.content)
     )
-    assert_enqueued_with(job: Collavre::InlineAgentReplayJob, args: [ @reply.id, @requester.id ]) do
+    assert_enqueued_with(job: Collavre::InlineAgentReplayJob, args: [ @reply.id, @requester.id, @task.id ]) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :success
@@ -557,15 +610,81 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   test "replay queue contains only ids and keeps the scheduler delay" do
     queue_delayed_replay
     job = enqueued_jobs.find { |entry| entry[:job] == Collavre::InlineAgentReplayJob }
-    assert_equal [ @reply.id, @requester.id ], job[:args]
+    assert_equal [ @reply.id, @requester.id, @task.id ], job[:args]
     assert_in_delta 30.seconds.from_now.to_f, job[:at], 2
     assert_equal false, Collavre::InlineAgentReplayJob.enqueue_after_transaction_commit
+  end
+
+  test "legacy queue entries without task ids still replay after validation" do
+    queue_delayed_replay
+    clear_enqueued_jobs
+    payloads = []
+    Collavre::AiAgentJob.stub(:perform_now, ->(_agent, _event, payload) { payloads << payload }) do
+      Collavre::InlineAgentReplayJob.perform_now(@reply.id, @requester.id)
+    end
+    assert_equal [ @original.id ], payloads.map { |payload| payload.dig("comment", "id") }
   end
 
   test "replay ignores a deleted card or user without invoking the agent" do
     Collavre::AiAgentJob.stub(:perform_now, ->(*) { flunk "must not start an agent" }) do
       Collavre::InlineAgentReplayJob.perform_now(-1, @requester.id)
       Collavre::InlineAgentReplayJob.perform_now(@reply.id, -1)
+    end
+  end
+
+  [ :card, :user ].each do |missing|
+    test "missing #{missing} abandons the queued replay and releases loop completion once" do
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => @original.topic_id
+      } } })
+      # A separate shared manager can be deleted without deleting the creative,
+      # source comment, agent or workspace owned by other users.
+      if missing == :user
+        @gateway.update!(workspace_mode: :shared)
+        @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+        set_data("workspace_id" => @workspace.id)
+        @requester = Collavre::User.create!(name: "Deleted manager", email: "deleted-manager@example.com",
+          password: "password123", system_admin: true)
+        Collavre::CreativeShare.create!(creative: @creative, user: @requester, permission: :feedback)
+        Collavre::CreativeSharesCache.find_or_create_by!(creative: @creative, user: @requester, permission: :feedback)
+        sign_in_as(@requester, password: "password123")
+      end
+      queue_delayed_replay
+      args = enqueued_jobs.find { |entry| entry[:job] == Collavre::InlineAgentReplayJob }[:args]
+      missing == :user ? @requester.destroy! : @reply.destroy!
+      clear_enqueued_jobs
+      2.times do |attempt|
+        expected = attempt.zero? ? 1 : 0
+        assert_enqueued_jobs expected, only: Collavre::TriggerLoopCheckJob do
+          assert_enqueued_jobs(missing == :card ? 0 : expected, only: Turbo::Streams::ActionBroadcastJob) do
+            Collavre::AiAgentJob.stub(:perform_now, ->(*) { flunk "missing identity cannot run" }) do
+              Collavre::InlineAgentReplayJob.perform_now(*args)
+            end
+          end
+        end
+      end
+      state = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal false, state["resumed"]
+      assert_equal false, state["retryable"]
+      assert_equal true, state["replay_abandoned"]
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+        perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+      end
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+      assert_equal 1, @creative.comments.where(user_id: nil, content: I18n.t("collavre.inline_agent_login.replay_abandoned")).count
+    end
+  end
+
+  test "deleted replay task is a no-op even if the card remains" do
+    queue_delayed_replay
+    @task.destroy!
+    clear_enqueued_jobs
+    Collavre::AiAgentJob.stub(:perform_now, ->(*) { flunk "deleted task cannot run" }) do
+      assert_no_enqueued_jobs { Collavre::InlineAgentReplayJob.perform_now(@reply.id, @requester.id, @task.id) }
     end
   end
 
@@ -579,6 +698,17 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  def request_login_session(operation)
+    path = inline_agent_login_session_path(comment_id: @reply.id, session_id: "authorized-session")
+    case operation
+    when :create then post inline_agent_login_sessions_path(comment_id: @reply.id), params: { flow: "api-key" }, as: :json
+    when :poll then get path, as: :json
+    when :submit then post path, params: { auth_secret: "secret" }, as: :json
+    when :cancel then delete path, as: :json
+    when :status then get inline_agent_login_status_path(comment_id: @reply.id), as: :json
+    end
+  end
 
   def queue_delayed_replay
     set_data("authorized" => true, "session_user_id" => @requester.id)

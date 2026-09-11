@@ -69,7 +69,7 @@ class InlineAgentLoginTest < ApplicationSystemTestCase
         end
         assert_equal "private-browser-code", submitted
         assert_equal 1, resumed.length
-        assert_equal [ @reply.id, @user.id ], resumed.first
+        assert_equal [ @reply.id, @user.id, @task.id ], resumed.first
         assert_not_includes @reply.reload.content, "private-browser-code"
         assert_not_includes @task.reload.trigger_event_payload.to_json, "private-browser-code"
       end

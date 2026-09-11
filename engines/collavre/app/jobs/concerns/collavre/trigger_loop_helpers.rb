@@ -6,6 +6,23 @@ module Collavre
 
     private
 
+    # Resolve the task's current topic while excluding unrelated conversations.
+    def trigger_completion_topic(task, loop_config)
+      id = loop_config["trigger_topic_id"]
+      return if id.present? && id != task.topic_id
+
+      Topic.find_by(id: task.topic_id)
+    end
+
+    # Abandonment has no agent result to evaluate, and its card may be gone.
+    def finish_abandoned_replay(task, creative, topic)
+      return false unless task.trigger_event_payload&.dig("engine_login", "replay_abandoned")
+
+      update_loop_data(creative, state: "awaiting_user", infra_retry_count: 0)
+      post_system_notice(creative, topic, I18n.t("collavre.inline_agent_login.replay_abandoned"))
+      true
+    end
+
     # Find the last comment by the task's agent in the trigger topic,
     # scoped to comments created after the task was dispatched.
     def find_last_agent_comment(creative, topic, task)

@@ -4,10 +4,17 @@ module Collavre
   class InlineAgentReplayJob < ApplicationJob
     queue_as :ai_agents
 
-    def perform(comment_id, user_id)
+    def perform(comment_id, user_id, task_id = nil)
       comment = Comment.find_by(id: comment_id)
+      # The optional fallback accepts jobs queued before task ids were included.
+      task = task_id ? Task.find_by(id: task_id) : comment&.task
+      return unless task
+
       user = User.find_by(id: user_id)
-      return unless comment && user
+      unless comment&.task_id == task.id && user
+        CliProxy::InlineLogin.abandon_replay!(task)
+        return
+      end
 
       login = CliProxy::InlineLogin.new(comment, user)
       payload = current_payload(login)

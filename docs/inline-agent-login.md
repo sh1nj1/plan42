@@ -29,10 +29,15 @@ for another attempt. The retry carries the original human workspace principal
 and strips turn-scoped delivery metadata. Requests that already emitted a
 chunk, previously handed off during an approval continuation, were cancelled,
 or whose source message was moved/deleted are not automatically replayed.
+Once replay is claimed, session mutations are rejected, including responses
+from requests that were already in flight. Queued replays include the original
+task ID so cleanup can run even if the card or initiating user is deleted.
 Queued replays carry only identifiers and revalidate the request at execution.
 If validation rejects a claimed replay, it clears the claim, disables automatic
 retry for that turn, refreshes the card with a failure notice, and explicitly
-runs the terminal task's completion callbacks so trigger loops can continue.
+runs the terminal task's completion callbacks. An abandoned replay puts its
+trigger loop in `awaiting_user` and posts a notice even when no reply card
+remains, without evaluating the login notice as an agent result.
 After restoring access or authentication, the requester must send a new message.
 
 Verification covers HTTP/SSE classification with RubyLLM's real parser,

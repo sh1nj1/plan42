@@ -61,12 +61,17 @@ module Collavre
       end
 
       def session_snapshot
+        return if data["resumed"]
         return unless data["session_id"] && data["session_user_id"] == @user.id && !data["authorized"]
 
         id = data["session_id"]
         observe_session!(client.auth_session(engine, id), id)
       rescue Client::Error => error
         { "engine" => engine, "status" => "failed", "error" => { "message" => error.message } }
+      end
+
+      def check_session_mutable!
+        fail_with!("already_resumed") if data["resumed"]
       end
 
       def remember_session!(response)
@@ -119,7 +124,13 @@ module Collavre
       end
 
       def abandon_replay!
+        self.class.abandon_replay!(task)
+      end
+
+      # Cleanup must survive deletion of the reply card or initiating user.
+      def self.abandon_replay!(task)
         task.with_lock do
+          data = task.trigger_event_payload.fetch("engine_login", {})
           return unless data["resumed"]
 
           task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" =>
@@ -128,7 +139,10 @@ module Collavre
         # The task is already terminal, so saving its payload cannot run these
         # status-change callbacks. Release loop completion and refresh the card once.
         task.fire_completion_callbacks_after_external_claim
-        comment.broadcast_replace_later_to([ comment.creative, :comments ], partial: "collavre/comments/comment") unless comment.private?
+        comment = task.reply_comment
+        return if !comment || comment.private?
+
+        comment.broadcast_replace_later_to([ comment.creative, :comments ], partial: "collavre/comments/comment")
       end
 
       private
@@ -145,7 +159,7 @@ module Collavre
         fail_with!("cannot_retry") if decision.nil? || decision[:timing] == :rejected
 
         job = decision[:timing] == :delayed ? InlineAgentReplayJob.set(wait: decision[:delay]) : InlineAgentReplayJob
-        result = job.perform_later(comment.id, @user.id)
+        result = job.perform_later(comment.id, @user.id, task.id)
         fail_with!("cannot_retry") unless result && result.successfully_enqueued?
       end
 
@@ -163,6 +177,8 @@ module Collavre
 
       def update_data!
         task.with_lock do
+          # A proxy response can arrive after resume! commits its replay claim.
+          check_session_mutable!
           task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" => yield(data)))
         end
       end
