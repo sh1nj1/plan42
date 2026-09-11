@@ -9,7 +9,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     @gateway = Collavre::AgentGateway.create!(owner: @owner, name: "Inline proxy", base_url: "https://proxy.example.com",
       admin_key: "admin-secret", completion_key: "completion-secret", identity_secret: "c" * 32, workspace_mode: :per_user)
     @agent = Collavre::User.create!(name: "Inline Agent", email: "inline@ai.local", password: SecureRandom.hex(24),
-      system_prompt: "Help", llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", created_by_id: @owner.id, agent_gateway: @gateway)
+      system_prompt: "Help", routing_expression: "true", llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", created_by_id: @owner.id, agent_gateway: @gateway)
     Collavre::Contact.ensure(user: @requester, contact_user: @agent)
     @creative = Collavre::Creative.create!(user: @requester, description: "Inline test")
     Collavre::CreativeShare.create!(creative: @creative, user: @agent, permission: :feedback)
@@ -457,6 +457,68 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_response :conflict
     assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+  end
+
+  [ :agent, :human, :ambient ].each do |target|
+    [ :resume, :delayed, :admission ].each do |stage|
+      test "replay rematches #{target} routing at #{stage} without a primary agent" do
+        @original.update!(content: "@#{@agent.name}: Original request")
+        assert_nil @original.topic.primary_agent_id
+        @task.update!(trigger_event_payload: @task.trigger_event_payload.merge(
+          "chat" => Collavre::SystemEvents::ContextBuilder.reanchor_chat(@original.content)
+        ))
+        set_data("authorized" => true, "session_user_id" => @requester.id)
+        queue_delayed_replay unless stage == :resume
+        change_route = lambda do
+          content = case target
+          when :agent then "@#{users(:ai_bot).name}: Only for another agent"
+          when :human then "@#{@requester.name}: Only for a human"
+          when :ambient
+            @agent.update!(routing_expression: "false")
+            "No agent requested"
+          end
+          @original.update!(content: content)
+        end
+
+        if stage == :resume
+          change_route.call
+          Collavre::Orchestration::Scheduler.stub(:new, ->(*) { flunk "Rejected routing must not reach the scheduler" }) do
+            assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
+              post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+            end
+          end
+          assert_response :conflict
+          assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+        else
+          dispatch = Collavre::AiAgentJob.method(:perform_now)
+          change_route.call if stage == :delayed
+          Collavre::AiAgentJob.stub(:perform_now, lambda { |*args|
+            change_route.call if stage == :admission
+            dispatch.call(*args)
+          }) do
+            assert_no_difference "Collavre::Task.count" do
+              assert_empty execute_replay_payloads
+            end
+          end
+          assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+        end
+      end
+    end
+  end
+
+  test "replay preserves a current multi-agent mention even when another agent is primary" do
+    @agent.update!(routing_expression: "false")
+    @original.topic.update!(primary_agent_id: users(:ai_bot).id)
+    @original.update!(content: "@#{users(:ai_bot).name}: First request. @#{@agent.name}: Still requested.")
+    queue_delayed_replay
+    assert_equal 1, execute_replay_payloads.size
+  end
+
+  test "replay preserves an ambient request selected by the current primary agent" do
+    @agent.update!(routing_expression: "false")
+    @original.topic.update!(primary_agent: @agent)
+    queue_delayed_replay
+    assert_equal 1, execute_replay_payloads.size
   end
 
   [ { private: true }, { action: '{"tool":"test"}' },

@@ -26,19 +26,23 @@ export default class extends AgentAuthController {
   }
 
   async refresh() {
+    let generation = this.sessionGeneration
     this.hideError()
     try {
       const data = await this.request(this.statusUrlValue)
-      if (this.disconnected) return
+      if (!this.currentSession(generation)) return
       const engines = data.engines || []
       this.baseUrlFlows = new Map(engines.map((engine) => [engine.engine, engine.base_url_flows || []]))
       this.renderEngines(engines)
       if (this.hasProvisionTarget) this.renderProvision(data.provision || {})
-      if (data.session) this.restoreSession(data.session)
+      if (data.session) {
+        this.restoreSession(data.session)
+        generation = this.sessionGeneration
+      }
       if (data.resumed) this.enginesTarget.replaceChildren(document.createTextNode(this.resumedValue))
       else if (data.authorized && this.hasResumeUrlValue) await this.authorized()
     } catch (error) {
-      this.showError(error.message)
+      if (this.currentSession(generation)) this.showError(error.message)
     }
   }
 

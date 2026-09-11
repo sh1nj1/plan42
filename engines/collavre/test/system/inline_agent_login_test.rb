@@ -7,7 +7,7 @@ class InlineAgentLoginTest < ApplicationSystemTestCase
     gateway = Collavre::AgentGateway.create!(owner: @user, name: "Browser proxy", base_url: "https://proxy.example.com",
       admin_key: "admin-secret", completion_key: "completion-secret", identity_secret: "c" * 32, workspace_mode: :per_user)
     @agent = User.create!(name: "Browser Agent", email: "inline-browser@ai.local", password: SecureRandom.hex(24),
-      system_prompt: "Help", llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", created_by_id: @user.id, agent_gateway: gateway)
+      system_prompt: "Help", routing_expression: "true", llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", created_by_id: @user.id, agent_gateway: gateway)
     @creative = Creative.create!(user: @user, description: "Inline browser test")
     Collavre::CreativeShare.create!(creative: @creative, user: @agent, permission: :feedback)
     Collavre::CreativeSharesCache.find_or_create_by!(creative: @creative, user: @agent, permission: :feedback)

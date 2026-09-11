@@ -135,7 +135,7 @@ module Collavre
           source = original_comment
           fail_with!("cannot_retry") unless source
           payload = retry_payload(source)
-          validate_retry_assignment!(payload)
+          validate_retry_routing!(payload)
           payload
         end
       end
@@ -170,7 +170,7 @@ module Collavre
       end
 
       def enqueue_retry(payload)
-        validate_retry_assignment!(payload)
+        validate_retry_routing!(payload)
         decision = Orchestration::Scheduler.new(payload).schedule([ agent ]).first
         fail_with!("cannot_retry") if decision.nil? || decision[:timing] == :rejected
 
@@ -179,13 +179,13 @@ module Collavre
         fail_with!("cannot_retry") unless result && result.successfully_enqueued?
       end
 
-      def validate_retry_assignment!(payload)
-        fail_with!("cannot_retry") unless Orchestration::Matcher.permits_creative_access?(payload, agent) &&
-          Orchestration::Matcher.permits_assignment?(payload, agent)
+      def validate_retry_routing!(payload)
+        context = SystemEvents::ContextBuilder.new(payload).build
+        fail_with!("cannot_retry") unless Orchestration::Matcher.new(context).match.include?(agent)
       end
 
       def retry_payload(source)
-        # Rebuild content and mentions after login, before assignment checks.
+        # Rebuild content and mentions after login, before matching current routing.
         payload = Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, source)
             .except("engine_login", *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
         # Preserve explicit principals, including nil. Shared workspaces have no

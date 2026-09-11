@@ -19,16 +19,19 @@ sent directly in `auth_secret` to a CSRF-protected endpoint. They never become
 chat messages. Only the attempt/session IDs, initiating user and authorization
 result are stored with the task. Responses are private and not cached. Chat refreshes
 preserve the live login form, and a rebuilt card can recover its pending
-session from the proxy. Custom provider base URLs remain on the full connection
-screen. Session starts claim an attempt ID before contacting the proxy; only
+session from the proxy. Status responses and errors are ignored if a newer login
+session has started while the request was in flight. Custom provider base URLs
+remain on the full connection screen. Session starts claim an attempt ID before contacting the proxy; only
 the latest initiated attempt can store its response. Starting another attempt
 also invalidates the previous session and its authorization. Cancellation revokes
 the local session before contacting the proxy, so stale polls and submissions
 cannot authorize a replay even if the proxy cancellation fails.
 
 After the server observes successful authorization, a locked replay claim
-queues the original request once through the scheduler. Permissions and topic
-assignment are checked again; scheduler rejection leaves the claim available
+queues the original request once through the scheduler. Current routing is matched
+again before scheduling and admission, including permissions, mentions, topic
+assignment and routing expressions. The recorded
+agent must still be selected; scheduler rejection leaves the claim available
 for another attempt. The retry carries the original human workspace principal
 and strips turn-scoped delivery metadata. An explicit principal (including nil)
 is preserved; shared replays without one use the source commenter through the
