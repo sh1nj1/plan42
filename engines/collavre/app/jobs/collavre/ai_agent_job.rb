@@ -115,7 +115,7 @@ module Collavre
         # in a topic that now belongs to someone else. Unlike a queued waiter
         # there is no Task yet to cancel, so cancelling on assignment change
         # cannot cover this path — the check has to happen here.
-        if context && !Orchestration::Matcher.new(context).assignment_permits?(agent)
+        if context && !Orchestration::Matcher.permits_assignment?(context, agent)
           Rails.logger.info(
             "[AiAgentJob] Skipping job for agent #{agent.id}: topic " \
             "#{context.dig('topic', 'id')} is now assigned to another agent " \

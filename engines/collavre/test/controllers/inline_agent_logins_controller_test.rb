@@ -506,6 +506,67 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  [ nil, :other ].each do |primary|
+    test "coalesced replay retains its merged mention with #{primary || 'no'} primary agent" do
+      mention = prepare_merged_replay
+      @original.topic.update!(primary_agent: users(:ai_bot)) if primary
+      queue_delayed_replay
+      payloads = execute_replay_payloads
+      assert_equal 1, payloads.size
+      payload = payloads.first
+      assert_includes payload["merged_comment_ids"], mention.id
+      (Collavre::Orchestration::DeliveryRecord::TURN_SCOPED_KEYS - [ "merged_comment_ids" ]).each do |key|
+        assert_not payload.key?(key), "Replay must strip #{key}"
+      end
+      messages = Collavre::AiAgent::MessageBuilder.new(agent: @agent, context: payload, original_comment: @original).build[:messages]
+      trigger = messages.find { |message| message[:kind] == :trigger }[:parts].filter_map { |part| part[:text] }.join("\n")
+      assert_includes trigger, "Merged request"
+      assert_includes trigger, @original.content
+    end
+  end
+
+  [ :edited, :deleted, :private, :approval, :topic, :creative ].each do |change|
+    [ :resume, :delayed, :admission ].each do |stage|
+      test "coalesced replay rejects #{change} merged mention at #{stage}" do
+        mention = prepare_merged_replay
+        set_data("authorized" => true, "session_user_id" => @requester.id)
+        queue_delayed_replay unless stage == :resume
+        revoke = lambda do
+          case change
+          when :edited then mention.update!(content: "@#{users(:ai_bot).name}: Only another agent")
+          when :deleted then mention.destroy!
+          when :private then mention.update!(private: true)
+          when :approval then mention.update!(action: '{"tool":"test"}')
+          when :topic then mention.update!(topic: @creative.topics.create!(name: "Elsewhere", user: @requester))
+          when :creative
+            destination = Collavre::Creative.create!(user: @requester, description: "Restricted destination")
+            mention.update!(creative: destination, topic: destination.topics.create!(name: "Elsewhere", user: @requester))
+          end
+        end
+        if stage == :resume
+          revoke.call
+          assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
+            post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+          end
+          assert_response :conflict
+          assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+        else
+          revoke.call if stage == :delayed
+          dispatch = Collavre::AiAgentJob.method(:perform_now)
+          Collavre::AiAgentJob.stub(:perform_now, lambda { |*args|
+            revoke.call if stage == :admission
+            dispatch.call(*args)
+          }) do
+            assert_no_difference "Collavre::Task.count" do
+              assert_empty execute_replay_payloads
+            end
+          end
+          assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+        end
+      end
+    end
+  end
+
   test "replay preserves a current multi-agent mention even when another agent is primary" do
     @agent.update!(routing_expression: "false")
     @original.topic.update!(primary_agent_id: users(:ai_bot).id)
@@ -1350,6 +1411,18 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  def prepare_merged_replay
+    @agent.update!(routing_expression: nil)
+    assert_nil @original.topic.primary_agent_id
+    mention = @original
+    mention.update!(content: "@#{@agent.name}: Merged request")
+    @original = @creative.comments.create!(user: @requester, topic: mention.topic, content: "Follow-up details", skip_dispatch: true)
+    payload = Collavre::Orchestration::TaskCoalescer.reanchor_payload(@task.trigger_event_payload, @original)
+    @task.update!(trigger_event_payload: payload.merge("merged_comment_ids" => [ mention.id ],
+      Collavre::Orchestration::DeliveryRecord::HANDOFF_FAILED_KEY => true))
+    mention
+  end
 
   def advance_reauthentication
     queue_delayed_replay

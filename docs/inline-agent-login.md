@@ -30,8 +30,13 @@ cannot authorize a replay even if the proxy cancellation fails.
 After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Current routing is matched
 again before scheduling and admission, including permissions, mentions, topic
-assignment and routing expressions. The recorded
-agent must still be selected; scheduler rejection leaves the claim available
+assignment and routing expressions. For coalesced turns, current public comments
+still in the recorded creative/topic also participate in matching; a mention in
+one of those comments can select the recorded agent even when the anchor does not.
+Merged comment IDs survive replay so the normal trigger renderer delivers their
+current text and attachments with the anchor. Deleted, private, approval, or moved
+comments cannot authorize the replay or contribute to its trigger.
+The recorded agent must still be selected; scheduler rejection leaves the claim available
 for another attempt. The retry carries the original human workspace principal
 and strips turn-scoped delivery metadata. An explicit principal (including nil)
 is preserved; shared replays without one use the source commenter through the

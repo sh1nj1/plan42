@@ -180,14 +180,28 @@ module Collavre
       end
 
       def validate_retry_routing!(payload)
+        return if retry_routing_matches?(payload)
+
+        # A coalesced mention may live outside the anchor. Only current, public
+        # siblings in the recorded turn can still authorize this replay.
+        ids = Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]).compact
+        permitted = AiAgent::MergedTriggerComments.in_turn(ids, payload).pluck(:content).any? do |content|
+          retry_routing_matches?(payload.merge("chat" => { "content" => content }))
+        end
+        fail_with!("cannot_retry") unless permitted
+      end
+
+      def retry_routing_matches?(payload)
         context = SystemEvents::ContextBuilder.new(payload).build
-        fail_with!("cannot_retry") unless Orchestration::Matcher.new(context).match.include?(agent)
+        Orchestration::Matcher.new(context).match.include?(agent)
       end
 
       def retry_payload(source)
         # Rebuild content and mentions after login, before matching current routing.
+        # Merged comments are part of the original request, not delivery state.
+        stripped_keys = Orchestration::DeliveryRecord::TURN_SCOPED_KEYS - [ Orchestration::TaskCoalescer::PAYLOAD_KEY ]
         payload = Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, source)
-            .except("engine_login", *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
+            .except("engine_login", *stripped_keys)
         # Preserve explicit principals, including nil. Shared workspaces have no
         # user: leave the key absent so normal source-principal resolution applies.
         payload["workspace_user_id"] = workspace.user_id unless payload.key?("workspace_user_id") || workspace.user_id.nil?
