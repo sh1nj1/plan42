@@ -253,7 +253,7 @@ describe('FormController - draft persistence', () => {
     controller.textareaTarget.value = 'still composing'
     dispatchTopicChange('77', '10074')
     expect(chatDrafts.get('77')).toBeNull()
-    expect(controller._activeDraftKey).toBe('77')
+    expect(controller._drafts._activeDraftKey).toBe('77')
   })
 
   test('switching linked creatives flushes before resetting a shared effective draft', () => {
@@ -275,7 +275,7 @@ describe('FormController - draft persistence', () => {
     popupEl.dispatchEvent(
       new CustomEvent('comments--topics:change', { detail: { topicId: '10073' } }),
     )
-    expect(controller._activeDraftKey).toBe('66')
+    expect(controller._drafts._activeDraftKey).toBe('66')
   })
 
   test('keeps the draft key empty when no creative id is available', () => {
@@ -284,7 +284,7 @@ describe('FormController - draft persistence', () => {
     popupEl.dispatchEvent(
       new CustomEvent('comments--topics:change', { detail: { topicId: '10073' } }),
     )
-    expect(controller._activeDraftKey).toBeNull()
+    expect(controller._drafts._activeDraftKey).toBeNull()
   })
 
   test('closing the popup flush-saves the draft; blank input deletes it', () => {
@@ -387,7 +387,7 @@ describe('FormController - draft persistence', () => {
     popupEl.dataset.creativeId = '88'
     dispatchTopicChange('88')
     controller.onPopupOpened({ creativeId: '88', canComment: true })
-    expect(controller._activeDraftKey).toBeNull()
+    expect(controller._drafts._activeDraftKey).toBeNull()
     typeInto(controller.textareaTarget, 'must not persist for the old user')
     controller.onPopupClosed()
     await new Promise((resolve) => setTimeout(resolve, 600))
@@ -484,14 +484,14 @@ describe('FormController - draft persistence', () => {
 
     expect(submissionBackup('77')).toBeNull()
     expect(freshController._draftPersistenceDisabled()).toBe(true)
-    expect(freshController._observedDraftClearNonces.has(namespace)).toBe(false)
+    expect(freshController._drafts._observedDraftClearNonces.has(namespace)).toBe(false)
 
     setItem.mockRestore()
     freshController.disconnect()
     freshController.connect()
 
     expect(freshController._draftPersistenceDisabled()).toBe(false)
-    expect(freshController._observedDraftClearNonces.get(namespace)).toBe('logout-2')
+    expect(freshController._drafts._observedDraftClearNonces.get(namespace)).toBe('logout-2')
     controller = freshController
   })
 
@@ -502,7 +502,7 @@ describe('FormController - draft persistence', () => {
       nonce: 'missed-logout',
     }))
     controller.disconnect()
-    controller._observedDraftClearNonces.clear()
+    controller._drafts._observedDraftClearNonces.clear()
     const storageGetter = jest.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
       throw new DOMException('denied', 'SecurityError')
     })
@@ -521,7 +521,7 @@ describe('FormController - draft persistence', () => {
   test('storage recovery does not treat an existing clear marker as a new logout', () => {
     controller.disconnect()
     chatDrafts.clearAll()
-    controller._observedDraftClearNonces.clear()
+    controller._drafts._observedDraftClearNonces.clear()
     const storageGetter = jest.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
       throw new DOMException('denied', 'SecurityError')
     })
@@ -1491,7 +1491,7 @@ describe('FormController - draft persistence', () => {
     delete popupEl.dataset.effectiveCreativeId
     controller.onChatWillOpen({ creativeId: '78' })
     chatDrafts.saveSubmissionBackup('78', 'failed submission restored after reload')
-    controller._pendingDraftSubmissions.clear()
+    controller._drafts._pendingDraftSubmissions.clear()
     controller.resetForm()
     controller._restoreDraft()
 
@@ -1614,15 +1614,15 @@ describe('FormController - draft persistence', () => {
     dispatchTopicChange('70')
     controller.onPopupOpened({ creativeId: '78', canComment: true })
 
-    expect(controller._activeDraftKey).toBe('78')
-    expect(controller._awaitingEffectiveDraftKeyFor).toBe('78')
+    expect(controller._drafts._activeDraftKey).toBe('78')
+    expect(controller._drafts._awaitingEffectiveDraftKeyFor).toBe('78')
     expect(controller.textareaTarget.value).toBe('latest raw draft')
 
     dispatchTopicChange('70')
     controller.onPopupOpened({ creativeId: '78', canComment: true })
 
-    expect(controller._activeDraftKey).toBe('70')
-    expect(controller._awaitingEffectiveDraftKeyFor).toBeNull()
+    expect(controller._drafts._activeDraftKey).toBe('70')
+    expect(controller._drafts._awaitingEffectiveDraftKeyFor).toBeNull()
     expect(controller.textareaTarget.value).toBe('latest raw draft')
     expect(chatDrafts.get('78')).toBeNull()
     expect(chatDrafts.get('70')).toBe('latest raw draft')
@@ -1642,8 +1642,8 @@ describe('FormController - draft persistence', () => {
     dispatchTopicChange('70')
     controller.onPopupOpened({ creativeId: '78', canComment: true })
 
-    expect(controller._activeDraftKey).toBe('70')
-    expect(controller._awaitingEffectiveDraftKeyFor).toBeNull()
+    expect(controller._drafts._activeDraftKey).toBe('70')
+    expect(controller._drafts._awaitingEffectiveDraftKeyFor).toBeNull()
     expect(controller.textareaTarget.value).toBe('newer canonical draft')
   })
 
@@ -1847,8 +1847,8 @@ describe('FormController - draft persistence', () => {
 
     controller.disconnect()
     controller.connect()
-    expect(controller._activeDraftKey).toBe('78')
-    expect(controller._awaitingEffectiveDraftKeyFor).toBe('78')
+    expect(controller._drafts._activeDraftKey).toBe('78')
+    expect(controller._drafts._awaitingEffectiveDraftKeyFor).toBe('78')
     typeInto(controller.textareaTarget, 'next message after reconnect')
 
     popupEl.dataset.creativeId = '78'

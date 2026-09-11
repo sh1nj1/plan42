@@ -26,7 +26,7 @@ const buildController = () => {
 // The stash is tagged with the creative it was typed in, so tests build it the
 // way handleStashDraft does rather than assigning a bare string.
 const stash = (controller, draft) => {
-  controller._stashedDraft = { draft, creativeId: controller.creativeId }
+  controller._drafts._stashedDraft = { draft, creativeId: controller.creativeId }
 }
 
 describe('CommentsFormController stashed draft', () => {
@@ -37,7 +37,7 @@ describe('CommentsFormController stashed draft', () => {
       new CustomEvent('comments--form:stash-draft', { detail: { draft: 'roadmap notes' } }),
     )
 
-    expect(controller._stashedDraft).toEqual({ draft: 'roadmap notes', creativeId: '7' })
+    expect(controller._drafts._stashedDraft).toEqual({ draft: 'roadmap notes', creativeId: '7' })
   })
 
   test('receives the event dispatched on the textarea, which bubbles to the popup', () => {
@@ -58,7 +58,7 @@ describe('CommentsFormController stashed draft', () => {
       }),
     )
 
-    expect(controller._stashedDraft).toEqual({ draft: 'roadmap notes', creativeId: '7' })
+    expect(controller._drafts._stashedDraft).toEqual({ draft: 'roadmap notes', creativeId: '7' })
   })
 
   test('restores the draft into the textarea the send cleared', () => {
@@ -116,7 +116,7 @@ describe('CommentsFormController stashed draft', () => {
     stash(controller, 'roadmap notes')
 
     controller._restoreStashedDraft()
-    expect(controller._stashedDraft).toBeNull()
+    expect(controller._drafts._stashedDraft).toBeNull()
 
     textarea.value = ''
     controller._restoreStashedDraft()

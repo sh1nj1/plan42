@@ -7,6 +7,10 @@ import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../.
 import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
 import { invalidateCreativeTree } from '../../lib/creative_tree_invalidation'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
+import TopicSelectionRestoreState from './topics/selection_restore_state'
+import LastTopicSave from './topics/last_topic_save'
+import LastTopicSaveOrderState, { LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX } from './topics/save_order_state'
+import LastTopicSelfEchoState from './topics/self_echo_state'
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
@@ -14,28 +18,68 @@ const AMBIGUOUS_SAVE_CLAIM_TIMEOUT = 5_000
 const SAVE_REQUEST_TIMEOUT = 5_000
 const UNREAD_COUNT_REFRESH_DELAY = 250
 const TOPIC_SCROLL_DURATION = 250
-const LAST_TOPIC_SAVE_SESSION_STORAGE_KEY = "collavre:last-topic-save-session-id"
-const LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY = "collavre:last-topic-save-sequence"
-const LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX = "collavre:last-topic-save-session:"
-let fallbackClientIdSequence = 0
-
-// Names one save, so its broadcast can be told from a sibling session's. It
-// has to be unique across the user's tabs, not just within this one: two tabs
-// counting from zero would answer to each other's echoes.
-function newClientId() {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-
-    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-        const bytes = crypto.getRandomValues(new Uint8Array(16))
-        return `save-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`
-    }
-
-    fallbackClientIdSequence += 1
-    return `save-${Date.now().toString(36)}-${fallbackClientIdSequence.toString(36)}`
-}
 
 export default class extends Controller {
     static targets = ["list", "creationContainer", "topicListButton"]
+
+    get selectionState() {
+        return this._selectionState || (this._selectionState = new TopicSelectionRestoreState())
+    }
+
+    get saveOrderState() {
+        return this._saveOrderState || (this._saveOrderState = new LastTopicSaveOrderState())
+    }
+
+	get lastTopicSave() {
+		return this._lastTopicSave || (this._lastTopicSave = new LastTopicSave(this))
+	}
+
+    get selfEchoState() {
+        return this._selfEchoState || (this._selfEchoState = new LastTopicSelfEchoState())
+    }
+
+    // Keep the controller's existing internal surface while the state itself is
+    // owned by focused collaborators. Existing lifecycle paths intentionally
+    // inspect these values while a request is in flight.
+    get _explicitAllMessagesSelection() {
+        return this.selectionState.explicitAllMessagesSelection
+    }
+
+    set _explicitAllMessagesSelection(value) {
+        this.selectionState.explicitAllMessagesSelection = value
+    }
+
+    get _pendingPick() {
+        return this.selectionState.pendingPick
+    }
+
+    set _pendingPick(value) {
+        this.selectionState.pendingPick = value
+    }
+
+    get _pickCreativeId() {
+        return this.selectionState.pickCreativeId
+    }
+
+    set _pickCreativeId(value) {
+        this.selectionState.pickCreativeId = value
+    }
+
+    get _pickTopicId() {
+        return this.selectionState.pickTopicId
+    }
+
+    set _pickTopicId(value) {
+        this.selectionState.pickTopicId = value
+    }
+
+    get _saveLastTopicTimer() {
+        return this.saveOrderState.timer
+    }
+
+    set _saveLastTopicTimer(value) {
+        this.saveOrderState.timer = value
+    }
 
     connect() {
         this._registerDragDrop()
@@ -1448,15 +1492,11 @@ export default class extends Controller {
             // resolved to the topic now being selected must keep outranking the
             // stale server last_topic_id for the rest of the popup session.
             this.releaseSelectionSourcesOtherThan(this.serverLastTopicId)
-            this.selectionEpoch += 1
-            this._pickCreativeId = this._renderedCreativeId
-            this._pickTopicId = this.serverLastTopicId
-            if (pending) {
-                this._pendingPick = {
-                    creativeId: this._pickCreativeId,
-                    topicId: this._pickTopicId,
-                }
-            }
+            this.selectionState.recordPick(
+                this._renderedCreativeId,
+                this.serverLastTopicId,
+                { pending }
+            )
         }
         if (persist) this.debounceSaveLastTopic(id)
     }
@@ -1464,11 +1504,11 @@ export default class extends Controller {
     // Bumped on every selection so an in-flight loadTopics() can tell whether
     // its answer predates a pick the user has since made.
     get selectionEpoch() {
-        return this._selectionEpoch || 0
+        return this.selectionState.epoch
     }
 
     set selectionEpoch(value) {
-        this._selectionEpoch = value
+        this.selectionState.epoch = value
     }
 
     // Did a pick land after the load at `epoch` started, or is there still an
@@ -1486,17 +1526,7 @@ export default class extends Controller {
     // made against a strip that predates a delete, and keeping it would fail the
     // lookup in restoreSelection() and persist Main in its place.
     pickOutranks(epoch, creativeId, topics, archivedTopics) {
-        const hasNewerPick = this.selectionEpoch !== epoch
-        const hasUnsavedPick = this._pendingPick &&
-            String(this._pendingPick.creativeId) === String(creativeId)
-        if (!hasNewerPick && !hasUnsavedPick) return false
-        // creativeId is always truthy here — loadTopics() returns without it —
-        // so a pick made before any strip was rendered fails this too.
-        if (String(this._pickCreativeId) !== String(creativeId)) return false
-        if (!this._pickTopicId) return true
-
-        return [ ...(topics || []), ...(archivedTopics || []) ]
-            .some(t => String(t.id) === String(this._pickTopicId))
+        return this.selectionState.outranks(epoch, creativeId, topics, archivedTopics)
     }
 
     releaseSelectionSourcesOtherThan(id) {
@@ -1558,130 +1588,18 @@ export default class extends Controller {
         // sticks need not be the last one picked. Waiting for the one in
         // flight is what makes the order they were picked in the order they
         // are written.
-        this._saveChain = (this._saveChain || Promise.resolve()).then(async () => {
-            // update_last_topic broadcasts to every session of this user, this
-            // one included. Claim the echo here, before the request goes out —
-            // the broadcast is sent server-side before the response is
-            // rendered, so it can beat the save returning.
-            const claimed = generation === this.subscriptionGenerationFor(effectiveCreativeId)
-            if (claimed) {
-                this.pendingSelfEchoes.push(clientId)
-                this.pendingSelfEchoCreativeIds.set(clientId, String(effectiveCreativeId))
-                this.pendingSelfEchoTopicIds.set(clientId, id ? String(id) : "")
-                this.pendingSelfEchoPreviousTopicIds.set(
-                    clientId,
-                    this.lastKnownRemoteTopicIdFor(effectiveCreativeId) === undefined
-                        ? (this.serverLastTopicId ? String(this.serverLastTopicId) : "")
-                        : this.lastKnownRemoteTopicIdFor(effectiveCreativeId)
-                )
-                // A save can wait behind another request while the popup closes. It
-                // takes its claim only when the queue reaches it, after the close
-                // handler has already marked the claims that existed then. Its echo
-                // will also be sent into that closed gap, so mark it at creation.
-                if (this._popupClosed && !this.topicsSubscription) {
-                    this.possiblyMissedPendingSelfEchoes.add(clientId)
-                }
-            }
-            // A thrown fetch has an unknown outcome: the server may have saved
-            // and broadcast before the connection failed, so keep its claim for
-            // that delayed echo. An HTTP failure is definitive, however, and
-            // update_last_topic returns before broadcasting in that case.
-            const saveResult = await this.saveLastTopicWithTimeout(creativeId, id || null, clientId)
-            const saved = saveResult === true || saveResult?.success === true
-            const savedRevision = this.normalizeLastTopicRevision(saveResult?.lastTopicRevision)
-            const savedRevisionIsCurrent = this.observeLastTopicRevision(
-                effectiveCreativeId,
-                savedRevision
-            )
-            const topicId = id ? String(id) : ""
-            const saveRejected = saveResult === false || saveResult?.success === false
-            const staleLastTopicSave = saveResult?.staleLastTopicSave === true
-            if (claimed && saved) {
-                // The Action Cable echo can arrive before this response. In that
-                // case it has already consumed the claim and removed its metadata;
-                // do not recreate an acknowledgement entry for a completed save.
-                const hasPendingSelfEcho = this.pendingSelfEchoes.includes(clientId)
-                if (hasPendingSelfEcho) {
-                    this.saveAcknowledgementVersion += 1
-                    this.pendingSelfEchoAcknowledgementVersions.set(
-                        clientId,
-                        this.saveAcknowledgementVersion
-                    )
-                    // The response can beat its Action Cable echo. Preserve the
-                    // server-issued revision now so a delayed GET can order this
-                    // acknowledged claim against a newer ABA snapshot.
-                    if (savedRevision) {
-                        this.pendingSelfEchoRemoteRevisions.set(clientId, savedRevision)
-                    }
-                }
-                const currentCreativeId = String(this.creativeId)
-                const currentStreamIsResolved = this.element.dataset.effectiveCreativeId ||
-                    this.knownEffectiveCreativeIds.has(currentCreativeId)
-                const subscribedToAnotherStream = this.topicsSubscription && currentStreamIsResolved &&
-                    String(this.effectiveCreativeId) !== String(effectiveCreativeId)
-                const possiblyMissedDuringDisconnect =
-                    this.possiblyMissedPendingSelfEchoesDuringDisconnect.has(clientId)
-                if ((this.possiblyMissedPendingSelfEchoes.has(clientId) && !this.topicsSubscription) ||
-                    subscribedToAnotherStream ||
-                    possiblyMissedDuringDisconnect) {
-                    // update_last_topic broadcasts before it returns. With the popup
-                    // closed, or after its stream was replaced, that echo was necessarily
-                    // sent somewhere this controller can no longer receive it and cannot
-                    // settle this claim.
-                    // This completed save is also the remote baseline for the next
-                    // queued save, which may have claimed after the popup closed.
-                    this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
-                    if (possiblyMissedDuringDisconnect) {
-                        this.retirePendingSelfEcho(clientId)
-                    } else {
-                        this.releasePendingSelfEcho(clientId)
-                    }
-                } else {
-                    // The replacement subscription may have been active before this
-                    // response beat the WebSocket message back to the browser. Keep the
-                    // id to consume that echo, but do not use this acknowledged claim to
-                    // override a later reopen snapshot.
-                    // A completed save establishes the server value that the
-                    // next claim was made from. Without moving this baseline,
-                    // a later closed save compares its reopen snapshot to a
-                    // value from before an earlier local save and mistakes the
-                    // legitimate previous value for another session's update.
-                    // Do not overwrite a newer Action Cable update after this
-                    // save's echo has already been consumed: that echo records
-                    // the baseline at broadcast time, and another message may
-                    // have advanced it before the HTTP response arrived.
-                    if (hasPendingSelfEcho && savedRevisionIsCurrent) {
-                        this.setLastKnownRemoteTopicId(effectiveCreativeId, topicId)
-                    }
-                    this.acknowledgePendingSelfEcho(clientId)
-                }
-            }
-            if (claimed && saveRejected) this.releasePendingSelfEcho(clientId)
-            if (claimed && saveResult === null) {
-                this.scheduleAmbiguousPendingSelfEchoRetirement(clientId)
-            }
-            const rejectedPendingPick = staleLastTopicSave && this._pendingPick === pendingPick &&
-                String(pendingPick?.creativeId) === String(creativeId) &&
-                pendingPick?.topicId === topicId
-            if (rejectedPendingPick) this._pendingPick = null
-            if (saveResult !== null) this.retryDeferredLastTopicReconciliation(effectiveCreativeId)
-            if (saveResult !== false && this._pendingPick === pendingPick &&
-                String(pendingPick?.creativeId) === String(creativeId) &&
-                pendingPick?.topicId === topicId) {
-                this._pendingPick = null
-            }
-        })
-        return this._saveChain
-    }
+		const context = {
+			id, creativeId, effectiveCreativeId, clientId, pendingPick, generation,
+		}
+		return this.lastTopicSave.enqueue(context)
+	}
 
     // A timed-out fetch can still be running on Rails. Prefix each echo id with
     // a controller-local session and monotonically increasing sequence so Rails
     // can reject an older request if a later one from this controller commits
     // first. The trailing nonce keeps the Action Cable echo identifier unique.
     newLastTopicSaveClientId() {
-        this._lastTopicSaveSessionId ||= this.lastTopicSaveSessionId()
-        this._lastTopicSaveSequence = this.nextLastTopicSaveSequence()
-        return `${this._lastTopicSaveSessionId}.${this._lastTopicSaveSequence}.${newClientId()}`
+        return this.saveOrderState.nextClientId()
     }
 
     // A Turbo replacement creates a new controller while an earlier request can
@@ -1689,13 +1607,7 @@ export default class extends Controller {
     // browser tab so the server can reject that earlier request after the new
     // controller has saved a later selection.
     lastTopicSaveSessionId() {
-        try {
-            const sessionId = this.lastTopicSaveWindowSessionId()
-            sessionStorage.setItem(LAST_TOPIC_SAVE_SESSION_STORAGE_KEY, sessionId)
-            return sessionId
-        } catch (_) {
-            return newClientId()
-        }
+        return this.saveOrderState.windowSessionId()
     }
 
     // sessionStorage survives a reload, but browsers copy it into a duplicated
@@ -1703,27 +1615,11 @@ export default class extends Controller {
     // survives reloads, so it keeps Turbo replacements on one fence while a
     // copied tab starts a separate ordering stream.
     lastTopicSaveWindowSessionId() {
-        const currentName = window.name || ""
-        if (currentName.startsWith(LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX)) {
-            const sessionId = currentName.slice(LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX.length)
-            if (/^[A-Za-z0-9-]+$/.test(sessionId)) return sessionId
-        }
-
-        const sessionId = newClientId()
-        window.name = `${LAST_TOPIC_SAVE_WINDOW_NAME_PREFIX}${sessionId}`
-        return sessionId
+        return this.saveOrderState.currentWindowSessionId()
     }
 
     nextLastTopicSaveSequence() {
-        try {
-            const stored = Number(sessionStorage.getItem(LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY))
-            const previous = Number.isSafeInteger(stored) && stored >= 0 ? stored : 0
-            const sequence = Math.max(this._lastTopicSaveSequence || 0, previous) + 1
-            sessionStorage.setItem(LAST_TOPIC_SAVE_SEQUENCE_STORAGE_KEY, String(sequence))
-            return sequence
-        } catch (_) {
-            return (this._lastTopicSaveSequence || 0) + 1
-        }
+        return this.saveOrderState.nextSequence()
     }
 
     // A request that never settles must not hold every later pick behind it.
@@ -1878,13 +1774,11 @@ export default class extends Controller {
     }
 
     get ambiguousPendingSelfEchoRetirements() {
-        return this._ambiguousPendingSelfEchoRetirements ||
-            (this._ambiguousPendingSelfEchoRetirements = new Map())
+        return this.selfEchoState.ambiguousRetirementTimers
     }
 
     get retiredSelfEchoSequenceHighWaters() {
-        return this._retiredSelfEchoSequenceHighWaters ||
-            (this._retiredSelfEchoSequenceHighWaters = new Map())
+        return this.selfEchoState.retiredSequenceHighWaters
     }
 
     // An early echo can be the only proof that an in-flight GET predates a
@@ -1907,15 +1801,15 @@ export default class extends Controller {
     // time it arrives the user may have picked something else — applying it
     // then reverts the newer pick and persists the older topic over it.
     get pendingSelfEchoes() {
-        return this._pendingSelfEchoes || (this._pendingSelfEchoes = [])
+        return this.selfEchoState.pendingIds
     }
 
     get pendingSelfEchoCreativeIds() {
-        return this._pendingSelfEchoCreativeIds || (this._pendingSelfEchoCreativeIds = new Map())
+        return this.selfEchoState.creativeIds
     }
 
     get pendingSelfEchoTopicIds() {
-        return this._pendingSelfEchoTopicIds || (this._pendingSelfEchoTopicIds = new Map())
+        return this.selfEchoState.topicIds
     }
 
     // The last preference observed from the server is the baseline for a save.
@@ -1931,50 +1825,41 @@ export default class extends Controller {
     }
 
     lastKnownRemoteTopicIdFor(creativeId) {
-        return this.lastKnownRemoteTopicIds.get(String(creativeId))
+        return this.saveOrderState.lastKnownTopicIdFor(creativeId)
     }
 
     setLastKnownRemoteTopicId(creativeId, value) {
-        this.lastKnownRemoteTopicIds.set(String(creativeId), value ? String(value) : "")
+        this.saveOrderState.setLastKnownTopicId(creativeId, value)
     }
 
     get lastKnownRemoteTopicIds() {
-        return this._lastKnownRemoteTopicIds || (this._lastKnownRemoteTopicIds = new Map())
+        return this.saveOrderState.lastKnownRemoteTopicIds
     }
 
     // Action Cable is ordered only within a connection. A delayed older message
     // can therefore arrive after a newer GET, response, or broadcast. Keep the
     // server-issued revision per effective stream and never apply it backward.
     observeLastTopicRevision(creativeId, revision) {
-        if (!revision) return true
-
-        const streamCreativeId = String(creativeId)
-        const previous = this.highestLastTopicRevisions.get(streamCreativeId)
-        const comparison = this.compareLastTopicRevisions(revision, previous)
-        if (comparison !== null && comparison < 0) return false
-        if (comparison === null || comparison > 0) {
-            this.highestLastTopicRevisions.set(streamCreativeId, revision)
-        }
-        return true
+        return this.saveOrderState.observeRevision(creativeId, revision)
     }
 
     get highestLastTopicRevisions() {
-        return this._highestLastTopicRevisions || (this._highestLastTopicRevisions = new Map())
+        return this.saveOrderState.highestRevisions
     }
 
     // The server resolves TopicsChannel subscriptions for linked shells to their
     // origin stream. Keep that result separately from the popup-scoped dataset:
     // the latter is deliberately cleared while a replacement load is pending.
     get knownEffectiveCreativeIds() {
-        return this._knownEffectiveCreativeIds || (this._knownEffectiveCreativeIds = new Map())
+        return this.saveOrderState.knownEffectiveCreativeIds
     }
 
     get pendingSelfEchoPreviousTopicIds() {
-        return this._pendingSelfEchoPreviousTopicIds || (this._pendingSelfEchoPreviousTopicIds = new Map())
+        return this.selfEchoState.previousTopicIds
     }
 
     get pendingSelfEchoAcknowledgementVersions() {
-        return this._pendingSelfEchoAcknowledgementVersions || (this._pendingSelfEchoAcknowledgementVersions = new Map())
+        return this.selfEchoState.acknowledgementVersions
     }
 
     // The preference row id distinguishes a record recreated after clearing the
@@ -1982,9 +1867,7 @@ export default class extends Controller {
     // they are a server-issued ordering token, rather than an inference from a
     // topic id that can repeat in an ABA change (Main -> Alpha -> Main).
     normalizeLastTopicRevision(value) {
-        if (!Array.isArray(value) || value.length !== 2) return null
-        const revision = value.map(Number)
-        return revision.every(Number.isSafeInteger) ? revision : null
+        return this.saveOrderState.normalizeRevision(value)
     }
 
     isPersistedAllMessagesSelection(topicId, allMessages) {
@@ -1992,30 +1875,29 @@ export default class extends Controller {
     }
 
     compareLastTopicRevisions(left, right) {
-        if (!left || !right) return null
-        return left[0] === right[0] ? left[1] - right[1] : left[0] - right[0]
+        return this.saveOrderState.compareRevisions(left, right)
     }
 
     get pendingSelfEchoRemoteRevisions() {
-        return this._pendingSelfEchoRemoteRevisions || (this._pendingSelfEchoRemoteRevisions = new Map())
+        return this.selfEchoState.remoteRevisions
     }
 
     // Echoes normally remove their claims. A short-lived tombstone retains the
     // save order for GETs already in progress when the echo arrived.
     get settledSelfEchoes() {
-        return this._settledSelfEchoes || (this._settledSelfEchoes = new Set())
+        return this.selfEchoState.settledIds
     }
 
     get activeLoadAcknowledgementVersions() {
-        return this._activeLoadAcknowledgementVersions || (this._activeLoadAcknowledgementVersions = new Map())
+        return this.saveOrderState.activeLoadAcknowledgementVersions
     }
 
     get saveAcknowledgementVersion() {
-        return this._saveAcknowledgementVersion || 0
+        return this.saveOrderState.acknowledgementVersion
     }
 
     set saveAcknowledgementVersion(value) {
-        this._saveAcknowledgementVersion = value
+        this.saveOrderState.acknowledgementVersion = value
     }
 
     // These claims were already in flight when the popup unsubscribed. If their
@@ -2023,7 +1905,7 @@ export default class extends Controller {
     // went into that gap. A replacement subscription can receive an echo when it
     // reopens before the response arrives, though.
     get possiblyMissedPendingSelfEchoes() {
-        return this._possiblyMissedPendingSelfEchoes || (this._possiblyMissedPendingSelfEchoes = new Set())
+        return this.selfEchoState.possiblyMissedIds
     }
 
     // A broadcast sent after Action Cable disconnects is not replayed after the
@@ -2031,8 +1913,7 @@ export default class extends Controller {
     // whether one could have been sent in that gap; acknowledged saves can be
     // retired immediately because their broadcast has already been sent.
     get possiblyMissedPendingSelfEchoesDuringDisconnect() {
-        return this._possiblyMissedPendingSelfEchoesDuringDisconnect ||
-            (this._possiblyMissedPendingSelfEchoesDuringDisconnect = new Set())
+        return this.selfEchoState.possiblyMissedDuringDisconnectIds
     }
 
     handleTopicsSubscriptionDisconnected() {
@@ -2094,7 +1975,7 @@ export default class extends Controller {
     // open popup keeps its id long enough to consume an echo still in flight,
     // without allowing it to override a later reopen snapshot.
     get acknowledgedPendingSelfEchoes() {
-        return this._acknowledgedPendingSelfEchoes || (this._acknowledgedPendingSelfEchoes = new Set())
+        return this.selfEchoState.acknowledgedIds
     }
 
     acknowledgePendingSelfEcho(clientId) {
@@ -2179,7 +2060,7 @@ export default class extends Controller {
     }
 
     get deferredLastTopicReconciliations() {
-        return this._deferredLastTopicReconciliations || (this._deferredLastTopicReconciliations = new Set())
+        return this.saveOrderState.deferredReconciliations
     }
 
     retryDeferredLastTopicReconciliation(creativeId) {
@@ -2196,23 +2077,15 @@ export default class extends Controller {
     // subscription must not prevent a queued save for the original stream from
     // claiming its own echo when the user returns to it.
     subscriptionGenerationFor(creativeId) {
-        const streamCreativeId = String(creativeId)
-        if (!this.subscriptionGenerations.has(streamCreativeId)) {
-            this.subscriptionGenerations.set(streamCreativeId, 0)
-        }
-        return this.subscriptionGenerations.get(streamCreativeId)
+        return this.saveOrderState.subscriptionGenerationFor(creativeId)
     }
 
     bumpSubscriptionGenerationFor(creativeId) {
-        const streamCreativeId = String(creativeId)
-        this.subscriptionGenerations.set(
-            streamCreativeId,
-            this.subscriptionGenerationFor(streamCreativeId) + 1
-        )
+        this.saveOrderState.bumpSubscriptionGeneration(creativeId)
     }
 
     get subscriptionGenerations() {
-        return this._subscriptionGenerations || (this._subscriptionGenerations = new Map())
+        return this.saveOrderState.subscriptionGenerations
     }
 
     // The legacy key is adopted only as a stand-in for a preference the server
@@ -2289,7 +2162,7 @@ export default class extends Controller {
             ...this.settledSelfEchoes,
         ].filter(clientId => this.pendingSelfEchoCreativeIds.get(clientId) === streamCreativeId))
 
-        this._pendingSelfEchoes = this.pendingSelfEchoes.filter(clientId => !clientIds.has(clientId))
+        this.selfEchoState.pendingIds = this.pendingSelfEchoes.filter(clientId => !clientIds.has(clientId))
         for (const clientId of clientIds) this.discardSelfEchoMetadata(clientId)
         this.bumpSubscriptionGenerationFor(streamCreativeId)
     }

@@ -38,4 +38,15 @@ describe('isHtmlEmpty', () => {
   test('returns false for [data-trix-attachment]-only HTML', () => {
     expect(isHtmlEmpty('<div data-trix-attachment=\'{"sgid":"x"}\'></div>')).toBe(false);
   });
+
+  test('parses untrusted HTML without assigning it to the active document', () => {
+    let activeDocumentSinkUsed = false;
+    const liveDocument = {
+      defaultView: { DOMParser },
+      createElement: () => { activeDocumentSinkUsed = true; }
+    };
+
+    expect(isHtmlEmpty('<img src="invalid" onerror="alert(1)">', liveDocument)).toBe(false);
+    expect(activeDocumentSinkUsed).toBe(false);
+  });
 });

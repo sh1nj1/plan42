@@ -6,8 +6,9 @@ import { attachBundleDragImage } from '../../lib/dnd/bundle_image'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
-import csrfFetch, { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
+import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
+import CommentReadTracker from './comment_read_tracker'
 import PrevMessageNavigator from './prev_message_navigator'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
@@ -31,6 +32,7 @@ export default class extends Controller {
     this.highlightCreativeId = null
     this._loadCommentsVersion = 0
     this.markReadTimeout = null
+    this.commentReadTracker = new CommentReadTracker(this)
     this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
@@ -144,9 +146,7 @@ export default class extends Controller {
       ? this.highlightAfterLoad
       : null
     this.creativeId = creativeId
-    this.renderedAllTopicIds = null
-    this.renderedAllTopicWatermarks = null
-    this.renderedAllIncludesLegacy = false
+    this.getCommentReadTracker().resetRenderedSnapshot()
     this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
     this.highlightAfterLoad = highlightId || pendingHighlight || this.deepLinkCommentId
@@ -169,9 +169,7 @@ export default class extends Controller {
     this.flushPendingRead()
     this._loadCommentsVersion += 1
     this.creativeId = null
-    this.renderedAllTopicIds = null
-    this.renderedAllTopicWatermarks = null
-    this.renderedAllIncludesLegacy = false
+    this.getCommentReadTracker().resetRenderedSnapshot()
     this.highlightAfterLoad = null
     this.highlightCreativeId = null
     this.suppressTopicChangeLoad = false
@@ -391,14 +389,10 @@ export default class extends Controller {
       // happen later and may observe a topic-strip archive change without
       // rendering that topic's existing history.
       if (loadVersion !== undefined && !pagination && !superseded && !this.currentTopicId && renderedTopicIds !== null) {
-        this.renderedAllTopicIds = renderedTopicIds.split(',').filter(Boolean)
-        try {
-          this.renderedAllTopicWatermarks = renderedTopicWatermarks ? JSON.parse(renderedTopicWatermarks) : null
-          this.renderedAllIncludesLegacy = Boolean(this.renderedAllTopicWatermarks && Object.hasOwn(this.renderedAllTopicWatermarks, '_legacy'))
-        } catch (_error) {
-          this.renderedAllTopicWatermarks = null
-          this.renderedAllIncludesLegacy = false
-        }
+        this.getCommentReadTracker().captureRenderedSnapshot(
+          renderedTopicIds,
+          renderedTopicWatermarks
+        )
       }
       // A load superseded while in flight must not retopic anything: its own HTML
       // is dropped, so moving currentTopicId (and the strip, and the form) to its
@@ -498,62 +492,21 @@ export default class extends Controller {
   }
 
   markCommentsRead() {
-    if (!this.creativeId) return
-    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
-    const creativeId = this.creativeId
-    const topicId = this.currentTopicId || null
-    const topicIds = topicId ? null : this.renderedAllTopicIds
-    const topicWatermarks = topicId ? null : this.renderedAllTopicWatermarks
-    const pendingRead = { creativeId, topicId, topicIds, topicWatermarks }
-    this.pendingRead = pendingRead
-    this.markReadTimeout = window.setTimeout(() => {
-      this.markReadTimeout = null
-      if (this.pendingRead !== pendingRead) return
-      this.pendingRead = null
-      if (!this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
-
-      this.updateReadPointer(creativeId, topicId, topicIds, topicWatermarks)
-    }, 2000);
+    this.getCommentReadTracker().markCommentsRead()
   }
 
   flushPendingRead({ keepalive = false } = {}) {
-    const pendingRead = this.pendingRead
-    if (!pendingRead) return
-
-    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
-    this.markReadTimeout = null
-    this.pendingRead = null
-    this.updateReadPointer(
-      pendingRead.creativeId,
-      pendingRead.topicId,
-      pendingRead.topicIds,
-      pendingRead.topicWatermarks,
-      { keepalive }
-    )
+    this.getCommentReadTracker().flushPendingRead({ keepalive })
   }
 
   updateReadPointer(creativeId, topicId, topicIds = null, topicWatermarks = null, { keepalive = false } = {}) {
-    if (!creativeId) return
-
-    csrfFetch('/comment_read_pointers/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    this.getCommentReadTracker().updateReadPointer({
+      creativeId,
+      topicId,
+      topicIds,
+      topicWatermarks,
       keepalive,
-      body: JSON.stringify({
-        creative_id: creativeId,
-        topic_id: topicId,
-        ...(topicIds ? { topic_ids: topicIds } : {}),
-        ...(topicWatermarks ? { topic_watermarks: topicWatermarks } : {}),
-      }),
-    }).then((response) => {
-      if (!response.ok || !this.element.isConnected || this.creativeId !== creativeId || (this.currentTopicId || null) !== topicId) return
-
-      // A successful topic read changes its chip and the aggregate creative
-      // badge. Reload immediately instead of leaving stale counts on screen.
-      this.popupController?.topicsController?.loadTopics?.()
-    }).catch(() => { /* ignore — creative may have been deleted */ })
+    })
   }
 
   handlePrevMsgUserInput() {
@@ -676,56 +629,20 @@ export default class extends Controller {
   // visible in the DOM. Live streams still fence topics outside the initial
   // snapshot because older history for those topics may be unseen.
   recordRenderedAllTopicWatermarks(comments, { includeNewTopics = false } = {}) {
-    if (this.currentTopicId || !Array.isArray(this.renderedAllTopicIds)) return false
-
-    let addedTopic = false
-    const renderedComments = comments instanceof Element ? [comments] : Array.from(comments || [])
-    renderedComments.forEach((comment) => {
-      const topicId = comment.dataset.topicId
-      const commentId = Number.parseInt(comment.dataset.commentId, 10)
-      if (!Number.isSafeInteger(commentId) || commentId <= 0) return
-
-      const watermarkKey = topicId || '_legacy'
-      if (!topicId && !this.renderedAllIncludesLegacy) {
-        if (!includeNewTopics) return
-
-        this.renderedAllIncludesLegacy = true
-        addedTopic = true
-      }
-
-      if (topicId && !this.renderedAllTopicIds.some((id) => String(id) === String(topicId))) {
-        if (!includeNewTopics) return
-
-        this.renderedAllTopicIds.push(String(topicId))
-        addedTopic = true
-      }
-
-      this.renderedAllTopicWatermarks ||= {}
-      const previousId = Number.parseInt(this.renderedAllTopicWatermarks[watermarkKey], 10)
-      if (!Number.isSafeInteger(previousId) || commentId > previousId) {
-        this.renderedAllTopicWatermarks[watermarkKey] = commentId
-      }
-    })
-
-    return addedTopic
+    return this.getCommentReadTracker().recordRenderedAllTopicWatermarks(comments, { includeNewTopics })
   }
 
   reportRenderedAllTopics() {
-    if (this.currentTopicId || !Array.isArray(this.renderedAllTopicIds)) return
-
-    this.element.dispatchEvent(new CustomEvent('comments--list:rendered-all-topics', {
-      bubbles: true,
-      detail: {
-        creativeId: this.creativeId,
-        topicIds: this.renderedAllTopicIds,
-        includesLegacy: this.renderedAllIncludesLegacy,
-      },
-    }))
+    this.getCommentReadTracker().reportRenderedAllTopics()
   }
 
   isOutsideRenderedAllTopics(topicId) {
-    return Array.isArray(this.renderedAllTopicIds) &&
-      !this.renderedAllTopicIds.some((id) => String(id) === String(topicId))
+    return this.getCommentReadTracker().isOutsideRenderedAllTopics(topicId)
+  }
+
+  getCommentReadTracker() {
+    this.commentReadTracker ||= new CommentReadTracker(this)
+    return this.commentReadTracker
   }
 
   handleStreamRender(event) {

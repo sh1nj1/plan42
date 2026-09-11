@@ -362,7 +362,7 @@ module Collavre
       if waiter.waiting_notice_scope == Comment::WAITING_NOTICE_TOPIC
         Orchestration::TaskCoalescer.coalesce!(waiter)
       end
-      Orchestration::AgentOrchestrator.post_topic_concurrency_notice(
+      Orchestration::WaitingNoticeManager.post_topic_concurrency_notice(
         creative_id, topic_id, context, agent: agent, waiter: waiter
       )
 

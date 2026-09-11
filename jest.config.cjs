@@ -7,6 +7,11 @@ module.exports = {
   roots: [
     "<rootDir>/app/javascript",
     "<rootDir>/engines",
+    // The complexity ratchet's JavaScript measurement (lib/js_complexity). It
+    // is tooling rather than app code, so it is deliberately absent from
+    // collectCoverageFrom below — but its entity naming is what keeps ratchet
+    // keys stable across commits, and that is worth unit tests.
+    "<rootDir>/lib",
     // Served production JS outside app/javascript (PWA service worker). Needed so
     // Jest's file crawler discovers it for coverage; no tests live here.
     "<rootDir>/app/views/pwa"
