@@ -6,7 +6,7 @@ import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 import { elementAnchor } from '../../lib/common_popup'
-import { createUserMenu } from '../../comments/user_menu'
+import { createUserMenu, healthStateFor, healthStateForUserId } from '../../comments/user_menu'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
@@ -360,21 +360,13 @@ export default class extends Controller {
   // separate: `presentIds` is who has this creative open, and it alone drives
   // read receipts. An agent is online when its gateway says it can run, whether
   // or not anyone is watching.
-  isParticipantOnline(user, presentIds) {
-    if (!user) return false
-    return (presentIds || []).some((id) => String(id) === String(user.id)) || user.agent_online === true
-  }
+  participantHealthState(user, presentIds) { return healthStateFor(user, presentIds, this.participantUserMenuLabels) }
 
   // The same answer by id, for the avatars rendered on each message: an agent in
   // the message list and the same agent in the participant strip must not
-  // disagree about whether it is online.
-  isUserOnline(userId, presentIds = this.currentPresentIds) {
-    const user = (this.participantsData || []).find((entry) => String(entry.id) === String(userId))
-    // A comment author who is no longer a participant still gets the plain
-    // chat-presence answer: absence from the list is not evidence of anything.
-    if (!user) return (presentIds || []).some((id) => String(id) === String(userId))
-
-    return this.isParticipantOnline(user, presentIds)
+  // disagree about whether it is online or why its health is unknown.
+  userHealthState(userId, presentIds = this.currentPresentIds) {
+    return healthStateForUserId(this.participantsData, userId, presentIds, this.participantUserMenuLabels)
   }
 
   _isCurrentParticipantLoad(loadVersion, creativeId) {
@@ -569,10 +561,12 @@ export default class extends Controller {
     }
     this.participantsTarget.innerHTML = ''
     this.participantsData.forEach((user) => {
-      const online = this.isParticipantOnline(user, presentIds)
+      const state = this.participantHealthState(user, presentIds)
       const wrapper = createUserMenu({
         user,
-        online,
+        online: state.online,
+        healthStatus: state.kind,
+        statusText: state.label,
         labels: this.participantUserMenuLabels,
         menuId: `participant-user-menu-${user.id}`,
         draggable: Boolean(user.ai_user)
@@ -603,13 +597,14 @@ export default class extends Controller {
     if (!matchesParticipants) return false
 
     menus.forEach((menu, index) => {
-      const online = this.isParticipantOnline(this.participantsData[index], presentIds)
-      menu.querySelector('.comment-presence-avatar')?.classList.toggle('inactive', !online)
+      const state = this.participantHealthState(this.participantsData[index], presentIds)
+      menu.querySelector('.comment-presence-avatar')?.classList.toggle('inactive', !state.online)
       const status = menu.querySelector('.comment-user-popup-status')
-      status?.classList.toggle('is-online', online)
       const statusLabel = menu.querySelector('[data-comment-user-menu-target="statusLabel"]')
       if (status && statusLabel) {
-        statusLabel.textContent = online ? status.dataset.onlineText : status.dataset.offlineText
+        status.classList.remove('is-online', 'is-offline', 'is-unknown', 'is-check_error')
+        status.classList.add(`is-${state.kind}`)
+        statusLabel.textContent = state.label
       }
     })
     return true
@@ -622,7 +617,9 @@ export default class extends Controller {
       mention: this.element.dataset.userMenuMentionText || 'Mention',
       dragGuide: this.element.dataset.userMenuAgentDragGuideText || '',
       online: this.element.dataset.participantOnlineText || 'Online',
-      offline: this.element.dataset.participantOfflineText || 'Offline'
+      offline: this.element.dataset.participantOfflineText || 'Offline',
+      unknown: this.element.dataset.participantHealthUnknownText || 'Health status unavailable',
+      check_error: this.element.dataset.participantHealthCheckErrorText || 'Health check error'
     }
   }
 
@@ -732,16 +729,14 @@ export default class extends Controller {
     const present = presentIds || []
     return (this.participantsData || []).map((user) => {
       // Offline reads the same here as it does on the avatar strip.
-      const online = this.isParticipantOnline(user, present)
+      const state = this.participantHealthState(user, present)
       return {
         id: user.id,
         label: user.name,
         avatarUrl: user.avatar_url,
         iconKey: user.avatar_url ? null : 'user',
-        muted: !online,
-        statusLabel: online
-          ? (this.element.dataset.participantOnlineText || 'Online')
-          : (this.element.dataset.participantOfflineText || 'Offline')
+        muted: !state.online,
+        statusLabel: state.label
       }
     })
   }

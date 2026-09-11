@@ -11,6 +11,10 @@ production: &production
     class: Collavre::GatewayHealthSweepJob
     queue: gateway_health
     schedule: every minute
+  endpoint_health_sweep:
+    class: Collavre::EndpointHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
   restore_dropped_dispatches:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
@@ -37,6 +41,10 @@ desktop:
     class: Collavre::GatewayHealthSweepJob
     queue: gateway_health
     schedule: every minute
+  endpoint_health_sweep:
+    class: Collavre::EndpointHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
   restore_dropped_dispatches:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
@@ -61,6 +69,10 @@ development:
     schedule: every minute
   gateway_health_sweep:
     class: Collavre::GatewayHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
+  endpoint_health_sweep:
+    class: Collavre::EndpointHealthSweepJob
     queue: gateway_health
     schedule: every minute
   restore_dropped_dispatches:

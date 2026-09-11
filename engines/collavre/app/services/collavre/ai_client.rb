@@ -58,7 +58,7 @@ module Collavre
 
       # Append a vendor <select> option ([label, value]). Idempotent by value.
       def register_vendor_option(label, value)
-        value = value.to_s
+        value = value.to_s.strip.downcase
         return if BASE_VENDOR_OPTIONS.any? { |_l, v| v == value }
         return if registered_vendor_options.any? { |_l, v| v == value }
 
@@ -77,11 +77,11 @@ module Collavre
       end
 
       def register_session_vendor(vendor)
-        session_vendors << vendor.to_s.downcase
+        session_vendors << vendor.to_s.strip.downcase
       end
 
       def vendor_supports_session?(vendor)
-        session_vendors.include?(vendor.to_s.downcase)
+        session_vendors.include?(vendor.to_s.strip.downcase)
       end
     end
 
@@ -96,7 +96,7 @@ module Collavre
     # propagates out of #chat as a cancellation, not an "⚠️ AI Error" delta.
     def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {},
                    log_interactions: true, before_tool_call: nil, request_timeout_seconds: nil)
-      @vendor = vendor
+      @vendor = vendor.to_s.strip.downcase
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
@@ -310,7 +310,7 @@ module Collavre
           api_key = gateway.completion_key
           base_url = gateway.completion_base_url
         else
-          api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
+          api_key = OpenaiEndpoint.api_key(base_url: @gateway_url, api_key: @llm_api_key)
           base_url = @gateway_url.presence
         end
         # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs

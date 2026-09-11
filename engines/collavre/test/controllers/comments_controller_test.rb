@@ -1446,6 +1446,31 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
                  "a human's presence is chat presence, and does not travel here"
   end
 
+  test "participants exposes endpoint health errors independently from dispatch" do
+    agent = Collavre::User.create!(
+      name: "OpenAI Agent", email: "openai-participants@ai.local", password: SecureRandom.hex(24),
+      system_prompt: "Help", llm_vendor: "openai", llm_model: "gpt-test", created_by_id: @user.id
+    )
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+    agent.update_columns(
+      endpoint_health_status: 3,
+      endpoint_health_checked_at: Time.current,
+      endpoint_health_error: "RuntimeError: checker failed"
+    )
+
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    health = participant_json(agent)
+    assert_equal false, health["agent_online"]
+    assert_equal "check_error", health["agent_health_status"]
+    assert_nil participant_json(@user)["agent_health_status"]
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    assert_equal "online", participant_json(agent)["agent_health_status"]
+    assert_equal true, participant_json(agent)["agent_online"]
+  end
+
   test "participants batches Claude Channel subscription liveness" do
     agents = 2.times.map do |index|
       agent = Collavre::User.create!(

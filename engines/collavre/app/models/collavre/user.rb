@@ -189,7 +189,7 @@ module Collavre
     end
 
     def cli_proxy_agent?
-      llm_vendor == "cli_proxy" && agent_gateway.present?
+      llm_vendor.to_s.strip.downcase == "cli_proxy" && agent_gateway.present?
     end
 
     def gateway_accessible_to?(user)
@@ -265,7 +265,7 @@ module Collavre
               inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
               allow_nil: true
     def cli_proxy_gateway_belongs_to_creator
-      return unless llm_vendor == "cli_proxy"
+      return unless llm_vendor.to_s.strip.downcase == "cli_proxy"
 
       validate_cli_proxy_gateway(agent_gateway)
     end
@@ -274,7 +274,7 @@ module Collavre
     # gateway checks immediately before writing the agent while holding the
     # same row lock used by a completion-key removal.
     def serialize_cli_proxy_gateway_assignment
-      return yield unless llm_vendor == "cli_proxy" && agent_gateway_id.present?
+      return yield unless llm_vendor.to_s.strip.downcase == "cli_proxy" && agent_gateway_id.present?
 
       gateway = AgentGateway.find_by(id: agent_gateway_id)
       return yield unless gateway

@@ -32,7 +32,7 @@ actor = Collavre::User.create!(
 )
 Collavre::Current.user = actor
 creative = Collavre::Creative.create!(description: "Smoke Host", user: actor)
-Collavre::User.create!(
+reviewer = Collavre::User.create!(
   name: "Smoke Reviewer", email: "smoke-agent-#{suffix}@example.test", password: "password123",
   llm_vendor: "google", llm_model: "gemini-1.5-flash", searchable: true
 )
@@ -62,6 +62,12 @@ end
 # DISTINCT either.
 check(failures, "AgentGateway.health_probe_targets") do
   Collavre::AgentGateway.health_probe_targets.find_by(id: -1)
+end
+
+check(failures, "User.with_llm_vendors normalizes control whitespace") do
+  reviewer.update_column(:llm_vendor, "\tGoOgLe\r\n")
+  Collavre::User.ai_agents.with_llm_vendors([ "google" ]).exists?(reviewer.id) ||
+    raise("expected the tab-padded vendor to match")
 end
 
 abort "\n#{failures.size} PostgreSQL-incompatible query/queries:\n- #{failures.join("\n- ")}" if failures.any?

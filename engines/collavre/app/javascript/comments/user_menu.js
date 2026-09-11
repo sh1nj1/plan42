@@ -27,7 +27,30 @@ function avatarElement(user, size, classes) {
   return wrapper
 }
 
-function menuHeader(user, online, labels) {
+export function healthStateFor(user, presentIds, labels) {
+  if (!user) return { online: false, kind: 'offline', label: labels.offline }
+
+  const present = (presentIds || []).some((id) => String(id) === String(user.id))
+  if (present || user.agent_online === true) {
+    return { online: true, kind: 'online', label: labels.online }
+  }
+  if (!user.ai_user) return { online: false, kind: 'offline', label: labels.offline }
+
+  const kind = ['offline', 'unknown', 'check_error'].includes(user.agent_health_status)
+    ? user.agent_health_status
+    : 'unknown'
+  return { online: false, kind, label: labels[kind] }
+}
+
+export function healthStateForUserId(users, userId, presentIds, labels) {
+  const user = (users || []).find((entry) => String(entry.id) === String(userId))
+  if (user) return healthStateFor(user, presentIds, labels)
+
+  const online = (presentIds || []).some((id) => String(id) === String(userId))
+  return { online, kind: online ? 'online' : 'offline', label: online ? labels.online : labels.offline }
+}
+
+function menuHeader(user, state, labels) {
   const header = document.createElement('div')
   header.className = 'comment-user-popup-header'
   header.appendChild(avatarElement(user, 36, 'avatar'))
@@ -45,7 +68,7 @@ function menuHeader(user, online, labels) {
   identity.appendChild(email)
 
   const status = document.createElement('span')
-  status.className = `comment-user-popup-status${online ? ' is-online' : ''}`
+  status.className = `comment-user-popup-status is-${state.kind}`
   status.dataset.commentUserMenuTarget = 'status'
   status.dataset.onlineText = labels.online
   status.dataset.offlineText = labels.offline
@@ -57,7 +80,7 @@ function menuHeader(user, online, labels) {
 
   const statusLabel = document.createElement('span')
   statusLabel.dataset.commentUserMenuTarget = 'statusLabel'
-  statusLabel.textContent = online ? labels.online : labels.offline
+  statusLabel.textContent = state.label
   status.appendChild(statusLabel)
   identity.appendChild(status)
   header.appendChild(identity)
@@ -65,7 +88,16 @@ function menuHeader(user, online, labels) {
   return header
 }
 
-export function createUserMenu({ user, online, labels, menuId, draggable = false }) {
+function menuState(online, healthStatus, statusText, labels) {
+  return {
+    online,
+    kind: healthStatus || (online ? 'online' : 'offline'),
+    label: statusText || (online ? labels.online : labels.offline),
+  }
+}
+
+export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
+  const state = menuState(online, healthStatus, statusText, labels)
   const root = document.createElement('div')
   root.className = 'popup-menu-wrapper comment-user-menu'
   root.dataset.controller = 'popup-menu comment-user-menu'
@@ -89,7 +121,7 @@ export function createUserMenu({ user, online, labels, menuId, draggable = false
   menu.dataset.popupMenuTarget = 'menu'
   menu.dataset.action = 'click->popup-menu#menuClick'
   menu.setAttribute('role', 'menu')
-  menu.appendChild(menuHeader(user, online, labels))
+  menu.appendChild(menuHeader(user, state, labels))
 
   const profile = document.createElement('a')
   profile.href = user.profile_url

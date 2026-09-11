@@ -87,7 +87,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
         ai_id: "proxy_bot",
         name: "Proxy Bot",
         system_prompt: "Help",
-        llm_vendor: "cli_proxy",
+        llm_vendor: " CLI_PROXY ",
         llm_model: "paperclip/claude_local",
         agent_gateway_id: gateway.id
       }
@@ -96,6 +96,20 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     agent = Collavre::User.find_by!(email: "proxy_bot@ai.local")
     assert_equal gateway, agent.agent_gateway
     assert_equal @admin.id, agent.created_by_id
+    assert agent.cli_proxy_agent?
+    assert_includes Collavre::AgentGateway.health_probe_targets, gateway
+
+    patch update_ai_user_url(agent), params: {
+      user: { name: "Renamed proxy", llm_vendor: " CLI_PROXY ", agent_gateway_id: gateway.id }
+    }
+    assert_redirected_to user_path(@admin, tab: "contacts")
+    assert_equal gateway, agent.reload.agent_gateway
+
+    patch update_ai_user_url(agent), params: {
+      user: { name: "Preserved proxy", llm_vendor: " CLI_PROXY " }
+    }
+    assert_redirected_to user_path(@admin, tab: "contacts")
+    assert_equal gateway, agent.reload.agent_gateway
   end
 
   test "does not offer or assign a provisioning-only gateway to a CLI Proxy agent" do

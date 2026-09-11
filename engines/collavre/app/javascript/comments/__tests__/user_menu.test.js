@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { createUserMenu } from '../user_menu'
+import { createUserMenu, healthStateFor, healthStateForUserId } from '../user_menu'
 
 const LABELS = {
   open: 'Open %{name}\'s profile menu',
@@ -10,6 +10,8 @@ const LABELS = {
   dragGuide: 'Drag this avatar to a topic.',
   online: 'Online',
   offline: 'Offline',
+  unknown: 'Health status unavailable',
+  check_error: 'Health check error',
 }
 
 const USER = {
@@ -23,6 +25,31 @@ const USER = {
 }
 
 describe('createUserMenu', () => {
+  test('maps presence and endpoint health evidence to display states', () => {
+    expect(healthStateFor(null, [], LABELS)).toEqual({ online: false, kind: 'offline', label: 'Offline' })
+    expect(healthStateFor({ ...USER, ai_user: false }, [], LABELS))
+      .toEqual({ online: false, kind: 'offline', label: 'Offline' })
+    expect(healthStateFor({ ...USER, ai_user: true }, [9], LABELS))
+      .toEqual({ online: true, kind: 'online', label: 'Online' })
+    expect(healthStateFor({ ...USER, ai_user: true, agent_online: true }, [], LABELS))
+      .toEqual({ online: true, kind: 'online', label: 'Online' })
+    expect(healthStateFor({ ...USER, ai_user: true, agent_health_status: 'offline' }, [], LABELS))
+      .toEqual({ online: false, kind: 'offline', label: 'Offline' })
+    expect(healthStateFor({ ...USER, ai_user: true, agent_health_status: 'invalid' }, [], LABELS))
+      .toEqual({ online: false, kind: 'unknown', label: 'Health status unavailable' })
+  })
+
+  test('resolves display state by user id with a chat-presence fallback', () => {
+    const users = [{ ...USER, ai_user: true, agent_health_status: 'check_error' }]
+
+    expect(healthStateForUserId(users, 9, [], LABELS))
+      .toEqual({ online: false, kind: 'check_error', label: 'Health check error' })
+    expect(healthStateForUserId(users, 10, [10], LABELS))
+      .toEqual({ online: true, kind: 'online', label: 'Online' })
+    expect(healthStateForUserId(null, 10, [], LABELS))
+      .toEqual({ online: false, kind: 'offline', label: 'Offline' })
+  })
+
   test('builds the complete online profile menu without drag guidance', () => {
     const menu = createUserMenu({
       user: USER,
@@ -64,5 +91,20 @@ describe('createUserMenu', () => {
     expect(menu.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(false)
     expect(menu.querySelector('[data-comment-user-menu-target="statusLabel"]').textContent).toBe('Offline')
     expect(menu.querySelector('.comment-user-popup-guide').textContent).toBe(LABELS.dragGuide)
+  })
+
+  test('shows a checker error separately from ordinary offline state', () => {
+    const menu = createUserMenu({
+      user: USER,
+      online: false,
+      healthStatus: 'check_error',
+      statusText: LABELS.check_error,
+      labels: LABELS,
+      menuId: 'participant-user-menu-9',
+    })
+
+    expect(menu.querySelector('.comment-user-popup-status').classList.contains('is-check_error')).toBe(true)
+    expect(menu.querySelector('[data-comment-user-menu-target="statusLabel"]').textContent)
+      .toBe('Health check error')
   })
 })

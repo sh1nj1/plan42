@@ -266,6 +266,77 @@ class AiClientTest < ActiveSupport::TestCase
     assert mock_config.verify
   end
 
+  test "vendor options normalize values and avoid duplicates" do
+    AiClient.register_vendor_option("Test", " Test-Vendor ")
+    AiClient.register_vendor_option("Duplicate", "TEST-VENDOR")
+    AiClient.register_vendor_option("Built-in", " OpenAI ")
+
+    assert_equal [ [ "Test", "test-vendor" ] ], AiClient.vendor_options.select { |_label, value| value == "test-vendor" }
+    assert_equal [ [ "OpenAI", "openai" ] ], AiClient.vendor_options.select { |_label, value| value == "openai" }
+  ensure
+    AiClient.registered_vendor_options.reject! { |_label, value| value == "test-vendor" }
+  end
+
+  test "build_conversation normalizes vendor whitespace and case" do
+    client = AiClient.new(
+      vendor: " OpenAI ",
+      model: "gpt-test",
+      system_prompt: nil,
+      llm_api_key: "agent-key",
+      gateway_url: "https://gateway.example.test/v1"
+    )
+    fake_chat = FakeConversation.new
+    chat_options = nil
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) do |**options|
+      chat_options = options
+      fake_chat
+    end
+    mock_config = Minitest::Mock.new
+    mock_config.expect(:openai_api_key=, nil, [ "agent-key" ])
+    mock_config.expect(:openai_api_base=, nil, [ "https://gateway.example.test/v1" ])
+    mock_config.expect(:request_timeout=, 1800, [ 1800 ])
+
+    RubyLLM.stub(:context, ->(&block) { block.call(mock_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal :openai, chat_options[:provider]
+    assert mock_config.verify
+  end
+
+  test "OpenAI dispatch only falls back to the integration key for official endpoints" do
+    endpoints = {
+      nil => "shared-key",
+      "https://api.openai.com/v1" => "shared-key",
+      "https://API.OPENAI.COM/v1" => "shared-key",
+      "https://api.openai.com:443/v1/" => "shared-key",
+      "https://gateway.example.test/v1" => "local-gateway"
+    }
+
+    [ "openai", " OpenAI " ].each do |vendor|
+      endpoints.each do |gateway_url, expected_key|
+        [ nil, "agent-key" ].each do |agent_key|
+          client = AiClient.new(vendor: vendor, model: "gpt-test", system_prompt: nil,
+                                gateway_url: gateway_url, llm_api_key: agent_key)
+          config = OpenStruct.new
+          fake_chat = FakeConversation.new
+          mock_context = Object.new
+          mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+          Collavre::IntegrationSettings.stub(:fetch, "shared-key") do
+            RubyLLM.stub(:context, ->(&block) { block.call(config); mock_context }) do
+              client.send(:build_conversation)
+            end
+          end
+
+          assert_equal agent_key || expected_key, config.openai_api_key, "#{vendor}: #{gateway_url}"
+          assert_equal gateway_url, config.openai_api_base if gateway_url
+        end
+      end
+    end
+  end
+
   test "build_conversation sets X-Session-Id header from creative and topic" do
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: 7)

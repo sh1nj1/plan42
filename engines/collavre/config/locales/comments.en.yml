@@ -170,6 +170,8 @@ en:
       participant_search_placeholder: Search users...
       participant_online: Online
       participant_offline: Offline
+      participant_health_unknown: Health status unavailable
+      participant_health_check_error: Health check error
       user_menu:
         open: "Open %{name}'s profile menu"
         view_profile: View profile

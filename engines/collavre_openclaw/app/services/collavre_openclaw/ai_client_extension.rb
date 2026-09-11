@@ -8,7 +8,7 @@ module CollavreOpenclaw
       end
 
       def register_adapter(vendor, adapter_class)
-        adapter_registry[vendor.to_s.downcase] = adapter_class
+        adapter_registry[vendor.to_s.strip.downcase] = adapter_class
       end
     end
 

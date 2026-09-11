@@ -75,18 +75,7 @@ module Collavre
 
     def update_ai
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf, tools: [])
-      effective_vendor = ai_params[:llm_vendor].presence || @user.llm_vendor
-      if effective_vendor == "cli_proxy" && ai_params.key?(:agent_gateway_id)
-        gateways = gateway_owner_for(@user).owned_agent_gateways
-        gateway = if ai_params[:agent_gateway_id].to_s == @user.agent_gateway_id.to_s
-          gateways.find_by(id: ai_params[:agent_gateway_id])
-        else
-          gateways.active.find_by(id: ai_params[:agent_gateway_id])
-        end
-        ai_params[:agent_gateway_id] = gateway&.id
-      elsif ai_params.key?(:llm_vendor)
-        ai_params[:agent_gateway_id] = nil
-      end
+      assign_ai_gateway(ai_params)
       clear_llm_api_key = ActiveModel::Type::Boolean.new.cast(ai_params.delete(:clear_llm_api_key))
       @has_stored_llm_api_key = @user.llm_api_key.present?
       @clear_llm_api_key = clear_llm_api_key
@@ -171,8 +160,23 @@ module Collavre
       end
     end
 
+    def assign_ai_gateway(ai_params)
+      effective_vendor = (ai_params[:llm_vendor].presence || @user.llm_vendor).to_s.strip.downcase
+      if effective_vendor == "cli_proxy" && ai_params.key?(:agent_gateway_id)
+        gateways = gateway_owner_for(@user).owned_agent_gateways
+        gateway = if ai_params[:agent_gateway_id].to_s == @user.agent_gateway_id.to_s
+          gateways.find_by(id: ai_params[:agent_gateway_id])
+        else
+          gateways.active.find_by(id: ai_params[:agent_gateway_id])
+        end
+        ai_params[:agent_gateway_id] = gateway&.id
+      elsif effective_vendor != "cli_proxy" && ai_params.key?(:llm_vendor)
+        ai_params[:agent_gateway_id] = nil
+      end
+    end
+
     def selected_agent_gateway
-      return unless params[:llm_vendor] == "cli_proxy"
+      return unless params[:llm_vendor].to_s.strip.downcase == "cli_proxy"
 
       Current.user.owned_agent_gateways.active.find_by(id: params[:agent_gateway_id])
     end
