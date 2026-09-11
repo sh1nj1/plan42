@@ -62,6 +62,74 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    [ "failed", "cancelled", "escalated" ].product([ false, true ]).each do |status, external|
+      test "abandonment is rechecked when newer turn becomes #{status} via #{external ? 'external claim' : 'callback'}" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        newer = @task.dup
+        newer.assign_attributes(status: "running", trigger_event_payload: {}, created_at: @task.created_at + 1.second)
+        newer.save!
+        TriggerLoopCheckJob.perform_now(@task.id)
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          if external
+            newer.update_columns(status: status)
+            newer.fire_completion_callbacks_after_external_claim
+          else
+            newer.update!(status: status)
+          end
+        end
+        assert_equal [ @task.id ], checks
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+          checks.each { |id| TriggerLoopCheckJob.perform_now(id) }
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+      end
+    end
+
+    test "abandonment waits for all newer active turns to end without a result" do
+      @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+      turns = 2.times.map do |offset|
+        newer = @task.dup
+        newer.assign_attributes(status: "running", trigger_event_payload: {}, created_at: @task.created_at + offset.seconds)
+        newer.tap(&:save!)
+      end
+      checks = []
+      TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+        turns.first.cancelled!
+      end
+      assert_equal [ @task.id ], checks
+      TriggerLoopCheckJob.perform_now(checks.first)
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      # Default inline adapter executes the second callback immediately.
+      turns.last.failed!
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    [ :topic, :creative, :event, :earlier, :not_abandoned, :completed ].each do |scope|
+      test "failed turn does not recheck an unrelated abandoned replay: #{scope}" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
+        newer = @task.dup
+        newer.assign_attributes(status: "running", trigger_event_payload: {}, created_at: @task.created_at + 1.second)
+        case scope
+        when :topic then newer.topic_id = @child.topics.create!(name: "Other", user: @human).id
+        when :creative then newer.creative = @parent
+        when :event then newer.trigger_event_name = "creative_updated"
+        when :earlier then newer.created_at = @task.created_at - 1.second
+        when :not_abandoned then @task.update!(trigger_event_payload: {})
+        when :completed
+          @child.data["trigger"]["loop"]["state"] = "completed"
+          @child.save!
+        end
+        newer.save!
+        TriggerLoopCheckJob.stub(:perform_later, ->(*) { flunk "Unrelated failure cannot take ownership" }) do
+          newer.failed!
+        end
+        assert_equal scope == :completed ? "completed" : "running", @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
     [ 0.seconds, 1.second ].each do |delay|
       test "stale abandoned replay leaves the newer turn in control with #{delay} timestamp offset" do
         @task.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })

@@ -201,8 +201,9 @@ module Collavre
         context = context_for(late)
         running_turn(anchor)
 
-        AiAgentJob.new.perform(@agent.id, "comment_created", context)
+        result = AiAgentJob.new.perform(@agent.id, "comment_created", context)
 
+        assert_equal :rejected, result, "Replay callers need an explicit outcome when no task is created"
         assert_empty tasks_for(@agent),
                      "the late-admission door has to ask the same question the enqueue door did"
         assert_empty Task.where(agent: @agent, topic_id: @topic.id, status: "running")

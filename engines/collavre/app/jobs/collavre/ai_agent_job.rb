@@ -105,7 +105,7 @@ module Collavre
             "[AiAgentJob] Skipping Claude Channel job for agent #{agent.id}: " \
             "session offline (no live presence, event=#{event_name})"
           )
-          return
+          return :rejected
         end
 
         # Guard: an exclusive primary-agent assignment created (or moved) after
@@ -121,7 +121,7 @@ module Collavre
             "#{context.dig('topic', 'id')} is now assigned to another agent " \
             "(event=#{event_name})"
           )
-          return
+          return :rejected
         end
 
         # Guard: skip if there's already a running task for the same agent + comment
@@ -131,7 +131,7 @@ module Collavre
             "[AiAgentJob] Skipping duplicate: agent #{agent.id} already has a running task " \
             "for comment #{comment_id} (event=#{event_name})"
           )
-          return
+          return :rejected
         end
 
         # Guard: the same question the orchestrator asks before enqueueing, asked
@@ -148,7 +148,7 @@ module Collavre
             "[AiAgentJob] Skipping dispatch: comment #{comment_id} was already delivered to " \
             "agent #{agent.id} by in-flight task #{covering.id} (event=#{event_name})"
           )
-          return
+          return :rejected
         end
 
         # Guard: the Scheduler's topic-concurrency check counts Task rows, but
@@ -386,7 +386,9 @@ module Collavre
       # gating on "no occupants at all" would strand that waiter until the
       # unrelated holder finishes. dequeue_next_for_topic re-checks capacity and
       # eligibility under the admission lock, so an over-eager call is a no-op.
-      Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
+      ActiveRecord.after_all_transactions_commit do
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
+      end
 
       nil
     end

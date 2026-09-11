@@ -46,6 +46,11 @@ module Collavre
           agent.gateway_accessible_to?(@user) && original_comment.present?
       end
 
+      # Abandonment exposes only a generic notice to viewers of the reply.
+      def abandoned_card_visible?
+        data["replay_abandoned"] && comment.creative.has_permission?(@user, :read)
+      end
+
       def manageable?
         return false unless accessible?
 
@@ -144,8 +149,10 @@ module Collavre
       private
 
       def original_comment
-        id = task&.trigger_event_payload&.dig("comment", "id")
-        source = comment.creative.comments.visible_to(@user).find_by(id: id, topic_id: comment.topic_id)
+        return unless task && comment.creative_id == task.creative_id && comment.topic_id == task.topic_id
+
+        id = task.trigger_event_payload&.dig("comment", "id")
+        source = Comment.visible_to(@user).find_by(id: id, creative_id: task.creative_id, topic_id: task.topic_id)
         source unless source&.private? || source&.approval_action?
       end
 

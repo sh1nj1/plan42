@@ -14,6 +14,11 @@ module Collavre
         Task.uncached { with_locked_login(identity) { |login| yield login.replay_payload } }
       end
 
+      # Early dispatch guards must release the login claim via the replay job.
+      def self.reject!
+        raise Client::Error.new(I18n.t("collavre.inline_agent_login.errors.cannot_retry"), status: 409, code: "cannot_retry")
+      end
+
       def self.with_locked_login(identity)
         comment_id, user_id, task_id = identity
         task = Task.find(task_id)
@@ -29,7 +34,7 @@ module Collavre
           yield InlineLogin.new(comment, User.find(user_id))
         end
       rescue ActiveRecord::RecordNotFound
-        raise Client::Error.new(I18n.t("collavre.inline_agent_login.errors.cannot_retry"), status: 409, code: "cannot_retry")
+        reject!
       end
       private_class_method :with_locked_login
     end

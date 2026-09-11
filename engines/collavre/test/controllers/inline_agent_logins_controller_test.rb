@@ -607,12 +607,16 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  [ :deleted, :private, :approval, :moved, :agent_access, :edited, :card, :task, :detached_card ].each do |change|
+  [ :deleted, :private, :approval, :moved, :agent_access, :edited, :card, :task, :detached_card, :assignment, :co_moved ].each do |change|
     test "dispatch admission revalidates #{change} after replay payload preparation" do
       queue_delayed_replay
       dispatch = Collavre::AiAgentJob.method(:perform_now)
       mutate_then_dispatch = lambda do |*args|
         case change
+        when :assignment then @original.topic.update!(primary_agent_id: users(:ai_bot).id)
+        when :co_moved
+          destination = @creative.topics.create!(name: "Co-moved at dispatch", user: @requester)
+          [ @original, @reply ].each { |comment| comment.update!(topic: destination) }
         when :deleted then @original.destroy!
         when :private then @original.update!(private: true)
         when :approval then @original.update!(action: '{"tool":"test"}')
@@ -764,6 +768,61 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     login.stub(:manageable?, -> { @original.destroy!; true }) do
       error = assert_raises(Collavre::CliProxy::Client::Error) { login.replay_payload }
       assert_equal "cannot_retry", error.code
+    end
+  end
+
+  [ :topic, :creative ].each do |destination|
+    test "replay rejects source and card moved together to another #{destination}" do
+      queue_delayed_replay
+      target = destination == :creative ? Collavre::Creative.create!(user: @requester, description: "Private destination") : @creative
+      topic = target.topics.create!(name: "Moved pair", user: @requester)
+      [ @original, @reply ].each { |comment| comment.update!(creative: target, topic: topic) }
+      assert_no_difference "Collavre::Task.count" do
+        assert_empty execute_replay_payloads
+      end
+      assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+    end
+  end
+
+  test "assignment rejection before admission releases the replay claim" do
+    queue_delayed_replay
+    dispatch = Collavre::AiAgentJob.method(:perform_now)
+    Collavre::AiAgentJob.stub(:perform_now, lambda { |*args|
+      @original.topic.update!(primary_agent_id: users(:ai_bot).id)
+      dispatch.call(*args)
+    }) do
+      assert_no_difference "Collavre::Task.count" do
+        assert_empty execute_replay_payloads
+      end
+    end
+    state = @task.reload.trigger_event_payload.fetch("engine_login")
+    assert_equal false, state["resumed"]
+    assert_equal false, state["retryable"]
+    assert_equal true, state["replay_abandoned"]
+  end
+
+  [ :deleted, :private, :moved, :approval, :gateway ].each do |change|
+    test "abandoned card renders generic explanation after #{change} without enabling actions" do
+      queue_delayed_replay
+      case change
+      when :deleted then @original.destroy!
+      when :private then @original.update!(private: true)
+      when :moved then @original.update!(topic: @creative.topics.create!(name: "Moved source", user: @requester))
+      when :approval then @original.update!(action: '{"tool":"test"}')
+      when :gateway then @gateway.update!(active: false)
+      end
+      assert_empty execute_replay_payloads
+      Collavre::CliProxy::Client.stub(:new, ->(*) { flunk "Generic card must not contact the proxy" }) do
+        get inline_agent_login_path(comment_id: @reply.id)
+        assert_response :success
+        assert_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+        assert_select "[data-controller=agent-connection]", count: 0
+        post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+        assert_response :not_found
+      end
+      sign_in_as(@owner, password: "password")
+      get inline_agent_login_path(comment_id: @reply.id)
+      assert_response :not_found
     end
   end
 

@@ -21,7 +21,8 @@ module Collavre
 
       # Carry identity into admission: validation and Task creation must share
       # the source lock, not just run consecutively in this worker.
-      AiAgentJob.perform_now(login.agent.id, login.task.trigger_event_name, payload, [ comment.id, user.id, task.id ])
+      result = AiAgentJob.perform_now(login.agent.id, login.task.trigger_event_name, payload, [ comment.id, user.id, task.id ])
+      CliProxy::InlineReplayAdmission.reject! if result == :rejected
     rescue CliProxy::Client::Error => error
       Rails.logger.info("[InlineAgentReplayJob] Skipping task=#{task.id} code=#{error.code}")
       task = Task.find_by(id: task.id)
