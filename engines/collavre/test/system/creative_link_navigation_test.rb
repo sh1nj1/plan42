@@ -81,7 +81,7 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
     assert_selector "#comments-popup[data-creative-id='#{@target.id}']", visible: :visible, wait: 10
   end
 
-  test "chat comment permalink loads an earlier page and highlights the message" do
+  test "chat comment permalink with a trailing slash loads an earlier page and highlights the message" do
     resize_window_to(600, 900)
     target_topic = @target.main_topic(fallback_user: @user)
     target_comment = Comment.create!(
@@ -98,7 +98,7 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
       creative: @target,
       topic: target_topic,
       user: @user,
-      content: "[Open earlier message](#{collavre.creative_comment_path(@target, target_comment)})"
+      content: "[Open earlier message](#{collavre.creative_comment_path(@target, target_comment)}/)"
     )
 
     visit collavre.creatives_path(id: @target.id, open_comments: true)

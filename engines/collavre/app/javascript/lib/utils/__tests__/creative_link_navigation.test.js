@@ -101,6 +101,8 @@ describe("creative link navigation", () => {
 
   test.each([
     "/creatives/42/comments/456",
+    "/creatives/42/comments/456/",
+    "/creatives/42/comments/456/?source=chat#comment_456",
     `${window.location.origin}/creatives/42/comments/456`,
   ])("navigates the comment permalink %s through the workspace frame", (href) => {
     const anchor = document.getElementById("creative-link")
@@ -115,8 +117,10 @@ describe("creative link navigation", () => {
     })
   })
 
-  test("navigates a comment permalink under the engine mount path", () => {
-    const href = "/collavre/creatives/42/comments/456"
+  test.each([
+    "/collavre/creatives/42/comments/456",
+    "/collavre/creatives/42/comments/456/",
+  ])("navigates the mounted comment permalink %s", (href) => {
     const anchor = document.getElementById("creative-link")
     document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
     anchor.setAttribute("href", href)
@@ -132,6 +136,8 @@ describe("creative link navigation", () => {
 
   test.each([
     "/admin/creatives/42",
+    "/admin/creatives/42/comments/456/",
+    "/collavre/creatives/42/comments/456/download_images/",
     "/creatives/42",
   ])("keeps default navigation outside the configured engine mount for %s", (href) => {
     const anchor = document.getElementById("creative-link")
@@ -162,6 +168,8 @@ describe("creative link navigation", () => {
     ["a nested creative route", { href: "/creatives/42/topics" }, {}],
     ["a creative index without an id", { href: "/creatives?search=target" }, {}],
     ["a creative index with an invalid id", { href: "/creatives?id=target" }, {}],
+    ["a double trailing slash", { href: "/creatives/42/comments/456//" }, {}],
+    ["a nested comment action with a trailing slash", { href: "/creatives/42/comments/456/download_images/" }, {}],
     ["a nested comment action", { href: "/creatives/42/comments/456/download_images" }, {}],
     ["a download", { download: "creative.txt" }, {}],
     ["a new-window target", { target: "_blank" }, {}],

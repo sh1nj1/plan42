@@ -11,7 +11,7 @@ function isCreativeCommentPath(path, mountPath) {
   const creativeBasePath = `${mountPath}/creatives`
   if (!parsed.pathname.startsWith(`${creativeBasePath}/`)) return false
 
-  return /^\/\d+\/comments\/\d+$/.test(parsed.pathname.slice(creativeBasePath.length))
+  return /^\/\d+\/comments\/\d+\/?$/.test(parsed.pathname.slice(creativeBasePath.length))
 }
 
 function shouldUseDefaultNavigation(event, anchor) {
