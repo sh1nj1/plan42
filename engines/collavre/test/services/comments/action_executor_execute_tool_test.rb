@@ -33,6 +33,31 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     )
   end
 
+  [ :private, :action, :destroy ].each do |withdrawal|
+    test "#{withdrawal} source withdrawal prevents approval side effects and resume" do
+      source = @creative.comments.create!(user: @user, content: "Original request")
+      @task.update!(trigger_event_payload: @task.trigger_event_payload.merge("comment" => { "id" => source.id }))
+      comment = approval_comment
+      if withdrawal == :destroy
+        source.destroy!
+      else
+        source.update!(withdrawal => (withdrawal == :private ? true : '{"tool":"approval"}'))
+      end
+
+      ::Tools::MetaToolService.stub(:new, -> { flunk "Withdrawn tool must not run" }) do
+        Collavre::AiAgentJob.stub(:perform_later, ->(*) { flunk "Withdrawn turn must not resume" }) do
+          error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+            Comments::ActionExecutor.new(comment: comment, executor: @user).call
+          end
+          assert_equal I18n.t("collavre.comments.approve_task_not_pending"), error.message
+        end
+      end
+      assert @task.reload.cancelled?
+      refute @task.pending_tool_call.key?("approved")
+      assert_nil comment.reload.action_executed_at
+    end
+  end
+
   test "execute_tool action updates task with approval and result" do
     action_payload = {
       "action" => "execute_tool",

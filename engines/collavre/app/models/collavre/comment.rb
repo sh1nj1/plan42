@@ -261,10 +261,9 @@ module Collavre
       # Cancel tasks triggered by this comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
       # existing tasks, so scoping would miss moved-comment tasks).
-      # Include "delegated" so a deleted prompt also cancels Claude Channel
-      # work that's still waiting on an external MCP reply — otherwise the
-      # delegated task keeps holding the topic/agent slot until stuck recovery.
-      Task.where(status: %w[pending running queued delegated]).find_each do |task|
+      # Include approval-paused and delegated work: both can resume side effects
+      # after withdrawal and keep holding the topic/agent slot without a worker.
+      Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
         next unless task.trigger_event_payload&.dig("comment", "id") == id
 
         # An un-started task can be the survivor of a coalesced burst, answering
@@ -276,8 +275,8 @@ module Collavre
         # to say is cancelled.
         next if reanchor_coalesced_task(task)
 
-        was_delegated = task.status == "delegated"
-        task.update!(status: "cancelled")
+        previous_status = task.cancel_if_active!
+        next unless previous_status
 
         # A waiter cancelled here leaves the queue without ever being promoted,
         # exactly as a folded one does — so the notice that spoke for it is left
@@ -296,10 +295,9 @@ module Collavre
         # loop, once every task this deletion cancels has left the queue.
         stranded_scopes << [ task.creative_id, task.topic_id ]
 
-        # Delegated tasks live past their job: the AiAgentJob already returned,
-        # holding the agent slot under task.id and counting against the per-topic
-        # serializer. Mirror the cancel path used elsewhere to free both.
-        next unless was_delegated
+        # Match explicit Stop: these states have no worker to release their
+        # reservation and drain the topic queue after cancellation.
+        next unless Task::HELD_SLOT_WITHOUT_WORKER.include?(previous_status)
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         end

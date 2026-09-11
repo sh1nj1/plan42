@@ -17,6 +17,47 @@ module Collavre
       )
     end
 
+    %w[pending pending_approval].product([ :private, :action, :destroy ]).each do |status, withdrawal|
+      test "#{withdrawal} cancels #{status} source task and releases its held slot" do
+        task = Task.create!(name: "Paused turn", status: status, agent: @agent, creative: @creative,
+          trigger_event_payload: { "comment" => { "id" => @comment.id } })
+        tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+        tracker.reset!
+        tracker.reserve!(task.id)
+        calls = []
+        drain = ->(topic_id, creative_id) do
+          calls << [ topic_id, creative_id ]
+          assert task.reload.cancelled?
+          assert_equal 0, tracker.active_jobs
+        end
+
+        Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, drain) do
+          if withdrawal == :destroy
+            @comment.destroy!
+          else
+            @comment.update!(withdrawal => (withdrawal == :private ? true : '{"tool":"approval"}'))
+          end
+          assert task.reload.cancelled?
+          @comment.send(:cancel_pending_tasks)
+        end
+
+        assert_equal [ [ nil, @creative.id ] ], calls
+        assert_equal 0, tracker.active_jobs
+      end
+    end
+
+    test "withdrawal does not overwrite a task completed after the active scan" do
+      task = Task.create!(name: "Paused turn", status: :pending_approval, agent: @agent, creative: @creative,
+        trigger_event_payload: { "comment" => { "id" => @comment.id } })
+      complete = ->(candidate) { Task.where(id: candidate.id).update_all(status: "done"); false }
+      @comment.stub(:reanchor_coalesced_task, complete) do
+        Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(*) { flunk "No cancellation occurred" }) do
+          @comment.update!(private: true)
+        end
+      end
+      assert task.reload.done?
+    end
+
     test "ordinary source edits leave active tasks running" do
       task = Task.create!(name: "Active turn", status: :running, agent: @agent,
         trigger_event_payload: { "comment" => { "id" => @comment.id } })

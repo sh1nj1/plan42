@@ -42,6 +42,10 @@ Admitted replays, including queued waiters, retain their original login task ID.
 If they are cancelled, fail, or escalate without completing, their terminal
 callback abandons that login claim as well. Successful replies and turns waiting
 for tool approval retain the normal completion path.
+Withdrawing a source (deletion, privacy change, or conversion to an approval
+surface) also cancels approval-paused replays, releases their held resources,
+and drains the topic queue. Their remaining approval cards cannot execute tools
+or enqueue a continuation after cancellation.
 After restoring access or authentication, the requester must send a new message.
 
 Verification covers HTTP/SSE classification with RubyLLM's real parser,

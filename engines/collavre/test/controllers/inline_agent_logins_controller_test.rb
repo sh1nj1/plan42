@@ -877,6 +877,34 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, data["replay_abandoned"]
   end
 
+  [ :private, :action, :destroy ].each do |withdrawal|
+    test "#{withdrawal} source withdrawal cancels an approval paused replay and settles its login" do
+      queue_delayed_replay
+      replay = nil
+      service = Object.new
+      service.define_singleton_method(:call) { raise Collavre::ApprovalPendingError }
+      Collavre::AiAgentService.stub(:new, ->(task) { replay = task; task.update!(status: :pending_approval); service }) do
+        perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+      end
+      assert replay.reload.pending_approval?
+      tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+      assert_equal 1, tracker.active_jobs
+
+      if withdrawal == :destroy
+        @original.destroy!
+      else
+        @original.update!(withdrawal => (withdrawal == :private ? true : '{"tool":"approval"}'))
+      end
+
+      assert replay.reload.cancelled?
+      assert_equal 0, tracker.active_jobs
+      data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal false, data["resumed"]
+      assert_equal false, data["retryable"]
+      assert_equal true, data["replay_abandoned"]
+    end
+  end
+
   test "stopping a deferred replay settles its original claim even with both comments intact" do
     queue_delayed_replay
     Collavre::Orchestration::TopicSlot.stub(:available_for?, false) do
