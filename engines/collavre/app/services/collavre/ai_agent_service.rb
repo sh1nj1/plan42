@@ -230,6 +230,7 @@ module Collavre
       # Bypass the new manager's initial polling throttle at this handoff
       # boundary so a terminal turn cannot start remote tool side effects.
       @lifecycle_manager.check_cancelled!(force: true)
+      check_replay_permission!
       response = client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
         @streamer.append(delta)

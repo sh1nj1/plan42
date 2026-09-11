@@ -48,6 +48,10 @@ current text and attachments with the anchor. Deleted, private, approval, or mov
 comments cannot authorize the replay or contribute to its trigger. Admission locks
 all recorded sources in ID order through task creation, so source withdrawal either
 precedes validation or sees the committed replay in its cancellation callback.
+After prompt preparation and immediately before the provider call, replay-linked
+turns recheck the agent's current feedback permission without the worker's SQL
+query cache. Revoked access cancels the task, abandons its linked login claims,
+and releases its resources without transmitting the prepared prompt.
 The recorded agent must still be selected; scheduler rejection leaves the claim available
 for another attempt. The retry carries the original human workspace principal
 and strips turn-scoped delivery metadata. An explicit principal (including nil)

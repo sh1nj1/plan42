@@ -10,6 +10,16 @@ module Collavre
         Orchestration::DeliveryRecord.mark_handed_off!(@task) if @client.handed_off?
       end
 
+      # Permission-cache updates do not cancel running tasks. Recheck after
+      # prompt preparation, bypassing this worker's SQL cache before handoff.
+      def check_replay_permission!
+        return if CliProxy::ReplayClaims.ids(@context).empty?
+        return if Task.uncached { Orchestration::Matcher.permits_creative_access?(@context, @agent) }
+
+        @task.cancel_if_active!
+        raise CancelledError
+      end
+
       def handle_engine_login(error)
         @lifecycle_manager.check_cancelled!(force: true)
         CliProxy::InlineLogin.record!(@task, @reply_comment, error, content: @streamer.content,

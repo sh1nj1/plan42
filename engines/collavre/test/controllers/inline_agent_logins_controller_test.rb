@@ -1582,6 +1582,64 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  %i[feedback read no_access removed].each do |permission|
+    test "replay rechecks #{permission} permission after prompt preparation before handoff" do
+      perform_enqueued_jobs(only: Collavre::PermissionCacheJob)
+      ancestor = @task
+      advance_reauthentication
+      logins = [ ancestor, @task ]
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => @original.topic_id
+      } } })
+      queue_delayed_replay
+      calls = []
+      client = Object.new
+      client.define_singleton_method(:chat) { |messages, **, &block| calls << messages; block.call("Permitted response") }
+      client.define_singleton_method(:last_handoff_failed?) { false }
+      client.define_singleton_method(:handed_off?) { calls.any? }
+      replay = nil
+      factory = lambda do |*|
+        replay = Collavre::Task.where(agent: @agent, status: :running).sole
+        assert replay.task_actions.exists?(action_type: "prompt_generated")
+        assert @creative.reload.has_permission?(@agent, :feedback)
+        perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+          share = Collavre::CreativeShare.find_by!(creative: @creative, user: @agent)
+          permission == :removed ? share.destroy! : share.update!(permission: permission)
+        end
+        assert_equal permission == :feedback, @creative.reload.has_permission?(@agent, :feedback)
+        assert replay.reload.running?, "Permission revocation does not cancel the task itself"
+        client
+      end
+      drains = []
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(*scope) { drains << scope }) do
+        Collavre::AiClient.stub(:new, factory) { perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob) }
+      end
+      allowed = permission == :feedback
+      assert_equal allowed ? 1 : 0, calls.size
+      assert_equal allowed ? "done" : "cancelled", replay.reload.status
+      assert_equal allowed, replay.trigger_event_payload[Collavre::Orchestration::DeliveryRecord::HANDED_OFF_KEY] == true
+      assert_nil replay.reply_comment unless allowed
+      assert_equal 0, Collavre::Orchestration::ResourceTracker.for(@agent).active_jobs
+      assert_includes drains, [ @original.topic_id, @creative.id ]
+      logins.each do |login|
+        data = login.reload.trigger_event_payload.fetch("engine_login")
+        assert_equal false, data["retryable"]
+        assert_equal allowed, data["resumed"]
+        assert_equal true, data[allowed ? "replay_completed" : "replay_abandoned"]
+      end
+      unless allowed
+        Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+          perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+        end
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+        assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+      end
+    end
+  end
+
   test "provider failure before a replay chunk persists an error but abandons the login" do
     queue_delayed_replay
     constructor = Collavre::AiClient.method(:new)
