@@ -71,6 +71,21 @@ module Collavre
         assert_raises(AgentResolver::UnknownAgentError) { AgentResolver.call(users(:two).email, actor: @user) }
       end
 
+      # The candidate scope unions "accessible to the actor" with "shared on the
+      # creative" and no longer applies DISTINCT — DISTINCT over whole `users`
+      # rows raises PG::UndefinedFunction on PostgreSQL, because the table has
+      # `json` columns. An agent in both branches must still come back once;
+      # a duplicated row would surface as a bogus AmbiguousAgentError.
+      test "an agent that is both accessible and shared on the creative resolves once" do
+        both = create_agent(name: "Both Ways", searchable: true, created_by: @user)
+        Collavre::CreativeShare.create!(
+          creative: @creative, user: both, shared_by: @user, permission: :feedback
+        )
+
+        assert_equal [ both ], AgentResolver.candidates_for(@user, @creative).where(id: both.id).to_a
+        assert_equal both, AgentResolver.call("Both Ways", actor: @user, creative: @creative)
+      end
+
       test "an unmatched token explains what is accepted" do
         error = assert_raises(AgentResolver::UnknownAgentError) { AgentResolver.call("nobody", actor: @user) }
 

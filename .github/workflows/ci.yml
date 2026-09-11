@@ -176,6 +176,17 @@ jobs:
           DATABASE_URL: postgresql://collavre:collavre@localhost:5432/collavre_test
         run: bin/rails db:schema:load
 
+      # Loading the schema only proves the DDL is portable. Query text diverges
+      # too: SQLite compares `json` columns, Postgres has no equality operator
+      # for `json`, so `SELECT DISTINCT users.*` passes the whole SQLite suite
+      # and raises PG::UndefinedFunction in the deployed environment. This runs
+      # the request-path queries that hit those tables for real.
+      - name: Smoke request-path queries on PostgreSQL
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgresql://collavre:collavre@localhost:5432/collavre_test
+        run: bin/rails runner script/postgres_query_smoke.rb
+
   test:
     runs-on: ubuntu-latest
 

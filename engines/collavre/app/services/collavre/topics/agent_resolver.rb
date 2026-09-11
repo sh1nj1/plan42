@@ -42,6 +42,12 @@ module Collavre
           raise(UnknownAgentError, unknown_message(token))
       end
 
+      # Both branches are `id IN (...)` over the same table, so an agent that is
+      # both accessible and shared still comes back once and DISTINCT buys
+      # nothing. It does cost something: `users` has `json` columns and Postgres
+      # cannot compare `json`, so `SELECT DISTINCT users.*` raises
+      # PG::UndefinedFunction. SQLite (dev/test) accepts it, so a DISTINCT here
+      # only ever breaks the deployed environment.
       def candidates_for(actor, creative)
         accessible = User.accessible_ai_agents_for(actor)
         return accessible unless creative
@@ -50,7 +56,7 @@ module Collavre
         base = User.ai_agents
         base.where(id: accessible.reorder(nil).select(:id))
             .or(base.where(id: shared.reorder(nil).select(:id)))
-            .distinct.order(:name)
+            .order(:name)
       end
 
       def find_by_id(candidates, token)
