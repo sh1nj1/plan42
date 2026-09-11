@@ -230,6 +230,10 @@ module Collavre
     end
 
     def broadcast_stop_button_removal
+      # Login cards already omit Stop and have a queued comment replacement.
+      # Replacing them again would discard an in-progress authentication form.
+      return if trigger_event_payload&.key?("engine_login")
+
       comment = reply_comment
       return unless comment
 

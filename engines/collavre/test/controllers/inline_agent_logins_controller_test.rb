@@ -30,25 +30,52 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     ActiveJob::Base.queue_adapter = @previous_adapter
   end
 
-  test "recording a login requirement broadcasts the card only once through the commit callback" do
-    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: @workspace)
+  [ true, false ].each do |finish_before_broadcast|
+    test "login card is broadcast once when task finishes #{finish_before_broadcast ? 'before' : 'after'} the queued replacement" do
+      @task.update!(status: :running, trigger_event_payload: @task.trigger_event_payload.except("engine_login"))
+      error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: @workspace)
+      broadcasts = []
+      clear_enqueued_jobs
+
+      ActionCable.server.stub(:broadcast, ->(_stream, content) { broadcasts << content }) do
+        assert_enqueued_jobs 1, only: Turbo::Streams::ActionBroadcastJob do
+          Collavre::CliProxy::InlineLogin.record!(@task, @reply, error, content: "", retryable: true)
+        end
+        @task.done! if finish_before_broadcast
+        assert_empty broadcasts, "Do not show the card before its queued replacement arrives"
+        perform_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob)
+        @task.done! unless finish_before_broadcast
+        @task.fire_completion_callbacks_after_external_claim
+        perform_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob)
+      end
+
+      assert_equal 1, broadcasts.size
+      stream = Nokogiri::HTML.fragment(broadcasts.first)
+      assert_equal "replace", stream.at_css("turbo-stream")["action"]
+      assert_equal "comment_#{@reply.id}", stream.at_css("turbo-stream")["target"]
+      assert stream.at_css("turbo-frame#inline_agent_login_#{@reply.id}")
+      assert_equal "false", stream.at_css(".comment-item")["data-streaming"]
+      assert_nil stream.at_css(".comment-stop-btn"), "Login cards must not retain a stop button even before the task finishes"
+    end
+  end
+
+  test "ordinary replies still replace the comment to remove the stop button when the task finishes" do
+    @task.update!(status: :running, trigger_event_payload: @task.trigger_event_payload.except("engine_login"))
     broadcasts = []
     clear_enqueued_jobs
 
     ActionCable.server.stub(:broadcast, ->(_stream, content) { broadcasts << content }) do
-      assert_enqueued_jobs 1, only: Turbo::Streams::ActionBroadcastJob do
-        Collavre::CliProxy::InlineLogin.record!(@task, @reply, error, content: "", retryable: true)
-      end
-      assert_empty broadcasts, "Do not show the card before its queued replacement arrives"
-      perform_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob)
+      @reply.broadcast_replace_to([ @creative, :comments ], partial: "collavre/comments/comment")
+      assert Nokogiri::HTML.fragment(broadcasts.last).at_css(".comment-stop-btn")
+      broadcasts.clear
+      @task.done!
     end
 
     assert_equal 1, broadcasts.size
     stream = Nokogiri::HTML.fragment(broadcasts.first)
-    assert_equal "replace", stream.at_css("turbo-stream")["action"]
     assert_equal "comment_#{@reply.id}", stream.at_css("turbo-stream")["target"]
-    assert stream.at_css("turbo-frame#inline_agent_login_#{@reply.id}")
-    assert_equal "false", stream.at_css(".comment-item")["data-streaming"]
+    assert_nil stream.at_css(".comment-stop-btn")
+    assert_nil stream.at_css("turbo-frame#inline_agent_login_#{@reply.id}")
   end
 
   test "requester gets inline controls without secrets" do
