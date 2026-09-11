@@ -11,12 +11,12 @@ module Collavre
       end
 
       # Permission and gateway updates do not cancel running tasks. Recheck
-      # both bindings after prompt preparation, without this worker's SQL cache.
+      # both bindings after prompt preparation, without either permission cache.
       def check_replay_authorization!
         return if CliProxy::ReplayClaims.ids(@context).empty?
         return if Task.uncached {
           CliProxy::ReplayWorkspace.permitted?(@context, @agent) &&
-            Orchestration::Matcher.permits_creative_access?(@context, @agent)
+            Creatives::PermissionChecker.current_allowed?(@context.dig("creative", "id"), @agent, :feedback)
         }
 
         @task.cancel_if_active!

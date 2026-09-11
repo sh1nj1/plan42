@@ -40,6 +40,35 @@ module Collavre
         end
       end
 
+      test "only outstanding login cards enter locking cleanup after a move" do
+        user = users(:one)
+        source = Creative.create!(description: "Source", user: user)
+        destination = Creative.create!(description: "Destination", user: user)
+        topic = source.topics.create!(name: "Moving", user: user)
+        logins = [ nil, {}, { "retryable" => false }, { "resumed" => false },
+          { "retryable" => false, "replay_abandoned" => true },
+          { "resumed" => true, "replay_completed" => true },
+          { "retryable" => true }, { "resumed" => true } ]
+        tasks = logins.map do |login|
+          Task.create!(name: "History", agent: user, creative: source, topic_id: topic.id,
+            status: :done, trigger_event_payload: login ? { "engine_login" => login } : {})
+        end
+        visited = []
+        abandon = CliProxy::InlineLogin.method(:abandon_replay!)
+        capture = lambda do |task, **options|
+          visited << task.id
+          abandon.call(task, **options)
+        end
+
+        CliProxy::InlineLogin.stub(:abandon_replay!, capture) do
+          TopicMove.new(topic: topic, target_creative: destination).call
+        end
+
+        assert_equal tasks.last(2).map(&:id).sort, visited.sort
+        tasks.last(2).each { |task| assert task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned") }
+        assert tasks[-3].reload.trigger_event_payload.dig("engine_login", "replay_completed")
+      end
+
       test "locks the topic and creatives before relocating its comments" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)

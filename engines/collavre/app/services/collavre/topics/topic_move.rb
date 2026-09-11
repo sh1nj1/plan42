@@ -67,7 +67,11 @@ module Collavre
       def abandon_moved_logins
         # Bulk comment relocation bypasses DispatchRevocation. Settle the old
         # scope after commit, without holding the topic lock while locking tasks.
-        Task.where(creative_id: source_creative_id, topic_id: topic.id, status: :done).find_each do |task|
+        Task.where(creative_id: source_creative_id, topic_id: topic.id, status: :done)
+          .where("CAST(trigger_event_payload -> 'engine_login' -> 'retryable' AS TEXT) = 'true' OR " \
+                 "CAST(trigger_event_payload -> 'engine_login' -> 'resumed' AS TEXT) = 'true'")
+          .where("COALESCE(CAST(trigger_event_payload -> 'engine_login' -> 'replay_completed' AS TEXT), 'false') <> 'true'")
+          .find_each do |task|
           CliProxy::InlineLogin.abandon_replay!(task, pending: true)
         end
       end

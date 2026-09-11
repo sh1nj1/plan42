@@ -1589,8 +1589,8 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  %i[feedback read no_access removed gateway base_url tenant mode inactive].each do |permission|
-    test "replay rechecks #{permission} permission after prompt preparation before handoff" do
+  %i[feedback read no_access removed gateway base_url tenant mode inactive].product([ true, false ]).each do |permission, drain_cache|
+    test "replay rechecks #{permission} permission before handoff with cache drained #{drain_cache}" do
       perform_enqueued_jobs(only: Collavre::PermissionCacheJob)
       ancestor = @task
       advance_reauthentication
@@ -1615,11 +1615,10 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
         if %i[gateway base_url tenant mode inactive].include?(permission)
           change_replay_gateway(permission)
         else
-          perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
-            share = Collavre::CreativeShare.find_by!(creative: @creative, user: @agent)
-            permission == :removed ? share.destroy! : share.update!(permission: permission)
-          end
-          assert_equal permission == :feedback, @creative.reload.has_permission?(@agent, :feedback)
+          share = Collavre::CreativeShare.find_by!(creative: @creative, user: @agent)
+          permission == :removed ? share.destroy! : share.update!(permission: permission)
+          perform_enqueued_jobs(only: Collavre::PermissionCacheJob) if drain_cache
+          assert_equal !drain_cache || permission == :feedback, @creative.reload.has_permission?(@agent, :feedback)
         end
         assert replay.reload.running?, "Permission revocation does not cancel the task itself"
         client

@@ -49,9 +49,12 @@ comments cannot authorize the replay or contribute to its trigger. Admission loc
 all recorded sources in ID order through task creation, so source withdrawal either
 precedes validation or sees the committed replay in its cancellation callback.
 After prompt preparation and immediately before the provider call, replay-linked
-turns recheck the agent's current feedback permission without the worker's SQL
-query cache. Revoked access cancels the task, abandons its linked login claims,
-and releases its resources without transmitting the prepared prompt.
+turns recheck the agent's feedback permission from current shares in the authoritative
+creative hierarchy, bypassing both the asynchronous permission table and the worker's
+SQL query cache. Owner access, closest-share inheritance, user-specific denial, and
+public fallback retain the normal permission checker's precedence. Revoked access
+cancels the task, abandons its linked login claims, and releases its resources
+without transmitting the prepared prompt.
 Admission, waiting-task execution gates, and provider handoff also recheck every
 inherited login claim against the agent's current gateway and workspace using
 uncached reads. Missing claims/workspaces, a changed gateway, endpoint, tenant,
@@ -104,8 +107,10 @@ turns re-match that remaining request before preservation; removing their last r
 justification cancels the turn and abandons its login claims. Cancellation
 releases held resources and drains the topic queue. Remaining approval cards cannot execute tools
 or enqueue a continuation after cancellation. Bulk topic moves settle pending login
-turns only after the move commits. If their topic has left the original creative,
-the loop abandonment notice stays in that creative's main topic.
+turns only after the move commits. Only retryable or resumed login cards enter
+the locking cleanup; ordinary completed tasks and settled cards are excluded. If
+their topic has left the original creative, the loop abandonment notice stays in
+that creative's main topic.
 After restoring access or authentication, the requester must send a new message.
 
 Verification covers HTTP/SSE classification with RubyLLM's real parser,
