@@ -23,9 +23,12 @@ session from the proxy. Status responses and errors are ignored if a newer login
 session has started while the request was in flight. Custom provider base URLs
 remain on the full connection screen. Session starts claim an attempt ID before contacting the proxy; only
 the latest initiated attempt can store its response. Starting another attempt
-also invalidates the previous session and its authorization. Cancellation revokes
-the local session before contacting the proxy, so stale polls and submissions
-cannot authorize a replay even if the proxy cancellation fails.
+also invalidates the previous session and its authorization. Cancellation
+invalidates browser polling immediately, before sending DELETE,
+and revokes the server session before contacting the proxy, so stale polls and
+submissions cannot authorize a replay even if the proxy cancellation fails.
+Superseded login and cancellation responses, including errors, cannot replace
+the current session or its polling.
 
 After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Current routing is matched

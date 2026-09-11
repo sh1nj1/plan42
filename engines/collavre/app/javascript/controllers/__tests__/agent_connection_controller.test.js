@@ -450,6 +450,79 @@ describe("AgentConnectionController", () => {
       expect(global.fetch).toHaveBeenCalledTimes(1)
     })
 
+    test.each(["success", "error"])("cancellation invalidates an in-flight authorized poll before DELETE resolves (%s)", async (outcome) => {
+      controller.renderSession(session)
+      let finishPoll, finishCancel, failCancel
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() => new Promise(resolve => { finishPoll = resolve }))
+        .mockImplementationOnce(() => new Promise((resolve, reject) => { finishCancel = resolve; failCancel = reject }))
+        .mockResolvedValue(response({ engines: [] }))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      const cancelling = controller.cancel(event)
+      finishPoll(response({ ...session, status: "authorized" }))
+      await polling
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/auth/codex/device"])
+      expect(global.fetch.mock.calls[1][1].method).toBe("DELETE")
+      expect(controller.liveSession).toBeNull()
+      if (outcome === "error") failCancel(new Error("Cancel failed"))
+      else finishCancel(response({}))
+      await cancelling
+      await jest.advanceTimersByTimeAsync(3000)
+
+      expect(global.fetch.mock.calls.some(([url]) => url === "/resume")).toBe(false)
+      expect(jest.getTimerCount()).toBe(0)
+      expect(controller.errorTarget.hidden).toBe(outcome !== "error")
+    })
+
+    test.each(["success", "error"])("a late cancellation %s cannot affect a newer login", async (outcome) => {
+      controller.renderSession(session)
+      let finish, fail
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+        .mockResolvedValueOnce(response({ ...session, sessionId: "replacement" }))
+      const cancelling = controller.cancel(event)
+      await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
+      const panel = controller.sessionTarget.firstChild
+      const generation = controller.sessionGeneration
+      if (outcome === "error") fail(new Error("Old cancellation failed"))
+      else finish(response({}))
+      await cancelling
+
+      expect(controller.liveSession.sessionId).toBe("replacement")
+      expect(controller.sessionTarget.firstChild).toBe(panel)
+      expect(controller.sessionGeneration).toBe(generation)
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+      global.fetch.mockResolvedValueOnce(response({ ...session, sessionId: "replacement", status: "authorized" }))
+        .mockResolvedValueOnce(response({ resumed: true }))
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+        "/auth/codex/device", "/auth/codex", "/auth/codex/replacement", "/resume"
+      ])
+    })
+
+    test.each(["replacement", "disconnect", "cancel"])("ignores a stale login error after %s", async (change) => {
+      let fail
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+        .mockResolvedValueOnce(response({ ...session, sessionId: "replacement", flow: "api-key" }))
+        .mockResolvedValue(response({ engines: [] }))
+      const loginEvent = { currentTarget: { dataset: { engine: "codex", flow: "api-key" } } }
+      const login = controller.login(loginEvent)
+      if (change === "replacement") await controller.login(loginEvent)
+      else if (change === "disconnect") controller.disconnect()
+      else await controller.cancel(event)
+      const panel = controller.sessionTarget.innerHTML
+      fail(new Error("Session superseded"))
+      await login
+
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(controller.sessionTarget.innerHTML).toBe(panel)
+      if (change === "replacement") expect(controller.liveSession.sessionId).toBe("replacement")
+    })
+
     test("cancelling stops pending polling, clears the session and refreshes login choices", async () => {
       controller.renderSession(session)
       global.fetch = jest.fn()
@@ -467,13 +540,13 @@ describe("AgentConnectionController", () => {
       expect(controller.sessionTarget.childElementCount).toBe(0)
     })
 
-    test("a failed cancellation keeps the session available for retry and displays a fallback error", async () => {
+    test("a failed cancellation stops local polling but keeps the cancel button available for retry", async () => {
       controller.renderSession(session)
       global.fetch = jest.fn().mockResolvedValue(response({}, false))
 
       await controller.cancel(event)
 
-      expect(controller.liveSession).toEqual(session)
+      expect(controller.liveSession).toBeNull()
       expect(controller.sessionTarget.childElementCount).toBe(1)
       expect(controller.errorTarget.hidden).toBe(false)
       expect(controller.errorTarget.textContent).toContain("CLI Proxy 오류")

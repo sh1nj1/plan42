@@ -27,11 +27,11 @@ export default class extends Controller {
         method: "POST",
         body: JSON.stringify({ flow })
       })
-      if (this.disconnected || generation !== this.sessionGeneration) return
+      if (!this.currentSession(generation)) return
       this.restoreSession(data, generation)
       if (data.status === "authorized") await this.authorized()
     } catch (error) {
-      this.showError(error.message)
+      if (this.currentSession(generation)) this.showError(error.message)
     }
   }
 
@@ -63,14 +63,15 @@ export default class extends Controller {
   }
 
   async cancel(event) {
+    const generation = this.sessionGeneration = (this.sessionGeneration || 0) + 1
+    this.liveSession = null
     try {
       await this.request(this.sessionDetailUrl(event.params.engine, event.params.session), { method: "DELETE" })
-      this.sessionGeneration = (this.sessionGeneration || 0) + 1
-      this.liveSession = null
+      if (!this.currentSession(generation)) return
       this.sessionTarget.replaceChildren()
       this.refresh()
     } catch (error) {
-      this.showError(error.message)
+      if (this.currentSession(generation)) this.showError(error.message)
     }
   }
 
