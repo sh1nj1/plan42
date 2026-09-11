@@ -314,12 +314,10 @@ body.creative-workspace .indent3 {
         max-width: var(--max-width);
     }
 
-    /* In the two-panel band the handle's default offset lands in the left
-       gutter main leaves itself. One-panel main runs flush to the edge, so the
-       same offset would sit on top of the breadcrumb row — park the handle in
-       the nav's empty left corner instead, where it reads as the menu button
-       it effectively is. */
+    /* Keep the drawer handle in easy thumb reach on one-panel screens while
+       clearing the device's bottom safe area. */
     .creative-workspace-tree-toggle {
-        top: var(--space-3);
+        top: auto;
+        bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     }
 }

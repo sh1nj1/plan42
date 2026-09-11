@@ -131,6 +131,20 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     assert_equal "contain", computed_style(".creative-workspace-tree-nav", "overscroll-behavior-y")
   end
 
+  test "the mobile drawer handle stays near the bottom for one-handed reach" do
+    visit_workspace(MOBILE_WIDTH)
+
+    position = page.evaluate_script(<<~JS)
+      (function () {
+        var rect = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
+        return { centerY: rect.top + rect.height / 2, bottom: rect.bottom, viewportHeight: window.innerHeight };
+      })();
+    JS
+
+    assert_operator position.fetch("centerY"), :>, position.fetch("viewportHeight") * 0.75
+    assert_operator position.fetch("bottom"), :<=, position.fetch("viewportHeight")
+  end
+
   private
 
   def visit_workspace(width)
