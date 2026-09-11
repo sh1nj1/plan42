@@ -75,7 +75,9 @@ module Collavre
 
       args = task.arguments || []
       if args.is_a?(Array) && args.first.is_a?(Hash)
-        job_class.perform_later(**args.first.symbolize_keys.except(:once))
+        keyword_args = args.first.symbolize_keys
+        keyword_args = keyword_args.except(:once) if task.class_name == CronActionJob.name
+        job_class.perform_later(**keyword_args)
       elsif args.is_a?(Array)
         job_class.perform_later(*args)
       else
@@ -106,6 +108,8 @@ module Collavre
     end
 
     def run_once?(task)
+      return false unless task.class_name == CronActionJob.name
+
       args = task.arguments
       return false unless args.is_a?(Array) && args.first.is_a?(Hash)
 
