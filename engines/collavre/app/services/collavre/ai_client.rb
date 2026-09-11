@@ -310,7 +310,7 @@ module Collavre
           api_key = gateway.completion_key
           base_url = gateway.completion_base_url
         else
-          api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
+          api_key = OpenaiEndpoint.api_key(base_url: @gateway_url, api_key: @llm_api_key)
           base_url = @gateway_url.presence
         end
         # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs

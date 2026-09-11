@@ -32,7 +32,11 @@ error state, and never changes dispatch behavior.
 Core registers an OpenAI-compatible checker. Once a minute it sends
 `GET {gateway_url}/models`, or `GET https://api.openai.com/v1/models` when the
 agent has no custom base URL. It uses the same agent or integration API key as
-the normal OpenAI client. This proves endpoint reachability and, where the
+the normal OpenAI client. Both paths use `Collavre::OpenaiEndpoint` to restrict
+the shared integration key to the official HTTPS endpoint (including equivalent
+host casing, port 443, and trailing slashes). Custom endpoints use only their
+per-agent key; keyless dispatch retains its non-secret `local-gateway` placeholder
+while the checker omits Authorization. This proves endpoint reachability and, where the
 route supports it, authentication; it deliberately does not make a completion
 request and therefore does not claim that inference for a particular model
 will succeed.

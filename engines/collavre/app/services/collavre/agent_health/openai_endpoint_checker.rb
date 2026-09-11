@@ -8,7 +8,7 @@ module Collavre
     # It deliberately avoids completion requests, which can incur cost or have
     # provider-specific side effects.
     class OpenaiEndpointChecker
-      DEFAULT_BASE_URL = "https://api.openai.com/v1"
+      DEFAULT_BASE_URL = OpenaiEndpoint::DEFAULT_BASE_URL
       OPEN_TIMEOUT = 3
       READ_TIMEOUT = 8
       REQUEST_TIMEOUT = OPEN_TIMEOUT + READ_TIMEOUT
@@ -54,20 +54,9 @@ module Collavre
 
       def request_headers
         headers = { "Accept" => "application/json" }
-        api_key = @agent.llm_api_key.presence
-        api_key ||= IntegrationSettings.fetch(:openai_api_key) if official_endpoint?
+        api_key = OpenaiEndpoint.api_key(base_url: @agent.gateway_url, api_key: @agent.llm_api_key)
         headers["Authorization"] = "Bearer #{api_key}" if api_key.present?
         headers
-      end
-
-      def official_endpoint?
-        uri = URI.parse(@agent.gateway_url.presence || DEFAULT_BASE_URL)
-        default_uri = URI.parse(DEFAULT_BASE_URL)
-        uri.userinfo.blank? && uri.query.blank? && uri.fragment.blank? &&
-          uri.scheme.to_s.downcase == default_uri.scheme && uri.host.to_s.downcase == default_uri.host &&
-          uri.port == default_uri.port && uri.path.to_s.sub(%r{/+\z}, "") == default_uri.path
-      rescue URI::InvalidURIError
-        false
       end
 
       def endpoint_policy

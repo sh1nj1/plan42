@@ -294,6 +294,38 @@ class AiClientTest < ActiveSupport::TestCase
     assert mock_config.verify
   end
 
+  test "OpenAI dispatch only falls back to the integration key for official endpoints" do
+    endpoints = {
+      nil => "shared-key",
+      "https://api.openai.com/v1" => "shared-key",
+      "https://API.OPENAI.COM/v1" => "shared-key",
+      "https://api.openai.com:443/v1/" => "shared-key",
+      "https://gateway.example.test/v1" => "local-gateway"
+    }
+
+    [ "openai", " OpenAI " ].each do |vendor|
+      endpoints.each do |gateway_url, expected_key|
+        [ nil, "agent-key" ].each do |agent_key|
+          client = AiClient.new(vendor: vendor, model: "gpt-test", system_prompt: nil,
+                                gateway_url: gateway_url, llm_api_key: agent_key)
+          config = OpenStruct.new
+          fake_chat = FakeConversation.new
+          mock_context = Object.new
+          mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+          Collavre::IntegrationSettings.stub(:fetch, "shared-key") do
+            RubyLLM.stub(:context, ->(&block) { block.call(config); mock_context }) do
+              client.send(:build_conversation)
+            end
+          end
+
+          assert_equal agent_key || expected_key, config.openai_api_key, "#{vendor}: #{gateway_url}"
+          assert_equal gateway_url, config.openai_api_base if gateway_url
+        end
+      end
+    end
+  end
+
   test "build_conversation sets X-Session-Id header from creative and topic" do
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: 7)
