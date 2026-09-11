@@ -186,6 +186,8 @@ module Collavre
       # boundary asked two ways, and Task#ended_undelivered? reads a row carrying
       # both as undelivered — so it has to be impossible to record both.
       @last_handoff_failed = !@handed_off
+      raise_cli_proxy_login_error(e)
+
       error_message = "[#{e.class.name}] #{e.message}"
       # When log_interactions is false, an LLM error message can echo request text.
       # Log only the error class so sensitive content never leaks. error_message
@@ -252,6 +254,13 @@ module Collavre
     # provider rejected the request and how large its reason was; raise the log level
     # to recover the full body on demand. The whole path is additionally gated by
     # @log_interactions at the call site, like the error-message log above.
+    def raise_cli_proxy_login_error(error)
+      return unless vendor == "cli_proxy" && @cli_proxy_identity
+
+      login_error = CliProxy::EngineUnauthenticatedError.from_response(error, workspace: @cli_proxy_identity[:workspace])
+      raise login_error if login_error
+    end
+
     def log_error_response(error)
       return unless error.respond_to?(:response) && (response = error.response)
 

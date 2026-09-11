@@ -145,6 +145,12 @@ module Collavre
       @lifecycle_manager.broadcast_status("idle")
 
       @streamer.content
+    rescue CliProxy::EngineUnauthenticatedError => error
+      @lifecycle_manager.check_cancelled!(force: true)
+      CliProxy::InlineLogin.record!(@task, @reply_comment, error, content: @streamer.content,
+                                  retryable: !@client.handed_off?)
+      @lifecycle_manager.broadcast_status("idle")
+      nil
     end
 
     def find_original_comment

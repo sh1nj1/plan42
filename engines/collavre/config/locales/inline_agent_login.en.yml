@@ -1,0 +1,20 @@
+{
+  "en": {
+    "collavre": {
+      "inline_agent_login": {
+        "required": "Sign in to %{engine} to continue.",
+        "help": "Sign in here. Your original request will resume once login completes.",
+        "partial": "Sign in here, then send a new message to continue. This turn already started and will not be replayed automatically.",
+        "owner_required": "The agent owner or a system administrator needs to sign in to this shared connection.",
+        "requester_required": "The person who started this request needs to sign in to their connection.",
+        "resumed": "Login complete. The original request has been queued again.",
+        "expired": "Login expired. Start a new login.",
+        "errors": {
+          "session_superseded": "This login was replaced. Start a new login.",
+          "not_authorized": "Complete login before retrying.",
+          "cannot_retry": "This turn cannot be retried yet. Refresh and try again."
+        }
+      }
+    }
+  }
+}

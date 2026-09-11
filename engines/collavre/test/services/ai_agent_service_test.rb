@@ -25,6 +25,40 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     )
   end
 
+  test "engine login failure creates an inline card without dispatching another agent" do
+    workspace = Struct.new(:id).new(42)
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)
+    client = Object.new
+    client.define_singleton_method(:chat) { |*args, **kwargs| raise error }
+    client.define_singleton_method(:handed_off?) { false }
+    AiClient.stub(:new, client) do
+      Collavre::AiAgent::A2aDispatcher.stub(:new, ->(*) { flunk "login cards must not dispatch agents" }) do
+        assert_nil AiAgentService.new(@task).call
+      end
+    end
+    reply = @task.reload.reply_comment
+    assert_includes reply.content, "codex"
+    assert_nil reply.action
+    assert @task.trigger_event_payload["handoff_failed"]
+    assert_equal({ "engine" => "codex", "workspace_id" => 42, "retryable" => true }, @task.trigger_event_payload["engine_login"])
+  end
+
+  test "login failure after partial output preserves content without allowing automatic replay" do
+    workspace = Struct.new(:id).new(42)
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "claude", workspace: workspace)
+    client = Object.new
+    client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+      block.call("Partial response")
+      raise error
+    end
+    client.define_singleton_method(:handed_off?) { true }
+    AiClient.stub(:new, client) { AiAgentService.new(@task).call }
+    assert_includes @task.reload.reply_comment.content, "Partial response"
+    assert_not @task.trigger_event_payload["engine_login"]["retryable"]
+    assert @task.trigger_event_payload["handed_off"]
+    assert_not @task.trigger_event_payload["handoff_failed"]
+  end
+
   test "creates placeholder and streams content into it" do
     mock_client = Minitest::Mock.new
 

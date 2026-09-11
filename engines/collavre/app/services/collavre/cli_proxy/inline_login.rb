@@ -1,0 +1,118 @@
+# frozen_string_literal: true
+
+module Collavre
+  module CliProxy
+    # Persists only the identity of the failed turn and a proxy session id.
+    # Login URLs, one-time codes and credentials never enter comments or tasks.
+    class InlineLogin
+      attr_reader :comment, :task, :workspace, :agent
+
+      def self.record!(task, comment, error, content:, retryable:)
+        retryable &&= !task.reload.trigger_event_payload[Orchestration::DeliveryRecord::HANDED_OFF_KEY]
+        Orchestration::DeliveryRecord.mark_handoff_failed!(task) if retryable
+        task.with_lock do
+          task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" => {
+            "engine" => error.engine, "workspace_id" => error.workspace.id, "retryable" => retryable
+          }))
+        end
+        return unless comment
+
+        text = I18n.t("collavre.inline_agent_login.required", engine: error.engine)
+        comment.update!(content: [ content.presence, text ].compact.join("\n\n"))
+        comment.broadcast_update_to([ comment.creative, :comments ],
+                                    partial: "collavre/comments/comment", locals: { comment: comment, streaming: false })
+      end
+
+      def initialize(comment, user)
+        @comment, @user = comment, user
+        @task = comment.task
+        @agent = task&.agent
+        @workspace = AgentWorkspace.find_by(id: data["workspace_id"])
+      end
+
+      def data
+        task&.trigger_event_payload&.fetch("engine_login", {}) || {}
+      end
+
+      def engine = data["engine"]
+
+      def accessible?
+        workspace && agent&.cli_proxy_agent? && agent.agent_gateway.active? &&
+          workspace.agent_id == agent.id && workspace.agent_gateway_id == agent.agent_gateway_id &&
+          comment.user_id == agent.id && comment.creative.has_permission?(@user, :feedback) &&
+          agent.gateway_accessible_to?(@user) && original_comment.present?
+      end
+
+      def manageable?
+        return false unless accessible?
+
+        if workspace.agent_gateway.shared?
+          @user.id == agent.created_by_id || @user.system_admin?
+        else
+          workspace.user_id == @user.id
+        end
+      end
+
+      def client
+        @client ||= Client.new(gateway: workspace.agent_gateway, workspace: workspace)
+      end
+
+      def remember_session!(response)
+        update_data! { |value| value.merge("session_id" => response.fetch("sessionId"), "session_user_id" => @user.id,
+                                         "authorized" => response["status"] == "authorized") }
+      end
+
+      def check_session!(id)
+        return if data["session_id"] == id && data["session_user_id"] == @user.id
+
+        fail_with!("session_superseded")
+      end
+
+      def observe_session!(response, id)
+        update_data! do |value|
+          fail_with!("session_superseded") unless value["session_id"] == id && value["session_user_id"] == @user.id
+          value.merge("authorized" => response["status"] == "authorized",
+                      "session_id" => response["status"] == "cancelled" ? nil : id)
+        end
+        response
+      end
+
+      def resume!
+        task.with_lock do
+          return if data["resumed"]
+          fail_with!("not_authorized") unless data["authorized"] && data["session_user_id"] == @user.id
+          fail_with!("cannot_retry") unless data["retryable"] && task.done? && original_comment
+
+          payload = retry_payload
+          task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" => data.merge("resumed" => true)))
+          AiAgentJob.perform_later(agent.id, task.trigger_event_name, payload)
+        end
+      end
+
+      private
+
+      def original_comment
+        id = task&.trigger_event_payload&.dig("comment", "id")
+        comment.creative.comments.visible_to(@user).find_by(id: id, topic_id: comment.topic_id)
+      end
+
+      def retry_payload
+        keys = Orchestration::DeliveryRecord.constants.filter_map do |key|
+          Orchestration::DeliveryRecord.const_get(key) if key.to_s.end_with?("KEY")
+        end
+        task.trigger_event_payload.except("engine_login", *keys).merge("workspace_user_id" => workspace.user_id ||
+          task.trigger_event_payload["workspace_user_id"])
+      end
+
+      def update_data!
+        task.with_lock do
+          task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" => yield(data)))
+        end
+      end
+
+      def fail_with!(code)
+        raise Client::Error.new(I18n.t("collavre.inline_agent_login.errors.#{code}"), status: 409, code: code)
+      end
+    end
+  end
+end

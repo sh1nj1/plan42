@@ -192,4 +192,76 @@ describe("AgentConnectionController", () => {
     expect(document.querySelector('[data-agent-connection-target="engines"]').textContent).toContain("routing to https://openrouter.ai/api/v1")
     expect(controller.requiresBaseUrl("codex_custom", "api-key")).toBe(false)
   })
+  test("inline paste-code submits the secret directly and retries only after authorization", async () => {
+    await mount()
+    const element = document.querySelector('[data-controller="agent-connection"]')
+    const controller = application.getControllerForElementAndIdentifier(element, "agent-connection")
+    controller.resumeUrlValue = "/resume"
+    controller.resumedValue = "Request queued again"
+    const calls = []
+    global.fetch = async (url, options = {}) => {
+      calls.push({ url, body: options.body && JSON.parse(options.body) })
+      return { ok: true, text: async () => JSON.stringify(url === "/resume" ? { resumed: true } : {
+        engine: "claude", sessionId: "one", flow: "paste-code",
+        status: url === "/auth/claude" ? "pending" : "authorized",
+        verificationUrl: "https://claude.com/login"
+      }) }
+    }
+    await controller.login({ currentTarget: { dataset: { engine: "claude", flow: "paste-code" } } })
+    const secret = element.querySelector('[data-role="secret"]')
+    expect(secret.type).toBe("password")
+    secret.value = "private-code"
+    await controller.submit({ params: { engine: "claude", session: "one" } })
+    expect(calls.map(call => call.url)).toEqual(["/auth/claude", "/auth/claude/one", "/resume"])
+    expect(calls[1].body).toEqual({ auth_secret: "private-code" })
+    expect(secret.value).toBe("")
+    expect(element.textContent).toContain("Request queued again")
+    expect(element.textContent).not.toContain("private-code")
+  })
+
+  test("device login renders the user code and polls without posting a secret", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
+    let polled
+    controller.poll = async (...args) => { polled = args }
+    global.fetch = async () => ({ ok: true, text: async () => JSON.stringify({
+      engine: "codex", flow: "device-code", status: "pending", sessionId: "device",
+      userCode: "ABCD-EFGH", verificationUrl: "https://auth.openai.com/codex/device", expiresAt: "2099-01-01T00:00:00Z"
+    }) })
+    await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
+    expect(document.body.textContent).toContain("ABCD-EFGH")
+    expect(document.querySelector('[data-role="secret"]')).toBeNull()
+    expect(polled.slice(0, 3)).toEqual(["codex", "device", "2099-01-01T00:00:00Z"])
+  })
+
+  test("expired or superseded polls cannot resume a turn and unsafe login URLs are not linked", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
+    controller.sessionGeneration = 2
+    controller.expiredValue = "Login expired"
+    let requests = 0
+    global.fetch = async () => { requests++; throw new Error("must not fetch") }
+    await controller.poll("codex", "old", "2099-01-01T00:00:00Z", 1)
+    await controller.poll("codex", "expired", "2000-01-01T00:00:00Z", 2)
+    expect(requests).toBe(0)
+    expect(document.body.textContent).toContain("Login expired")
+    controller.renderSession({ engine: "claude", status: "pending", flow: "paste-code", verificationUrl: "javascript:alert(1)" })
+    expect(controller.sessionTarget.querySelector("a")).toBeNull()
+  })
+
+  test("login errors remain visible and a disconnected pending start cannot render its response", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
+    global.fetch = async () => ({ ok: false, text: async () => JSON.stringify({ error: { code: "session_superseded", message: "Start again" } }) })
+    await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
+    expect(controller.errorTarget.textContent).toContain("Start again")
+    let finish
+    global.fetch = () => new Promise(resolve => { finish = resolve })
+    const pending = controller.login({ currentTarget: { dataset: { engine: "claude", flow: "paste-code" } } })
+    controller.disconnect()
+    finish({ ok: true, text: async () => JSON.stringify({ status: "pending", engine: "claude", sessionId: "late" }) })
+    await pending
+    expect(controller.sessionTarget.childElementCount).toBe(0)
+  })
+
 })

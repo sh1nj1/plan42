@@ -54,6 +54,16 @@ Collavre::Engine.routes.draw do
     post "rotate-tokens", to: "agent_connections#rotate_tokens", as: :rotate_tokens
   end
 
+  scope "comments/:comment_id/agent-login", as: :inline_agent_login do
+    get "/", to: "inline_agent_logins#show"
+    get "status", to: "inline_agent_logins#status", as: :status
+    post "sessions", to: "inline_agent_logins#create_session", as: :sessions
+    get "sessions/:session_id", to: "inline_agent_logins#session", as: :session
+    post "sessions/:session_id", to: "inline_agent_logins#submit"
+    delete "sessions/:session_id", to: "inline_agent_logins#cancel"
+    post "resume", to: "inline_agent_logins#resume", as: :resume
+  end
+
   get "/agents/:agent_id/workspaces/:token/provision.json",
       to: "agent_provisioning#manifest", as: :agent_provision_manifest, format: false
   get "/agent-provisioning/collavre/:sha256.tar.gz",

@@ -177,6 +177,10 @@
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
     </div>
   <% end %>
+  <% if comment.task&.trigger_event_payload&.key?("engine_login") %>
+    <%= turbo_frame_tag "inline_agent_login_#{comment.id}", src: collavre.inline_agent_login_path(comment_id: comment.id), loading: :lazy %>
+  <% end %>
+
   <% if comment.approval_action? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
