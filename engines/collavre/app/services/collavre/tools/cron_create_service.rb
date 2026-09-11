@@ -7,13 +7,14 @@ module Tools
     extend ToolMeta
 
     tool_name "cron_create"
-    tool_description "Create a new recurring scheduled job. The job will periodically post a message to a creative's topic, creating the named topic when it does not exist, and triggering agent orchestration. Schedule uses cron syntax (e.g., '*/5 * * * *' for every 5 minutes, '0 9 * * *' for daily at 9am)."
+    tool_description "Create a scheduled job. It posts a message to a creative's topic, creating the named topic when it does not exist, and triggers agent orchestration. Jobs recur by default; set once to true to remove the schedule after its first successful enqueue. Schedule uses cron syntax (e.g., '*/5 * * * *' for every 5 minutes, '0 9 * * *' for daily at 9am)."
 
     tool_param :creative_id, description: "The creative ID to post recurring messages to.", required: true
     tool_param :topic_name, description: "The topic name within the creative to post to. Missing topics are created automatically. Use 'Main' for the default main topic.", required: true
     tool_param :schedule, description: "Cron schedule expression (e.g., '0 9 * * *' for daily at 9am, '*/30 * * * *' for every 30 minutes).", required: true
     tool_param :message, description: "The message content to post on each execution. This triggers the agent orchestration pipeline.", required: true
     tool_param :description, description: "Human-readable description of what this cron job does.", required: false
+    tool_param :once, description: "Run only on the first matching schedule, then remove the job. Defaults to false.", required: false
 
     sig do
       params(
@@ -21,10 +22,11 @@ module Tools
         topic_name: String,
         schedule: String,
         message: String,
-        description: T.nilable(String)
+        description: T.nilable(String),
+        once: T::Boolean
       ).returns(T::Hash[Symbol, T.untyped])
     end
-    def call(creative_id:, topic_name:, schedule:, message:, description: nil)
+    def call(creative_id:, topic_name:, schedule:, message:, description: nil, once: false)
       raise "Current.user is required" unless Current.user
 
       creative = Creative.find_by(id: creative_id)
@@ -43,27 +45,32 @@ module Tools
       key = "cron_#{creative_id}_#{SecureRandom.hex(4)}"
 
       task = create_task(
-        topic: topic, creative: creative, creative_id: creative_id, topic_created: topic_created,
-        key: key, schedule: schedule, message: message, description: description
+        topic: topic, creative: creative, topic_created: topic_created,
+        key: key, schedule: schedule, message: message, description: description, once: once
       )
       return task if task.is_a?(Hash) && task[:error]
 
       topic_created ? broadcast_topic_created(topic) : Crons::ChangeBroadcaster.call(creative)
 
+      task_result(task, creative_id: creative_id, topic_name: topic_name, once: once)
+    end
+
+    private
+
+    def task_result(task, creative_id:, topic_name:, once:)
       {
         success: true,
         key: task.key,
         schedule: task.schedule,
         description: task.description,
+        once: once,
         creative_id: creative_id,
         topic_name: topic_name,
         next_run: task.next_time&.iso8601
       }
     end
 
-    private
-
-    def create_task(topic:, creative:, creative_id:, key:, schedule:, message:, description:, topic_created:)
+    def create_task(topic:, creative:, key:, schedule:, message:, description:, once:, topic_created:)
       creation_error = nil
       retained_created_topic = false
       task = topic.with_lock do
@@ -73,8 +80,8 @@ module Tools
         end
 
         persist_task(
-          topic: topic, creative_id: creative_id, key: key, schedule: schedule,
-          message: message, description: description
+          topic: topic, creative_id: creative.id, key: key, schedule: schedule,
+          message: message, description: description, once: once
         )
       rescue StandardError => e
         retained_created_topic = clean_up_failed_topic_creation(topic) if topic_created
@@ -101,7 +108,7 @@ module Tools
       false
     end
 
-    def persist_task(topic:, creative_id:, key:, schedule:, message:, description:)
+    def persist_task(topic:, creative_id:, key:, schedule:, message:, description:, once:)
       SolidQueue::RecurringTask.create!(
         key: key,
         class_name: "Collavre::CronActionJob",
@@ -113,7 +120,8 @@ module Tools
           creative_id: creative_id,
           topic_id: topic.id,
           agent_id: Current.user.id,
-          message: message
+          message: message,
+          once: once
         } ]
       )
     end

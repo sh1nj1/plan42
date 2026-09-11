@@ -82,6 +82,17 @@ module Collavre
         assert_equal "0 9 * * *", job[:schedule]
         assert_equal "Test cron", job[:description]
         assert_equal "Hello", job[:message]
+        assert_equal false, job[:once]
+      end
+
+      test "identifies a run-once job" do
+        arguments = @task.arguments.first.merge(once: true)
+        @task.update!(arguments: [ arguments ])
+
+        result = CronListService.new.call(creative_id: @creative.id)
+        job = result[:cron_jobs].find { |candidate| candidate[:key] == @task.key }
+
+        assert_equal true, job[:once]
       end
     end
   end

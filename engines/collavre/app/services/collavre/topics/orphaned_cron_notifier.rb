@@ -72,6 +72,7 @@ module Collavre
           message: args["message"],
           description: task.description
         }
+        payload[:once] = true if args["once"] == true
 
         "/cron_create #{JSON.generate(payload)}"
       end
