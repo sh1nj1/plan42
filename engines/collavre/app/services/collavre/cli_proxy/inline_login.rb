@@ -18,9 +18,9 @@ module Collavre
         return unless comment
 
         text = I18n.t("collavre.inline_agent_login.required", engine: error.engine)
+        # The commit callback broadcasts the card once. An immediate broadcast
+        # would let users start a form that the queued replacement then discards.
         comment.update!(content: [ content.presence, text ].compact.join("\n\n"))
-        comment.broadcast_update_to([ comment.creative, :comments ],
-                                    partial: "collavre/comments/comment", locals: { comment: comment, streaming: false })
       end
 
       def initialize(comment, user)
