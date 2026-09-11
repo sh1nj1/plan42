@@ -7,6 +7,7 @@ ko:
       default_summary: 크리에이티브 수정
       changed_count: "크리에이티브 %{count}개"
       inline: 인라인 diff
+      skipped_lines: "… 변경되지 않은 %{count}줄"
       split: 분할 diff
       before: 이전
       after: 이후
