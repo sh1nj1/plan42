@@ -42,6 +42,17 @@ module Collavre
       assert_empty probed
     end
 
+    test "sweep normalizes vendor whitespace and case" do
+      @agent.update_column(:llm_vendor, " JOB-VENDOR ")
+      probed = []
+
+      EndpointHealthProbeJob.stub(:perform_later, ->(id) { probed << id }) do
+        EndpointHealthSweepJob.perform_now
+      end
+
+      assert_includes probed, @agent.id
+    end
+
     test "probe job executes the registered checker" do
       EndpointHealthProbeJob.perform_now(@agent.id)
 

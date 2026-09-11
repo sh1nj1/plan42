@@ -54,9 +54,14 @@ module Collavre
 
       def request_headers
         headers = { "Accept" => "application/json" }
-        api_key = @agent.llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
+        api_key = @agent.llm_api_key.presence
+        api_key ||= IntegrationSettings.fetch(:openai_api_key) if official_endpoint?
         headers["Authorization"] = "Bearer #{api_key}" if api_key.present?
         headers
+      end
+
+      def official_endpoint?
+        @agent.gateway_url.blank? || @agent.gateway_url.to_s.sub(%r{/+\z}, "") == DEFAULT_BASE_URL
       end
 
       def endpoint_policy

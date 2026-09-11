@@ -14,7 +14,7 @@ module Collavre
       vendors = AgentHealth.vendors
       return if vendors.empty?
 
-      User.ai_agents.where("LOWER(llm_vendor) IN (?)", vendors).pluck(:id).each do |agent_id|
+      User.ai_agents.where("LOWER(TRIM(llm_vendor)) IN (?)", vendors).pluck(:id).each do |agent_id|
         EndpointHealthProbeJob.perform_later(agent_id)
       end
     end

@@ -360,8 +360,6 @@ export default class extends Controller {
   // separate: `presentIds` is who has this creative open, and it alone drives
   // read receipts. An agent is online when its gateway says it can run, whether
   // or not anyone is watching.
-  isParticipantOnline(user, presentIds) { return this.participantHealthState(user, presentIds).online }
-
   participantHealthState(user, presentIds) { return healthStateFor(user, presentIds, this.participantUserMenuLabels) }
 
   // The same answer by id, for the avatars rendered on each message: an agent in

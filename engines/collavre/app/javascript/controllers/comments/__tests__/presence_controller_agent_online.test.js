@@ -80,6 +80,16 @@ describe('CommentsPresenceController — gateway-backed agent liveness', () => {
         expect(isMenuOnline(2)).toBe(false)
     })
 
+    test('message avatars resolve the same health state by participant id', () => {
+        controller.participantsData = [{ ...AGENT, agent_online: false, agent_health_status: 'check_error' }]
+
+        expect(controller.userHealthState(2, [])).toEqual(expect.objectContaining({
+            online: false,
+            kind: 'check_error',
+            label: 'Health check error'
+        }))
+    })
+
     test('checker errors and unsupported checkers have distinct status labels', () => {
         controller.participantsData = [
             { ...AGENT, agent_online: false, agent_health_status: 'check_error' },
