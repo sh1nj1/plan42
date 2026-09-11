@@ -184,29 +184,28 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     end
   end
 
-  # Check initial placement too, including the unchanged two-panel gutter.
-  [ MOBILE_WIDTH, TWO_PANEL_WIDTH ].each do |width|
-    test "the closed drawer handle covers no control in the content column at #{width}px" do
-      visit_workspace(width)
-      assert_selector ".creative-workspace-tree-toggle"
+  # Only the two-panel layout reserves a gutter; mobile allows temporary overlap
+  # and relies on the full-width and scroll-clearance tests above.
+  test "the closed drawer handle covers no control in the two-panel content column" do
+    visit_workspace(TWO_PANEL_WIDTH)
+    assert_selector ".creative-workspace-tree-toggle"
 
-      covered = page.evaluate_script(<<~JS)
-        (function () {
-          var handle = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
-          var controls = document.querySelectorAll('main a, main button, main input, main [role="button"]');
-          return Array.prototype.filter.call(controls, function (control) {
-            var rect = control.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) return false;
-            return rect.left < handle.right && rect.right > handle.left &&
-                   rect.top < handle.bottom && rect.bottom > handle.top;
-          }).map(function (control) {
-            return (control.textContent || control.getAttribute('aria-label') || control.tagName).trim();
-          });
-        })();
-      JS
+    covered = page.evaluate_script(<<~JS)
+      (function () {
+        var handle = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
+        var controls = document.querySelectorAll('main a, main button, main input, main [role="button"]');
+        return Array.prototype.filter.call(controls, function (control) {
+          var rect = control.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) return false;
+          return rect.left < handle.right && rect.right > handle.left &&
+                 rect.top < handle.bottom && rect.bottom > handle.top;
+        }).map(function (control) {
+          return (control.textContent || control.getAttribute('aria-label') || control.tagName).trim();
+        });
+      })();
+    JS
 
-      assert_empty covered, "the drawer handle overlaps content controls: #{covered.inspect}"
-    end
+    assert_empty covered, "the drawer handle overlaps content controls: #{covered.inspect}"
   end
 
   test "the tree keeps its own column and hides the toggle at three-panel width" do
