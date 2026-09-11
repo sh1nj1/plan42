@@ -90,6 +90,7 @@ export {
   OrgChartController,
   ShareModalController,
   ImageLightboxController,
+  CreativeImageLightboxController,
   SearchPopupController,
   CommentBadgeController,
   LandingVideoController,
@@ -103,6 +104,11 @@ export {
   CreativeHistoryController,
   CreativeHistoryUndoController,
   CronBadgeController
+}
+
+function registerImageLightboxControllers(application) {
+  application.register("image-lightbox", ImageLightboxController)
+  application.register("creative-image-lightbox", CreativeImageLightboxController)
 }
 
 // Registration function for use with a Stimulus application
@@ -144,8 +150,7 @@ export function registerControllers(application) {
   application.register("comment-version", CommentVersionController)
   application.register("org-chart", OrgChartController)
   application.register("share-modal", ShareModalController)
-  application.register("image-lightbox", ImageLightboxController)
-  application.register("creative-image-lightbox", CreativeImageLightboxController)
+  registerImageLightboxControllers(application)
   application.register("search-popup", SearchPopupController)
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)
