@@ -141,6 +141,43 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ expected.merge("inline_login_task_id" => @task.id) ], execute_replay_payloads
   end
 
+  [ :shared, :per_user ].each do |mode|
+    [ :absent, :explicit, :nil ].each do |principal|
+      test "#{mode} replay preserves #{principal} requester through provider dispatch" do
+        @gateway.update!(workspace_mode: mode)
+        @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @requester)
+        @creative.update!(user: @owner) if mode == :shared
+        manager = mode == :shared ? @owner : @requester
+        sign_in_as(manager, password: "password")
+        payload = @task.reload.trigger_event_payload.except("workspace_user_id")
+        payload["workspace_user_id"] = principal == :explicit ? @owner.id : nil unless principal == :absent
+        @task.update!(trigger_event_payload: payload)
+        set_data("workspace_id" => @workspace.id, "authorized" => true, "session_user_id" => manager.id)
+        clear_enqueued_jobs
+        post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+        assert_response :success
+
+        expected = { absent: @requester, explicit: @owner, nil: nil }.fetch(principal)
+        principals = []
+        client = Object.new
+        client.define_singleton_method(:chat) { |*, **, &block| block.call("Replay response") }
+        client.define_singleton_method(:last_handoff_failed?) { false }
+        client.define_singleton_method(:handed_off?) { true }
+        factory = lambda do |**options|
+          principals << [ options[:context][:workspace_user], Collavre::Current.agent_turn[:user] ]
+          client
+        end
+        Collavre::AiClient.stub(:new, factory) do
+          perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+        end
+
+        assert_equal [ [ expected, expected ] ], principals
+        assert @creative.comments.exists?(content: "Replay response")
+        assert @task.reload.trigger_event_payload.dig("engine_login", "replay_completed")
+      end
+    end
+  end
+
   test "inaccessible, deleted, moved, private and stale requests fail closed" do
     @original.update!(private: true)
     @creative.update!(user: @owner)

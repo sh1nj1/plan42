@@ -186,9 +186,12 @@ module Collavre
 
       def retry_payload(source)
         # Rebuild content and mentions after login, before assignment checks.
-        Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, source)
+        payload = Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, source)
             .except("engine_login", *ReplayClaims::KEYS, *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
-            .merge("workspace_user_id" => workspace.user_id || task.trigger_event_payload["workspace_user_id"])
+        # Preserve explicit principals, including nil. Shared workspaces have no
+        # user: leave the key absent so normal source-principal resolution applies.
+        payload["workspace_user_id"] = workspace.user_id unless payload.key?("workspace_user_id") || workspace.user_id.nil?
+        payload
       end
 
       def update_data!

@@ -30,9 +30,12 @@ After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Permissions and topic
 assignment are checked again; scheduler rejection leaves the claim available
 for another attempt. The retry carries the original human workspace principal
-and strips turn-scoped delivery metadata. Requests that already emitted a
-chunk, previously handed off during an approval continuation, were cancelled,
-or whose source message was moved/deleted are not automatically replayed.
+and strips turn-scoped delivery metadata. An explicit principal (including nil)
+is preserved; shared replays without one use the source commenter through the
+normal principal resolver, not the manager who completed login. Requests that
+already emitted a chunk, previously handed off during an approval continuation,
+were cancelled, or whose source message was moved/deleted are not automatically
+replayed.
 Once replay is claimed, session mutations are rejected, including responses
 from requests that were already in flight. Queued replays include the original
 task ID so cleanup can run even if the card or initiating user is deleted.
