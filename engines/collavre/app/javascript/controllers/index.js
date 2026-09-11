@@ -39,6 +39,7 @@ import CommentVersionController from "./comment_version_controller"
 import OrgChartController from "./org_chart_controller"
 import CommentBadgeController from "./comment_badge_controller"
 import ShareModalController from "./share_modal_controller"
+import CreativeImageLightboxController from "./creative_image_lightbox_controller"
 import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
@@ -144,6 +145,7 @@ export function registerControllers(application) {
   application.register("org-chart", OrgChartController)
   application.register("share-modal", ShareModalController)
   application.register("image-lightbox", ImageLightboxController)
+  application.register("creative-image-lightbox", CreativeImageLightboxController)
   application.register("search-popup", SearchPopupController)
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)

@@ -239,6 +239,9 @@ en:
         csv: CSV
         excel: Excel
       lightbox:
+        zoom_in: Zoom in
+        zoom_out: Zoom out
+        zoom_reset: Reset zoom
         close: Close
         previous: Previous
         next: Next

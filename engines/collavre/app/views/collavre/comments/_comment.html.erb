@@ -124,6 +124,9 @@
     <% images_list = comment.images.to_a %>
     <div class="comment-attachments"
          data-controller="image-lightbox"
+         data-image-lightbox-i18n-zoom-in-value="<%= t('collavre.comments.lightbox.zoom_in') %>"
+         data-image-lightbox-i18n-zoom-out-value="<%= t('collavre.comments.lightbox.zoom_out') %>"
+         data-image-lightbox-i18n-zoom-reset-value="<%= t('collavre.comments.lightbox.zoom_reset') %>"
          data-image-lightbox-download-all-url-value="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>"
          data-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
          data-image-lightbox-i18n-previous-value="<%= t('collavre.comments.lightbox.previous') %>"

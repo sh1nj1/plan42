@@ -73,6 +73,10 @@
   gap: var(--space-1, 0.25rem);
 }
 
+.image-lightbox-btn[hidden] {
+  display: none;
+}
+
 .image-lightbox-btn:hover {
   background: rgba(255, 255, 255, 0.15);
   color: #fff;

@@ -236,6 +236,9 @@ ko:
         csv: CSV
         excel: Excel
       lightbox:
+        zoom_in: 확대
+        zoom_out: 축소
+        zoom_reset: 확대/축소 초기화
         close: 닫기
         previous: 이전
         next: 다음
