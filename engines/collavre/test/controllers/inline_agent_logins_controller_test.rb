@@ -1343,6 +1343,62 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  %i[promotion resumed approval delayed].product([ false, true ]).each do |gate, edited|
+    test "#{gate} rechecks #{edited ? 'edited' : 'retained'} merged mention before replay execution" do
+      mention = prepare_merged_replay
+      @original.update!(content: "@#{users(:ai_bot).name}: Only for another agent")
+      queue_delayed_replay
+      payload = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester).replay_payload
+      # Coalescing can leave only the plural claim key on a survivor.
+      payload["inline_login_task_ids"] = [ @task.id ]
+      status = { promotion: :queued, resumed: :pending, approval: :pending_approval }
+      replay = unless gate == :delayed
+        Collavre::Task.create!(name: "Waiting replay", agent: @agent, creative: @creative,
+          topic_id: @original.topic_id, status: status.fetch(gate), trigger_event_name: "comment_created",
+          trigger_event_payload: payload)
+      end
+      tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+      tracker.reserve!(replay.id) if gate == :approval
+      mention.update!(content: "Never mind, no mention here") if edited
+      clear_enqueued_jobs
+      calls = []
+      service = Object.new
+      service.define_singleton_method(:call) { nil }
+      Collavre::AiAgentService.stub(:new, ->(task) {
+        calls << task
+        task.task_actions.create!(action_type: "reply_created", status: "done", payload: { content: "Replayed response" })
+        service
+      }) do
+        case gate
+        when :promotion
+          Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(@original.topic_id, @creative.id)
+          assert_equal(edited ? "cancelled" : "pending", replay.reload.status)
+          perform_enqueued_jobs(only: Collavre::AiAgentJob)
+        when :delayed
+          result = Collavre::AiAgentJob.perform_now(@agent.id, "comment_created", payload)
+          assert_equal :rejected, result if edited
+        else
+          Collavre::AiAgentJob.perform_now(replay)
+        end
+      end
+      assert_equal(edited ? 0 : 1, calls.size)
+      assert_equal 0, tracker.active_jobs
+      if edited
+        if replay
+          assert replay.reload.cancelled?
+          data = @task.reload.trigger_event_payload.fetch("engine_login")
+          assert_equal true, data["replay_abandoned"]
+          assert_equal false, data["retryable"]
+          assert_equal false, data["resumed"]
+        else
+          assert_equal [ @task.id ], Collavre::Task.where(agent: @agent).pluck(:id)
+        end
+      else
+        assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_completed")
+      end
+    end
+  end
+
   test "stopping a deferred replay settles its original claim even with both comments intact" do
     queue_delayed_replay
     Collavre::Orchestration::TopicSlot.stub(:available_for?, false) do

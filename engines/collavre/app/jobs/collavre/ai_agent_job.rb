@@ -70,10 +70,10 @@ module Collavre
         # exclusively someone else's.
         resumed_context = task.trigger_event_payload
         if resumed_context&.key?("topic") &&
-           !Orchestration::Matcher.permits_assignment?(resumed_context, agent)
+           !Orchestration::Matcher.permits_waiting_task?(resumed_context, agent)
           Rails.logger.info(
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
-            "is now assigned to another agent (agent=#{agent.id})"
+            "no longer permits the recorded agent (agent=#{agent.id})"
           )
           task.update!(status: "cancelled")
           # A pending_approval task kept its slot across the pause (the
@@ -115,10 +115,10 @@ module Collavre
         # in a topic that now belongs to someone else. Unlike a queued waiter
         # there is no Task yet to cancel, so cancelling on assignment change
         # cannot cover this path — the check has to happen here.
-        if context && !Orchestration::Matcher.permits_assignment?(context, agent)
+        if context && !Orchestration::Matcher.permits_waiting_task?(context, agent)
           Rails.logger.info(
             "[AiAgentJob] Skipping job for agent #{agent.id}: topic " \
-            "#{context.dig('topic', 'id')} is now assigned to another agent " \
+            "#{context.dig('topic', 'id')} no longer permits the recorded agent " \
             "(event=#{event_name})"
           )
           return :rejected

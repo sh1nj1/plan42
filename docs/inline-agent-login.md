@@ -34,7 +34,8 @@ or a new attempt clears authorization.
 
 After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Current routing is matched
-again before scheduling and admission, including permissions, mentions, topic
+again before scheduling, admission, queue promotion, delayed execution, and
+approval resumption, including permissions, mentions, topic
 assignment and routing expressions. For coalesced turns, current public comments
 still in the recorded creative/topic also participate in matching; a mention in
 one of those comments can select the recorded agent even when the anchor does not.
