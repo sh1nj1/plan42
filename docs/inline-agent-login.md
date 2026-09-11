@@ -44,8 +44,14 @@ trigger loop in `awaiting_user` and posts a notice even when no reply card
 remains, without evaluating the login notice as an agent result.
 Admitted replays, including queued waiters, retain their original login task ID.
 If they are cancelled, fail, or escalate without completing, their terminal
-callback abandons that login claim as well. Successful replies and turns waiting
-for tool approval retain the normal completion path. Coalescing queued turns
+callback abandons that login claim as well. Successful replies mark their linked
+login claims completed and disable retry while preserving the resumed notice.
+Later source/card withdrawal cannot rewrite those historical claims as abandoned.
+Only the reply task drives loop completion; settled login cards never do.
+A second authentication failure or a failed provider handoff is not successful
+completion, and turns waiting for tool approval keep their claims pending.
+Settled cards remain readable by reply viewers even after source invalidation,
+without enabling session actions. Coalescing queued turns
 transfers all login claims to the survivor in the same transaction; superseded
 waiters do not abandon requests that remain queued. The survivor settles every
 inherited claim if it later ends without a result.

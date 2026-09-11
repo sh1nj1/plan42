@@ -16,7 +16,7 @@ module Collavre
       # Admission persists this link on both running turns and queued waiters.
       # Settle before looking for abandoned predecessors to avoid a duplicate
       # completion check; abandon_replay! handles repeated terminal callbacks.
-      def settle_inline_replay
+      def settle_inline_replay(completed: false)
         original_ids = CliProxy::ReplayClaims.ids(trigger_event_payload)
         return false if original_ids.empty?
 
@@ -24,11 +24,23 @@ module Collavre
         # task need not predate the survivor. Scope and non-self checks still apply.
         originals = Task.where(agent_id: agent_id, creative_id: creative_id, topic_id: topic_id, status: "done")
                         .where.not(id: id).where(id: original_ids).to_a
-        originals.each { |original| CliProxy::InlineLogin.abandon_replay!(original) }
+        originals.each do |original|
+          completed ? CliProxy::ReplayClaims.complete!(original) : CliProxy::InlineLogin.abandon_replay!(original)
+        end
         originals.any?
       end
 
+      def loop_completion_delegated_to_replay?
+        login = trigger_event_payload&.fetch("engine_login", {})
+        login && (login["retryable"] || login["replay_completed"])
+      end
+
+      def completed_inline_replay?
+        done? && !trigger_event_payload&.key?("engine_login") && !ended_undelivered?
+      end
+
       def recheck_abandoned_replays
+        return settle_inline_replay(completed: true) if completed_inline_replay?
         return unless status.in?(%w[failed cancelled escalated]) && trigger_event_name == "comment_created"
         return if settle_inline_replay
         return unless creative&.parent&.drop_trigger_enabled?

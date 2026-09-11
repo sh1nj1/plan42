@@ -11,6 +11,18 @@ module Collavre
         (Array(payload&.fetch(KEYS.first, nil)) + Array(payload&.fetch(KEYS.last, nil))).compact.uniq
       end
 
+      # The reply task owns loop completion; settling its historical login card
+      # must not evaluate that card's authentication notice as another result.
+      def self.complete!(task)
+        task.with_lock do
+          data = task.trigger_event_payload&.fetch("engine_login", {}) || {}
+          return unless data["resumed"] && data["retryable"]
+
+          task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" =>
+            data.merge("retryable" => false, "replay_completed" => true)))
+        end
+      end
+
       # Caller holds the survivor and sibling locks for the entire fold.
       def self.transfer!(keep, siblings)
         claimed = siblings.select { |task| ids(task.trigger_event_payload).any? }

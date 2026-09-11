@@ -46,9 +46,9 @@ module Collavre
           agent.gateway_accessible_to?(@user) && original_comment.present?
       end
 
-      # Abandonment exposes only a generic notice to viewers of the reply.
-      def abandoned_card_visible?
-        data["replay_abandoned"] && comment.creative.has_permission?(@user, :read)
+      # Settled cards expose only a generic notice to viewers of the reply.
+      def settled_card_visible?
+        (data["replay_abandoned"] || data["replay_completed"]) && comment.creative.has_permission?(@user, :read)
       end
 
       def manageable?
@@ -144,6 +144,7 @@ module Collavre
       def self.abandon_replay!(task, pending: false)
         task.with_lock do
           data = task.trigger_event_payload&.fetch("engine_login", {}) || {}
+          return if data["replay_completed"]
           return unless data["resumed"] || (pending && data["retryable"])
 
           task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" =>

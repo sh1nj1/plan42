@@ -106,6 +106,65 @@ module Collavre
       end
     end
 
+    [ false, true ].each do |external|
+      test "successful survivor settles all login claims via #{external ? 'external claim' : 'callback'} without duplicate loop checks" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+        second = @task.dup
+        second.save!
+        replay = @task.dup
+        replay.assign_attributes(status: "running", trigger_event_payload: {
+          "inline_login_task_id" => @task.id, "inline_login_task_ids" => [ @task.id, second.id ]
+        })
+        replay.save!
+        @child.comments.create!(content: "More work [STATUS: CONTINUE]", topic: @topic, user: @ai_bot,
+                                task: replay, created_at: replay.created_at + 1.second, skip_dispatch: true)
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          if external
+            replay.update_columns(status: "done")
+            replay.fire_completion_callbacks_after_external_claim
+          else
+            replay.done!
+          end
+          [ @task, second ].each do |original|
+            original.reload.fire_completion_callbacks_after_external_claim
+            assert_no_changes -> { original.reload.updated_at } do
+              CliProxy::ReplayClaims.complete!(original)
+              CliProxy::InlineLogin.abandon_replay!(original, pending: true)
+            end
+          end
+        end
+        assert_equal [ replay.id ], checks
+        [ @task, second ].each do |original|
+          data = original.reload.trigger_event_payload.fetch("engine_login")
+          assert_equal true, data["replay_completed"]
+          assert_equal true, data["resumed"]
+          assert_equal false, data["retryable"]
+          assert_not data["replay_abandoned"]
+        end
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) { TriggerLoopCheckJob.perform_now(replay.id) }
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+      end
+    end
+
+    [ :login, :undelivered, :approval, :unclaimed ].each do |ending|
+      test "#{ending} replay does not settle a claim as successfully completed" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => ending != :unclaimed } })
+        replay = @task.dup
+        replay.assign_attributes(status: "running", trigger_event_payload: { "inline_login_task_id" => @task.id })
+        replay.save!
+        payload = replay.trigger_event_payload
+        payload["engine_login"] = { "retryable" => true } if ending == :login
+        payload[Orchestration::DeliveryRecord::HANDOFF_FAILED_KEY] = true if ending == :undelivered
+        replay.update!(status: ending == :approval ? "pending_approval" : "done", trigger_event_payload: payload)
+        data = @task.reload.trigger_event_payload.fetch("engine_login")
+        assert_equal true, data["retryable"]
+        assert_not data["replay_completed"]
+        assert_not data["replay_abandoned"]
+      end
+    end
+
     test "a failed survivor settles multiple inherited login claims and ends the loop once" do
       @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
       second = @task.dup

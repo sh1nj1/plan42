@@ -58,7 +58,7 @@ module Collavre
       response.headers["Cache-Control"] = "private, no-store"
       @comment = Comment.visible_to(Current.user).find(params[:comment_id])
       @login = CliProxy::InlineLogin.new(@comment, Current.user)
-      return if action_name == "show" && @login.abandoned_card_visible?
+      return if action_name == "show" && @login.settled_card_visible?
 
       head :not_found unless @login.accessible?
     end

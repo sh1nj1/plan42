@@ -1117,6 +1117,41 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
   end
 
+  [ :private, :action, :destroy, :topic, :creative ].each do |withdrawal|
+    test "#{withdrawal} after a successful replay preserves its completed login card" do
+      queue_delayed_replay
+      assert_equal 1, execute_replay_payloads.size
+      before = @task.reload.trigger_event_payload.fetch("engine_login").deep_dup
+      assert_equal true, before["replay_completed"]
+      assert_equal false, before["retryable"]
+
+      revoke_replay_source(withdrawal)
+
+      assert_equal before, @task.reload.trigger_event_payload.fetch("engine_login")
+      Collavre::CliProxy::Client.stub(:new, ->(*) { flunk "Completed cards must not contact the proxy" }) do
+        get inline_agent_login_path(comment_id: @reply.id)
+      end
+      assert_response :success
+      assert_includes response.body, I18n.t("collavre.inline_agent_login.resumed")
+      assert_not_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+      assert_select "[data-controller=agent-connection]", count: 0
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+      assert_response :not_found
+      sign_in_as(@owner, password: "password")
+      get inline_agent_login_path(comment_id: @reply.id)
+      assert_response :not_found
+    end
+  end
+
+  test "deleting a completed login card preserves the successful claim" do
+    queue_delayed_replay
+    execute_replay_payloads
+    before = @task.reload.trigger_event_payload.deep_dup
+    @reply.destroy!
+    assert_equal before, @task.reload.trigger_event_payload
+    assert_equal true, @task.trigger_event_payload.dig("engine_login", "replay_completed")
+  end
+
   test "successful replay does not abandon its original login" do
     queue_delayed_replay
     assert_equal 1, execute_replay_payloads.size
