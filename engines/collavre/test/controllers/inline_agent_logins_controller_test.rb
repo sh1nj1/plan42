@@ -355,6 +355,33 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   end
 
   [ :callback, :external_claim ].each do |completion|
+    test "#{completion} checks trigger loop completion when login cannot replay the partial turn" do
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => @original.topic_id
+      } } })
+      set_data("retryable" => false)
+      @task.update!(status: :running)
+      @reply.update!(content: "Partial response [STATUS: BLOCKED need credentials]")
+      clear_enqueued_jobs
+
+      assert_enqueued_with(job: Collavre::TriggerLoopCheckJob, args: [ @task.id ]) do
+        if completion == :callback
+          @task.done!
+        else
+          @task.update_columns(status: "done")
+          @task.reload.fire_completion_callbacks_after_external_claim
+        end
+      end
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+        perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+      end
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+    end
+
     test "#{completion} leaves the trigger loop running until the authenticated replay completes" do
       parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
       # Avoid dispatching a drop event while preparing the active loop.

@@ -146,8 +146,8 @@ module Collavre
     # fire_completion_callbacks_after_external_claim for explicit replay.
     def trigger_loop_completion_eligible?
       return false unless status == "done"
-      # Authentication notices are not results; the replay completes the loop.
-      return false if trigger_event_payload&.key?("engine_login")
+      # Wait for a replay only when authentication can resume the turn.
+      return false if trigger_event_payload&.dig("engine_login", "retryable")
       return false unless trigger_event_name == "comment_created"
       return false unless creative&.parent&.drop_trigger_enabled?
 
