@@ -17,7 +17,7 @@ export function handleCreativeChatClick(popup, detail) {
     updateCurrentChat(popup, { button, creativeId, targetId, highlightId, shouldExpand, openRequested })
     return
   }
-  if (shouldExpand) popup.expandDocked()
+  if (shouldExpand) popup.expandDocked({ scrollToBottom: !highlightId })
   openCreativeChat(popup, button, { creativeId, highlightId })
 }
 
@@ -29,7 +29,7 @@ function closePreviousFloatingChat(popup, targetId) {
 
 function updateCurrentChat(popup, { button, creativeId, targetId, highlightId, shouldExpand, openRequested }) {
   if (popup.isDocked()) {
-    if (shouldExpand) popup.expandDocked()
+    if (shouldExpand) popup.expandDocked({ scrollToBottom: !highlightId })
     if (highlightId) popup.reloadDockedHighlight(targetId, highlightId)
     return
   }

@@ -32,15 +32,34 @@ export function scrollToPreviousMessage() {
 }
 
 export function loadAndNavigateToPreviousMessage(anchorId) {
+  const pending = this.pendingPreviousMessageNavigation
+  if (pending) {
+    pending.steps += 1
+    return pending.promise
+  }
   if (this.navigateToPreviousSibling(anchorId)) return Promise.resolve(true)
   if (this.allOlderLoaded) return Promise.resolve(false)
 
-  this.pendingPreviousMessageAnchorId = anchorId
-  const requestContext = this.paginationRequestContext()
-  return this.loadOlderComments().then(() => {
-    if (!this.isCurrentPaginationContext(requestContext)) return false
-    return this.fulfillPendingPreviousMessageNavigation()
-  })
+  const navigation = { anchorId, steps: 1 }
+  this.pendingPreviousMessageNavigation = navigation
+  navigation.promise = drainPreviousMessageNavigation(this, navigation)
+  return navigation.promise
+}
+
+async function drainPreviousMessageNavigation(list, navigation) {
+  const requestContext = list.paginationRequestContext()
+  let navigated = false
+  try {
+    while (list.pendingPreviousMessageNavigation === navigation) {
+      const loaded = await list.loadOlderComments()
+      if (!list.isCurrentPaginationContext(requestContext)) return false
+      navigated = list.fulfillPendingPreviousMessageNavigation() || navigated
+      if (!loaded) break
+    }
+    return navigation.steps === 0 || navigated
+  } finally {
+    if (list.pendingPreviousMessageNavigation === navigation) list.pendingPreviousMessageNavigation = null
+  }
 }
 
 export function navigateToPreviousSibling(anchorId) {
@@ -53,11 +72,17 @@ export function navigateToPreviousSibling(anchorId) {
 }
 
 export function fulfillPendingPreviousMessageNavigation() {
-  const anchorId = this.pendingPreviousMessageAnchorId
-  if (!anchorId || !this.navigateToPreviousSibling(anchorId)) return false
+  const pending = this.pendingPreviousMessageNavigation
+  if (!pending) return false
 
-  this.pendingPreviousMessageAnchorId = null
-  return true
+  let navigated = false
+  while (pending.steps > 0 && this.navigateToPreviousSibling(pending.anchorId)) {
+    pending.anchorId = this.prevMsgNavigator.anchorId
+    pending.steps -= 1
+    navigated = true
+  }
+  if (pending.steps === 0) this.pendingPreviousMessageNavigation = null
+  return navigated
 }
 
 export function navigateToMessage(target) {

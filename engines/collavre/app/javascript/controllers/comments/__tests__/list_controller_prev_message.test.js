@@ -212,6 +212,62 @@ describe('list_controller previous-message navigation', () => {
     expect(h.controller.prevMsgNavigator.anchorId).toBe('19')
   })
 
+  test.each([false, true])('retains three rapid clicks across pages (automatic load: %s)', async (automatic) => {
+    const h = buildController()
+    h.list.innerHTML = '<div class="comment-item" data-comment-id="20"></div>'
+    h.controller.creativeId = '1'
+    h.controller.prevMsgNavigator.commit('20', 0)
+    let finishLoading
+    h.controller.fetchComments = jest.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { finishLoading = resolve }))
+      .mockResolvedValueOnce('<div id="comment_17" class="comment-item" data-comment-id="17"></div>')
+    const automaticLoad = automatic && h.controller.loadOlderComments()
+    const clicks = Array.from({ length: 3 }, () => h.controller.scrollToPreviousMessage())
+    finishLoading('<div id="comment_18" class="comment-item" data-comment-id="18"></div>' +
+      '<div id="comment_19" class="comment-item" data-comment-id="19"></div>')
+    await Promise.all([automaticLoad, ...clicks])
+
+    expect(h.controller.prevMsgNavigator.anchorId).toBe('17')
+    expect(h.list.querySelector('#comment_17').classList).toContain('highlight-flash')
+    expect(h.list.scrollTo).toHaveBeenCalledTimes(3)
+    expect(h.controller.fetchComments).toHaveBeenCalledTimes(2)
+  })
+
+  test.each(['exhausted', 'failed', 'user input'])('clears queued clicks when loading is %s', async (outcome) => {
+    const h = buildController()
+    h.list.innerHTML = '<div class="comment-item" data-comment-id="20"></div>'
+    h.controller.creativeId = '1'
+    h.controller.prevMsgNavigator.commit('20', 0)
+    let finishLoading, failLoading
+    h.controller.fetchComments = jest.fn(() => new Promise((resolve, reject) => {
+      finishLoading = resolve
+      failLoading = reject
+    }))
+    const first = h.controller.scrollToPreviousMessage()
+    const second = h.controller.scrollToPreviousMessage()
+    if (outcome === 'failed') {
+      failLoading(new Error('Network failure'))
+      await expect(first).rejects.toThrow('Network failure')
+      await expect(second).rejects.toThrow('Network failure')
+    } else {
+      if (outcome === 'user input') h.list.dispatchEvent(new Event('wheel'))
+      finishLoading(outcome === 'exhausted' ? '' : '<div class="comment-item" data-comment-id="19"></div>')
+      await Promise.all([first, second])
+    }
+    expect(h.controller.pendingPreviousMessageNavigation).toBeNull()
+    expect(h.list.scrollTo).not.toHaveBeenCalled()
+  })
+
+  test('fulfills the queue when an older loader inserts messages before resolving', async () => {
+    const h = buildController()
+    h.controller.loadOlderComments = jest.fn(async () => {
+      h.list.insertAdjacentHTML('afterbegin', '<div class="comment-item" data-comment-id="older"></div>')
+      return false
+    })
+    await expect(h.controller.loadAndNavigateToPreviousMessage('c0')).resolves.toBe(true)
+    expect(h.controller.prevMsgNavigator.anchorId).toBe('older')
+  })
+
   test('an old page response does not clear or fulfill a newer navigation request', async () => {
     const h = buildController()
     h.list.innerHTML = '<div class="comment-item" data-comment-id="20"></div>'
@@ -237,7 +293,7 @@ describe('list_controller previous-message navigation', () => {
     expect(fulfill).not.toHaveBeenCalled()
     expect(h.controller.loadingOlder).toBe(true)
     expect(h.controller.loadingOlderPromise).toBe(newPromise)
-    expect(h.controller.pendingPreviousMessageAnchorId).toBe('20')
+    expect(h.controller.pendingPreviousMessageNavigation.anchorId).toBe('20')
 
     responses[1]('<div id="comment_19" class="comment-item" data-comment-id="19"></div>')
     await newNavigation
@@ -378,13 +434,13 @@ describe('list_controller previous-message navigation', () => {
     h.scrollTo(4 * ITEM_HEIGHT)
     h.controller.scrollToPreviousMessage()
     expect(h.controller.prevMsgNavigator.anchorId).toBe('c3')
-    h.controller.pendingPreviousMessageAnchorId = 'c3'
+    h.controller.pendingPreviousMessageNavigation = { anchorId: 'c3', steps: 2 }
 
     h.controller.creativeId = '1'
     h.controller.fetchComments = jest.fn(() => new Promise(() => {}))
     h.controller.loadInitialComments()
 
     expect(h.controller.prevMsgNavigator.anchorId).toBeNull()
-    expect(h.controller.pendingPreviousMessageAnchorId).toBeNull()
+    expect(h.controller.pendingPreviousMessageNavigation).toBeNull()
   })
 })

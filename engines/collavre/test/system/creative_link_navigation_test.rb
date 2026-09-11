@@ -81,6 +81,37 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
     assert_selector "#comments-popup[data-creative-id='#{@target.id}']", visible: :visible, wait: 10
   end
 
+  test "expanding a collapsed dock preserves the visible deep-link target" do
+    topic = @target.main_topic(fallback_user: @user)
+    comments = 18.times.map do |index|
+      Comment.create!(creative: @target, topic:, user: @user, content: "Loaded message #{index}")
+    end
+    target_comment = comments.first
+    @target.update!(description: %(<a href="#{collavre.creatives_path(id: @target.id, comment_id: target_comment.id)}">Highlight loaded message</a>))
+
+    visit collavre.creatives_path(id: @target.id)
+    assert_selector "#comment_#{target_comment.id}", wait: 10
+    find("#comments-popup [data-comments--popup-target='closeButton']").click
+    assert_selector "#comments-popup.docked-collapsed"
+    mark_workspace_shell
+    find("#creative-workspace-content .creative-title-content a", text: "Highlight loaded message").click
+
+    assert_no_selector "#comments-popup.docked-collapsed"
+    assert_selector "#comment_#{target_comment.id}[data-highlighted='true']", wait: 10
+    page.evaluate_async_script(<<~JS)
+      const done = arguments[arguments.length - 1]
+      requestAnimationFrame(() => requestAnimationFrame(done))
+    JS
+    assert page.evaluate_script(<<~JS)
+      (() => {
+        const target = document.querySelector('#comment_#{target_comment.id}').getBoundingClientRect()
+        const list = document.querySelector('#comments-list').getBoundingClientRect()
+        return target.top >= list.top && target.bottom <= list.bottom
+      })()
+    JS
+    assert_selector ".creative-workspace-shell[data-creative-link-marker='mounted']"
+  end
+
   test "chat comment permalink with a trailing slash loads an earlier page and highlights the message" do
     resize_window_to(600, 900)
     target_topic = @target.main_topic(fallback_user: @user)

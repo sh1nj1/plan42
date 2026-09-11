@@ -627,14 +627,14 @@ export default class extends Controller {
     this._syncWakeLock()
   }
 
-  expandDocked() {
+  expandDocked({ scrollToBottom = true } = {}) {
     if (!this.isDocked()) return
     if (!this.element.classList.contains('docked-collapsed')) return
 
     this.element.classList.remove('docked-collapsed')
     this.syncDockedUI()
     this._syncWakeLock()
-    requestAnimationFrame(() => this.listController?.scrollToBottom())
+    if (scrollToBottom) requestAnimationFrame(() => this.listController?.scrollToBottom())
   }
 
   syncDockedUI() {

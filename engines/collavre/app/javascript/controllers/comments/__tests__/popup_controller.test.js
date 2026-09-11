@@ -478,7 +478,7 @@ describe('CommentsPopupController', () => {
         expect(suppressionAfterReload).toBe(false)
     })
 
-    test('same-creative workspace deep links highlight an already loaded comment without reloading', () => {
+    test('collapsed dock keeps an already loaded deep-link target visible after animation frames', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')
         const listTarget = document.createElement('div')
@@ -489,9 +489,13 @@ describe('CommentsPopupController', () => {
         popup.dataset.docked = 'true'
         popup.dataset.creativeId = '123'
         popup.style.display = 'flex'
+        popup.classList.add('docked-collapsed')
+        const frames = []
+        const raf = jest.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback))
         const listController = {
             listTarget,
-            highlightComment: jest.fn(),
+            highlightComment: jest.fn(() => { listTarget.scrollTop = 100 }),
+            scrollToBottom: jest.fn(() => { listTarget.scrollTop = 900 }),
             onPopupOpened: jest.fn(),
             onPopupClosed: jest.fn(),
         }
@@ -505,10 +509,16 @@ describe('CommentsPopupController', () => {
                 button: triggerBtn,
                 creativeId: '123',
                 workspaceSync: true,
+                openRequested: true,
                 highlightId: '456',
             },
         }))
 
+        frames.forEach(callback => callback())
+        raf.mockRestore()
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(listTarget.scrollTop).toBe(100)
+        expect(listController.scrollToBottom).not.toHaveBeenCalled()
         expect(listController.highlightComment).toHaveBeenCalledWith('456')
         expect(listController.onPopupOpened).not.toHaveBeenCalled()
     })

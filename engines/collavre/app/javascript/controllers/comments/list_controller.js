@@ -25,7 +25,7 @@ export default class extends Controller {
     this.selection = new Set()
     this.loadingOlder = false
     this.loadingOlderPromise = null
-    this.pendingPreviousMessageAnchorId = null
+    this.pendingPreviousMessageNavigation = null
     this.loadingNewer = false
     this.allOlderLoaded = false // Reached the beginning of time
     this.allNewerLoaded = true  // Reached current time (initially true until we scroll up)
@@ -191,7 +191,7 @@ export default class extends Controller {
     this.allNewerLoaded = true
     this.movingComments = false
     this.manualSearchQuery = null
-    this.pendingPreviousMessageAnchorId = null
+    this.pendingPreviousMessageNavigation = null
   }
 
   resetToLatest() {
@@ -208,7 +208,7 @@ export default class extends Controller {
 
     // The list is about to be replaced wholesale; any anchor we hold is stale.
     this.prevMsgNavigator.reset()
-    this.pendingPreviousMessageAnchorId = null
+    this.pendingPreviousMessageNavigation = null
 
     const requestVersion = ++this._loadCommentsVersion
     const params = {}
@@ -482,7 +482,7 @@ export default class extends Controller {
   }
 
   handlePrevMsgUserInput() {
-    this.pendingPreviousMessageAnchorId = null
+    this.pendingPreviousMessageNavigation = null
     this.prevMsgNavigator.notifyUserInput()
   }
 
