@@ -29,6 +29,11 @@ for another attempt. The retry carries the original human workspace principal
 and strips turn-scoped delivery metadata. Requests that already emitted a
 chunk, previously handed off during an approval continuation, were cancelled,
 or whose source message was moved/deleted are not automatically replayed.
+Queued replays carry only identifiers and revalidate the request at execution.
+If validation rejects a claimed replay, it clears the claim, disables automatic
+retry for that turn, refreshes the card with a failure notice, and explicitly
+runs the terminal task's completion callbacks so trigger loops can continue.
+After restoring access or authentication, the requester must send a new message.
 
 Verification covers HTTP/SSE classification with RubyLLM's real parser,
 workspace and session isolation, replay claims, permission revocation,

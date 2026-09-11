@@ -10,6 +10,8 @@ en:
       requester_required: The person who started this request needs to sign in to
         their connection.
       resumed: Login complete. The original request has been queued again.
+      replay_abandoned: The original request could not be resumed because its message
+        or access changed. Check your connection and permissions, then send a new message.
       expired: Login expired. Start a new login.
       errors:
         session_superseded: This login was replaced. Start a new login.

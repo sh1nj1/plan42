@@ -118,6 +118,19 @@ module Collavre
         end
       end
 
+      def abandon_replay!
+        task.with_lock do
+          return unless data["resumed"]
+
+          task.update!(trigger_event_payload: task.trigger_event_payload.merge("engine_login" =>
+            data.merge("retryable" => false, "resumed" => false, "replay_abandoned" => true)))
+        end
+        # The task is already terminal, so saving its payload cannot run these
+        # status-change callbacks. Release loop completion and refresh the card once.
+        task.fire_completion_callbacks_after_external_claim
+        comment.broadcast_replace_later_to([ comment.creative, :comments ], partial: "collavre/comments/comment") unless comment.private?
+      end
+
       private
 
       def original_comment

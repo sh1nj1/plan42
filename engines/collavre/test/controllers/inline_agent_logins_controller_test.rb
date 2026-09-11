@@ -465,7 +465,70 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       assert_no_difference "Collavre::Task.count" do
         assert_empty execute_replay_payloads
       end
+      login_data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal false, login_data["resumed"]
+      unless change == :unclaimed
+        assert_equal false, login_data["retryable"]
+        assert_equal true, login_data["replay_abandoned"]
+      end
     end
+  end
+
+  test "abandoned replay releases loop completion and refreshes the card only once" do
+    parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+    @creative.update_columns(parent_id: parent.id)
+    @creative.reload.update!(data: { "trigger" => { "loop" => {
+      "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+      "trigger_topic_id" => @original.topic_id, "stuck_conditions" => [ "Login required" ]
+    } } })
+    queue_delayed_replay
+    @original.destroy!
+    clear_enqueued_jobs
+
+    2.times do |attempt|
+      expected = attempt.zero? ? 1 : 0
+      assert_enqueued_jobs expected, only: Collavre::TriggerLoopCheckJob do
+        assert_enqueued_jobs expected, only: Turbo::Streams::ActionBroadcastJob do
+          assert_no_difference "Collavre::Task.count" do
+            Collavre::InlineAgentReplayJob.perform_now(@reply.id, @requester.id)
+          end
+        end
+      end
+    end
+    Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+      perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+    end
+    assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+    assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+  end
+
+  test "abandoned replay shows a truthful card after authorization is restored" do
+    queue_delayed_replay
+    set_data("authorized" => false)
+    assert_empty execute_replay_payloads
+    set_data("authorized" => true)
+
+    get inline_agent_login_path(comment_id: @reply.id)
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+    assert_not_includes response.body, I18n.t("collavre.inline_agent_login.resumed")
+    assert_select "[data-agent-connection-resume-url-value]", count: 0
+    assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+    end
+    assert_response :conflict
+    assert_equal "cannot_retry", response.parsed_body.dig("error", "code")
+  end
+
+  test "abandoning a reply made private does not broadcast it to the creative" do
+    queue_delayed_replay
+    @reply.update!(private: true)
+    set_data("authorized" => false)
+    assert_no_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob) do
+      assert_empty execute_replay_payloads
+    end
+    assert_equal false, @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+    assert_equal false, @task.trigger_event_payload.dig("engine_login", "retryable")
   end
 
   test "delayed replay rebuilds edited source text before the agent executes" do

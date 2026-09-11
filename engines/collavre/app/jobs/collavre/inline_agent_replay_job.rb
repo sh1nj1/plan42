@@ -24,6 +24,7 @@ module Collavre
       login.replay_payload
     rescue CliProxy::Client::Error => error
       Rails.logger.info("[InlineAgentReplayJob] Skipping reply=#{login.comment.id} code=#{error.code}")
+      login.abandon_replay!
       nil
     end
   end

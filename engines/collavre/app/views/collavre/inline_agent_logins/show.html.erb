@@ -1,5 +1,7 @@
 <%= turbo_frame_tag "inline_agent_login_#{@comment.id}" do %>
-  <% if @login.data["resumed"] %>
+  <% if @login.data["replay_abandoned"] %>
+    <p class="text-muted"><%= t("collavre.inline_agent_login.replay_abandoned") %></p>
+  <% elsif @login.data["resumed"] %>
     <p class="text-muted"><%= t("collavre.inline_agent_login.resumed") %></p>
   <% elsif @login.manageable? %>
     <div class="comment-action-block" data-controller="agent-connection"
