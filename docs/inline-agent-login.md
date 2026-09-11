@@ -16,11 +16,13 @@ owner or a system administrator. Other participants receive an explanation.
 The existing connection screen and inline card share the auth controller.
 Device codes are displayed and polled; pasted OAuth codes and API keys are
 sent directly in `auth_secret` to a CSRF-protected endpoint. They never become
-chat messages. Only the session ID, initiating user and authorization result
-are stored with the task. Responses are private and not cached. Chat refreshes
+chat messages. Only the attempt/session IDs, initiating user and authorization
+result are stored with the task. Responses are private and not cached. Chat refreshes
 preserve the live login form, and a rebuilt card can recover its pending
 session from the proxy. Custom provider base URLs remain on the full connection
-screen.
+screen. Session starts claim an attempt ID before contacting the proxy; only
+the latest initiated attempt can store its response. Starting another attempt
+also invalidates the previous session and its authorization.
 
 After the server observes successful authorization, a locked replay claim
 queues the original request once through the scheduler. Permissions and topic
@@ -42,9 +44,9 @@ Admitted replays, including queued waiters, retain their original login task ID.
 If they are cancelled, fail, or escalate without completing, their terminal
 callback abandons that login claim as well. Successful replies and turns waiting
 for tool approval retain the normal completion path.
-Withdrawing a source (deletion, privacy change, or conversion to an approval
-surface) also cancels approval-paused replays, releases their held resources,
-and drains the topic queue. Their remaining approval cards cannot execute tools
+Withdrawing a source (deletion, privacy change, creative/topic move, or
+conversion to an approval surface) also cancels approval-paused replays, releases
+their held resources, and drains the topic queue. Their remaining approval cards cannot execute tools
 or enqueue a continuation after cancellation.
 After restoring access or authentication, the requester must send a new message.
 

@@ -172,6 +172,84 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @reply.reload.content, "private-login-secret"
   end
 
+  %w[pending authorized].each do |old_status|
+    test "late #{old_status} session start cannot replace a newer initiated session" do
+      second = open_session
+      second.post session_path, params: { email: @requester.email, password: "password" }
+      second.assert_response :redirect
+      starts = 0
+      proxy = Object.new
+      handler = ->(*) do
+        starts += 1
+        if starts == 1
+          second.post inline_agent_login_sessions_path(comment_id: @reply.id), params: { flow: "device-code" }, as: :json
+          second.assert_response :created
+          { "sessionId" => "older-session", "status" => old_status }
+        else
+          { "sessionId" => "newer-session", "status" => "pending" }
+        end
+      end
+      proxy.define_singleton_method(:create_auth_session) { |*args| handler.call(*args) }
+      proxy.define_singleton_method(:auth_session) do |_engine, id|
+        raise "Wrong session polled" unless id == "newer-session"
+        { "sessionId" => id, "status" => "authorized" }
+      end
+      Collavre::CliProxy::Client.stub(:new, proxy) do
+        post inline_agent_login_sessions_path(comment_id: @reply.id), params: { flow: "api-key" }, as: :json
+        assert_response :conflict
+        assert_equal "session_superseded", response.parsed_body.dig("error", "code")
+        state = @task.reload.trigger_event_payload.fetch("engine_login")
+        assert_equal "newer-session", state["session_id"]
+        assert_equal false, state["authorized"]
+        get inline_agent_login_session_path(comment_id: @reply.id, session_id: "newer-session"), as: :json
+        assert_response :success
+        assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "authorized")
+      end
+    end
+  end
+
+  [ :poll, :submit, :cancel, :status ].each do |operation|
+    test "new session start invalidates an in-flight #{operation} response" do
+      set_data("session_id" => "authorized-session", "session_user_id" => @requester.id)
+      proxy = Object.new
+      proxy.define_singleton_method(:engines) { { "data" => [] } }
+      handler = ->(*) do
+        login = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester)
+        login.begin_session!
+        { "sessionId" => "authorized-session", "status" => "authorized" }
+      end
+      method = { poll: :auth_session, submit: :submit_auth_session, cancel: :cancel_auth_session, status: :auth_session }.fetch(operation)
+      proxy.define_singleton_method(method) { |*args| handler.call(*args) }
+      Collavre::CliProxy::Client.stub(:new, proxy) { request_login_session(operation) }
+      assert_response(operation == :status ? :success : :conflict)
+      state = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_nil state["session_id"]
+      assert_equal false, state["authorized"]
+      assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
+        post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+      end
+      assert_response :conflict
+      assert_equal "not_authorized", response.parsed_body.dig("error", "code")
+    end
+  end
+
+  test "failed session start keeps old authorization revoked and permits a fresh attempt" do
+    set_data("session_id" => "authorized-session", "session_user_id" => @requester.id, "authorized" => true)
+    proxy = Object.new
+    proxy.define_singleton_method(:create_auth_session) do |*|
+      raise Collavre::CliProxy::Client::Error.new("Unavailable", status: 502, code: "proxy_unreachable")
+    end
+    Collavre::CliProxy::Client.stub(:new, proxy) { request_login_session(:create) }
+    assert_response :bad_gateway
+    state = @task.reload.trigger_event_payload.fetch("engine_login")
+    assert_nil state["session_id"]
+    assert_equal false, state["authorized"]
+    proxy.define_singleton_method(:create_auth_session) { |*| { "sessionId" => "fresh-session", "status" => "pending" } }
+    Collavre::CliProxy::Client.stub(:new, proxy) { request_login_session(:create) }
+    assert_response :created
+    assert_equal "fresh-session", @task.reload.trigger_event_payload.dig("engine_login", "session_id")
+  end
+
   test "polling device login records authorization and cancellation revokes it" do
     set_data("session_id" => "device-session", "session_user_id" => @requester.id)
     fake = Minitest::Mock.new
@@ -237,7 +315,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       state = @task.reload.trigger_event_payload.fetch("engine_login")
       assert_equal true, state["resumed"]
       assert_equal true, state["authorized"]
-      assert_equal "authorized-session", state["session_id"]
+      operation == :create ? assert_nil(state["session_id"]) : assert_equal("authorized-session", state["session_id"])
     end
   end
 
@@ -491,6 +569,9 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   test "deleted or moved source messages cannot be replayed" do
     @original.update!(topic_id: @creative.topics.create!(name: "Moved", user: @requester).id)
     get inline_agent_login_path(comment_id: @reply.id)
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.inline_agent_login.replay_abandoned")
+    post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     assert_response :not_found
     @original.destroy!
     post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
@@ -861,23 +942,25 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "source revocation after replay admission cancels dispatch and settles the original login" do
-    queue_delayed_replay
-    client = Object.new
-    client.define_singleton_method(:chat) { |*| raise "withdrawn source reached the provider" }
-    client.define_singleton_method(:handed_off?) { false }
-    Collavre::AiClient.stub(:new, ->(*) { @original.update!(private: true); client }) do
-      perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+  [ :private, :topic, :creative ].each do |change|
+    test "#{change} source revocation after replay admission cancels dispatch and settles the original login" do
+      queue_delayed_replay
+      client = Object.new
+      client.define_singleton_method(:chat) { |*| raise "withdrawn source reached the provider" }
+      client.define_singleton_method(:handed_off?) { false }
+      Collavre::AiClient.stub(:new, ->(*) { revoke_replay_source(change); client }) do
+        perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+      end
+      replay = Collavre::Task.where(agent: @agent).where.not(id: @task.id).order(:id).last
+      assert replay.cancelled?
+      data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal false, data["resumed"]
+      assert_equal false, data["retryable"]
+      assert_equal true, data["replay_abandoned"]
     end
-    replay = Collavre::Task.where(agent: @agent).where.not(id: @task.id).order(:id).last
-    assert replay.cancelled?
-    data = @task.reload.trigger_event_payload.fetch("engine_login")
-    assert_equal false, data["resumed"]
-    assert_equal false, data["retryable"]
-    assert_equal true, data["replay_abandoned"]
   end
 
-  [ :private, :action, :destroy ].each do |withdrawal|
+  [ :private, :action, :destroy, :topic, :creative ].each do |withdrawal|
     test "#{withdrawal} source withdrawal cancels an approval paused replay and settles its login" do
       queue_delayed_replay
       replay = nil
@@ -890,11 +973,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
       assert_equal 1, tracker.active_jobs
 
-      if withdrawal == :destroy
-        @original.destroy!
-      else
-        @original.update!(withdrawal => (withdrawal == :private ? true : '{"tool":"approval"}'))
-      end
+      revoke_replay_source(withdrawal)
 
       assert replay.reload.cancelled?
       assert_equal 0, tracker.active_jobs
@@ -975,6 +1054,19 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  def revoke_replay_source(change)
+    case change
+    when :destroy then @original.destroy!
+    when :private then @original.update!(private: true)
+    when :action then @original.update!(action: '{"tool":"approval"}')
+    when :topic, :creative
+      destination = change == :creative ? Collavre::Creative.create!(user: @requester, description: "Private destination") : @creative
+      topic = destination.topics.create!(name: "Destination", user: @requester)
+      options = change == :creative ? { target_creative_id: destination.id } : { target_topic_id: topic.id }
+      Collavre::CommentMoveService.new(creative: @creative, user: @requester).call(comment_ids: [ @original.id ], **options)
+    end
+  end
 
   def request_login_session(operation)
     path = inline_agent_login_session_path(comment_id: @reply.id, session_id: "authorized-session")

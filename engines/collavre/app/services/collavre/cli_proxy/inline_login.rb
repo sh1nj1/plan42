@@ -79,9 +79,21 @@ module Collavre
         fail_with!("already_resumed") if data["resumed"]
       end
 
-      def remember_session!(response)
-        update_data! { |value| value.merge("session_id" => response.fetch("sessionId"), "session_user_id" => @user.id,
-                                         "authorized" => response["status"] == "authorized") }
+      def begin_session!
+        attempt = SecureRandom.uuid
+        # Claim before proxy I/O. Invalidate the previous session so its in-flight
+        # polls/submissions cannot authorize or resume this new attempt.
+        update_data! { |value| value.merge("session_attempt" => attempt, "session_id" => nil,
+                                         "session_user_id" => @user.id, "authorized" => false) }
+        attempt
+      end
+
+      def remember_session!(response, attempt:)
+        update_data! do |value|
+          fail_with!("session_superseded") unless value["session_attempt"] == attempt
+          value.merge("session_id" => response.fetch("sessionId"), "session_user_id" => @user.id,
+                      "authorized" => response["status"] == "authorized")
+        end
       end
 
       def check_session!(id)

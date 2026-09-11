@@ -15,7 +15,8 @@ module Collavre
       private
 
       def dispatch_revoked?
-        (saved_change_to_private? && private?) || (saved_change_to_action? && approval_action?)
+        saved_change_to_creative_id? || saved_change_to_topic_id? ||
+          (saved_change_to_private? && private?) || (saved_change_to_action? && approval_action?)
       end
 
       def revoke_source_dispatch

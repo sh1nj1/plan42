@@ -23,9 +23,10 @@ module Collavre
     end
 
     def create_session
+      attempt = @login.begin_session!
       response = @login.client.create_auth_session(@login.engine, flow: params[:flow].presence,
         provisioning_url: "#{request.base_url}#{agent_provision_manifest_path(agent_id: @login.agent.id, token: @login.workspace.manifest_token)}")
-      @login.remember_session!(response)
+      @login.remember_session!(response, attempt: attempt)
       render json: response, status: :created
     end
 
