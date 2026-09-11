@@ -43,14 +43,25 @@ module Collavre
     end
 
     test "sweep normalizes vendor whitespace and case" do
-      @agent.update_column(:llm_vendor, " JOB-VENDOR ")
-      probed = []
+      [ " ", "\t", "\n", "\r", "\f", "\v" ].each do |whitespace|
+        @agent.update_column(:llm_vendor, "#{whitespace}JOB-VENDOR#{whitespace}")
+        probed = []
 
-      EndpointHealthProbeJob.stub(:perform_later, ->(id) { probed << id }) do
-        EndpointHealthSweepJob.perform_now
+        EndpointHealthProbeJob.stub(:perform_later, ->(id) { probed << id }) do
+          EndpointHealthSweepJob.perform_now
+        end
+
+        assert_includes probed, @agent.id, "Missing vendor padded with #{whitespace.inspect}"
       end
+    end
 
-      assert_includes probed, @agent.id
+    test "vendor filtering preserves its relation and ignores internal whitespace" do
+      human = users(:one)
+      human.update_columns(llm_vendor: "job-vendor", llm_model: nil)
+      @agent.update_column(:llm_vendor, "job-\tvendor")
+
+      assert_empty User.where(id: @agent.id).with_llm_vendors([ "job-vendor" ]).pluck(:id)
+      assert_includes User.with_llm_vendors([ "job-vendor" ]).pluck(:id), human.id
     end
 
     test "probe job executes the registered checker" do

@@ -39,6 +39,19 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
       "PostgreSQL cannot apply DISTINCT to the gateway health_engines json column")
   end
 
+  test "gateway targets recognize every persisted Ruby whitespace variant" do
+    agent = assign_gateway
+
+    [ " ", "\t", "\n", "\r", "\f", "\v" ].each do |whitespace|
+      agent.update_column(:llm_vendor, "#{whitespace}CLI_PROXY#{whitespace}")
+
+      assert_includes Collavre::AgentGateway.health_probe_targets.pluck(:id), @gateway.id
+    end
+
+    agent.update_column(:llm_vendor, "cli_\tproxy")
+    assert_not_includes Collavre::AgentGateway.health_probe_targets.pluck(:id), @gateway.id
+  end
+
   test "the probe records a verdict for the gateway it names" do
     assign_gateway
     body = { "status" => "ok", "engines" => { "ready" => 1, "total" => 1 } }

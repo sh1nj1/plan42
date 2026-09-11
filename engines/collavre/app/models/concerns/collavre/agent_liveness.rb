@@ -14,6 +14,13 @@ module Collavre
     ENDPOINT_HEALTH_CONFIGURATION_ATTRIBUTES = %w[llm_vendor llm_api_key gateway_url].freeze
 
     included do
+      # SQL TRIM/LOWER differ from Ruby for control whitespace and Unicode.
+      # Normalize distinct stored spellings, then filter rows by their exact values.
+      scope :with_llm_vendors, ->(vendors) do
+        spellings = distinct.pluck(:llm_vendor).select { |value| vendors.include?(value.to_s.strip.downcase) }
+        where(llm_vendor: spellings)
+      end
+
       enum :endpoint_health_status,
            { unknown: 0, online: 1, offline: 2, check_error: 3 },
            prefix: :endpoint_health,
