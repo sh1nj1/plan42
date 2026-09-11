@@ -18,6 +18,23 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  test "selection mode selects image rows and restores the viewer when cancelled" do
+    visit collavre.creatives_path
+    assert_selector "#creative-#{@creative.id} img[alt='First']"
+    find('[aria-controls="creative-overflow-menu"]').click
+    find("#select-creative-btn").click
+
+    find("#creative-#{@creative.id} img[alt='First']").click
+    assert_selector "#creative-#{@creative.id} .select-creative-checkbox:checked"
+    assert_no_selector ".image-lightbox-dialog"
+
+    find('[aria-controls="creative-overflow-menu"]').click
+    find("#select-creative-btn").click
+    assert_no_selector "#creative-#{@creative.id} .select-creative-checkbox:checked", visible: :all
+    find("#creative-#{@creative.id} img[alt='First']").click
+    assert_selector ".image-lightbox-dialog[open] .image-lightbox-counter", text: "1 / 2"
+  end
+
   test "list and title images open the chat viewer without navigation" do
     visit collavre.creatives_path
     find("#creative-#{@creative.id} img[alt='Second']").click

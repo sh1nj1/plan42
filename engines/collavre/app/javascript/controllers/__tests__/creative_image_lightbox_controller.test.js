@@ -2,6 +2,7 @@ import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import CreativeImageLightboxController from '../creative_image_lightbox_controller'
 import ImageLightboxController from '../image_lightbox_controller'
+import SelectModeController from '../creatives/select_mode_controller'
 
 let application
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -77,10 +78,46 @@ test.each(['#text', '#empty', '#missing', '#editor', '#form', '#avatar'])('ignor
   expect(dialog()).toBeNull()
 })
 
-test('leaves select mode to the row selection handler', () => {
+test('leaves explicit row select mode to the row selection handler', () => {
   document.querySelector('#row').selectMode = true
   click('#first')
   expect(dialog()).toBeNull()
+})
+
+test('toolbar selection selects the image row without opening the viewer, then restores viewing', async () => {
+  const main = document.querySelector('main')
+  main.dataset.controller += ' creatives--select-mode'
+  main.insertAdjacentHTML('afterbegin', `
+    <button id="select" data-action="creatives--select-mode#toggle">Select</button>`)
+  const content = document.querySelector('#row .creative-content')
+  content.classList.add('creative-row')
+  content.setAttribute('data-creatives--select-mode-target', 'row')
+  content.insertAdjacentHTML('afterbegin', `
+    <input type="checkbox" class="select-creative-checkbox" data-creatives--select-mode-target="checkbox">`)
+  application.register('creatives--select-mode', SelectModeController)
+  await settle()
+
+  click('#select')
+  expect(document.querySelector('#row').selectMode).toBeUndefined()
+  document.querySelector('#first').dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }))
+  click('#first')
+  expect(content.querySelector('input').checked).toBe(true)
+  expect(content.classList.contains('selected')).toBe(true)
+  expect(dialog()).toBeNull()
+  click('#title')
+  expect(dialog()).toBeNull()
+
+  click('#select')
+  expect(content.querySelector('input').checked).toBe(false)
+  click('#first')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/first.png')
+})
+
+test('opens images when the selection controller has not connected', () => {
+  document.querySelector('main').dataset.controller += ' creatives--select-mode'
+  click('#first')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/first.png')
 })
 
 test('uses fresh images after a streamed update and closes on disconnect', async () => {
