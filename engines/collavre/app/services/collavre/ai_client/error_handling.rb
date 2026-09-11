@@ -4,13 +4,12 @@ module Collavre
       private
 
       def report_chat_error(e, response_content)
-        raise_cli_proxy_login_error(e)
-
         error_message = "[#{e.class.name}] #{e.message}"
         # When log_interactions is false, an LLM error message can echo request text.
         # Log only the error class so sensitive content never leaks. error_message
         # stays intact for the gated ensure log and streamed yield to the caller.
         Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
+        raise_cli_proxy_login_error(e)
         log_error_response(e) if @log_interactions
         Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
         Rails.logger.debug e.backtrace.join("\n")

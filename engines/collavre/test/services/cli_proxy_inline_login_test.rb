@@ -37,6 +37,30 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
     assert_equal "codex", classified.engine
   end
 
+  test "AiClient logs the error class before raising a login requirement without exposing provider content" do
+    secret = "sensitive-provider-message"
+    response = Struct.new(:status, :body).new(401, @body)
+    conversation = Object.new
+    conversation.define_singleton_method(:complete) { raise RubyLLM::UnauthorizedError.new(response, secret) }
+    client = Collavre::AiClient.new(vendor: "cli_proxy", model: "paperclip/codex_local", system_prompt: "", log_interactions: false)
+    client.instance_variable_set(:@cli_proxy_identity, { workspace: @workspace })
+    messages = []
+    logger = Object.new
+    logger.define_singleton_method(:error) { |message| messages << message }
+
+    Rails.stub(:logger, logger) do
+      client.stub(:build_conversation, conversation) do
+        client.stub(:add_messages, nil) do
+          error = assert_raises(Collavre::CliProxy::EngineUnauthenticatedError) { client.chat([]) }
+          assert_equal "codex", error.engine
+          assert_equal @workspace, error.workspace
+          assert_equal [ "AI Client error: [RubyLLM::UnauthorizedError]" ], messages
+          assert_not_includes messages.join, secret
+        end
+      end
+    end
+  end
+
   test "AiClient raises login requirement only for a configured CLI proxy and keeps handoff evidence" do
     response = Struct.new(:status, :body).new(401, @body)
     conversation = Object.new
