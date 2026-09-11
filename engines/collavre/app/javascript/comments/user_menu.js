@@ -88,12 +88,16 @@ function menuHeader(user, state, labels) {
   return header
 }
 
-export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
-  const state = {
+function menuState(online, healthStatus, statusText, labels) {
+  return {
     online,
     kind: healthStatus || (online ? 'online' : 'offline'),
     label: statusText || (online ? labels.online : labels.offline),
   }
+}
+
+export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
+  const state = menuState(online, healthStatus, statusText, labels)
   const root = document.createElement('div')
   root.className = 'popup-menu-wrapper comment-user-menu'
   root.dataset.controller = 'popup-menu comment-user-menu'
