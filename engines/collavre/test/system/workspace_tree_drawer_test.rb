@@ -127,22 +127,22 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
   end
 
   [ 375, MOBILE_WIDTH, 767 ].each do |width|
-    test "scrolled row controls stay clear of the mobile drawer handle at #{width}px" do
+    test "row controls can scroll above the floating mobile drawer handle at #{width}px" do
       branches = Array.new(35) do |index|
         branch = Creative.create!(description: "Scroll branch #{index}", user: @user)
         Creative.create!(description: "Scroll leaf #{index}", user: @user, parent: branch)
         branch
       end
       visit_workspace(width)
-      row_selector = "#creative-#{branches[20].id}"
+      row_selector = "#creative-#{branches.last.id}"
       control = find("#{row_selector} .creative-toggle-btn")
 
-      # Align a real row control with the fixed handle after document scrolling.
-      # Initial-position checks with a short list cannot exercise this overlap.
+      # The floating handle must not reserve a full-height gutter. Even a row
+      # near the end of a long list must scroll above it to remain operable.
       page.execute_script(<<~JS, control)
         const rect = arguments[0].getBoundingClientRect();
         const handle = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
-        window.scrollBy(0, rect.top + rect.height / 2 - handle.top - handle.height / 2);
+        window.scrollBy(0, rect.bottom - handle.top + 16);
       JS
       assert_operator page.evaluate_script("window.scrollY"), :>, 0
       assert_selector "#{row_selector} .creative-toggle-btn" do |button|
@@ -151,18 +151,36 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
             const rect = arguments[0].getBoundingClientRect();
             const handle = document.querySelector('.creative-workspace-tree-toggle').getBoundingClientRect();
             const centerY = rect.top + rect.height / 2;
-            return centerY > handle.top && centerY < handle.bottom && rect.left >= handle.right &&
+            return rect.top >= 0 && rect.bottom < handle.top &&
               arguments[0].contains(document.elementFromPoint(rect.left + rect.width / 2, centerY));
           })();
         JS
       end
 
       control.click
-      assert_selector "creative-tree-row[dom-id='creative-#{branches[20].id}'][expanded]"
+      assert_selector "creative-tree-row[dom-id='creative-#{branches.last.id}'][expanded]"
       assert_no_selector ".creative-workspace-tree-region.is-open"
       assert_toggle_within_viewport
       find(".creative-workspace-tree-toggle").click
       assert_selector ".creative-workspace-tree-region.is-open"
+    end
+  end
+
+  [ 375, MOBILE_WIDTH, 767 ].each do |width|
+    test "mobile content uses the full width without a drawer gutter at #{width}px" do
+      visit_workspace(width)
+
+      bounds = page.evaluate_script(<<~JS)
+        (() => {
+          const main = document.querySelector('.creative-workspace-shell > main').getBoundingClientRect();
+          return { left: main.left, right: main.right, viewport: window.innerWidth,
+            pageWidth: document.documentElement.scrollWidth };
+        })();
+      JS
+
+      assert_in_delta 0, bounds.fetch("left"), 1
+      assert_in_delta bounds.fetch("viewport"), bounds.fetch("right"), 1
+      assert_operator bounds.fetch("pageWidth"), :<=, bounds.fetch("viewport")
     end
   end
 
