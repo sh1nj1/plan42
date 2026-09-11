@@ -138,7 +138,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :success
-    assert_equal [ expected ], execute_replay_payloads
+    assert_equal [ expected.merge("inline_login_task_id" => @task.id) ], execute_replay_payloads
   end
 
   test "inaccessible, deleted, moved, private and stale requests fail closed" do
@@ -276,7 +276,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :success
-    assert_equal [ expected ], execute_replay_payloads
+    assert_equal [ expected.merge("inline_login_task_id" => @task.id) ], execute_replay_payloads
     assert_not_includes expected.to_json, "Removed secret"
     assert_equal @agent.id, expected.dig("chat", "mentioned_user", "id")
     assert_not expected["comment"].key?("quoted_comment_id")
@@ -875,6 +875,65 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, data["resumed"]
     assert_equal false, data["retryable"]
     assert_equal true, data["replay_abandoned"]
+  end
+
+  test "stopping a deferred replay settles its original claim even with both comments intact" do
+    queue_delayed_replay
+    Collavre::Orchestration::TopicSlot.stub(:available_for?, false) do
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, nil) do
+        assert_empty execute_replay_payloads
+      end
+    end
+    replay = Collavre::Task.where(agent: @agent, status: "queued").sole
+    assert_equal @task.id, replay.trigger_event_payload["inline_login_task_id"]
+    assert_equal "queued", replay.cancel_if_active!
+    assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+    assert Collavre::Comment.exists?(@original.id)
+    assert Collavre::Comment.exists?(@reply.id)
+  end
+
+  test "successful replay does not abandon its original login" do
+    queue_delayed_replay
+    assert_equal 1, execute_replay_payloads.size
+    assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "resumed")
+    assert_not @task.trigger_event_payload.dig("engine_login", "replay_abandoned")
+  end
+
+  %w[running queued pending pending_approval].product(%w[cancelled failed escalated]).each do |initial, ending|
+    test "#{initial} replay ending #{ending} settles its login claim and loop once" do
+      parent = Collavre::Creative.create!(user: @requester, description: "Trigger parent", data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update_columns(parent_id: parent.id)
+      @creative.reload.update!(data: { "trigger" => { "loop" => {
+        "state" => "running", "current_iteration" => 1, "cooldown_seconds" => 0,
+        "trigger_topic_id" => @original.topic_id
+      } } })
+      queue_delayed_replay
+      replay = nil
+      service = Object.new
+      service.define_singleton_method(:call) { raise Collavre::ApprovalPendingError }
+      Collavre::AiAgentService.stub(:new, ->(task) { replay = task; service }) do
+        perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+      end
+      assert_equal @task.id, replay.reload.trigger_event_payload["inline_login_task_id"]
+      replay.update_columns(status: initial)
+      clear_enqueued_jobs
+      assert_enqueued_with(job: Collavre::TriggerLoopCheckJob, args: [ @task.id ]) do
+        replay.update!(status: ending)
+      end
+      assert_equal 1, enqueued_jobs.count { |job| job[:job] == Collavre::TriggerLoopCheckJob }
+      data = @task.reload.trigger_event_payload.fetch("engine_login")
+      assert_equal false, data["resumed"]
+      assert_equal false, data["retryable"]
+      assert_equal true, data["replay_abandoned"]
+      assert_no_enqueued_jobs(only: Collavre::TriggerLoopCheckJob) do
+        replay.fire_completion_callbacks_after_external_claim
+      end
+      Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) do
+        perform_enqueued_jobs(only: Collavre::TriggerLoopCheckJob)
+      end
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @creative.data.dig("trigger", "loop", "current_iteration")
+    end
   end
 
   test "status preserves an explicitly empty list after filtering every custom flow" do

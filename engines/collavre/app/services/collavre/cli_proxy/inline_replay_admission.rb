@@ -11,7 +11,11 @@ module Collavre
 
         # An earlier validation in this job may have populated the query cache.
         # Another connection's edits do not invalidate that cache.
-        Task.uncached { with_locked_login(identity) { |login| yield login.replay_payload } }
+        Task.uncached do
+          with_locked_login(identity) do |login|
+            yield login.replay_payload.merge("inline_login_task_id" => login.task.id)
+          end
+        end
       end
 
       # Early dispatch guards must release the login claim via the replay job.

@@ -174,7 +174,7 @@ module Collavre
       def retry_payload(source)
         # Rebuild content and mentions after login, before assignment checks.
         Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, source)
-            .except("engine_login", *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
+            .except("engine_login", "inline_login_task_id", *Orchestration::DeliveryRecord::TURN_SCOPED_KEYS)
             .merge("workspace_user_id" => workspace.user_id || task.trigger_event_payload["workspace_user_id"])
       end
 

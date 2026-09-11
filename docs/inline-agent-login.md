@@ -38,6 +38,10 @@ retry for that turn, refreshes the card with a failure notice, and explicitly
 runs the terminal task's completion callbacks. An abandoned replay puts its
 trigger loop in `awaiting_user` and posts a notice even when no reply card
 remains, without evaluating the login notice as an agent result.
+Admitted replays, including queued waiters, retain their original login task ID.
+If they are cancelled, fail, or escalate without completing, their terminal
+callback abandons that login claim as well. Successful replies and turns waiting
+for tool approval retain the normal completion path.
 After restoring access or authentication, the requester must send a new message.
 
 Verification covers HTTP/SSE classification with RubyLLM's real parser,

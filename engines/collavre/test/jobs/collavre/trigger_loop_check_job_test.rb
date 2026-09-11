@@ -88,6 +88,44 @@ module Collavre
       end
     end
 
+    %w[cancelled failed escalated].each do |ending|
+      test "external #{ending} replay settles its original login exactly once" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+        replay = @task.dup
+        replay.assign_attributes(status: "running", trigger_event_payload: { "inline_login_task_id" => @task.id })
+        replay.save!
+        replay.update_columns(status: ending)
+        checks = []
+        TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) do
+          2.times { replay.fire_completion_callbacks_after_external_claim }
+        end
+        assert_equal [ @task.id ], checks
+        assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { [] }) { TriggerLoopCheckJob.perform_now(checks.first) }
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
+    [ :missing, :agent, :creative, :topic, :self ].each do |mismatch|
+      test "replay settlement ignores an invalid original linkage: #{mismatch}" do
+        @task.reload.update!(trigger_event_payload: { "engine_login" => { "retryable" => true, "resumed" => true } })
+        replay = @task.dup
+        replay.assign_attributes(status: "running", trigger_event_payload: { "inline_login_task_id" => @task.id })
+        replay.save!
+        case mismatch
+        when :missing then replay.update_columns(trigger_event_payload: { "inline_login_task_id" => -1 })
+        when :self then replay.update_columns(trigger_event_payload: { "inline_login_task_id" => replay.id })
+        when :agent then replay.update_columns(agent_id: @human.id)
+        when :creative then replay.update_columns(creative_id: @parent.id)
+        when :topic then replay.update_columns(topic_id: nil)
+        end
+        replay.cancelled!
+        assert_equal true, @task.reload.trigger_event_payload.dig("engine_login", "retryable")
+        assert_equal true, @task.trigger_event_payload.dig("engine_login", "resumed")
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
     test "abandonment waits for all newer active turns to end without a result" do
       @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })
       turns = 2.times.map do |offset|

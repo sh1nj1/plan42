@@ -734,7 +734,9 @@ module Collavre
       # re-send comments it was created for, and its acquired anchor would
       # label this turn's own trigger as borrowed.
       def self.restored_context(payload, comment)
-        TaskCoalescer.reanchor_payload(payload, comment).except(*TURN_SCOPED_KEYS)
+        # Restoring a different dropped dispatch does not inherit the covering
+        # turn's authentication replay claim.
+        TaskCoalescer.reanchor_payload(payload, comment).except("inline_login_task_id", *TURN_SCOPED_KEYS)
       end
       private_class_method :restored_context
 
