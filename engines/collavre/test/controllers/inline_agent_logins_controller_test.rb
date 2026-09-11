@@ -143,7 +143,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
 
   [ :shared, :per_user ].each do |mode|
     [ :absent, :explicit, :nil ].each do |principal|
-      test "#{mode} replay preserves #{principal} requester through provider dispatch" do
+      test "#{mode} replay preserves #{principal} requester only for its authenticated workspace" do
         @gateway.update!(workspace_mode: mode)
         @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @requester)
         @creative.update!(user: @owner) if mode == :shared
@@ -171,9 +171,15 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
           perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
         end
 
-        assert_equal [ [ expected, expected ] ], principals
-        assert @creative.comments.exists?(content: "Replay response")
-        assert @task.reload.trigger_event_payload.dig("engine_login", "replay_completed")
+        if mode == :per_user && principal != :absent
+          assert_empty principals, "A different or missing principal cannot use the requester's login"
+          assert_not @creative.comments.exists?(content: "Replay response")
+          assert @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+        else
+          assert_equal [ [ expected, expected ] ], principals
+          assert @creative.comments.exists?(content: "Replay response")
+          assert @task.reload.trigger_event_payload.dig("engine_login", "replay_completed")
+        end
       end
     end
   end
@@ -1343,7 +1349,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  %i[promotion resumed approval delayed].product(%i[retained edited revoked anchor_edited anchor_retained]).each do |gate, change|
+  %i[promotion resumed approval delayed].product(%i[retained edited revoked anchor_edited anchor_retained gateway base_url tenant mode inactive]).each do |gate, change|
     test "#{gate} rechecks #{change} replay routing before execution" do
       rejected = !%i[retained anchor_retained].include?(change)
       mention = prepare_merged_replay
@@ -1377,6 +1383,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
         # Losing permission does not itself cancel the admitted task.
         assert_equal status.fetch(gate).to_s, replay.reload.status if replay
       end
+      change_replay_gateway(change) if %i[gateway base_url tenant mode inactive].include?(change)
       clear_enqueued_jobs
       calls = []
       service = Object.new
@@ -1582,7 +1589,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  %i[feedback read no_access removed].each do |permission|
+  %i[feedback read no_access removed gateway base_url tenant mode inactive].each do |permission|
     test "replay rechecks #{permission} permission after prompt preparation before handoff" do
       perform_enqueued_jobs(only: Collavre::PermissionCacheJob)
       ancestor = @task
@@ -1605,11 +1612,15 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
         replay = Collavre::Task.where(agent: @agent, status: :running).sole
         assert replay.task_actions.exists?(action_type: "prompt_generated")
         assert @creative.reload.has_permission?(@agent, :feedback)
-        perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
-          share = Collavre::CreativeShare.find_by!(creative: @creative, user: @agent)
-          permission == :removed ? share.destroy! : share.update!(permission: permission)
+        if %i[gateway base_url tenant mode inactive].include?(permission)
+          change_replay_gateway(permission)
+        else
+          perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+            share = Collavre::CreativeShare.find_by!(creative: @creative, user: @agent)
+            permission == :removed ? share.destroy! : share.update!(permission: permission)
+          end
+          assert_equal permission == :feedback, @creative.reload.has_permission?(@agent, :feedback)
         end
-        assert_equal permission == :feedback, @creative.reload.has_permission?(@agent, :feedback)
         assert replay.reload.running?, "Permission revocation does not cancel the task itself"
         client
       end
@@ -1719,6 +1730,22 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+
+  def change_replay_gateway(change)
+    case change
+    when :gateway
+      replacement = Collavre::AgentGateway.create!(owner: @owner, name: "Replacement proxy",
+        base_url: "https://replacement.example.com", admin_key: "new-admin", completion_key: "new-completion",
+        identity_secret: "d" * 32, workspace_mode: :per_user)
+      # Use another instance so execution cannot rely on its cached association.
+      Collavre::User.find(@agent.id).update!(agent_gateway: replacement)
+    when :base_url then @gateway.update!(base_url: "https://replacement.example.com")
+    when :tenant then @gateway.update!(tenant_id: "replacement")
+    when :mode then @gateway.update!(workspace_mode: :shared)
+    when :inactive then @gateway.update!(active: false)
+    end
+    assert_not Collavre::AgentWorkspace.exists?(@workspace.id)
+  end
 
   def prepare_merged_replay
     @agent.update!(routing_expression: nil)

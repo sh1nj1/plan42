@@ -52,6 +52,13 @@ After prompt preparation and immediately before the provider call, replay-linked
 turns recheck the agent's current feedback permission without the worker's SQL
 query cache. Revoked access cancels the task, abandons its linked login claims,
 and releases its resources without transmitting the prepared prompt.
+Admission, waiting-task execution gates, and provider handoff also recheck every
+inherited login claim against the agent's current gateway and workspace using
+uncached reads. Missing claims/workspaces, a changed gateway, endpoint, tenant,
+workspace mode, or a different per-user principal abandon the replay. This check
+never creates a replacement workspace: authentication of the old binding does
+not authorize transmission to a new one. Shared workspaces still preserve the
+human requester independently of their shared credential identity.
 The recorded agent must still be selected; scheduler rejection leaves the claim available
 for another attempt. The retry carries the original human workspace principal
 and strips turn-scoped delivery metadata. An explicit principal (including nil)

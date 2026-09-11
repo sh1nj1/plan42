@@ -10,11 +10,14 @@ module Collavre
         Orchestration::DeliveryRecord.mark_handed_off!(@task) if @client.handed_off?
       end
 
-      # Permission-cache updates do not cancel running tasks. Recheck after
-      # prompt preparation, bypassing this worker's SQL cache before handoff.
-      def check_replay_permission!
+      # Permission and gateway updates do not cancel running tasks. Recheck
+      # both bindings after prompt preparation, without this worker's SQL cache.
+      def check_replay_authorization!
         return if CliProxy::ReplayClaims.ids(@context).empty?
-        return if Task.uncached { Orchestration::Matcher.permits_creative_access?(@context, @agent) }
+        return if Task.uncached {
+          CliProxy::ReplayWorkspace.permitted?(@context, @agent) &&
+            Orchestration::Matcher.permits_creative_access?(@context, @agent)
+        }
 
         @task.cancel_if_active!
         raise CancelledError

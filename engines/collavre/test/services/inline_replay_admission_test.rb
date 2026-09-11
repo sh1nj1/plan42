@@ -33,6 +33,7 @@ module Collavre
         skip "Row-lock contention requires PostgreSQL" unless Comment.connection.adapter_name == "PostgreSQL"
         login = Object.new
         login.define_singleton_method(:task) { @task }
+        login.define_singleton_method(:agent) { @task.agent }
         login.instance_variable_set(:@task, @task)
         validate = lambda do
           [ @merged, @anchor ].each { |source| assert source_locked?(source.id), "Validation must lock source #{source.id}" }
@@ -42,12 +43,14 @@ module Collavre
         replay_id = nil
         admit = lambda do
           CliProxy::InlineLogin.stub(:new, login) do
-            CliProxy::InlineReplayAdmission.call({}, @identity) do |payload|
-              replay = Task.create!(name: "Admitted replay", agent: users(:ai_bot), creative: @creative,
-                topic_id: @anchor.topic_id, status: :pending, trigger_event_payload: payload)
-              replay_id = replay.id
-              [ @merged, @anchor ].each { |source| assert source_locked?(source.id), "Task commit must still hold source #{source.id}" }
-              raise "Roll back admission" if rollback
+            CliProxy::ReplayWorkspace.stub(:permitted?, true) do
+              CliProxy::InlineReplayAdmission.call({}, @identity) do |payload|
+                replay = Task.create!(name: "Admitted replay", agent: users(:ai_bot), creative: @creative,
+                  topic_id: @anchor.topic_id, status: :pending, trigger_event_payload: payload)
+                replay_id = replay.id
+                [ @merged, @anchor ].each { |source| assert source_locked?(source.id), "Task commit must still hold source #{source.id}" }
+                raise "Roll back admission" if rollback
+              end
             end
           end
         end

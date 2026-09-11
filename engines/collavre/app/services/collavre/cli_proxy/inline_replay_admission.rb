@@ -13,7 +13,9 @@ module Collavre
         # Another connection's edits do not invalidate that cache.
         Task.uncached do
           with_locked_login(identity) do |login|
-            yield ReplayClaims.attach(login.replay_payload, login.task.id)
+            payload = ReplayClaims.attach(login.replay_payload, login.task.id)
+            reject! unless ReplayWorkspace.permitted?(payload, login.agent)
+            yield payload
           end
         end
       end

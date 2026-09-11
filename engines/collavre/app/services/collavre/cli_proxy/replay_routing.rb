@@ -12,6 +12,8 @@ module Collavre
       # Return the exact anchor snapshot that passed routing, for persistence
       # and delivery. A waiting task's cached text/mentions are not authoritative.
       def self.prepare(payload, agent)
+        return unless ReplayWorkspace.permitted?(payload, agent)
+
         Comment.uncached do
           source = AiAgent::MergedTriggerComments.in_turn([ payload.dig("comment", "id") ], payload).first
           next unless source
