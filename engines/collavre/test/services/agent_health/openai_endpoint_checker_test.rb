@@ -73,15 +73,17 @@ module Collavre
         assert_not client.headers.key?("Authorization")
       end
 
-      test "uses the integration key when the official endpoint is configured explicitly" do
-        @agent.update!(gateway_url: "https://api.openai.com/v1/", llm_api_key: nil)
-        client = RecordingClient.new
+      test "uses the integration key for normalized forms of the official endpoint" do
+        [ "https://API.OPENAI.COM/v1", "https://api.openai.com:443/v1/" ].each do |gateway_url|
+          @agent.update!(gateway_url: gateway_url, llm_api_key: nil)
+          client = RecordingClient.new
 
-        IntegrationSettings.stub(:fetch, "shared-key") do
-          OpenaiEndpointChecker.new(agent: @agent, client: client).call
+          IntegrationSettings.stub(:fetch, "shared-key") do
+            OpenaiEndpointChecker.new(agent: @agent, client: client).call
+          end
+
+          assert_equal "Bearer shared-key", client.headers["Authorization"], gateway_url
         end
-
-        assert_equal "Bearer shared-key", client.headers["Authorization"]
       end
 
       test "does not append models twice" do

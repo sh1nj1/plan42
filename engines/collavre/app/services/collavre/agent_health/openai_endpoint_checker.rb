@@ -61,7 +61,13 @@ module Collavre
       end
 
       def official_endpoint?
-        @agent.gateway_url.blank? || @agent.gateway_url.to_s.sub(%r{/+\z}, "") == DEFAULT_BASE_URL
+        uri = URI.parse(@agent.gateway_url.presence || DEFAULT_BASE_URL)
+        default_uri = URI.parse(DEFAULT_BASE_URL)
+        uri.userinfo.blank? && uri.query.blank? && uri.fragment.blank? &&
+          uri.scheme.to_s.downcase == default_uri.scheme && uri.host.to_s.downcase == default_uri.host &&
+          uri.port == default_uri.port && uri.path.to_s.sub(%r{/+\z}, "") == default_uri.path
+      rescue URI::InvalidURIError
+        false
       end
 
       def endpoint_policy

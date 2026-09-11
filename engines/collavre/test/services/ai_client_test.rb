@@ -266,6 +266,34 @@ class AiClientTest < ActiveSupport::TestCase
     assert mock_config.verify
   end
 
+  test "build_conversation normalizes vendor whitespace and case" do
+    client = AiClient.new(
+      vendor: " OpenAI ",
+      model: "gpt-test",
+      system_prompt: nil,
+      llm_api_key: "agent-key",
+      gateway_url: "https://gateway.example.test/v1"
+    )
+    fake_chat = FakeConversation.new
+    chat_options = nil
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) do |**options|
+      chat_options = options
+      fake_chat
+    end
+    mock_config = Minitest::Mock.new
+    mock_config.expect(:openai_api_key=, nil, [ "agent-key" ])
+    mock_config.expect(:openai_api_base=, nil, [ "https://gateway.example.test/v1" ])
+    mock_config.expect(:request_timeout=, 1800, [ 1800 ])
+
+    RubyLLM.stub(:context, ->(&block) { block.call(mock_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal :openai, chat_options[:provider]
+    assert mock_config.verify
+  end
+
   test "build_conversation sets X-Session-Id header from creative and topic" do
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: 7)

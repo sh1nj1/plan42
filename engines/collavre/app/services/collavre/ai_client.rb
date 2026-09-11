@@ -96,7 +96,7 @@ module Collavre
     # propagates out of #chat as a cancellation, not an "⚠️ AI Error" delta.
     def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {},
                    log_interactions: true, before_tool_call: nil, request_timeout_seconds: nil)
-      @vendor = vendor
+      @vendor = vendor.to_s.strip.downcase
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
