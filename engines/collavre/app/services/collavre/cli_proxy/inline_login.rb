@@ -102,6 +102,22 @@ module Collavre
         end
       end
 
+      # Queue entries carry only ids. Rebuild at execution as well as scheduling:
+      # there is no replay Task for comment cancellation to find during a delay.
+      def replay_payload
+        # Wait for resume!'s claim transaction before inspecting resumed.
+        task&.with_lock do
+          fail_with!("cannot_retry") unless manageable? && task.done? && data["retryable"] && data["resumed"]
+          fail_with!("not_authorized") unless data["authorized"] && data["session_user_id"] == @user.id
+
+          source = original_comment
+          fail_with!("cannot_retry") unless source
+          payload = retry_payload(source)
+          validate_retry_assignment!(payload)
+          payload
+        end
+      end
+
       private
 
       def original_comment
@@ -111,14 +127,18 @@ module Collavre
       end
 
       def enqueue_retry(payload)
-        fail_with!("cannot_retry") unless Orchestration::Matcher.permits_creative_access?(payload, agent) &&
-          Orchestration::Matcher.permits_assignment?(payload, agent)
+        validate_retry_assignment!(payload)
         decision = Orchestration::Scheduler.new(payload).schedule([ agent ]).first
         fail_with!("cannot_retry") if decision.nil? || decision[:timing] == :rejected
 
-        job = decision[:timing] == :delayed ? AiAgentJob.set(wait: decision[:delay]) : AiAgentJob
-        result = job.perform_later(agent.id, task.trigger_event_name, payload)
+        job = decision[:timing] == :delayed ? InlineAgentReplayJob.set(wait: decision[:delay]) : InlineAgentReplayJob
+        result = job.perform_later(comment.id, @user.id)
         fail_with!("cannot_retry") unless result && result.successfully_enqueued?
+      end
+
+      def validate_retry_assignment!(payload)
+        fail_with!("cannot_retry") unless Orchestration::Matcher.permits_creative_access?(payload, agent) &&
+          Orchestration::Matcher.permits_assignment?(payload, agent)
       end
 
       def retry_payload(source)

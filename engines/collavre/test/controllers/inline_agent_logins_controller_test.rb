@@ -134,10 +134,11 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     expected = @task.reload.trigger_event_payload.except("engine_login").merge(
       "comment" => @original.dispatch_payload[:comment].deep_stringify_keys, "chat" => { "content" => @original.content }
     )
-    assert_enqueued_with(job: Collavre::AiAgentJob, args: [ @agent.id, "comment_created", expected ]) do
+    assert_enqueued_with(job: Collavre::InlineAgentReplayJob, args: [ @reply.id, @owner.id ]) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :success
+    assert_equal [ expected ], execute_replay_payloads
   end
 
   test "inaccessible, deleted, moved, private and stale requests fail closed" do
@@ -195,12 +196,12 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "resume requires server authorization and enqueues the original request only once" do
-    assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+    assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
       post inline_agent_login_resume_path(comment_id: @reply.id), params: { authorized: true }, as: :json
     end
     assert_response :conflict
     set_data("authorized" => true, "session_user_id" => @requester.id)
-    assert_enqueued_jobs 1, only: Collavre::AiAgentJob do
+    assert_enqueued_jobs 1, only: Collavre::InlineAgentReplayJob do
       2.times { post inline_agent_login_resume_path(comment_id: @reply.id), as: :json; assert_response :success }
     end
     assert @task.reload.trigger_event_payload.dig("engine_login", "resumed")
@@ -218,10 +219,11 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       "comment" => @original.dispatch_payload[:comment].deep_stringify_keys,
       "chat" => Collavre::SystemEvents::ContextBuilder.reanchor_chat(@original.content)
     )
-    assert_enqueued_with(job: Collavre::AiAgentJob, args: [ @agent.id, "comment_created", expected ]) do
+    assert_enqueued_with(job: Collavre::InlineAgentReplayJob, args: [ @reply.id, @requester.id ]) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :success
+    assert_equal [ expected ], execute_replay_payloads
     assert_not_includes expected.to_json, "Removed secret"
     assert_equal @agent.id, expected.dig("chat", "mentioned_user", "id")
     assert_not expected["comment"].key?("quoted_comment_id")
@@ -234,7 +236,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     ))
     @original.topic.update!(primary_agent_id: users(:ai_bot).id)
     @original.update!(content: "Updated request without mention")
-    assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+    assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :conflict
@@ -248,7 +250,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       login = Collavre::CliProxy::InlineLogin.new(@reply, @requester)
       assert login.accessible?
       @original.update!(attributes)
-      assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+      assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
         error = assert_raises(Collavre::CliProxy::Client::Error) { login.resume! }
         assert_equal "cannot_retry", error.code
         post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
@@ -262,7 +264,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     set_data("authorized" => true, "session_user_id" => @requester.id, "retryable" => false)
     get inline_agent_login_path(comment_id: @reply.id)
     assert_select "[data-agent-connection-resume-url-value]", count: 0
-    assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+    assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :conflict
@@ -301,7 +303,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     fake = Minitest::Mock.new
     fake.expect(:schedule, [ { timing: :rejected } ], [ [ @agent ] ])
     Collavre::Orchestration::Scheduler.stub(:new, fake) do
-      assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+      assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
         post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
       end
     end
@@ -317,7 +319,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
         result = case failure
         when :false then false
         when :nil then nil
-        else Collavre::AiAgentJob.new
+        else Collavre::InlineAgentReplayJob.new
         end
         scheduler = Object.new
         scheduler.define_singleton_method(:schedule) { |*| [ { timing: timing, delay: 30 } ] }
@@ -326,14 +328,14 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
         Collavre::Orchestration::Scheduler.stub(:new, scheduler) do
           # Exercise both perform_later entry points without bypassing the scheduler.
           if timing == :delayed
-            configured_job = Collavre::AiAgentJob.set(wait: 30)
-            Collavre::AiAgentJob.stub(:set, configured_job) do
+            configured_job = Collavre::InlineAgentReplayJob.set(wait: 30)
+            Collavre::InlineAgentReplayJob.stub(:set, configured_job) do
               configured_job.stub(:perform_later, failed_enqueue) do
                 post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
               end
             end
           else
-            Collavre::AiAgentJob.stub(:perform_later, failed_enqueue) do
+            Collavre::InlineAgentReplayJob.stub(:perform_later, failed_enqueue) do
               post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
             end
           end
@@ -342,7 +344,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
           assert_not @task.reload.trigger_event_payload.dig("engine_login", "resumed")
           assert @task.trigger_event_payload.dig("engine_login", "authorized")
 
-          assert_enqueued_jobs 1, only: Collavre::AiAgentJob do
+          assert_enqueued_jobs 1, only: Collavre::InlineAgentReplayJob do
             2.times do
               post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
               assert_response :success
@@ -406,7 +408,10 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       clear_enqueued_jobs
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
       assert_response :success
-      payload = enqueued_jobs.find { |job| job[:job] == Collavre::AiAgentJob }[:args][2]
+      payload = nil
+      Collavre::AiAgentJob.stub(:perform_now, ->(_agent, _event, context) { payload = context }) do
+        perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+      end
       assert_not payload.key?("engine_login")
       replay = Collavre::Task.create!(name: "Authenticated replay", agent: @agent, creative: @creative,
         topic_id: @original.topic_id, status: :running, trigger_event_name: "comment_created", trigger_event_payload: payload)
@@ -423,7 +428,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     set_data("authorized" => true, "session_user_id" => @requester.id)
     Collavre::CreativeShare.where(creative: @creative, user: @agent).destroy_all
     Collavre::CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
-    assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+    assert_no_enqueued_jobs(only: Collavre::InlineAgentReplayJob) do
       post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
     end
     assert_response :conflict
@@ -439,7 +444,99 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  [ :private, :deleted, :approval, :moved, :agent_access, :gateway, :authorization, :session_owner, :cancelled, :partial, :unclaimed ].each do |change|
+    test "delayed replay rejects #{change} changes before execution" do
+      queue_delayed_replay
+      case change
+      when :private then @original.update!(private: true)
+      when :deleted then @original.destroy!
+      when :approval then @original.update!(action: '{"tool":"test"}')
+      when :moved then @original.update!(topic_id: @creative.topics.create!(name: "Moved later", user: @requester).id)
+      when :agent_access
+        Collavre::CreativeShare.where(creative: @creative, user: @agent).destroy_all
+        Collavre::CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
+      when :gateway then @gateway.update!(active: false)
+      when :authorization then set_data("authorized" => false)
+      when :session_owner then set_data("session_user_id" => @owner.id)
+      when :cancelled then @task.update!(status: :cancelled)
+      when :partial then set_data("retryable" => false)
+      when :unclaimed then set_data("resumed" => false)
+      end
+      assert_no_difference "Collavre::Task.count" do
+        assert_empty execute_replay_payloads
+      end
+    end
+  end
+
+  test "delayed replay rebuilds edited source text before the agent executes" do
+    queue_delayed_replay
+    @original.update!(content: "@#{@agent.name}: Current request")
+    payloads = execute_replay_payloads
+    assert_equal 1, payloads.size
+    payload = payloads.first
+    assert_equal @original.content, payload.dig("comment", "content")
+    assert_equal @original.content, payload.dig("chat", "content")
+    assert_equal @agent.id, payload.dig("chat", "mentioned_user", "id")
+    assert_not_includes payload.to_json, "Hello"
+    assert_equal @requester.id, payload["workspace_user_id"]
+  end
+
+  test "delayed replay cannot use a removed mention to bypass topic assignment" do
+    @original.update!(content: "@#{@agent.name}: Hello")
+    @original.topic.update!(primary_agent_id: users(:ai_bot).id)
+    queue_delayed_replay
+    @original.update!(content: "No mention anymore")
+    assert_no_difference "Collavre::Task.count" do
+      assert_empty execute_replay_payloads
+    end
+  end
+
+  test "replay queue contains only ids and keeps the scheduler delay" do
+    queue_delayed_replay
+    job = enqueued_jobs.find { |entry| entry[:job] == Collavre::InlineAgentReplayJob }
+    assert_equal [ @reply.id, @requester.id ], job[:args]
+    assert_in_delta 30.seconds.from_now.to_f, job[:at], 2
+    assert_equal false, Collavre::InlineAgentReplayJob.enqueue_after_transaction_commit
+  end
+
+  test "replay ignores a deleted card or user without invoking the agent" do
+    Collavre::AiAgentJob.stub(:perform_now, ->(*) { flunk "must not start an agent" }) do
+      Collavre::InlineAgentReplayJob.perform_now(-1, @requester.id)
+      Collavre::InlineAgentReplayJob.perform_now(@reply.id, -1)
+    end
+  end
+
+  test "replay fails closed when the source disappears during access checks" do
+    queue_delayed_replay
+    login = Collavre::CliProxy::InlineLogin.new(@reply.reload, @requester)
+    login.stub(:manageable?, -> { @original.destroy!; true }) do
+      error = assert_raises(Collavre::CliProxy::Client::Error) { login.replay_payload }
+      assert_equal "cannot_retry", error.code
+    end
+  end
+
   private
+
+  def queue_delayed_replay
+    set_data("authorized" => true, "session_user_id" => @requester.id)
+    clear_enqueued_jobs
+    scheduler = Object.new
+    scheduler.define_singleton_method(:schedule) { |*| [ { timing: :delayed, delay: 30 } ] }
+    Collavre::Orchestration::Scheduler.stub(:new, scheduler) do
+      post inline_agent_login_resume_path(comment_id: @reply.id), as: :json
+    end
+    assert_response :success
+  end
+
+  def execute_replay_payloads
+    payloads = []
+    service = Object.new
+    service.define_singleton_method(:call) { nil }
+    Collavre::AiAgentService.stub(:new, ->(task) { payloads << task.trigger_event_payload; service }) do
+      perform_enqueued_jobs(only: Collavre::InlineAgentReplayJob)
+    end
+    payloads
+  end
 
   def set_data(values)
     payload = @task.reload.trigger_event_payload
