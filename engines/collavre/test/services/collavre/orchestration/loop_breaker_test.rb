@@ -76,6 +76,33 @@ module Collavre
         assert_equal @creative.id, result.details[:creative_id]
       end
 
+      test "detects ping-pong when another agent pair is interleaved" do
+        agent3 = Collavre::User.create!(
+          name: "agent-3",
+          email: "agent3-#{SecureRandom.hex(4)}@test.test",
+          password: "password123",
+          llm_vendor: "openai",
+          llm_model: "gpt-4"
+        )
+        create_policy(@enabled_config)
+        breaker = LoopBreaker.new(@context, policy_resolver: PolicyResolver.new(@context))
+
+        breaker.record_interaction(@agent1.id, @agent2.id, @creative.id)
+        breaker.record_interaction(@agent1.id, agent3.id, @creative.id)
+        breaker.record_interaction(@agent2.id, @agent1.id, @creative.id)
+        breaker.record_interaction(@agent1.id, agent3.id, @creative.id)
+        breaker.record_interaction(@agent1.id, @agent2.id, @creative.id)
+        breaker.record_interaction(@agent1.id, agent3.id, @creative.id)
+        breaker.record_interaction(@agent2.id, @agent1.id, @creative.id)
+
+        result = breaker.check
+
+        assert result.should_break?
+        assert_equal :ping_pong, result.reason
+        assert_equal [ @agent1.id, @agent2.id ].sort, result.details[:agents]
+        assert_equal 3, result.details[:exchange_count]
+      end
+
       test "allows interactions below ping-pong threshold" do
         policy = create_policy(@enabled_config)
         resolver = PolicyResolver.new(@context)
