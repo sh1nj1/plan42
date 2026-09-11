@@ -298,11 +298,15 @@ body.creative-workspace .indent3 {
         overflow: visible;
     }
 
-    /* The floating chat is rendered after the tree in the workspace shell and
-       uses the modal layer. Keep the opened tree above it so its rows remain
-       visible and tappable on one-panel screens. */
+    /* Keep the closed handle below the floating chat so it cannot intercept
+       taps on the comment form. Raise only the opened tree above the chat so
+       its rows and close handle remain tappable on one-panel screens. */
     .creative-workspace-tree-region {
-	z-index: calc(var(--layer-modal) + 1);
+        z-index: calc(var(--layer-modal) - 1);
+    }
+
+    .creative-workspace-tree-region.is-open {
+        z-index: calc(var(--layer-modal) + 1);
     }
 
     .creative-workspace-shell {
@@ -314,12 +318,17 @@ body.creative-workspace .indent3 {
         max-width: var(--max-width);
     }
 
-    /* In the two-panel band the handle's default offset lands in the left
-       gutter main leaves itself. One-panel main runs flush to the edge, so the
-       same offset would sit on top of the breadcrumb row — park the handle in
-       the nav's empty left corner instead, where it reads as the menu button
-       it effectively is. */
+    /* Reserve the handle's width outside the scrolling content so row controls
+       never pass underneath it, including in long creative lists. */
+    .creative-workspace-shell > main {
+        margin-left: 2.75rem;
+        width: calc(100% - 2.75rem);
+    }
+
+    /* Keep the drawer handle in easy thumb reach on one-panel screens while
+       clearing the device's bottom safe area. */
     .creative-workspace-tree-toggle {
-        top: var(--space-3);
+        top: auto;
+        bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     }
 }
