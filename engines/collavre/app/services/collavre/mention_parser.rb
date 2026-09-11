@@ -65,8 +65,23 @@ module Collavre
     end
 
     # Resolve all mentioned users from text, in mention order.
+    #
+    # One lookup for the whole body, not one per name: a comment carries as many
+    # mentions as its author typed, and this runs inside the synchronous
+    # after-commit dispatch, so a per-name query would put the mention count
+    # directly on the critical path. Order comes back from the mention list
+    # rather than from the rows, which arrive in whatever order the database
+    # picked.
     def self.resolve_all_users(text)
-      extract_all_names(text).filter_map { |name| find_user_by_name(name) }.uniq
+      keys = extract_all_names(text).map { |name| name.strip.downcase }.uniq
+      return [] if keys.empty?
+
+      # Ordered by id, and first-wins, so two names differing only in case
+      # resolve to the same row find_user_by_name would have returned.
+      by_key = User.where("LOWER(name) IN (?)", keys).order(:id)
+                   .each_with_object({}) { |user, acc| acc[user.name.to_s.downcase] ||= user }
+
+      keys.filter_map { |key| by_key[key] }
     end
 
     # Strip self-mention prefix from text (both @name: and @name formats)

@@ -162,5 +162,64 @@ module Collavre
 
       assert_equal [ user.id ], MentionParser.resolve_all_users("@ops@example.com: investigate").map(&:id)
     end
+
+    test "resolve_all_users resolves every mention in a single query" do
+      names = 5.times.map do |i|
+        User.create!(name: "BatchAgent#{i}", email: "batch_agent_#{i}@example.com", password: "password").name
+      end
+      text = names.map { |name| "@#{name}: go" }.join("\n")
+
+      selects = capture_user_selects { MentionParser.resolve_all_users(text) }
+
+      assert_equal 1, selects.size,
+        "expected one lookup for #{names.size} mentions, got #{selects.size}:\n#{selects.join("\n")}"
+    end
+
+    test "resolve_all_users keeps mention order when resolved in one query" do
+      # Descending ids so a query returning rows in primary-key order cannot
+      # accidentally match the mention order.
+      third = User.create!(name: "BatchOrderC", email: "batch_order_c@example.com", password: "password")
+      second = User.create!(name: "BatchOrderB", email: "batch_order_b@example.com", password: "password")
+      first = User.create!(name: "BatchOrderA", email: "batch_order_a@example.com", password: "password")
+
+      resolved = MentionParser.resolve_all_users("@BatchOrderC: one\n@BatchOrderB: two\n@BatchOrderA: three")
+
+      assert_equal [ third.id, second.id, first.id ], resolved.map(&:id)
+    end
+
+    test "resolve_all_users matches a name stored with surrounding whitespace" do
+      user = User.create!(name: "  PaddedAgent  ", email: "padded_agent@example.com", password: "password")
+
+      assert_equal [ user.id ], MentionParser.resolve_all_users("@PaddedAgent: go").map(&:id)
+    end
+
+    test "resolve_all_users resolves a mention of a name written with line breaks" do
+      # The canonical mention is "@" + name + ":", so a stored line break would
+      # split the name across the newline boundary the parser enforces. Names
+      # are normalized to a single line so the canonical form stays parseable.
+      user = User.create!(name: "Line\nBreak Agent", email: "line_break_agent@example.com", password: "password")
+
+      assert_equal [ user.id ], MentionParser.resolve_all_users("@#{user.name}: investigate").map(&:id)
+    end
+
+    private
+
+    def capture_user_selects
+      queries = []
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+        sql = payload[:sql]
+        next if payload[:name] == "SCHEMA" || payload[:cached]
+
+        queries << sql if sql.match?(/\ASELECT\b/i) && sql.match?(/\bFROM\s+"?users"?/i)
+      end
+
+      begin
+        yield
+      ensure
+        ActiveSupport::Notifications.unsubscribe(subscriber)
+      end
+
+      queries
+    end
   end
 end
