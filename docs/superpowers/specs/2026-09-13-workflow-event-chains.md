@@ -55,7 +55,7 @@ execution is still open and its mode, permission and scope remain valid:
 
 | Task evidence | Workflow outcome |
 | --- | --- |
-| `cancelled` with an authoritative workflow safety-stop reason recorded by the fixed-anchor guard | Use the persisted `scope_changed`, `permission_revoked`, or `routing_disabled` reason; no continuation |
+| Workflow-terminal Task (`done`, `cancelled`, `failed`, or `escalated`) with an authoritative persisted safety-stop reason recorded by the fixed-anchor guard | Use the persisted `scope_changed`, `permission_revoked`, or `routing_disabled` reason; no continuation |
 | `failed`, other `cancelled`, or `escalated` | `task_failed`; no continuation |
 | Any status other than `done` | Keep waiting; no success inference from response actions |
 | `engine_login` key present, including retryable, replay-completed or abandoned cards | `login_required`; never reopen after separate replay |
@@ -197,7 +197,8 @@ indexed execution reference on tasks. Normal tasks retain a null reference.
   admissions. Already admitted tasks keep their identity and frozen fan-in set.
   Do not re-run Arbiter rotation or grow the selected set on retry.
 - Infrastructure retries use 3 attempts, followed by a recorded terminal failure.
-  A claimed worker has a 5-minute lease; recovery inspects durable task/execution
+  An agent/event outbox worker has a 5-minute lease (push uses the separate
+  state-specific deadlines below); recovery inspects durable task/execution
   state before reclaiming. No generic recursive Ruby dispatch call stack.
 
 ### Task materialization and recovery identity
@@ -247,15 +248,25 @@ an ordinary dropped dispatch from the **covering Task's** payload and directly
 enqueues `AiAgentJob` after Scheduler checks. It does not persist the incoming
 workflow dispatch's identity. Consequently workflow obligations must never be
 recorded as legacy drops or recovered through that reconstruction. Strip the
-covering turn's internal `workflow_execution_id` by adding it to
-`DeliveryRecord::TURN_SCOPED_KEYS`, consumed by `restored_context`, when
-restoring a different ordinary comment; never attach that ordinary Task to the
-covering execution. Workflow recovery uses its own persisted outbox payload and
-the same validated task insertion doors. Test both restore isolation and direct
-workflow outbox redelivery; adding an ID to a covering payload alone cannot
-make legacy restore a workflow recovery mechanism. Extend the existing
-TURN_SCOPED_KEYS writer/drift fixture to exercise the validated workflow marker
-writer as well; adding the constant entry alone does not extend that fixture.
+covering turn's internal `workflow_execution_id` using a separate
+`DeliveryRecord::DISPATCH_SCOPED_KEYS = %w[workflow_execution_id]` list.
+Keep `TURN_SCOPED_KEYS` and its exact post-dispatch-writer drift test unchanged:
+the workflow marker is present at dispatch, not written later by the turn.
+`restored_context` strips the union of both lists. The second consumer,
+`CliProxy::InlineLogin#retry_payload`, strips `DISPATCH_SCOPED_KEYS` in addition
+to its existing turn-key removal, preserving its existing merged-comment
+exception and workspace-principal behavior. A separate login replay has no
+workflow Task reference and cannot inherit the original completion obligation.
+Neither path strips the marker from redelivery of the same validated workflow
+outbox admission. Workflow recovery uses that admission's persisted payload and
+the validated task insertion doors, never legacy restoration.
+
+Add separate tests that materialize a validated workflow Task with the marker
+already in its dispatched payload, then exercise ordinary `restored_context`
+and login `retry_payload`. Assert the marker is absent in both new dispatches,
+ordinary/replay Task references are null, and same-admission outbox redelivery
+retains its identity. Keep the original writer equality test unchanged; do not
+make a fixture pretend that the marker was written after dispatch.
 
 ### Selection and lock boundaries
 
@@ -451,8 +462,15 @@ merely because its anchor comment was already read.
 before its generic latest-comment selection and `DeferredTriggerScope.reanchor_payload`.
 This branch applies to a validated persisted workflow Task, including both
 `dequeue_next_for_topic` promotion and `coalesce_at_start!`. The start path must
-run this validation before its coalescing-policy/absorbed-set early returns,
-even though workflow Tasks themselves cannot be coalesced. It revalidates the
+invoke a shared fixed-anchor validator explicitly at the entry to
+`coalesce_at_start!`, before its status, topic, policy and absorbed-set returns.
+Putting a branch only inside `refresh_deferred_context!` is insufficient:
+workflow Tasks never produce an absorbed set. The refresh branch calls the same
+validator for promotion; the start entry returns after validated workflow
+handling without running generic coalescing. Resumed `pending_approval` work
+also receives validation. `AiAgentJob` must run the same safety validation for
+persisted workflow Tasks before its offline-session and waiting-assignment
+cancellation doors, and before provider start. The shared validator revalidates the
 original input anchor against the execution/admission and current public scope,
 permission and mode, then returns without replacing any input identity. An
 already-read input or an AI-authored input remains valid workflow input; do not
@@ -463,7 +481,15 @@ moved input stops with `scope_changed`, a private/unreadable input with
 `Comment#cancel_pending_tasks` must also recognize workflow Tasks before
 `reanchor_coalesced_task`; `reanchor_locked_task` must recheck the persisted Task
 under its existing lock and refuse workflow reanchoring. Deleting the workflow
-input cancels active work without selecting a surviving merged comment. Keep
+input cancels active work without selecting a surviving merged comment.
+`Comment::DispatchRevocation#revoke_source_dispatch` uses this same door after
+individual moves, private transitions and approval-action transitions. Classify
+current input evidence: missing/deleted or changed creative/topic is
+`scope_changed`; private/unreadable or an `approval_action?` input is
+`permission_revoked` (withdrawn as an executable public request); disabled mode
+is `routing_disabled`. Apply this input-eligibility check at every workflow
+effect boundary, including callback-free recovery. Do not classify every call
+to `cancel_pending_tasks` as deletion or accept a supplied payload reason. Keep
 existing cancellation cleanup, waiter-notice removal, reservation release and
 queue draining. Ordinary tasks retain their existing reanchoring behavior.
 
@@ -474,9 +500,25 @@ write the allowed reasons above, for a validated workflow Task. It writes the
 reason and `cancelled` status together using `cancel_if_active!` under the Task
 lock; it must not overwrite an already-terminal task or trust a caller-supplied
 payload reason. A manual cancellation or provider failure has no such reason.
-The settlement table consumes this durable reason before generic cancellation;
-this exception concerns loss of the input, not the later lost-reply evidence
-branch. Provider failure still takes precedence over reply-anchor evidence.
+For workflow-terminal states the settlement table consumes this durable reason
+before generic failure, independently of the final status spelling.
+`AiAgentJob#perform` currently writes `failed` unconditionally in its
+`rescue StandardError`; if it overwrites a safety cancellation after its commit
+callback was lost, sweep still consumes the persisted reason. PR4 need not
+rewrite that shared rescue to preserve workflow classification. Preserve the
+reason through subsequent ordinary status writes and never infer it from status
+or response payloads. Nonterminal hook entry still follows the preceding safety
+checks and waiting contract; terminal execution results never reopen.
+
+After successful safety validation, a materialized Task cancelled only because
+its session went offline or `Matcher.prepare_waiting_task!` rejected a newly
+exclusive primary assignment uses `task_failed`, with no safety-stop reason.
+This differs from no-Task admission rejection (`scheduler_rejected`). If that
+waiting check reflects lost access, changed input scope or disabled mode, rerun
+the safety validator before generic cancellation to record its specific reason.
+Preserve queue/resource cleanup and prohibit provider I/O on every denied path.
+This safety-reason exception concerns withdrawal of the input, not the later
+lost-reply evidence branch. Provider failure still takes precedence over reply-anchor evidence.
 
 Do not take a chain lock inside these Task/topic transactions. The status commit
 hook settles after the outer transaction, with the workflow sweep recovering a
@@ -606,45 +648,65 @@ the ordinary push default is required. The same core migration adds nullable
 `push_attempts` (integer) and `push_state` (string), required for workflow rows
 with initial values `0` and `pending`, plus an index supporting workflow recovery.
 Ordinary rows retain null values and the existing push behavior. Workflow states
-are `pending`, `enqueued`, `completed`, `suppressed`, and `failed`; the last three
-are terminal. `completed` records completion of the push worker's best-effort
-transport attempt, not guaranteed device delivery. Reuse `push_claim_token` and
-`push_claimed_at` for the five-minute lease. Increment attempts atomically when
-claiming one queue/worker delivery attempt; its worker uses that same token and
-does not increment it again. Failure before or during that attempt returns to
-`pending` below three attempts, otherwise seals `failed`. A reclaimed expired
-attempt counts against the same limit; duplicates with a stale token do nothing.
-Policy denial seals `suppressed` without pretending a push was enqueued.
+are `pending`, `enqueued`, `delivering`, `completed`, `suppressed`, and `failed`;
+the last three are terminal. `completed` records completion of the push worker's
+best-effort transport attempt, not guaranteed device delivery.
 
-A successful workflow enqueue acknowledgement sets `push_state: enqueued` and
-`push_enqueued_at` but **retains `push_claim_token` and `push_claimed_at`** from
-that attempt. Neither the generic acknowledgement that clears the lease nor
-its generic `release_claim` rescue applies to workflow rows. Acknowledgement
-requires the same token and a still-open attempt; it never resets the lease
-clock. A worker must verify the token, unexpired lease and nonterminal state
-before transport and acknowledge with the same token. Keep the lease through
-queue wait and transport. Terminal completion/suppression/failure clears it;
-an observed queue/worker failure may atomically return to `pending` and release
-it below the attempt limit. Queue acceptance alone never releases the lease.
+Separate workflow queue waiting from transport ownership. Proposed defaults are
+**30 minutes for queue waiting** and **5 minutes for transport**, with **3 total
+queue/worker attempts**. These are product proposals, not measured queue SLAs.
+The queue allowance accommodates delays above the old five-minute enqueue lease
+while bounding lost-job recovery; it cannot guarantee delivery during an
+unbounded backlog. A backlog exceeding 30 minutes on every attempt may still
+exhaust all attempts with zero provider calls (roughly 90 minutes plus sweep
+cadence). Preserve the Inbox and `human_handoff` outcome and explain this
+best-effort limit in EN/KO help. Ordinary push behavior remains unchanged.
 
-Recovery can reclaim a live attempt only after five minutes, replacing its token
-and consuming the next bounded attempt (or sealing `failed` if exhausted).
-Repeated sweeps during an unexpired `enqueued` lease must neither enqueue nor
-increment attempts. A stale worker cannot begin transport or acknowledge a new
-attempt. A worker already inside external transport when its lease expires can
-overlap a reclaimed attempt; this remains within the declared best-effort push
-limit, not an exactly-once guarantee. Late enqueue acknowledgement after worker
-completion, failure or reclamation is a no-op and must not release a newer lease.
+Reuse `push_claim_token` and `push_claimed_at`, with state-specific clocks rather
+than changing ordinary `CLAIM_TIMEOUT`. Claiming a pending attempt increments
+`push_attempts` atomically and sets token/time before queue I/O. A claimed
+`pending` row and an `enqueued` row use the 30-minute queue deadline from that
+claim. `push_enqueued_at` is observational, never a lease or recovery gate.
+An enqueue acknowledgement conditionally changes only a still-claimed `pending`
+row with the same token to `enqueued`, retaining token and claim time. It cannot
+regress `delivering` or any later outcome. Bypass both generic acknowledgement
+and generic `release_claim` for workflow rows. Queue acceptance never clears or
+renews the token/clock.
 
-Expand `ready_for_push` with explicit branches: ordinary rows keep the existing
-null-enqueue-time/expired-claim predicate; workflow rows require a nonterminal
-state and an absent/expired lease. They must remain recoverable after queue
-acceptance (`enqueued`) until worker completion, regardless of
-`push_enqueued_at`. At three exhausted attempts, the recovery adapter seals
-`failed` without a fourth enqueue. Re-enabling access, mode or preferences cannot
-select `suppressed` or `failed` rows. Updates of state, counters and acknowledgement
-are conditional on the claim token; a fast worker completion must not be
-regressed to `enqueued` by a late enqueue acknowledgement.
+The worker atomically claims transport only from a token-matching `pending` or
+`enqueued` row before its queue deadline: change state to `delivering` and set
+`push_claimed_at` to worker-start time, retaining the token and attempt count.
+Allow `pending` here because a fast worker can precede enqueue acknowledgement.
+Only this successful state transition renews the clock, exactly once per
+attempt. A duplicate worker seeing `delivering` cannot renew it or call transport.
+Worker/sweep races are decided by conditional DB updates; an expired queue claim
+cannot be revived by a late worker. Revalidate current delivery policy before
+transport; denial records terminal `suppressed` without a provider call.
+
+A `delivering` row uses five minutes from transport claim. Keep its token until
+completion, suppression, failure or expiry recovery. Transport completion/failure
+updates require the same token, state and still-valid transport lease. An
+observed queue/worker failure below three attempts returns to `pending` and
+clears that attempt's token/time; otherwise it seals `failed`. A stale or expired
+worker cannot acknowledge a newer attempt. An external call already in progress
+at expiry cannot be retracted and can overlap recovery, within the declared
+best-effort limit. No transport heartbeat or duplicate renewal is introduced.
+
+Recovery uses the row's state-specific deadline: 30 minutes for claimed
+`pending`/`enqueued`, five minutes for `delivering`. Expiry permits one conditional
+replacement token and next attempt, or terminal `failed` at exhaustion; never a
+fourth enqueue. Terminal outcomes clear the lease. Late enqueue acknowledgements
+and failure rescues after worker start, completion or reclamation are no-ops;
+only the worker owns a `delivering` attempt. No old token may release a newer one.
+
+Expand `ready_for_push` with explicit branches: ordinary rows retain their
+existing null-enqueue-time/expired-claim predicate; workflow rows select unclaimed
+`pending` or expired claimed `pending`/`enqueued`/`delivering` using the deadlines
+above, independently of `push_enqueued_at`. The claim adapter rechecks every
+scope result under conditional updates. Repeated sweeps before the applicable
+deadline neither enqueue nor increment attempts. Terminal rows never re-enter
+recovery after policy re-enable. Both sweeps and workers may suppress a denied
+current attempt without reopening its sealed execution.
 
 Place the common workflow branch at the **start** of
 `CommentNotificationDelivery#enqueue_push!`, before its generic claim and
@@ -664,7 +726,7 @@ not pending rows that replay when access or settings are re-enabled. The durable
 inbox entry remains; the sealed execution remains `human_handoff`. Push retry
 exhaustion is a delivery failure, never a reason to reopen or relabel execution.
 The sweep must inspect pending deliveries even when their executions are sealed.
-Use the proposed 3-attempt/5-minute-lease recovery policy separately for delivery;
+Use the proposed 3-attempt, 30-minute queue / 5-minute transport policy for delivery;
 no external exactly-once guarantee is introduced by those counters.
 
 ## Integration map discovered in current code
@@ -839,7 +901,12 @@ Additional integration acceptance cases:
 | Manual cancellation/provider failure with valid input and no workflow safety reason | `task_failed`; no reinterpretation using reply-anchor evidence |
 | `TopicSlot.lock_matches_context?` fails before Task insertion | No Task; durable `scope_changed`, no indefinite fan-in |
 | Workflow push acknowledged, sweeps at minutes 1 through 4 before worker runs | Same token/time and one attempt; no additional enqueue |
-| Workflow push lease expires at five minutes before worker runs | One conditional reclaim/new token or exhausted `failed`; old token cannot start transport or acknowledge |
+| Workflow push starts after six minutes of queue delay | No reclaim at five minutes; one transport claim starts a fresh five-minute clock with the original token and attempt count |
+| Queue claim expires at 30 minutes before worker runs | One conditional reclaim/new token or exhausted `failed`; old worker cannot start transport or acknowledge |
+| Worker starts at minute 29, sweeps at minute 30, transport ends at minute 31 | `delivering` uses the worker-start clock; one provider attempt, no reclaim at the obsolete queue deadline |
+| Duplicate worker or late enqueue acknowledgement during `delivering` | No clock renewal, state regression, second transport or token release |
+| Delivering lease expires after five minutes | Bounded conditional reclaim; expired worker cannot acknowledge; already-started external transport remains best effort |
+| All three queue waits exceed 30 minutes | Terminal delivery `failed` can have zero provider calls; Inbox and execution remain intact, EN/KO help states this limit |
 | Worker finishes/fails before enqueue acknowledgement, or old worker returns after reclaim | Terminal/pending outcome or newer lease preserved; no stale state/lease write |
 | Observed enqueue failure below attempt limit | Atomically return to pending and release that attempt's lease; generic release cannot clear another token |
 
@@ -1023,8 +1090,8 @@ technical review, not product approval or a runtime fix.
 | Review item | Revised contract |
 | --- | --- |
 | New 1: promotion/deletion can replace a workflow input | Name both refresh callers and Comment deletion/reanchor helpers; use a validated fixed-anchor branch and atomically persist safety cancellation with nullable Task `workflow_stop_reason`, then settle after outer commit |
-| New 2: enqueue acknowledgement clears the workflow lease | Retain token/time through enqueued and transport; bypass generic acknowledgement/release; bound expiry recovery and make stale acknowledgements no-ops |
-| Restore marker | Add to TURN_SCOPED_KEYS and extend its writer/drift fixture, preserving ordinary restore isolation |
+| New 2: enqueue acknowledgement clears the workflow lease | Retain token through enqueue and transport, bypass generic acknowledgement/release; sixth review below separates queue and transport clocks |
+| Restore marker | Originally proposed extending TURN_SCOPED_KEYS; superseded by the sixth-review separate DISPATCH_SCOPED_KEYS contract below |
 | No-Task qualifications | TopicSlot context mismatch is scope_changed; park_waiter nil does not itself return an admitted agent, while existing workflow obligations still require settlement |
 | Environment registration | Production's anchor is unused by desktop/development; register recovery separately in all three |
 
@@ -1062,3 +1129,36 @@ Terminal failure still takes precedence over a surviving partial reply.
 These are author dispositions pending technical re-review and product decisions,
 including the newly explicit topic-move limitation. Runtime code and migrations
 remain unchanged, and task 21052 remains incomplete.
+
+## Sixth review: dispatch metadata, safety evidence and push clocks
+
+Report 134591 reviews 86239dd01, not the later 048ede030 topic-move proposal.
+It closes the fourth review's two design items and identifies three new blockers.
+This revision is an author disposition requiring technical re-review and product
+approval; no runtime change or new runtime validation is claimed.
+
+| Review item | Revised contract |
+| --- | --- |
+| 1: turn-writer equality excludes incoming dispatch metadata | Preserve TURN_SCOPED_KEYS and its existing equality test; add DISPATCH_SCOPED_KEYS and strip it in both restored_context and InlineLogin#retry_payload, with real dispatch-origin isolation tests |
+| 2: rescue overwrites cancelled status after lost callback | A workflow-terminal Task's authoritative persisted stop reason precedes generic failure even if status becomes failed; ordinary failures without that evidence remain task_failed |
+| 3: five-minute queue delay exhausts push attempts | Separate a proposed 30-minute queue deadline from a five-minute delivering lease; worker atomically starts the latter once, with the same token/count; state-specific sweep and stale updates preserve ownership |
+| Revocation and start entry points | Name individual move/private/approval reason mapping, an explicit coalesce_at_start! validator before all early returns, and offline/waiting-assignment cancellation outcomes |
+| Whole-topic move and nonterminal callbacks | Already addressed by 048ede030; callback-free scope checks and guarded waiting remain pending review, not approved by the older-target report |
+
+Additional acceptance checks:
+
+| Scenario | Expected result |
+| --- | --- |
+| Marker exists in initial dispatched payload; existing turn writers run | Existing TURN_SCOPED_KEYS equality test remains true without adding a fake post-dispatch marker writer |
+| Ordinary restore and separate login replay from a workflow Task | Both strip dispatch identity; new Task has no workflow reference; original execution cannot reopen |
+| Safety cancellation, lost commit callback, AiAgentJob rescue writes failed, input later restored | Sweep uses the authoritative persisted stop reason; no task_failed substitution or continuation |
+| Manual/provider failure without authoritative safety reason | task_failed, even with caller-supplied reason text |
+| Input individually moved / made private / converted to approval action | scope_changed / permission_revoked / permission_revoked, respectively; no replacement anchor; sweep covers missed callbacks |
+| coalesce_at_start! policy disabled or absorbed set empty; approval resume | Explicit shared validator still runs before early returns and provider I/O |
+| Materialized Task goes offline or loses exclusive assignment with valid safety checks | task_failed with cleanup; no fabricated safety reason; no-Task rejection remains scheduler_rejected |
+
+The push queue allowance and zero-transport exhaustion limit are new product
+proposals. Choosing a longer fixed timeout reduces the previous exposure but
+cannot promise delivery under arbitrary queue delays. Timing, ownership,
+budgets, producer limits and topic-move policy remain unapproved; task 21052
+stays incomplete and runtime implementation remains unstarted.
