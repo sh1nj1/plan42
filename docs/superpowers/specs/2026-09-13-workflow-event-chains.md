@@ -31,7 +31,23 @@ runtime changes are made.
 
 Agent success requires `done`, a committed non-private, non-placeholder,
 nonempty reply linked to that task in the same creative/topic, and no recorded
-provider handoff failure. `done` alone is insufficient. `running`, `delegated`,
+provider handoff failure. Reuse the existing finalized-response and replay
+completion evidence in `Task::ReplayLoopCompletion`; do not create a competing
+definition of provider success. Its `unsuccessful_loop_response?` alone is not a
+positive success predicate: it explicitly excludes `engine_login` turns.
+PR4 treats an `engine_login` card as `login_required`, never as a successful
+reply. Normal authentication/replay remains available, but does not reopen that
+terminal workflow execution. Carrying a workflow completion obligation into a
+separate login replay task is outside this proposal; a new root event is needed
+after authentication. This limitation must be visible in editor/help text.
+
+A successful `review_updated` action without a usable reply anchor is
+`completed_no_anchor`: success without emitting. Review routing normally outranks
+the workflow tier, so an ordinary review never starts a workflow execution.
+This explicit outcome also covers an adapter that completes by updating an
+existing reply. Do not manufacture or quote a private anchor to continue it.
+
+`done` alone is insufficient. `running`, `delegated`,
 `pending`, `queued`, and `pending_approval` are not completion. `failed`,
 `cancelled`, `escalated`, empty completion or lost/revoked scope stop the execution.
 A workflow never approves tools or substitutes a responder.
@@ -48,7 +64,10 @@ its chain: start a new external event for a new attempt.
 Register `workflow_step_completed` with required `creative`, `comment`, and
 `workflow` payload blocks, source `workflow`. Add `workflow` to the supported
 source options of registered events that can be emitted. Only registered names
-are executable. Keep unknown `emits` as a save-time advisory for PR3 compatibility;
+are executable (`Dispatcher` already enforces names through `Vocabulary.fetch`).
+Vocabulary required keys and sources are currently advisory/editor metadata;
+add explicit payload and source validation at the workflow execution boundary.
+Keep unknown `emits` as a save-time advisory for PR3 compatibility;
 when execution reaches that edge, persist `unknown_emit` and stop.
 
 `emits` remains a scalar name: one execution has at most one child. No arbitrary
@@ -61,6 +80,11 @@ A child uses `Envelope.child` once, and persists the resulting envelope before
 queueing it. Retries reuse that same envelope ID, timestamp and body. Preserve
 `correlation_id`; set `causation_id` to the input envelope ID, increment `depth`
 by one, and set `source` to `workflow`. Never call `Envelope.child` again on retry.
+Before every dispatch assert that persisted envelope name, payload event name and
+snapshotted emits agree. A mismatch stops as `invalid_envelope`; otherwise the
+existing dispatcher would silently create another child. `occurred_at` is event
+creation time, not enqueue or provider-start time. Liquid sees this persisted
+value on every retry; it must not be presented as a fresh execution timestamp.
 
 Payload (JSON-safe):
 
@@ -98,7 +122,8 @@ indexed execution reference on tasks. Normal tasks retain a null reference.
 - Chain identity is the envelope correlation ID and fixed creative/topic scope.
   A repeated ID in a different scope is refused, not treated as authority.
 - Unique execution identity is `(chain_id, input_event_id)`. Persist the winning
-  rule snapshot, selected responders, admission outcome, input envelope and
+  rule snapshot (JSON `data["workflow_rule"]` plus rule creative ID, not a Ruby
+  Rule object), selected responders, admission outcome, input envelope and
   context. Rule edits cannot alter an in-flight execution's configured `emits`.
 - Unique task identity is `(workflow_execution_id, agent_id)`. Enqueue retries
   may deliver another job but cannot create another workflow task for that agent.
@@ -141,36 +166,43 @@ not sufficient for deduplication or budget accounting.
 
 Proposed fixed PR4 defaults (new decisions, not previously approved):
 
-- Maximum child envelope depth: **8** (root depth 0; depth 8 may run but cannot
-  create depth 9).
-- Maximum admitted agent tasks per correlation: **16**, shared across fan-out and
-  all steps. Reserve the entire selected/admitted set atomically before enqueue;
+- Maximum relative workflow depth: **8**. Persist `root_depth` at the first
+  workflow admission and require `envelope.depth - root_depth <= 8`. Preserve
+  absolute envelope depth; a managed event at absolute depth **64** cannot create
+  depth 65. Relative depth 8 may run but cannot create relative depth 9.
+- Maximum admitted workflow-handler agent tasks per correlation: **16**, shared
+  across workflow fan-out and steps. Reserve the entire selected/admitted set atomically before enqueue;
   if it does not fit, stop the step instead of truncating responders.
 - Maximum workflow executions per chain: **16**, counting agent, human and none
   decisions. Repeated deliveries and blocked duplicates consume no additional
-  budget. Existing upstream envelope depth counts; PR4 does not reset it.
+  budget. Existing upstream depth remains traceable and is never reset in the
+  envelope. The step budget bounds multiple workflow entries sharing a correlation;
+  it would be redundant for a purely linear scalar-emits chain. It counts only
+  actual workflow rule executions, not ordinary routing decisions.
 - The same rule creative ID may execute only once per chain. Encountering it
   again records `cycle`, including A -> B -> A and self-emission. New root events
   may legitimately run the same rule again.
 - Invalid negative/malformed depth, inconsistent correlation/scope, unknown event,
   missing anchor, or deleted/private/moved anchor stop without fallback.
 
-Once a correlation is workflow-managed, every descendant agent admission goes
-through its budget gate, including A2A mentions, primary-agent routing and
-expression fallback. Those retain their existing routing precedence but do not
-run a workflow rule's emits. Record their event admission without a rule ID.
-A2aDispatcher must preserve the managed-chain identity and a stable delivery key
-based on parent execution and reply comment. Its direct handoff and a configured
-emits are distinct edges; both consume the same task/depth budget. Merely clearing
-mentions in the emits payload cannot constrain the separate A2A dispatch already
-performed by response finalization. Re-entering a workflow rule via either edge
-uses the same cycle guard. Unmanaged ordinary A2A dispatches remain unchanged.
+These are workflow budgets, not a new global conversation quota. A2A mentions,
+review, primary-agent routing and expression fallback retain their existing
+admission and LoopBreaker policies; they do not consume workflow task budget or
+emit a matched rule's continuation. An emitted event that falls through to normal
+routing remains a normal dispatch. Enforce workflow publication bounds before
+publishing the edge, not by refusing its later fallback result. If a later event
+in the same correlation actually matches a workflow rule, its execution shares
+the workflow budget and rule-cycle guard. A2aDispatcher is a distinct existing
+handoff path; PR4 does not claim to bound every ordinary A2A descendant or provide
+exactly-once delivery for that pre-existing path. This narrowed scope preserves
+existing routing rather than turning a workflow counter into a conversation stop.
 
 Record terminal reason codes: `completed`, `human_handoff`, `ignored`,
 `no_eligible_agent`, `scheduler_rejected`, `task_failed`, `empty_reply`,
 `permission_revoked`, `scope_changed`, `routing_disabled`, `unknown_emit`,
 `depth_exceeded`, `task_budget_exhausted`, `step_budget_exhausted`, `cycle`,
-`delivery_failed`. Logs carry IDs, event name, correlation, depth and reason;
+`delivery_failed`, `invalid_envelope`, `login_required`, `completed_no_anchor`.
+Logs carry IDs, event name, correlation, absolute/relative depth and reason;
 never bodies, Liquid source, credentials or exception messages containing them.
 
 ## Mode, permission and queue revalidation
@@ -192,7 +224,8 @@ merely because its anchor comment was already read.
 
 ## Human notification target and privacy
 
-PR4 chooses one explicit responsibility rule: the effective target creative's
+PR4 chooses one explicit responsibility rule: resolve the event target through
+`Creative#effective_origin` and use that origin creative's
 human owner (not the workflow configuration owner, rule creator, commenter,
 mentioned people, all shared users or an arbitrary `agent_ids` value). Recheck
 current feedback permission using authoritative permission resolution, and require
@@ -201,7 +234,12 @@ absent, an AI user, revoked or otherwise ineligible, record a blocked handoff;
 never substitute a recipient or agent.
 
 Persist a localized action-needed notice in that person's Inbox System topic,
-linked to the source conversation. Dedup key is execution ID plus recipient ID.
+linked to the source conversation. Use only a generic localized label and link:
+no copied source body and no `quoted_comment` association. The existing private
+`create_inbox_comment` helper always attaches a quote and must not be called
+unchanged. Dedup key is execution ID plus recipient ID. Resolve the owner once
+for the admitted handoff; an ownership change before delivery stops it rather
+than sending the same execution to a second person.
 Do not include private rule titles or rule content: a target owner may lack read
 access to the pinned workflow. The notice is a system-authored comment with
 `skip_dispatch`, and must not recursively trigger workflow or regular inbox
@@ -226,12 +264,19 @@ completion button; replying to the source topic is a separate external event.
 - `AgentOrchestrator#dispatch` returns early for an empty selected set. Handle
   matched human/none before that return; keep ordinary dispatch unchanged.
 - `SystemEvents::Dispatcher` reuses a same-name envelope. Feed it the persisted
-  child without `parent:` on retries, or it would generate a fresh child.
+child without `parent:` on retries, or it would generate a fresh child.
 - `AiAgentJob#admit_or_defer!` and `AgentOrchestrator#park_waiter` are the two task
   insert doors. Both must enforce the execution/agent unique identity.
-- `Task#after_update_commit` covers normal completion. `TaskClaimService#finalize`
+- A new task `after_update_commit` settlement hook must use
+  `saved_change_to_status?`, then explicitly inspect workflow terminal states.
+  Do not reuse `became_terminal?`: its `terminal_status?` excludes `escalated`.
+  `TaskClaimService#finalize`
   uses `update_all` and then `fire_completion_callbacks_after_external_claim`;
   this supported escape hatch must run the same workflow settlement hook.
+  Also cover `CliProxy::InlineLogin.abandon_replay!` and
+  `Task::ReplayLoopCompletion#recheck_abandoned_replays`, which call that escape
+  hatch again on already-terminal tasks. Settlement must be idempotent and must
+  never reopen a terminal workflow execution. Validate all three callers.
 - A recurring settlement/outbox sweep is mandatory because callbacks and queue
   acceptance are not atomic. Scope it to unfinished workflow records.
 - `Comment::Notifiable` already has transactional unique inbox insertion and a
@@ -252,11 +297,19 @@ completion button; replying to the source topic is a separate external event.
 | Both succeed | One child, stable fan-in IDs and deterministic anchor |
 | One fails/cancels/returns empty; later manual task retry | Terminal chain, no child or reopened chain |
 | Delegated reply; tool approval pause/resume | No emission before committed successful reply; external completion settled too |
+| Inline login card ends done; subsequent separate replay succeeds | Login card records login_required, never emits; normal replay does not reopen this workflow |
+| review_updated-only successful completion | completed_no_anchor; no manufactured anchor or emit |
+| escalated transition; repeated external completion callback | Prompt terminal settlement; repeated settlement is a no-op |
 | Duplicate delivery/completion; two concurrent workers | One execution, one task per agent, one child and one budget reservation |
+| Repeated same comment callback in on versus off/shadow | on reuses workflow root receipt; off/shadow retain current producer behavior and create no receipt |
+| Ordinary A2A/primary/fallback after workflow budget exhaustion | Existing admission policy still applies; only new workflow effects stop |
+| More than 200 resolved rules | Existing Resolver cap/order/warning retained; no new search past the cap during chaining |
 | Crash after completion commit or before enqueue | Sweep recovers persisted outbox without new envelope IDs |
 | Queue rejects or partially accepts jobs | Bounded retries, no duplicate durable admissions or Arbiter rotation |
 | Task budget 15 with two responders | Whole step stops; no partial response truncation |
-| Root depth 0 / child depth 8 / request for depth 9 | Root accepted; depth 8 accepted; depth 9 blocked |
+| Root absolute depth 6 / child relative depth 8 / request for relative depth 9 | Same eight-step allowance as a depth-0 root; relative depth 9 blocked |
+| Absolute depth 64 / request for depth 65 | Depth 64 may run if relative bound permits; depth 65 blocked |
+| Persisted child name differs from dispatch name | invalid_envelope; never silently create a replacement child |
 | A -> A and A -> B -> A | Cycle stops before repeated rule executes |
 | Same rule in a new root correlation | Independent execution with fresh budgets |
 | Scope/mode/permission/anchor changes while queued | Fail closed with a reason; no new child or notification |
@@ -275,3 +328,20 @@ completion button; replying to the source topic is a separate external event.
 - [ ] Integration, concurrency/permission/failure tests; changed executable-line
   coverage 100%; Rubocop; complexity ratchet; EN/KO key symmetry; independent
   review; seeded preview; ready-for-review PR and topic monitor (21056).
+
+Tasks 21053 and 21054 are development sequencing inside one PR. Do not enable or
+deploy a runnable emission path before its minimum atomic budget/depth/cycle
+guards are present. Intermediate commits must keep the new execution path inert
+until those guards and their regression tests land.
+
+## Design review disposition
+
+Vrex reviewed the initial proposal in Collavre topic 19327. Revisions address
+login-card success, review-only completion, escalated callbacks, all three
+external completion callers, envelope-name consistency, relative depth, narrowed
+workflow budget scope, quote-free human notices and effective-origin ownership.
+Names already are enforced by `Vocabulary.fetch`; sources and required blocks
+need a new workflow-boundary check. `unsuccessful_loop_response?` is not by itself
+a positive success predicate. The revised proposal has not yet received reviewer
+sign-off or the product owner's emission-timing answer. No runtime change is
+implemented or validated by this document.
