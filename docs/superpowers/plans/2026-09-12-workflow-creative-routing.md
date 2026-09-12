@@ -189,3 +189,21 @@ Validation: 83 tests / 495 assertions passed; this follow-up covers 5/5 changed
 executable Ruby lines (100%). RuboCop passed across 1,420 files, the complexity
 ratchet reported no growth, and independent review found no actionable issues.
 English/Korean orchestration keys are symmetric.
+
+### PR review follow-up: reuse comment authors across workflow rules
+
+- [x] Reproduce repeated author lookups across candidate rules in on/shadow modes.
+- [x] Share one lazy author lookup per workflow matching pass, including missing
+      authors, without mutating the event payload or caching across events.
+- [x] Preserve predicate short circuiting, first-match routing, and rule-specific
+      Liquid diagnostics while reusing the evaluator.
+- [x] Complete relevant tests, fresh changed-line coverage, lint, complexity,
+      and independent specification and code quality review.
+- [x] Prepare the fix for ready-for-review PR #1679 and verify its topic monitor.
+
+Validation: 540 tests / 1,495 assertions passed; this follow-up covers 5/5
+changed executable Ruby lines (100%) from a fresh coverage run. Both on and
+shadow now perform one author lookup across 200 candidate rules, including
+missing authors. RuboCop passed across 1,421 files, the complexity ratchet
+reported no growth, and independent specification and code quality reviews
+found no actionable issues.

@@ -74,11 +74,88 @@ module Collavre
         assert_equal [ @other ], match
       end
 
+      %w[on shadow].each do |routing_mode|
+        [ false, true ].each do |missing_author|
+          test "#{routing_mode} looks up #{missing_author ? 'missing' : 'present'} author once across all workflow rules" do
+            mode(routing_mode)
+            author = missing_author ? nil : @user
+            @context["comment"] = { "user_id" => author&.id, "content" => "Ready" }
+            original_context = @context.deep_dup
+            rules = Array.new(Workflow::Resolver::MAX_RULES) do |index|
+              routing_rule(index, { "author_agent" => false, "body_contains" => [ "absent" ] })
+            end
+            rules[-1] = routing_rule(rules.size, { "author_agent" => false })
+            calls = []
+            finder = ->(attributes) { calls << attributes; author }
+            matcher = Matcher.new(@context)
+
+            matcher.stub(:workflow_rules, rules) do
+              User.stub(:find_by, finder) do
+                expected = routing_mode == "on" && author ? @other : @agent
+                assert_equal [ expected ], matcher.match
+              end
+            end
+
+            assert_equal 1, calls.size
+            assert_equal({ id: author&.id }, calls.first)
+            assert_equal original_context, @context
+          end
+        end
+
+        test "#{routing_mode} skips author lookups without author predicates or after source and event mismatches" do
+          mode(routing_mode)
+          @context["comment"] = { "user_id" => @user.id }
+          @context[SystemEvents::Envelope::KEY] = SystemEvents::Envelope.root(
+            "comment_created", source: "comment_callback"
+          ).to_h
+          conditions = [
+            { "body_contains" => [ "absent" ] },
+            { "source" => [ "cron" ], "author_agent" => false },
+            { "author_agent" => false }
+          ]
+          rules = conditions.each_with_index.map { |condition, index| routing_rule(index, condition) }
+          rules[-1] = rules.last.with(event_name: "other_event")
+          matcher = Matcher.new(@context)
+
+          matcher.stub(:workflow_rules, rules) do
+            User.stub(:find_by, ->(*) { flunk "author must not be queried" }) do
+              assert_equal [ @agent ], matcher.match
+            end
+          end
+        end
+
+        test "#{routing_mode} looks up authors independently for separate events" do
+          mode(routing_mode)
+          rules = [ routing_rule(1, { "author_agent" => false }) ]
+          calls = []
+          finder = lambda do |attributes|
+            calls << attributes
+            [ @user, @agent ].find { |author| author.id == attributes[:id] }
+          end
+
+          User.stub(:find_by, finder) do
+            [ @user, @agent ].each do |author|
+              context = @context.merge("comment" => { "user_id" => author.id })
+              matcher = Matcher.new(context)
+              matcher.stub(:workflow_rules, rules) do
+                expected = routing_mode == "on" && author == @user ? @other : @agent
+                assert_equal [ expected ], matcher.match
+              end
+            end
+          end
+
+          assert_equal [ { id: @user.id }, { id: @agent.id } ], calls
+        end
+      end
+
       test "Liquid failures identify the rule without exposing its condition in either routing mode" do
-        rule = agent_rule(sequence: 1)
-        rule.data["workflow_rule"]["when"] = { "liquid" => "{% confidential_customer_tag %}" }
-        rule.save!
-        agent_rule(sequence: 2)
+        failing_rules = 2.times.map do |index|
+          rule = agent_rule(sequence: index)
+          rule.data["workflow_rule"]["when"] = { "liquid" => "{% confidential_customer_tag %}" }
+          rule.save!
+          rule
+        end
+        agent_rule(sequence: 3)
 
         %w[on shadow].each do |routing_mode|
           mode(routing_mode)
@@ -86,7 +163,9 @@ module Collavre
           Rails.logger.stub(:error, ->(line) { lines << line }) do
             assert_equal [ routing_mode == "on" ? @other : @agent ], match
           end
-          assert_equal [ "[Workflow::Conditions] Liquid error=Liquid::SyntaxError rule_id=#{rule.id}" ], lines
+          assert_equal failing_rules.map { |rule|
+            "[Workflow::Conditions] Liquid error=Liquid::SyntaxError rule_id=#{rule.id}"
+          }, lines
         end
       end
 
@@ -314,9 +393,12 @@ module Collavre
         mode("shadow")
         agent_rule
         matcher = Matcher.new(@context)
+        conditions = Workflow::Conditions.new({}, @context)
         lines = capture_shadow do
-          Workflow::Conditions.stub(:match?, ->(*) { raise "private condition content" }) do
-            assert_equal [ @agent ], matcher.match
+          conditions.stub(:match?, ->(*) { raise "private condition content" }) do
+            Workflow::Conditions.stub(:new, conditions) do
+              assert_equal [ @agent ], matcher.match
+            end
           end
           assert_equal [ @agent ], matcher.match
         end
@@ -352,6 +434,11 @@ module Collavre
       end
 
       private
+
+      def routing_rule(id, conditions)
+        Workflow::Rule.new(creative_id: id, event_name: "comment_created", conditions: conditions,
+                           handler_type: "agent", agent_ids: [ @other.id ], emits: nil)
+      end
 
       def grant_feedback(agent)
         CreativeShare.create!(creative: @creative, user: agent, permission: "feedback")

@@ -69,6 +69,22 @@ module Collavre
         refute Conditions.match?({ "author_agent" => false }, { "comment" => {} })
       end
 
+      test "reuses the author while replacing symbol-key predicates on an instance" do
+        author = users(:one)
+        context = { "comment" => { "user_id" => author.id } }
+        conditions = Conditions.new({ author_agent: true }, context)
+        calls = 0
+
+        User.stub(:find_by, ->(*) { calls += 1; author }) do
+          refute conditions.match?
+          assert conditions.match?({ author_agent: false })
+          assert conditions.match?
+        end
+
+        assert_equal 1, calls
+        assert Conditions.match?({ author_agent: false }, context)
+      end
+
       test "matches any body fragment case insensitively" do
         context = { "comment" => { "content" => "Ready to DEPLOY today" } }
 

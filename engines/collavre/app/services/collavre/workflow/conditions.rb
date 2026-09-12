@@ -10,12 +10,15 @@ module Collavre
       end
 
       def initialize(conditions, context, rule_id: nil)
-        @conditions = conditions.to_h.stringify_keys
+        @conditions = conditions
         @context = context
         @rule_id = rule_id
       end
 
-      def match?
+      def match?(conditions = @conditions, rule_id: @rule_id)
+        @conditions = conditions.to_h.stringify_keys
+        @rule_id = rule_id
+
         KEYS.all? do |key|
           !@conditions.key?(key) || send("#{key}_matches?", @conditions[key])
         end
