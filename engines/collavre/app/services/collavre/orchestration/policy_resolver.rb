@@ -18,6 +18,13 @@ module Collavre
     class PolicyResolver
       # Default configurations when no policy is set
       DEFAULTS = {
+        "matching" => {
+          # off | shadow | on
+          #
+          # Shadow mode compares workflow decisions with expression routing
+          # while expression routing continues to determine participation.
+          "workflow_routing" => "shadow"
+        },
         "arbitration" => {
           "strategy" => "all",
           "max_responders" => nil # nil means unlimited
@@ -61,8 +68,15 @@ module Collavre
         }
       }.freeze
 
+      MODES = %w[off shadow on].freeze
+
       def initialize(context)
         @context = context
+      end
+
+      def workflow_routing_mode
+        mode = merge_policies("matching")["workflow_routing"].to_s
+        MODES.include?(mode) ? mode : "shadow"
       end
 
       # Get merged arbitration config
