@@ -1,12 +1,18 @@
 <%= turbo_frame_tag "activity_log_details_#{comment.id}" do %>
   <% if activity_logs.any? %>
+    <% execution_time = inline_task_execution_time(comment.task) %>
     <div class="activity-log-list">
-      <% activity_logs.each do |log| %>
+      <% activity_logs.each_with_index do |log, index| %>
         <div class="activity-log-item">
           <details>
             <summary class="activity-log-summary">
               <span class="activity-name"><%= log.activity %></span>
-              <span class="activity-time"><%= time_ago_in_words(log.created_at) %> ago</span>
+              <span class="activity-time">
+                <%= t("collavre.comments.activity_logs.time_ago", time: time_ago_in_words(log.created_at)) %>
+                <% if index.zero? && execution_time %>
+                  <span class="activity-execution-time" role="note" title="<%= t('collavre.comments.activity_logs.duration_hint') %>" aria-label="<%= t('collavre.comments.activity_logs.duration', duration: execution_time) %>"><%= t('collavre.comments.activity_logs.inline_duration', duration: execution_time) %></span>
+                <% end %>
+              </span>
             </summary>
             <div class="activity-log-body">
               <pre class="activity-log-yaml"><code><%= log.log.to_yaml.sub(/^---\n/, '') %></code></pre>
@@ -17,7 +23,7 @@
     </div>
   <% else %>
     <div class="activity-log-empty">
-      No activity logs available.
+      <%= t("collavre.comments.activity_logs.empty") %>
     </div>
   <% end %>
 <% end %>

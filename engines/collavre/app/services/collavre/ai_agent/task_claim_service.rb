@@ -69,6 +69,7 @@ module Collavre
         raise ActiveRecord::RecordNotSaved, "claimed reply task was not running" unless completed == 1
 
         task.reload
+        task.task_actions.create!(action_type: "completion", status: "done", payload: { comment_id: comment.id })
         ActiveRecord.after_all_transactions_commit do
           run_completion_effects(agent, task, comment)
         end

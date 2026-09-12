@@ -231,7 +231,7 @@
       <details>
         <summary><%= t("collavre.comments.activity_logs_summary") %></summary>
         <%= turbo_frame_tag "activity_log_details_#{comment.id}", src: collavre.creative_comment_activity_log_path(comment.creative, comment), loading: "lazy" do %>
-          Loading...
+          <%= t("collavre.comments.activity_logs.loading") %>
         <% end %>
       </details>
     </div>
