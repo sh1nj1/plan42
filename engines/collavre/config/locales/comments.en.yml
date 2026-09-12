@@ -237,6 +237,7 @@ en:
       activity_logs_summary: Activity Logs
       activity_logs:
         duration: "Execution time: %{duration}"
+        inline_duration: "(%{duration})"
         duration_hint: "Latest attempt: from start to model response completion, or reply persistence for delegated agents. Excludes queue time, earlier retries, and follow-up dispatch."
         in_progress: "In progress"
         unavailable: "Unavailable"

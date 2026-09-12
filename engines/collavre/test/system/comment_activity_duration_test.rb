@@ -25,14 +25,17 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     find("button[name='show-comments-btn'][data-creative-id='#{@creative.id}']", wait: 10).click
 
     within("#comment_#{@reply.id}") do
+      assert_selector "time + .comment-execution-time", text: "(1m 23s)"
       find(".comment-activity-log-block summary").click
       assert_selector ".activity-log-duration", text: "Execution time: 1m 23s"
     end
     within("#comment_#{@reviewed.id}") do
+      assert_selector "time + .comment-execution-time", text: "(20s)"
       find(".comment-activity-log-block summary").click
       assert_selector ".activity-log-duration", text: "Execution time: 20s"
     end
     within("#comment_#{@plain.id}") do
+      assert_no_selector ".comment-execution-time"
       assert_no_selector ".comment-activity-log-block"
     end
     within("#comment_#{@logged.id}") do
