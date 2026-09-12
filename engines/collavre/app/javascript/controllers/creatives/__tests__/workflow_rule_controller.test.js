@@ -41,10 +41,33 @@ test('loads vocabulary and renders descriptions and diagnostics as text', async 
   await mount()
   expect(form().textContent).toContain('<b>Advisory</b>')
   expect(form().querySelector('img')).toBeNull()
-  expect(form().querySelector('h3').textContent).toBe('Title')
+  expect(form().querySelector('h3').textContent).toBe(rule().description)
   expect(form().querySelector('[name="event"]').options[0].text).toBe('Comment')
   expect(form().querySelector('[name="agents"]').multiple).toBe(true)
   expect(root.textContent).toContain('Target permissions apply')
+})
+
+test.each([
+  'Handle <script> examples',
+  '<script>alert(1)</script>',
+  'Compare <b>bold</b> & &lt;literal&gt;',
+  '배포 <조건> 처리'
+])('preserves title %s as literal text through save and reload', async description => {
+  const record = { ...rule(), description }
+  await mount(data([record]))
+  const assertTitle = () => {
+    const heading = form().querySelector('h3')
+    expect(heading.textContent).toBe(description)
+    expect(heading.childElementCount).toBe(0)
+  }
+  assertTitle()
+  csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => record })
+  submit(); await tick()
+  expect(root.textContent).toContain('Saved')
+  assertTitle()
+  csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => data([record]) })
+  await controller.load()
+  assertTitle()
 })
 
 test('saves changed author while retaining explicit empty conditions, unknown fields and emits', async () => {

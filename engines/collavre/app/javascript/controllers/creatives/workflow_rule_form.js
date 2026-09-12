@@ -1,5 +1,3 @@
-import DOMPurify from 'dompurify'
-
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const copy = value => JSON.parse(JSON.stringify(value))
 const array = value => Array.isArray(value) ? value : []
@@ -29,7 +27,7 @@ export default class WorkflowRuleForm {
   render() {
     const rule = object(this.draft) ? this.draft : {}
     const conditions = object(rule.when) ? rule.when : {}
-    this.role('heading').textContent = this.record.id ? DOMPurify.sanitize(this.record.description, { ALLOWED_TAGS: [], RETURN_DOM_FRAGMENT: true }).textContent : this.labels.add_rule
+    this.role('heading').textContent = this.record.id ? this.record.description : this.labels.add_rule
     this.role('title-label').hidden = Boolean(this.record.id)
     this.field('title').required = !this.record.id
     this.role('saved-title-note').hidden = !this.record.id
