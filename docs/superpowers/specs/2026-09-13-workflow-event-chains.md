@@ -189,6 +189,69 @@ indexed execution reference on tasks. Normal tasks retain a null reference.
   A claimed worker has a 5-minute lease; recovery inspects durable task/execution
   state before reclaiming. No generic recursive Ruby dispatch call stack.
 
+### Task materialization and recovery identity
+
+An admitted responder has a durable admission/outbox obligation before enqueue;
+queue acceptance or a returned agent alone does not satisfy that obligation.
+For a validated workflow dispatch, bypass both
+`Task.duplicate_running_for_comment?` and
+`DeliveryRecord.covering_task` / `claim_drop!` in **both**
+`AgentOrchestrator#enqueue_jobs` and the new-task branch of `AiAgentJob#perform`.
+Keep those guards for ordinary routing. Put the workflow incoming-context
+exclusion in the shared `DeliveryRecord.covering_task` boundary as well; the
+late worker check must not undo the enqueue-side exclusion. An already-read
+anchor, including logical `comment_created`, still requires its own workflow
+Task. Deduplicate workflow work by execution/agent, never by comment alone.
+
+Persist an internal top-level `workflow_execution_id` in every admitted agent's
+outbox dispatch context and resulting `Task#trigger_event_payload`; populate the
+Task column from this validated identity in both task insertion doors. This is
+the **current admission's** ID, distinct from `workflow.execution_id` in a child
+event, which describes its completed parent. Only the execution boundary stamps
+it after ownership commits. Validate the persisted execution, admission/agent,
+input envelope and creative/topic against the outbox before using the marker;
+an arbitrary supplied ID cannot bypass guards or confer chain membership.
+A new child, ordinary fallback or A2A dispatch must not inherit the current
+admission marker. A workflow match on that child receives its own new ID.
+Retries of the same admission preserve the same payload identity.
+
+A missing Task is pending only while its durable scheduling obligation is still
+recoverable. After the scheduled due time and lease, recovery queries the unique
+execution/agent Task before retrying materialization, without re-selection or
+additional budget. A queued Task counts as materialized even if
+`admit_or_defer!` returns nil. An explicit offline/session rejection with no Task
+seals `scheduler_rejected`; changed access/scope/mode uses the corresponding
+existing reason. Unexplained failure to create a Task after the three-attempt
+infrastructure limit seals `delivery_failed`. Never wait indefinitely for a
+callback from a nonexistent Task. Existing or started Tasks are not recreated;
+a late job for a sealed execution cannot create or start new work.
+
+`RestoreDroppedDispatchesJob` calls `DeliveryRecord.restore!`, which reconstructs
+an ordinary dropped dispatch from the **covering Task's** payload and directly
+enqueues `AiAgentJob` after Scheduler checks. It does not persist the incoming
+workflow dispatch's identity. Consequently workflow obligations must never be
+recorded as legacy drops or recovered through that reconstruction. Strip the
+covering turn's internal `workflow_execution_id` in `restored_context` when
+restoring a different ordinary comment; never attach that ordinary Task to the
+covering execution. Workflow recovery uses its own persisted outbox payload and
+the same validated task insertion doors. Test both restore isolation and direct
+workflow outbox redelivery; adding an ID to a covering payload alone cannot
+make legacy restore a workflow recovery mechanism.
+
+### Selection and lock boundaries
+
+`TopicMessageCreateService` calls `prepare_selection` once inside its comment
+transaction under `topic.lock!`, then again after that transaction. Neither call
+may create/claim a receipt, take a chain lock, reserve budget or create workflow
+effects. Snapshot the second selection actually passed to dispatch. At workflow
+admission, commit that selection once; outbox retries never rotate Arbiter again.
+Keep topic locks and chain locks in separate transactions: do not acquire a
+chain lock while holding the topic slot lock, or acquire a topic slot while
+holding the chain lock. Reserve and persist under the chain lock, commit, then
+materialize Tasks through topic-slot admission. Any materialization denial is
+settled after the topic transaction ends, with safety revalidation and no refund
+of the already committed workflow reservation.
+
 ### Producer identity and dispatch acknowledgement
 
 There are five registered producer sources, not five automatic root paths: A2A
@@ -206,7 +269,28 @@ run ID or cron occurrence ID to reuse.
 
 The Drop Trigger receipt is new core-engine state in task 21053, not an assumed
 existing mechanism. `job_id` is the serialized ActiveJob identifier, never a
-queue-provider ID or the retry attempt count; add a serialization/retry test.
+queue-provider ID or the retry attempt count. Both class and instance entry
+points of `Dispatcher.dispatch_with_outcome` and
+`AgentOrchestrator.dispatch_with_outcome` accept an optional explicit
+`invocation:` keyword. `DropTriggerJob#dispatch_trigger` passes
+`invocation: { source: "drop_trigger", job_id: job_id }`; Dispatcher forwards it
+unchanged to the shared dispatch path. Derive event name from the validated
+method argument and require invocation source to agree with dispatch source.
+Do not read `Current`, substitute comment IDs, infer a job ID from payload text,
+or propagate this invocation into emitted children. Other producers may omit it.
+Receipt lookup before `prepare_trigger` / `task_exists_for?` uses the same job
+identity so an existing receipt can be acknowledged even after its anchor is
+lost; it does not depend on first finding another comment.
+
+Receipt retry tests must locally replace the default `:inline` adapter with
+`:test` and restore it in teardown. Exercise `retry_on` through ActiveJob's
+execution/queued-job helpers, including the scheduled wait, and assert the
+serialized retry retains the original `job_id`. For duplicate/concurrent
+redelivery, deserialize the same serialized job rather than call `new` twice.
+Test a retryable failure before receipt commit separately from redelivery after
+commit: the latter is acknowledged and its outbox, not Drop Trigger, recovers
+effects. A separate new job is a negative control with a different identity;
+the existing manual `perform` tests do not prove serialized-job deduplication.
 A separately enqueued job has a new ID and is a separate invocation even if its
 arguments or anchor match. This does not deduplicate independent duplicate job
 creation. Do not key a deliberate restart by comment text or mutable loop state.
@@ -351,7 +435,9 @@ mentioned people, all shared users or an arbitrary `agent_ids` value). Recheck
 current feedback permission using authoritative permission resolution, and require
 that the anchor is public and still in the same creative/topic. If the owner is
 absent, an AI user, revoked or otherwise ineligible, record a blocked handoff;
-never substitute a recipient or agent.
+never substitute a recipient or agent. `Creative#user` already delegates through
+`effective_origin`; reuse `comment.creative.user` with current permission checks
+rather than introducing a second ownership traversal.
 
 Persist a localized action-needed notice in that person's Inbox System topic,
 linked to the source conversation. Use only a generic localized label and link:
@@ -364,6 +450,11 @@ Do not include `notification_revision`, locale, title or retry attempt in this
 identity. Resolve the owner once
 for the admitted handoff; an ownership change before delivery stops it rather
 than sending the same execution to a second person.
+Independent move/create/start jobs may reuse the same anchor and legitimately
+produce separate executions and separate inbox entries under this proposal.
+Do not replace the execution/recipient key with an anchor/rule key: that would
+also suppress a later intentional handoff over the same comment. Cross-invocation
+notice aggregation is a separate product choice, outside the proposed guarantee.
 Do not include private rule titles or rule content: a target owner may lack read
 access to the pinned workflow. The notice is a system-authored comment with
 `skip_dispatch`, and must not recursively trigger workflow or regular inbox
@@ -408,14 +499,43 @@ deliveries; workflow deliveries require both the execution reference and a
 nonempty recipient-localized title. Persist that title in the handoff transaction
 alongside message/link, so immediate delivery and sweep recovery use the same
 text even if the recipient later changes locale. No locale backfill or change to
-the ordinary push default is required. Delivery attempt/terminal-state fields
-needed for the independent recovery policy below also belong to core migrations.
-The existing `CommentPushDeliverySweepJob` must route workflow-tagged rows through
-the same adapter as immediate delivery; it must not call the ungated generic
-enqueue path for them. Both paths recheck mode, recorded owner, scope, public
-anchor, feedback permission and the explicit-false preference. Revalidate again
+the ordinary push default is required. The same core migration adds nullable
+`push_attempts` (integer) and `push_state` (string), required for workflow rows
+with initial values `0` and `pending`, plus an index supporting workflow recovery.
+Ordinary rows retain null values and the existing push behavior. Workflow states
+are `pending`, `enqueued`, `completed`, `suppressed`, and `failed`; the last three
+are terminal. `completed` records completion of the push worker's best-effort
+transport attempt, not guaranteed device delivery. Reuse `push_claim_token` and
+`push_claimed_at` for the five-minute lease. Increment attempts atomically when
+claiming one queue/worker delivery attempt; its worker uses that same token and
+does not increment it again. Failure before or during that attempt returns to
+`pending` below three attempts, otherwise seals `failed`. A reclaimed expired
+attempt counts against the same limit; duplicates with a stale token do nothing.
+Policy denial seals `suppressed` without pretending a push was enqueued.
+
+Expand `ready_for_push` with explicit branches: ordinary rows keep the existing
+null-enqueue-time/expired-claim predicate; workflow rows require a nonterminal
+state and an absent/expired lease. They must remain recoverable after queue
+acceptance (`enqueued`) until worker completion, regardless of
+`push_enqueued_at`. At three exhausted attempts, the recovery adapter seals
+`failed` without a fourth enqueue. Re-enabling access, mode or preferences cannot
+select `suppressed` or `failed` rows. Updates of state, counters and acknowledgement
+are conditional on the claim token; a fast worker completion must not be
+regressed to `enqueued` by a late enqueue acknowledgement.
+
+Place the common workflow branch at the **start** of
+`CommentNotificationDelivery#enqueue_push!`, before its generic claim and
+hardcoded `PushNotificationJob.perform_later`. Both immediate delivery and
+`CommentPushDeliverySweepJob` call this entry point after the handoff commit.
+It delegates workflow rows to one workflow delivery adapter; that adapter must
+not recursively call `enqueue_push!` or fall through to the generic branch.
+Both paths recheck mode, recorded owner, scope, public anchor, feedback permission and the explicit-false preference. Revalidate again
 in the workflow push worker before handing off to `PushNotificationJob` with
-the localized title; direct generic queueing must not bypass that final check.
+the localized title. Invoke the shared push transport synchronously from that
+worker after revalidation (for example `PushNotificationJob.perform_now` with
+the saved title), rather than enqueue a second generic job that would reopen an
+unchecked permission gap. The workflow delivery state owns bounded retries;
+direct generic queueing must not bypass that final check.
 Rows suppressed by a changed policy/permission are terminal delivery outcomes,
 not pending rows that replay when access or settings are re-enabled. The durable
 inbox entry remains; the sealed execution remains `human_handoff`. Push retry
@@ -443,7 +563,14 @@ no external exactly-once guarantee is introduced by those counters.
 - `SystemEvents::Dispatcher` reuses a same-name envelope. Feed it the persisted
 child without `parent:` on retries, or it would generate a fresh child.
 - `AiAgentJob#admit_or_defer!` and `AgentOrchestrator#park_waiter` are the two task
-  insert doors. Both must enforce the execution/agent unique identity.
+  insert doors. Both must enforce the execution/agent unique identity from the
+  validated outbox context. Cover the duplicate-running and history-drop guards
+  in both `enqueue_jobs` and `AiAgentJob#perform`, shared
+  `DeliveryRecord.covering_task`, and legacy `restored_context` identity stripping.
+  See the task materialization contract for no-Task terminal outcomes.
+- `TopicMessageCreateService#create_comment` and its post-commit selection must
+  remain free of workflow effects and chain locks; use the dispatched selection
+  and the separate topic/chain transaction boundaries specified above.
 - A new task `after_update_commit` settlement hook must use
   `saved_change_to_status?`, then explicitly inspect workflow terminal states.
   Do not reuse `became_terminal?`: its `terminal_status?` excludes `escalated`.
@@ -455,7 +582,13 @@ child without `parent:` on retries, or it would generate a fresh child.
   hatch again on already-terminal tasks. Settlement must be idempotent and must
   never reopen a terminal workflow execution. Validate all three callers.
 - A recurring settlement/outbox sweep is mandatory because callbacks and queue
-  acceptance are not atomic. Scope it to unfinished workflow records.
+  acceptance are not atomic. Scope it to unfinished workflow records. Register
+  it in all three `config/recurring.yml` blocks: production, desktop and
+  development. Keep push recovery independently active for sealed handoffs.
+  Crash-gap tests explicitly stub the after-commit enqueue boundary or simulate
+  interruption after persistence, then run recovery against committed rows.
+  A single-database inline adapter does not model the production queue database
+  separation; do not claim that it alone proves crash recovery.
 - `Comment::Notifiable` already has transactional unique inbox insertion and a
   push delivery record, but its recipient policy and private helper cannot be
   called unmodified for human workflow responsibility.
@@ -519,6 +652,26 @@ child without `parent:` on retries, or it would generate a fresh child.
 | Emitted event over an already-read comment | New workflow task; no history drop or unrelated coalescing |
 | Generated reply contains mentions | No replay of root/response textual mentions; primary priority preserved |
 | Unknown emits and human/none with emits | Save advisory; no unsupported effect at runtime |
+
+Additional integration acceptance cases:
+
+| Scenario | Expected result |
+| --- | --- |
+| Existing running Task for same agent/comment; workflow event at enqueue and later worker | Both comment-based duplicate guards bypassed only for validated workflow admission; exactly one new execution/agent Task |
+| History coverage appears between enqueue and worker, including logical `comment_created` | Neither drop door consumes the workflow obligation; no legacy drop record; fan-in completes normally |
+| Worker parks a queued Task and returns nil | Admission is materialized; wait for that Task instead of treating nil as failure |
+| Worker goes offline/rejects before Task creation; unexplained materialization failure exhausts retries | Explicit rejection reason or `delivery_failed`; no permanently open fan-in or child |
+| Same workflow outbox payload is redelivered concurrently | Same execution/agent identity at both insert doors; no duplicate Task or provider restart |
+| Ordinary restore uses a covering workflow Task's payload | Strip current-admission marker; restored ordinary task has null workflow reference and cannot settle the covering execution |
+| Parent `workflow.execution_id`, forged current ID, or ID with mismatched scope/agent/envelope | Parent metadata is not an admission marker; unvalidated current marker cannot bypass guards or bind a Task |
+| Serialized Drop Trigger retry with `:test`, scheduled wait and preserved `job_id` | One receipt identity; post-commit redelivery acknowledges frozen outcome; new job ID remains independent |
+| Invocation travels Drop Trigger to Dispatcher to AgentOrchestrator | Exact source/job ID preserved; source mismatch rejected before workflow effects; child does not inherit invocation |
+| Workflow push queue failure, worker failure, expired lease and third exhausted attempt | Shared attempt counter and token; terminal failed row never selected for a fourth attempt |
+| Push accepted into queue, then worker lost or suppresses after permission change | Enqueued workflow row remains recoverable by lease; suppressed row never replays; ordinary scope unchanged |
+| Worker completes before enqueue acknowledgement | Conditional updates preserve terminal state; stale acknowledgement cannot reopen delivery |
+| Topic tool previews under lock, then dispatches its second selection | No preview effects or chain lock; single snapshot/selection commit; task slot and chain locks never nested |
+| Three recurring environment blocks and simulated post-commit crash | Each registers workflow sweep; persisted admissions/children/deliveries recover without new identities |
+| Two independently enqueued Drop Trigger jobs share an anchor/rule/owner | Separate receipts/executions/notices under current proposal; no implicit anchor-based notice aggregation |
 
 ## Sequenced implementation checklist
 
@@ -629,3 +782,32 @@ later revision. The following is the author's disposition, pending review:
 
 Only the specification changed. These dispositions do not claim runtime coverage,
 technical sign-off, or approval of the proposed product semantics.
+
+## Review 134545: task creation, invocation transport and push states
+
+Report 134545 in topic 19327 reviews the 52e1dc21e response and closes all nine
+second-review items at the design level. It explicitly withdraws B-2:
+`A2aDispatcher` supplies resolved mentions and Matcher handles even ineligible
+mentions exclusively, so this path does not enter workflow routing. Preserve
+that existing precedence; do not add a workflow gate there. The report is not
+sign-off on the subsequently revised full document or product approval.
+
+| New review item | Author disposition in this revision |
+| --- | --- |
+| 1: returned agent without a Task | Exclude workflow dispatches from duplicate-running and history-drop checks at both enqueue and worker doors; record durable materialization outcomes, bounded failure and queued-Task evidence. Validate current execution ID in outbox payload and both insert doors. |
+| 2: job identity cannot reach receipt boundary | Add explicit optional `invocation:` to both layers' typed API and pass serialized `job_id` from Drop Trigger; receipt lookup also precedes anchor preparation. |
+| 3: retry and suppression states absent | Name core delivery columns `push_attempts` and `push_state`, define terminal states and leased recovery after enqueue, and extend `ready_for_push` with a workflow-specific branch. |
+| 4: inline/manual retry fixture proves the wrong identity | Locally use `:test`, execute the scheduled retry, assert serialization preserves `job_id`, and deserialize one job for redelivery. Keep a new job as the separate-invocation negative control. |
+| Selection and lock order | Document both topic-tool previews, snapshot the dispatched selection, and separate chain reservations from topic-slot materialization transactions. |
+| Anchor-based notice aggregation | Not adopted: it would merge independent handoffs. Preserve the explicit per-execution guarantee and document repeated notices from independent jobs as a pending product limitation. |
+| Environment registration and crash tests | Register sweep in production/desktop/development; simulate the post-commit enqueue gap explicitly. |
+| Owner and push entry points | Reuse `Creative#user`; branch at the start of `enqueue_push!` and use one revalidating workflow worker before synchronous shared transport. |
+
+One implementation qualification extends item 1: `AiAgentJob#perform` repeats
+both guards, so changing only the orchestrator is insufficient. Also, legacy
+restore reconstructs the covering Task's payload, not an incoming workflow
+outbox payload. Preserving that covering execution ID would attach unrelated
+ordinary work to the wrong execution; strip it there and recover workflow work
+only from its own durable admission. These are author proposals requiring review.
+Runtime code and migrations remain unchanged. Task 21052 stays incomplete pending
+technical re-review and the outstanding product decisions.
