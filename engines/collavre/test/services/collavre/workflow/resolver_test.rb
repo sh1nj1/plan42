@@ -175,6 +175,28 @@ module Collavre
         assert_equal [ rule.id ], resolver.rules.map(&:creative_id)
       end
 
+      [ [], "legacy", 42, 1.5, true, false, nil ].each do |metadata|
+        test "inherits pins and disables through malformed target and parent #{metadata.inspect}" do
+          kept = create_workflow
+          disabled = create_workflow
+          kept_rule = create_workflow_rule(parent: kept)
+          create_workflow_rule(parent: disabled)
+          grandparent = create_workflow_creative(description: "Grandparent", data: {
+            "context_ids" => [ disabled.id, kept.id ], "disabled_context_ids" => [ disabled.id ]
+          })
+          parent = create_workflow_creative(description: "Parent", parent: grandparent)
+          target = create_workflow_creative(description: "Target", parent: parent)
+          linked = create_workflow_creative(description: "Linked target", origin: target)
+          Creative.where(id: [ parent.id, target.id ]).update_all([ "data = ?", metadata.to_json ])
+
+          [ target, linked ].each do |creative|
+            resolver = Resolver.new(context_for(creative))
+            assert_equal [ kept.id ], resolver.workflow_creative_ids
+            assert_equal [ kept_rule.id ], resolver.rules.map(&:creative_id)
+          end
+        end
+      end
+
       test "loads only active direct rule children and compacts invalid rules" do
         workflow = create_workflow
         valid = create_workflow_rule(parent: workflow)

@@ -93,7 +93,7 @@ module Collavre
     CONTENT_TOPIC_NAME = "Content"
 
     def inbox?
-      data&.dig("kind") == "inbox"
+      data.is_a?(Hash) && data["kind"] == "inbox"
     end
 
     def workflow?
@@ -229,12 +229,12 @@ module Collavre
     # --- Context IDs ---
     # Returns the directly-configured context creative IDs for this creative.
     def context_ids
-      Array(data&.dig("context_ids"))
+      data.is_a?(Hash) ? Array(data["context_ids"]) : []
     end
 
     # Returns the directly-configured disabled context IDs for this creative.
     def disabled_context_ids
-      Array(data&.dig("disabled_context_ids"))
+      data.is_a?(Hash) ? Array(data["disabled_context_ids"]) : []
     end
 
     # Returns the effective context IDs: own + inherited from ancestors (deduplicated).

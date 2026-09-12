@@ -22,6 +22,17 @@ module Collavre
       assert_equal [], @feature_a.context_ids
     end
 
+    [ [], [ { "context_ids" => [ 1 ] } ], "legacy", 42, 1.5, true, false, nil ].each do |metadata|
+      test "context readers ignore persisted non-object metadata #{metadata.inspect}" do
+        Creative.where(id: @feature_a.id).update_all([ "data = ?", metadata.to_json ])
+        @feature_a.reload
+
+        assert_empty @feature_a.context_ids
+        assert_empty @feature_a.disabled_context_ids
+        refute_predicate @feature_a, :inbox?
+      end
+    end
+
     test "context_ids returns configured IDs from data" do
       @features.update!(data: { "context_ids" => [ @development.id ] })
       assert_equal [ @development.id ], @features.context_ids

@@ -28,6 +28,25 @@ module Collavre
         assert_equal [ @agent ], match
       end
 
+      [ [], [ { "context_ids" => [ 1 ] } ], "legacy", 42, 1.5, true, false, nil ].each do |metadata|
+        test "on mode falls back for non-object target metadata #{metadata.inspect}" do
+          Creative.where(id: @creative.id).update_all([ "data = ?", metadata.to_json ])
+
+          assert_equal [ @agent ], match
+        end
+
+        test "on mode preserves pins through non-object ancestor metadata #{metadata.inspect}" do
+          grandparent = create_workflow_creative(description: "Grandparent",
+            data: { "context_ids" => [ @workflow.id ] })
+          parent = create_workflow_creative(description: "Parent", parent: grandparent)
+          @creative.update!(parent: parent, data: {})
+          Creative.where(id: parent.id).update_all([ "data = ?", metadata.to_json ])
+          agent_rule
+
+          assert_equal [ @other ], match
+        end
+      end
+
       test "an unconditional rule chooses its agent exclusively" do
         agent_rule
         assert_equal [ @other ], match
