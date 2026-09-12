@@ -10,7 +10,7 @@ module Collavre
           "on" => "comment_created",
           "when" => { "source" => [ "cron" ], "author_agent" => true },
           "handler" => { "type" => "agent", "agent_ids" => [ 17, 23 ] },
-          "emits" => [ "comment_created" ]
+          "emits" => "comment_created"
         })
 
         rule, errors = Rule.parse(creative)
@@ -22,7 +22,7 @@ module Collavre
           conditions: { "source" => [ "cron" ], "author_agent" => true },
           handler_type: "agent",
           agent_ids: [ 17, 23 ],
-          emits: [ "comment_created" ]
+          emits: "comment_created"
         ), rule
         assert rule.responder?
         assert rule.event_name.frozen?
@@ -31,6 +31,7 @@ module Collavre
         assert rule.handler_type.frozen?
         assert rule.agent_ids.frozen?
         assert rule.emits.frozen?
+        assert_equal %w[agent human none], Rule::HANDLER_TYPES
       end
 
       test "returns nil without errors for a creative that is not a rule" do
@@ -66,14 +67,24 @@ module Collavre
       end
 
       test "agent handler requires a nonempty integer ID list" do
-        [ nil, [], [ "17" ], [ 17, nil ] ].each do |agent_ids|
+        [ {}, { "agent_ids" => [] } ].each do |attributes|
+          rule, errors = Rule.parse(creative_with(
+            "on" => "comment_created",
+            "handler" => { "type" => "agent" }.merge(attributes)
+          ))
+
+          assert_nil rule
+          assert_equal [ I18n.t("collavre.workflow.rule.errors.no_agent") ], errors
+        end
+
+        [ nil, [ "17" ], [ 17, nil ] ].each do |agent_ids|
           rule, errors = Rule.parse(creative_with(
             "on" => "comment_created",
             "handler" => { "type" => "agent", "agent_ids" => agent_ids }
           ))
 
           assert_nil rule
-          assert_equal [ I18n.t("collavre.workflow.rule.errors.no_agent") ], errors
+          assert_equal [ I18n.t("collavre.workflow.rule.errors.invalid_structure") ], errors
         end
       end
 
@@ -95,11 +106,32 @@ module Collavre
         rule, errors = Rule.parse(creative_with(
           "on" => "comment_created",
           "handler" => { "type" => "none" },
-          "emits" => [ "future_event" ]
+          "emits" => "future_event"
         ))
 
-        assert_equal [ "future_event" ], rule.emits
+        assert_equal "future_event", rule.emits
         assert_equal [ I18n.t("collavre.workflow.rule.errors.unknown_emit", event: "future_event") ], errors
+      end
+
+      test "emits is optional and absent emits remains nil" do
+        rule, errors = Rule.parse(creative_with(
+          "on" => "comment_created", "handler" => { "type" => "none" }
+        ))
+
+        assert_empty errors
+        assert_nil rule.emits
+      end
+
+      test "human and none handlers reject malformed provided agent ID lists" do
+        %w[human none].product([ "17", [ "17" ], [ 17, nil ] ]).each do |type, agent_ids|
+          rule, errors = Rule.parse(creative_with(
+            "on" => "comment_created",
+            "handler" => { "type" => type, "agent_ids" => agent_ids }
+          ))
+
+          assert_nil rule
+          assert_not_empty errors
+        end
       end
 
       test "unknown conditions are advisory and ignored without mutating source data" do
@@ -125,7 +157,7 @@ module Collavre
           [],
           { "on" => "comment_created", "handler" => [], "when" => {} },
           { "on" => "comment_created", "handler" => { "type" => "human" }, "when" => [] },
-          { "on" => "comment_created", "handler" => { "type" => "human" }, "emits" => "event" },
+          { "on" => "comment_created", "handler" => { "type" => "human" }, "emits" => [ "event" ] },
           rule_payload("when" => { "source" => "cron" }),
           rule_payload("when" => { "author_agent" => "yes" }),
           rule_payload("when" => { "body_contains" => [ 3 ] }),
@@ -161,6 +193,12 @@ module Collavre
 
         assert_nil rule
         assert_equal [ I18n.t("collavre.workflow.rule.errors.invalid_structure") ], errors
+
+        warnings = []
+        Rails.logger.stub(:warn, ->(message) { warnings << message }) do
+          assert_nil Rule.from(creative)
+        end
+        assert_equal 1, warnings.size
       end
 
       test "human and none handlers are not responders" do

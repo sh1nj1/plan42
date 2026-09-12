@@ -2,7 +2,7 @@
 
 module Collavre
   module Workflow
-    Rule = Data.define(:creative_id, :event_name, :conditions, :handler_type, :agent_ids, :emits) do
+    class Rule < Data.define(:creative_id, :event_name, :conditions, :handler_type, :agent_ids, :emits)
       HANDLER_TYPES = %w[agent human none].freeze
       CONDITION_TYPES = {
         "source" => ->(value) { value.is_a?(Array) && value.all?(String) },
@@ -19,13 +19,23 @@ module Collavre
 
       def self.from(creative)
         rule, errors = parse(creative)
-        Rails.logger.warn("[Workflow::Rule] Creative #{creative&.id}: #{errors.join(', ')}") if errors.any?
+        Rails.logger.warn("[Workflow::Rule] Creative #{creative_id_for_log(creative)}: #{errors.join(', ')}") if errors.any?
         rule
+      rescue StandardError => exception
+        Rails.logger.warn("[Workflow::Rule] Creative #{creative_id_for_log(creative)}: #{exception.message}")
+        nil
       end
 
       def self.error(key, **options)
         I18n.t("collavre.workflow.rule.errors.#{key}", **options)
       end
+
+      def self.creative_id_for_log(creative)
+        creative&.id
+      rescue StandardError
+        "unknown"
+      end
+      private_class_method :creative_id_for_log
 
       def responder?
         handler_type == "agent"
@@ -81,12 +91,14 @@ module Collavre
           @handler_type = handler["type"]
           return add_fatal(:unknown_handler) unless HANDLER_TYPES.include?(@handler_type)
 
-          @agent_ids = handler["agent_ids"] || []
-          add_fatal(:no_agent) if @handler_type == "agent" && !valid_agent_ids?
+          @agent_ids = handler.fetch("agent_ids", [])
+          return add_fatal(:invalid_structure) unless valid_agent_ids?
+
+          add_fatal(:no_agent) if @handler_type == "agent" && @agent_ids.empty?
         end
 
         def valid_agent_ids?
-          @agent_ids.is_a?(Array) && @agent_ids.any? && @agent_ids.all? { |id| id.is_a?(Integer) && id.positive? }
+          @agent_ids.is_a?(Array) && @agent_ids.all? { |id| id.is_a?(Integer) && id.positive? }
         end
 
         def parse_conditions
@@ -105,13 +117,13 @@ module Collavre
         end
 
         def parse_emits
-          source = payload.fetch("emits", [])
-          return add_fatal(:invalid_structure) unless source.is_a?(Array) && source.all?(String)
+          return @emits = nil unless payload.key?("emits")
+
+          source = payload["emits"]
+          return add_fatal(:invalid_structure) unless source.is_a?(String)
 
           @emits = immutable_copy(source)
-          source.reject { |event| SystemEvents::Vocabulary.known?(event) }.each do |event|
-            add_error(:unknown_emit, event: event)
-          end
+          add_error(:unknown_emit, event: source) unless SystemEvents::Vocabulary.known?(source)
         end
 
         def build_rule
@@ -150,6 +162,7 @@ module Collavre
           @fatal == true
         end
       end
+      private_constant :Parser, :CONDITION_TYPES
     end
   end
 end
