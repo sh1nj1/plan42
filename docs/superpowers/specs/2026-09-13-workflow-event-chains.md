@@ -1,9 +1,10 @@
 # PR4: workflow events and chained execution
 
 Status: implementation proposal. The emission timing question has been sent to
-the product owner; the recommended completion-based semantics below are new PR4
-decisions, not approvals inherited from PR3. This document is reviewable before
-runtime changes are made.
+the product owner. Vrex recommends completion-based emission in review topic
+19327; the cross-post in topic 19326 is a reviewer report, not a separate product
+approval. The semantics and limits below are new PR4 proposals, not approvals
+inherited from PR3. This document is reviewable before runtime changes are made.
 
 ## Scope and invariants
 
@@ -46,6 +47,29 @@ A successful `review_updated` action without a usable reply anchor is
 the workflow tier, so an ordinary review never starts a workflow execution.
 This explicit outcome also covers an adapter that completes by updating an
 existing reply. Do not manufacture or quote a private anchor to continue it.
+
+Settlement evaluates the following cases in order, after checking that the
+execution is still open and its mode, permission and scope remain valid:
+
+| Task evidence | Workflow outcome |
+| --- | --- |
+| `failed`, `cancelled`, or `escalated` | `task_failed`; no continuation |
+| Any status other than `done` | Keep waiting; no success inference from response actions |
+| `engine_login` key present, including retryable, replay-completed or abandoned cards | `login_required`; never reopen after separate replay |
+| Recorded provider handoff failure (`ended_undelivered?`) | `task_failed`, even if an error reply exists |
+| `unsuccessful_loop_response?` | `empty_reply`; no successful finalized response |
+| Finalized `review_updated` action with no reply anchor | `completed_no_anchor`; successful terminal outcome without emission |
+| Missing reply without that successful review evidence, or empty/placeholder reply | `empty_reply`; never manufacture an anchor |
+| Existing reply is private, deleted, moved or outside the task's scope | Stop with `permission_revoked` or `scope_changed`; do not relabel this as successful review completion |
+| Finalized response and committed, usable reply | Record responder success; emit only after the full admitted set succeeds |
+
+Keep the adapter for these decisions on `Task` so it can reuse the private
+`finalized_response?` and replay predicates without copying their implementations.
+`loop_completion_delegated_to_replay?` is a separate private predicate; it is not
+called by `unsuccessful_loop_response?`. The explicit login branch above covers
+both delegated and abandoned login cards. Existing trigger-loop replay behavior
+stays unchanged. In a fan-in, any successful `completed_no_anchor` member makes
+the execution non-emitting; another responder's anchor cannot replace its result.
 
 `done` alone is insufficient. `running`, `delegated`,
 `pending`, `queued`, and `pending_approval` are not completion. `failed`,
@@ -249,6 +273,12 @@ must not suppress the durable action-needed inbox entry.
 `PushNotificationJob` currently does not enforce `notifications_enabled` itself.
 The workflow notification adapter must check it explicitly; do not assume that
 calling the existing job supplies this preference gate.
+The existing push title is Korean in both the FCM v1 and legacy client paths.
+Workflow delivery must use a recipient-localized EN/KO title in both paths,
+including the title used to calculate the FCM byte budget. A backwards-compatible
+optional title argument can preserve existing callers while supplying the
+workflow's localized title. Add coverage for both transports and byte fitting;
+do not send the workflow notice through a path that ignores the supplied title.
 
 Use the existing Comment notification unique key and delivery table where
 possible. One inbox entry is guaranteed per execution/recipient. External push
@@ -299,6 +329,7 @@ child without `parent:` on retries, or it would generate a fresh child.
 | Delegated reply; tool approval pause/resume | No emission before committed successful reply; external completion settled too |
 | Inline login card ends done; subsequent separate replay succeeds | Login card records login_required, never emits; normal replay does not reopen this workflow |
 | review_updated-only successful completion | completed_no_anchor; no manufactured anchor or emit |
+| Fan-in includes one review-only success without an anchor | No child, even when another responder has a usable reply |
 | escalated transition; repeated external completion callback | Prompt terminal settlement; repeated settlement is a no-op |
 | Duplicate delivery/completion; two concurrent workers | One execution, one task per agent, one child and one budget reservation |
 | Repeated same comment callback in on versus off/shadow | on reuses workflow root receipt; off/shadow retain current producer behavior and create no receipt |
@@ -314,6 +345,7 @@ child without `parent:` on retries, or it would generate a fresh child.
 | Same rule in a new root correlation | Independent execution with fresh budgets |
 | Scope/mode/permission/anchor changes while queued | Fail closed with a reason; no new child or notification |
 | Owner present, absent, AI, no permission; duplicate delivery | Exactly one eligible human owner inbox entry, otherwise recorded block |
+| EN/KO recipient, v1/legacy push, notifications disabled | Localized notice and push title; disabled push leaves the durable inbox notice intact |
 | Unreadable rule title; private source comment | No rule text leaked; no private source handed off |
 | Emitted event over an already-read comment | New workflow task; no history drop or unrelated coalescing |
 | Generated reply contains mentions | No replay of root/response textual mentions; primary priority preserved |
@@ -345,3 +377,26 @@ need a new workflow-boundary check. `unsuccessful_loop_response?` is not by itse
 a positive success predicate. The revised proposal has not yet received reviewer
 sign-off or the product owner's emission-timing answer. No runtime change is
 implemented or validated by this document.
+
+### Cross-post review reconciliation
+
+The five blockers in topic 19326 summarize the longer review in topic 19327.
+The current proposal addresses them as follows; this is an author disposition,
+not a claim that the reviewer has signed off:
+
+| Review item | Specification resolution |
+| --- | --- |
+| Login card mistaken for success | Explicit ordered `login_required` branch before finalized-response checks; reuse Task evidence rather than negate the unsuccessful predicate |
+| Review-only success without an anchor | `completed_no_anchor`, including fan-in termination without a substitute anchor |
+| Escalation misses settlement | `saved_change_to_status?` hook plus explicit workflow terminal states |
+| Three external callback callers | All three are named in the integration map; settlement is idempotent on already-terminal tasks |
+| Inherited absolute depth shortens the budget | Persist `root_depth`; relative limit 8 and separate absolute ceiling 64 |
+| Ordinary routing blocked by workflow budgets | Count workflow admissions only; preserve A2A, primary and expression behavior |
+| Event validation and retry identity | Existing `Vocabulary.fetch` already rejects unknown names; add workflow source/payload validation and persisted-name equality before dispatch |
+| Human ownership and private quotes | `effective_origin` human owner, current feedback permission, public anchor, generic link without quotes |
+| Push preference and language | Explicit preference gate and localized title in both transports with byte-budget coverage |
+
+Technical re-review remains requested in topic 19327 (message 134506). Product
+decisions still pending are completion-based emission, the owner handoff, the
+login/review terminal outcomes, and fixed depth/task/step/retry limits. No pending
+decision is inferred from a report posted using a human-account CLI token.
