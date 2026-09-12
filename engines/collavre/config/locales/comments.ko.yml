@@ -235,6 +235,7 @@ ko:
       activity_logs:
         duration: "수행 시간: %{duration}"
         inline_duration: "(%{duration})"
+        inline_duration_hint: "마지막 시도의 수행 시간"
         duration_hint: "마지막 시도의 시작부터 모델 응답 완료까지이며, 위임 에이전트는 답글 저장 완료까지입니다. 큐 대기, 이전 재시도, 후속 작업 전달 시간은 제외합니다."
         in_progress: "진행 중"
         unavailable: "측정 불가"

@@ -2397,3 +2397,8 @@ li:hover .topic-create-option {
     cursor: pointer;
     font-size: 1.2rem;
 }
+
+.comment-execution-time {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}

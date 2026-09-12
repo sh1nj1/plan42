@@ -22,24 +22,53 @@ class Comments::ExecutionTimeTest < ActionDispatch::IntegrationTest
 
       assert_response :success
       assert_select "#comment_#{@comment.id} time + .comment-execution-time", text: "(#{duration})" do |elements|
+        assert_equal "note", elements.first["role"]
         assert_equal I18n.t("collavre.comments.activity_logs.duration", locale: locale, duration: duration), elements.first["aria-label"]
-        assert_equal I18n.t("collavre.comments.activity_logs.duration_hint", locale: locale), elements.first["title"]
+        assert_equal I18n.t("collavre.comments.activity_logs.inline_duration_hint", locale: locale), elements.first["title"]
       end
       assert_select "#comment_#{@comment.id} time[datetime][title]", count: 1
     end
   end
 
-  test "shows active and unavailable task states inline" do
-    @task.update!(status: "running")
-    get creative_comments_path(@creative)
-    assert_response :success
-    assert_select ".comment-execution-time", text: "(In progress)"
+  test "hides inline timing for active unsuccessful and historical tasks" do
+    %w[running pending queued delegated pending_approval failed cancelled escalated].each do |status|
+      @task.update!(status: status)
+      get creative_comments_path(@creative)
+      assert_response :success
+      assert_select ".comment-execution-time", count: 0
+    end
 
     @task.update!(status: "done")
     @task.task_actions.where(action_type: "completion").delete_all
     get creative_comments_path(@creative)
     assert_response :success
-    assert_select ".comment-execution-time", text: "(Unavailable)"
+    assert_select ".comment-execution-time", count: 0
+  end
+
+  test "loads timing events once per page including pagination and topic filtering" do
+    topic = @creative.topics.create!(name: "Timed replies", user: @user)
+    @comment.update!(topic: topic)
+    7.times do
+      task = Collavre::Task.create!(name: "Timed task", agent: @user, status: "done")
+      @creative.comments.create!(user: @user, topic: topic, task: task, content: "Another reply")
+      task.task_actions.create!(action_type: "start", status: "done", created_at: 30.seconds.ago)
+      task.task_actions.create!(action_type: "completion", status: "done", created_at: 10.seconds.ago)
+    end
+
+    [ {}, { topic_id: topic.id }, { after_id: @comment.id },
+      { before_id: @creative.comments.maximum(:id) + 1 } ].each do |parameters|
+      queries = []
+      subscriber = ->(_name, _start, _finish, _id, payload) do
+        queries << payload[:sql] if payload[:sql].match?(/SELECT.*FROM "task_actions"/)
+      end
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        get creative_comments_path(@creative), params: parameters
+      end
+
+      assert_response :success
+      assert_select ".comment-execution-time", count: parameters[:after_id] ? 7 : 8
+      assert_equal 1, queries.size, queries.join("\n")
+    end
   end
 
   test "does not add parentheses to comments without a task" do

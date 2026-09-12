@@ -11,6 +11,11 @@ module Collavre
       format_execution_time(seconds)
     end
 
+    def inline_task_execution_time(task)
+      seconds = TaskExecutionTime.seconds(task) if task
+      format_execution_time(seconds) if seconds
+    end
+
     def format_execution_time(seconds)
       days, remainder = seconds.round.divmod(86400)
       hours, remainder = remainder.divmod(3600)

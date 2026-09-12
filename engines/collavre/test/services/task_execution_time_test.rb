@@ -15,7 +15,7 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     event("completion", 83.25)
     event("reply_created", 84)
 
-    assert_equal 83.25, Collavre::TaskExecutionTime.seconds(@task)
+    assert_equal 83.25, measured_seconds
   end
 
   test "uses the latest completed attempt" do
@@ -24,7 +24,7 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     event("start", 100)
     event("completion", 130)
 
-    assert_equal 30, Collavre::TaskExecutionTime.seconds(@task)
+    assert_equal 30, measured_seconds
   end
 
   test "consecutive starts use the latest attempt boundary" do
@@ -32,7 +32,7 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     event("start", 100)
     event("completion", 130)
 
-    assert_equal 30, Collavre::TaskExecutionTime.seconds(@task)
+    assert_equal 30, measured_seconds
   end
 
   test "does not reuse an earlier completion for a later attempt" do
@@ -40,16 +40,16 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     event("completion", 20)
     event("start", 100)
 
-    assert_nil Collavre::TaskExecutionTime.seconds(@task)
+    assert_nil measured_seconds
   end
 
   test "requires both start and completion" do
-    assert_nil Collavre::TaskExecutionTime.seconds(@task)
+    assert_nil measured_seconds
     event("completion", 10)
-    assert_nil Collavre::TaskExecutionTime.seconds(@task)
+    assert_nil measured_seconds
     @task.task_actions.delete_all
     event("start", 0)
-    assert_nil Collavre::TaskExecutionTime.seconds(@task)
+    assert_nil measured_seconds
   end
 
   test "does not estimate delegated task completion from updated_at" do
@@ -57,7 +57,7 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     event("delegated", 1)
     @task.update_columns(updated_at: @started_at + 60)
 
-    assert_nil Collavre::TaskExecutionTime.seconds(@task)
+    assert_nil measured_seconds
   end
 
   test "does not show successful duration for unfinished or unsuccessful tasks" do
@@ -65,7 +65,7 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     event("completion", 20)
     %w[pending queued running delegated pending_approval failed cancelled escalated].each do |status|
       @task.status = status
-      assert_nil Collavre::TaskExecutionTime.seconds(@task), status
+      assert_nil measured_seconds, status
     end
   end
 
@@ -73,19 +73,35 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     event("completion", 83)
     event("start", 0)
 
-    assert_equal 83, Collavre::TaskExecutionTime.seconds(@task)
+    assert_equal 83, measured_seconds
   end
 
   test "supports zero duration and deterministic ordering for equal timestamps" do
     event("start", 0)
     event("completion", 0)
-    assert_equal 0, Collavre::TaskExecutionTime.seconds(@task)
+    assert_equal 0, measured_seconds
 
     event("start", 0)
-    assert_nil Collavre::TaskExecutionTime.seconds(@task)
+    assert_nil measured_seconds
   end
 
   private
+
+  def measured_seconds
+    @task.task_actions.reset
+    queried = Collavre::TaskExecutionTime.seconds(@task)
+    @task.task_actions.load
+    preloaded = nil
+    assert_no_queries do
+      preloaded = Collavre::TaskExecutionTime.seconds(@task)
+    end
+    if queried.nil?
+      assert_nil preloaded
+    else
+      assert_equal queried, preloaded
+    end
+    preloaded
+  end
 
   def event(type, offset)
     @task.task_actions.create!(action_type: type, status: "done", created_at: @started_at + offset)

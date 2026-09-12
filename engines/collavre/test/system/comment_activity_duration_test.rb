@@ -16,6 +16,8 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     started_at = Time.current - 100
     task.task_actions.create!(action_type: "start", status: "done", created_at: started_at)
     task.task_actions.create!(action_type: "completion", status: "done", created_at: started_at + 83)
+    historical_task = Collavre::Task.create!(name: "Historical delegation", agent: @user, status: "done")
+    @historical = Comment.create!(creative: @creative, user: @user, task: historical_task, content: "Old response")
     create_reviewed_reply
     sign_in_via_ui(@user)
   end
@@ -33,6 +35,11 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
       assert_selector "time + .comment-execution-time", text: "(20s)"
       find(".comment-activity-log-block summary").click
       assert_selector ".activity-log-duration", text: "Execution time: 20s"
+    end
+    within("#comment_#{@historical.id}") do
+      assert_no_selector ".comment-execution-time"
+      find(".comment-activity-log-block summary").click
+      assert_selector ".activity-log-duration", text: "Execution time: Unavailable"
     end
     within("#comment_#{@plain.id}") do
       assert_no_selector ".comment-execution-time"

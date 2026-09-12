@@ -23,6 +23,18 @@ class Collavre::ActivityLogsHelperTest < ActionView::TestCase
     end
   end
 
+  test "inline timing only formats measured durations including zero" do
+    assert_nil inline_task_execution_time(nil)
+    task = Collavre::Task.new(status: "running")
+    assert_nil inline_task_execution_time(task)
+    task.status = "done"
+    I18n.with_locale(:en) do
+      Collavre::TaskExecutionTime.stub(:seconds, nil) { assert_nil inline_task_execution_time(task) }
+      Collavre::TaskExecutionTime.stub(:seconds, 0) { assert_equal "0s", inline_task_execution_time(task) }
+      Collavre::TaskExecutionTime.stub(:seconds, 83) { assert_equal "1m 23s", inline_task_execution_time(task) }
+    end
+  end
+
   test "renders task states and measured duration" do
     task = Collavre::Task.new(status: "running")
     I18n.with_locale(:en) do
