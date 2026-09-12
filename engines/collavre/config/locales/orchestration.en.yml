@@ -17,6 +17,7 @@ en:
           no_agent: "Choose at least one valid agent."
           unknown_emit: "Unknown emitted workflow event: %{event}."
           unknown_condition: "Unknown workflow condition: %{condition}."
+          invalid_liquid: "This workflow rule has invalid Liquid syntax."
           invalid_structure: "This workflow rule has malformed data."
   admin:
     orchestration:

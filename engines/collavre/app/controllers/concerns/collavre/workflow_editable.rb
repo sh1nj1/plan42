@@ -85,16 +85,21 @@ module Collavre
       payload = params[:workflow_rule]
       payload = payload.to_unsafe_h if payload.is_a?(ActionController::Parameters)
       rule.data = (rule.data || {}).merge("workflow_rule" => payload)
-      parsed, errors = Workflow::Rule.parse(rule)
+      parsed, errors = Workflow::Rule.parse(rule, validate_liquid: true)
       return render json: { errors: errors }, status: :unprocessable_entity unless parsed
 
       if rule.save
-        # The creator must be able to keep editing before queued permission jobs run.
-        Creatives::PermissionCacheBuilder.rebuild_for_creative(rule) if status == :created
+        initialize_workflow_rule(rule) if status == :created
         render json: Workflow::Editor.new(workflow, Current.user).rule_json(rule), status: status
       else
         render json: { errors: rule.errors.full_messages }, status: :unprocessable_entity
       end
+    end
+
+    def initialize_workflow_rule(rule)
+      # Initialize inherited access before collaborators receive the new tree row.
+      Creatives::PermissionCacheBuilder.rebuild_for_creative(rule)
+      rule.broadcast_creative_created
     end
 
     def workflow_error(key)

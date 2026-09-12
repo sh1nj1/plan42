@@ -7,11 +7,17 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
   include WorkflowCreativeHelper
 
   setup do
+    @original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
     @user = users(:one)
     sign_in_as @user, password: "password"
     @workflow = create_workflow
     @rule = create_workflow_rule(parent: @workflow, sequence: 2)
     @payload = { "on" => "comment_created", "handler" => { "type" => "none" } }
+  end
+
+  teardown do
+    ActiveJob::Base.queue_adapter = @original_adapter
   end
 
   test "lists active direct rules in tree order with raw payload and parser diagnostics" do
@@ -140,6 +146,101 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     assert_equal @payload, created.data.fetch("workflow_rule")
     get workflow_path(@workflow), as: :json
     assert_includes response.parsed_body.fetch("rules").map { |rule| rule.fetch("id") }, created.id
+  end
+
+  test "created rules broadcast their initialized tree payload to collaborators" do
+    @rule.update!(sequence: -1)
+    reader = users(:two)
+    share(@workflow, reader, :write)
+    stream = "#{reader.to_gid_param}:creative_tree"
+
+    messages = capture_broadcasts(stream) do
+      perform_enqueued_jobs(only: Collavre::CreativeBroadcastJob) do
+        post rule_path(@workflow), params: { description: "Broadcast rule", workflow_rule: @payload }, as: :json
+      end
+    end
+
+    assert_response :created
+    created = Creative.find(response.parsed_body.fetch("id"))
+    payloads = messages.filter_map do |message|
+      data = Nokogiri::HTML.fragment(message).at_css("turbo-stream[action='refresh_creative_tree']")&.[]("data")
+      JSON.parse(data) if data
+    end
+    creations = payloads.select { |item| item.fetch("action") == "created" }
+    assert_equal 1, creations.length
+    payload = creations.sole.fetch("creative")
+    assert_equal created.id, payload.fetch("id")
+    assert_equal @workflow.id, payload.fetch("parent_id")
+    assert_equal created.sequence, payload.fetch("sequence")
+    assert_equal @rule.id, payload.fetch("previous_sibling_id")
+    assert_equal "Broadcast rule", payload.fetch("inline_editor_payload").fetch("description_raw_html")
+    assert_equal true, payload.fetch("can_write")
+    assert_equal @payload, created.data.fetch("workflow_rule")
+    assert Collavre::CreativeSharesCache.exists?(creative: created, user: reader)
+  end
+
+  test "updates and failed creates never enqueue a created broadcast" do
+    clear_enqueued_jobs
+    patch rule_path(@rule), params: { workflow_rule: @payload }, as: :json
+    assert_response :success
+    post rule_path(@workflow), params: { description: "Invalid", workflow_rule: {} }, as: :json
+    assert_response :unprocessable_entity
+
+    created_jobs = enqueued_jobs.select do |job|
+      job[:job] == Collavre::CreativeBroadcastJob && job[:args][1] == "created"
+    end
+    assert_empty created_jobs
+  end
+
+  %i[en ko].each do |locale|
+    test "invalid Liquid creates and updates return localized errors without mutations in #{locale}" do
+      original = @rule.data.deep_dup
+      [ "{% if", "{% if comment.content %}true", "comment.content ==" ].each do |expression|
+        payload = @payload.merge("when" => { "liquid" => expression })
+        headers = { "Accept-Language" => locale.to_s }
+        patch rule_path(@rule), params: { workflow_rule: payload }, headers: headers, as: :json
+        assert_response :unprocessable_entity
+        expected = I18n.t("collavre.workflow.rule.errors.invalid_liquid", locale: locale)
+        assert_equal [ expected ], response.parsed_body.fetch("errors")
+        refute_match(/translation missing/i, expected)
+        assert_equal original, @rule.reload.data
+
+        assert_no_difference -> { Creative.count } do
+          post rule_path(@workflow), params: { description: "Invalid Liquid", workflow_rule: payload },
+               headers: headers, as: :json
+        end
+        assert_response :unprocessable_entity
+        assert_equal [ expected ], response.parsed_body.fetch("errors")
+      end
+    end
+  end
+
+  test "valid Liquid shorthand and templates preserve advisory data on create and update" do
+    [ "  comment.content contains 'deploy'  ", "  {% if comment.content %}true{% endif %}  " ].each do |expression|
+      payload = @payload.merge("when" => { "liquid" => expression, "future_condition" => { "keep" => true } },
+                               "emits" => "future_event")
+      post rule_path(@workflow), params: { description: "Valid Liquid", workflow_rule: payload }, as: :json
+      assert_response :created
+      assert_equal payload, Creative.find(response.parsed_body.fetch("id")).data.fetch("workflow_rule")
+      assert_equal 2, response.parsed_body.fetch("errors").length
+      patch rule_path(@rule), params: { workflow_rule: payload }, as: :json
+      assert_response :success
+      assert_equal payload, @rule.reload.data.fetch("workflow_rule")
+      assert_equal 2, response.parsed_body.fetch("errors").length
+    end
+  end
+
+  test "editor reports malformed stored Liquid while preserving its raw input" do
+    payload = @payload.merge("when" => { "liquid" => "{% if" })
+    @rule.update!(data: @rule.data.merge("workflow_rule" => payload))
+
+    get workflow_path(@workflow), as: :json
+
+    assert_response :success
+    rule = response.parsed_body.fetch("rules").sole
+    assert_equal false, rule.fetch("valid")
+    assert_equal [ I18n.t("collavre.workflow.rule.errors.invalid_liquid") ], rule.fetch("errors")
+    assert_equal payload, rule.fetch("rule")
   end
 
   test "collaborator created rules retain workflow ownership and revocable access" do

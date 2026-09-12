@@ -68,6 +68,28 @@ class WorkflowRuleEditorTest < ApplicationSystemTestCase
     assert_equal "Keep this title", @workflow.children.sole.description
   end
 
+  test "malformed Liquid retains input until repaired and survives reload" do
+    rule = create_workflow_rule(parent: @workflow)
+    original = rule.data.deep_dup
+    visit collavre.edit_creative_path(@workflow)
+    assert_button label(:save), disabled: false
+    find("summary", text: label(:advanced)).click
+    fill_in label(:liquid), with: "{% if"
+    click_button label(:save)
+    assert_text I18n.t("collavre.workflow.rule.errors.invalid_liquid")
+    assert_field label(:liquid), with: "{% if"
+    assert_equal original, rule.reload.data
+
+    fill_in label(:liquid), with: "comment.content != blank"
+    click_button label(:save)
+    assert_text label(:saved)
+    visit current_url
+    assert_button label(:save), disabled: false
+    find("summary", text: label(:advanced)).click
+    assert_field label(:liquid), with: "comment.content != blank"
+    assert_equal "comment.content != blank", rule.reload.data.dig("workflow_rule", "when", "liquid")
+  end
+
   test "readers can inspect but cannot edit rules and ordinary creatives have no panel" do
     foreign = create_workflow(user: users(:two))
     create_workflow_rule(parent: foreign, user: users(:two))

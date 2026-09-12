@@ -25,7 +25,7 @@ module Collavre
       end
 
       def rule_json(creative)
-        parsed, errors = Rule.parse(creative)
+        parsed, errors = Rule.parse(creative, validate_liquid: true)
         {
           id: creative.id, description: creative.description,
           rule: creative.data["workflow_rule"], errors: errors,

@@ -216,6 +216,47 @@ module Collavre
         end
       end
 
+      test "editor validation rejects Liquid syntax with stable diagnostics and preserves advisory data" do
+        expression = "{% private_customer_tag %}"
+        creative = creative_with(rule_payload(
+          "when" => { "liquid" => expression, "future_condition" => true }, "emits" => "future_event"
+        ))
+        original = creative.data.deep_dup
+        diagnostics = []
+        logs = []
+        Rails.logger.stub(:error, ->(message) { logs << message }) do
+          rule, errors = Rule.parse(creative, diagnostics: diagnostics, validate_liquid: true)
+          assert_nil rule
+          assert_equal [ Rule.error(:unknown_condition, condition: "future_condition"),
+                         Rule.error(:unknown_emit, event: "future_event"), Rule.error(:invalid_liquid) ], errors
+          refute_includes errors.join, expression
+        end
+        assert_equal [ :unknown_condition, :unknown_emit, :invalid_liquid ], diagnostics
+        assert_equal original, creative.data
+        assert_empty logs
+      end
+
+      test "routing parses rule structure without parsing Liquid before cheap predicates" do
+        creative = creative_with(rule_payload("when" => { "source" => [ "cron" ], "liquid" => "{% if" }))
+        Liquid::Template.stub(:parse, ->(*) { flunk "Routing must evaluate cheap conditions before parsing Liquid" }) do
+          rule = Rule.from(creative)
+          assert_instance_of Rule, rule
+          refute Conditions.match?(rule.conditions, {})
+        end
+      end
+
+      test "editor Liquid validation parses but never renders customer templates" do
+        template = Liquid::Template.parse("{% if true %}true{% endif %}", error_mode: :strict)
+        template.stub(:render, ->(*) { flunk "Validation must not render Liquid" }) do
+          Liquid::Template.stub(:parse, template) do
+            rule, errors = Rule.parse(creative_with(rule_payload("when" => { "liquid" => "true" })),
+                                     validate_liquid: true)
+            assert_instance_of Rule, rule
+            assert_empty errors
+          end
+        end
+      end
+
       test "from is silent for valid rules and ordinary creatives" do
         warnings = []
         Rails.logger.stub(:warn, ->(message) { warnings << message }) do

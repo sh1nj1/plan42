@@ -9,6 +9,21 @@ module Collavre
         new(conditions, context, rule_id: rule_id).match?
       end
 
+      def self.valid_liquid?(expression)
+        return true if expression.nil?
+
+        parse_liquid(expression, error_mode: :strict)
+        true
+      rescue Liquid::SyntaxError
+        false
+      end
+
+      def self.parse_liquid(expression, error_mode: :lax)
+        expression = expression.strip
+        expression = "{% if #{expression} %}true{% endif %}" unless expression.start_with?("{%")
+        Liquid::Template.parse(expression, error_mode: error_mode)
+      end
+
       def initialize(conditions, context, rule_id: nil)
         @conditions = conditions
         @context = context
@@ -47,10 +62,7 @@ module Collavre
       end
 
       def liquid_matches?(expression)
-        expression = expression.strip
-        expression = "{% if #{expression} %}true{% endif %}" unless expression.start_with?("{%")
-
-        template = Liquid::Template.parse(expression)
+        template = self.class.parse_liquid(expression)
         template.render(@context.except("agent", :agent)).strip == "true"
       rescue StandardError => e
         Rails.logger.error("[Workflow::Conditions] Liquid error=#{e.class.name} rule_id=#{@rule_id.inspect}")

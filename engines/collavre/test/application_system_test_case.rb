@@ -49,6 +49,10 @@ at_exit { SystemTestChromeLocator.cleanup_temp_dirs }
 
 BUILD_CHROME_DRIVER = lambda do |app, extra_arguments|
   options = Selenium::WebDriver::Chrome::Options.new
+  # Browser-owned password prompts can intercept WebDriver input after fixture logins.
+  options.add_preference("credentials_enable_service", false)
+  options.add_preference("profile.password_manager_enabled", false)
+  options.add_preference("profile.password_manager_leak_detection", false)
   options.add_argument "--headless"
   options.add_argument "--disable-gpu"
   options.add_argument "--no-sandbox"

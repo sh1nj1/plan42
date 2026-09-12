@@ -22,8 +22,12 @@ permission. A collaborator with write permission can inspect the panel but canno
 New rules retain the workflow owner's ownership; creation history records the
 administrator who created them. Each rule's controls reflect its own permissions.
 Creation initializes inherited permissions before returning, so collaborators can
-continue editing while background permission jobs are queued.
-Invalid rules show parser errors and cannot be saved until repaired. Advisory
+continue editing while background permission jobs are queued. It then enqueues the
+standard creation broadcast for subscribed creative trees.
+Invalid rules show parser errors and cannot be saved until repaired. The editor
+checks Liquid syntax without rendering it; malformed conditions return 422 and
+leave the stored rule unchanged. Both shorthand conditions and full Liquid
+templates are supported. Advisory
 warnings, including unknown condition keys and unknown `emits`, do not block
 saving. The editor preserves fields outside its controls. Advanced rule data can repair
 malformed values that the structured fields cannot express; changes are applied
