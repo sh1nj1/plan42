@@ -122,6 +122,101 @@ module Collavre
         assert_equal 1, sql.count { |statement| statement.include?("parent_id") }
       end
 
+      test "bounds target parent hierarchy queries while preserving inherited pin order and disables" do
+        own, near, far, disabled = Array.new(4) { create_workflow }
+        rules = [ own, near, far ].map { |workflow| create_workflow_rule(parent: workflow) }
+        root = create_workflow_creative(description: "Root", data: {
+          "context_ids" => [ far.id, disabled.id ], "disabled_context_ids" => [ disabled.id ]
+        })
+        counts = [ 1, 12 ].map do |depth|
+          parent = depth.times.reduce(root) do |ancestor, level|
+            create_workflow_creative(description: "Ancestor #{level}", parent: ancestor)
+          end
+          parent.update!(data: { "context_ids" => [ near.id, far.id ] })
+          target = create_workflow_creative(description: "Target", parent:, data: {
+            "context_ids" => [ own.id, disabled.id ]
+          })
+
+          capture_creative_selects do
+            resolver = Resolver.new(context_for(target))
+            assert_equal [ own.id, near.id, far.id ], resolver.workflow_creative_ids
+            assert_equal rules.map(&:id), resolver.rules.map(&:creative_id)
+          end.length
+        end
+
+        assert_equal counts.first, counts.last
+        assert_operator counts.last, :<=, 4
+      end
+
+      test "bounds linked target origin queries and inherits only from the final origin hierarchy" do
+        own, inherited, disabled, shell_pin = Array.new(4) { create_workflow }
+        rules = [ own, inherited ].map { |workflow| create_workflow_rule(parent: workflow) }
+        ancestor = create_workflow_creative(description: "Ancestor", data: {
+          "context_ids" => [ inherited.id, disabled.id ], "disabled_context_ids" => [ disabled.id ]
+        })
+        parent = 12.times.reduce(ancestor) do |previous, level|
+          create_workflow_creative(description: "Parent #{level}", parent: previous)
+        end
+        origin = create_workflow_creative(description: "Origin", parent:, data: {
+          "context_ids" => [ own.id, disabled.id ]
+        })
+        shell_parent = target_with_context(shell_pin)
+        counts = [ 1, 12 ].map do |depth|
+          target = depth.times.reduce(origin) do |previous, level|
+            create_workflow_creative(
+              description: "Linked target #{level}", origin: previous, parent: shell_parent,
+              archived_at: (Time.current if level.zero?), data: { "context_ids" => [ shell_pin.id ] }
+            )
+          end
+
+          capture_creative_selects do
+            resolver = Resolver.new(context_for(target))
+            assert_equal [ own.id, inherited.id ], resolver.workflow_creative_ids
+            assert_equal rules.map(&:id), resolver.rules.map(&:creative_id)
+          end.length
+        end
+
+        assert_equal counts.first, counts.last
+        assert_operator counts.last, :<=, 5
+      end
+
+      test "bounds empty target hierarchy queries and keeps an ordinary root to one query" do
+        root = create_workflow_creative(description: "Empty root")
+        assert_equal 1, capture_creative_selects { assert_empty Resolver.new(context_for(root)).rules }.length
+
+        counts = [ 1, 12 ].map do |depth|
+          origin = depth.times.reduce(root) do |parent, level|
+            create_workflow_creative(description: "Empty parent #{level}", parent:)
+          end
+          linked = depth.times.reduce(origin) do |previous, level|
+            create_workflow_creative(description: "Empty link #{level}", origin: previous)
+          end
+          capture_creative_selects { assert_empty Resolver.new(context_for(linked)).rules }.length
+        end
+
+        assert_equal counts.first, counts.last
+        assert_operator counts.last, :<=, 3
+      end
+
+      test "preserves the target cycle entry when preloading linked origins" do
+        first_pin, second_pin = Array.new(2) { create_workflow }
+        first = target_with_context(first_pin)
+        second = create_workflow_creative(
+          description: "Second", origin: first, data: { "context_ids" => [ second_pin.id ] }
+        )
+        linked = 8.times.reduce(second) do |origin, level|
+          create_workflow_creative(description: "Cycle link #{level}", origin:)
+        end
+        Creative.where(id: first.id).update_all(origin_id: second.id)
+
+        sql = capture_creative_selects do
+          assert_equal [ second_pin.id ], Resolver.new(context_for(linked)).workflow_creative_ids
+          assert_equal [ first_pin.id ], Resolver.new(context_for(first)).workflow_creative_ids
+        end
+
+        assert_operator sql.length, :<=, 6
+      end
+
       test "traverses archived intermediate links without activating archived pins" do
         workflow = create_workflow
         archived_link = create_workflow_creative(
@@ -231,6 +326,16 @@ module Collavre
         assert_empty Resolver.new(context_for(workflow)).workflow_creative_ids
       end
 
+      test "follows current parent pointers when closure rows are stale" do
+        old_pin, current_pin = Array.new(2) { create_workflow }
+        old_parent = target_with_context(old_pin)
+        current_parent = target_with_context(current_pin)
+        target = create_workflow_creative(description: "Moved target", parent: old_parent)
+        target.update_column(:parent_id, current_parent.id)
+
+        assert_equal [ current_pin.id ], Resolver.new(context_for(target)).workflow_creative_ids
+      end
+
       test "uses one active workflow query and one batched child query" do
         first = create_workflow(description: "First")
         second = create_workflow(description: "Second")
@@ -298,7 +403,7 @@ module Collavre
         statements = []
         callback = lambda do |*, payload|
           sql = payload[:sql]
-          statements << sql if sql.start_with?("SELECT") && sql.include?('FROM "creatives"')
+          statements << sql if sql.match?(/\A(?:SELECT|WITH)\b/) && sql.include?('FROM "creatives"')
         end
         ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
         statements

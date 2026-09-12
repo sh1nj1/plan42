@@ -41,7 +41,7 @@ module Collavre
         creative = Creative.find_by(id: @context.dig("creative", "id"))
         return [] unless creative
 
-        origin = creative.effective_origin(Set.new)
+        origin = ContextPreloader.preload(creative)
         @excluded_context_ids = [ creative.id, origin.id ]
         origin.effective_context_ids - origin.effective_disabled_context_ids - @excluded_context_ids
       end
