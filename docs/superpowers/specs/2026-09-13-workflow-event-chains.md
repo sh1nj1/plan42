@@ -44,7 +44,7 @@ terminal workflow execution. Carrying a workflow completion obligation into a
 separate login replay task is outside this proposal; a new root event is needed
 after authentication. This limitation must be visible in editor/help text.
 
-A successful `review_updated` action without a usable reply anchor is
+A successful `review_updated` action that never created a reply anchor is
 `completed_no_anchor`: success without emitting. Review routing normally outranks
 the workflow tier, so an ordinary review never starts a workflow execution.
 This explicit outcome also covers an adapter that completes by updating an
@@ -60,9 +60,11 @@ execution is still open and its mode, permission and scope remain valid:
 | `engine_login` key present, including retryable, replay-completed or abandoned cards | `login_required`; never reopen after separate replay |
 | Recorded provider handoff failure (`ended_undelivered?`) | `task_failed`, even if an error reply exists |
 | `unsuccessful_loop_response?` | `empty_reply`; no successful finalized response |
-| Finalized `review_updated` action with no reply anchor | `completed_no_anchor`; successful terminal outcome without emission |
+| No current reply, but a done `reply_created` action or previously persisted workflow reply ID proves an anchor existed | `scope_changed`; lost/deleted anchor, even if a `review_updated` action also exists |
+| Current reply is private or no longer readable | `permission_revoked`; no review-only reinterpretation |
+| Current reply has moved or is outside the task's creative/topic | `scope_changed`; no review-only reinterpretation |
+| Finalized `review_updated` action with no reply and no evidence that an anchor previously existed | `completed_no_anchor`; successful terminal outcome without emission |
 | Missing reply without that successful review evidence, or empty/placeholder reply | `empty_reply`; never manufacture an anchor |
-| Existing reply is private, deleted, moved or outside the task's scope | Stop with `permission_revoked` or `scope_changed`; do not relabel this as successful review completion |
 | Finalized response and committed, usable reply | Record responder success; emit only after the full admitted set succeeds |
 
 Keep the adapter for these decisions on `Task` so it can reuse the private
@@ -70,8 +72,18 @@ Keep the adapter for these decisions on `Task` so it can reuse the private
 `loop_completion_delegated_to_replay?` is a separate private predicate; it is not
 called by `unsuccessful_loop_response?`. The explicit login branch above covers
 both delegated and abandoned login cards. Existing trigger-loop replay behavior
-stays unchanged. In a fan-in, any successful `completed_no_anchor` member makes
+stays unchanged: an abandoned login card can remain eligible for the existing
+trigger loop when its other gates pass, while PR4 terminates its workflow chain
+as `login_required`. Do not change trigger-loop eligibility to align these layers.
+In a fan-in, any successful `completed_no_anchor` member makes
 the execution non-emitting; another responder's anchor cannot replace its result.
+
+The lost-anchor branch uses existing done `reply_created` action evidence (the
+response finalizer records `comment_id`) or an already persisted workflow reply
+ID; it does not need the deleted Comment row to exist. Re-query current reply
+state during settlement/publication rather than trust a cached association.
+If neither evidence survives, a missing reply is `empty_reply` unless the
+review-only branch applies. No tombstone or reconstructed source body is needed.
 
 `done` alone is insufficient. `running`, `delegated`,
 `pending`, `queued`, and `pending_approval` are not completion. `failed`,
@@ -345,7 +357,11 @@ Persist a localized action-needed notice in that person's Inbox System topic,
 linked to the source conversation. Use only a generic localized label and link:
 no copied source body and no `quoted_comment` association. The existing private
 `create_inbox_comment` helper always attaches a quote and must not be called
-unchanged. Dedup key is execution ID plus recipient ID. Resolve the owner once
+unchanged. Use `workflow_execution:<execution_id>:recipient:<recipient_id>` for
+both `comments.notification_key` and
+`comment_notification_deliveries.delivery_key`, whose unique indexes are global.
+Do not include `notification_revision`, locale, title or retry attempt in this
+identity. Resolve the owner once
 for the admitted handoff; an ownership change before delivery stops it rather
 than sending the same execution to a second person.
 Do not include private rule titles or rule content: a target owner may lack read
@@ -385,7 +401,15 @@ can raise; calling the existing Notifiable helper inside settlement is unsafe.
 After outer commit, attempt push queueing independently. Failure records a
 pending retry without undoing the inbox comment, execution seal or receipt.
 
-Persist the workflow execution reference and localized title on the delivery.
+PR4 explicitly includes a core-engine migration of
+`comment_notification_deliveries` adding nullable, indexed
+`workflow_execution_id` and nullable `title` (text). They remain null on ordinary
+deliveries; workflow deliveries require both the execution reference and a
+nonempty recipient-localized title. Persist that title in the handoff transaction
+alongside message/link, so immediate delivery and sweep recovery use the same
+text even if the recipient later changes locale. No locale backfill or change to
+the ordinary push default is required. Delivery attempt/terminal-state fields
+needed for the independent recovery policy below also belong to core migrations.
 The existing `CommentPushDeliverySweepJob` must route workflow-tagged rows through
 the same adapter as immediate delivery; it must not call the ungated generic
 enqueue path for them. Both paths recheck mode, recorded owner, scope, public
@@ -455,6 +479,9 @@ child without `parent:` on retries, or it would generate a fresh child.
 | Delegated reply; tool approval pause/resume | No emission before committed successful reply; external completion settled too |
 | Inline login card ends done; subsequent separate replay succeeds | Login card records login_required, never emits; normal replay does not reopen this workflow |
 | review_updated-only successful completion | completed_no_anchor; no manufactured anchor or emit |
+| Deleted reply with done reply_created evidence, including a task with review_updated too | scope_changed before review-only classification; no child |
+| Missing reply without prior anchor or successful review evidence | empty_reply; no inferred deletion or child |
+| Abandoned login card eligible for an existing trigger loop | Existing loop eligibility unchanged; workflow terminates as login_required |
 | Fan-in includes one review-only success without an anchor | No child, even when another responder has a usable reply |
 | escalated transition; repeated external completion callback | Prompt terminal settlement; repeated settlement is a no-op |
 | Duplicate delivery/completion; two concurrent workers | One execution, one task per agent, one child and one budget reservation |
@@ -485,6 +512,8 @@ child without `parent:` on retries, or it would generate a fresh child.
 | notifications_enabled is nil / true / false | nil and true permit workflow push with devices; only false suppresses it; ordinary notification behavior unchanged |
 | Push queue raises after human handoff commit | One sealed execution and inbox entry remain; pending delivery retried independently |
 | Crash between handoff commit and push enqueue; concurrent sweep | Recover the same delivery and title using a lease; no duplicate inbox entry or execution |
+| EN/KO title restored by sweep, then v1/legacy transport; locale changes after handoff | Persisted localized title reaches both transports and byte fitting unchanged |
+| Source comment revision changes; ordinary and workflow notices coexist | Same namespaced execution/recipient key; no duplicate workflow inbox entry or collision with ordinary keys |
 | Owner/access/mode/preference changes before push sweep or worker handoff | Suppress the pending push durably; generic sweep cannot bypass checks or replay after re-enable |
 | Unreadable rule title; private source comment | No rule text leaked; no private source handed off |
 | Emitted event over an already-read comment | New workflow task; no history drop or unrelated coalescing |
@@ -579,3 +608,24 @@ chain boundary, the stated producer deduplication limits, and workflow-only push
 preference semantics. No pending decision is inferred from a report posted using
 a human-account CLI token. Task 21052 remains incomplete until this concrete
 contract is settled; runtime implementation, PR and preview remain unstarted.
+
+### Third review: reconcile the reviewed revision and remaining detail
+
+Report 134524 in topic 19327 (cross-post 134531 in 19326) explicitly closes
+request 134506 against `e64b3a474`. The later `52e1dc21e` proposal was already
+submitted in request 134528. Do not apply the older report as sign-off on that
+later revision. The following is the author's disposition, pending review:
+
+| Review item | Current contract |
+| --- | --- |
+| Remaining 1: blank dispatch result | `52e1dc21e` already defines `dispatch_with_outcome`, durable `workflow_handled?`, Drop Trigger acknowledgement and serialized-job receipt. Keep legacy `dispatch` as an array of real agents; do not add a non-agent sentinel merely to make it nonblank. |
+| Remaining 2: nullable preference | `52e1dc21e` already proposes nil/true enabled and false disabled for workflow push only. Product approval remains separate. |
+| New 1: durable title and shared sweep | The latest proposal already persists title and routes workflow sweep rows through a revalidating adapter. This revision explicitly scopes nullable delivery `title` and indexed `workflow_execution_id` core-engine migrations, title snapshot semantics, and recovery/transport acceptance cases. |
+| New 2: handoff transaction | `52e1dc21e` already commits inbox, pending delivery and execution seal atomically, with push enqueue only after the outer commit. Moving inbox persistence outside the seal transaction is unnecessary; separating queue I/O is the required boundary. |
+| Scope and producer recommendations | The latest proposal already uses scope-local chains, lists producer identity limits and includes root-producer acceptance cases. The topic tool condition cited in the report is a rejection condition; allowed other topics still preserve correlation. |
+| Abandoned login asymmetry | Explicitly preserve existing trigger-loop eligibility while terminating the workflow as login_required. |
+| Deleted reply classification | Lost-anchor evidence yields scope_changed before review-only classification; missing reply without that evidence follows the explicit empty/review-only branches. |
+| Global notification keys | Use the workflow_execution/recipient namespace in both global unique keys, with no notification_revision or retry component. |
+
+Only the specification changed. These dispositions do not claim runtime coverage,
+technical sign-off, or approval of the proposed product semantics.
