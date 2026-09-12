@@ -20,8 +20,7 @@ export default class extends ImageLightboxController {
   }
 
   _prepareImages() {
-    this.element.querySelectorAll('.creative-content img[src], .creative-title-content img[src]').forEach((image) => {
-      if (!image.getAttribute("src") || image.closest('[contenteditable="true"], .inline-edit-form')) return
+    this._listImages().forEach((image) => {
       const link = image.closest("a[href]")
       if (link) {
         this._prepareLink(link)
@@ -32,6 +31,18 @@ export default class extends ImageLightboxController {
       image.setAttribute("aria-haspopup", "dialog")
       image.setAttribute("aria-label", image.alt || this.i18nOpenValue)
     })
+  }
+
+  _listImages() {
+    return Array.from(this.element.querySelectorAll('.creative-content img[src], .creative-title-content img[src]'))
+      .filter((image) => image.getAttribute("src") && !image.closest('[contenteditable="true"], .inline-edit-form-shell'))
+  }
+
+  _hiddenInList(image) {
+    for (let element = image; element && element !== this.element; element = element.parentElement) {
+      if (element.hidden || element.style.display === "none") return true
+    }
+    return false
   }
 
   _prepareLink(link) {
@@ -74,7 +85,7 @@ export default class extends ImageLightboxController {
   open(event) {
     const image = this._imageForEvent(event)
     const content = image?.closest(".creative-content, .creative-title-content")
-    if (!content || image.closest('[contenteditable="true"], .inline-edit-form')) return
+    if (!content || image.closest('[contenteditable="true"], .inline-edit-form-shell')) return
     if (this._selectionActive(content)) {
       if (event.type === "keydown") {
         // Suppress document shortcuts while preserving pointer row selection.
@@ -84,7 +95,8 @@ export default class extends ImageLightboxController {
       return
     }
 
-    const images = Array.from(content.querySelectorAll("img[src]")).filter((img) => img.getAttribute("src"))
+    // Keep hidden images prepared for keyboard access when their rows are revealed.
+    const images = this._listImages().filter((image) => !this._hiddenInList(image))
     const index = images.indexOf(image)
     if (index < 0) return
 

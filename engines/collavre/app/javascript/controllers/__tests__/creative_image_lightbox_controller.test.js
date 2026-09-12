@@ -24,7 +24,7 @@ beforeEach(async () => {
       </div></creative-tree-row>
       <creative-tree-row><div class="creative-title-content"><img id="title" src="/title.png"></div></creative-tree-row>
       <div contenteditable="true"><div class="creative-content"><img id="editor" src="/editor.png"></div></div>
-      <div class="inline-edit-form"><div class="creative-content"><img id="form" src="/form.png"></div></div>
+      <div class="inline-edit-form-shell"><div class="creative-content"><img id="form" src="/form.png"></div></div>
       <img id="avatar" src="/avatar.png">
     </main>`
   application = Application.start()
@@ -40,15 +40,19 @@ afterEach(async () => {
   jest.restoreAllMocks()
 })
 
-test('opens the clicked image, blocks navigation and scopes the carousel to its creative', () => {
+test('opens the clicked image, blocks navigation and navigates across the creative list in DOM order', () => {
   const onClick = jest.fn()
   document.querySelector('#row').addEventListener('click', onClick)
   expect(click('#second')).toBe(false)
   expect(onClick).not.toHaveBeenCalled()
   expect(dialog().querySelector('img').src).toBe('http://localhost/second.png')
-  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 2')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 3')
+  click('.image-lightbox-next')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/title.png')
   click('.image-lightbox-next')
   expect(dialog().querySelector('img').src).toBe('http://localhost/first.png')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/title.png')
   click('.image-lightbox-prev')
   expect(dialog().querySelector('img').src).toBe('http://localhost/second.png')
   expect(dialog().querySelector('.image-lightbox-delete').hidden).toBe(true)
@@ -60,8 +64,8 @@ test('opens the clicked image, blocks navigation and scopes the carousel to its 
 
 test('opens title images and preserves zoom, keyboard navigation and close', () => {
   click('#title')
-  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('1 / 1')
-  expect(dialog().querySelector('.image-lightbox-next').style.visibility).toBe('hidden')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('3 / 3')
+  expect(dialog().querySelector('.image-lightbox-next').style.visibility).toBe('visible')
   click('.image-lightbox-zoom-in')
   expect(dialog().querySelector('img').style.transform).toContain('scale(1.25)')
   click('.image-lightbox-close')
@@ -83,6 +87,8 @@ test('preserves image descriptions on every carousel entry and clears missing or
   expect(dialog().querySelector('img').alt).toBe(description)
   click('.image-lightbox-prev')
   expect(dialog().querySelector('img').alt).toBe('First')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('')
   click('.image-lightbox-prev')
   expect(dialog().querySelector('img').alt).toBe('')
   click('.image-lightbox-prev')
@@ -352,4 +358,91 @@ test('makes an image keyboard accessible when its source arrives later', async (
   expect(document.activeElement.id).toBe('missing')
   expect(keydown('#missing', 'Enter')).toBe(false)
   expect(dialog().querySelector('img').src).toBe('http://localhost/loaded.png')
+})
+
+test('rebuilds the gallery across rows on each open and preserves duplicate image positions', () => {
+  const titleRow = document.querySelector('#title').closest('creative-tree-row')
+  titleRow.insertAdjacentHTML('afterend', `
+    <creative-tree-row id="streamed"><div class="creative-content"><img id="duplicate" src="/first.png" alt="Duplicate"></div></creative-tree-row>`)
+  click('#duplicate')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('4 / 4')
+  expect(dialog().querySelector('img').alt).toBe('Duplicate')
+  click('.image-lightbox-close')
+  document.querySelector('#row').remove()
+  titleRow.before(document.querySelector('#streamed'))
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 2')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('Duplicate')
+})
+
+test('excludes images outside the current list and editor images inside a creative', () => {
+  document.body.insertAdjacentHTML('beforeend', '<div class="creative-content"><img src="/outside.png"></div>')
+  document.querySelector('.creative-content').insertAdjacentHTML('beforeend', `
+    <div contenteditable="true"><img src="/nested-editor.png"></div>
+    <div class="inline-edit-form-shell"><img src="/nested-form.png"></div>`)
+  click('#first')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('1 / 3')
+})
+
+
+test.each([
+  ['collapsed subtree', '<div class="creative-children" data-expanded="false" style="display:none">'],
+  ['row being edited', '<div class="creative-row" style="display:none">'],
+  ['hidden ancestor', '<div hidden>']
+])('excludes images inside a %s from the gallery', (_name, container) => {
+  document.querySelector('main').insertAdjacentHTML('beforeend', `${container}
+    <creative-tree-row><div class="creative-content"><img id="hidden-image" src="/hidden.png"></div></creative-tree-row>
+  </div>`)
+  expect(click('#hidden-image')).toBe(true)
+  expect(dialog()).toBeNull()
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('3 / 3')
+  click('.image-lightbox-next')
+  expect(dialog().querySelector('img').alt).toBe('First')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/title.png')
+})
+
+test.each(['hidden', 'display'])('excludes an image directly hidden with %s', (mechanism) => {
+  const image = document.querySelector('#second')
+  if (mechanism === 'hidden') image.hidden = true
+  else image.style.display = 'none'
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 2')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('First')
+})
+
+test('prepares collapsed images and rebuilds the gallery after expanding and collapsing loaded rows', async () => {
+  document.querySelector('main').insertAdjacentHTML('beforeend', `
+    <div id="children" class="creative-children" data-expanded="false" style="display:none">
+      <creative-tree-row><div class="creative-content"><img id="child-image" src="/child.png" alt="Child"></div></creative-tree-row>
+    </div>`)
+  await settle()
+  const children = document.querySelector('#children')
+  const child = document.querySelector('#child-image')
+  expect(child.tabIndex).toBe(0)
+  expect(child.getAttribute('role')).toBe('button')
+  expect(child.getAttribute('aria-haspopup')).toBe('dialog')
+  expect(child.getAttribute('aria-label')).toBe('Child')
+
+  children.style.display = ''
+  children.dataset.expanded = 'true'
+  child.focus()
+  expect(document.activeElement).toBe(child)
+  expect(keydown('#child-image', 'Enter')).toBe(false)
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('4 / 4')
+  expect(dialog().querySelector('img').alt).toBe('Child')
+  click('.image-lightbox-close')
+
+  children.style.display = 'none'
+  children.dataset.expanded = 'false'
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('3 / 3')
+  click('.image-lightbox-close')
+  children.style.display = ''
+  children.dataset.expanded = 'true'
+  expect(keydown('#child-image', ' ')).toBe(false)
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('4 / 4')
 })
