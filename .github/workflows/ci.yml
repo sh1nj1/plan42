@@ -162,6 +162,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # ActiveStorage initializes its Vips transformer during Rails boot.
+      - name: Install image processing runtime
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libvips
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
