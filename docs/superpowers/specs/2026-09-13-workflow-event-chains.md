@@ -486,6 +486,49 @@ boundary. Promotion/start must stop on a failed validation before provider I/O.
 Tests must preserve `scope_changed` after source deletion even when another
 comment could have been chosen, and after recovery without the commit callback.
 
+### Whole-topic moves and unmaterialized work
+
+`Topics::TopicMove#call` bulk-updates comment and snapshot creative IDs and then
+moves the Topic under its topic/creative locks. The comment `update_all` bypasses
+`Comment::DispatchRevocation`; Task creative IDs are unchanged. Its existing
+`MoveBlocker` rejects active Tasks, pending legacy dropped-dispatch restoration,
+trigger-loop topics and recurring jobs. It does not see a workflow admission
+without a Task, or a sealed handoff's pending push.
+
+For PR4, propose the review's explicit scope-invalidation option: keep these
+existing move blockers, and do not add a workflow-only move blocker. A workflow
+outbox obligation without a Task, an unpublished child, or a pending workflow
+push alone does not prevent a move. This is a product limitation to show in
+EN/KO workflow help: moving the topic can stop its pending workflow and suppress
+its remaining push; it does not transfer the workflow to the destination.
+Do not represent workflow obligations as legacy drops to obtain a move blocker.
+
+After a committed move, the next workflow materialization, settlement,
+publication or recovery pass must reload the current Topic and Comment and
+compare both to the persisted creative/topic scope. A topic ID staying the same
+is insufficient. Stop an open execution or its pending child as `scope_changed`
+before new Task creation, provider start, notification persistence or child
+dispatch. A sealed parent keeps its terminal result; stop its undelivered edge
+without reopening it. Do not change its chain identity, stamp a new scope, choose
+a replacement anchor, refund a reservation or fall through to ordinary routing.
+For a sealed `human_handoff`, suppress the pending/enqueued push through the
+workflow delivery adapter, retaining its inbox entry and execution outcome.
+An already-started external push retains the previously stated best-effort
+transport limitation; no move can retract a provider-accepted push.
+
+No new chain settlement runs inside `TopicMove`'s topic/creative transaction.
+Recovery must work without any Comment callback or login card; the periodic
+workflow sweep handles the no-Task admission and child, and the push sweep also
+handles sealed handoffs. Keep `TopicMove#abandon_moved_logins` and its existing
+`after_all_transactions_commit` boundary. A rolled-back move causes no scope
+invalidation. Revalidation under topic-slot admission handles a move that wins
+before task insertion; an active Task committed first retains the existing
+`MoveBlocker` protection. This proposal checks current scope at the stated
+boundaries; it introduces no history of unobserved move-away-and-back operations.
+Once a mismatch is recorded, returning to the original creative cannot reopen
+the execution, edge or suppressed delivery. A fresh external event at the new
+location may start a separate scope-local chain through ordinary routing.
+
 ## Human notification target and privacy
 
 PR4 chooses one explicit responsibility rule: resolve the event target through
@@ -666,12 +709,29 @@ child without `parent:` on retries, or it would generate a fresh child.
   this supported escape hatch must run the same workflow settlement hook.
   Also cover `CliProxy::InlineLogin.abandon_replay!` and
   `Task::ReplayLoopCompletion#recheck_abandoned_replays`, which call that escape
-  hatch again on already-terminal tasks. Settlement must be idempotent and must
-  never reopen a terminal workflow execution. Validate all three callers.
+  hatch on both nonterminal and already-terminal tasks. Settlement must be
+  idempotent and never reopen a terminal workflow execution. Validate all three
+  direct callers, without assuming that entering the hook proves completion.
+  After the open-execution and current mode/permission/scope checks, a valid
+  `running` or other nonterminal Task remains waiting under the ordered table;
+  an `engine_login` payload alone cannot advance it to `login_required` early.
+  A revoked scope still stops the workflow at the preceding safety check.
   `abandon_replay!` calls the escape hatch only after its guarded payload update;
   already replay-completed cards and non-resumable/non-retryable cards return
   without it. It does not add `engine_login` to an ordinary task. Initial status
   settlement and recovery must work without depending on abandonment callbacks.
+  The five `abandon_replay!` call sites are
+  `Task::ReplayLoopCompletion#settle_inline_replay`, both the missing-input and
+  rescued-client-error branches of `InlineAgentReplayJob#perform`,
+  `Comment::DispatchRevocation#abandon_pending_logins` (scans `running` and
+  `done`), and `Topics::TopicMove#abandon_moved_logins` (old-scope `done` tasks
+  after outer commit). Preserve their existing guards and test their entry
+  states. These are indirect entrances through one of the three direct callers.
+- `Topics::TopicMove#call` / `MoveBlocker#call` retain their existing movement
+  policy. Bulk relocation skips Comment callbacks, so workflow recovery and
+  every effect boundary must detect the changed creative even when the topic ID
+  is unchanged and no Task exists. Use the whole-topic move contract above;
+  keep `#abandon_moved_logins` after outer commit, without nested chain locks.
 - Preserve `TriggerLoopCheckJob#perform` and
   `TriggerLoopHelpers#finish_abandoned_replay` / `#newer_loop_completion_task?`.
   Their resumable stop and newer-turn delegation belong to the existing loop.
@@ -782,6 +842,21 @@ Additional integration acceptance cases:
 | Workflow push lease expires at five minutes before worker runs | One conditional reclaim/new token or exhausted `failed`; old token cannot start transport or acknowledge |
 | Worker finishes/fails before enqueue acknowledgement, or old worker returns after reclaim | Terminal/pending outcome or newer lease preserved; no stale state/lease write |
 | Observed enqueue failure below attempt limit | Atomically return to pending and release that attempt's lease; generic release cannot clear another token |
+
+Additional move and callback acceptance cases:
+
+| Scenario | Expected result |
+| --- | --- |
+| Committed workflow admission, no Task; whole topic moves before recovery | Existing move policy permits it absent another blocker; current-scope check records `scope_changed`, with no Task, provider start, replacement root or fallback |
+| Sealed parent with an unpublished child; whole topic moves | Recovery stops the pending edge as `scope_changed`; parent result and persisted envelope identity remain unchanged |
+| Sealed human handoff with pending/enqueued push; topic moves before sweep/worker | Delivery becomes terminal `suppressed`; inbox and `human_handoff` remain; no destination recipient substitution |
+| Bulk topic move with no login card and Comment callbacks absent | Both workflow and push sweeps detect creative mismatch independently of abandonment callbacks |
+| Move commits before task-slot materialization / active Task commits first | First case stops materialization as `scope_changed`; second retains existing active-task move rejection |
+| Move rolls back / recorded scope stop followed by return move | Rollback alone does not stop work; a recorded terminal stop is never reopened by moving back |
+| Legacy pending restoration, trigger-loop or recurring-job blocker; ordinary topic | Existing move results remain unchanged; workflow work is never inserted as a legacy drop |
+| Running login task reaches abandonment hook with valid scope | Keep waiting; after later `done`, classify `login_required` once; callback repetition emits nothing |
+| Running login task reaches hook after source permission/scope revocation | Pre-table safety check stops workflow for the current violation; do not infer success or skip safety because status is running |
+| Failed/cancelled task retains a nonempty partial reply | Failure branch precedes every reply-anchor branch; no continuation |
 
 ## Sequenced implementation checklist
 
@@ -960,3 +1035,30 @@ acknowledgement. The task reason column is an explicit addition to the proposed
 core migration, needed to preserve cancellation cause without taking a chain
 lock under a topic lock. Runtime code and migrations remain unchanged; task
 21052 and the product decisions remain pending.
+
+## Fifth review: whole-topic moves and nonterminal callback entries
+
+Report 134582 in topic 19327 reviews `3b6f8597d`, and confirms its three deltas
+(partial anchors, loop branches, conditional abandonment callbacks). Its two
+carried blockers were already addressed in `86239dd01`, submitted as request
+134578: fixed-anchor promotion/deletion and durable cancellation reasons, plus
+enqueued push lease retention. That earlier-target report does not sign off on
+those newer changes.
+
+This revision proposes the report's option (b) for `Topics::TopicMove` and
+`MoveBlocker`: preserve ordinary move blockers, explicitly allow a move during
+workflow-only no-Task/push obligations, then stop pending workflow work on current
+scope mismatch and suppress undelivered workflow push. The integration map,
+EN/KO help requirement and acceptance cases identify that product limitation,
+callback-free recovery, unchanged sealed outcomes and separate lock boundaries.
+No extra move-history guarantee is proposed.
+
+The three direct external-completion callers remain the same. Their indirect
+entry map now includes all five `abandon_replay!` sites, including the running
+Task scan in `Comment::DispatchRevocation`. Nonterminal entry waits only after
+current safety checks pass; abandonment is not proof of a completed Task.
+Terminal failure still takes precedence over a surviving partial reply.
+
+These are author dispositions pending technical re-review and product decisions,
+including the newly explicit topic-move limitation. Runtime code and migrations
+remain unchanged, and task 21052 remains incomplete.
