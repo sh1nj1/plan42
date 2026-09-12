@@ -99,7 +99,12 @@ module CollavreNotion
       Rails.logger.info("NotionService: Exporting creative #{creative.id} as page title with #{children.count} children as blocks")
 
       exporter = NotionCreativeExporter.new(creative)
+
+      # Add author callout block at the top of the page
       blocks = []
+      if @account.notion_uid.present?
+        blocks << exporter.send(:create_author_callout_block, @account.notion_uid)
+      end
 
       # If no parent specified, search for a suitable workspace page
       parent_page_id ||= find_default_parent_page
@@ -206,6 +211,12 @@ module CollavreNotion
 
       NotionBlockLink.transaction do
         notion_link.notion_block_links.delete_all
+
+        # Re-add author callout block at the top after clearing all blocks
+        if @account.notion_uid.present?
+          author_block = exporter.send(:create_author_callout_block, @account.notion_uid)
+          append_blocks(notion_link.page_id, [ author_block ])
+        end
 
         child_exports.each do |data|
           exported_blocks = data[:exported_blocks]

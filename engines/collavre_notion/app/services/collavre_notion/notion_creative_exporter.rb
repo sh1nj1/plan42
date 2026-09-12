@@ -268,6 +268,29 @@ module CollavreNotion
       [ create_rich_text(text.to_s) ]
     end
 
+    def create_author_callout_block(notion_user_id)
+      {
+        object: "block",
+        type: "callout",
+        callout: {
+          icon: { type: "emoji", emoji: "👤" },
+          rich_text: [
+            {
+              type: "text",
+              text: { content: I18n.t("collavre_notion.export.author_label") }
+            },
+            {
+              type: "mention",
+              mention: {
+                type: "user",
+                user: { id: notion_user_id }
+              }
+            }
+          ]
+        }
+      }
+    end
+
     def create_rich_text(text)
       # Notion has a 2000 character limit per text block
       content = text.to_s.strip

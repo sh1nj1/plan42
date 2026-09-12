@@ -52,3 +52,5 @@ en:
       current_creative: "Current Creative"
       selected_page: "Selected page"
       synced_label: "synced"
+    export:
+      author_label: "Author: "
