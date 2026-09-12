@@ -60,7 +60,7 @@ execution is still open and its mode, permission and scope remain valid:
 | `engine_login` key present, including retryable, replay-completed or abandoned cards | `login_required`; never reopen after separate replay |
 | Recorded provider handoff failure (`ended_undelivered?`) | `task_failed`, even if an error reply exists |
 | `unsuccessful_loop_response?` | `empty_reply`; no successful finalized response |
-| No current reply, but a done `reply_created` action or previously persisted workflow reply ID proves an anchor existed | `scope_changed`; lost/deleted anchor, even if a `review_updated` action also exists |
+| No current reply, but a done, non-partial `reply_created` action or previously persisted workflow reply ID proves an anchor existed | `scope_changed`; lost/deleted anchor, even if a `review_updated` action also exists |
 | Current reply is private or no longer readable | `permission_revoked`; no review-only reinterpretation |
 | Current reply has moved or is outside the task's creative/topic | `scope_changed`; no review-only reinterpretation |
 | Finalized `review_updated` action with no reply and no evidence that an anchor previously existed | `completed_no_anchor`; successful terminal outcome without emission |
@@ -72,16 +72,26 @@ Keep the adapter for these decisions on `Task` so it can reuse the private
 `loop_completion_delegated_to_replay?` is a separate private predicate; it is not
 called by `unsuccessful_loop_response?`. The explicit login branch above covers
 both delegated and abandoned login cards. Existing trigger-loop replay behavior
-stays unchanged: an abandoned login card can remain eligible for the existing
-trigger loop when its other gates pass, while PR4 terminates its workflow chain
-as `login_required`. Do not change trigger-loop eligibility to align these layers.
+stays unchanged. When `TriggerLoopCheckJob` reaches `finish_abandoned_replay`,
+a qualifying newer turn takes over loop completion; otherwise the helper sets
+`awaiting_user`, resets `infra_retry_count` to 0 and posts a system notice.
+The check job then returns without ordinary response evaluation. The loop can
+resume, while PR4 seals the abandoned card's workflow as `login_required`.
+Preserve the existing loop gates and newer-turn delegation; not every abandoned
+card unconditionally changes the loop state. Do not change trigger-loop
+eligibility to align these layers.
 In a fan-in, any successful `completed_no_anchor` member makes
 the execution non-emitting; another responder's anchor cannot replace its result.
 
-The lost-anchor branch uses existing done `reply_created` action evidence (the
-response finalizer records `comment_id`) or an already persisted workflow reply
-ID; it does not need the deleted Comment row to exist. Re-query current reply
-state during settlement/publication rather than trust a cached association.
+The lost-anchor branch uses existing done, non-partial `reply_created` action
+evidence (the response finalizer records `comment_id`) or an already persisted
+workflow reply ID from a validated successful responder. Exclude action payloads
+with `partial: true`: `AgentLifecycleManager#handle_cancelled` records those with
+status `done`, but they are not finalized-anchor evidence. Terminal task failure
+still takes precedence over every anchor branch. This restriction is local to
+workflow evidence; do not rewrite the shared `finalized_response?` predicate.
+The lost-anchor check does not need the deleted Comment row to exist. Re-query
+current reply state during settlement/publication rather than trust a cached association.
 If neither evidence survives, a missing reply is `empty_reply` unless the
 review-only branch applies. No tombstone or reconstructed source body is needed.
 
@@ -581,6 +591,15 @@ child without `parent:` on retries, or it would generate a fresh child.
   `Task::ReplayLoopCompletion#recheck_abandoned_replays`, which call that escape
   hatch again on already-terminal tasks. Settlement must be idempotent and must
   never reopen a terminal workflow execution. Validate all three callers.
+  `abandon_replay!` calls the escape hatch only after its guarded payload update;
+  already replay-completed cards and non-resumable/non-retryable cards return
+  without it. It does not add `engine_login` to an ordinary task. Initial status
+  settlement and recovery must work without depending on abandonment callbacks.
+- Preserve `TriggerLoopCheckJob#perform` and
+  `TriggerLoopHelpers#finish_abandoned_replay` / `#newer_loop_completion_task?`.
+  Their resumable stop and newer-turn delegation belong to the existing loop.
+  The latter's use of `!unsuccessful_loop_response?` stays unchanged; do not copy
+  it as PR4's positive success predicate.
 - A recurring settlement/outbox sweep is mandatory because callbacks and queue
   acceptance are not atomic. Scope it to unfinished workflow records. Register
   it in all three `config/recurring.yml` blocks: production, desktop and
@@ -612,9 +631,12 @@ child without `parent:` on retries, or it would generate a fresh child.
 | Delegated reply; tool approval pause/resume | No emission before committed successful reply; external completion settled too |
 | Inline login card ends done; subsequent separate replay succeeds | Login card records login_required, never emits; normal replay does not reopen this workflow |
 | review_updated-only successful completion | completed_no_anchor; no manufactured anchor or emit |
-| Deleted reply with done reply_created evidence, including a task with review_updated too | scope_changed before review-only classification; no child |
+| Deleted reply with done, non-partial reply_created evidence, including a task with review_updated too | scope_changed before review-only classification; no child |
 | Missing reply without prior anchor or successful review evidence | empty_reply; no inferred deletion or child |
-| Abandoned login card eligible for an existing trigger loop | Existing loop eligibility unchanged; workflow terminates as login_required |
+| Abandoned login reaches the loop helper with no qualifying newer turn | Loop pauses as awaiting_user with infra_retry_count 0; workflow seals login_required |
+| Abandoned login has a qualifying newer turn | Existing loop delegates completion without an awaiting_user rewrite; original workflow remains sealed |
+| abandon_replay! returns early for replay_completed or unmet replay guards | No abandonment callback; initial status settlement or sweep handles the workflow, never reopening it |
+| Missing reply with only partial reply_created evidence and no persisted successful workflow reply ID | Partial action does not prove a lost finalized anchor; failed/cancelled/escalated remains task_failed, otherwise use the existing empty/review-only branches |
 | Fan-in includes one review-only success without an anchor | No child, even when another responder has a usable reply |
 | escalated transition; repeated external completion callback | Prompt terminal settlement; repeated settlement is a no-op |
 | Duplicate delivery/completion; two concurrent workers | One execution, one task per agent, one child and one budget reservation |
@@ -811,3 +833,19 @@ ordinary work to the wrong execution; strip it there and recover workflow work
 only from its own durable admission. These are author proposals requiring review.
 Runtime code and migrations remain unchanged. Task 21052 stays incomplete pending
 technical re-review and the outstanding product decisions.
+
+## Supplements 134550 and 134562: partial anchors and abandoned replay
+
+These reports review `12f3c9670`; their remaining-blocker lists do not review
+`0bd0052c4`, submitted in request 134559. The latter already specifies both
+worker/enqueue guard exclusions and bounded no-Task outcomes, explicit producer
+`invocation:`, terminal-state filtering in `ready_for_push`, and serialized-job
+retry tests with a local `:test` adapter. Those author dispositions still need
+technical re-review; the supplements are not sign-off on that revision.
+
+This revision excludes cancellation's `partial: true` actions from lost-anchor
+evidence, documents conditional abandonment callbacks, and replaces the generic
+loop-eligibility description with the guarded `awaiting_user` / newer-turn
+handoff behavior. Acceptance cases cover both loop branches and callback early
+returns. Existing trigger-loop predicates remain unchanged. Runtime code and
+migrations are untouched; product decisions and task 21052 remain pending.
