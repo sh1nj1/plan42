@@ -11,8 +11,14 @@ module Collavre
         "liquid" => ->(value) { value.is_a?(String) }
       }.freeze
 
-      def self.parse(creative, diagnostics: [])
-        Parser.new(creative, diagnostics).parse
+      def self.parse(creative, diagnostics: [], validate_liquid: false)
+        rule, errors = Parser.new(creative, diagnostics).parse
+        if validate_liquid && rule && !Conditions.valid_liquid?(rule.conditions["liquid"])
+          diagnostics << :invalid_liquid
+          return [ nil, errors + [ error(:invalid_liquid) ] ]
+        end
+
+        [ rule, errors ]
       rescue StandardError
         diagnostics << :invalid_structure
         [ nil, [ error(:invalid_structure) ] ]

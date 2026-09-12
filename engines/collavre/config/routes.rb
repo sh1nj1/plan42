@@ -152,9 +152,7 @@ Collavre::Engine.routes.draw do
       patch :archive
       patch :unarchive
       get :slide_view
-      get :contexts
-      patch :update_contexts
-      patch :update_metadata
+      draw :creative_contexts
       patch :trigger_action
     end
   end

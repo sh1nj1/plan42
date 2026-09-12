@@ -1,0 +1,63 @@
+<% labels = t('collavre.workflow.editor') %>
+<section class="workflow-editor" data-controller="creatives--workflow-rule"
+         data-creatives--workflow-rule-url-value="<%= workflow_creative_path(@creative) %>"
+         data-creatives--workflow-rule-create-url-value="<%= workflow_rule_creative_path(@creative) %>"
+         data-creatives--workflow-rule-rule-url-value="<%= workflow_rule_creative_path('RULE_ID') %>"
+         data-creatives--workflow-rule-labels-value="<%= labels.to_json %>">
+  <h2><%= t('collavre.workflow.editor.title') %></h2>
+  <p><%= t('collavre.workflow.editor.scope_note') %></p>
+  <p data-creatives--workflow-rule-target="permission"></p>
+  <p><%= link_to t('collavre.workflow.editor.tree_link'), creative_path(@creative), data: { turbo_frame: '_top' } %></p>
+  <p data-creatives--workflow-rule-target="status" role="status" aria-live="polite"></p>
+  <button type="button" data-action="creatives--workflow-rule#load"><%= t('collavre.workflow.editor.reload') %></button>
+  <div data-creatives--workflow-rule-target="rules"></div>
+  <button type="button" disabled data-creatives--workflow-rule-target="create" data-action="creatives--workflow-rule#add"><%= t('collavre.workflow.editor.add_rule') %></button>
+  <template data-creatives--workflow-rule-target="template">
+    <form class="workflow-rule" data-action="submit->creatives--workflow-rule#save change->creatives--workflow-rule#change input->creatives--workflow-rule#input keydown->creatives--workflow-rule#key">
+      <h3 data-role="heading"></h3>
+      <fieldset data-role="controls">
+        <label data-role="title-label"><%= t('collavre.workflow.editor.rule_title') %><input name="title" required></label>
+        <p data-role="saved-title-note"><%= t('collavre.workflow.editor.title_note') %></p>
+        <label><%= t('collavre.workflow.editor.event') %><select name="event" data-field="on"></select></label>
+        <fieldset>
+          <legend><%= t('collavre.workflow.editor.handler') %></legend>
+          <% %w[agent human none].each do |type| %>
+            <label class="workflow-choice"><input type="radio" name="handler" value="<%= type %>" data-field="handler.type"><%= t("collavre.workflow.editor.handlers.#{type}") %></label>
+          <% end %>
+        </fieldset>
+        <label><%= t('collavre.workflow.editor.agents') %><select name="agents" multiple data-field="handler.agent_ids"></select></label>
+        <fieldset>
+          <legend><%= t('collavre.workflow.editor.sources') %></legend>
+          <label class="workflow-choice"><input type="checkbox" name="any-source" data-field="any-source"><%= t('collavre.workflow.editor.any_source') %></label>
+          <div data-role="sources"></div>
+        </fieldset>
+        <label><%= t('collavre.workflow.editor.author') %>
+          <select name="author" data-field="when.author_agent">
+            <option value="any"><%= t('collavre.workflow.editor.any') %></option>
+            <option value="yes"><%= t('collavre.workflow.editor.yes') %></option>
+            <option value="no"><%= t('collavre.workflow.editor.no') %></option>
+          </select>
+        </label>
+        <fieldset>
+          <legend><%= t('collavre.workflow.editor.body_contains') %></legend>
+          <label class="workflow-choice"><input type="checkbox" name="any-body" data-field="any-body"><%= t('collavre.workflow.editor.any_body') %></label>
+          <div data-role="tags" class="workflow-tags"></div>
+          <label><%= t('collavre.workflow.editor.phrase') %><input name="phrase"></label>
+          <button type="button" data-action="creatives--workflow-rule#addPhrase"><%= t('collavre.workflow.editor.add_phrase') %></button>
+          <p><%= t('collavre.workflow.editor.empty_conditions') %></p>
+        </fieldset>
+        <details>
+          <summary><%= t('collavre.workflow.editor.advanced') %></summary>
+          <label class="workflow-choice"><input type="checkbox" name="any-liquid" data-field="any-liquid"><%= t('collavre.workflow.editor.any_liquid') %></label>
+          <label><%= t('collavre.workflow.editor.liquid') %><textarea name="expression" data-field="when.liquid" rows="4"></textarea></label>
+          <p><%= t('collavre.workflow.editor.raw_note') %></p>
+          <label><%= t('collavre.workflow.editor.raw') %><textarea name="raw" rows="6" spellcheck="false"></textarea></label>
+          <button type="button" data-action="creatives--workflow-rule#applyRaw"><%= t('collavre.workflow.editor.apply_raw') %></button>
+        </details>
+        <button type="submit"><%= t('collavre.workflow.editor.save') %></button>
+      </fieldset>
+      <div data-role="diagnostics" role="status" aria-live="polite"></div>
+      <div data-role="warnings" role="status" aria-live="polite"></div>
+    </form>
+  </template>
+</section>

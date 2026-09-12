@@ -1,4 +1,7 @@
-<h1><%= t('collavre.creatives.edit_title') %></h1>
-
-<p><%= t('collavre.creatives.edit.inline_editor_only_html') %></p>
-<%= link_to t('app.cancel'), @creative %>
+<% if workflow_editor_creative?(@creative) %>
+  <%= render "workflow_panel" %>
+<% else %>
+  <h1><%= t('collavre.creatives.edit_title') %></h1>
+  <p><%= t('collavre.creatives.edit.inline_editor_only_html') %></p>
+  <%= link_to t('app.cancel'), @creative %>
+<% end %>

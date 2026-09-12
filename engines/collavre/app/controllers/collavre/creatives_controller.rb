@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Collavre
   class CreativesController < ApplicationController
     WORKSPACE_TREE_EXPANSION_LIMIT = 100
@@ -7,6 +9,7 @@ module Collavre
     include Collavre::Concerns::TreeManageable
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
+    include Collavre::WorkflowEditable
 
     # Authorization for these read actions is not open-to-public: each action
     # enforces per-Creative read access via has_permission?(Current.user, :read)
@@ -19,7 +22,7 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
+    before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
     include Collavre::Concerns::CreativeHistoryTrackable
 
@@ -268,9 +271,8 @@ module Collavre
     end
 
     def edit
-      unless @creative.has_permission?(Current.user, :write)
-        redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
-      end
+      return unless creative_edit_access?
+
       if params[:inline]
         render partial: "inline_edit_form"
       end

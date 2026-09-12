@@ -78,6 +78,9 @@
 
     <%# Right: primary actions + overflow %>
     <div class="creative-header-actions">
+      <% if workflow_editor_creative?(current_creative) %>
+        <%= link_to t('collavre.workflow.editor.title'), edit_creative_path(current_creative), class: 'creative-header-outline-btn', data: { turbo_frame: '_top' } %>
+      <% end %>
       <%# Add button (always visible) %>
       <%= render 'add_button' if can_add %>
 
