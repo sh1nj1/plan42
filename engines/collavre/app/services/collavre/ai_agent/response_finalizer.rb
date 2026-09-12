@@ -48,6 +48,8 @@ module Collavre
           reassociate_activity_logs(@reply_comment, surviving)
           # Run row survives via ON DELETE SET NULL, so no run-id bookkeeping here.
           @reply_comment.destroy!
+          # The visible reply belongs to the latest revision's task.
+          surviving.update!(task: @task)
           surviving
         else
           # Normal comment workflow

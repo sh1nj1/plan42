@@ -27,6 +27,14 @@ class Collavre::TaskExecutionTimeTest < ActiveSupport::TestCase
     assert_equal 30, Collavre::TaskExecutionTime.seconds(@task)
   end
 
+  test "consecutive starts use the latest attempt boundary" do
+    event("start", 0)
+    event("start", 100)
+    event("completion", 130)
+
+    assert_equal 30, Collavre::TaskExecutionTime.seconds(@task)
+  end
+
   test "does not reuse an earlier completion for a later attempt" do
     event("start", 0)
     event("completion", 20)

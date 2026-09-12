@@ -12,9 +12,10 @@ module Collavre
     end
 
     def format_execution_time(seconds)
-      hours, remainder = seconds.round.divmod(3600)
+      days, remainder = seconds.round.divmod(86400)
+      hours, remainder = remainder.divmod(3600)
       minutes, seconds = remainder.divmod(60)
-      units = { hours: hours, minutes: minutes, seconds: seconds }
+      units = { days: days, hours: hours, minutes: minutes, seconds: seconds }
       units.filter_map do |unit, count|
         next if count.zero? && (unit != :seconds || units.values.any?(&:positive?))
 

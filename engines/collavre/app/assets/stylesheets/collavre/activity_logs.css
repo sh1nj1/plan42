@@ -12,6 +12,12 @@
     color: var(--text-muted);
 }
 
+.activity-log-duration {
+    margin: var(--space-2) 0;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
 /* List container */
 .activity-log-list {
     display: flex;

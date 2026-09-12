@@ -8,7 +8,7 @@ class Collavre::ActivityLogsHelperTest < ActionView::TestCase
   test "formats English durations with seconds minutes and hours" do
     I18n.with_locale(:en) do
       { 0 => "0s", 0.1 => "0s", 0.6 => "1s", 59.5 => "1m", 60 => "1m", 83 => "1m 23s",
-        3600 => "1h", 3661 => "1h 1m 1s", 90000 => "25h" }.each do |seconds, text|
+        3600 => "1h", 3661 => "1h 1m 1s", 86400 => "1d", 90000 => "1d 1h", 90061 => "1d 1h 1m 1s" }.each do |seconds, text|
         assert_equal text, format_execution_time(seconds)
       end
     end
@@ -19,6 +19,7 @@ class Collavre::ActivityLogsHelperTest < ActionView::TestCase
       assert_equal "0초", format_execution_time(0)
       assert_equal "1분 23초", format_execution_time(83)
       assert_equal "1시간 1분 1초", format_execution_time(3661)
+      assert_equal "1일 1시간 1분 1초", format_execution_time(90061)
     end
   end
 

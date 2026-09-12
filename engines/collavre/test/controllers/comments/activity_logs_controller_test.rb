@@ -53,6 +53,31 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".activity-log-duration", text: "수행 시간: 측정 불가"
   end
 
+  [ false, true ].each do |with_logs|
+    test "shows latest review duration after finalization with logs=#{with_logs}" do
+      original_task = @task
+      review_task = Collavre::Task.create!(name: "Review", agent: @user, status: "running")
+      review_task.task_actions.create!(action_type: "start", status: "done", created_at: 30.seconds.ago)
+      review_task.task_actions.create!(action_type: "completion", status: "done", created_at: 10.seconds.ago)
+      review = @creative.comments.create!(user: @user, content: "Revise", quoted_comment: @comment)
+      placeholder = @creative.comments.create!(user: @user, content: "Working", task: review_task)
+      placeholder.activity_logs.create!(user: @user, activity: "Review LLM") if with_logs
+
+      Collavre::AiAgent::ResponseFinalizer.new(
+        task: review_task, agent: @user, original_comment: review,
+        reply_comment: placeholder, response_content: "Revised answer"
+      ).finalize
+      review_task.update!(status: "done")
+      get creative_comment_activity_log_path(@creative, @comment), params: { locale: :en }
+
+      assert_response :success
+      assert_select ".activity-log-duration", text: "Execution time: 20s"
+      assert_select ".activity-name", text: "Review LLM", count: with_logs ? 1 : 0
+      assert_equal 83, Collavre::TaskExecutionTime.seconds(original_task)
+      assert_not Collavre::Comment.exists?(placeholder.id)
+    end
+  end
+
   test "rejects users without creative read permission" do
     sign_in_as(users(:two), password: "password")
     get creative_comment_activity_log_path(@creative, @comment)
