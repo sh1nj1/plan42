@@ -152,6 +152,9 @@ Collavre::Engine.routes.draw do
       patch :archive
       patch :unarchive
       get :slide_view
+      get :workflow
+      post :workflow_rule, action: :create_workflow_rule
+      patch :workflow_rule, action: :update_workflow_rule
       get :contexts
       patch :update_contexts
       patch :update_metadata

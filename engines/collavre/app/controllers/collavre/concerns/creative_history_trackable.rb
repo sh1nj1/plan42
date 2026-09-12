@@ -8,7 +8,7 @@ module Collavre
       included do
         around_action :track_creative_history,
                       only: %i[create update destroy unconvert update_contexts update_metadata archive unarchive
-                               trigger_action reorder link_drop]
+                               trigger_action reorder link_drop create_workflow_rule update_workflow_rule]
       end
 
       private

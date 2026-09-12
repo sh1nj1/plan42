@@ -1,0 +1,11 @@
+en:
+  collavre:
+    workflow:
+      editor:
+        permission_note: "Response permission is checked here at the workflow. Each creative where this workflow is pinned has its own permissions, which determine whether the agent can respond there."
+        agent_cannot_respond_here: "This agent cannot respond at this workflow because it lacks feedback permission."
+        agent_unavailable: "A selected agent is unavailable or is not visible to you."
+        errors:
+          not_workflow: "This creative must be an active workflow."
+          not_direct_rule: "Only active direct workflow rule children can be edited here."
+          title_required: "Enter a title for the rule."
