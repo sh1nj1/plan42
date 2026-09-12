@@ -179,16 +179,19 @@ module Collavre
         task = running_task(coordinator, @topic, parent: parent)
         destination = @creative.topics.create!(name: "Envelope Destination", user: @owner)
         Current.agent_turn = { user: @reader, task: task }
-        dispatch_options = nil
+        envelope = nil
 
-        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, _context, **options) {
-          dispatch_options = options
+        SystemEvents::Dispatcher.stub(:dispatch, ->(_event, context, **_options) {
+          envelope = SystemEvents::Envelope.in(context)
           []
         }) do
           service.call(topic_id: destination.id, content: "Child instruction")
         end
 
-        assert_equal parent, dispatch_options[:parent]
+        assert_equal parent.id, envelope.causation_id
+        assert_equal parent.correlation_id, envelope.correlation_id
+        assert_equal parent.depth + 1, envelope.depth
+        assert_equal "a2a", envelope.source
       end
 
       test "an agent without a workspace principal cannot dispatch to itself" do

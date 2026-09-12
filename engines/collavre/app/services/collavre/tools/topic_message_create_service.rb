@@ -40,12 +40,13 @@ module Tools
       topic = Topic.find(topic_id)
       TopicAuthorizer.authorize_feedback!(topic, user: user)
       principal = workspace_user(user)
+      envelope = agent_envelope if user.ai_user?
 
-      comment = create_comment(topic, content, user, principal)
+      comment = create_comment(topic, content, user, principal, envelope)
       if user.ai_user?
-        selection = prepare_selection(comment, principal)
+        selection = prepare_selection(comment, principal, envelope)
         reject_selected_self_route!(selection.agents, user, principal)
-        dispatch_agent_message(comment, user, principal, selection)
+        dispatch_agent_message(comment, user, principal, selection, envelope)
       end
 
       serialize(comment)
@@ -53,7 +54,7 @@ module Tools
 
     private
 
-    def create_comment(topic, content, user, principal)
+    def create_comment(topic, content, user, principal, envelope)
       Comment.transaction do
         topic.lock!
         TopicAuthorizer.authorize_feedback!(topic, user: user)
@@ -67,7 +68,7 @@ module Tools
           private: false,
           skip_dispatch: user.ai_user?
         )
-        selection = prepare_selection(comment, principal) if user.ai_user?
+        selection = prepare_selection(comment, principal, envelope) if user.ai_user?
         reject_selected_self_route!(selection&.agents, user, principal)
 
         comment
@@ -98,26 +99,26 @@ module Tools
       raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.current_topic")
     end
 
-    def prepare_selection(comment, principal)
+    def prepare_selection(comment, principal, envelope)
       Orchestration::AgentOrchestrator.prepare_selection(
-        "comment_created", dispatch_payload(comment, principal),
+        "comment_created", dispatch_payload(comment, principal, envelope),
         candidate_overrides: candidate_overrides(comment.user, principal)
       )
     end
 
-    def dispatch_agent_message(comment, user, principal, selection)
+    def dispatch_agent_message(comment, user, principal, selection, envelope)
       selected_agents = selection.agents
       context_for = lambda do |agent|
         next {} unless agent.id == user.id && principal
 
         { "sender" => SystemEvents::ContextBuilder.sender_context_for(principal) }
       end
-      payload = dispatch_payload(comment, principal)
+      payload = dispatch_payload(comment, principal, envelope)
       if selected_agents.any? { |agent| agent.id == user.id }
         payload[Orchestration::DeferredTriggerScope::SELF_AUTHORED_COMMENT_ID_KEY] = comment.id
       end
       SystemEvents::Dispatcher.dispatch(
-        "comment_created", payload, source: "a2a", parent: parent_envelope,
+        "comment_created", payload, source: "a2a",
         selection: selection, context_for: context_for,
         scheduling_hooks: scheduling_hooks(user, comment)
       )
@@ -136,8 +137,9 @@ module Tools
       { user.id => { "sender" => SystemEvents::ContextBuilder.sender_context_for(principal) } }
     end
 
-    def dispatch_payload(comment, principal)
+    def dispatch_payload(comment, principal, envelope)
       comment.dispatch_payload.merge(workspace_user_id: principal&.id).tap do |payload|
+        payload[SystemEvents::Envelope::KEY] = envelope.to_h
         payload[:comment][:from_ai] = comment.user.ai_user?
       end
     end
@@ -151,8 +153,9 @@ module Tools
       raise ArgumentError, I18n.t("collavre.tools.topic_message_create.errors.self_route")
     end
 
-    def parent_envelope
-      SystemEvents::Envelope.in(Current.agent_turn&.dig(:task)&.trigger_event_payload)
+    def agent_envelope
+      parent = SystemEvents::Envelope.in(Current.agent_turn&.dig(:task)&.trigger_event_payload)
+      SystemEvents::Envelope.child("comment_created", parent: parent, source: "a2a")
     end
 
     def record_interactions(selected_agents, user, creative_id)

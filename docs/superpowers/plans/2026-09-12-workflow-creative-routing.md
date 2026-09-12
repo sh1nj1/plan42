@@ -70,6 +70,20 @@ Resolver, policy, then Matcher. Each task uses tests first and a task review.
 
 ## Verification and rollout
 
+### PR review follow-up: A2A source before selection
+
+- [x] Reproduce source-filtered workflow misses in `topic_message_create`.
+- [x] Stamp one A2A envelope before both selection passes and reuse it at
+      dispatch, preserving parent causality and post-commit reselection.
+- [x] Verify exclusive agent/silence decisions, self-route rejection, envelope
+      identity, related tests, changed-line coverage, lint, and complexity.
+- [x] Complete independent specification and code quality reviews.
+- [ ] Push the fix to PR #1679.
+
+Review validation: 568 tests / 1,602 assertions passed; changed executable Ruby
+coverage 230/230 (100%). RuboCop passed across 1,419 files and the complexity
+ratchet reported no growth. Source-routing regressions failed before the fix.
+
 Run from the host root:
 
 ```sh
