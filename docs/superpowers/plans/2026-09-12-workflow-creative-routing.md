@@ -28,7 +28,8 @@ validated for advisory diagnostics in PR3a but never executed.
   nonempty integer `agent_ids` list.
 - Conditions AND together. `source` and case-insensitive `body_contains` are
   any-of lists; `author_agent` is boolean; `liquid` is evaluated last, once per
-  rule, without an agent binding. Missing source metadata cannot match source.
+  rule, without an agent binding. A missing envelope cannot match source.
+  Envelopes without a source use PR2's explicit `unknown` source sentinel.
 - Unknown events, handlers, or malformed structures invalidate a rule.
   Unknown condition keys are ignored with advisory errors; unknown emitted
   events are advisory. Diagnostics are localized in English and Korean.
@@ -55,15 +56,15 @@ validated for advisory diagnostics in PR3a but never executed.
 Task order resolves dependencies: Creative predicates, Conditions, Rule,
 Resolver, policy, then Matcher. Each task uses tests first and a task review.
 
-- [ ] Creative predicates and prompt exclusion, including mixed context pins.
-- [ ] Structured predicates, short-circuiting, missing data, Liquid errors.
-- [ ] Immutable rule value, fatal/advisory parser, EN/KO diagnostics.
-- [ ] Ordered resolver, inheritance, disabled pins, archives, cycles, cap.
-- [ ] Matching policy defaults, precedence, invalid values, ignored User scope.
-- [ ] Matcher first-match tier, exclusive decisions, existing routing fallback,
+- [x] Creative predicates and prompt exclusion, including mixed context pins.
+- [x] Structured predicates, short-circuiting, missing data, Liquid errors.
+- [x] Immutable rule value, fatal/advisory parser, EN/KO diagnostics.
+- [x] Ordered resolver, inheritance, disabled pins, archives, cycles, cap.
+- [x] Matching policy defaults, precedence, invalid values, ignored User scope.
+- [x] Matcher first-match tier, exclusive decisions, existing routing fallback,
       shadow error isolation and comparison, assignment compatibility.
-- [ ] Affected suites pass; changed executable lines have 100% coverage.
-- [ ] RuboCop and complexity ratchet pass; final branch review is resolved.
+- [x] Affected suites pass; changed executable lines have 100% coverage.
+- [x] RuboCop and complexity ratchet pass; final branch review is resolved.
 - [ ] Push with `--no-verify` and open an English ready-for-review PR.
 
 ## Verification and rollout

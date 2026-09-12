@@ -201,6 +201,21 @@ module Collavre
         assert_equal 1, warnings.size
       end
 
+      test "from skips unexpected parser failures with a warning" do
+        warnings = []
+        creative = creative_with(rule_payload({}))
+
+        Rails.logger.stub(:warn, ->(message) { warnings << message }) do
+          Rule.stub(:parse, ->(*) { raise TypeError, "parser failed" }) do
+            assert_nil Rule.from(creative)
+          end
+        end
+
+        assert_equal 1, warnings.size
+        assert_includes warnings.first, "parser failed"
+        assert_includes warnings.first, creative.id.to_s
+      end
+
       test "human and none handlers are not responders" do
         %w[human none].each do |type|
           rule = Rule.from(creative_with(

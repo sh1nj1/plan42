@@ -11,13 +11,16 @@ module Collavre
     #    - If only humans are mentioned → no AI agents respond
     # 2. Primary-agent assignment: If the topic has a primary_agent, that agent is
     #    the topic's sole ambient responder (see #match_by_primary_agent)
-    # 3. Expression-based: Evaluate each agent's routing_expression (Liquid)
+    # 3. Workflow rules: Optional first-match routing for the creative subtree
+    # 4. Agent defaults: Evaluate routing_expression and live channel presence
     #
     # Permission checks:
     # - All agents need feedback permission on the creative to respond
     # - searchable only affects discoverability, not response permission
     #
     class Matcher
+      include WorkflowRouting
+
       # Login replays must remain selected by current routing at promotion,
       # execution, and approval resumption. Ordinary waiting turns retain their
       # assignment-only contract rather than re-evaluating routing expressions.
@@ -96,8 +99,8 @@ module Collavre
         primary_result = match_by_primary_agent
         return primary_result unless primary_result.nil?
 
-        # Priority 3: Liquid expression routing (fallback)
-        match_by_expression
+        # Priority 3: Workflow rules, with existing agent routing as fallback
+        match_with_workflow
       end
 
       # May this agent still take the floor in this topic, given the topic's

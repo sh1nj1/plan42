@@ -21,6 +21,14 @@ module Collavre
 
       test "does not match a source condition without an envelope" do
         refute Conditions.match?({ "source" => [ "comment_callback" ] }, {})
+        refute Conditions.match?({ "source" => [ "unknown" ] }, {})
+      end
+
+      test "uses the envelope unknown sentinel when source is unspecified" do
+        context = { Envelope::KEY => { "id" => "legacy-event" } }
+
+        assert Conditions.match?({ "source" => [ "unknown" ] }, context)
+        refute Conditions.match?({ "source" => [ "comment_callback" ] }, context)
       end
 
       test "matches whether the comment author is an agent" do
