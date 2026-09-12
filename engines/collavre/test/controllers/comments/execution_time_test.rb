@@ -15,18 +15,14 @@ class Comments::ExecutionTimeTest < ActionDispatch::IntegrationTest
     sign_in_as(@user, password: "password")
   end
 
-  { en: "1m 23s", ko: "1분 23초" }.each do |locale, duration|
-    test "shows #{locale} duration next to the timestamp before expanding logs" do
+  %i[en ko].each do |locale|
+    test "preserves #{locale} comment timestamp without execution time" do
       @user.update!(locale: locale)
       get creative_comments_path(@creative)
 
       assert_response :success
-      assert_select "#comment_#{@comment.id} time + .comment-execution-time", text: "(#{duration})" do |elements|
-        assert_equal "note", elements.first["role"]
-        assert_equal I18n.t("collavre.comments.activity_logs.duration", locale: locale, duration: duration), elements.first["aria-label"]
-        assert_equal I18n.t("collavre.comments.activity_logs.inline_duration_hint", locale: locale), elements.first["title"]
-      end
       assert_select "#comment_#{@comment.id} time[datetime][title]", count: 1
+      assert_select ".comment-execution-time, .activity-execution-time", count: 0
     end
   end
 
@@ -45,7 +41,7 @@ class Comments::ExecutionTimeTest < ActionDispatch::IntegrationTest
     assert_select ".comment-execution-time", count: 0
   end
 
-  test "loads timing events once per page including pagination and topic filtering" do
+  test "does not load timing events on comment pages including pagination and topic filtering" do
     topic = @creative.topics.create!(name: "Timed replies", user: @user)
     @comment.update!(topic: topic)
     7.times do
@@ -56,7 +52,7 @@ class Comments::ExecutionTimeTest < ActionDispatch::IntegrationTest
     end
 
     [ {}, { topic_id: topic.id }, { after_id: @comment.id },
-      { before_id: @creative.comments.maximum(:id) + 1 } ].each do |parameters|
+      { before_id: @creative.comments.maximum(:id) + 1 }, { around_comment_id: @comment.id } ].each do |parameters|
       queries = []
       subscriber = ->(_name, _start, _finish, _id, payload) do
         queries << payload[:sql] if payload[:sql].match?(/SELECT.*FROM "task_actions"/)
@@ -66,8 +62,9 @@ class Comments::ExecutionTimeTest < ActionDispatch::IntegrationTest
       end
 
       assert_response :success
-      assert_select ".comment-execution-time", count: parameters[:after_id] ? 7 : 8
-      assert_equal 1, queries.size, queries.join("\n")
+      assert_select "time[datetime]", count: parameters[:after_id] ? 7 : 8
+      assert_select ".comment-execution-time, .activity-execution-time", count: 0
+      assert_equal 0, queries.size, queries.join("\n")
     end
   end
 
@@ -80,10 +77,11 @@ class Comments::ExecutionTimeTest < ActionDispatch::IntegrationTest
     assert_select ".comment-execution-time", count: 0
   end
 
-  test "broadcast renderer can render the inline duration" do
+  test "broadcast renderer preserves timestamp without timing" do
     html = ApplicationController.render(partial: "collavre/comments/comment", locals: { comment: @comment })
     fragment = Nokogiri::HTML.fragment(html)
 
-    assert_equal "(1m 23s)", fragment.at_css("time + .comment-execution-time").text
+    assert fragment.at_css("time[datetime][title]")
+    assert_nil fragment.at_css(".comment-execution-time, .activity-execution-time")
   end
 end

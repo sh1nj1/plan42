@@ -10,6 +10,7 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     @creative = Creative.create!(description: "Task timing", user: @user)
     task = Collavre::Task.create!(name: "Timed task", agent: @user, status: "done")
     @reply = Comment.create!(creative: @creative, user: @user, task: task, content: "Timed response")
+    @reply.activity_logs.create!(activity: "LLM", log: { result: "ok" })
     @plain = Comment.create!(creative: @creative, user: @user, content: "Plain response")
     @logged = Comment.create!(creative: @creative, user: @user, content: "Logged response")
     @logged.activity_logs.create!(activity: "LLM", log: { result: "ok" })
@@ -22,24 +23,27 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
-  test "lazy activity panel shows task duration even without interaction logs" do
+  test "execution time appears only beside the activity timestamp" do
     visit collavre.creatives_path(id: @creative.id)
     find("button[name='show-comments-btn'][data-creative-id='#{@creative.id}']", wait: 10).click
 
+    assert_docked_comments_loaded
+
     within("#comment_#{@reply.id}") do
-      assert_selector "time + .comment-execution-time", text: "(1m 23s)"
+      assert_no_selector ".comment-execution-time"
+      assert_selector "time[datetime]"
       find(".comment-activity-log-block summary").click
-      assert_selector ".activity-log-duration", text: "Execution time: 1m 23s"
+      assert_selector ".activity-time", text: /ago\s*\(1m 23s\)/
+      assert_no_selector ".activity-log-duration"
     end
     within("#comment_#{@reviewed.id}") do
-      assert_selector "time + .comment-execution-time", text: "(20s)"
+      assert_no_selector ".comment-execution-time"
       find(".comment-activity-log-block summary").click
-      assert_selector ".activity-log-duration", text: "Execution time: 20s"
+      assert_selector ".activity-time .activity-execution-time", text: "(20s)"
     end
     within("#comment_#{@historical.id}") do
       assert_no_selector ".comment-execution-time"
-      find(".comment-activity-log-block summary").click
-      assert_selector ".activity-log-duration", text: "Execution time: Unavailable"
+      assert_no_selector ".comment-activity-log-block"
     end
     within("#comment_#{@plain.id}") do
       assert_no_selector ".comment-execution-time"
@@ -48,7 +52,7 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     within("#comment_#{@logged.id}") do
       find(".comment-activity-log-block summary").click
       assert_selector ".activity-name", text: "LLM"
-      assert_no_selector ".activity-log-duration"
+      assert_no_selector ".activity-log-duration, .activity-execution-time"
     end
   end
 
@@ -59,6 +63,7 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     review = Comment.create!(creative: @creative, user: @user, content: "Revise", quoted_comment: @reviewed)
     task = Collavre::Task.create!(name: "Review task", agent: @user, status: "running")
     reply = Comment.create!(creative: @creative, user: @user, task: task, content: "Working")
+    reply.activity_logs.create!(user: @user, activity: "Review LLM")
     started_at = 30.seconds.ago
     task.task_actions.create!(action_type: "start", status: "done", created_at: started_at)
     task.task_actions.create!(action_type: "completion", status: "done", created_at: started_at + 20)

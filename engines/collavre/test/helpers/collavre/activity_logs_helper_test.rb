@@ -34,18 +34,4 @@ class Collavre::ActivityLogsHelperTest < ActionView::TestCase
       Collavre::TaskExecutionTime.stub(:seconds, 83) { assert_equal "1m 23s", inline_task_execution_time(task) }
     end
   end
-
-  test "renders task states and measured duration" do
-    task = Collavre::Task.new(status: "running")
-    I18n.with_locale(:en) do
-      assert_equal "In progress", task_execution_time(task)
-      task.status = "done"
-      Collavre::TaskExecutionTime.stub(:seconds, nil) do
-        assert_equal "Unavailable", task_execution_time(task)
-      end
-      Collavre::TaskExecutionTime.stub(:seconds, 83) do
-        assert_equal "1m 23s", task_execution_time(task)
-      end
-    end
-  end
 end

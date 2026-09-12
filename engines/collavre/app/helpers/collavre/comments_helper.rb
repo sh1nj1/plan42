@@ -1,7 +1,5 @@
 module Collavre
   module CommentsHelper
-    include ActivityLogsHelper
-
     def formatted_comment_action(comment)
       JSON.pretty_generate(JSON.parse(comment.action))
     rescue JSON::ParserError, TypeError

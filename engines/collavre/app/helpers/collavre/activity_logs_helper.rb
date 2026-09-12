@@ -2,15 +2,6 @@
 
 module Collavre
   module ActivityLogsHelper
-    def task_execution_time(task)
-      return t("collavre.comments.activity_logs.in_progress") if task.active?
-
-      seconds = TaskExecutionTime.seconds(task)
-      return t("collavre.comments.activity_logs.unavailable") unless seconds
-
-      format_execution_time(seconds)
-    end
-
     def inline_task_execution_time(task)
       seconds = TaskExecutionTime.seconds(task) if task
       format_execution_time(seconds) if seconds

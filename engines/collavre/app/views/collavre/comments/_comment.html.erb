@@ -31,9 +31,6 @@
         title: l(timestamp, format: :chat_timestamp),
         datetime: timestamp.iso8601
       ) %>
-      <% if (execution_time = inline_task_execution_time(comment.task)) %>
-        <span class="comment-execution-time" role="note" title="<%= t('collavre.comments.activity_logs.inline_duration_hint') %>" aria-label="<%= t('collavre.comments.activity_logs.duration', duration: execution_time) %>"><%= t('collavre.comments.activity_logs.inline_duration', duration: execution_time) %></span>
-      <% end %>
     </span>
     <span id="read_receipts_comment_<%= comment.id %>" class="read-receipt-wrapper">
       <% users_read = defined?(read_by_users) ? read_by_users : (defined?(read_receipts) ? read_receipts[comment.id] : nil) %>
@@ -229,7 +226,7 @@
       </button>
     </div>
   <% end %>
-  <% if comment.task_id.present? || comment.activity_logs.exists? %>
+  <% if comment.activity_logs.exists? %>
     <div class="comment-activity-log-block">
       <details>
         <summary><%= t("collavre.comments.activity_logs_summary") %></summary>

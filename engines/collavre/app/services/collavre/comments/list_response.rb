@@ -68,7 +68,7 @@ module Collavre
       end
 
       def filtered_scope(visible_scope, topic_id)
-        scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions, :snapshot_as_result, task: :task_actions)
+        scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions, :snapshot_as_result, :task)
         scope = search_scope(scope)
         return [ scope.where(topic_id: topic_id).order(id: :desc), false ] if topic_id.present?
 
