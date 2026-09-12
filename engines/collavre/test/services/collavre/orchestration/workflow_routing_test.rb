@@ -47,6 +47,22 @@ module Collavre
         assert_equal [ @other ], match
       end
 
+      test "Liquid failures identify the rule without exposing its condition in either routing mode" do
+        rule = agent_rule(sequence: 1)
+        rule.data["workflow_rule"]["when"] = { "liquid" => "{% confidential_customer_tag %}" }
+        rule.save!
+        agent_rule(sequence: 2)
+
+        %w[on shadow].each do |routing_mode|
+          mode(routing_mode)
+          lines = []
+          Rails.logger.stub(:error, ->(line) { lines << line }) do
+            assert_equal [ routing_mode == "on" ? @other : @agent ], match
+          end
+          assert_equal [ "[Workflow::Conditions] Liquid error=Liquid::SyntaxError rule_id=#{rule.id}" ], lines
+        end
+      end
+
       %w[none human].each do |type|
         test "matched #{type} blocks expression evaluation" do
           create_workflow_rule(parent: @workflow, handler: { "type" => type })

@@ -103,6 +103,21 @@ module Collavre
         refute Conditions.match?({ "liquid" => "{% if" }, {})
       end
 
+      test "Liquid errors log only the exception class without customer text" do
+        lines = []
+        Rails.logger.stub(:error, ->(line) { lines << line }) do
+          refute Conditions.match?({ "liquid" => "{% confidential_customer_tag %}" }, {})
+          Liquid::Template.stub(:parse, ->(*) { raise Liquid::SyntaxError, "private text\nforged log" }) do
+            refute Conditions.match?({ "liquid" => "true" }, {})
+          end
+        end
+
+        assert_equal 2, lines.size
+        lines.each do |line|
+          assert_equal "[Workflow::Conditions] Liquid error=Liquid::SyntaxError rule_id=nil", line
+        end
+      end
+
       test "evaluates Liquid last and short circuits on an earlier mismatch" do
         parser = ->(*) { flunk "Liquid should not be parsed" }
 

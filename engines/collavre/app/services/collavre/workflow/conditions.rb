@@ -5,13 +5,14 @@ module Collavre
     class Conditions
       KEYS = %w[source author_agent body_contains liquid].freeze
 
-      def self.match?(conditions, context)
-        new(conditions, context).match?
+      def self.match?(conditions, context, rule_id: nil)
+        new(conditions, context, rule_id: rule_id).match?
       end
 
-      def initialize(conditions, context)
+      def initialize(conditions, context, rule_id: nil)
         @conditions = conditions.to_h.stringify_keys
         @context = context
+        @rule_id = rule_id
       end
 
       def match?
@@ -49,7 +50,7 @@ module Collavre
         template = Liquid::Template.parse(expression)
         template.render(@context.except("agent", :agent)).strip == "true"
       rescue StandardError => e
-        Rails.logger.error("[Workflow::Conditions] Liquid error: #{e.message}")
+        Rails.logger.error("[Workflow::Conditions] Liquid error=#{e.class.name} rule_id=#{@rule_id.inspect}")
         false
       end
 

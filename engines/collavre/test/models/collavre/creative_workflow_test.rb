@@ -24,5 +24,14 @@ module Collavre
       refute_predicate creative, :workflow?
       refute_predicate creative, :workflow_rule?
     end
+
+    [ [], [ { "kind" => "workflow" } ], "workflow", 42, 1.5, true, false, nil ].each do |metadata|
+      test "workflow predicates are false for non-object metadata #{metadata.inspect}" do
+        creative = Creative.new(data: metadata)
+
+        refute_predicate creative, :workflow?
+        refute_predicate creative, :workflow_rule?
+      end
+    end
   end
 end

@@ -53,6 +53,22 @@ module Collavre
         assert_equal [ kept.id ], Resolver.new(context_for(target)).workflow_creative_ids
       end
 
+      test "ignores pinned creatives with persisted non-object metadata" do
+        malformed = [ [], "workflow", 42, 1.5, true, false, nil ].map do |metadata|
+          creative = create_workflow_creative(description: "Malformed context")
+          Creative.where(id: creative.id).update_all([ "data = ?", metadata.to_json ])
+          creative
+        end
+        workflow = create_workflow
+        rule = create_workflow_rule(parent: workflow)
+        target = target_with_context(*malformed, workflow)
+
+        resolver = Resolver.new(context_for(target))
+
+        assert_equal [ workflow.id ], resolver.workflow_creative_ids
+        assert_equal [ rule.id ], resolver.rules.map(&:creative_id)
+      end
+
       test "loads only active direct rule children and compacts invalid rules" do
         workflow = create_workflow
         valid = create_workflow_rule(parent: workflow)

@@ -159,6 +159,31 @@ module Collavre
         assert_not_includes contexts.first.dig(:parts, 0, :text), "Routing configuration"
       end
 
+      test "keeps pinned context with persisted non-object metadata" do
+        pinned = [ [], "workflow", 42, 1.5, true, false, nil ].map.with_index do |metadata, index|
+          creative = Creative.create!(description: "Context note #{index}", user: @user, progress: 0.0)
+          Creative.where(id: creative.id).update_all([ "data = ?", metadata.to_json ])
+          creative
+        end
+        @creative.update!(data: { "context_ids" => pinned.map(&:id) })
+
+        messages = MessageBuilder.new(
+          agent: @agent,
+          context: {
+            "comment" => { "id" => @comment.id, "content" => "Implement feature X" },
+            "creative" => { "id" => @creative.id }
+          },
+          original_comment: @comment
+        ).build[:messages]
+        contexts = messages.select { |message| message[:kind] == :context_creative }
+
+        assert_equal pinned.size, contexts.size
+        pinned.zip(contexts).each do |creative, message|
+          assert_includes message.dig(:parts, 0, :text), creative.description
+          assert_includes message.dig(:parts, 0, :text), "Context Creative (id: #{creative.id}):"
+        end
+      end
+
       test "includes ancestry breadcrumb in full subtree context" do
         context = {
           "comment" => { "id" => @comment.id, "content" => "Hello" },

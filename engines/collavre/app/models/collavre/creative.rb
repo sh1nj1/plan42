@@ -97,11 +97,11 @@ module Collavre
     end
 
     def workflow?
-      data&.dig("kind") == "workflow"
+      data.is_a?(Hash) && data["kind"] == "workflow"
     end
 
     def workflow_rule?
-      data&.dig("kind") == "workflow_rule"
+      data.is_a?(Hash) && data["kind"] == "workflow_rule"
     end
 
     # Bypass the read-only-source guard for a single save (used by the vendor

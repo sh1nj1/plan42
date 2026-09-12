@@ -23,7 +23,8 @@ module Collavre
 
       def match_by_workflow
         rule = workflow_rules.find do |candidate|
-          candidate.event_name == @context["event_name"] && Workflow::Conditions.match?(candidate.conditions, @context)
+          candidate.event_name == @context["event_name"] &&
+            Workflow::Conditions.match?(candidate.conditions, @context, rule_id: candidate.creative_id)
         end
         return nil unless rule
         return [] unless rule.responder?
