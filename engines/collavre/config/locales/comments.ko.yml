@@ -232,6 +232,17 @@ ko:
       stop_blocking_agent: 실행 중 작업 중지
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
+      activity_logs:
+        duration: "수행 시간: %{duration}"
+        duration_hint: "마지막 시도의 시작부터 완료까지이며, 큐 대기 시간과 이전 재시도는 제외합니다."
+        in_progress: "진행 중"
+        unavailable: "측정 불가"
+        hours: "%{count}시간"
+        minutes: "%{count}분"
+        seconds: "%{count}초"
+        loading: "불러오는 중..."
+        empty: "활동 기록이 없습니다."
+        time_ago: "%{time} 전"
       table_download:
         csv: CSV
         excel: Excel

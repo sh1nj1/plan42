@@ -235,6 +235,17 @@ en:
       stop_blocking_agent: Stop running task
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
+      activity_logs:
+        duration: "Execution time: %{duration}"
+        duration_hint: "From start to completion of the latest attempt; excludes queue time and earlier retries."
+        in_progress: "In progress"
+        unavailable: "Unavailable"
+        hours: "%{count}h"
+        minutes: "%{count}m"
+        seconds: "%{count}s"
+        loading: "Loading..."
+        empty: "No activity logs available."
+        time_ago: "%{time} ago"
       table_download:
         csv: CSV
         excel: Excel
