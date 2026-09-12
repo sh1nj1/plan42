@@ -83,8 +83,7 @@ module Collavre
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
-        ids_to_load = active_ids.reject { |ctx_id| @injected_creative_ids.include?(ctx_id) }
-        creatives_by_id = Creative.where(id: ids_to_load).index_by(&:id)
+        creatives_by_id = load_prompt_context_creatives(active_ids)
 
         active_ids.each do |ctx_id|
           next if @injected_creative_ids.include?(ctx_id)
@@ -103,6 +102,16 @@ module Collavre
             parts: [ { text: "Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
           }
         end
+      end
+
+      # Workflow creatives are machine-readable routing configuration. Only
+      # Workflow::Resolver should consume them; prompt injection would expose
+      # rule titles as noise and as a prompt-injection surface.
+      def load_prompt_context_creatives(active_ids)
+        ids = active_ids.reject { |id| @injected_creative_ids.include?(id) }
+        Creative.where(id: ids)
+                .reject { |creative| creative.workflow? || creative.workflow_rule? }
+                .index_by(&:id)
       end
 
       def append_referenced_creative_contexts(messages)

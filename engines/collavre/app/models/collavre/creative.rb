@@ -96,6 +96,14 @@ module Collavre
       data&.dig("kind") == "inbox"
     end
 
+    def workflow?
+      data&.dig("kind") == "workflow"
+    end
+
+    def workflow_rule?
+      data&.dig("kind") == "workflow_rule"
+    end
+
     # Bypass the read-only-source guard for a single save (used by the vendor
     # sync services that legitimately write the synced content into core).
     attr_accessor :skip_read_only_source_validation
