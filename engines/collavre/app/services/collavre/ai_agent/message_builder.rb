@@ -64,7 +64,10 @@ module Collavre
       end
 
       def build_ancestry_chain(creative)
-        creative.self_and_ancestors.reverse.map { |c| "#{c.creative_snippet} (id: #{c.id})" }.join(" > ")
+        ancestors = creative.self_and_ancestors.reverse
+        Creatives::OriginChainPreloader.preload(ancestors)
+        ancestors.reject { |ancestor| workflow_context?(ancestor) }
+                 .map { |ancestor| "#{ancestor.creative_snippet} (id: #{ancestor.id})" }.join(" > ")
       end
 
       def append_context_creatives(messages)
@@ -109,9 +112,9 @@ module Collavre
       # rule titles as noise and as a prompt-injection surface.
       def load_prompt_context_creatives(active_ids)
         ids = active_ids.reject { |id| @injected_creative_ids.include?(id) }
-        Creative.where(id: ids).preload(:origin)
-                .reject { |creative| workflow_context?(creative) }
-                .index_by(&:id)
+        creatives = Creative.where(id: ids).to_a
+        Creatives::OriginChainPreloader.preload(creatives)
+        creatives.reject { |creative| workflow_context?(creative) }.index_by(&:id)
       end
 
       def workflow_context?(creative)

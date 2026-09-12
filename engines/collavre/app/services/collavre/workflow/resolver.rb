@@ -30,26 +30,11 @@ module Collavre
 
         ids = active_context_ids
         indexed = Creative.active.where(id: ids).index_by(&:id)
-        preload_origin_chains(indexed.values)
+        Creatives::OriginChainPreloader.preload(indexed.values)
         @workflow_creatives = ids.filter_map { |id| indexed[id]&.effective_origin(Set.new) }
           .select { |creative| creative.archived_at.nil? && creative.workflow? }
           .reject { |creative| @excluded_context_ids.include?(creative.id) }
           .uniq(&:id)
-      end
-
-      def preload_origin_chains(creatives)
-        indexed = creatives.index_by(&:id)
-        pending = creatives
-        until pending.empty?
-          origin_ids = pending.filter_map(&:origin_id).uniq - indexed.keys
-          pending = Creative.where(id: origin_ids).to_a
-          indexed.merge!(pending.index_by(&:id))
-        end
-
-        # Reuse the same records at every depth, including converging paths and cycles.
-        indexed.each_value do |creative|
-          creative.association(:origin).target = indexed[creative.origin_id] if creative.origin_id
-        end
       end
 
       def active_context_ids

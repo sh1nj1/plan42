@@ -262,6 +262,20 @@ module Collavre
         refute_includes messages.to_s, "Secret workflow"
       end
 
+      %i[context_creative referenced_creative].each do |source|
+        test "batches every origin depth for #{source} during build" do
+          shallow = build_routing_links(count: 8, depth: 1)
+          deep = build_routing_links(count: 8, depth: 3)
+
+          one_count = routing_build_query_count(source, deep.first(1))
+          many_count = routing_build_query_count(source, deep)
+          shallow_count = routing_build_query_count(source, shallow)
+
+          assert_equal one_count, many_count, "Origin queries must not grow with the number of linked roots"
+          assert_equal shallow_count + 2, many_count, "Each extra origin depth needs one batched query"
+        end
+      end
+
       test "keeps ordinary pinned context while excluding workflow creatives" do
         ordinary = Creative.create!(description: "Coding standards", user: @user, progress: 0.0)
         workflow = Creative.create!(
@@ -326,6 +340,63 @@ module Collavre
         assert_not_nil creative_msg
         assert_includes creative_msg[:parts].first[:text], "Creative Path:"
         assert_match(/\(id: #{@creative.id}\)/, creative_msg[:parts].first[:text])
+      end
+
+      %w[workflow workflow_rule].each do |kind|
+        [ false, true ].each do |linked|
+          [ false, true ].each do |disabled_self_context|
+            test "excludes #{kind} ancestry with linked=#{linked} disabled_self_context=#{disabled_self_context}" do
+              root = Creative.create!(description: "Ordinary root", user: @user)
+              routing = Creative.create!(description: "Private routing text", user: @user, parent: root,
+                                         data: linked ? {} : { "kind" => kind })
+              middle = Creative.create!(description: "Ordinary middle", user: @user, parent: routing)
+              target = Creative.create!(description: "Current note", user: @user, parent: middle,
+                                        data: { "disabled_self_context" => disabled_self_context })
+              if linked
+                origin = build_routing_links(count: 1, depth: 2, kind: kind).first
+                Creative.where(id: routing.id).update_all(origin_id: origin.id)
+              end
+
+              messages = MessageBuilder.new(agent: @agent, context: { "creative" => { "id" => target.id } }).build[:messages]
+              text = messages.find { |message| message[:kind] == :creative_context }.dig(:parts, 0, :text)
+
+              assert_equal "Creative Path: Ordinary root (id: #{root.id}) > Ordinary middle (id: #{middle.id}) > Current note (id: #{target.id})",
+                           text.lines.first.chomp
+              refute_includes text, "Private routing text"
+              refute_includes text, "Secret routing"
+              assert_includes text, "Current note"
+            end
+          end
+        end
+      end
+
+      test "batches origin chains across linked ancestry during build" do
+        root = Creative.create!(description: "Ordinary root", user: @user)
+        ancestors = 8.times.each_with_object([]) do |index, chain|
+          chain << Creative.create!(description: "Ancestor #{index}", user: @user, parent: chain.last || root)
+        end
+        target = Creative.create!(description: "Current note", user: @user, parent: ancestors.last,
+                                  data: { "disabled_self_context" => true })
+        origins = build_routing_links(count: ancestors.size, depth: 2)
+        origin_ids = origins.flat_map { |origin| [ origin.id, origin.origin_id, origin.origin.origin_id ] }
+        ancestors.zip(origins).each do |ancestor, origin|
+          Creative.where(id: ancestor.id).update_all(origin_id: origin.id)
+        end
+        origin_queries = []
+        callback = lambda do |*, payload|
+          if payload[:sql].start_with?("SELECT") && payload[:sql].include?('FROM "creatives"') &&
+              payload[:binds].any? { |bind| origin_ids.include?(bind.value_for_database) }
+            origin_queries << payload[:sql]
+          end
+        end
+
+        Creative.uncached do
+          ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+            MessageBuilder.new(agent: @agent, context: { "creative" => { "id" => target.id } }).build
+          end
+        end
+
+        assert_equal 3, origin_queries.size, "All ancestors must share one query per origin depth"
       end
 
       test "injects only ancestry chain when disabled_self_context is true" do
@@ -774,6 +845,38 @@ module Collavre
       end
 
       private
+
+      def build_routing_links(count:, depth:, kind: "workflow")
+        Array.new(count) do
+          routing = Creative.create!(description: "Secret routing", user: @user, data: { "kind" => kind })
+          depth.times.reduce(routing) do |origin, index|
+            Creative.create!(description: "Routing link #{index}", user: @user, origin: origin)
+          end
+        end
+      end
+
+      def routing_build_query_count(source, links)
+        context = { "creative" => { "id" => @creative.id },
+                    "comment" => { "id" => @comment.id, "content" => @comment.content } }
+        if source == :context_creative
+          @creative.update!(data: { "context_ids" => links.map(&:id) })
+        else
+          context["comment"]["content"] = links.map { |link| "[rules](/creatives/#{link.id})" }.join(" ")
+        end
+        statements = []
+        callback = lambda do |*, payload|
+          sql = payload[:sql]
+          statements << sql if sql.start_with?("SELECT") && sql.include?('FROM "creatives"')
+        end
+        Creative.uncached do
+          ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+            messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+            assert_empty messages.select { |message| message[:kind] == source }
+            refute_includes messages.to_s, "Secret routing"
+          end
+        end
+        statements.length
+      end
 
       def one_pixel_png
         Base64.decode64(
