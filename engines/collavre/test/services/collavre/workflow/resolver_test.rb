@@ -102,6 +102,49 @@ module Collavre
         assert_equal 1, sql.count { |statement| statement.include?("parent_id") }
       end
 
+      test "batches every origin depth for many chained workflow pins" do
+        workflows = Array.new(8) { create_workflow }
+        links = workflows.map do |workflow|
+          3.times.reduce(workflow) do |origin, depth|
+            create_workflow_creative(description: "Link #{depth}", origin:)
+          end
+        end
+        rules = workflows.map { |workflow| create_workflow_rule(parent: workflow) }
+        target = target_with_context(*links.reverse, workflows.first)
+        resolver = Resolver.new(context_for(target))
+
+        sql = capture_creative_selects do
+          assert_equal workflows.reverse.map(&:id), resolver.workflow_creative_ids
+          assert_equal rules.reverse.map(&:id), resolver.rules.map(&:creative_id)
+        end
+
+        assert_equal 6, sql.length
+        assert_equal 1, sql.count { |statement| statement.include?("parent_id") }
+      end
+
+      test "traverses archived intermediate links without activating archived pins" do
+        workflow = create_workflow
+        archived_link = create_workflow_creative(
+          description: "Archived link", origin: workflow, archived_at: Time.current
+        )
+        active_link = create_workflow_creative(description: "Active link", origin: archived_link)
+        other = create_workflow
+        target = target_with_context(archived_link, other, active_link)
+
+        assert_equal [ other.id, workflow.id ], Resolver.new(context_for(target)).workflow_creative_ids
+      end
+
+      test "preserves cycle entry origins when linked pins converge on a cycle" do
+        first = create_workflow(description: "First")
+        second = create_workflow(description: "Second", origin: first)
+        first_link = create_workflow_creative(description: "First link", origin: first)
+        second_link = create_workflow_creative(description: "Second link", origin: second)
+        Creative.where(id: first.id).update_all(origin_id: second.id)
+        target = target_with_context(second, first_link, second_link, first)
+
+        assert_equal [ second.id, first.id ], Resolver.new(context_for(target)).workflow_creative_ids
+      end
+
       test "excludes disabled, current, origin, archived, and non-workflow context creatives" do
         kept = create_workflow(description: "Kept")
         disabled = create_workflow(description: "Disabled")

@@ -69,6 +69,47 @@ module Collavre
         end
       end
 
+      %i[creative_context context_creative referenced_creative merged_reference].each do |source|
+        %w[workflow workflow_rule].each do |kind|
+          [ false, true ].each do |linked|
+            test "prunes #{kind} descendants from #{source} with linked=#{linked}" do
+              root = source == :creative_context ? @creative : Creative.create!(description: "Ordinary folder", user: @user)
+              branch = Creative.create!(description: "Ordinary branch", user: @user, parent: root)
+              metadata = { "kind" => kind }
+              routing = Creative.create!(description: "Hidden routing text", user: @user, data: metadata,
+                                         parent: linked ? nil : branch)
+              Creative.create!(description: "Hidden routing notes", user: @user, parent: routing)
+              Creative.create!(description: "Routing shell", user: @user, origin: routing, parent: branch) if linked
+              Creative.create!(description: "Visible sibling", user: @user, parent: branch)
+              @agent.update!(agent_conf: { "context" => { "creative_children_level" => 5 } }.to_json)
+              context = { "creative" => { "id" => @creative.id },
+                          "comment" => { "id" => @comment.id, "content" => @comment.content } }
+              case source
+              when :context_creative
+                @creative.update!(data: { "context_ids" => [ root.id ] })
+              when :referenced_creative
+                context["comment"]["content"] = "[folder](/creatives/#{root.id})"
+              when :merged_reference
+                absorbed = @creative.comments.create!(content: "[folder](/creatives/#{root.id})", user: @user,
+                                                       topic_id: @comment.topic_id)
+                context[Orchestration::TaskCoalescer::PAYLOAD_KEY] = [ absorbed.id ]
+              end
+
+              Current.set(user: @user) do
+                messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+                rendered_kind = source == :merged_reference ? :referenced_creative : source
+                text = messages.find { |message| message[:kind] == rendered_kind }.dig(:parts, 0, :text)
+
+                assert_includes text, "Ordinary branch"
+                assert_includes text, "Visible sibling"
+                refute_includes text, "Hidden routing"
+                refute_includes text, "Routing shell"
+              end
+            end
+          end
+        end
+      end
+
       test "history delivery ignores excluded workflow references but still requires ordinary references" do
         workflow = Creative.create!(description: "Private routing configuration", user: users(:two),
                                     progress: 0.0, data: { "kind" => "workflow" })

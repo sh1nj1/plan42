@@ -351,6 +351,18 @@ class CreativesHelperTest < ActionView::TestCase
     end
   end
 
+  test "workflow trees remain available to ordinary markdown exports" do
+    user = users(:one)
+    workflow = Creative.create!(description: "Exported workflow", user: user, data: { "kind" => "workflow" })
+    Creative.create!(description: "Exported rule", user: user, parent: workflow, data: { "kind" => "workflow_rule" })
+
+    Current.set(user: user) do
+      markdown = render_creative_tree_markdown([ workflow ])
+      assert_includes markdown, "Exported workflow"
+      assert_includes markdown, "Exported rule"
+    end
+  end
+
   # max_depth tests for render_creative_tree_markdown
 
   test "render_creative_tree_markdown with max_depth limits tree depth" do

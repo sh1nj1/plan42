@@ -55,7 +55,7 @@ module Collavre
           children_level = @agent.creative_children_level
           max_depth = 1 + children_level
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth
+            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
           )
 
           @injected_creative_ids << creative.id
@@ -93,7 +93,7 @@ module Collavre
 
           @injected_creative_ids << ctx_id
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ ctx ], 1, true, max_depth: max_depth
+            [ ctx ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
           )
 
           messages << {
@@ -141,7 +141,7 @@ module Collavre
 
           @injected_creative_ids << creative_id
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth
+            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
           )
 
           messages << {
