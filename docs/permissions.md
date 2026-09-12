@@ -145,6 +145,17 @@ Two entry points:
 - `ranks_for(ids)` — returns `{ id => rank }` for callers that already operate
   inside the viewer's own tree and want the raw rank (no shell gate).
 
+### Authoritative reads before replay handoff
+
+`PermissionChecker.current_allowed?` checks a creative by ID using current
+`CreativeShare` rows joined to the synchronously maintained `CreativeHierarchy`,
+without consulting `CreativeSharesCache` or Active Record's SQL query cache.
+It reuses the normal checker's owner/user/public precedence and effective-origin
+resolution; each user/public entry is the closest share in the current hierarchy.
+Inline login replays use this immediately before the provider call so revocation
+does not wait for `PermissionCacheJob`. Ordinary permission reads retain their
+existing cache path, and this check does not write or rebuild the cache.
+
 ### Read sites that converged
 
 PR #1388 pinned the observable behavior of the **five** read sites that queried

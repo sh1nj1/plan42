@@ -24,14 +24,9 @@ module Collavre
       loop_config = child_creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "running"
 
-      # Use the task's topic directly — not a stored topic_id which can become stale
-      topic = Topic.find_by(id: task.topic_id)
+      topic = trigger_completion_topic(task, loop_config)
       return unless topic
-
-      # Only evaluate tasks from the loop's trigger topic to prevent
-      # cross-topic contamination from unrelated AI conversations
-      trigger_topic_id = loop_config["trigger_topic_id"]
-      return if trigger_topic_id.present? && trigger_topic_id != task.topic_id
+      return if finish_abandoned_replay(task, child_creative, topic)
 
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment

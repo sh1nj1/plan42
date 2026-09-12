@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import { Application } from "@hotwired/stimulus"
+import { jest } from "@jest/globals"
 
 const { default: AgentConnectionController } = await import("../agent_connection_controller")
 
@@ -54,10 +55,25 @@ describe("AgentConnectionController", () => {
   })
 
   afterEach(() => {
+    jest.useRealTimers()
     application?.stop()
     application = null
     document.body.innerHTML = ""
     delete global.fetch
+  })
+
+  test.each([
+    [{ flow: "custom", flows: [] }, []],
+    [{ flow: "api-key" }, ["api-key"]],
+    [{ flow: "custom", flows: ["device-code"] }, ["device-code"]]
+  ])("honors explicit flow availability %j", async (engine, expected) => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'), "agent-connection"
+    )
+    controller.renderEngines([{ engine: "codex", ...engine }])
+    expect([...document.querySelectorAll('[data-action="agent-connection#login"]')]
+      .map((button) => button.dataset.flow)).toEqual(expected)
   })
 
   test("renders engine, provisioning, and session states with localized labels", async () => {
@@ -191,5 +207,400 @@ describe("AgentConnectionController", () => {
 
     expect(document.querySelector('[data-agent-connection-target="engines"]').textContent).toContain("routing to https://openrouter.ai/api/v1")
     expect(controller.requiresBaseUrl("codex_custom", "api-key")).toBe(false)
+  })
+  test("inline paste-code submits the secret directly and retries only after authorization", async () => {
+    await mount()
+    const element = document.querySelector('[data-controller="agent-connection"]')
+    const controller = application.getControllerForElementAndIdentifier(element, "agent-connection")
+    controller.resumeUrlValue = "/resume"
+    controller.resumedValue = "Request queued again"
+    const calls = []
+    global.fetch = async (url, options = {}) => {
+      calls.push({ url, body: options.body && JSON.parse(options.body) })
+      return { ok: true, text: async () => JSON.stringify(url === "/resume" ? { resumed: true } : {
+        engine: "claude", sessionId: "one", flow: "paste-code",
+        status: url === "/auth/claude" ? "pending" : "authorized",
+        verificationUrl: "https://claude.com/login"
+      }) }
+    }
+    await controller.login({ currentTarget: { dataset: { engine: "claude", flow: "paste-code" } } })
+    const secret = element.querySelector('[data-role="secret"]')
+    expect(secret.type).toBe("password")
+    secret.value = "private-code"
+    await controller.submit({ params: { engine: "claude", session: "one" } })
+    expect(calls.map(call => call.url)).toEqual(["/auth/claude", "/auth/claude/one", "/resume"])
+    expect(calls[1].body).toEqual({ auth_secret: "private-code" })
+    expect(secret.value).toBe("")
+    expect(element.textContent).toContain("Request queued again")
+    expect(element.textContent).not.toContain("private-code")
+  })
+
+  test("device login renders the user code and polls without posting a secret", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
+    let polled
+    controller.poll = async (...args) => { polled = args }
+    global.fetch = async () => ({ ok: true, text: async () => JSON.stringify({
+      engine: "codex", flow: "device-code", status: "pending", sessionId: "device",
+      userCode: "ABCD-EFGH", verificationUrl: "https://auth.openai.com/codex/device", expiresAt: "2099-01-01T00:00:00Z"
+    }) })
+    await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
+    expect(document.body.textContent).toContain("ABCD-EFGH")
+    expect(document.querySelector('[data-role="secret"]')).toBeNull()
+    expect(polled.slice(0, 3)).toEqual(["codex", "device", "2099-01-01T00:00:00Z"])
+  })
+
+  test("expired or superseded polls cannot resume a turn and unsafe login URLs are not linked", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
+    controller.sessionGeneration = 2
+    controller.expiredValue = "Login expired"
+    let requests = 0
+    global.fetch = async () => { requests++; throw new Error("must not fetch") }
+    await controller.poll("codex", "old", "2099-01-01T00:00:00Z", 1)
+    await controller.poll("codex", "expired", "2000-01-01T00:00:00Z", 2)
+    expect(requests).toBe(0)
+    expect(document.body.textContent).toContain("Login expired")
+    controller.renderSession({ engine: "claude", status: "pending", flow: "paste-code", verificationUrl: "javascript:alert(1)" })
+    expect(controller.sessionTarget.querySelector("a")).toBeNull()
+  })
+
+  test("login errors remain visible and a disconnected pending start cannot render its response", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
+    global.fetch = async () => ({ ok: false, text: async () => JSON.stringify({ error: { code: "session_superseded", message: "Start again" } }) })
+    await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
+    expect(controller.errorTarget.textContent).toContain("Start again")
+    let finish
+    global.fetch = () => new Promise(resolve => { finish = resolve })
+    const pending = controller.login({ currentTarget: { dataset: { engine: "claude", flow: "paste-code" } } })
+    controller.disconnect()
+    finish({ ok: true, text: async () => JSON.stringify({ status: "pending", engine: "claude", sessionId: "late" }) })
+    await pending
+    expect(controller.sessionTarget.childElementCount).toBe(0)
+  })
+
+  describe("authentication session recovery", () => {
+    let controller
+    const session = {
+      engine: "codex", flow: "device-code", status: "pending", sessionId: "device",
+      expiresAt: "2099-01-01T00:00:00Z"
+    }
+    const event = { params: { engine: "codex", session: "device" } }
+    const response = (data, ok = true) => ({ ok, text: async () => JSON.stringify(data) })
+
+    beforeEach(async () => {
+      await mount()
+      controller = application.getControllerForElementAndIdentifier(
+        document.querySelector('[data-controller="agent-connection"]'), "agent-connection"
+      )
+      controller.sessionGeneration = 1
+      controller.resumeUrlValue = "/resume"
+      controller.resumedValue = "Request queued again"
+      jest.useFakeTimers()
+    })
+
+    test.each(["pending", "authorized", "resumed", "error"])(
+      "a stale %s refresh cannot replace or resume a newer login",
+      async (outcome) => {
+        controller.renderSession({ ...session, sessionId: "old", flow: "api-key" })
+        let finish, fail
+        global.fetch = jest.fn()
+          .mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+          .mockResolvedValueOnce(response(session))
+        const refreshing = controller.refresh()
+        await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
+        const generation = controller.sessionGeneration
+        const panel = controller.sessionTarget.firstChild
+        const engines = controller.enginesTarget.innerHTML
+
+        if (outcome === "error") fail(new Error("Stale status error"))
+        else finish(response({
+          engines: [], session: { ...session, sessionId: "old", status: outcome },
+          authorized: outcome === "authorized", resumed: outcome === "resumed"
+        }))
+        await refreshing
+
+        expect(controller.liveSession.sessionId).toBe("device")
+        expect(controller.sessionTarget.firstChild).toBe(panel)
+        expect(controller.enginesTarget.innerHTML).toBe(engines)
+        expect(controller.sessionGeneration).toBe(generation)
+        expect(controller.errorTarget.hidden).toBe(true)
+        expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/status", "/auth/codex"])
+        expect(jest.getTimerCount()).toBe(1)
+
+        global.fetch.mockResolvedValueOnce(response({ ...session, status: "authorized" }))
+          .mockResolvedValueOnce(response({ resumed: true }))
+        await jest.advanceTimersByTimeAsync(3000)
+        expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+          "/status", "/auth/codex", "/auth/codex/device", "/resume"
+        ])
+        expect(controller.sessionTarget.textContent).toBe("Request queued again")
+      }
+    )
+
+    test.each([false, true])(
+      "a recovered session reports resume errors only while current (replaced: %s)",
+      async (replaced) => {
+        let fail
+        global.fetch = jest.fn()
+          .mockResolvedValueOnce(response({ session: { ...session, status: "authorized" }, authorized: true }))
+          .mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+          .mockResolvedValueOnce(response({ ...session, flow: "api-key", sessionId: "replacement" }))
+        const refreshing = controller.refresh()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/status", "/resume"])
+        if (replaced) await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "api-key" } } })
+        fail(new Error("Resume failed"))
+        await refreshing
+
+        expect(controller.errorTarget.hidden).toBe(replaced)
+        expect(controller.liveSession.sessionId).toBe(replaced ? "replacement" : "device")
+        if (!replaced) expect(controller.errorTarget.textContent).toContain("Resume failed")
+      }
+    )
+
+    test("polls a pending device session until authorized, then resumes exactly once", async () => {
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response(session))
+        .mockResolvedValueOnce(response({ ...session, status: "authorized" }))
+        .mockResolvedValueOnce(response({ resumed: true }))
+
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+      expect(controller.sessionTarget.textContent).toContain("pending")
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+        "/auth/codex/device", "/auth/codex/device", "/resume"
+      ])
+      expect(global.fetch.mock.calls[2][1].method).toBe("POST")
+      expect(controller.sessionTarget.textContent).toBe("Request queued again")
+      expect(controller.enginesTarget.childElementCount).toBe(0)
+      expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test("reconnecting a pending device session continues polling without starting a new login", async () => {
+      controller.renderSession(session)
+      controller.disconnect()
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response({ ...session, status: "authorized" }))
+        .mockResolvedValueOnce(response({ resumed: true }))
+
+      controller.connect()
+      await jest.advanceTimersByTimeAsync(3000)
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/resume"])
+      expect(controller.sessionTarget.textContent).toBe("Request queued again")
+    })
+
+    test("failed device authorization shows the reason and refreshes status without resuming", async () => {
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response({ ...session, status: "failed", error: { message: "Access denied" } }))
+        .mockResolvedValueOnce(response({ engines: [] }))
+
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(controller.sessionTarget.textContent).toContain("Access denied")
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/status"])
+      expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test("poll transport errors stay visible without resuming or continuing to poll", async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error("Session superseded"))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(controller.errorTarget.hidden).toBe(false)
+      expect(controller.errorTarget.textContent).toContain("Session superseded")
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+      expect(jest.getTimerCount()).toBe(0)
+    })
+
+    test("disconnecting during a poll delay prevents the HTTP request", async () => {
+      global.fetch = jest.fn()
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      controller.disconnect()
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test.each(["authorized", "error"])("a late %s poll response cannot overwrite a replacement session", async (outcome) => {
+      let finish, fail
+      global.fetch = jest.fn(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      controller.sessionGeneration++
+      controller.renderSession({ ...session, sessionId: "replacement", flow: "api-key" })
+      const form = controller.sessionTarget.firstElementChild
+      if (outcome === "error") fail(new Error("Old session failed"))
+      else finish(response({ ...session, status: "authorized" }))
+      await polling
+
+      expect(controller.sessionTarget.firstElementChild).toBe(form)
+      expect(controller.liveSession.sessionId).toBe("replacement")
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test.each(["success", "error"])("cancellation invalidates an in-flight authorized poll before DELETE resolves (%s)", async (outcome) => {
+      controller.renderSession(session)
+      let finishPoll, finishCancel, failCancel
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() => new Promise(resolve => { finishPoll = resolve }))
+        .mockImplementationOnce(() => new Promise((resolve, reject) => { finishCancel = resolve; failCancel = reject }))
+        .mockResolvedValue(response({ engines: [] }))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+      await jest.advanceTimersByTimeAsync(3000)
+      const cancelling = controller.cancel(event)
+      finishPoll(response({ ...session, status: "authorized" }))
+      await polling
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/auth/codex/device"])
+      expect(global.fetch.mock.calls[1][1].method).toBe("DELETE")
+      expect(controller.liveSession).toBeNull()
+      if (outcome === "error") failCancel(new Error("Cancel failed"))
+      else finishCancel(response({}))
+      await cancelling
+      await jest.advanceTimersByTimeAsync(3000)
+
+      expect(global.fetch.mock.calls.some(([url]) => url === "/resume")).toBe(false)
+      expect(jest.getTimerCount()).toBe(0)
+      expect(controller.errorTarget.hidden).toBe(outcome !== "error")
+    })
+
+    test.each(["success", "error"])("a late cancellation %s cannot affect a newer login", async (outcome) => {
+      controller.renderSession(session)
+      let finish, fail
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+        .mockResolvedValueOnce(response({ ...session, sessionId: "replacement" }))
+      const cancelling = controller.cancel(event)
+      await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
+      const panel = controller.sessionTarget.firstChild
+      const generation = controller.sessionGeneration
+      if (outcome === "error") fail(new Error("Old cancellation failed"))
+      else finish(response({}))
+      await cancelling
+
+      expect(controller.liveSession.sessionId).toBe("replacement")
+      expect(controller.sessionTarget.firstChild).toBe(panel)
+      expect(controller.sessionGeneration).toBe(generation)
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(global.fetch).toHaveBeenCalledTimes(2)
+      global.fetch.mockResolvedValueOnce(response({ ...session, sessionId: "replacement", status: "authorized" }))
+        .mockResolvedValueOnce(response({ resumed: true }))
+      await jest.advanceTimersByTimeAsync(3000)
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+        "/auth/codex/device", "/auth/codex", "/auth/codex/replacement", "/resume"
+      ])
+    })
+
+    test.each(["replacement", "disconnect", "cancel"])("ignores a stale login error after %s", async (change) => {
+      let fail
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+        .mockResolvedValueOnce(response({ ...session, sessionId: "replacement", flow: "api-key" }))
+        .mockResolvedValue(response({ engines: [] }))
+      const loginEvent = { currentTarget: { dataset: { engine: "codex", flow: "api-key" } } }
+      const login = controller.login(loginEvent)
+      if (change === "replacement") await controller.login(loginEvent)
+      else if (change === "disconnect") controller.disconnect()
+      else await controller.cancel(event)
+      const panel = controller.sessionTarget.innerHTML
+      fail(new Error("Session superseded"))
+      await login
+
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(controller.sessionTarget.innerHTML).toBe(panel)
+      if (change === "replacement") expect(controller.liveSession.sessionId).toBe("replacement")
+    })
+
+    test("cancelling stops pending polling, clears the session and refreshes login choices", async () => {
+      controller.renderSession(session)
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, text: async () => "" })
+        .mockResolvedValueOnce(response({ engines: [] }))
+      const polling = controller.poll("codex", "device", session.expiresAt, 1)
+
+      await controller.cancel(event)
+      await jest.advanceTimersByTimeAsync(3000)
+      await polling
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex/device", "/status"])
+      expect(global.fetch.mock.calls[0][1].method).toBe("DELETE")
+      expect(controller.liveSession).toBeNull()
+      expect(controller.sessionTarget.childElementCount).toBe(0)
+    })
+
+    test("a failed cancellation stops local polling but keeps the cancel button available for retry", async () => {
+      controller.renderSession(session)
+      global.fetch = jest.fn().mockResolvedValue(response({}, false))
+
+      await controller.cancel(event)
+
+      expect(controller.liveSession).toBeNull()
+      expect(controller.sessionTarget.childElementCount).toBe(1)
+      expect(controller.errorTarget.hidden).toBe(false)
+      expect(controller.errorTarget.textContent).toContain("CLI Proxy 오류")
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test("rejected code submissions display an error and clear the password input", async () => {
+      controller.renderSession({ ...session, flow: "api-key" })
+      const secret = controller.sessionTarget.querySelector('[data-role="secret"]')
+      secret.value = "private-key"
+      global.fetch = jest.fn().mockRejectedValue(new Error("Submission rejected"))
+
+      await controller.submit(event)
+
+      expect(secret.value).toBe("")
+      expect(controller.errorTarget.textContent).toContain("Submission rejected")
+      expect(controller.errorTarget.hidden).toBe(false)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
+
+    test("connection settings refresh after authorization when there is no chat to resume", async () => {
+      controller.element.removeAttribute("data-agent-connection-resume-url-value")
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(response({ ...session, status: "authorized" }))
+        .mockResolvedValueOnce(response({ engines: [{ engine: "codex", status: { state: "authenticated" } }] }))
+
+      await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "api-key" } } })
+      await jest.advanceTimersByTimeAsync(0)
+
+      expect(global.fetch.mock.calls.map(([url]) => url)).toEqual(["/auth/codex", "/status"])
+      expect(controller.enginesTarget.textContent).toContain("authenticated")
+    })
+
+    test.each(["authorized", "error"])("a late %s submission clears its secret without affecting the new login", async (outcome) => {
+      controller.renderSession({ ...session, flow: "api-key" })
+      const secret = controller.sessionTarget.querySelector('[data-role="secret"]')
+      secret.value = "private-key"
+      let finish, fail
+      global.fetch = jest.fn(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+      const submission = controller.submit(event)
+      controller.sessionGeneration++
+      controller.renderSession({ ...session, sessionId: "replacement", flow: "api-key" })
+      const replacement = controller.sessionTarget.querySelector('[data-role="secret"]')
+      replacement.value = "new-key"
+
+      if (outcome === "error") fail(new Error("Old submission failed"))
+      else finish(response({ ...session, status: "authorized" }))
+      await submission
+
+      expect(secret.value).toBe("")
+      expect(replacement.value).toBe("new-key")
+      expect(controller.liveSession.sessionId).toBe("replacement")
+      expect(controller.errorTarget.hidden).toBe(true)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    })
   })
 })

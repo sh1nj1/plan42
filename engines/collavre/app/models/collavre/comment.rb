@@ -184,6 +184,7 @@ module Collavre
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
     include TopicMembership
+    include DispatchRevocation
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
@@ -191,8 +192,6 @@ module Collavre
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative
     validate :images_must_be_images
-
-    after_destroy_commit :cancel_pending_tasks
 
     def next_version_number
       (comment_versions.maximum(:version_number) || 0) + 1
@@ -259,14 +258,13 @@ module Collavre
     def cancel_pending_tasks
       stranded_scopes = []
 
-      # Cancel tasks triggered by this comment (no creative_id scoping —
+      # Cancel tasks anchored to or rendering this merged comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
       # existing tasks, so scoping would miss moved-comment tasks).
-      # Include "delegated" so a deleted prompt also cancels Claude Channel
-      # work that's still waiting on an external MCP reply — otherwise the
-      # delegated task keeps holding the topic/agent slot until stuck recovery.
-      Task.where(status: %w[pending running queued delegated]).find_each do |task|
-        next unless task.trigger_event_payload&.dig("comment", "id") == id
+      # Include approval-paused and delegated work: both can resume side effects
+      # after withdrawal and keep holding the topic/agent slot without a worker.
+      Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
+        next unless dispatch_source_ids(task).include?(id)
 
         # An un-started task can be the survivor of a coalesced burst, answering
         # several comments at once. Cancelling it because its anchor was deleted
@@ -277,8 +275,8 @@ module Collavre
         # to say is cancelled.
         next if reanchor_coalesced_task(task)
 
-        was_delegated = task.status == "delegated"
-        task.update!(status: "cancelled")
+        previous_status = task.cancel_if_active!
+        next unless previous_status
 
         # A waiter cancelled here leaves the queue without ever being promoted,
         # exactly as a folded one does — so the notice that spoke for it is left
@@ -297,10 +295,9 @@ module Collavre
         # loop, once every task this deletion cancels has left the queue.
         stranded_scopes << [ task.creative_id, task.topic_id ]
 
-        # Delegated tasks live past their job: the AiAgentJob already returned,
-        # holding the agent slot under task.id and counting against the per-topic
-        # serializer. Mirror the cancel path used elsewhere to free both.
-        next unless was_delegated
+        # Match explicit Stop: these states have no worker to release their
+        # reservation and drain the topic queue after cancellation.
+        next unless Task::HELD_SLOT_WITHOUT_WORKER.include?(previous_status)
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         end
@@ -365,8 +362,7 @@ module Collavre
       return false unless %w[queued pending].include?(task.status)
 
       payload = task.trigger_event_payload || {}
-      merged = Array(payload[Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY])
-                 .compact.map(&:to_i).uniq - [ id ]
+      merged = dispatch_source_ids(task) - [ id ]
       return false if merged.empty?
 
       # Anything else in the merge window may have been deleted too. Newest by id:
@@ -397,7 +393,8 @@ module Collavre
                    .in_turn(merged, "creative" => { "id" => task.creative_id },
                                     "topic" => { "id" => task.topic_id })
                    .order(:id).to_a
-      replacement = in_scope.last
+      # Withdrawing a merged source need not move a still-valid anchor.
+      replacement = in_scope.find { |comment| comment.id == payload.dig("comment", "id").to_i } || in_scope.last
       return false unless replacement
 
       # Through the same door the refresh uses, so the promotion is recorded as
@@ -412,6 +409,8 @@ module Collavre
         Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY =>
           (in_scope.map(&:id) - [ replacement.id ]).sort
       )
+      return false unless replay_route_preserved?(task, payload)
+
       task.update!(trigger_event_payload: payload)
 
       Rails.logger.info(

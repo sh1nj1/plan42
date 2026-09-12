@@ -3,7 +3,7 @@ module Collavre
     queue_as :ai_agents
 
     # Allow resuming a task that was pending approval
-    def perform(agent_id_or_task, event_name = nil, context = nil)
+    def perform(agent_id_or_task, event_name = nil, context = nil, replay_identity = nil)
       if agent_id_or_task.is_a?(Task)
         # Resume existing task
         task = agent_id_or_task
@@ -68,12 +68,10 @@ module Collavre
         # as long as the human takes to approve. Re-check at the moment of
         # execution so a demoted agent cannot answer in a topic that is now
         # exclusively someone else's.
-        resumed_context = task.trigger_event_payload
-        if resumed_context&.key?("topic") &&
-           !Orchestration::Matcher.permits_assignment?(resumed_context, agent)
+        unless Orchestration::Matcher.prepare_waiting_task!(task)
           Rails.logger.info(
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
-            "is now assigned to another agent (agent=#{agent.id})"
+            "no longer permits the recorded agent (agent=#{agent.id})"
           )
           task.update!(status: "cancelled")
           # A pending_approval task kept its slot across the pause (the
@@ -105,7 +103,7 @@ module Collavre
             "[AiAgentJob] Skipping Claude Channel job for agent #{agent.id}: " \
             "session offline (no live presence, event=#{event_name})"
           )
-          return
+          return :rejected
         end
 
         # Guard: an exclusive primary-agent assignment created (or moved) after
@@ -115,14 +113,17 @@ module Collavre
         # in a topic that now belongs to someone else. Unlike a queued waiter
         # there is no Task yet to cancel, so cancelling on assignment change
         # cannot cover this path — the check has to happen here.
-        if context && !Orchestration::Matcher.new(context).assignment_permits?(agent)
+        prepared_context = context && Orchestration::Matcher.prepare_waiting_payload(context, agent)
+        if context && !prepared_context
           Rails.logger.info(
             "[AiAgentJob] Skipping job for agent #{agent.id}: topic " \
-            "#{context.dig('topic', 'id')} is now assigned to another agent " \
+            "#{context.dig('topic', 'id')} no longer permits the recorded agent " \
             "(event=#{event_name})"
           )
-          return
+          return :rejected
         end
+
+        context = prepared_context
 
         # Guard: skip if there's already a running task for the same agent + comment
         comment_id = context&.dig("comment", "id")
@@ -131,7 +132,7 @@ module Collavre
             "[AiAgentJob] Skipping duplicate: agent #{agent.id} already has a running task " \
             "for comment #{comment_id} (event=#{event_name})"
           )
-          return
+          return :rejected
         end
 
         # Guard: the same question the orchestrator asks before enqueueing, asked
@@ -148,7 +149,7 @@ module Collavre
             "[AiAgentJob] Skipping dispatch: comment #{comment_id} was already delivered to " \
             "agent #{agent.id} by in-flight task #{covering.id} (event=#{event_name})"
           )
-          return
+          return :rejected
         end
 
         # Guard: the Scheduler's topic-concurrency check counts Task rows, but
@@ -157,7 +158,7 @@ module Collavre
         # empty topic and are all judged :immediate — several turns run at once
         # in a topic limited to one. Re-check at the moment the row is created,
         # where the answer is authoritative, and defer into the queue instead.
-        task = admit_or_defer!(agent, event_name, context)
+        task = admit_dispatch!(agent, event_name, context, replay_identity)
         return if task.nil?
       end
 
@@ -265,6 +266,13 @@ module Collavre
         raise CancelledError unless task.status == "running"
 
         task.update!(attributes)
+      end
+    end
+
+    def admit_dispatch!(agent, event_name, context, replay_identity)
+      CliProxy::InlineReplayAdmission.call(context, replay_identity) do |current_context|
+        agent.reload if replay_identity
+        admit_or_defer!(agent, event_name, current_context)
       end
     end
 
@@ -379,7 +387,9 @@ module Collavre
       # gating on "no occupants at all" would strand that waiter until the
       # unrelated holder finishes. dequeue_next_for_topic re-checks capacity and
       # eligibility under the admission lock, so an over-eager call is a no-op.
-      Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
+      ActiveRecord.after_all_transactions_commit do
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
+      end
 
       nil
     end

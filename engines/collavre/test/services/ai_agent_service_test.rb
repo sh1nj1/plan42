@@ -25,6 +25,100 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     )
   end
 
+  test "engine login failure creates an inline card without dispatching another agent" do
+    workspace = Struct.new(:id).new(42)
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)
+    client = Object.new
+    client.define_singleton_method(:chat) { |*args, **kwargs| raise error }
+    client.define_singleton_method(:handed_off?) { false }
+    AiClient.stub(:new, client) do
+      Collavre::AiAgent::A2aDispatcher.stub(:new, ->(*) { flunk "login cards must not dispatch agents" }) do
+        assert_nil AiAgentService.new(@task).call
+      end
+    end
+    reply = @task.reload.reply_comment
+    assert_includes reply.content, "codex"
+    assert_nil reply.action
+    assert_not reply.private?, "Login cards require public reply broadcasts"
+    assert @task.trigger_event_payload["handoff_failed"]
+    assert_equal({ "engine" => "codex", "workspace_id" => 42, "retryable" => true }, @task.trigger_event_payload["engine_login"])
+  end
+
+  [ true, false ].each do |with_comment|
+    test "login requirement is logged with safe identifiers #{with_comment ? 'with' : 'without'} a reply" do
+      unless with_comment
+        @task.update!(trigger_event_name: "creative_updated", trigger_event_payload: @task.trigger_event_payload.except("comment"))
+      end
+      workspace = Struct.new(:id).new(42)
+      error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)
+      client = Object.new
+      client.define_singleton_method(:chat) { |*args, **kwargs| raise error }
+      client.define_singleton_method(:handed_off?) { false }
+      messages = []
+      Rails.logger.stub(:info, ->(message = nil, &block) { messages << (message || block&.call) }) do
+        AiClient.stub(:new, client) { assert_nil AiAgentService.new(@task).call }
+      end
+      reply = @task.reload.reply_comment
+      assert_nil reply unless with_comment
+      assert_includes messages, "[AiAgent] engine_unauthenticated task_id=#{@task.id} agent_id=#{@agent.id} " \
+                                "engine=codex workspace_id=42 reply_comment_id=#{reply&.id || 'none'}"
+    end
+  end
+
+  test "login failure after partial output preserves content without allowing automatic replay" do
+    workspace = Struct.new(:id).new(42)
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "claude", workspace: workspace)
+    client = Object.new
+    client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+      block.call("Partial response")
+      raise error
+    end
+    client.define_singleton_method(:handed_off?) { true }
+    AiClient.stub(:new, client) { AiAgentService.new(@task).call }
+    assert_includes @task.reload.reply_comment.content, "Partial response"
+    assert_not @task.trigger_event_payload["engine_login"]["retryable"]
+    assert @task.trigger_event_payload["handed_off"]
+    assert_not @task.trigger_event_payload["handoff_failed"]
+  end
+
+  %w[cancelled failed].each do |status|
+    [ "", "Partial response" ].each do |content|
+      test "#{status} before login recording preserves #{content.empty? ? 'empty' : 'partial'} cancellation cleanup" do
+        error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: Struct.new(:id).new(42))
+        client = Object.new
+        client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+          block.call(content) if content.present?
+          raise error
+        end
+        client.define_singleton_method(:handed_off?) { content.present? }
+        record = Collavre::CliProxy::InlineLogin.method(:record!)
+        # Settle a separate instance after the lifecycle check but before the row lock.
+        interrupted_record = lambda do |task, *args, **kwargs|
+          Task.find(task.id).update!(status: status)
+          assert task.running?, "The worker must still hold a stale running instance"
+          record.call(task, *args, **kwargs)
+        end
+
+        AiClient.stub(:new, client) do
+          Collavre::CliProxy::InlineLogin.stub(:record!, interrupted_record) do
+            assert_raises(Collavre::CancelledError) { AiAgentService.new(@task).call }
+          end
+        end
+
+        assert_equal status, @task.reload.status
+        assert_nil @task.trigger_event_payload["engine_login"]
+        assert_nil @task.trigger_event_payload["handoff_failed"]
+        assert @task.task_actions.exists?(action_type: status)
+        if content.empty?
+          assert_nil @task.reply_comment
+        else
+          assert_equal content, @task.reply_comment.content
+          assert @task.trigger_event_payload["handed_off"]
+        end
+      end
+    end
+  end
+
   test "creates placeholder and streams content into it" do
     mock_client = Minitest::Mock.new
 
@@ -621,6 +715,25 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_equal "failed", @task.reload.status
     assert_not @task.task_actions.exists?(action_type: "completion"),
                "an externally failed turn must not enter response finalization"
+  end
+
+  [ { private: true }, { action: '{"tool":"approval"}' } ].each do |change|
+    test "source revocation #{change.keys.first} after prompt preparation prevents provider handoff" do
+      source = @comment
+      client = Object.new
+      client.define_singleton_method(:chat) { |*| raise "revoked source must not reach the provider" }
+      client.define_singleton_method(:handed_off?) { false }
+      service = AiAgentService.new(@task)
+      service.define_singleton_method(:build_ai_client) do |_prompt|
+        source.update!(change)
+        client
+      end
+
+      assert_raises(Collavre::CancelledError) { service.call }
+      assert @task.reload.cancelled?
+      assert_not @task.task_actions.exists?(action_type: "completion")
+      assert_not Collavre::Orchestration::DeliveryRecord.handed_off?(@task.trigger_event_payload)
+    end
   end
 
   test "force-checks terminal status immediately before starting the provider call" do

@@ -468,6 +468,17 @@ module Collavre
                      DeliveryRecord.handed_off_ids_in(turn.reload.trigger_event_payload)
       end
 
+      test "restoring a dropped dispatch does not inherit the covering replay login claim" do
+        anchor = comment("Login replay")
+        dropped = comment("Separate request")
+        payload = context_for(anchor).merge("inline_login_task_id" => 123, "inline_login_task_ids" => [ 456 ])
+        restored = DeliveryRecord.send(:restored_context, payload, dropped)
+        assert_equal dropped.id, restored.dig("comment", "id")
+        assert_not restored.key?("inline_login_task_id")
+        assert_not restored.key?("inline_login_task_ids")
+        assert_equal 123, payload["inline_login_task_id"]
+      end
+
       # The same drift, on the other list. TURN_SCOPED_KEYS is what a restored
       # dispatch is stripped of, and it is right only while it names every key a
       # turn writes onto its own payload. Driving every writer over one

@@ -1,6 +1,6 @@
-import { Controller } from "@hotwired/stimulus"
+import AgentAuthController from "./agent_auth_controller"
 
-export default class extends Controller {
+export default class extends AgentAuthController {
   static targets = ["engines", "provision", "session", "error", "manifest"]
   static values = {
     statusUrl: String,
@@ -25,73 +25,24 @@ export default class extends Controller {
     itemTypeLabels: Object
   }
 
-  connect() {
-    this.disconnected = false
-    this.refresh()
-  }
-
-  disconnect() {
-    this.disconnected = true
-  }
-
   async refresh() {
+    let generation = this.sessionGeneration
     this.hideError()
     try {
       const data = await this.request(this.statusUrlValue)
+      if (!this.currentSession(generation)) return
       const engines = data.engines || []
       this.baseUrlFlows = new Map(engines.map((engine) => [engine.engine, engine.base_url_flows || []]))
       this.renderEngines(engines)
-      this.renderProvision(data.provision || {})
+      if (this.hasProvisionTarget) this.renderProvision(data.provision || {})
+      if (data.session) {
+        this.restoreSession(data.session)
+        generation = this.sessionGeneration
+      }
+      if (data.resumed) this.enginesTarget.replaceChildren(document.createTextNode(this.resumedValue))
+      else if (data.authorized && this.hasResumeUrlValue) await this.authorized()
     } catch (error) {
-      this.showError(error.message)
-    }
-  }
-
-  async login(event) {
-    const engine = event.currentTarget.dataset.engine
-    const flow = event.currentTarget.dataset.flow
-    try {
-      const data = await this.request(this.sessionUrl(engine), {
-        method: "POST",
-        body: JSON.stringify({ flow })
-      })
-      this.renderSession(data)
-      if (data.flow === "device-code") this.poll(engine, data.sessionId, data.expiresAt)
-    } catch (error) {
-      this.showError(error.message)
-    }
-  }
-
-  async submit(event) {
-    const secret = this.sessionTarget.querySelector('[data-role="secret"]')
-    const baseUrl = this.sessionTarget.querySelector('[data-role="base-url"]')
-    if (baseUrl && !baseUrl.checkValidity()) {
-      baseUrl.reportValidity()
-      return
-    }
-
-    try {
-      const data = await this.request(this.sessionDetailUrl(event.params.engine, event.params.session), {
-        method: "POST",
-        body: JSON.stringify({
-          auth_secret: secret?.value || "",
-          ...(baseUrl ? { base_url: baseUrl.value } : {})
-        })
-      })
-      this.renderSession(data)
-      if (data.status === "authorized") this.refresh()
-    } catch (error) {
-      this.showError(error.message)
-    }
-  }
-
-  async cancel(event) {
-    try {
-      await this.request(this.sessionDetailUrl(event.params.engine, event.params.session), { method: "DELETE" })
-      this.sessionTarget.replaceChildren()
-      this.refresh()
-    } catch (error) {
-      this.showError(error.message)
+      if (this.currentSession(generation)) this.showError(error.message)
     }
   }
 
@@ -145,7 +96,7 @@ export default class extends Controller {
         state.append(detail)
       }
       const action = document.createElement("td")
-      const flows = engine.flows?.length ? engine.flows : [engine.flow].filter(Boolean)
+      const flows = Array.isArray(engine.flows) ? engine.flows : [engine.flow].filter(Boolean)
       flows.forEach((flow) => {
         const button = document.createElement("button")
         button.type = "button"
@@ -228,130 +179,8 @@ export default class extends Controller {
     return button
   }
 
-  renderSession(session) {
-    const panel = document.createElement("div")
-    panel.className = "alert alert-info mt-2"
-    const title = document.createElement("strong")
-    title.textContent = `${session.engine}: ${this.statusLabel(session.status)}`
-    panel.append(title)
-
-    if (session.verificationUrl) {
-      const link = document.createElement("a")
-      link.href = session.verificationUrl
-      link.target = "_blank"
-      link.rel = "noopener"
-      link.textContent = this.openUrlValue
-      link.className = "btn btn-sm btn-secondary ml-2"
-      panel.append(link)
-    }
-    if (session.userCode) {
-      const code = document.createElement("p")
-      code.className = "provision-user-code"
-      code.textContent = session.userCode
-      panel.append(code)
-    }
-
-    if (session.status === "pending" && session.flow !== "device-code") {
-      if (this.requiresBaseUrl(session.engine, session.flow)) {
-        const baseUrlLabel = document.createElement("label")
-        baseUrlLabel.className = "mt-2"
-        baseUrlLabel.textContent = this.baseUrlLabelValue
-        const baseUrlHelp = document.createElement("p")
-        baseUrlHelp.className = "text-muted"
-        baseUrlHelp.textContent = this.baseUrlHelpValue
-        const baseUrl = document.createElement("input")
-        baseUrl.type = "url"
-        baseUrl.className = "stacked-form-control"
-        baseUrl.placeholder = "https://openrouter.ai/api/v1"
-        baseUrl.dataset.role = "base-url"
-        baseUrl.required = true
-        panel.append(baseUrlLabel, baseUrlHelp, baseUrl)
-      }
-      const secret = document.createElement("input")
-      secret.type = session.flow === "api-key" ? "password" : "text"
-      secret.className = "stacked-form-control mt-2"
-      secret.dataset.role = "secret"
-      const submit = this.actionButton(this.submitValue, "agent-connection#submit", session)
-      panel.append(secret, submit)
-    }
-    if (session.status === "pending") panel.append(this.actionButton(this.cancelValue, "agent-connection#cancel", session))
-    if (session.error?.message) {
-      const error = document.createElement("p")
-      error.textContent = session.error.message
-      panel.append(error)
-    }
-    this.sessionTarget.replaceChildren(panel)
-  }
-
-  actionButton(label, action, session) {
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "btn btn-sm btn-secondary mt-2"
-    button.textContent = label
-    button.dataset.action = action
-    button.dataset.agentConnectionEngineParam = session.engine
-    button.dataset.agentConnectionSessionParam = session.sessionId
-    return button
-  }
-
-  statusLabel(status) {
-    return this.statusLabelsValue[status] || status
-  }
-
   itemTypeLabel(type) {
     return this.itemTypeLabelsValue[type] || type
   }
 
-  requiresBaseUrl(engine, flow) {
-    return (this.baseUrlFlows?.get(engine) || []).includes(flow)
-  }
-
-  async poll(engine, sessionId, expiresAt) {
-    if (this.disconnected || Date.now() >= Date.parse(expiresAt)) return
-    await new Promise((resolve) => window.setTimeout(resolve, 3000))
-    if (this.disconnected) return
-    try {
-      const session = await this.request(this.sessionDetailUrl(engine, sessionId))
-      this.renderSession(session)
-      if (session.status === "pending") return this.poll(engine, sessionId, expiresAt)
-      this.refresh()
-    } catch (error) {
-      this.showError(error.message)
-    }
-  }
-
-  sessionUrl(engine) {
-    return this.sessionUrlValue.replace("__ENGINE__", encodeURIComponent(engine))
-  }
-
-  sessionDetailUrl(engine, session) {
-    return this.sessionDetailUrlValue
-      .replace("__ENGINE__", encodeURIComponent(engine))
-      .replace("__SESSION__", encodeURIComponent(session))
-  }
-
-  async request(url, options = {}) {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content || "",
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(options.headers || {})
-      }
-    })
-    const text = await response.text()
-    const data = text ? JSON.parse(text) : {}
-    if (!response.ok) throw new Error(data.error?.message || this.errorValue)
-    return data
-  }
-
-  showError(message) {
-    this.errorTarget.textContent = `${this.errorValue}: ${message}`
-    this.errorTarget.hidden = false
-  }
-
-  hideError() {
-    this.errorTarget.hidden = true
-  }
 }

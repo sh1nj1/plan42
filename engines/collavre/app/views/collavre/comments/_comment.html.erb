@@ -2,6 +2,7 @@
 <% current_topic_id = local_assigns[:current_topic_id] %>
 <% has_pending_action = comment.approval_action? && comment.action_executed_at.blank? %>
 <% approver_id = comment.approver_id %>
+<% has_engine_login = comment.task&.trigger_event_payload&.key?("engine_login") %>
 <div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approver-id="<%= approver_id %>" data-ai-user="<%= comment.user&.ai_user? %>" data-streaming="<%= local_assigns.fetch(:streaming, false) %>">
   <div class="comment-select">
     <input type="checkbox"
@@ -49,7 +50,7 @@
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
     <div class="comment-action-container">
-      <% if comment.task_id && comment.task&.status&.in?(%w[running pending queued pending_approval]) %>
+      <% if !has_engine_login && comment.task_id && comment.task&.status&.in?(%w[running pending queued pending_approval]) %>
         <button class="comment-stop-btn" type="button" data-action="click->comment#cancelTask" data-task-id="<%= comment.task_id %>" title="<%= t('collavre.comments.stop_agent') %>">
           <span class="agent-stop-icon">&#x25A0;</span> <%= t('collavre.comments.stop_agent') %>
         </button>
@@ -180,6 +181,10 @@
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
     </div>
   <% end %>
+  <% if has_engine_login %>
+    <%= turbo_frame_tag "inline_agent_login_#{comment.id}", src: collavre.inline_agent_login_path(comment_id: comment.id), loading: :lazy %>
+  <% end %>
+
   <% if comment.approval_action? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">

@@ -18,6 +18,28 @@ module Collavre
     # - searchable only affects discoverability, not response permission
     #
     class Matcher
+      # Login replays must remain selected by current routing at promotion,
+      # execution, and approval resumption. Ordinary waiting turns retain their
+      # assignment-only contract rather than re-evaluating routing expressions.
+      # Return the validated payload so execution uses the same current anchor.
+      # This includes coalesced survivors that inherited replay claims.
+      def self.prepare_waiting_payload(context, agent)
+        return CliProxy::ReplayRouting.prepare(context, agent) if CliProxy::ReplayClaims.ids(context).any?
+
+        context if permits_assignment?(context, agent)
+      end
+
+      def self.prepare_waiting_task!(task)
+        context = task.trigger_event_payload
+        return true unless context&.key?("topic")
+
+        prepared = prepare_waiting_payload(context, task.agent)
+        return false unless prepared
+
+        task.update!(trigger_event_payload: prepared) unless prepared == context
+        true
+      end
+
       # The one entry point for "may this agent answer, given the topic's
       # primary-agent assignment?", taking a raw trigger payload.
       #
