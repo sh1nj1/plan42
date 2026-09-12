@@ -174,6 +174,58 @@ module Collavre
         end
       end
 
+      %i[en ko].each do |locale|
+        test "from logs stable fatal diagnostics without workflow values in #{locale}" do
+          I18n.with_locale(locale) do
+            event = "customer@example.com\nforged log entry"
+            creative = creative_with(rule_payload("on" => event))
+            rule, errors = Rule.parse(creative)
+
+            assert_nil rule
+            assert_equal [ Rule.error(:unknown_event, event: event) ], errors
+            assert_includes errors.first, event
+            warnings = []
+            Rails.logger.stub(:warn, ->(message) { warnings << message }) do
+              assert_nil Rule.from(creative)
+            end
+
+            assert_equal [ "[Workflow::Rule] Creative 42: unknown_event" ], warnings
+          end
+        end
+
+        test "from logs stable advisory diagnostics without workflow values in #{locale}" do
+          I18n.with_locale(locale) do
+            condition = "private-condition@example.com\nforged condition"
+            event = "private-event@example.com\nforged event"
+            creative = creative_with(rule_payload("when" => { condition => true }, "emits" => event))
+            rule, errors = Rule.parse(creative)
+
+            assert_equal event, rule.emits
+            assert_empty rule.conditions
+            assert_equal [ Rule.error(:unknown_condition, condition: condition),
+                           Rule.error(:unknown_emit, event: event) ], errors
+            assert_includes errors.first, condition
+            assert_includes errors.last, event
+            warnings = []
+            Rails.logger.stub(:warn, ->(message) { warnings << message }) do
+              assert_equal rule, Rule.from(creative)
+            end
+
+            assert_equal [ "[Workflow::Rule] Creative 42: unknown_condition, unknown_emit" ], warnings
+          end
+        end
+      end
+
+      test "from is silent for valid rules and ordinary creatives" do
+        warnings = []
+        Rails.logger.stub(:warn, ->(message) { warnings << message }) do
+          assert_instance_of Rule, Rule.from(creative_with(rule_payload({})))
+          assert_nil Rule.from(creative_with({}, kind: "note"))
+        end
+
+        assert_empty warnings
+      end
+
       test "from logs parser errors and never raises for malformed data" do
         warnings = []
 
@@ -182,7 +234,7 @@ module Collavre
         end
 
         assert_equal 1, warnings.size
-        assert_match(/42/, warnings.first)
+        assert_equal "[Workflow::Rule] Creative 42: invalid_structure", warnings.first
       end
 
       test "parse absorbs unexpected malformed accessors" do
@@ -198,7 +250,7 @@ module Collavre
         Rails.logger.stub(:warn, ->(message) { warnings << message }) do
           assert_nil Rule.from(creative)
         end
-        assert_equal 1, warnings.size
+        assert_equal [ "[Workflow::Rule] Creative unknown: invalid_structure" ], warnings
       end
 
       test "from skips unexpected parser failures with a warning" do
@@ -206,14 +258,12 @@ module Collavre
         creative = creative_with(rule_payload({}))
 
         Rails.logger.stub(:warn, ->(message) { warnings << message }) do
-          Rule.stub(:parse, ->(*) { raise TypeError, "parser failed" }) do
+          Rule.stub(:parse, ->(*) { raise TypeError, "customer@example.com\nforged parser failure" }) do
             assert_nil Rule.from(creative)
           end
         end
 
-        assert_equal 1, warnings.size
-        assert_includes warnings.first, "parser failed"
-        assert_includes warnings.first, creative.id.to_s
+        assert_equal [ "[Workflow::Rule] Creative 42: invalid_structure" ], warnings
       end
 
       test "human and none handlers are not responders" do

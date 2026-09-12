@@ -57,19 +57,21 @@ module Collavre
           end
         end
 
-        # Remove empty sections
-        structure.each do |type, data|
+        remove_empty_policy_sections!(structure)
+
+        # Include matching for installations upgrading with existing policies.
+        structure = default_policies_structure if structure.empty?
+        structure["matching"] ||= default_policies_structure["matching"]
+
+        structure.to_yaml
+      end
+
+      def remove_empty_policy_sections!(structure)
+        structure.each_value do |data|
           data.delete("global") if data["global"].nil?
           data.delete("overrides") if data["overrides"].empty?
         end
-        structure.delete_if { |_, v| v.empty? }
-
-        # Add defaults if empty
-        if structure.empty?
-          structure = default_policies_structure
-        end
-
-        structure.to_yaml
+        structure.delete_if { |_, data| data.empty? }
       end
 
       def default_policies_structure

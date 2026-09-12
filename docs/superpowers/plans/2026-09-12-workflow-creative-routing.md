@@ -70,6 +70,24 @@ Resolver, policy, then Matcher. Each task uses tests first and a task review.
 
 ## Verification and rollout
 
+### PR review follow-up: safe rule diagnostics and upgrade defaults
+
+- [x] Reproduce sensitive rule values in routing logs and missing matching
+      defaults when other policy sections already exist.
+- [x] Keep detailed localized parser errors for editors; log only stable
+      diagnostic categories and the creative ID, including unexpected failures.
+- [x] Add the matching shadow default when that section is absent without
+      overwriting existing matching modes or scoped overrides.
+- [x] Complete affected tests, changed-line coverage, lint, complexity, and
+      independent specification and quality review.
+- [x] Confirm the existing topic monitor; prepare fixes for ready-for-review
+      PR #1679.
+
+Validation: 519 tests / 1,542 assertions passed; this follow-up covers 18/18
+changed executable Ruby lines (100%). Eight regressions failed before the fixes.
+RuboCop passed across 1,420 files; the complexity ratchet reported no growth.
+Independent specification and code quality review found no remaining issues.
+
 ### PR review follow-up: preserve matching policies in the admin editor
 
 - [x] Reproduce rejected matching YAML and lost policies on unrelated saves.

@@ -11,18 +11,20 @@ module Collavre
         "liquid" => ->(value) { value.is_a?(String) }
       }.freeze
 
-      def self.parse(creative)
-        Parser.new(creative).parse
+      def self.parse(creative, diagnostics: [])
+        Parser.new(creative, diagnostics).parse
       rescue StandardError
+        diagnostics << :invalid_structure
         [ nil, [ error(:invalid_structure) ] ]
       end
 
       def self.from(creative)
-        rule, errors = parse(creative)
-        Rails.logger.warn("[Workflow::Rule] Creative #{creative_id_for_log(creative)}: #{errors.join(', ')}") if errors.any?
+        diagnostics = []
+        rule, = parse(creative, diagnostics: diagnostics)
+        Rails.logger.warn("[Workflow::Rule] Creative #{creative_id_for_log(creative)}: #{diagnostics.uniq.join(', ')}") if diagnostics.any?
         rule
-      rescue StandardError => exception
-        Rails.logger.warn("[Workflow::Rule] Creative #{creative_id_for_log(creative)}: #{exception.message}")
+      rescue StandardError
+        Rails.logger.warn("[Workflow::Rule] Creative #{creative_id_for_log(creative)}: invalid_structure")
         nil
       end
 
@@ -42,8 +44,9 @@ module Collavre
       end
 
       class Parser
-        def initialize(creative)
+        def initialize(creative, diagnostics)
           @creative = creative
+          @diagnostics = diagnostics
           @errors = []
         end
 
@@ -155,6 +158,7 @@ module Collavre
         end
 
         def add_error(key, **options)
+          @diagnostics << key
           @errors << Rule.error(key, **options)
         end
 

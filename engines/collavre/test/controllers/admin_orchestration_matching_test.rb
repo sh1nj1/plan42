@@ -14,6 +14,51 @@ class AdminOrchestrationMatchingTest < ActionDispatch::IntegrationTest
     assert_equal "shadow", editor_policies.dig("matching", "global", "workflow_routing")
   end
 
+  test "upgraded policy editor adds shadow matching and preserves other policies through editing" do
+    existing = {
+      "arbitration" => { "global" => { "strategy" => "all", "max_responders" => 2 } },
+      "scheduling" => { "global" => { "max_concurrent_jobs" => 5 } },
+      "collaboration" => { "global" => { "mention_rule" => "Keep existing instructions" } }
+    }
+    existing.each do |type, data|
+      Collavre::OrchestratorPolicy.create!(policy_type: type, config: data["global"])
+    end
+
+    get collavre.admin_orchestration_path
+
+    assert_response :success
+    policies = editor_policies
+    assert_equal existing, policies.except("matching")
+    assert_equal({ "global" => { "workflow_routing" => "shadow" } }, policies["matching"])
+    policies["scheduling"]["global"]["max_concurrent_jobs"] = 3
+
+    patch collavre.admin_orchestration_path, params: { policies_yaml: policies.to_yaml }
+
+    assert_redirected_to collavre.admin_orchestration_path
+    assert_equal "shadow", workflow_mode({})
+    get collavre.admin_orchestration_path
+
+    assert_response :success
+    assert_equal policies, editor_policies
+  end
+
+  test "existing scoped matching section is preserved without adding a global default" do
+    create_matching_policy(mode: "on", scope_type: "Creative", scope_id: creatives(:tshirt).id, priority: 71)
+    original_matching = matching_snapshot
+
+    get collavre.admin_orchestration_path
+
+    assert_response :success
+    policies = editor_policies
+    refute policies["matching"].key?("global")
+    assert_equal "on", policies["matching"]["overrides"].sole.dig("config", "workflow_routing")
+
+    patch collavre.admin_orchestration_path, params: { policies_yaml: policies.to_yaml }
+
+    assert_redirected_to collavre.admin_orchestration_path
+    assert_equal original_matching, matching_snapshot
+  end
+
   %w[off shadow on].each do |mode|
     test "saves global workflow routing #{mode} as a string" do
       policies = { "matching" => { "global" => { "workflow_routing" => mode } } }
