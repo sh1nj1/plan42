@@ -65,7 +65,8 @@ Resolver, policy, then Matcher. Each task uses tests first and a task review.
       shadow error isolation and comparison, assignment compatibility.
 - [x] Affected suites pass; changed executable lines have 100% coverage.
 - [x] RuboCop and complexity ratchet pass; final branch review is resolved.
-- [ ] Push with `--no-verify` and open an English ready-for-review PR.
+- [x] Push with `--no-verify` and open an English ready-for-review PR:
+      https://github.com/sh1nj1/plan42/pull/1679
 
 ## Verification and rollout
 
