@@ -40,6 +40,52 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     assert_current_path collavre.creatives_path
   end
 
+  test "collapsed child images are excluded and regain keyboard access when expanded" do
+    child = Creative.create!(user: @user, parent: @creative, description: "Child gallery")
+    child.update!(description: @creative.description.sub("First", "Child"))
+    visit collavre.creatives_path
+    parent_row = "creative-tree-row[dom-id='creative-#{@creative.id}']"
+    child_image = "#creative-#{child.id} img[alt='Child']"
+
+    find("#{parent_row} .creative-toggle-btn").click
+    assert_selector child_image
+    find("#{parent_row} .creative-toggle-btn").click
+    assert_no_selector child_image
+    assert_selector child_image, visible: :hidden
+    find("#creative-#{@creative.id} img[alt='First']").click
+    assert_selector ".image-lightbox-counter", text: "1 / 2"
+    find(".image-lightbox-next").click
+    assert_selector ".image-lightbox-image[alt='Second']"
+    find(".image-lightbox-next").click
+    assert_selector ".image-lightbox-image[alt='First']"
+    find(".image-lightbox-close").click
+
+    find("#{parent_row} .creative-toggle-btn").click
+    image = find("#{child_image}[role='button'][tabindex='0']")
+    page.execute_script("arguments[0].focus()", image)
+    page.driver.browser.action.send_keys(:enter).perform
+    assert_selector ".image-lightbox-counter", text: "3 / 4"
+    assert_selector ".image-lightbox-image[alt='Child']"
+  end
+
+  test "images in a row being edited are excluded until editing closes" do
+    sibling = Creative.create!(user: @user, description: @creative.description)
+    visit collavre.creatives_path
+    row = "creative-tree-row[dom-id='creative-#{sibling.id}']"
+    find("#{row} .creative-row").hover
+    find("#{row} .edit-inline-btn").click
+    assert_selector "#inline-edit-form-element"
+    assert_selector "#creative-#{sibling.id} img[alt='First']", visible: :hidden
+
+    find("#creative-#{@creative.id} img[alt='First']").click
+    assert_selector ".image-lightbox-counter", text: "1 / 2"
+    find(".image-lightbox-close").click
+    find("#inline-close").click
+    assert_no_selector "#inline-edit-form-element"
+    find("#creative-#{@creative.id} img[alt='First']").click
+    assert_selector ".image-lightbox-counter", text: %r{[13] / 4}
+  end
+
   test "selection mode selects image rows and restores the viewer when cancelled" do
     visit collavre.creatives_path
     assert_selector "#creative-#{@creative.id} img[alt='First']"

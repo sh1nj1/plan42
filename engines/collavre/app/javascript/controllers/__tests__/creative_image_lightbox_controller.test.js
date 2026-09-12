@@ -24,7 +24,7 @@ beforeEach(async () => {
       </div></creative-tree-row>
       <creative-tree-row><div class="creative-title-content"><img id="title" src="/title.png"></div></creative-tree-row>
       <div contenteditable="true"><div class="creative-content"><img id="editor" src="/editor.png"></div></div>
-      <div class="inline-edit-form"><div class="creative-content"><img id="form" src="/form.png"></div></div>
+      <div class="inline-edit-form-shell"><div class="creative-content"><img id="form" src="/form.png"></div></div>
       <img id="avatar" src="/avatar.png">
     </main>`
   application = Application.start()
@@ -380,7 +380,69 @@ test('excludes images outside the current list and editor images inside a creati
   document.body.insertAdjacentHTML('beforeend', '<div class="creative-content"><img src="/outside.png"></div>')
   document.querySelector('.creative-content').insertAdjacentHTML('beforeend', `
     <div contenteditable="true"><img src="/nested-editor.png"></div>
-    <div class="inline-edit-form"><img src="/nested-form.png"></div>`)
+    <div class="inline-edit-form-shell"><img src="/nested-form.png"></div>`)
   click('#first')
   expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('1 / 3')
+})
+
+
+test.each([
+  ['collapsed subtree', '<div class="creative-children" data-expanded="false" style="display:none">'],
+  ['row being edited', '<div class="creative-row" style="display:none">'],
+  ['hidden ancestor', '<div hidden>']
+])('excludes images inside a %s from the gallery', (_name, container) => {
+  document.querySelector('main').insertAdjacentHTML('beforeend', `${container}
+    <creative-tree-row><div class="creative-content"><img id="hidden-image" src="/hidden.png"></div></creative-tree-row>
+  </div>`)
+  expect(click('#hidden-image')).toBe(true)
+  expect(dialog()).toBeNull()
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('3 / 3')
+  click('.image-lightbox-next')
+  expect(dialog().querySelector('img').alt).toBe('First')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/title.png')
+})
+
+test.each(['hidden', 'display'])('excludes an image directly hidden with %s', (mechanism) => {
+  const image = document.querySelector('#second')
+  if (mechanism === 'hidden') image.hidden = true
+  else image.style.display = 'none'
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 2')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('First')
+})
+
+test('prepares collapsed images and rebuilds the gallery after expanding and collapsing loaded rows', async () => {
+  document.querySelector('main').insertAdjacentHTML('beforeend', `
+    <div id="children" class="creative-children" data-expanded="false" style="display:none">
+      <creative-tree-row><div class="creative-content"><img id="child-image" src="/child.png" alt="Child"></div></creative-tree-row>
+    </div>`)
+  await settle()
+  const children = document.querySelector('#children')
+  const child = document.querySelector('#child-image')
+  expect(child.tabIndex).toBe(0)
+  expect(child.getAttribute('role')).toBe('button')
+  expect(child.getAttribute('aria-haspopup')).toBe('dialog')
+  expect(child.getAttribute('aria-label')).toBe('Child')
+
+  children.style.display = ''
+  children.dataset.expanded = 'true'
+  child.focus()
+  expect(document.activeElement).toBe(child)
+  expect(keydown('#child-image', 'Enter')).toBe(false)
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('4 / 4')
+  expect(dialog().querySelector('img').alt).toBe('Child')
+  click('.image-lightbox-close')
+
+  children.style.display = 'none'
+  children.dataset.expanded = 'false'
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('3 / 3')
+  click('.image-lightbox-close')
+  children.style.display = ''
+  children.dataset.expanded = 'true'
+  expect(keydown('#child-image', ' ')).toBe(false)
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('4 / 4')
 })
