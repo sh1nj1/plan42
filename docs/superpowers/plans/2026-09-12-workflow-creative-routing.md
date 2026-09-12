@@ -1,0 +1,209 @@
+# Workflow Creative routing with agent defaults — PR3a
+
+## Approved design
+
+Workflow rules express who should handle an event in a creative subtree. An
+agent's `routing_expression` remains its reusable default participation rule.
+The previously proposed PR5 removal of that column and editor is withdrawn.
+
+Precedence: review author → mention → topic primary agent → workflow → agent
+routing. Only a workflow **miss** falls back to agent routing. A matched rule
+is final, including `human`, `none`, and agents that lack permission or are no
+longer eligible. The default mode is `shadow`: calculate and compare workflow
+results, while the existing agent tier still decides actual routing.
+
+PR3a implements parsing and routing only. PR3b adds the editor after schema
+review. Event emission, budgets, and tracing remain PR4. `emits` is stored and
+validated for advisory diagnostics in PR3a but never executed.
+
+## Contract
+
+- No database migrations or new SQL JSON operators. Use ID-scoped queries and
+  Ruby filtering of the existing `creatives.data` column.
+- Workflow: `data = { "kind": "workflow" }`.
+- Its immediate children with `kind: "workflow_rule"` each hold one rule in
+  `data["workflow_rule"]`. Descendants below those children are human notes.
+- Rule fields: registered event `on`, optional `when`, required `handler`,
+  optional `emits`. Handler types: `agent`, `human`, `none`; agents require a
+  nonempty integer `agent_ids` list.
+- Conditions AND together. `source` and case-insensitive `body_contains` are
+  any-of lists; `author_agent` is boolean; `liquid` is evaluated last, once per
+  rule, without an agent binding. A missing envelope cannot match source.
+  Envelopes without a source use PR2's explicit `unknown` source sentinel.
+- Unknown events, handlers, or malformed structures invalidate a rule.
+  Unknown condition keys are ignored with advisory errors; unknown emitted
+  events are advisory. Diagnostics are localized in English and Korean.
+- Syntactically valid agent IDs are checked for current eligibility at routing
+  time. Deleted or unauthorized agents cannot cause expression fall-through.
+- Active pins mirror MessageBuilder: effective origin, own pins then inherited
+  pins, remove disabled IDs and creative/origin IDs. Archive filters apply to
+  both workflows and rules. Child order is `sequence`, then `id`.
+- Load all pinned creatives once and all workflow children once. Memoize the
+  resolver. Limit valid parsed rules to 200; warn with the discarded count.
+- Exclude workflow and rule pins from agent context messages without adding a
+  creative-loading query.
+- Matching policy `workflow_routing`: `off`, `shadow` (default), or `on`.
+  Invalid values become `shadow`. Existing global → Creative → Topic policy
+  precedence applies; User policies do not control workflow mode.
+- Shadow diagnostics include creative ID, event, workflow IDs, expression IDs,
+  agreement, rule count, and correlation ID. Sorted responder IDs determine
+  agreement; a miss and empty expression result agree. Workflow failures must
+  not interrupt shadow routing. Unexpected failures propagate in `on` mode.
+- Existing assignment revalidation is unchanged.
+
+## Execution checklist
+
+Task order resolves dependencies: Creative predicates, Conditions, Rule,
+Resolver, policy, then Matcher. Each task uses tests first and a task review.
+
+- [x] Creative predicates and prompt exclusion, including mixed context pins.
+- [x] Structured predicates, short-circuiting, missing data, Liquid errors.
+- [x] Immutable rule value, fatal/advisory parser, EN/KO diagnostics.
+- [x] Ordered resolver, inheritance, disabled pins, archives, cycles, cap.
+- [x] Matching policy defaults, precedence, invalid values, ignored User scope.
+- [x] Matcher first-match tier, exclusive decisions, existing routing fallback,
+      shadow error isolation and comparison, assignment compatibility.
+- [x] Affected suites pass; changed executable lines have 100% coverage.
+- [x] RuboCop and complexity ratchet pass; final branch review is resolved.
+- [x] Push with `--no-verify` and open an English ready-for-review PR:
+      https://github.com/sh1nj1/plan42/pull/1679
+
+## Verification and rollout
+
+### PR review follow-up: safe rule diagnostics and upgrade defaults
+
+- [x] Reproduce sensitive rule values in routing logs and missing matching
+      defaults when other policy sections already exist.
+- [x] Keep detailed localized parser errors for editors; log only stable
+      diagnostic categories and the creative ID, including unexpected failures.
+- [x] Add the matching shadow default when that section is absent without
+      overwriting existing matching modes or scoped overrides.
+- [x] Complete affected tests, changed-line coverage, lint, complexity, and
+      independent specification and quality review.
+- [x] Confirm the existing topic monitor; prepare fixes for ready-for-review
+      PR #1679.
+
+Validation: 519 tests / 1,542 assertions passed; this follow-up covers 18/18
+changed executable Ruby lines (100%). Eight regressions failed before the fixes.
+RuboCop passed across 1,420 files; the complexity ratchet reported no growth.
+Independent specification and code quality review found no remaining issues.
+
+### PR review follow-up: preserve matching policies in the admin editor
+
+- [x] Reproduce rejected matching YAML and lost policies on unrelated saves.
+- [x] Include matching in admin serialization, validation, and shadow defaults.
+- [x] Verify global modes and Creative/Topic overrides survive a YAML round trip.
+- [x] Preserve the effective merged config when multiple global matching policies
+      exist, using the resolver's priority order and shallow merge semantics.
+- [x] Complete affected tests, changed-line coverage, lint, complexity, and review.
+- [x] Push the fix to PR #1679 and confirm the topic monitor remains attached.
+
+Validation: 27 tests / 133 assertions passed; this follow-up covers 5/5
+changed executable Ruby lines (100%). Six regression tests failed before their
+fixes. RuboCop passed across 1,420 files; the complexity ratchet reported no
+growth. Independent specification and quality review has no remaining findings.
+
+### PR review follow-up: A2A source before selection
+
+- [x] Reproduce source-filtered workflow misses in `topic_message_create`.
+- [x] Stamp one A2A envelope before both selection passes and reuse it at
+      dispatch, preserving parent causality and post-commit reselection.
+- [x] Verify exclusive agent/silence decisions, self-route rejection, envelope
+      identity, related tests, changed-line coverage, lint, and complexity.
+- [x] Complete independent specification and code quality reviews.
+- [x] Push the fix to PR #1679 (`dfc44923d`).
+
+Review validation: 568 tests / 1,602 assertions passed; changed executable Ruby
+coverage 230/230 (100%). RuboCop passed across 1,419 files and the complexity
+ratchet reported no growth. Source-routing regressions failed before the fix.
+
+Run from the host root:
+
+```sh
+bin/rails test engines/collavre/test/services/collavre/workflow/
+bin/rails test engines/collavre/test/services/collavre/orchestration/
+bin/rails test engines/collavre/test/services/collavre/ai_agent/message_builder_test.rb
+bin/rails test engines/collavre/test/models/collavre/creative_workflow_test.rb
+./bin/rubocop -a
+bin/complexity_check
+```
+
+Preserve existing orchestration assertions. Add tests for all new paths and
+measure the changed executable lines using SimpleCov (`COVERAGE=1`). This is a
+backend PR: no UI/system behavior is added. Follow the user's scoped-test rule.
+
+Start with shadow traffic in the intended creative/topic. Inspect mismatches
+and confirm each intended exclusive decision before applying a scoped
+`matching` policy with `workflow_routing: "on"`. Matching rules may deliberately
+differ from agent defaults, so agreement is evidence for review, not a universal
+requirement. A missing rule always falls back to agent routing. Roll back that
+scope to `shadow` or `off` when needed; a narrower policy overrides a global one.
+
+Use the existing admin orchestration YAML editor to manage `matching` alongside
+other policies. Keep mode values quoted (`"off"`, `"shadow"`, `"on"`) so YAML
+does not interpret `on` or `off` as booleans. For example:
+
+```yaml
+matching:
+  global:
+    workflow_routing: "shadow"
+  overrides:
+    - scope_type: Creative
+      scope_id: 123
+      config:
+        workflow_routing: "on"
+      priority: 50
+```
+
+### PR review follow-up: referenced context and YAML mode validation
+
+- [x] Reproduce workflow/rule reference injection from trigger and merged comments,
+      including shared origins, while preserving ordinary references.
+- [x] Reuse the pinned-context filter for references and history delivery checks.
+- [x] Reject invalid matching modes before saving global or scoped policies,
+      with English/Korean guidance to quote YAML mode strings.
+- [x] Complete related tests, changed-line coverage, lint, complexity, and review.
+- [x] Prepare fixes for ready-for-review PR #1679 and verify the topic monitor.
+
+Normalize matching config keys before validation so YAML symbol keys cannot
+bypass the mode check. Invalid modes preserve existing policies and submitted
+YAML; absent mode keys remain supported. History delivery uses the same workflow
+reference exclusion as trigger context construction.
+
+Validation: 600 tests / 1,948 assertions passed; this follow-up covers 21/21
+changed executable Ruby lines (100%). RuboCop passed across 1,420 files, the
+complexity ratchet reported no growth, and independent re-review has no
+remaining findings. English/Korean orchestration keys are symmetric.
+
+### PR review follow-up: reject User-scoped matching overrides
+
+- [x] Reproduce successful saves of ineffective User matching overrides.
+- [x] Reject matching scopes other than Creative and Topic before replacing
+      policies, preserving submitted YAML and stored policies on rejection.
+- [x] Explain allowed scopes in English/Korean validation and editor guidance;
+      preserve User overrides for other policy types.
+- [x] Complete related tests, changed-line coverage, lint, complexity, and review.
+- [x] Prepare the fix for ready-for-review PR #1679 and confirm its topic monitor.
+
+Validation: 83 tests / 495 assertions passed; this follow-up covers 5/5 changed
+executable Ruby lines (100%). RuboCop passed across 1,420 files, the complexity
+ratchet reported no growth, and independent review found no actionable issues.
+English/Korean orchestration keys are symmetric.
+
+### PR review follow-up: reuse comment authors across workflow rules
+
+- [x] Reproduce repeated author lookups across candidate rules in on/shadow modes.
+- [x] Share one lazy author lookup per workflow matching pass, including missing
+      authors, without mutating the event payload or caching across events.
+- [x] Preserve predicate short circuiting, first-match routing, and rule-specific
+      Liquid diagnostics while reusing the evaluator.
+- [x] Complete relevant tests, fresh changed-line coverage, lint, complexity,
+      and independent specification and code quality review.
+- [x] Prepare the fix for ready-for-review PR #1679 and verify its topic monitor.
+
+Validation: 540 tests / 1,495 assertions passed; this follow-up covers 5/5
+changed executable Ruby lines (100%) from a fresh coverage run. Both on and
+shadow now perform one author lookup across 200 candidate rules, including
+missing authors. RuboCop passed across 1,421 files, the complexity ratchet
+reported no growth, and independent specification and code quality reviews
+found no actionable issues.
