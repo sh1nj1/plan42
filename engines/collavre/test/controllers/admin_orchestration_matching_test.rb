@@ -84,7 +84,6 @@ class AdminOrchestrationMatchingTest < ActionDispatch::IntegrationTest
     create_matching_policy(mode: "off", priority: 100)
     create_matching_policy(mode: "on", scope_type: "Creative", scope_id: creative.id, priority: 71)
     create_matching_policy(mode: "shadow", scope_type: "Topic", scope_id: topic.id, priority: 22)
-    create_matching_policy(mode: "off", scope_type: "User", scope_id: users(:ai_bot).id, priority: 999)
     Collavre::OrchestratorPolicy.create!(policy_type: "scheduling", config: { "max_concurrent_jobs" => 5 })
     original_matching = matching_snapshot
     contexts = [
@@ -137,6 +136,53 @@ class AdminOrchestrationMatchingTest < ActionDispatch::IntegrationTest
     assert_equal expected_config, Collavre::OrchestratorPolicy.for_type("matching").global.sole.config
     assert_equal expected_config, Collavre::Orchestration::PolicyResolver.new({}).resolve("matching")
     assert_equal "off", workflow_mode({})
+  end
+
+  %w[en ko].each do |locale|
+    test "rejects User matching overrides and preserves policies and input in #{locale}" do
+      users(:one).update!(locale: locale)
+      existing = Collavre::OrchestratorPolicy.create!(
+        policy_type: "scheduling", config: { "max_concurrent_jobs" => 5 }
+      )
+      original = existing.attributes
+      yaml = {
+        "matching" => {
+          "global" => { "workflow_routing" => "off" },
+          "overrides" => [ {
+            "scope_type" => "User", "scope_id" => users(:ai_bot).id,
+            "config" => { "workflow_routing" => "on" }
+          } ]
+        }
+      }.to_yaml
+
+      assert_no_difference "Collavre::OrchestratorPolicy.count" do
+        patch collavre.admin_orchestration_path(locale: locale), params: { policies_yaml: yaml }
+      end
+
+      assert_response :unprocessable_entity
+      assert_equal original, existing.reload.attributes
+      assert_equal yaml, css_select("textarea[name='policies_yaml']").sole.text
+      assert_equal I18n.t("admin.orchestration.invalid_scope_type", locale: locale,
+                         type: "matching", index: 0, scope_type: "User", scopes: "Creative, Topic"), flash[:alert]
+    end
+  end
+
+  %w[arbitration scheduling collaboration].each do |type|
+    test "continues to save User overrides for #{type}" do
+      config = { "custom_options" => { "enabled" => true } }
+      yaml = { type => { "overrides" => [ {
+        "scope_type" => "User", "scope_id" => users(:ai_bot).id, "config" => config
+      } ] } }.to_yaml
+
+      patch collavre.admin_orchestration_path, params: { policies_yaml: yaml }
+
+      assert_redirected_to collavre.admin_orchestration_path
+      policy = Collavre::OrchestratorPolicy.sole
+      assert_equal type, policy.policy_type
+      assert_equal "User", policy.scope_type
+      assert_equal users(:ai_bot).id, policy.scope_id
+      assert_equal config, policy.config
+    end
   end
 
   private

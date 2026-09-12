@@ -174,3 +174,18 @@ Validation: 600 tests / 1,948 assertions passed; this follow-up covers 21/21
 changed executable Ruby lines (100%). RuboCop passed across 1,420 files, the
 complexity ratchet reported no growth, and independent re-review has no
 remaining findings. English/Korean orchestration keys are symmetric.
+
+### PR review follow-up: reject User-scoped matching overrides
+
+- [x] Reproduce successful saves of ineffective User matching overrides.
+- [x] Reject matching scopes other than Creative and Topic before replacing
+      policies, preserving submitted YAML and stored policies on rejection.
+- [x] Explain allowed scopes in English/Korean validation and editor guidance;
+      preserve User overrides for other policy types.
+- [x] Complete related tests, changed-line coverage, lint, complexity, and review.
+- [x] Prepare the fix for ready-for-review PR #1679 and confirm its topic monitor.
+
+Validation: 83 tests / 495 assertions passed; this follow-up covers 5/5 changed
+executable Ruby lines (100%). RuboCop passed across 1,420 files, the complexity
+ratchet reported no growth, and independent review found no actionable issues.
+English/Korean orchestration keys are symmetric.

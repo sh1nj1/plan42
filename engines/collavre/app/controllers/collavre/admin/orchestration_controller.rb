@@ -143,10 +143,7 @@ module Collavre
           raise PolicyValidationError, t("admin.orchestration.invalid_override_format", type: type, index: idx)
         end
 
-        unless %w[Creative Topic User].include?(override["scope_type"])
-          raise PolicyValidationError, t("admin.orchestration.invalid_scope_type",
-                                         type: type, index: idx, scope_type: override["scope_type"])
-        end
+        validate_scope_type!(type, override["scope_type"], idx)
 
         unless override["scope_id"].is_a?(Integer) && override["scope_id"].positive?
           raise PolicyValidationError, t("admin.orchestration.invalid_scope_id", type: type, index: idx)
@@ -157,6 +154,14 @@ module Collavre
         end
 
         validate_workflow_routing!(type, override["config"])
+      end
+
+      def validate_scope_type!(type, scope_type, idx)
+        scopes = type == "matching" ? %w[Creative Topic] : %w[Creative Topic User]
+        return if scopes.include?(scope_type)
+
+        raise PolicyValidationError, t("admin.orchestration.invalid_scope_type",
+                                       type: type, index: idx, scope_type: scope_type, scopes: scopes.join(", "))
       end
 
       def validate_workflow_routing!(type, config)
