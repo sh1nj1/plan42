@@ -14,7 +14,7 @@ scope "comments/:comment_id/agent-login", as: :inline_agent_login do
   get "/", to: "inline_agent_logins#show"
   get "status", to: "inline_agent_logins#status", as: :status
   post "sessions", to: "inline_agent_logins#create_session", as: :sessions
-  get "sessions/:session_id", to: "inline_agent_logins#session", as: :session
+  get "sessions/:session_id", to: "inline_agent_logins#show_session", as: :session
   post "sessions/:session_id", to: "inline_agent_logins#submit"
   delete "sessions/:session_id", to: "inline_agent_logins#cancel"
   post "resume", to: "inline_agent_logins#resume", as: :resume

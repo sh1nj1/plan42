@@ -4,8 +4,8 @@ module Collavre
   class InlineAgentLoginsController < ApplicationController
     before_action :set_login
     before_action :require_manager, except: :show
-    before_action :require_mutable_session, only: [ :create_session, :session, :submit, :cancel ]
-    before_action :check_session, only: [ :session, :submit, :cancel ]
+    before_action :require_mutable_session, only: [ :create_session, :show_session, :submit, :cancel ]
+    before_action :check_session, only: [ :show_session, :submit, :cancel ]
     rescue_from CliProxy::Client::Error, with: :render_proxy_error
 
     def show
@@ -30,7 +30,7 @@ module Collavre
       render json: response, status: :created
     end
 
-    def session
+    def show_session
       render json: @login.observe_session!(@login.client.auth_session(@login.engine, params[:session_id]), params[:session_id])
     end
 

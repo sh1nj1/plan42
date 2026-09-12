@@ -98,6 +98,19 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     assert_nil stream.at_css("turbo-frame#inline_agent_login_#{@reply.id}")
   end
 
+  test "inline card preserves Rails session access with forgery protection enabled" do
+    controller = Collavre::InlineAgentLoginsController
+    previous = controller.allow_forgery_protection
+    controller.allow_forgery_protection = true
+
+    get inline_agent_login_path(comment_id: @reply.id)
+
+    assert_response :success
+    assert_select "turbo-frame#inline_agent_login_#{@reply.id} [data-controller=agent-connection]"
+  ensure
+    controller.allow_forgery_protection = previous
+  end
+
   test "requester gets inline controls without secrets" do
     get inline_agent_login_path(comment_id: @reply.id)
     assert_response :success
