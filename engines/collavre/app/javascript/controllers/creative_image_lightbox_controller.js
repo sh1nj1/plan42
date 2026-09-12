@@ -20,8 +20,7 @@ export default class extends ImageLightboxController {
   }
 
   _prepareImages() {
-    this.element.querySelectorAll('.creative-content img[src], .creative-title-content img[src]').forEach((image) => {
-      if (!image.getAttribute("src") || image.closest('[contenteditable="true"], .inline-edit-form')) return
+    this._listImages().forEach((image) => {
       const link = image.closest("a[href]")
       if (link) {
         this._prepareLink(link)
@@ -32,6 +31,11 @@ export default class extends ImageLightboxController {
       image.setAttribute("aria-haspopup", "dialog")
       image.setAttribute("aria-label", image.alt || this.i18nOpenValue)
     })
+  }
+
+  _listImages() {
+    return Array.from(this.element.querySelectorAll('.creative-content img[src], .creative-title-content img[src]'))
+      .filter((image) => image.getAttribute("src") && !image.closest('[contenteditable="true"], .inline-edit-form'))
   }
 
   _prepareLink(link) {
@@ -84,7 +88,7 @@ export default class extends ImageLightboxController {
       return
     }
 
-    const images = Array.from(content.querySelectorAll("img[src]")).filter((img) => img.getAttribute("src"))
+    const images = this._listImages()
     const index = images.indexOf(image)
     if (index < 0) return
 

@@ -18,6 +18,28 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  test "the gallery navigates images across creative rows in list order" do
+    sibling = Creative.create!(user: @user, description: "Another gallery")
+    sibling.files.attach(@creative.files.first.blob)
+    url = Rails.application.routes.url_helpers.rails_blob_path(sibling.files.first, only_path: true)
+    sibling.update!(description: "<img src='#{url}' alt='Sibling' width='80' height='80'>")
+
+    visit collavre.creatives_path
+    assert_selector "#creative-#{sibling.id} img[alt='Sibling']"
+    images = all(".creative-content img[src]")
+    expected_alts = images.map { |image| image[:alt] }
+    assert_equal 3, expected_alts.size
+    images.last.click
+    assert_selector ".image-lightbox-counter", text: "3 / 3"
+    find(".image-lightbox-next").click
+    assert_selector ".image-lightbox-image[alt='#{expected_alts.first}']"
+    find(".image-lightbox-prev").click
+    assert_selector ".image-lightbox-image[alt='#{expected_alts.last}']"
+    page.driver.browser.action.send_keys(:arrow_left).perform
+    assert_selector ".image-lightbox-image[alt='#{expected_alts[1]}']"
+    assert_current_path collavre.creatives_path
+  end
+
   test "selection mode selects image rows and restores the viewer when cancelled" do
     visit collavre.creatives_path
     assert_selector "#creative-#{@creative.id} img[alt='First']"

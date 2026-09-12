@@ -40,15 +40,19 @@ afterEach(async () => {
   jest.restoreAllMocks()
 })
 
-test('opens the clicked image, blocks navigation and scopes the carousel to its creative', () => {
+test('opens the clicked image, blocks navigation and navigates across the creative list in DOM order', () => {
   const onClick = jest.fn()
   document.querySelector('#row').addEventListener('click', onClick)
   expect(click('#second')).toBe(false)
   expect(onClick).not.toHaveBeenCalled()
   expect(dialog().querySelector('img').src).toBe('http://localhost/second.png')
-  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 2')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 3')
+  click('.image-lightbox-next')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/title.png')
   click('.image-lightbox-next')
   expect(dialog().querySelector('img').src).toBe('http://localhost/first.png')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').src).toBe('http://localhost/title.png')
   click('.image-lightbox-prev')
   expect(dialog().querySelector('img').src).toBe('http://localhost/second.png')
   expect(dialog().querySelector('.image-lightbox-delete').hidden).toBe(true)
@@ -60,8 +64,8 @@ test('opens the clicked image, blocks navigation and scopes the carousel to its 
 
 test('opens title images and preserves zoom, keyboard navigation and close', () => {
   click('#title')
-  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('1 / 1')
-  expect(dialog().querySelector('.image-lightbox-next').style.visibility).toBe('hidden')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('3 / 3')
+  expect(dialog().querySelector('.image-lightbox-next').style.visibility).toBe('visible')
   click('.image-lightbox-zoom-in')
   expect(dialog().querySelector('img').style.transform).toContain('scale(1.25)')
   click('.image-lightbox-close')
@@ -83,6 +87,8 @@ test('preserves image descriptions on every carousel entry and clears missing or
   expect(dialog().querySelector('img').alt).toBe(description)
   click('.image-lightbox-prev')
   expect(dialog().querySelector('img').alt).toBe('First')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('')
   click('.image-lightbox-prev')
   expect(dialog().querySelector('img').alt).toBe('')
   click('.image-lightbox-prev')
@@ -352,4 +358,29 @@ test('makes an image keyboard accessible when its source arrives later', async (
   expect(document.activeElement.id).toBe('missing')
   expect(keydown('#missing', 'Enter')).toBe(false)
   expect(dialog().querySelector('img').src).toBe('http://localhost/loaded.png')
+})
+
+test('rebuilds the gallery across rows on each open and preserves duplicate image positions', () => {
+  const titleRow = document.querySelector('#title').closest('creative-tree-row')
+  titleRow.insertAdjacentHTML('afterend', `
+    <creative-tree-row id="streamed"><div class="creative-content"><img id="duplicate" src="/first.png" alt="Duplicate"></div></creative-tree-row>`)
+  click('#duplicate')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('4 / 4')
+  expect(dialog().querySelector('img').alt).toBe('Duplicate')
+  click('.image-lightbox-close')
+  document.querySelector('#row').remove()
+  titleRow.before(document.querySelector('#streamed'))
+  click('#title')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('2 / 2')
+  click('.image-lightbox-prev')
+  expect(dialog().querySelector('img').alt).toBe('Duplicate')
+})
+
+test('excludes images outside the current list and editor images inside a creative', () => {
+  document.body.insertAdjacentHTML('beforeend', '<div class="creative-content"><img src="/outside.png"></div>')
+  document.querySelector('.creative-content').insertAdjacentHTML('beforeend', `
+    <div contenteditable="true"><img src="/nested-editor.png"></div>
+    <div class="inline-edit-form"><img src="/nested-form.png"></div>`)
+  click('#first')
+  expect(dialog().querySelector('.image-lightbox-counter').textContent).toBe('1 / 3')
 })
