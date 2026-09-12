@@ -47,7 +47,7 @@ module Collavre
         expression = "{% if #{expression} %}true{% endif %}" unless expression.start_with?("{%")
 
         template = Liquid::Template.parse(expression)
-        template.render(@context).strip == "true"
+        template.render(@context.except("agent", :agent)).strip == "true"
       rescue StandardError => e
         Rails.logger.error("[Workflow::Conditions] Liquid error: #{e.message}")
         false

@@ -77,8 +77,18 @@ module Collavre
         refute Conditions.match?({ "liquid" => "comment.content contains 'rollback'" }, context)
       end
 
-      test "does not add an agent variable to Liquid context" do
-        refute Conditions.match?({ "liquid" => "agent.id == 1" }, {})
+      test "removes caller-provided agent variables without mutating context" do
+        contexts = [
+          { "agent" => { "id" => 1 }, "comment" => { "content" => "deploy" } },
+          { agent: { id: 1 }, "comment" => { "content" => "deploy" } }
+        ]
+
+        contexts.each do |context|
+          original = context.deep_dup
+
+          refute Conditions.match?({ "liquid" => "agent.id == 1" }, context)
+          assert_equal original, context
+        end
       end
 
       test "returns false when Liquid evaluation raises" do
