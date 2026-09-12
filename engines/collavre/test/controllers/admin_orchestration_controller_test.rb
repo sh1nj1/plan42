@@ -313,6 +313,46 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  %w[matching arbitration scheduling collaboration].each do |type|
+    %w[en ko].each do |locale|
+      test "rejects blank non-array #{type} overrides and preserves policies and input in #{locale}" do
+        @admin.update!(locale: locale)
+        existing = Collavre::OrchestratorPolicy.create!(
+          policy_type: "matching", config: { "workflow_routing" => "on" }
+        )
+        original = existing.attributes
+
+        [ "", " \t\n", false, {} ].each do |overrides|
+          yaml = { type => { "overrides" => overrides } }.to_yaml
+
+          assert_no_difference "Collavre::OrchestratorPolicy.count" do
+            patch collavre.admin_orchestration_path(locale: locale), params: { policies_yaml: yaml }
+          end
+
+          assert_response :unprocessable_entity
+          assert_equal original, existing.reload.attributes
+          assert_equal yaml, css_select("textarea[name='policies_yaml']").sole.text
+          assert_equal I18n.t("admin.orchestration.invalid_overrides", locale: locale, type: type), flash[:alert]
+        end
+      end
+    end
+
+    { "omitted" => {}, "null" => { "overrides" => nil }, "empty array" => { "overrides" => [] } }.each do |label, data|
+      test "accepts #{label} #{type} overrides" do
+        config = { "custom_options" => { "enabled" => true } }
+        yaml = { type => data.merge("global" => config) }.to_yaml
+
+        patch collavre.admin_orchestration_path, params: { policies_yaml: yaml }
+
+        assert_redirected_to collavre.admin_orchestration_path
+        policy = Collavre::OrchestratorPolicy.sole
+        assert_equal type, policy.policy_type
+        assert policy.global?
+        assert_equal config, policy.config
+      end
+    end
+  end
+
   private
 
   def matching_yaml(scope, config)

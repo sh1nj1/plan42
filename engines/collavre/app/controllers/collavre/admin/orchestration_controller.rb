@@ -114,7 +114,7 @@ module Collavre
           end
 
           validate_global_config!(type, data["global"])
-          validate_overrides!(type, data["overrides"]) if data["overrides"].present?
+          validate_overrides!(type, data["overrides"]) unless data["overrides"].nil?
         end
       end
 
