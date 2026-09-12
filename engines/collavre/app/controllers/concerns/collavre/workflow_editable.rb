@@ -53,10 +53,11 @@ module Collavre
     private
 
     def creative_edit_access?
-      if !params[:inline] && workflow_editor_creative?(@creative)
-        return workflow_access?(@creative, :read)
+      readable = Creatives::PermissionFilter.new(user: Current.user).readable_ids([ @creative.id ]).any?
+      if readable
+        return true if !params[:inline] && workflow_editor_creative?(@creative)
+        return true if @creative.has_permission?(Current.user, :write)
       end
-      return true if @creative.has_permission?(Current.user, :write)
 
       redirect_to @creative, alert: t("collavre.creatives.errors.no_permission")
       false
