@@ -55,7 +55,8 @@ execution is still open and its mode, permission and scope remain valid:
 
 | Task evidence | Workflow outcome |
 | --- | --- |
-| `failed`, `cancelled`, or `escalated` | `task_failed`; no continuation |
+| `cancelled` with an authoritative workflow safety-stop reason recorded by the fixed-anchor guard | Use the persisted `scope_changed`, `permission_revoked`, or `routing_disabled` reason; no continuation |
+| `failed`, other `cancelled`, or `escalated` | `task_failed`; no continuation |
 | Any status other than `done` | Keep waiting; no success inference from response actions |
 | `engine_login` key present, including retryable, replay-completed or abandoned cards | `login_required`; never reopen after separate replay |
 | Recorded provider handoff failure (`ended_undelivered?`) | `task_failed`, even if an error reply exists |
@@ -231,7 +232,12 @@ execution/agent Task before retrying materialization, without re-selection or
 additional budget. A queued Task counts as materialized even if
 `admit_or_defer!` returns nil. An explicit offline/session rejection with no Task
 seals `scheduler_rejected`; changed access/scope/mode uses the corresponding
-existing reason. Unexplained failure to create a Task after the three-attempt
+existing reason. Specifically, `AiAgentJob#admit_or_defer!` returning without a
+Task because `TopicSlot.lock_matches_context?` fails is `scope_changed`.
+`enqueue_jobs` skips the agent when `park_waiter` returns nil; this ordinary
+branch does not return a phantom admitted responder. A previously committed
+workflow outbox obligation still needs its explicit rejection/scope outcome.
+Unexplained failure to create a Task after the three-attempt
 infrastructure limit seals `delivery_failed`. Never wait indefinitely for a
 callback from a nonexistent Task. Existing or started Tasks are not recreated;
 a late job for a sealed execution cannot create or start new work.
@@ -241,12 +247,15 @@ an ordinary dropped dispatch from the **covering Task's** payload and directly
 enqueues `AiAgentJob` after Scheduler checks. It does not persist the incoming
 workflow dispatch's identity. Consequently workflow obligations must never be
 recorded as legacy drops or recovered through that reconstruction. Strip the
-covering turn's internal `workflow_execution_id` in `restored_context` when
+covering turn's internal `workflow_execution_id` by adding it to
+`DeliveryRecord::TURN_SCOPED_KEYS`, consumed by `restored_context`, when
 restoring a different ordinary comment; never attach that ordinary Task to the
 covering execution. Workflow recovery uses its own persisted outbox payload and
 the same validated task insertion doors. Test both restore isolation and direct
 workflow outbox redelivery; adding an ID to a covering payload alone cannot
-make legacy restore a workflow recovery mechanism.
+make legacy restore a workflow recovery mechanism. Extend the existing
+TURN_SCOPED_KEYS writer/drift fixture to exercise the validated workflow marker
+writer as well; adding the constant entry alone does not extend that fixture.
 
 ### Selection and lock boundaries
 
@@ -436,6 +445,47 @@ it must not replace an execution's input with the latest unrelated comment.
 History-delivery/drop suppression must not swallow a distinct workflow event
 merely because its anchor comment was already read.
 
+### Fixed-anchor promotion and withdrawal
+
+`AgentOrchestrator#refresh_deferred_context!` needs an explicit workflow branch
+before its generic latest-comment selection and `DeferredTriggerScope.reanchor_payload`.
+This branch applies to a validated persisted workflow Task, including both
+`dequeue_next_for_topic` promotion and `coalesce_at_start!`. The start path must
+run this validation before its coalescing-policy/absorbed-set early returns,
+even though workflow Tasks themselves cannot be coalesced. It revalidates the
+original input anchor against the execution/admission and current public scope,
+permission and mode, then returns without replacing any input identity. An
+already-read input or an AI-authored input remains valid workflow input; do not
+require it to win the ordinary deferred-comment eligibility query. A missing or
+moved input stops with `scope_changed`, a private/unreadable input with
+`permission_revoked`, and disabled routing with `routing_disabled`.
+
+`Comment#cancel_pending_tasks` must also recognize workflow Tasks before
+`reanchor_coalesced_task`; `reanchor_locked_task` must recheck the persisted Task
+under its existing lock and refuse workflow reanchoring. Deleting the workflow
+input cancels active work without selecting a surviving merged comment. Keep
+existing cancellation cleanup, waiter-notice removal, reservation release and
+queue draining. Ordinary tasks retain their existing reanchoring behavior.
+
+To preserve the cause across cancellation, callback loss and recovery, include
+nullable `tasks.workflow_stop_reason` (string, no ordinary backfill) in the
+core-engine task migration. Only the internal fixed-anchor safety adapter may
+write the allowed reasons above, for a validated workflow Task. It writes the
+reason and `cancelled` status together using `cancel_if_active!` under the Task
+lock; it must not overwrite an already-terminal task or trust a caller-supplied
+payload reason. A manual cancellation or provider failure has no such reason.
+The settlement table consumes this durable reason before generic cancellation;
+this exception concerns loss of the input, not the later lost-reply evidence
+branch. Provider failure still takes precedence over reply-anchor evidence.
+
+Do not take a chain lock inside these Task/topic transactions. The status commit
+hook settles after the outer transaction, with the workflow sweep recovering a
+missed callback from the same persisted reason. When the callback runs inside
+the deletion cleanup sequence, it must still respect the existing outer-commit
+boundary. Promotion/start must stop on a failed validation before provider I/O.
+Tests must preserve `scope_changed` after source deletion even when another
+comment could have been chosen, and after recovery without the commit callback.
+
 ## Human notification target and privacy
 
 PR4 chooses one explicit responsibility rule: resolve the event target through
@@ -523,6 +573,26 @@ does not increment it again. Failure before or during that attempt returns to
 attempt counts against the same limit; duplicates with a stale token do nothing.
 Policy denial seals `suppressed` without pretending a push was enqueued.
 
+A successful workflow enqueue acknowledgement sets `push_state: enqueued` and
+`push_enqueued_at` but **retains `push_claim_token` and `push_claimed_at`** from
+that attempt. Neither the generic acknowledgement that clears the lease nor
+its generic `release_claim` rescue applies to workflow rows. Acknowledgement
+requires the same token and a still-open attempt; it never resets the lease
+clock. A worker must verify the token, unexpired lease and nonterminal state
+before transport and acknowledge with the same token. Keep the lease through
+queue wait and transport. Terminal completion/suppression/failure clears it;
+an observed queue/worker failure may atomically return to `pending` and release
+it below the attempt limit. Queue acceptance alone never releases the lease.
+
+Recovery can reclaim a live attempt only after five minutes, replacing its token
+and consuming the next bounded attempt (or sealing `failed` if exhausted).
+Repeated sweeps during an unexpired `enqueued` lease must neither enqueue nor
+increment attempts. A stale worker cannot begin transport or acknowledge a new
+attempt. A worker already inside external transport when its lease expires can
+overlap a reclaimed attempt; this remains within the declared best-effort push
+limit, not an exactly-once guarantee. Late enqueue acknowledgement after worker
+completion, failure or reclamation is a no-op and must not release a newer lease.
+
 Expand `ready_for_push` with explicit branches: ordinary rows keep the existing
 null-enqueue-time/expired-claim predicate; workflow rows require a nonterminal
 state and an absent/expired lease. They must remain recoverable after queue
@@ -578,6 +648,13 @@ child without `parent:` on retries, or it would generate a fresh child.
   in both `enqueue_jobs` and `AiAgentJob#perform`, shared
   `DeliveryRecord.covering_task`, and legacy `restored_context` identity stripping.
   See the task materialization contract for no-Task terminal outcomes.
+- `AgentOrchestrator#dequeue_next_for_topic` / `#coalesce_at_start!` call
+  `#refresh_deferred_context!`; guard workflow inputs before generic
+  `DeferredTriggerScope.reanchor_payload`. Also guard
+  `Comment#cancel_pending_tasks` / `#reanchor_coalesced_task` /
+  `#reanchor_locked_task`. Preserve the fixed input, persist safety cancellation
+  atomically on the Task, then settle after the outer commit without nested
+  topic/chain locks. Include the nullable `workflow_stop_reason` core migration.
 - `TopicMessageCreateService#create_comment` and its post-commit selection must
   remain free of workflow effects and chain locks; use the dispatched selection
   and the separate topic/chain transaction boundaries specified above.
@@ -603,7 +680,9 @@ child without `parent:` on retries, or it would generate a fresh child.
 - A recurring settlement/outbox sweep is mandatory because callbacks and queue
   acceptance are not atomic. Scope it to unfinished workflow records. Register
   it in all three `config/recurring.yml` blocks: production, desktop and
-  development. Keep push recovery independently active for sealed handoffs.
+  development. The current `&production` YAML anchor is not reused by the other
+  two blocks; all three are separate definitions. Keep push recovery
+  independently active for sealed handoffs.
   Crash-gap tests explicitly stub the after-commit enqueue boundary or simulate
   interruption after persistence, then run recovery against committed rows.
   A single-database inline adapter does not model the production queue database
@@ -694,6 +773,15 @@ Additional integration acceptance cases:
 | Topic tool previews under lock, then dispatches its second selection | No preview effects or chain lock; single snapshot/selection commit; task slot and chain locks never nested |
 | Three recurring environment blocks and simulated post-commit crash | Each registers workflow sweep; persisted admissions/children/deliveries recover without new identities |
 | Two independently enqueued Drop Trigger jobs share an anchor/rule/owner | Separate receipts/executions/notices under current proposal; no implicit anchor-based notice aggregation |
+| Workflow waiter promotion/start with a newer unrelated comment, or an already-read/AI input | Original execution, envelope and anchor remain unchanged; fixed-anchor revalidation still runs |
+| Workflow input deleted with a surviving candidate, or moved/private before promotion | No reanchor/provider start; durable `scope_changed` or `permission_revoked`, including cancellation-callback loss followed by sweep |
+| Source deletion races with already-terminal Task; ordinary task has surviving merged comments | No terminal Task overwrite; ordinary reanchoring behavior preserved |
+| Manual cancellation/provider failure with valid input and no workflow safety reason | `task_failed`; no reinterpretation using reply-anchor evidence |
+| `TopicSlot.lock_matches_context?` fails before Task insertion | No Task; durable `scope_changed`, no indefinite fan-in |
+| Workflow push acknowledged, sweeps at minutes 1 through 4 before worker runs | Same token/time and one attempt; no additional enqueue |
+| Workflow push lease expires at five minutes before worker runs | One conditional reclaim/new token or exhausted `failed`; old token cannot start transport or acknowledge |
+| Worker finishes/fails before enqueue acknowledgement, or old worker returns after reclaim | Terminal/pending outcome or newer lease preserved; no stale state/lease write |
+| Observed enqueue failure below attempt limit | Atomically return to pending and release that attempt's lease; generic release cannot clear another token |
 
 ## Sequenced implementation checklist
 
@@ -849,3 +937,26 @@ loop-eligibility description with the guarded `awaiting_user` / newer-turn
 handoff behavior. Acceptance cases cover both loop branches and callback early
 returns. Existing trigger-loop predicates remain unchanged. Runtime code and
 migrations are untouched; product decisions and task 21052 remain pending.
+
+## Fourth review: queued anchors and enqueue lease retention
+
+Reports 134572/134573 in topic 19327 review 0bd0052c4 and close the four
+134545 design items, while identifying two additional integration blockers.
+This revision extends 3b6f8597d; the following is an author disposition pending
+technical review, not product approval or a runtime fix.
+
+| Review item | Revised contract |
+| --- | --- |
+| New 1: promotion/deletion can replace a workflow input | Name both refresh callers and Comment deletion/reanchor helpers; use a validated fixed-anchor branch and atomically persist safety cancellation with nullable Task `workflow_stop_reason`, then settle after outer commit |
+| New 2: enqueue acknowledgement clears the workflow lease | Retain token/time through enqueued and transport; bypass generic acknowledgement/release; bound expiry recovery and make stale acknowledgements no-ops |
+| Restore marker | Add to TURN_SCOPED_KEYS and extend its writer/drift fixture, preserving ordinary restore isolation |
+| No-Task qualifications | TopicSlot context mismatch is scope_changed; park_waiter nil does not itself return an admitted agent, while existing workflow obligations still require settlement |
+| Environment registration | Production's anchor is unused by desktop/development; register recovery separately in all three |
+
+Acceptance cases cover retained AI/already-read inputs, newer-comment promotion,
+source deletion with a surviving candidate, durable cancellation recovery,
+ordinary reanchoring, pre-expiry sweeps, expiry/reclaim and late worker/queue
+acknowledgement. The task reason column is an explicit addition to the proposed
+core migration, needed to preserve cancellation cause without taking a chain
+lock under a topic lock. Runtime code and migrations remain unchanged; task
+21052 and the product decisions remain pending.
