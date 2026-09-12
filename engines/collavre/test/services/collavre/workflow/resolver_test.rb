@@ -39,6 +39,69 @@ module Collavre
         assert_equal [ rule.id ], resolver.rules.map(&:creative_id)
       end
 
+      test "resolves shared workflow pins in pin order and deduplicates origins" do
+        first = create_workflow(description: "First")
+        second = create_workflow(description: "Second")
+        first_link = first.create_linked_creative_for_user(users(:two))
+        second_link = second.create_linked_creative_for_user(users(:two))
+        first_rule = create_workflow_rule(parent: first)
+        second_rule = create_workflow_rule(parent: second)
+        target = target_with_context(second_link, first_link, second)
+
+        resolver = Resolver.new(context_for(target))
+
+        assert_equal [ second.id, first.id ], resolver.workflow_creative_ids
+        assert_equal [ second_rule.id, first_rule.id ], resolver.rules.map(&:creative_id)
+      end
+
+      test "resolves chained linked workflow pins" do
+        workflow = create_workflow
+        shared = workflow.create_linked_creative_for_user(users(:two))
+        chained = create_workflow_creative(description: "Chained link", origin: shared)
+        rule = create_workflow_rule(parent: workflow)
+
+        assert_equal [ rule.id ], Resolver.new(context_for(target_with_context(chained))).rules.map(&:creative_id)
+      end
+
+      test "excludes disabled and archived linked pins and archived workflow origins" do
+        disabled = create_workflow
+        archived_link_origin = create_workflow
+        archived_origin = create_workflow(archived_at: Time.current)
+        links = [ disabled, archived_link_origin, archived_origin ].map do |workflow|
+          create_workflow_rule(parent: workflow)
+          workflow.create_linked_creative_for_user(users(:two))
+        end
+        links[1].update!(archived_at: Time.current)
+        target = target_with_context(*links)
+        target.update!(data: target.data.merge("disabled_context_ids" => [ links.first.id ]))
+
+        assert_empty Resolver.new(context_for(target)).rules
+      end
+
+      test "excludes self-pinned workflow aliases for direct and linked targets" do
+        workflow = create_workflow
+        linked = workflow.create_linked_creative_for_user(users(:two))
+        create_workflow_rule(parent: workflow)
+        workflow.update!(data: workflow.data.merge("context_ids" => [ linked.id ]))
+
+        [ workflow, linked ].each do |target|
+          resolver = Resolver.new(context_for(target))
+          assert_empty resolver.workflow_creative_ids
+          assert_empty resolver.rules
+        end
+      end
+
+      test "batches origin lookups for shared workflow pins" do
+        workflows = Array.new(3) { create_workflow }
+        links = workflows.map { |workflow| workflow.create_linked_creative_for_user(users(:two)) }
+        workflows.each { |workflow| create_workflow_rule(parent: workflow) }
+        target = target_with_context(*links)
+        sql = capture_creative_selects { Resolver.new(context_for(target)).rules }
+
+        assert_equal 4, sql.length
+        assert_equal 1, sql.count { |statement| statement.include?("parent_id") }
+      end
+
       test "excludes disabled, current, origin, archived, and non-workflow context creatives" do
         kept = create_workflow(description: "Kept")
         disabled = create_workflow(description: "Disabled")

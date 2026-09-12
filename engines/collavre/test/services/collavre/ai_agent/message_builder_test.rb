@@ -134,6 +134,44 @@ module Collavre
         assert_empty messages.select { |message| message[:kind] == :context_creative }
       end
 
+      test "excludes shared workflow and rule pins while preserving ordinary linked context" do
+        links = %w[workflow workflow_rule note].map do |kind|
+          origin = Creative.create!(description: "Shared #{kind} content", user: users(:two),
+                                    progress: 0.0, data: { "kind" => kind })
+          origin.create_linked_creative_for_user(@user)
+        end
+        @creative.update!(data: { "context_ids" => links.map(&:id) })
+
+        messages = MessageBuilder.new(
+          agent: @agent,
+          context: { "creative" => { "id" => @creative.id } },
+          original_comment: @comment
+        ).build[:messages]
+        contexts = messages.select { |message| message[:kind] == :context_creative }
+
+        assert_equal 1, contexts.size
+        assert_includes contexts.first.dig(:parts, 0, :text), "Shared note content"
+        assert_includes contexts.first.dig(:parts, 0, :text), "Context Creative (id: #{links.last.id}):"
+        refute_includes messages.to_s, "Shared workflow"
+      end
+
+      test "excludes chained links to workflow pins" do
+        workflow = Creative.create!(description: "Secret workflow", user: users(:two),
+                                    progress: 0.0, data: { "kind" => "workflow" })
+        shared = workflow.create_linked_creative_for_user(@user)
+        chained = Creative.create!(user: @user, origin: shared, progress: 0.0)
+        @creative.update!(data: { "context_ids" => [ chained.id ] })
+
+        messages = MessageBuilder.new(
+          agent: @agent,
+          context: { "creative" => { "id" => @creative.id } },
+          original_comment: @comment
+        ).build[:messages]
+
+        assert_empty messages.select { |message| message[:kind] == :context_creative }
+        refute_includes messages.to_s, "Secret workflow"
+      end
+
       test "keeps ordinary pinned context while excluding workflow creatives" do
         ordinary = Creative.create!(description: "Coding standards", user: @user, progress: 0.0)
         workflow = Creative.create!(

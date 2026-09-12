@@ -33,6 +33,14 @@ module Collavre
         assert_equal [ @other ], match
       end
 
+      test "a shared workflow pin chooses the origin rule agent instead of the expression agent" do
+        agent_rule
+        linked = @workflow.create_linked_creative_for_user(users(:two))
+        @creative.update!(data: { "context_ids" => [ linked.id ] })
+
+        assert_equal [ @other ], match
+      end
+
       test "first matching rule wins" do
         agent_rule(sequence: 1)
         agent_rule(agent: @agent, sequence: 2)

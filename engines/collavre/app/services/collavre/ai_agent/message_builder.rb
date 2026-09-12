@@ -109,9 +109,14 @@ module Collavre
       # rule titles as noise and as a prompt-injection surface.
       def load_prompt_context_creatives(active_ids)
         ids = active_ids.reject { |id| @injected_creative_ids.include?(id) }
-        Creative.where(id: ids)
-                .reject { |creative| creative.workflow? || creative.workflow_rule? }
+        Creative.where(id: ids).preload(:origin)
+                .reject { |creative| workflow_context?(creative) }
                 .index_by(&:id)
+      end
+
+      def workflow_context?(creative)
+        origin = creative.effective_origin(Set.new)
+        origin.workflow? || origin.workflow_rule?
       end
 
       def append_referenced_creative_contexts(messages)

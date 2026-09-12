@@ -29,8 +29,11 @@ module Collavre
         return @workflow_creatives if defined?(@workflow_creatives)
 
         ids = active_context_ids
-        indexed = Creative.active.where(id: ids).index_by(&:id)
-        @workflow_creatives = ids.filter_map { |id| indexed[id] }.select(&:workflow?)
+        indexed = Creative.active.where(id: ids).preload(:origin).index_by(&:id)
+        @workflow_creatives = ids.filter_map { |id| indexed[id]&.effective_origin(Set.new) }
+          .select { |creative| creative.archived_at.nil? && creative.workflow? }
+          .reject { |creative| @excluded_context_ids.include?(creative.id) }
+          .uniq(&:id)
       end
 
       def active_context_ids
@@ -38,7 +41,8 @@ module Collavre
         return [] unless creative
 
         origin = creative.effective_origin(Set.new)
-        origin.effective_context_ids - origin.effective_disabled_context_ids - [ creative.id, origin.id ]
+        @excluded_context_ids = [ creative.id, origin.id ]
+        origin.effective_context_ids - origin.effective_disabled_context_ids - @excluded_context_ids
       end
 
       def rule_creatives
