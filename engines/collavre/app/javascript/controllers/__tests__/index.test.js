@@ -3,6 +3,7 @@
  */
 
 import { jest } from '@jest/globals'
+import WorkflowRuleController from '../creatives/workflow_rule_controller'
 import LastVisitedCreativeController from '../last_visited_creative_controller'
 
 describe('registerControllers', () => {
@@ -38,6 +39,7 @@ describe('registerControllers', () => {
       'last-visited-creative',
       LastVisitedCreativeController,
     )
+    expect(application.register).toHaveBeenCalledWith('creatives--workflow-rule', WorkflowRuleController)
     expect(application.register).toHaveBeenCalledWith(
       'cron-badge',
       expect.any(Function),

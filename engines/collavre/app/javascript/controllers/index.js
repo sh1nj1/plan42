@@ -12,6 +12,7 @@ import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
 import CreativesSyncController from "./creatives/sync_controller"
+import CreativesWorkflowRuleController from "./creatives/workflow_rule_controller"
 import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
@@ -111,12 +112,7 @@ function registerImageLightboxControllers(application) {
   application.register("creative-image-lightbox", CreativeImageLightboxController)
 }
 
-// Registration function for use with a Stimulus application
-export function registerControllers(application) {
-  application.register("creative-move", CreativeMoveController)
-  application.register("agent-trigger", AgentTriggerController)
-  application.register("popup-menu", PopupMenuController)
-  application.register("progress-filter", ProgressFilterController)
+function registerCreativeControllers(application) {
   application.register("creatives--import", CreativesImportController)
   application.register("creatives--select-mode", CreativesSelectModeController)
   application.register("creatives--drag-drop", CreativesDragDropController)
@@ -125,6 +121,16 @@ export function registerControllers(application) {
   application.register("creatives--tree", CreativesTreeController)
   application.register("creatives--sync", CreativesSyncController)
   application.register("creatives--write-access-request", CreativesWriteAccessRequestController)
+  application.register("creatives--workflow-rule", CreativesWorkflowRuleController)
+}
+
+// Registration function for use with a Stimulus application
+export function registerControllers(application) {
+  application.register("creative-move", CreativeMoveController)
+  application.register("agent-trigger", AgentTriggerController)
+  application.register("popup-menu", PopupMenuController)
+  application.register("progress-filter", ProgressFilterController)
+  registerCreativeControllers(application)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
   application.register("comments--presence", CommentsPresenceController)

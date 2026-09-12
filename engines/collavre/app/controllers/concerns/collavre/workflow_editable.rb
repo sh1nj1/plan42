@@ -4,13 +4,24 @@ module Collavre
   module WorkflowEditable
     extend ActiveSupport::Concern
 
+    included do
+      helper_method :workflow_editor_creative?
+    end
+
+    def workflow_editor_creative?(creative)
+      return false unless creative && creative.archived_at.nil?
+
+      origin = creative.effective_origin(Set.new)
+      origin.workflow? && origin.archived_at.nil?
+    end
+
     def workflow
       return unless workflow_access?(@creative, :read)
 
       creative = @creative.effective_origin(Set.new)
       return unless active_workflow?(creative)
 
-      render json: Workflow::Editor.new(creative, Current.user).as_json
+      render json: Workflow::Editor.new(creative, Current.user, placement: @creative).as_json
     end
 
     def create_workflow_rule
@@ -22,7 +33,7 @@ module Collavre
         return workflow_error(:title_required)
       end
 
-      rule = creative.children.build(user: Current.user, description: params[:description],
+      rule = creative.children.build(user: creative.user, description: params[:description],
                                      data: { "kind" => "workflow_rule" })
       save_workflow_rule(rule, creative, :created)
     end
@@ -38,6 +49,16 @@ module Collavre
     end
 
     private
+
+    def creative_edit_access?
+      if !params[:inline] && workflow_editor_creative?(@creative)
+        return workflow_access?(@creative, :read)
+      end
+      return true if @creative.has_permission?(Current.user, :write)
+
+      redirect_to @creative, alert: t("collavre.creatives.errors.no_permission")
+      false
+    end
 
     def workflow_access?(creative, permission)
       allowed = Creatives::PermissionFilter.new(user: Current.user)
@@ -68,6 +89,8 @@ module Collavre
       return render json: { errors: errors }, status: :unprocessable_entity unless parsed
 
       if rule.save
+        # The creator must be able to keep editing before queued permission jobs run.
+        Creatives::PermissionCacheBuilder.rebuild_for_creative(rule) if status == :created
         render json: Workflow::Editor.new(workflow, Current.user).rule_json(rule), status: status
       else
         render json: { errors: rule.errors.full_messages }, status: :unprocessable_entity

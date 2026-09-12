@@ -86,6 +86,37 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "management flags follow rule permission overrides" do
+    admin = users(:two)
+    share(@workflow, admin, :admin)
+    share(@rule, admin, :read)
+    sign_in_as admin, password: "password"
+
+    get workflow_path(@workflow), as: :json
+
+    assert_response :success
+    assert_equal true, response.parsed_body.fetch("can_manage")
+    assert_equal false, response.parsed_body.fetch("rules").sole.fetch("can_manage")
+    patch rule_path(@rule), params: { workflow_rule: @payload }, as: :json
+    assert_response :forbidden
+  end
+
+  test "management flags distinguish linked placement creation from origin rule updates" do
+    linked = create_workflow_creative(description: "Shared link", origin: @workflow, user: users(:two))
+    share(linked, @user, :read)
+
+    get workflow_path(linked), as: :json
+
+    assert_response :success
+    assert_equal false, response.parsed_body.fetch("can_manage")
+    assert_equal true, response.parsed_body.fetch("rules").sole.fetch("can_manage")
+    post rule_path(linked), params: { description: "Denied", workflow_rule: @payload }, as: :json
+    assert_response :forbidden
+    patch rule_path(@rule), params: { workflow_rule: @payload }, as: :json
+    assert_response :success
+    assert_equal true, response.parsed_body.fetch("can_manage")
+  end
+
   test "updates payload while preserving unrelated metadata and title" do
     @rule.update!(data: @rule.data.merge("custom" => { "keep" => true }))
     patch rule_path(@rule), params: { workflow_rule: @payload, description: "Ignored" }, as: :json
@@ -109,6 +140,50 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     assert_equal @payload, created.data.fetch("workflow_rule")
     get workflow_path(@workflow), as: :json
     assert_includes response.parsed_body.fetch("rules").map { |rule| rule.fetch("id") }, created.id
+  end
+
+  test "collaborator created rules retain workflow ownership and revocable access" do
+    collaborator = users(:two)
+    share(@workflow, collaborator, :admin)
+    sign_in_as collaborator, password: "password"
+    post rule_path(@workflow), params: { description: "Shared rule", workflow_rule: @payload }, as: :json
+    assert_response :created
+    created = Creative.find(response.parsed_body.fetch("id"))
+    assert_equal @workflow.user_id, created.user_id
+    assert_equal collaborator.id, Collavre::CreativeChangeSet.last.user_id
+
+    sign_in_as @user, password: "password"
+    get workflow_path(@workflow), as: :json
+    assert_includes response.parsed_body.fetch("rules").map { |rule| rule.fetch("id") }, created.id
+    patch rule_path(created), params: { workflow_rule: @payload }, as: :json
+    assert_response :success
+
+    perform_enqueued_jobs do
+      CreativeShare.find_by!(creative: @workflow, user: collaborator).destroy!
+    end
+    sign_in_as collaborator, password: "password"
+    patch rule_path(created), params: { workflow_rule: @payload }, as: :json
+    assert_response :forbidden
+    assert_not created.reload.has_permission?(collaborator, :read)
+  end
+
+  test "collaborator can immediately update a new rule while permission jobs are queued" do
+    collaborator = users(:two)
+    share(@workflow, collaborator, :admin)
+    sign_in_as collaborator, password: "password"
+    previous_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+
+    post rule_path(@workflow), params: { description: "Queued permissions", workflow_rule: @payload }, as: :json
+    assert_response :created
+    assert_equal true, response.parsed_body.fetch("can_manage")
+    created = Creative.find(response.parsed_body.fetch("id"))
+    patch rule_path(created), params: { workflow_rule: @payload }, as: :json
+    assert_response :success
+    get workflow_path(@workflow), as: :json
+    assert_includes response.parsed_body.fetch("rules").map { |rule| rule.fetch("id") }, created.id
+  ensure
+    ActiveJob::Base.queue_adapter = previous_adapter if previous_adapter
   end
 
   test "updating workflow metadata does not leave an empty history change set" do

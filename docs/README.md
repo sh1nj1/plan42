@@ -15,6 +15,9 @@ thin agent entry point that indexes into this directory.
 - [permissions.md](permissions.md) — the permission system and the converged
   `CreativeSharesCache` / `PermissionFilter` architecture.
 
+- [workflow_rule_editor.md](workflow_rule_editor.md) — edit workflow rules,
+  understand pin scope, and roll out routing through matching policies.
+
 ## Building & Contributing
 
 - [conventions.md](conventions.md) — the engineering rulebook: Rails philosophy,

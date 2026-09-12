@@ -271,9 +271,8 @@ module Collavre
     end
 
     def edit
-      unless @creative.has_permission?(Current.user, :write)
-        redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
-      end
+      return unless creative_edit_access?
+
       if params[:inline]
         render partial: "inline_edit_form"
       end

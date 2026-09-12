@@ -1,0 +1,105 @@
+.workflow-editor {
+  max-width: 56rem;
+  margin-inline: auto;
+  padding: var(--space-3);
+}
+
+.workflow-rule {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-bg);
+  overflow-wrap: anywhere;
+}
+
+.workflow-rule fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+}
+
+.workflow-rule [data-role="controls"] {
+  display: grid;
+  gap: var(--space-3);
+  border: 0;
+  padding: 0;
+}
+
+.workflow-rule label:not([hidden]) {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.workflow-rule label.workflow-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-inline-end: var(--space-3);
+}
+
+.workflow-rule input:not([type="checkbox"], [type="radio"]),
+.workflow-rule select,
+.workflow-rule textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.workflow-rule select[multiple] {
+  min-height: 6rem;
+}
+
+.workflow-rule details > * {
+  margin-block: var(--space-2);
+}
+
+.workflow-rule summary {
+  cursor: pointer;
+}
+
+.workflow-rule [data-role="diagnostics"],
+.workflow-rule [data-role="warnings"] {
+  white-space: pre-wrap;
+}
+
+.workflow-rule fieldset:disabled {
+  opacity: 0.7;
+}
+
+.workflow-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+@media (width <= 40rem) {
+  .workflow-editor,
+  .workflow-rule {
+    padding: var(--space-2);
+  }
+}
+
+.workflow-rule input[type="checkbox"],
+.workflow-rule input[type="radio"] {
+  width: auto;
+  margin: 0;
+}
+
+.workflow-editor button {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-btn-bg);
+  color: var(--color-btn-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.workflow-editor button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}

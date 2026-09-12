@@ -9,6 +9,7 @@ module Collavre
       collavre/secret_fields
       collavre/gnb
       collavre/creatives
+      collavre/workflow_editor
       collavre/actiontext
       collavre/activity_logs
       collavre/user_menu

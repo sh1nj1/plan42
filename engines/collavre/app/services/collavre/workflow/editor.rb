@@ -4,9 +4,10 @@ module Collavre
   module Workflow
     # Presents authoring data only; dispatch still applies the target's permissions.
     class Editor
-      def initialize(creative, user)
+      def initialize(creative, user, placement: creative)
         @creative = creative
         @user = user
+        @placement = placement
       end
 
       def as_json
@@ -19,7 +20,7 @@ module Collavre
           end,
           agents: agents,
           permission_note: I18n.t("collavre.workflow.editor.permission_note"),
-          can_manage: @creative.has_permission?(@user, :admin)
+          can_manage: admin_ids.include?(@placement.id)
         }
       end
 
@@ -28,16 +29,25 @@ module Collavre
         {
           id: creative.id, description: creative.description,
           rule: creative.data["workflow_rule"], errors: errors,
-          valid: parsed.present?, warnings: rule_warnings(parsed)
+          valid: parsed.present?, warnings: rule_warnings(parsed),
+          can_manage: admin_ids.include?(@creative.id) && admin_ids.include?(creative.id)
         }
       end
 
       private
 
       def visible_rules
-        children = @creative.children.active.order(:sequence, :id).to_a
         ids = Creatives::PermissionFilter.new(user: @user).readable_ids(children.map(&:id))
         children.select { |child| ids.include?(child.id) && child.workflow_rule? }
+      end
+
+      def children
+        @children ||= @creative.children.active.order(:sequence, :id).to_a
+      end
+
+      def admin_ids
+        @admin_ids ||= Creatives::PermissionFilter.new(user: @user)
+          .readable_ids([ @creative.id, @placement.id, *children.map(&:id) ], min_permission: :admin).to_set
       end
 
       def agents
