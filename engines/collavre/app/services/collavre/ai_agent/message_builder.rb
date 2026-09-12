@@ -133,7 +133,7 @@ module Collavre
 
         referenced_ids = contents.flat_map { |c| referenced_creative_ids(c) }.uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
-        creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
+        creatives_by_id = load_prompt_context_creatives(referenced_ids)
 
         referenced_ids.each do |creative_id|
           creative = creatives_by_id[creative_id]
@@ -187,7 +187,8 @@ module Collavre
         missing = referenced_creative_ids(comment.content) - @injected_creative_ids.to_a
         return true if missing.empty?
 
-        !Creative.where(id: missing).exists?
+        # Excluded routing configuration supplies no subtree on the trigger path either.
+        load_prompt_context_creatives(missing).empty?
       end
 
       # Appends chat history messages and returns the count of messages added.

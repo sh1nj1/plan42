@@ -113,19 +113,28 @@ module Collavre
             raise PolicyValidationError, t("admin.orchestration.invalid_policy_structure", type: type)
           end
 
-          if data["global"].present? && !data["global"].is_a?(Hash)
-            raise PolicyValidationError, t("admin.orchestration.invalid_global_config", type: type)
-          end
+          validate_global_config!(type, data["global"])
+          validate_overrides!(type, data["overrides"]) if data["overrides"].present?
+        end
+      end
 
-          if data["overrides"].present?
-            unless data["overrides"].is_a?(Array)
-              raise PolicyValidationError, t("admin.orchestration.invalid_overrides", type: type)
-            end
+      def validate_global_config!(type, config)
+        return if config.blank?
 
-            data["overrides"].each_with_index do |override, idx|
-              validate_override!(type, override, idx)
-            end
-          end
+        unless config.is_a?(Hash)
+          raise PolicyValidationError, t("admin.orchestration.invalid_global_config", type: type)
+        end
+
+        validate_workflow_routing!(type, config)
+      end
+
+      def validate_overrides!(type, overrides)
+        unless overrides.is_a?(Array)
+          raise PolicyValidationError, t("admin.orchestration.invalid_overrides", type: type)
+        end
+
+        overrides.each_with_index do |override, idx|
+          validate_override!(type, override, idx)
         end
       end
 
@@ -146,6 +155,18 @@ module Collavre
         unless override["config"].is_a?(Hash)
           raise PolicyValidationError, t("admin.orchestration.invalid_override_config", type: type, index: idx)
         end
+
+        validate_workflow_routing!(type, override["config"])
+      end
+
+      def validate_workflow_routing!(type, config)
+        return unless type == "matching"
+
+        config.stringify_keys!
+        return unless config.key?("workflow_routing")
+        return if Orchestration::PolicyResolver::MODES.include?(config["workflow_routing"])
+
+        raise PolicyValidationError, t("admin.orchestration.invalid_workflow_routing")
       end
 
       def apply_policies!(parsed)

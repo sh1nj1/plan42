@@ -154,3 +154,23 @@ matching:
         workflow_routing: "on"
       priority: 50
 ```
+
+### PR review follow-up: referenced context and YAML mode validation
+
+- [x] Reproduce workflow/rule reference injection from trigger and merged comments,
+      including shared origins, while preserving ordinary references.
+- [x] Reuse the pinned-context filter for references and history delivery checks.
+- [x] Reject invalid matching modes before saving global or scoped policies,
+      with English/Korean guidance to quote YAML mode strings.
+- [x] Complete related tests, changed-line coverage, lint, complexity, and review.
+- [x] Prepare fixes for ready-for-review PR #1679 and verify the topic monitor.
+
+Normalize matching config keys before validation so YAML symbol keys cannot
+bypass the mode check. Invalid modes preserve existing policies and submitted
+YAML; absent mode keys remain supported. History delivery uses the same workflow
+reference exclusion as trigger context construction.
+
+Validation: 600 tests / 1,948 assertions passed; this follow-up covers 21/21
+changed executable Ruby lines (100%). RuboCop passed across 1,420 files, the
+complexity ratchet reported no growth, and independent re-review has no
+remaining findings. English/Korean orchestration keys are symmetric.

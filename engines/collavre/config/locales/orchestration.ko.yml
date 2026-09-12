@@ -47,6 +47,7 @@ ko:
       unknown_policy_type: "알 수 없는 정책 유형: %{type}. 'arbitration' 또는 'scheduling'을 사용하세요."
       invalid_policy_structure: "'%{type}'의 구조가 잘못되었습니다: 'global' 및/또는 'overrides'를 가진 객체가 필요합니다."
       invalid_global_config: "'%{type}'의 전역 설정이 잘못되었습니다: 객체가 필요합니다."
+      invalid_workflow_routing: "matching의 workflow_routing이 잘못되었습니다: 문자열 'off', 'shadow', 'on' 중 하나를 사용하세요. YAML에서는 값을 따옴표로 감싸세요 (예: workflow_routing: 'on')."
       invalid_overrides: "'%{type}'의 오버라이드가 잘못되었습니다: 배열이 필요합니다."
       invalid_override_format: "'%{type}' 인덱스 %{index}의 오버라이드가 잘못되었습니다: 객체가 필요합니다."
       invalid_scope_type: "'%{type}' 인덱스 %{index}의 scope_type이 잘못되었습니다: '%{scope_type}'. Creative, Topic, 또는 User를 사용하세요."

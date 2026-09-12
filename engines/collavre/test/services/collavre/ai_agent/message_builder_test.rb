@@ -39,6 +39,55 @@ module Collavre
         assert_includes referenced_msg[:parts].first[:text], other_creative.id.to_s
       end
 
+      %w[workflow workflow_rule].each do |kind|
+        [ false, true ].each do |linked|
+          [ false, true ].each do |merged|
+            test "excludes #{kind} references with linked=#{linked} merged=#{merged}" do
+              origin = Creative.create!(description: "Private routing configuration", user: users(:two),
+                                        progress: 0.0, data: { "kind" => kind })
+              target = linked ? origin.create_linked_creative_for_user(@user) : origin
+              ordinary = Creative.create!(description: "Ordinary reference", user: @user, progress: 0.0)
+              content = "[rules](/creatives/#{target.id}) [note](/creatives/#{ordinary.id})"
+              context = {
+                "creative" => { "id" => @creative.id },
+                "comment" => { "id" => @comment.id, "content" => content }
+              }
+              if merged
+                absorbed = @creative.comments.create!(content: content, user: @user, topic_id: @comment.topic_id)
+                context[Orchestration::TaskCoalescer::PAYLOAD_KEY] = [ absorbed.id ]
+                context["comment"]["content"] = @comment.content
+              end
+
+              messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+              references = messages.select { |message| message[:kind] == :referenced_creative }
+
+              assert_equal 1, references.size
+              assert_includes references.first.dig(:parts, 0, :text), "Ordinary reference"
+              refute_includes messages.to_s, "Private routing configuration"
+            end
+          end
+        end
+      end
+
+      test "history delivery ignores excluded workflow references but still requires ordinary references" do
+        workflow = Creative.create!(description: "Private routing configuration", user: users(:two),
+                                    progress: 0.0, data: { "kind" => "workflow" })
+        linked = workflow.create_linked_creative_for_user(@user)
+        ordinary = Creative.create!(description: "Ordinary reference", user: @user, progress: 0.0)
+        delivered = @creative.comments.create!(content: "[rules](/creatives/#{linked.id})",
+                                               user: @user, topic_id: @comment.topic_id)
+        withheld = @creative.comments.create!(content: "[rules](/creatives/#{linked.id}) [note](/creatives/#{ordinary.id})",
+                                              user: @user, topic_id: @comment.topic_id)
+        messages = MessageBuilder.new(
+          agent: @agent, original_comment: @comment,
+          context: { "creative" => { "id" => @creative.id }, "comment" => { "id" => @comment.id, "content" => @comment.content } }
+        ).build[:messages]
+        history = messages.select { |message| message[:kind] == :chat_history }
+
+        assert_includes history.map { |message| message[:comment_id] }, delivered.id
+        refute_includes history.map { |message| message[:comment_id] }, withheld.id
+      end
+
       test "does not duplicate current creative in referenced contexts" do
         context = {
           "comment" => {

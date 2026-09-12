@@ -207,4 +207,119 @@ class AdminOrchestrationControllerTest < ActionDispatch::IntegrationTest
     assert_equal "scheduling", policy.policy_type
     assert_equal 10, policy.config["max_concurrent_jobs"]
   end
+
+  %w[global override].each do |scope|
+    %w[on off].each do |value|
+      test "rejects unquoted #{value} with a symbol key in #{scope}" do
+        existing = Collavre::OrchestratorPolicy.create!(
+          policy_type: "arbitration", config: { "strategy" => "all" }
+        )
+        original_attributes = existing.attributes
+
+        assert_no_difference "Collavre::OrchestratorPolicy.count" do
+          patch collavre.admin_orchestration_path, params: {
+            policies_yaml: matching_yaml(scope, ":workflow_routing: #{value}")
+          }
+        end
+
+        assert_response :unprocessable_entity
+        assert_equal I18n.t("admin.orchestration.invalid_workflow_routing"), flash[:alert]
+        assert_equal original_attributes, existing.reload.attributes
+      end
+    end
+
+    %w[off shadow on].each do |mode|
+      test "accepts quoted #{mode} with a symbol key in #{scope}" do
+        patch collavre.admin_orchestration_path, params: {
+          policies_yaml: matching_yaml(scope, ":workflow_routing: '#{mode}'")
+        }
+
+        assert_redirected_to collavre.admin_orchestration_path
+        policy = Collavre::OrchestratorPolicy.find_by!(policy_type: "matching")
+        assert_equal({ "workflow_routing" => mode }, policy.config)
+        assert_equal scope == "global", policy.global?
+      end
+    end
+
+    %w[on off true false null 1 invalid :on [] {}].each do |value|
+      test "rejects #{value} workflow routing in #{scope} without replacing existing policies" do
+        existing = Collavre::OrchestratorPolicy.create!(
+          policy_type: "arbitration", config: { "strategy" => "all" }
+        )
+        original_attributes = existing.attributes
+        yaml = matching_yaml(scope, "workflow_routing: #{value}")
+
+        assert_no_difference "Collavre::OrchestratorPolicy.count" do
+          patch collavre.admin_orchestration_path, params: { policies_yaml: yaml }
+        end
+
+        assert_response :unprocessable_entity
+        assert_equal I18n.t("admin.orchestration.invalid_workflow_routing"), flash[:alert]
+        assert_equal original_attributes, existing.reload.attributes
+        assert_select "textarea[name='policies_yaml']", text: yaml
+      end
+    end
+
+    %w[off shadow on].each do |mode|
+      test "accepts quoted #{mode} workflow routing in #{scope}" do
+        yaml = matching_yaml(scope, "workflow_routing: '#{mode}'")
+
+        patch collavre.admin_orchestration_path, params: { policies_yaml: yaml }
+
+        assert_redirected_to collavre.admin_orchestration_path
+        policy = Collavre::OrchestratorPolicy.find_by!(policy_type: "matching")
+        assert_equal mode, policy.config["workflow_routing"]
+        assert_equal scope == "global", policy.global?
+      end
+    end
+
+    test "accepts #{scope} matching config without workflow routing" do
+      yaml = matching_yaml(scope, "trigger_expression: 'event.type == comment_created'")
+
+      patch collavre.admin_orchestration_path, params: { policies_yaml: yaml }
+
+      assert_redirected_to collavre.admin_orchestration_path
+      policy = Collavre::OrchestratorPolicy.find_by!(policy_type: "matching")
+      assert_equal({ "trigger_expression" => "event.type == comment_created" }, policy.config)
+    end
+  end
+
+  test "explains workflow routing quoting in Korean" do
+    @admin.update!(locale: "ko")
+    patch collavre.admin_orchestration_path(locale: :ko), params: {
+      policies_yaml: matching_yaml("global", "workflow_routing: on")
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("admin.orchestration.invalid_workflow_routing", locale: :ko), flash[:alert]
+    assert_includes flash[:alert], "따옴표"
+  end
+
+  {
+    "invalid_policy_structure" => { "matching" => "invalid" },
+    "invalid_global_config" => { "matching" => { "global" => "invalid" } },
+    "invalid_overrides" => { "matching" => { "overrides" => { "config" => {} } } },
+    "invalid_override_format" => { "matching" => { "overrides" => [ "invalid" ] } },
+    "invalid_override_config" => {
+      "matching" => { "overrides" => [ { "scope_type" => "Topic", "scope_id" => 123, "config" => "invalid" } ] }
+    }
+  }.each do |error, policies|
+    test "rejects matching #{error} before checking workflow routing" do
+      patch collavre.admin_orchestration_path, params: { policies_yaml: policies.to_yaml }
+
+      assert_response :unprocessable_entity
+      assert_equal I18n.t("admin.orchestration.#{error}", type: "matching", index: 0), flash[:alert]
+      assert_equal 0, Collavre::OrchestratorPolicy.count
+    end
+  end
+
+  private
+
+  def matching_yaml(scope, config)
+    if scope == "global"
+      "matching:\n  global:\n    #{config}\n"
+    else
+      "matching:\n  overrides:\n    - scope_type: Topic\n      scope_id: 123\n      config:\n        #{config}\n"
+    end
+  end
 end

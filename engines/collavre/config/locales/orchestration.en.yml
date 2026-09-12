@@ -47,6 +47,7 @@ en:
       unknown_policy_type: "Unknown policy type: %{type}. Use 'arbitration' or 'scheduling'."
       invalid_policy_structure: "Invalid structure for '%{type}': expected an object with 'global' and/or 'overrides'."
       invalid_global_config: "Invalid global config for '%{type}': expected an object."
+      invalid_workflow_routing: "Invalid matching workflow_routing: use the string 'off', 'shadow', or 'on'. Quote the value in YAML (for example, workflow_routing: 'on')."
       invalid_overrides: "Invalid overrides for '%{type}': expected an array."
       invalid_override_format: "Invalid override at '%{type}' index %{index}: expected an object."
       invalid_scope_type: "Invalid scope_type at '%{type}' index %{index}: '%{scope_type}'. Use Creative, Topic, or User."
