@@ -4,7 +4,10 @@ Status: implementation proposal. The emission timing question has been sent to
 the product owner. Vrex recommends completion-based emission in review topic
 19327; the cross-post in topic 19326 is a reviewer report, not a separate product
 approval. The semantics and limits below are new PR4 proposals, not approvals
-inherited from PR3. This document is reviewable before runtime changes are made.
+inherited from PR3. Review 134607 in topic 19327 reports no remaining technical
+blockers against `1ad24d199`. This revision records its five recommendations;
+product approval and runtime implementation remain outstanding. Earlier review
+dispositions below are historical and retain their original reviewed revisions.
 
 ## Scope and invariants
 
@@ -246,7 +249,10 @@ a late job for a sealed execution cannot create or start new work.
 `RestoreDroppedDispatchesJob` calls `DeliveryRecord.restore!`, which reconstructs
 an ordinary dropped dispatch from the **covering Task's** payload and directly
 enqueues `AiAgentJob` after Scheduler checks. It does not persist the incoming
-workflow dispatch's identity. Consequently workflow obligations must never be
+workflow dispatch's identity. The synchronous worker path through
+`AiAgentJob#perform` and `DeliveryRecord.restore_if_undelivered!` also calls
+`restore!`; keep stripping in their shared `restored_context`, not only the sweep.
+Consequently workflow obligations must never be
 recorded as legacy drops or recovered through that reconstruction. Strip the
 covering turn's internal `workflow_execution_id` using a separate
 `DeliveryRecord::DISPATCH_SCOPED_KEYS = %w[workflow_execution_id]` list.
@@ -266,7 +272,10 @@ already in its dispatched payload, then exercise ordinary `restored_context`
 and login `retry_payload`. Assert the marker is absent in both new dispatches,
 ordinary/replay Task references are null, and same-admission outbox redelivery
 retains its identity. Keep the original writer equality test unchanged; do not
-make a fixture pretend that the marker was written after dispatch.
+make a fixture pretend that the marker was written after dispatch. Both new
+isolation tests populate dispatch-origin keys and assert removal by iterating
+`DeliveryRecord::DISPATCH_SCOPED_KEYS`, rather than checking only a literal
+`workflow_execution_id`; additions to the list must be covered in both consumers.
 
 ### Selection and lock boundaries
 
@@ -483,7 +492,10 @@ moved input stops with `scope_changed`, a private/unreadable input with
 under its existing lock and refuse workflow reanchoring. Deleting the workflow
 input cancels active work without selecting a surviving merged comment.
 `Comment::DispatchRevocation#revoke_source_dispatch` uses this same door after
-individual moves, private transitions and approval-action transitions. Classify
+individual moves, private transitions and approval-action transitions, but calls
+`cancel_pending_tasks` only `unless waiting_notice?`. Preserve that exception;
+waiting notices are not executable workflow inputs. Do not rely on this
+conditional callback in place of effect-boundary and sweep validation. Classify
 current input evidence: missing/deleted or changed creative/topic is
 `scope_changed`; private/unreadable or an `approval_action?` input is
 `permission_revoked` (withdrawn as an executable public request); disabled mode
@@ -660,7 +672,14 @@ while bounding lost-job recovery; it cannot guarantee delivery during an
 unbounded backlog. A backlog exceeding 30 minutes on every attempt may still
 exhaust all attempts with zero provider calls (roughly 90 minutes plus sweep
 cadence). Preserve the Inbox and `human_handoff` outcome and explain this
-best-effort limit in EN/KO help. Ordinary push behavior remains unchanged.
+best-effort limit in EN/KO help. Retain the same 30-minute queue deadline for
+claimed `pending` and `enqueued` rows (review option (a)). A crash after claim
+but before `perform_later`, or a lost job before transport claim, therefore
+waits for that deadline before retry: up to 30 minutes from claim plus sweep
+cadence and recovery-queue delay. This is not a measured or guaranteed recovery
+SLA; no queue-level retry is assumed. EN/KO help must state this single-loss
+delay as well as the zero-transport exhaustion limit. The Inbox remains available
+throughout. Ordinary push behavior remains unchanged.
 
 Reuse `push_claim_token` and `push_claimed_at`, with state-specific clocks rather
 than changing ordinary `CLAIM_TIMEOUT`. Claiming a pending attempt increments
@@ -695,7 +714,13 @@ best-effort limit. No transport heartbeat or duplicate renewal is introduced.
 Recovery uses the row's state-specific deadline: 30 minutes for claimed
 `pending`/`enqueued`, five minutes for `delivering`. Expiry permits one conditional
 replacement token and next attempt, or terminal `failed` at exhaustion; never a
-fourth enqueue. Terminal outcomes clear the lease. Late enqueue acknowledgements
+fourth enqueue. For an expired claimed `pending`, `enqueued` or `delivering`
+row below the limit, one conditional UPDATE checks the old state, token and
+applicable expiry, sets `push_state = pending`, replaces token/time, and increments
+`push_attempts` once before queue I/O. Do not expose an intermediate unclaimed
+row or apply a second pending claim. Only this UPDATE winner enqueues the new
+attempt; exhaustion conditionally seals `failed` without enqueue. Terminal
+outcomes clear the lease. Late enqueue acknowledgements
 and failure rescues after worker start, completion or reclamation are no-ops;
 only the worker owns a `delivering` attempt. No old token may release a newer one.
 
@@ -753,6 +778,11 @@ child without `parent:` on retries, or it would generate a fresh child.
   in both `enqueue_jobs` and `AiAgentJob#perform`, shared
   `DeliveryRecord.covering_task`, and legacy `restored_context` identity stripping.
   See the task materialization contract for no-Task terminal outcomes.
+- `RestoreDroppedDispatchesJob` and the synchronous
+  `AiAgentJob#perform` restore calls (including its ensure cleanup) reach
+  `DeliveryRecord.restore_if_undelivered!` / `restore!`. Both use the shared
+  `restored_context` stripping; cover ordinary recovery from a covering workflow
+  Task through both entries, without attaching it to that workflow execution.
 - `AgentOrchestrator#dequeue_next_for_topic` / `#coalesce_at_start!` call
   `#refresh_deferred_context!`; guard workflow inputs before generic
   `DeferredTriggerScope.reanchor_payload`. Also guard
@@ -948,9 +978,11 @@ external completion callers, envelope-name consistency, relative depth, narrowed
 workflow budget scope, quote-free human notices and effective-origin ownership.
 Names already are enforced by `Vocabulary.fetch`; sources and required blocks
 need a new workflow-boundary check. `unsuccessful_loop_response?` is not by itself
-a positive success predicate. The revised proposal has not yet received reviewer
-sign-off or the product owner's emission-timing answer. No runtime change is
-implemented or validated by this document.
+a positive success predicate. Review 134607 reports no remaining technical
+blockers against `1ad24d199`; the five follow-up recommendations are recorded
+below. This does not approve product policy or validate runtime code. The product
+owner's policy decisions remain pending. No runtime change is implemented or
+validated by this document.
 
 ### Cross-post review reconciliation
 
@@ -1162,3 +1194,32 @@ proposals. Choosing a longer fixed timeout reduces the previous exposure but
 cannot promise delivery under arbitrary queue delays. Timing, ownership,
 budgets, producer limits and topic-move policy remain unapproved; task 21052
 stays incomplete and runtime implementation remains unstarted.
+
+### Seventh review: technical blockers closed and recovery qualifications
+
+Report 134607 in topic 19327 reviews `1ad24d199` and closes all three sixth-review
+blockers. There are no remaining technical blockers in that report. This revision
+records the five recommendations without claiming a new runtime review or product
+approval. The proposed queue timing stays unchanged.
+
+| Recommendation | Disposition |
+| --- | --- |
+| Lost worker or crash between claim and enqueue | Choose documentation option (a): claimed pending/enqueued both retain 30 minutes; EN/KO help states retry waits for expiry plus sweep and recovery delay, while the Inbox remains available |
+| Expired reclaim target state | One conditional UPDATE changes the expired row to claimed pending with a new token/time and one increment; no intermediate unclaimed state or second claim |
+| Dispatch-list drift | Both new isolation tests populate and assert every DISPATCH_SCOPED_KEYS entry; preserve the existing TURN_SCOPED_KEYS writer equality test |
+| Conditional source revocation | Preserve cancel_pending_tasks unless waiting_notice?; callback-free effect checks and sweep remain authoritative |
+| Synchronous restoration | Name AiAgentJob and restore_if_undelivered! alongside the sweep; both strip at shared restored_context |
+
+Additional acceptance checks:
+
+| Scenario | Expected result |
+| --- | --- |
+| Crash after pending claim but before perform_later; or enqueued job lost before transport claim | No retry before the 30-minute claim deadline; next eligible recovery pass makes one claimed-pending attempt, preserving the Inbox; EN/KO help states the delay and does not promise a recovery SLA |
+| Expired enqueued/delivering row with two recovery contenders | Only one conditional update sets claimed pending with the next token and one increment; only its winner enqueues; old token cannot acknowledge |
+| New entry added to DISPATCH_SCOPED_KEYS | Both isolation tests exercise the entry in dispatched payloads and require its removal; original turn-writer equality test stays unchanged |
+| Synchronous undelivered restoration from a covering workflow Task | Shared restored_context removes dispatch identity just as sweep recovery does; restored ordinary Task has no workflow reference |
+
+Task 21052 remains incomplete solely pending the product contract, including
+completion timing, human/login/review outcomes, budgets, scope and producer
+limits, push preferences/timing and topic-move semantics. Runtime implementation,
+integration validation, PR and preview remain unstarted.
