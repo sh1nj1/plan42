@@ -3,6 +3,8 @@
 module Collavre
   module Admin
     class OrchestrationController < ApplicationController
+      EDITABLE_POLICY_TYPES = %w[matching arbitration scheduling collaboration].freeze
+
       before_action :require_system_admin!
 
       def show
@@ -37,18 +39,14 @@ module Collavre
         policies = OrchestratorPolicy.enabled.order(:policy_type, :scope_type, :priority)
 
         # Group by type for readable YAML structure
-        structure = {
-          "arbitration" => { "global" => nil, "overrides" => [] },
-          "scheduling" => { "global" => nil, "overrides" => [] },
-          "collaboration" => { "global" => nil, "overrides" => [] }
-        }
+        structure = EDITABLE_POLICY_TYPES.index_with { { "global" => nil, "overrides" => [] } }
 
         policies.each do |policy|
           type = policy.policy_type
           next unless structure.key?(type)
 
           if policy.global?
-            structure[type]["global"] = policy.config
+            structure[type]["global"] = (structure[type]["global"] || {}).merge(policy.config)
           else
             structure[type]["overrides"] << {
               "scope_type" => policy.scope_type,
@@ -76,6 +74,7 @@ module Collavre
 
       def default_policies_structure
         {
+          "matching" => { "global" => { "workflow_routing" => "shadow" } },
           "arbitration" => {
             "global" => {
               "strategy" => "all",
@@ -104,7 +103,7 @@ module Collavre
         raise PolicyValidationError, t("admin.orchestration.invalid_format") unless parsed.is_a?(Hash)
 
         parsed.each do |type, data|
-          unless %w[arbitration scheduling collaboration].include?(type)
+          unless EDITABLE_POLICY_TYPES.include?(type)
             raise PolicyValidationError, t("admin.orchestration.unknown_policy_type", type: type)
           end
 

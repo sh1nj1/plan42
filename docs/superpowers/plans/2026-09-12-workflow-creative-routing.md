@@ -70,6 +70,21 @@ Resolver, policy, then Matcher. Each task uses tests first and a task review.
 
 ## Verification and rollout
 
+### PR review follow-up: preserve matching policies in the admin editor
+
+- [x] Reproduce rejected matching YAML and lost policies on unrelated saves.
+- [x] Include matching in admin serialization, validation, and shadow defaults.
+- [x] Verify global modes and Creative/Topic overrides survive a YAML round trip.
+- [x] Preserve the effective merged config when multiple global matching policies
+      exist, using the resolver's priority order and shallow merge semantics.
+- [x] Complete affected tests, changed-line coverage, lint, complexity, and review.
+- [x] Push the fix to PR #1679 and confirm the topic monitor remains attached.
+
+Validation: 27 tests / 133 assertions passed; this follow-up covers 5/5
+changed executable Ruby lines (100%). Six regression tests failed before their
+fixes. RuboCop passed across 1,420 files; the complexity ratchet reported no
+growth. Independent specification and quality review has no remaining findings.
+
 ### PR review follow-up: A2A source before selection
 
 - [x] Reproduce source-filtered workflow misses in `topic_message_create`.
@@ -105,3 +120,19 @@ and confirm each intended exclusive decision before applying a scoped
 differ from agent defaults, so agreement is evidence for review, not a universal
 requirement. A missing rule always falls back to agent routing. Roll back that
 scope to `shadow` or `off` when needed; a narrower policy overrides a global one.
+
+Use the existing admin orchestration YAML editor to manage `matching` alongside
+other policies. Keep mode values quoted (`"off"`, `"shadow"`, `"on"`) so YAML
+does not interpret `on` or `off` as booleans. For example:
+
+```yaml
+matching:
+  global:
+    workflow_routing: "shadow"
+  overrides:
+    - scope_type: Creative
+      scope_id: 123
+      config:
+        workflow_routing: "on"
+      priority: 50
+```
