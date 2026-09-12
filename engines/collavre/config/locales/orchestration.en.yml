@@ -8,6 +8,16 @@ en:
         busy: "agent concurrency limit reached"
         rate_limited: "rate limit reached"
         unknown: "waiting for resources"
+    workflow:
+      rule:
+        errors:
+          missing_on: "Choose an event for this workflow rule."
+          unknown_event: "Unknown workflow event: %{event}."
+          unknown_handler: "Choose a supported workflow handler."
+          no_agent: "Choose at least one valid agent."
+          unknown_emit: "Unknown emitted workflow event: %{event}."
+          unknown_condition: "Unknown workflow condition: %{condition}."
+          invalid_structure: "This workflow rule has malformed data."
   admin:
     orchestration:
       title: "AI Agent Orchestration"
