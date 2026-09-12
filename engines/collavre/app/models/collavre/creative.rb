@@ -363,6 +363,7 @@ module Collavre
     end
 
     def fire_drop_trigger_on_create
+      return if workflow_rule?
       return unless parent&.drop_trigger_enabled?
 
       DropTriggerJob.perform_later(parent_id, id)

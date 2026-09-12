@@ -33,7 +33,9 @@ module Collavre
         return workflow_error(:title_required)
       end
 
+      max_sequence = creative.children.maximum(:sequence)
       rule = creative.children.build(user: creative.user, description: params[:description],
+                                     sequence: max_sequence ? max_sequence + 1 : 0,
                                      data: { "kind" => "workflow_rule" })
       save_workflow_rule(rule, creative, :created)
     end

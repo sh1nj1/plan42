@@ -81,7 +81,10 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     assert_equal @workflow.id, response.parsed_body.fetch("workflow_id")
     post rule_path(linked), params: { description: "Created via link", workflow_rule: @payload }, as: :json
     assert_response :created
-    assert_equal @workflow.id, Creative.find(response.parsed_body.fetch("id")).parent_id
+    created = Creative.find(response.parsed_body.fetch("id"))
+    assert_equal @workflow.id, created.parent_id
+    assert_equal 3, created.sequence
+    assert_empty linked.children
   end
 
   test "foreign private linked placement does not expose a readable workflow origin" do
@@ -148,8 +151,66 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     assert_includes response.parsed_body.fetch("rules").map { |rule| rule.fetch("id") }, created.id
   end
 
+  test "new rules append after all direct children without changing routing order" do
+    later = create_workflow_rule(parent: @workflow, sequence: 8)
+    create_workflow_creative(parent: @workflow, description: "Notes", sequence: 15)
+    create_workflow_rule(parent: @workflow, sequence: 20, archived_at: Time.current)
+    create_workflow_creative(parent: @workflow, description: "Archived notes", sequence: 30,
+                             archived_at: Time.current)
+    create_workflow_rule(parent: @rule, sequence: 100)
+    existing_sequences = @workflow.children.pluck(:id, :sequence).to_h
+    target = create_workflow_creative(description: "Routing target", data: { "context_ids" => [ @workflow.id ] })
+    context = { "creative" => { "id" => target.id } }
+    expected_ids = [ @rule.id, later.id ]
+    assert_equal expected_ids, Collavre::Workflow::Resolver.new(context).rules.map(&:creative_id)
+
+    2.times do |index|
+      post rule_path(@workflow), params: { description: "Appended rule", workflow_rule: @payload }, as: :json
+      assert_response :created
+      created = Creative.find(response.parsed_body.fetch("id"))
+      assert_equal 31 + index, created.sequence
+      expected_ids << created.id
+
+      get workflow_path(@workflow), as: :json
+      assert_response :success
+      assert_equal expected_ids, response.parsed_body.fetch("rules").map { |rule| rule.fetch("id") }
+      assert_equal expected_ids, Collavre::Workflow::Resolver.new(context).rules.map(&:creative_id)
+      assert_equal existing_sequences, Creative.where(id: existing_sequences.keys).pluck(:id, :sequence).to_h
+    end
+  end
+
+  test "first rule in an empty workflow starts at zero" do
+    empty_workflow = create_workflow(description: "Empty workflow")
+
+    post rule_path(empty_workflow), params: { description: "First rule", workflow_rule: @payload }, as: :json
+
+    assert_response :created
+    created = Creative.find(response.parsed_body.fetch("id"))
+    assert_equal 0, created.sequence
+    assert_equal [ created.id ], empty_workflow.children.pluck(:id)
+  end
+
+  test "creating a rule under a trigger workflow does not dispatch or mutate trigger state" do
+    @workflow.update!(data: @workflow.data.merge("trigger" => { "on_child_enter" => true }))
+    original_data = @workflow.data.deep_dup
+    clear_enqueued_jobs
+
+    assert_no_enqueued_jobs(only: Collavre::DropTriggerJob) do
+      post rule_path(@workflow), params: { description: "Configuration", workflow_rule: @payload }, as: :json
+    end
+    assert_response :created
+    created = Creative.find(response.parsed_body.fetch("id"))
+    original_rule_data = created.data.deep_dup
+    assert_no_difference [ -> { Collavre::Topic.count }, -> { Collavre::Comment.count }, -> { Collavre::Task.count } ] do
+      perform_enqueued_jobs(only: Collavre::DropTriggerJob)
+    end
+    assert_equal [ Creative::MAIN_TOPIC_NAME ], created.topics.pluck(:name)
+    assert_empty created.comments
+    assert_equal original_rule_data, created.reload.data
+    assert_equal original_data, @workflow.reload.data
+  end
+
   test "created rules broadcast their initialized tree payload to collaborators" do
-    @rule.update!(sequence: -1)
     reader = users(:two)
     share(@workflow, reader, :write)
     stream = "#{reader.to_gid_param}:creative_tree"
@@ -171,6 +232,7 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     payload = creations.sole.fetch("creative")
     assert_equal created.id, payload.fetch("id")
     assert_equal @workflow.id, payload.fetch("parent_id")
+    assert_equal 3, created.sequence
     assert_equal created.sequence, payload.fetch("sequence")
     assert_equal @rule.id, payload.fetch("previous_sibling_id")
     assert_equal "Broadcast rule", payload.fetch("inline_editor_payload").fetch("description_raw_html")
@@ -316,6 +378,8 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     assert_equal "create", change.operation
     assert_equal "Recorded rule", change.after.fetch("description")
     assert_equal @workflow.id, change.after.fetch("parent_id")
+    assert_equal 3, change.after.fetch("sequence")
+    assert_equal Creative.find(created_id).sequence, change.after.fetch("sequence")
   end
 
   test "advisory diagnostics allow save and remain visible" do
