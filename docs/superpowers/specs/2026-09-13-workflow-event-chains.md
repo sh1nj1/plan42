@@ -18,6 +18,8 @@ inherited from PR3. This document is reviewable before runtime changes are made.
   through, including when an execution is blocked, fails, or exhausts its budget.
 - Selecting responders is read-only. `select`/`prepare_selection`, shadow
   comparison, rule creation, and rule saves cannot execute workflows.
+- A normal human comment dispatch starts a fresh root correlation, including a
+  reply in a topic with an existing workflow. It does not join that earlier chain.
 - `routing_expression` columns, UI, migrations and default seeds are outside PR4.
   PR3's no-migration constraint covered PR3. PR4 needs durable execution state;
   new migrations belong to the core engine.
@@ -144,7 +146,14 @@ Introduce engine-owned workflow chain and execution records, plus a nullable
 indexed execution reference on tasks. Normal tasks retain a null reference.
 
 - Chain identity is the envelope correlation ID and fixed creative/topic scope.
-  A repeated ID in a different scope is refused, not treated as authority.
+  Enforce a composite unique key `(correlation_id, creative_id, topic_id)`.
+  Correlation alone is tracing data, never permission or chain membership.
+  A workflow outbox child must remain in its recorded chain scope; changing its
+  scope fails closed. An ordinary A2A event targeting another topic is outside
+  the originating chain and retains normal routing. If it matches a workflow
+  there, it may start a separate scope-local chain with its own `root_depth` and
+  budgets, preserving the envelope correlation and absolute depth. This is a new
+  proposed scope policy; PR4 does not impose a global cross-topic task quota.
 - Unique execution identity is `(chain_id, input_event_id)`. Persist the winning
   rule snapshot (JSON `data["workflow_rule"]` plus rule creative ID, not a Ruby
   Rule object), selected responders, admission outcome, input envelope and
@@ -168,18 +177,62 @@ indexed execution reference on tasks. Normal tasks retain a null reference.
   A claimed worker has a 5-minute lease; recovery inspects durable task/execution
   state before reclaiming. No generic recursive Ruby dispatch call stack.
 
-Root identity must also survive producer retries. The current comment callback
-creates a new UUID on each dispatch, so uniqueness on envelope ID alone does not
-deduplicate a repeated callback. For workflow admission, persist a root receipt
-keyed by `comment_callback/comment_created/comment_id`, with its envelope, before
-effects. Other producers must supply a stable delivery key for their invocation
-(for example persisted trigger run or cron occurrence), or preserve a persisted
-envelope. A deliberate user restart receives a new invocation key. Do not infer
-that two different sources or two deliberate restarts of one comment are retries.
-Off/shadow retain their existing producer behavior and do not create receipts.
-Producer calls without stable identity have only envelope-ID deduplication;
-the implementation must expose that limitation rather than claim universal
-exactly-once root delivery.
+### Producer identity and dispatch acknowledgement
+
+There are five registered producer sources, not five automatic root paths: A2A
+normally carries a parent envelope. The following map describes existing code
+and the proposed PR4 guarantee separately. There is no existing persisted trigger
+run ID or cron occurrence ID to reuse.
+
+| Producer | Existing delivery behavior | PR4 identity contract |
+| --- | --- | --- |
+| `Comment#dispatch_to_orchestration` / `comment_callback` | `after_create_commit`, normally one call for a newly created human comment; no parent | Fresh root. No callback-specific receipt. A producer that creates another comment on retry creates another invocation; PR4 does not deduplicate comment creation. |
+| `DropTriggerJob#dispatch_trigger` / `drop_trigger` | Reuses a found trigger comment; `retry_on DispatchFailedError, attempts: 3`; task JSON scan cannot acknowledge human/none | For a workflow-owned decision, a new durable receipt keyed by `(source, event_name, ActiveJob job_id)` stores the first envelope, anchor scope and execution/result. The same serialized job's retries/redeliveries reuse it. |
+| `TriggerActionCommand#post_restart_trigger` / `trigger_restart` | Creates a new comment with `skip_dispatch: true`, then explicitly dispatches it; no automatic retry in this command | A deliberate restart is a fresh invocation. No command receipt or HTTP idempotency guarantee in PR4. Reusing a supplied persisted envelope is deduplicated at workflow execution only. |
+| `CronActionJob` / `cron` | Each `perform` creates a comment and dispatches an inline payload, without a parent | No occurrence/comment-creation deduplication in PR4. A repeat `perform` can create a separate root and notice. A preserved envelope deduplicates only execution of that envelope. |
+| `A2aDispatcher` and `TopicMessageCreateService` / `a2a` | Reply mentions derive a child from the task envelope; the topic tool constructs one child and uses it for that call | Preserve existing parent propagation. Separate tool calls and reconstructed A2A children are distinct deliveries; no new exactly-once A2A guarantee. |
+
+The Drop Trigger receipt is new core-engine state in task 21053, not an assumed
+existing mechanism. `job_id` is the serialized ActiveJob identifier, never a
+queue-provider ID or the retry attempt count; add a serialization/retry test.
+A separately enqueued job has a new ID and is a separate invocation even if its
+arguments or anchor match. This does not deduplicate independent duplicate job
+creation. Do not key a deliberate restart by comment text or mutable loop state.
+
+Resolve workflow ownership without effects, then atomically persist/claim the
+Drop Trigger receipt, its envelope and execution before notification/task effects.
+On redelivery, consult an existing receipt before the old `task_exists_for?`
+scan and before re-selection. Reuse the frozen selection and current safety
+revalidation; concurrent contenders use the receipt's database unique constraint.
+The first committed anchor remains authoritative: a deleted/moved/private anchor
+stops the receipt, and must not be replaced with a newly found comment. No
+receipt is created for ordinary routing or in off/shadow. An existing receipt
+is still recognized after a mode change and stopped without effects, so a later
+re-enable cannot turn its redelivery into a new root. Existing ordinary trigger
+task detection remains outside the new workflow deduplication guarantee.
+
+Introduce an opt-in `dispatch_with_outcome` API through Dispatcher and
+AgentOrchestrator. Its result has `agents`, `workflow_execution_id`,
+`workflow_handled?`, and `reason`; the existing `dispatch` API remains an array of
+real agents. Never insert a sentinel or execution record into that array.
+Both APIs delegate to the same execution path; the wrapper must not dispatch
+twice. Selection preview still returns no runtime acknowledgement or effects.
+
+`workflow_handled?` means a durable workflow-owned outcome exists: admitted work,
+human/none, ineligible/blocked, or a previously recorded outcome all acknowledge
+the producer even with zero agents. It does not mean an agent succeeded or a
+push was delivered. Persistence failure before ownership commits is retryable;
+once ownership commits, its outbox owns infrastructure recovery. Update
+`DropTriggerJob` to raise `DispatchFailedError` only when there is neither a
+workflow acknowledgement nor an ordinary scheduled/handled agent. A missing or
+rejected ordinary route keeps its existing retry behavior. `TriggerActionCommand`
+may keep the array API; its `size` log must continue counting real agents only.
+
+The default Drop Trigger comment contains an explicit agent mention and its new
+topic has a primary agent. Those tiers normally preempt workflow. The human/none
+retry regression must arrange a reused trigger anchor with no effective mention
+and no primary assignment, then separately prove default priority is unchanged.
+Do not claim that every existing Drop Trigger currently reaches human/none.
 
 Queue acceptance is not handler completion. PostgreSQL row locks and unique
 indexes are the concurrency authority; SQLite tests also exercise database
@@ -194,7 +247,7 @@ Proposed fixed PR4 defaults (new decisions, not previously approved):
   workflow admission and require `envelope.depth - root_depth <= 8`. Preserve
   absolute envelope depth; a managed event at absolute depth **64** cannot create
   depth 65. Relative depth 8 may run but cannot create relative depth 9.
-- Maximum admitted workflow-handler agent tasks per correlation: **16**, shared
+- Maximum admitted workflow-handler agent tasks per scope-local chain: **16**, shared
   across workflow fan-out and steps. Reserve the entire selected/admitted set atomically before enqueue;
   if it does not fit, stop the step instead of truncating responders.
 - Maximum workflow executions per chain: **16**, counting agent, human and none
@@ -206,8 +259,10 @@ Proposed fixed PR4 defaults (new decisions, not previously approved):
 - The same rule creative ID may execute only once per chain. Encountering it
   again records `cycle`, including A -> B -> A and self-emission. New root events
   may legitimately run the same rule again.
-- Invalid negative/malformed depth, inconsistent correlation/scope, unknown event,
-  missing anchor, or deleted/private/moved anchor stop without fallback.
+- At workflow admission/publication, invalid negative/malformed depth, an
+  inconsistent persisted chain/envelope, unknown event, missing anchor, or a
+  deleted/private/moved anchor stop without fallback. This is not a global
+  pre-Matcher scope gate for ordinary A2A routing.
 
 These are workflow budgets, not a new global conversation quota. A2A mentions,
 review, primary-agent routing and expression fallback retain their existing
@@ -215,11 +270,40 @@ admission and LoopBreaker policies; they do not consume workflow task budget or
 emit a matched rule's continuation. An emitted event that falls through to normal
 routing remains a normal dispatch. Enforce workflow publication bounds before
 publishing the edge, not by refusing its later fallback result. If a later event
-in the same correlation actually matches a workflow rule, its execution shares
+in the same correlation and scope actually matches a workflow rule, its execution shares
 the workflow budget and rule-cycle guard. A2aDispatcher is a distinct existing
 handoff path; PR4 does not claim to bound every ordinary A2A descendant or provide
 exactly-once delivery for that pre-existing path. This narrowed scope preserves
 existing routing rather than turning a workflow counter into a conversation stop.
+
+### A2A ordering and failure boundary
+
+In-process `AiAgentService#call` dispatches reply mentions before `AiAgentJob`
+transitions to `done`. External `/agent/reply` finalizes the task and fires
+completion callbacks before dispatching mentions. PR4 does not reorder either
+transport. Explicit reply mentions win above workflow and cannot reserve its
+budget, repeat its rule, or emit its configured child. With one workflow task
+slot left, A2A admission therefore cannot take that slot ahead of `emits` in
+either transport. Ordinary scheduler capacity and LoopBreaker can still affect
+scheduling order; this is not a guarantee of identical wall-clock task ordering.
+
+Do not add a workflow rejection gate in `A2aDispatcher`, before or inside its
+`rescue StandardError`. Its existing interaction-before-dispatch behavior stays
+unchanged. New workflow denials are persisted at the workflow execution boundary
+and returned as typed outcomes, not communicated by an exception swallowed by
+that rescue. Workflow `emits` does not call A2aDispatcher or record an A2A
+interaction. No new workflow-budget rejection notice is attached to a reply
+mention, because PR4 never rejects that mention on workflow-budget grounds.
+
+If an in-process parent fails after sending A2A, its already-dispatched ordinary
+A2A descendants retain their existing lifecycle. Their tasks have no workflow
+execution reference, take no workflow reservations to refund, and cannot settle
+or emit the failed parent's configured continuation. An independent ambient
+event that later matches workflow is subject to its own scope-local admission;
+PR4 does not cancel all ordinary descendants sharing a correlation. Within the
+same chain, admitted reservations are not refunded and sealed executions never
+reopen. The existing in-process `review_flow` skip remains: do not synthesize an
+A2A handoff for a review-only completion with no anchor.
 
 Record terminal reason codes: `completed`, `human_handoff`, `ignored`,
 `no_eligible_agent`, `scheduler_rejected`, `task_failed`, `empty_reply`,
@@ -271,8 +355,13 @@ notifications. Respect push preferences using the existing push path. Presence
 must not suppress the durable action-needed inbox entry.
 
 `PushNotificationJob` currently does not enforce `notifications_enabled` itself.
-The workflow notification adapter must check it explicitly; do not assume that
-calling the existing job supplies this preference gate.
+The column is nullable with no default. Proposed PR4 compatibility policy:
+`false` disables workflow push; `true` and `nil` permit it when a device exists.
+Do not use a truthiness gate that silently treats every unset preference as an
+opt-out. Apply the gate only to workflow notices. Ordinary mention/approval
+delivery retains its current behavior, which does not check this column; this
+intentional temporary asymmetry is a product proposal, not an existing invariant
+or a general notification-settings fix.
 The existing push title is Korean in both the FCM v1 and legacy client paths.
 Workflow delivery must use a recipient-localized EN/KO title in both paths,
 including the title used to calculate the FCM byte budget. A backwards-compatible
@@ -287,12 +376,46 @@ provider acceptance but before acknowledgement; do not advertise exactly-once
 push. Recheck permissions before enqueuing a pending push. PR4 has no human
 completion button; replying to the source topic is a separate external event.
 
+Separate persistence from queue delivery explicitly: the chain-locked primary DB
+transaction inserts the unique inbox comment and a workflow-tagged pending push
+delivery, then seals `human_handoff`. No `enqueue_push!`, `perform_later`, or
+provider I/O is allowed inside that transaction, including a nested helper that
+enqueues after its own inner transaction. `CommentNotificationDelivery#enqueue_push!`
+can raise; calling the existing Notifiable helper inside settlement is unsafe.
+After outer commit, attempt push queueing independently. Failure records a
+pending retry without undoing the inbox comment, execution seal or receipt.
+
+Persist the workflow execution reference and localized title on the delivery.
+The existing `CommentPushDeliverySweepJob` must route workflow-tagged rows through
+the same adapter as immediate delivery; it must not call the ungated generic
+enqueue path for them. Both paths recheck mode, recorded owner, scope, public
+anchor, feedback permission and the explicit-false preference. Revalidate again
+in the workflow push worker before handing off to `PushNotificationJob` with
+the localized title; direct generic queueing must not bypass that final check.
+Rows suppressed by a changed policy/permission are terminal delivery outcomes,
+not pending rows that replay when access or settings are re-enabled. The durable
+inbox entry remains; the sealed execution remains `human_handoff`. Push retry
+exhaustion is a delivery failure, never a reason to reopen or relabel execution.
+The sweep must inspect pending deliveries even when their executions are sealed.
+Use the proposed 3-attempt/5-minute-lease recovery policy separately for delivery;
+no external exactly-once guarantee is introduced by those counters.
+
 ## Integration map discovered in current code
 
 - `WorkflowRouting#match_by_workflow` currently discards the matched Rule. Expose
   its decision through Matcher/Selection without side effects, in `on` only.
 - `AgentOrchestrator#dispatch` returns early for an empty selected set. Handle
-  matched human/none before that return; keep ordinary dispatch unchanged.
+  matched human/none before that return; preserve the array compatibility API
+  and expose the new typed outcome to `DropTriggerJob#dispatch_trigger`.
+- `DropTriggerJob#perform`, `#prepare_trigger`, `#task_exists_for?` and
+  `#dispatch_trigger` require the receipt/acknowledgement boundary above.
+  `TriggerActionCommand#post_restart_trigger`, `CronActionJob#perform`, and
+  `Comment#dispatch_to_orchestration` retain the stated producer limitations.
+- `AiAgentService#call`, `AiAgentJob#perform`, `/agent/reply`,
+  `A2aDispatcher#dispatch` and `TopicMessageCreateService#agent_envelope` cover
+  transport order and cross-topic correlation; ordinary routing has no new
+  workflow gate. The topic tool's `reject_unrunnable_self_dispatch!` rejects
+  same-topic or certain unprovable self-routes; those are not its allow conditions.
 - `SystemEvents::Dispatcher` reuses a same-name envelope. Feed it the persisted
 child without `parent:` on retries, or it would generate a fresh child.
 - `AiAgentJob#admit_or_defer!` and `AgentOrchestrator#park_waiter` are the two task
@@ -312,6 +435,9 @@ child without `parent:` on retries, or it would generate a fresh child.
 - `Comment::Notifiable` already has transactional unique inbox insertion and a
   push delivery record, but its recipient policy and private helper cannot be
   called unmodified for human workflow responsibility.
+- `CommentNotificationDelivery#enqueue_push!`, `CommentPushDeliverySweepJob`
+  and both `PushNotificationJob` transports need the workflow-specific delivery
+  adapter, persisted title and outer-commit boundary above.
 
 ## Boundary scenarios and acceptance checks
 
@@ -332,8 +458,18 @@ child without `parent:` on retries, or it would generate a fresh child.
 | Fan-in includes one review-only success without an anchor | No child, even when another responder has a usable reply |
 | escalated transition; repeated external completion callback | Prompt terminal settlement; repeated settlement is a no-op |
 | Duplicate delivery/completion; two concurrent workers | One execution, one task per agent, one child and one budget reservation |
-| Repeated same comment callback in on versus off/shadow | on reuses workflow root receipt; off/shadow retain current producer behavior and create no receipt |
+| New human reply in a workflow topic | Fresh root correlation; never inherits the earlier workflow budget |
+| Drop Trigger human/none with higher-priority tiers absent | Typed acknowledgement with zero agents; no empty-array failure retry |
+| Same serialized Drop Trigger job delivered twice/concurrently or retried after receipt commit | One workflow receipt, envelope, execution and owner notice; no re-selection |
+| Ordinary default Drop Trigger mention/primary; ordinary no-agent result | Priority preserved; missing ordinary route still follows the existing retry policy |
+| Drop Trigger receipt followed by off/shadow and re-enable | Recognize prior delivery, stop pending effects, never create a replacement root |
+| Separately enqueued Drop Trigger job, deliberate restart, repeated cron perform, producer creates another comment | Separate invocation can create another root/notice; no universal producer deduplication claim |
+| Off/shadow producer calls without a prior receipt | No new workflow receipt or execution |
 | Ordinary A2A/primary/fallback after workflow budget exhaustion | Existing admission policy still applies; only new workflow effects stop |
+| Reply mentions another agent with one workflow task slot left, in-process versus external reply | A2A does not consume the workflow slot/cycle guard; emits requires successful settlement in both paths |
+| In-process parent fails after A2A dispatch | Parent cannot emit; ordinary A2A descendants keep their lifecycle, with no workflow budget reservation/refund |
+| topic_message_create to an allowed different topic with the same correlation | Preserve ordinary routing; no source-chain scope denial. A workflow match there uses a separate scoped chain |
+| Persisted workflow outbox child changes topic | scope_changed; no cross-topic workflow publication |
 | More than 200 resolved rules | Existing Resolver cap/order/warning retained; no new search past the cap during chaining |
 | Crash after completion commit or before enqueue | Sweep recovers persisted outbox without new envelope IDs |
 | Queue rejects or partially accepts jobs | Bounded retries, no duplicate durable admissions or Arbiter rotation |
@@ -346,6 +482,10 @@ child without `parent:` on retries, or it would generate a fresh child.
 | Scope/mode/permission/anchor changes while queued | Fail closed with a reason; no new child or notification |
 | Owner present, absent, AI, no permission; duplicate delivery | Exactly one eligible human owner inbox entry, otherwise recorded block |
 | EN/KO recipient, v1/legacy push, notifications disabled | Localized notice and push title; disabled push leaves the durable inbox notice intact |
+| notifications_enabled is nil / true / false | nil and true permit workflow push with devices; only false suppresses it; ordinary notification behavior unchanged |
+| Push queue raises after human handoff commit | One sealed execution and inbox entry remain; pending delivery retried independently |
+| Crash between handoff commit and push enqueue; concurrent sweep | Recover the same delivery and title using a lease; no duplicate inbox entry or execution |
+| Owner/access/mode/preference changes before push sweep or worker handoff | Suppress the pending push durably; generic sweep cannot bypass checks or replay after re-enable |
 | Unreadable rule title; private source comment | No rule text leaked; no private source handed off |
 | Emitted event over an already-read comment | New workflow task; no history drop or unrelated coalescing |
 | Generated reply contains mentions | No replay of root/response textual mentions; primary priority preserved |
@@ -396,7 +536,46 @@ not a claim that the reviewer has signed off:
 | Human ownership and private quotes | `effective_origin` human owner, current feedback permission, public anchor, generic link without quotes |
 | Push preference and language | Explicit preference gate and localized title in both transports with byte-budget coverage |
 
-Technical re-review remains requested in topic 19327 (message 134506). Product
-decisions still pending are completion-based emission, the owner handoff, the
-login/review terminal outcomes, and fixed depth/task/step/retry limits. No pending
-decision is inferred from a report posted using a human-account CLI token.
+### Second review: producer, A2A and push boundaries
+
+The second report is message 134505 in topic 19327, cross-posted as 134516 in
+19326. The following is the author's revised proposal, pending technical review.
+
+| Review item | Revised specification |
+| --- | --- |
+| A-1: callback receipt misses Drop Trigger empty-result retries | Remove callback-only receipt; add an opt-in typed outcome and acknowledge durable human/none/blocked outcomes without fake agents |
+| A-2: unspecified producer keys | List all five source families; add a Drop Trigger receipt using serialized `job_id`; explicitly exclude independent job creation, restart-request and cron-occurrence deduplication |
+| A-3: human comments and correlation | New human comment dispatch starts a fresh root, even in an active workflow topic |
+| B-1: transport-dependent A2A/emits ordering | Keep transport order; explicit A2A mentions do not share workflow reservations or cycle checks |
+| B-2: A2A rescue and interaction order | Add no workflow gate in A2aDispatcher; persist workflow denials at the execution boundary; emits never records an A2A interaction |
+| B-3: parent failure after A2A dispatch | Ordinary descendants keep their lifecycle and cannot emit the parent's continuation; no workflow reservation was consumed or refunded by them |
+| B-4: correlation crosses topics | Composite scope-local chain identity; ordinary cross-topic A2A is outside the source chain, while persisted workflow children must retain their scope |
+| C-1/C-2: nullable preference and notification asymmetry | Propose nil/true as push-enabled, false as disabled, for workflow notices only; preserve ordinary notifications and explicitly identify the product decision |
+| C-3: enqueue raises during handoff | Commit inbox entry, pending delivery and execution seal before queue I/O; independent recovery must handle sealed executions and preserve the inbox entry |
+
+Two factual qualifications matter when implementing the regression fixtures:
+
+- `TriggerActionCommand#post_restart_trigger` creates a new comment before its
+  explicit dispatch; it does not redispatch an old comment in the inspected code.
+  `CronActionJob` also creates a comment on each `perform`. The confirmed automatic
+  same-comment retry is DropTriggerJob, not three assumed root producers.
+- The topic tool's same-topic/principal condition raises from
+  `reject_unrunnable_self_dispatch!`; it is a rejection condition, not permission
+  to post. Other authorized topics are allowed and still inherit correlation, so
+  the review's cross-topic concern remains valid.
+
+Review source files checked in worktree20945 (runtime unchanged):
+`comment.rb`, `drop_trigger_job.rb`, `creatives/trigger_action_command.rb`,
+`cron_action_job.rb`, `system_events/dispatcher.rb`,
+`orchestration/agent_orchestrator.rb`, `ai_agent/a2a_dispatcher.rb`,
+`tools/topic_message_create_service.rb`, `ai_agent_service.rb`, `ai_agent_job.rb`,
+`api/v1/agents_controller.rb`, `comment/notifiable.rb`,
+`comment_notification_delivery.rb`, `comment_push_delivery_sweep_job.rb`,
+`push_notification_job.rb`, and `db/schema.rb`.
+
+Product decisions still pending are completion-based emission, owner handoff,
+login/review terminal outcomes, fixed depth/task/step/retry limits, the scope-local
+chain boundary, the stated producer deduplication limits, and workflow-only push
+preference semantics. No pending decision is inferred from a report posted using
+a human-account CLI token. Task 21052 remains incomplete until this concrete
+contract is settled; runtime implementation, PR and preview remain unstarted.
