@@ -210,6 +210,40 @@ class CreativesControllerTypeTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "stale linked context updates preserve the committed workflow type and settings" do
+    linked = create_workflow_creative(description: "Link", origin: @creative)
+    stale_origin = linked.effective_origin
+    latest = { "kind" => "workflow", "workflow" => { "mode" => "shadow" }, "disabled_context_ids" => [ 123 ] }
+    Creative.where(id: stale_origin.id).update_all(data: latest)
+
+    Creative.stub(:find, linked) do
+      patch update_contexts_creative_path(linked), params: { context_ids: [ 456 ], disabled_self_context: true }, as: :json
+    end
+    assert_response :success
+    assert_equal latest.merge("context_ids" => [ 456 ], "disabled_self_context" => true), @creative.reload.data
+    assert_nil linked.reload.data&.dig("context_ids")
+  end
+
+  test "metadata trigger notification runs after releasing the creative transaction" do
+    transactions = Creative.connection.open_transactions
+    notifier_class = Collavre::Creatives::DropTriggerMissingAgentNotifier
+    original_new = notifier_class.method(:new)
+    notified = false
+    build = lambda do |creative:|
+      notified = true
+      assert_equal transactions, Creative.connection.open_transactions
+      original_new.call(creative: creative)
+    end
+
+    notifier_class.stub(:new, build) do
+      patch update_metadata_creative_path(@creative), params: { data: { trigger: { on_child_enter: true } }.to_json }, as: :json
+    end
+
+    assert_response :success
+    assert notified
+    assert @creative.reload.drop_trigger_enabled?
+  end
+
   private
 
   def share(creative, user, permission)

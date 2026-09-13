@@ -6,7 +6,7 @@ module Collavre
 
     included do
       before_action :validate_type_input, only: %i[create update]
-      around_action :lock_creative_content, only: %i[update update_metadata]
+      around_action :lock_creative_content, only: %i[update update_metadata update_contexts]
       around_action :lock_rule_authoring, only: %i[create_workflow_rule update_workflow_rule]
     end
 
@@ -41,7 +41,13 @@ module Collavre
       workflow = action_name == "create_workflow_rule" ? @creative.effective_origin(Set.new) : @creative.parent
       return yield unless workflow
 
-      workflow.with_lock { yield }
+      workflow.with_lock do
+        if action_name == "update_workflow_rule"
+          @creative.with_lock { yield }
+        else
+          yield
+        end
+      end
     end
 
     def lock_creative_content
@@ -51,6 +57,9 @@ module Collavre
         yield
         raise ActiveRecord::Rollback if response.status >= 400
       end
+      # Comment insertion takes a topic FK lock; release the creative first to
+      # avoid reversing the topic -> creative order used by trigger/topic jobs.
+      notify_drop_trigger_missing_agent!(@newly_enabled_drop_trigger) if @newly_enabled_drop_trigger
     end
   end
 end

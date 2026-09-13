@@ -438,7 +438,7 @@ module Collavre
       previous_enabled = creative.drop_trigger_enabled?
 
       if creative.update(data: new_data)
-        notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
+        @newly_enabled_drop_trigger = creative if !previous_enabled && creative.drop_trigger_enabled?
         head :ok
       else
         render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity

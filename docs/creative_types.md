@@ -21,7 +21,7 @@ reopening their creative. Arbitrary JSON and null are rejected.
 
 Type updates require write access to the actual placement and origin. A change
 across the Workflow boundary additionally requires admin permission, matching
-rule management. Body, type, metadata and rule-authoring requests lock and reload the origin before changing JSON data;
+rule management. Body, type, metadata and context requests lock and reload the origin before changing JSON data;
 a rejected request rolls back linked placement changes as well. Archived and
 externally managed creatives cannot change type.
 
@@ -51,3 +51,35 @@ Changing types/settings does not publish workflow events. Existing comment/task
 publication, default shadow mode, unmatched `on` fallback to `routing_expression`,
 and terminal matched human/none/ineligible routing remain unchanged. The PR5
 removal/seed plan and the existing task 21056 duration-test failure are excluded.
+
+## Concurrent metadata writers
+
+Read-modify-write operations must lock and reload the row **before reading** its
+JSON. Locking only the final UPDATE cannot prevent an older snapshot from
+replacing a newly committed type or unrelated settings.
+
+| Writer | Serialization |
+| --- | --- |
+| Body/type, metadata, contexts | Effective origin row |
+| Rule creation / update | Workflow row first; existing rule row second |
+| Container toggle | Effective origin row; notification after release |
+| Pause / resume / restart | Placement row holding the loop; eligibility checked after reload |
+| Loop check / verify jobs | Placement row; merge only requested loop fields |
+| Drop-trigger initialization | Topic first, then child row; check existing loop after reload |
+| MCP body update | Effective origin row before preparing Markdown |
+| Attachment embed / removal | Effective origin row before deriving body and Markdown demotion |
+
+Trigger loops remain placement-local; linked container settings remain
+origin-local. Metadata's missing-agent notification runs after the creative
+transaction releases its lock, avoiding a creative-to-topic foreign-key lock
+order opposite to the topic-to-creative order of trigger initialization and topic
+moves. The container action also posts its notification outside its row lock.
+
+The writer audit additionally found existing serialization in human-comment loop
+resumption (`creative.with_lock`), Linear inbound updates/removal, the Linear
+outbound job, and History application (locked rows before snapshot validation).
+GitHub Markdown source updates affect externally managed, read-only creatives,
+which cannot enter the type-transition path. New creative/inbox/import creation
+has no pre-existing row/type to overwrite. Any future writer on an existing
+mutable creative, including a body writer whose callbacks change Markdown keys,
+must follow the same lock-before-read contract.
