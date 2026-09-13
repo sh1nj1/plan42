@@ -302,12 +302,14 @@ module Collavre
         Settlement.new(execution).call
         next_rule = create_workflow_rule(parent: @workflow, event: "workflow_step_completed", handler: { "type" => "none" })
         child = execution.outboxes.find_by!(key: "child")
-        Publication.new(child).call
+        token = child.reload.claim_token || child.claim!
+        child.reload.update!(state: "delivering")
+        Publication.new(child, token: token).call
         following = execution.chain.executions.find_by!(rule_id: next_rule.id)
         assert_equal "ignored", following.reason
         assert_equal child.context["event"], following.context["event"]
         assert_no_difference "Execution.count" do
-          Publication.new(child).call
+          Publication.new(child, token: token).call
         end
       end
 
@@ -827,10 +829,18 @@ module Collavre
         assert_equal "pending", child.reload.state
         accepted = enqueued_jobs.select { |job| job[:job] == AiAgentJob }
         assert_equal [ @agent.id ], accepted.map { |job| job[:args].first }
-        deliver_child(child)
+        completed = Task.create!(name: "Accepted fallback", agent: @agent, creative: @creative,
+          topic_id: @topic.id, status: "running", trigger_event_name: "workflow_step_completed", trigger_event_payload: child.context)
+        succeed(completed)
+        assert_nil completed.workflow_execution_id
+        assert_equal({ @agent.id.to_s => "handled", second.id.to_s => "pending" }, child.ordinary_delivery)
+        # Routing edits and a new matching workflow must not replace this frozen ordinary route.
+        second.update!(routing_expression: "false")
+        create_workflow_rule(parent: @workflow, event: "workflow_step_completed", handler: { "type" => "human" })
+        Orchestration::Selection.stub(:new, ->(*) { flunk "must not reselect" }) { deliver_child(child) }
         assert_equal "completed", child.reload.state
         jobs = enqueued_jobs.select { |job| job[:job] == AiAgentJob }
-        assert_includes jobs.map { |job| job[:args].first }, second.id
+        assert_equal [ @agent.id, second.id ], jobs.map { |job| job[:args].first }
         assert jobs.all? { |job| ActiveJob::Arguments.deserialize(job[:args]).last["event"] == child.context["event"] }
       end
 
@@ -843,6 +853,181 @@ module Collavre
         AiAgentJob.stub(:perform_later, nil) { deliver_child(child) }
         assert_equal "pending", child.reload.state
         assert_equal 2, child.attempts
+      end
+
+      test "fallback retries retain a round robin selection after rejection" do
+        child = fallback_child
+        second = @agent.dup
+        second.assign_attributes(email: "round-robin-fallback@example.test", name: "Round robin fallback")
+        second.save!
+        CreativeShare.create!(creative: @creative, user: second, shared_by: @owner, permission: :feedback)
+        CreativeSharesCache.create!(creative: @creative, user: second, permission: :feedback)
+        OrchestratorPolicy.create!(policy_type: "arbitration", config: { "strategy" => "round_robin", "max_responders" => 1 })
+        AiAgentJob.stub(:perform_later, nil) { deliver_child(child) }
+        frozen_ids = child.reload.ordinary_delivery.keys.map(&:to_i)
+        assert_equal 1, frozen_ids.size
+        Orchestration::Selection.stub(:new, ->(*) { flunk "must not rotate again" }) { deliver_child(child) }
+        assert_equal frozen_ids, enqueued_jobs.select { |job| job[:job] == AiAgentJob }.map { |job| job[:args].first }
+      end
+
+      test "fallback acknowledgement survives a failed delayed waiting notice" do
+        child = fallback_child
+        OrchestratorPolicy.create!(policy_type: "scheduling", config: { "max_concurrent_jobs" => 0 })
+        Orchestration::WaitingNoticeManager.stub(:post, ->(*) { raise ActiveRecord::StatementInvalid }) { deliver_child(child) }
+        assert_equal "pending", child.reload.state
+        assert_equal "handled", child.ordinary_delivery[@agent.id.to_s]
+        assert_no_difference -> { enqueued_jobs.count { |job| job[:job] == AiAgentJob } } do
+          deliver_child(child)
+        end
+        assert_equal "completed", child.reload.state
+      end
+
+      test "fallback rejection after access revocation is terminal without a substitute" do
+        child = fallback_child
+        recipient = @agent.dup
+        recipient.assign_attributes(email: "revoked-fallback@example.test", name: "Revoked fallback")
+        recipient.save!
+        CreativeShare.create!(creative: @creative, user: recipient, shared_by: @owner, permission: :feedback)
+        CreativeSharesCache.create!(creative: @creative, user: recipient, permission: :feedback)
+        @agent.update!(routing_expression: "false")
+        AiAgentJob.stub(:perform_later, nil) { deliver_child(child) }
+        assert_equal({ recipient.id.to_s => "pending" }, child.reload.ordinary_delivery)
+        CreativeShare.where(creative: @creative, user: recipient).delete_all
+        # Deliberately leave the cached share behind: the journal uses current permission.
+        assert_no_difference -> { enqueued_jobs.count { |job| job[:job] == AiAgentJob } } do
+          deliver_child(child)
+        end
+        assert_equal "completed", child.reload.state
+        assert_equal "rejected", child.ordinary_delivery[recipient.id.to_s]
+      end
+
+      test "fallback scheduling rejection is persisted before another recipient can fail" do
+        child = fallback_child
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) { |agents, **| agents.map { |agent| { agent: agent, timing: :rejected } } }
+        Orchestration::Scheduler.stub(:new, scheduler) { deliver_child(child) }
+        assert_equal "completed", child.reload.state
+        assert_equal "rejected", child.ordinary_delivery[@agent.id.to_s]
+      end
+
+      test "fallback queued waiter is acknowledged before its waiting notice" do
+        child = fallback_child
+        OrchestratorPolicy.create!(policy_type: "scheduling", config: { "topic_max_concurrent_jobs" => 0 })
+        Orchestration::WaitingNoticeManager.stub(:post, ->(*) { raise ActiveRecord::StatementInvalid }) { deliver_child(child) }
+        waiter = Task.find_by!(agent: @agent, status: "queued", trigger_event_name: "workflow_step_completed")
+        assert_nil waiter.workflow_execution_id
+        assert_equal "handled", child.reload.ordinary_delivery[@agent.id.to_s]
+        assert_no_difference "Task.count" do
+          deliver_child(child)
+        end
+        assert_equal "completed", child.reload.state
+      end
+
+      test "fallback records a scope-denied waiter without waiting for an absent task" do
+        child = fallback_child
+        OrchestratorPolicy.create!(policy_type: "scheduling", config: { "topic_max_concurrent_jobs" => 0 })
+        Orchestration::TopicSlot.stub(:matches_context?, false) { deliver_child(child) }
+        assert_equal "completed", child.reload.state
+        assert_equal "rejected", child.ordinary_delivery[@agent.id.to_s]
+      end
+
+      test "fallback missing recipients and frozen empty selections do not reselect" do
+        child = fallback_child
+        child.update!(ordinary_delivery: { "-1" => "pending" })
+        Orchestration::Selection.stub(:new, ->(*) { flunk "must not reselect" }) { deliver_child(child) }
+        assert_equal "completed", child.reload.state
+        assert_equal({ "-1" => "rejected" }, child.ordinary_delivery)
+        child.update!(state: "pending", ordinary_delivery: {})
+        Orchestration::Selection.stub(:new, ->(*) { flunk "empty is a frozen selection" }) { deliver_child(child) }
+        assert_equal "completed", child.reload.state
+      end
+
+      test "fallback stale leases cannot overwrite a new recipient journal or enqueue" do
+        child = fallback_child
+        token = child.reload.claim_token || child.claim!
+        child.reload.update!(state: "delivering")
+        stale = FallbackDelivery.new(child, token: token)
+        stale.capture!([ @agent ])
+        child.update!(claim_token: "replacement", ordinary_delivery: { @agent.id.to_s => "handled" })
+        assert_raises(ActiveRecord::StaleObjectError) { stale.record!(@agent, "pending") }
+        assert_raises(ActiveRecord::StaleObjectError) { stale.permitted?(@agent) }
+        child.deliver!(token)
+        assert_equal({ @agent.id.to_s => "handled" }, child.reload.ordinary_delivery)
+        assert_equal "replacement", child.claim_token
+      end
+
+      test "an outbox worker cannot adopt the replacement token when reload resumes" do
+        child = fallback_child
+        token = child.reload.claim_token || child.claim!
+        original_reload = child.method(:reload)
+        replacement = nil
+        child.stub(:reload, ->(*) {
+          Outbox.where(id: child.id).update_all(claimed_at: 6.minutes.ago)
+          contender = Outbox.find(child.id)
+          replacement = contender.claim!
+          assert replacement
+          contender.reload.update!(state: "delivering", ordinary_delivery: { @agent.id.to_s => "pending" })
+          original_reload.call
+        }) do
+          assert_no_difference -> { enqueued_jobs.count { |job| job[:job] == AiAgentJob } } do
+            child.deliver!(token)
+          end
+        end
+        assert_equal replacement, child.reload.claim_token
+        assert_equal "delivering", child.state
+        assert_equal({ @agent.id.to_s => "pending" }, child.ordinary_delivery)
+        Publication.new(child, token: replacement).call
+        assert_equal({ @agent.id.to_s => "handled" }, child.reload.ordinary_delivery)
+      end
+
+      test "a stale publication safety failure cannot clear a replacement lease" do
+        child = fallback_child
+        token = child.reload.claim_token || child.claim!
+        child.reload.update!(state: "delivering")
+        publication = Publication.new(child, token: token)
+        publication.stub(:reason, -> {
+          Outbox.where(id: child.id).update_all(claimed_at: 6.minutes.ago)
+          contender = Outbox.find(child.id)
+          assert contender.claim!
+          contender.reload.update!(state: "delivering")
+          "scope_changed"
+        }) { publication.call }
+        assert_equal "delivering", child.reload.state
+        assert_not_equal token, child.claim_token
+        assert_nil child.reason
+      end
+
+      test "a current publication safety failure stops only its child" do
+        child = fallback_child
+        child.context["event"]["name"] = "comment_created"
+        child.save!
+        deliver_child(child)
+        assert_equal "failed", child.reload.state
+        assert_equal "invalid_envelope", child.reason
+        assert_nil child.claim_token
+        assert_equal "completed", child.execution.reload.reason
+      end
+
+      test "a pending fallback recipient loses assignment without restarting handled recipients" do
+        child = fallback_child
+        child.update!(ordinary_delivery: { "-1" => "handled", @agent.id.to_s => "pending" })
+        @topic.update_column(:primary_agent_id, users(:channel_bot).id)
+        assert_no_difference -> { enqueued_jobs.count { |job| job[:job] == AiAgentJob } } do
+          deliver_child(child)
+        end
+        assert_equal "completed", child.reload.state
+        assert_equal({ "-1" => "handled", @agent.id.to_s => "rejected" }, child.ordinary_delivery)
+      end
+
+      test "fallback acknowledges ordinary running-task duplicate handling" do
+        child = fallback_child
+        Task.create!(name: "Already answering", agent: @agent, creative: @creative, topic_id: @topic.id,
+          status: "running", trigger_event_name: "comment_created", trigger_event_payload: child.context)
+        assert_no_difference [ "Task.count", -> { enqueued_jobs.count { |job| job[:job] == AiAgentJob } } ] do
+          deliver_child(child)
+        end
+        assert_equal "completed", child.reload.state
+        assert_equal "handled", child.ordinary_delivery[@agent.id.to_s]
       end
 
       test "ordinary dispatch keeps legacy enqueue handling without child acknowledgement" do

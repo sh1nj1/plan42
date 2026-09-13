@@ -1136,6 +1136,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_13_000100) do
     t.datetime "due_at", null: false
     t.integer "execution_id", null: false
     t.string "key", null: false
+    t.json "ordinary_delivery"
     t.string "reason"
     t.bigint "reply_comment_id"
     t.string "state", default: "pending", null: false

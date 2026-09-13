@@ -13,6 +13,7 @@ module Collavre
     #
     class AgentOrchestrator
       include WorkflowDispatch
+      include JobEnqueue
       def self.dispatch(event_name, context, **options)
         new(event_name: event_name, context: context).dispatch(**options)
       end
@@ -454,92 +455,6 @@ module Collavre
       def policy_resolver = @policy_resolver ||= PolicyResolver.new(@context)
 
       def scheduler = @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
-
-      def enqueue_jobs(decisions, context_for:, require_enqueue_ack: false)
-        decisions.filter_map do |decision|
-          context = context_for_agent(agent = decision[:agent], context_for)
-          log_decision(decision)
-
-          # A rejected decision is not a dispatch, so neither guard below
-          # applies to it. Both ask "is this dispatch redundant?", which is only
-          # a question about work that was going to run: the scheduler has
-          # already refused this one, over an exhausted quota or a loop breaker
-          # that fired. Recording a drop against it would make
-          # DeliveryRecord.restore! owe a turn for work nothing scheduled, and
-          # the restore enqueues AiAgentJob directly — past the very check that
-          # did the refusing, so the quota is exceeded or the broken loop
-          # restarted. Reporting the agent would be the same mistake in the
-          # other direction: nothing is answering, and an empty result is how a
-          # caller learns that.
-          next nil if decision[:timing] == :rejected
-
-          # Guard: skip if agent already has a running task for this comment.
-          # Handled, not unscheduled — see the drop guard below for why the two
-          # are different answers and what reads them apart.
-          comment_id = context.dig("comment", "id")
-          if Workflow::TaskAdmission.duplicate_dispatch?(context, agent)
-            Rails.logger.warn(
-              "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
-              "for comment #{comment_id}"
-            )
-            next agent
-          end
-
-          # Guard: an in-flight turn has already been given this comment. It
-          # reached the agent inside that turn's chat history, so a turn of its
-          # own would answer something the agent has read — and parking it as a
-          # waiter costs a "⏳" notice and a promotion round-trip for a reply
-          # nobody is waiting on. Drop it instead of queueing it.
-          #
-          # Nothing is recorded for a session-backed agent (it is sent only its
-          # :trigger), so nothing is dropped for one either — those bursts still
-          # go through TaskCoalescer, which merges rather than discards.
-          #
-          # Dropped only if the covering turn will take responsibility for it:
-          # claim_drop! re-reads that turn's status under a lock and refuses if
-          # it has already ended, because a turn that has ended has already run
-          # its restore and would leave this comment with nobody to answer it.
-          #
-          # The agent is still returned. What this method reports is who will
-          # answer, not how many turns it started — a :deferred decision
-          # returns its agent although all it created was a queued row — and a
-          # drop says this agent is answering that comment inside a turn
-          # already running. Reporting nothing is how a caller learns *no agent
-          # was scheduled*: DropTriggerJob#dispatch_trigger raises
-          # DispatchFailedError on an empty result and retries a trigger that
-          # was covered, three times, and calls the job failed at the end of it.
-          covering = DeliveryRecord.covering_task(agent, comment_id, context, @event_name)
-          if covering && DeliveryRecord.claim_drop!(covering, comment_id)
-            Rails.logger.info(
-              "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
-              "delivered to agent #{agent.id} by in-flight task #{covering.id}"
-            )
-            next agent
-          end
-
-          case decision[:timing]
-          when :immediate, :delayed
-            enqueue_agent_job(agent, context, decision, require_enqueue_ack: require_enqueue_ack)
-            post_waiting_notice(agent, decision) if decision[:timing] == :delayed
-            agent
-          when :deferred
-            next unless (waiter = park_waiter(agent, context))
-
-            post_waiting_notice(agent, decision, waiter: waiter)
-            agent
-          when :rejected
-            nil
-          end
-        end
-      end
-
-      def enqueue_agent_job(agent, context, decision, require_enqueue_ack:)
-        queue = decision[:timing] == :delayed ? AiAgentJob.set(wait: decision[:delay]) : AiAgentJob
-        job = queue.perform_later(agent.id, @event_name, context)
-        # Child publication must remain recoverable when an adapter rejects
-        # enqueue without raising. Keep the legacy array API's default behavior.
-        raise ActiveJob::EnqueueError if require_enqueue_ack && !(job && job.successfully_enqueued?)
-      end
 
       def context_for_agent(agent, context_for)
         override = context_for&.call(agent)

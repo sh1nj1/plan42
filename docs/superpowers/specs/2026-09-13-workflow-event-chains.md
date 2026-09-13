@@ -208,6 +208,23 @@ indexed execution reference on tasks. Normal tasks retain a null reference.
 - If scheduling fails after some jobs were enqueued, retry only missing durable
   admissions. Already admitted tasks keep their identity and frozen fan-in set.
   Do not re-run Arbiter rotation or grow the selected set on retry.
+- For a published child that selects ordinary routing, persist its selected
+  recipient IDs and each recipient's `pending`, `handled`, or `rejected` outcome
+  in nullable `workflow_outboxes.ordinary_delivery` JSON before completing the
+  child. Freeze that ordinary route before queue I/O, including an empty set.
+  On recovery, bypass matching and Arbiter and schedule only pending recipients;
+  new rules, expression edits and a completed accepted Task cannot add or repeat
+  recipients. Recheck current access, primary assignment and Scheduler policy for
+  missing recipients without substituting another agent. Missing users and
+  rejected admissions are terminal recipient outcomes. Ordinary duplicate/history
+  handling and queued waiters also count as handled. Persist queue acceptance or
+  waiter creation before posting a waiting notice or continuing fan-out.
+  Writes require the current unexpired outbox transport token. Ordinary Tasks
+  still have no workflow execution reference and take no workflow task budget.
+  Queue acceptance and the primary database acknowledgement are not atomic: a
+  process crash or acknowledgement failure between them can still duplicate
+  ordinary delivery. This does not add exactly-once provider/queue semantics or
+  recover a provider-accepted job lost after its durable acknowledgement.
 - Infrastructure retries use 3 attempts, followed by a recorded terminal failure.
   An agent/event outbox worker has a 5-minute lease (push uses the separate
   state-specific deadlines below); recovery inspects durable task/execution

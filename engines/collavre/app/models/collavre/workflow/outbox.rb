@@ -32,7 +32,7 @@ module Collavre
       def deliver!(token)
         return unless owned(token).where(state: "enqueued").update_all(state: "delivering") == 1
         reload
-        agent_id ? Materialization.new(self).call : Publication.new(self).call
+        agent_id ? Materialization.new(self).call : Publication.new(self, token: token).call
         owned(token).update_all(state: "completed", claim_token: nil, claimed_at: nil)
       rescue StandardError => error
         owned(token).update_all(state: "pending", claim_token: nil, claimed_at: nil)

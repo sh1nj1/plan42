@@ -3,18 +3,27 @@
 module Collavre
   module Workflow
     class Publication
-      def initialize(row)
+      def initialize(row, token:)
         @row = row
+        @token = token
         @execution = row.execution
       end
 
       def call
+        return unless @row.owned(@token).where(state: "delivering").exists?
         error = reason
-        return @row.finish!(error) if error
-        SystemEvents::Dispatcher.dispatch_with_outcome(@execution.emits, @row.context, source: "workflow", require_enqueue_ack: true)
+        return stop!(error) if error
+        delivery = FallbackDelivery.new(@row, token: @token)
+        SystemEvents::Dispatcher.dispatch_with_outcome(@execution.emits, @row.context, source: "workflow",
+          selected_agents: delivery.pending_agents, ordinary_delivery: delivery, require_enqueue_ack: true)
       end
 
       private
+
+      def stop!(error)
+        @row.owned(@token).where(state: "delivering").update_all(
+          state: "failed", reason: error, claim_token: nil, claimed_at: nil)
+      end
 
       def reason
         safety = Safety.new(@execution)
