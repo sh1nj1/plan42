@@ -64,15 +64,7 @@ module Collavre
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
             "no longer permits the recorded agent (agent=#{agent.id})"
           )
-          Workflow::FixedAnchor.validate!(task)
-          task.cancel_if_active!
-          # A pending_approval task kept its slot across the pause (the
-          # ApprovalPendingError rescue sets should_release = false), and this
-          # early return skips the ensure block that would give it back, so
-          # release explicitly. release! is idempotent, so a queued task that
-          # never reserved one is unaffected.
-          Orchestration::ResourceTracker.for(agent).release!(task.id)
-          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          reject_assignment_resumption(task, agent)
           return
         end
 
@@ -257,13 +249,23 @@ module Collavre
         "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
         "session offline (no live presence)"
       )
-      task.update!(status: "cancelled")
       if task.workflow?
-        Workflow::TaskAdmission.cleanup(task)
-      elsif task.trigger_event_payload&.key?("topic")
-        Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+        Workflow::TaskAdmission.reject_resumption!(task)
+      else
+        task.update!(status: "cancelled")
+        if task.trigger_event_payload&.key?("topic")
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+        end
       end
       true
+    end
+
+    def reject_assignment_resumption(task, agent)
+      return Workflow::TaskAdmission.reject_resumption!(task) if task.workflow?
+      task.cancel_if_active!
+      # Approval-paused work holds its reservation without a worker ensure block.
+      Orchestration::ResourceTracker.for(agent).release!(task.id)
+      Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
     end
 
     # A terminal status can be written by Stop/StuckDetector after the service's

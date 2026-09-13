@@ -617,6 +617,53 @@ module Collavre
         assert_equal 0, tracker.active_jobs
       end
 
+      test "a stale resumption never cancels or releases another running worker" do
+        execution = execute
+        task = materialize(execution, status: "pending")
+        stale = Task.find(task.id)
+        task.update_columns(status: "running")
+        tracker = Orchestration::ResourceTracker.for(@agent)
+        tracker.reserve!(task.id)
+        Settlement.new(execution).stop!("task_failed")
+        assert_not TaskAdmission.validate_start!(stale)
+        TaskAdmission.reject_resumption!(stale)
+        assert task.reload.running?
+        assert_equal 1, tracker.active_jobs
+        assert_nil task.workflow_stop_reason
+      end
+
+      test "late offline and assignment denials preserve a worker that has started" do
+        execution = execute
+        task = materialize(execution, status: "pending_approval")
+        tracker = Orchestration::ResourceTracker.for(@agent)
+        tracker.reserve!(task.id)
+        stale = Task.find(task.id)
+        task.update_columns(status: "running")
+        job = AiAgentJob.new
+        @agent.stub(:claude_channel_agent?, true) do
+          @agent.stub(:claude_channel_online?, false) do
+            assert job.send(:reject_offline_resumption?, stale, @agent)
+          end
+        end
+        job.send(:reject_assignment_resumption, stale, @agent)
+        assert task.reload.running?
+        assert_equal 1, tracker.active_jobs
+        assert execution.reload.open?
+      end
+
+      test "assignment denial after input withdrawal preserves its safety reason and releases resources" do
+        execution = execute
+        task = materialize(execution, status: "pending_approval")
+        tracker = Orchestration::ResourceTracker.for(@agent)
+        tracker.reserve!(task.id)
+        @comment.update_columns(private: true)
+        AiAgentJob.new.send(:reject_assignment_resumption, task, @agent)
+        assert task.reload.cancelled?
+        assert_equal "permission_revoked", task.workflow_stop_reason
+        assert_equal "permission_revoked", execution.reload.reason
+        assert_equal 0, tracker.active_jobs
+      end
+
       test "raw malformed depth is rejected before envelope coercion can authorize execution" do
         @context["event"]["depth"] = "not-a-depth"
         assert_equal "invalid_envelope", execute.reason

@@ -4,6 +4,8 @@ module Collavre
   module Workflow
     # Called under the existing topic-slot transaction. Never takes a chain lock.
     module TaskAdmission
+      RESUMPTION_STATUSES = %w[pending queued pending_approval].freeze
+
       def self.duplicate_dispatch?(context, agent)
         comment_id = context&.dig("comment", "id")
         !DispatchIdentity.valid?(context, agent.id) && comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
@@ -45,14 +47,27 @@ module Collavre
 
       def self.validate_start!(task)
         return true unless task.workflow?
-        return false unless task.active?
-        valid = FixedAnchor.validate!(task)
-        if valid && !task.workflow_execution.reload.open? && task.status.in?(%w[pending queued])
-          task.cancel_if_active!
-          valid = false
+        outcome = task.with_lock do
+          next :duplicate unless RESUMPTION_STATUSES.include?(task.status)
+          next :denied unless FixedAnchor.validate!(task)
+          if !task.pending_approval? && !task.workflow_execution.reload.open?
+            task.cancel_if_active!(statuses: RESUMPTION_STATUSES)
+            :denied
+          else
+            :valid
+          end
         end
-        cleanup(task) unless valid
-        valid
+        cleanup(task) if outcome == :denied
+        outcome == :valid
+      end
+
+      def self.reject_resumption!(task)
+        denied = task.with_lock do
+          next false unless RESUMPTION_STATUSES.include?(task.status)
+          task.cancel_if_active!(statuses: RESUMPTION_STATUSES) if FixedAnchor.validate!(task)
+          true
+        end
+        cleanup(task) if denied
       end
 
       def self.cleanup(task)
