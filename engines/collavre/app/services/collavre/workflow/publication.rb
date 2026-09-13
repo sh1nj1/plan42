@@ -11,7 +11,7 @@ module Collavre
       def call
         error = reason
         return @row.finish!(error) if error
-        SystemEvents::Dispatcher.dispatch_with_outcome(@execution.emits, @row.context, source: "workflow")
+        SystemEvents::Dispatcher.dispatch_with_outcome(@execution.emits, @row.context, source: "workflow", require_enqueue_ack: true)
       end
 
       private

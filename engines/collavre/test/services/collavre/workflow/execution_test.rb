@@ -767,7 +767,108 @@ module Collavre
         assert_equal 3, row.attempts
       end
 
+      test "rejected ordinary child enqueue is retried with the persisted envelope" do
+        child = fallback_child
+        original = child.context.deep_dup
+        adapter = AiAgentJob.queue_adapter
+        adapter.stub(:enqueue, ->(*) { raise ActiveJob::EnqueueError }) do
+          deliver_child(child)
+        end
+        assert_equal "pending", child.reload.state
+        assert_equal 1, child.attempts
+        assert_nil child.claim_token
+        assert_equal original, child.context
+        assert_equal "completed", child.execution.reload.reason
+
+        assert_difference -> { enqueued_jobs.count { |job| job[:job] == AiAgentJob } }, 1 do
+          deliver_child(child)
+        end
+        assert_equal "completed", child.reload.state
+        payload = ActiveJob::Arguments.deserialize(enqueued_jobs.reverse.find { |job| job[:job] == AiAgentJob }[:args]).last
+        assert_equal original["event"], payload["event"]
+        assert_not payload.key?("workflow_execution_id")
+      end
+
+      test "rejected delayed child enqueue exhausts bounded recovery without a waiting notice" do
+        child = fallback_child
+        OrchestratorPolicy.create!(policy_type: "scheduling", config: { "max_concurrent_jobs" => 0 })
+        adapter = AiAgentJob.queue_adapter
+        adapter.stub(:enqueue_at, ->(*) { raise ActiveJob::EnqueueError }) do
+          assert_no_difference "Comment.count" do
+            3.times { deliver_child(child) }
+          end
+        end
+        assert_equal "pending", child.reload.state
+        assert_equal 3, child.attempts
+        Recovery.outbox(child)
+        assert_equal "failed", child.reload.state
+        assert_equal "delivery_failed", child.reason
+        assert_equal "completed", child.execution.reload.reason
+        assert_no_difference -> { enqueued_jobs.size } do
+          Recovery.outbox(child)
+        end
+      end
+
+      test "partial ordinary child fanout rejection remains recoverable" do
+        child = fallback_child
+        second = @agent.dup
+        second.assign_attributes(email: "fallback-second@example.test", name: "Fallback second")
+        second.save!
+        CreativeShare.create!(creative: @creative, user: second, shared_by: @owner, permission: :feedback)
+        CreativeSharesCache.create!(creative: @creative, user: second, permission: :feedback)
+        OrchestratorPolicy.create!(policy_type: "arbitration", config: { "strategy" => "all", "max_responders" => 2 })
+        OrchestratorPolicy.create!(policy_type: "scheduling", config: { "topic_max_concurrent_jobs" => 2 })
+        adapter = AiAgentJob.queue_adapter
+        enqueue = adapter.method(:enqueue)
+        adapter.stub(:enqueue, ->(job) {
+          raise ActiveJob::EnqueueError if job.is_a?(AiAgentJob) && job.arguments.first == second.id
+          enqueue.call(job)
+        }) { deliver_child(child) }
+        assert_equal "pending", child.reload.state
+        accepted = enqueued_jobs.select { |job| job[:job] == AiAgentJob }
+        assert_equal [ @agent.id ], accepted.map { |job| job[:args].first }
+        deliver_child(child)
+        assert_equal "completed", child.reload.state
+        jobs = enqueued_jobs.select { |job| job[:job] == AiAgentJob }
+        assert_includes jobs.map { |job| job[:args].first }, second.id
+        assert jobs.all? { |job| ActiveJob::Arguments.deserialize(job[:args]).last["event"] == child.context["event"] }
+      end
+
+      test "a job reporting unsuccessful enqueue leaves child publication pending" do
+        child = fallback_child
+        rejected = AiAgentJob.new
+        assert_not rejected.successfully_enqueued?
+        AiAgentJob.stub(:perform_later, rejected) { deliver_child(child) }
+        assert_equal "pending", child.reload.state
+        AiAgentJob.stub(:perform_later, nil) { deliver_child(child) }
+        assert_equal "pending", child.reload.state
+        assert_equal 2, child.attempts
+      end
+
+      test "ordinary dispatch keeps legacy enqueue handling without child acknowledgement" do
+        child = fallback_child
+        AiAgentJob.stub(:perform_later, nil) do
+          outcome = SystemEvents::Dispatcher.dispatch_with_outcome("workflow_step_completed", child.context, source: "workflow")
+          assert_equal [ @agent.id ], outcome.agents.map(&:id)
+          assert_not outcome.workflow_handled?
+        end
+      end
+
       private
+
+      def fallback_child
+        emits!
+        execution = execute
+        succeed(materialize(execution))
+        Settlement.new(execution).call
+        @agent.update!(routing_expression: "true")
+        execution.outboxes.find_by!(key: "child")
+      end
+
+      def deliver_child(child)
+        Recovery.outbox(child.reload)
+        child.reload.deliver!(child.claim_token)
+      end
 
       def fan_in
         second = @agent.dup

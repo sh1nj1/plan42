@@ -455,7 +455,7 @@ module Collavre
 
       def scheduler = @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
 
-      def enqueue_jobs(decisions, context_for:)
+      def enqueue_jobs(decisions, context_for:, require_enqueue_ack: false)
         decisions.filter_map do |decision|
           context = context_for_agent(agent = decision[:agent], context_for)
           log_decision(decision)
@@ -518,24 +518,27 @@ module Collavre
           end
 
           case decision[:timing]
-          when :immediate
-            AiAgentJob.perform_later(agent.id, @event_name, context)
+          when :immediate, :delayed
+            enqueue_agent_job(agent, context, decision, require_enqueue_ack: require_enqueue_ack)
+            post_waiting_notice(agent, decision) if decision[:timing] == :delayed
             agent
           when :deferred
             next unless (waiter = park_waiter(agent, context))
 
             post_waiting_notice(agent, decision, waiter: waiter)
             agent
-          when :delayed
-            AiAgentJob.set(wait: decision[:delay]).perform_later(
-              agent.id, @event_name, context
-            )
-            post_waiting_notice(agent, decision)
-            agent
           when :rejected
             nil
           end
         end
+      end
+
+      def enqueue_agent_job(agent, context, decision, require_enqueue_ack:)
+        queue = decision[:timing] == :delayed ? AiAgentJob.set(wait: decision[:delay]) : AiAgentJob
+        job = queue.perform_later(agent.id, @event_name, context)
+        # Child publication must remain recoverable when an adapter rejects
+        # enqueue without raising. Keep the legacy array API's default behavior.
+        raise ActiveJob::EnqueueError if require_enqueue_ack && !(job && job.successfully_enqueued?)
       end
 
       def context_for_agent(agent, context_for)

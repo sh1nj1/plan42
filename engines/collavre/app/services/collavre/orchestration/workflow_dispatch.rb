@@ -20,7 +20,7 @@ module Collavre
         dispatch_with_outcome(**options).agents
       end
 
-      def dispatch_with_outcome(selected_agents: nil, selection: nil, context_for: nil, scheduling_hooks: nil, invocation: nil)
+      def dispatch_with_outcome(selected_agents: nil, selection: nil, context_for: nil, scheduling_hooks: nil, invocation: nil, require_enqueue_ack: false)
         identity = Workflow::Receipt.identity(invocation, @event_name, @context.dig("event", "source"))
         recovered = Workflow::Receipt.recover(identity)
         return recovered if recovered
@@ -30,16 +30,16 @@ module Collavre
             context_for: context_for, scheduling_hooks: scheduling_hooks).call
         end
         selected = selected_agents || selection.agents
-        agents = ordinary_dispatch(selected, selection, context_for, scheduling_hooks)
+        agents = ordinary_dispatch(selected, selection, context_for, scheduling_hooks, require_enqueue_ack: require_enqueue_ack)
         Workflow::DispatchOutcome.new(agents: agents, workflow_execution_id: nil, reason: nil)
       end
 
-      def ordinary_dispatch(selected, selection, context_for, scheduling_hooks)
+      def ordinary_dispatch(selected, selection, context_for, scheduling_hooks, require_enqueue_ack:)
         return [] if selected.empty?
         selection&.commit!
         decisions = scheduler.schedule(selected, scheduling_hooks: scheduling_hooks)
         scheduling_hooks&.scheduled(decisions.filter_map { |decision| decision[:agent] unless decision[:timing] == :rejected })
-        enqueue_jobs(decisions, context_for: context_for)
+        enqueue_jobs(decisions, context_for: context_for, require_enqueue_ack: require_enqueue_ack)
       end
     end
   end
