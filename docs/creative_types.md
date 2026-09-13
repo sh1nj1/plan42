@@ -5,7 +5,7 @@ addition. It shares the searchable popup with the agent model picker. Search tex
 is not submitted: selecting an option or choosing Add stages a type alongside the
 body for the existing autosave/close save. Escape or Tab dismisses an uncommitted
 search. Closing the editor flushes edits, as before; it is not a discard action.
-Failed saves retain both inputs for correction and retry. The confirmed Workflow
+The Cancel type change button restores the last acknowledged type without discarding body edits. Failed saves retain both inputs for correction and retry. The confirmed Workflow
 selection exposes Edit rules, which opens the existing workflow editor.
 
 ## Storage and authorization
@@ -21,7 +21,7 @@ reopening their creative. Arbitrary JSON and null are rejected.
 
 Type updates require write access to the actual placement and origin. A change
 across the Workflow boundary additionally requires admin permission, matching
-rule management. The origin is locked while the body/type request is applied;
+rule management. Body, type, metadata and rule-authoring requests lock and reload the origin before changing JSON data;
 a rejected request rolls back linked placement changes as well. Archived and
 externally managed creatives cannot change type.
 

@@ -5,6 +5,8 @@ en:
         cancel: Cancel type change
         label: Type
         general: General
+        inbox: Inbox
+        workflow_rule: Workflow rule
         workflow: Workflow
         search: Search types
         add: 'Add type "%{name}"'

@@ -5,6 +5,8 @@ ko:
         cancel: 타입 변경 취소
         label: 타입
         general: 일반
+        inbox: 인박스
+        workflow_rule: 워크플로 규칙
         workflow: 워크플로
         search: 타입 검색
         add: '"%{name}" 타입 추가'

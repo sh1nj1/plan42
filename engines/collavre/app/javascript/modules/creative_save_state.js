@@ -128,7 +128,7 @@ export function resetCreativeSaveState(snapshot, current = null, currentDirty = 
     current.content === snapshot.content &&
     current.progress === snapshot.progress &&
     current.originId === snapshot.originId &&
-    current.creativeType === snapshot.creativeType
+    (snapshot.creativeType === undefined || current.creativeType === snapshot.creativeType)
   )
 
   return {

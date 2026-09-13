@@ -11,10 +11,10 @@ module Collavre
       end
 
       def apply
-        return error(:invalid) unless @input.is_a?(String) && @input.valid_encoding? && !@input.match?(/[[:cntrl:]]/)
+        return error(:invalid) unless valid_input?
 
         target = @input.unicode_normalize(:nfkc).strip.gsub(/[[:space:]]+/, " ").downcase
-        return error(:invalid) if target.length > MAX_LENGTH || target.match?(/[[:cntrl:]]/)
+        return error(:invalid) if target.length > MAX_LENGTH
         return if target == @creative.creative_type
         return error(:protected) if PROTECTED.include?(target) || PROTECTED.include?(@creative.creative_type)
         return error(:data_present) if workflow_data?
@@ -26,6 +26,10 @@ module Collavre
       end
 
       private
+
+      def valid_input?
+        @input.is_a?(String) && @input.valid_encoding? && !@input.match?(/[[:cntrl:]]/)
+      end
 
       def workflow_data?
         (@creative.data || {}).key?("workflow") || (@creative.data || {}).key?("workflow_rule") ||

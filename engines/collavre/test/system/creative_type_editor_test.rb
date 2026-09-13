@@ -10,6 +10,7 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     @user = users(:one)
     @user.update!(locale: "en", email_verified_at: Time.current)
     @creative = create_workflow_creative(description: "Type selector test")
+    resize_window_to
     sign_in_via_ui(@user, password: "password")
   end
 
@@ -78,8 +79,8 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     @user.update!(locale: "ko")
     @creative.update!(data: { "kind" => "inbox" })
     open_editor
-    assert_field "타입", disabled: true, with: "inbox"
-    assert_button "타입 변경 취소"
+    assert_field "타입", disabled: true, with: "인박스"
+    assert_button "타입 변경 취소", disabled: true
   end
 
   private
@@ -89,6 +90,6 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     row = find("#creative-#{@creative.id}")
     row.hover
     row.find(".edit-inline-btn").click
-    assert_selector "[data-editor-ready=true] .lexical-content-editable"
+    assert_selector "[data-editor-ready=true] .lexical-content-editable:focus"
   end
 end

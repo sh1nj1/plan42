@@ -85,9 +85,10 @@ test('protected and too-long names cannot be added; existing system type is read
     search(value)
     expect(editor.popup.isOpen()).toBe(false)
   }
+  editor.protectedLabels = { inbox: 'Inbox' }
   editor.load({ id: 7, creative_type: 'inbox' })
   expect(editor.input.disabled).toBe(true)
-  expect(editor.input.value).toBe('inbox')
+  expect(editor.input.value).toBe('Inbox')
 })
 
 test('cancel restores the saved type, while a newer selection survives an older response', () => {
@@ -151,4 +152,28 @@ test('missing template tolerates loading, saving and failure handling', async ()
   const response = {}
   expect(await absent.failed(response)).toBe(response)
   expect(absent.value).toBeUndefined()
+})
+
+test('late responses only update the session they saved', () => {
+  const first = {}, second = {}
+  editor.acknowledgeSave({}, { id: 7, creative_type: 'workflow' }, second, first)
+  expect(editor.link.hidden).toBe(true)
+  editor.acknowledgeSave({}, { id: 7, creative_type: 'workflow' }, first, first)
+  expect(editor.link.hidden).toBe(false)
+  editor.acknowledgeSave({}, { id: 7, creative_type: '' }, null, first)
+  expect(editor.link.hidden).toBe(true)
+})
+
+
+test('unsaved type remains flushable after an autosave failure and teardown closes the popup', () => {
+  expect(editor.needsFlush(false, false)).toBe(false)
+  expect(editor.needsFlush(true, false)).toBe(true)
+  expect(editor.needsFlush(false, true)).toBe(true)
+  search('workflow')
+  key('Enter')
+  expect(editor.needsFlush(false, false)).toBe(true)
+  search('new type')
+  editor.dispose()
+  expect(editor.popup.isOpen()).toBe(false)
+  new CreativeTypeEditor(document.createElement('form'), onChange).dispose()
 })

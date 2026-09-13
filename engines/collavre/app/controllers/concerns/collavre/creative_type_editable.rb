@@ -6,11 +6,25 @@ module Collavre
 
     included do
       before_action :validate_type_input, only: %i[create update]
-      around_action :lock_type_update, only: :update
+      around_action :lock_creative_content, only: %i[update update_metadata]
       around_action :lock_rule_authoring, only: %i[create_workflow_rule update_workflow_rule]
     end
 
     private
+
+    def editable_metadata_for(creative)
+      data = creative.effective_origin(Set.new).data
+      data.is_a?(Hash) ? data.except("markdown_source") : data
+    end
+
+    def creative_update_payload(base)
+      {
+        id: base.id, creative_type: base.creative_type,
+        progress: base.progress, progress_html: view_context.render_creative_progress(base),
+        has_children: base.children.exists?, content_type: base.data&.dig("content_type"),
+        markdown_editor: base.data&.dig("editor")
+      }
+    end
 
     def type_input?
       params[:creative].is_a?(ActionController::Parameters) && params[:creative].key?(:creative_type)
@@ -30,9 +44,8 @@ module Collavre
       workflow.with_lock { yield }
     end
 
-    def lock_type_update
-      return yield unless type_input?
-      return unless workflow_access?(@creative, :write)
+    def lock_creative_content
+      return if type_input? && !workflow_access?(@creative, :write)
 
       @creative.effective_origin(Set.new).with_lock do
         yield

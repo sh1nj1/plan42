@@ -193,13 +193,7 @@ module Collavre
             else
                       @creative.ancestors.count + 1
             end
-            sanitized_data = @creative.effective_origin(Set.new).data
-            # markdown_source is exposed via the top-level `markdown_source:` field for writers;
-            # exclude it from the editable `data` payload so the metadata YAML editor can't
-            # round-trip a stale copy back into data["markdown_source"] on update_metadata.
-            if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
-              sanitized_data = sanitized_data.except("markdown_source")
-            end
+            sanitized_data = editable_metadata_for(@creative)
             render json: {
               id: @creative.id,
               creative_type: @creative.effective_origin(Set.new).creative_type,
@@ -318,15 +312,7 @@ module Collavre
           format.html { redirect_to @creative }
           format.json do
             base.reload
-            response_data = {
-              id: base.id,
-              creative_type: base.creative_type,
-              progress: base.progress,
-              progress_html: view_context.render_creative_progress(base),
-              has_children: base.children.exists?,
-              content_type: base.data&.dig("content_type"),
-              markdown_editor: base.data&.dig("editor")
-            }
+            response_data = creative_update_payload(base)
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
             # Gated on write permission so a read-only share recipient moving a

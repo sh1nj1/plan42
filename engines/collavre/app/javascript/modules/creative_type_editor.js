@@ -8,6 +8,8 @@ export class CreativeTypeEditor {
     this.field = this.root.querySelector('[name="creative[creative_type]"]')
     this.link = this.root.querySelector('a')
     this.error = this.root.querySelector('[role=alert]')
+    this.protectedLabels = JSON.parse(this.root.dataset.protectedLabels || '{}')
+    this.cancelButton = this.root.querySelector('button')
     this.options = JSON.parse(this.root.dataset.options)
     this.popup = new SearchCombobox(this.root.querySelector('.common-popup'), {
       input: this.input, allowCustom: true, addLabel: this.root.dataset.addLabel,
@@ -15,6 +17,7 @@ export class CreativeTypeEditor {
       onSelect: item => {
         if (item.custom) this.options.push({ value: item.value, name: item.value })
         this.error.textContent = ''
+        this.link.hidden = true
         this.field.value = item.value
         this.field.disabled = false
         this.restoreLabel()
@@ -22,7 +25,7 @@ export class CreativeTypeEditor {
         onChange()
       }
     })
-    this.root.querySelector('button').addEventListener('click', () => {
+    this.cancelButton.addEventListener('click', () => {
       this.field.value = this.baseline
       this.restoreLabel()
       this.popup.hide()
@@ -56,7 +59,7 @@ export class CreativeTypeEditor {
   }
 
   restoreLabel() {
-    this.input.value = this.options.find(item => item.value === this.field.value)?.name || this.field.value
+    this.input.value = this.options.find(item => item.value === this.field.value)?.name || this.protectedLabels[this.field.value] || this.field.value
   }
 
   load(data = {}) {
@@ -67,6 +70,7 @@ export class CreativeTypeEditor {
     this.field.value = this.baseline
     this.field.disabled = true
     this.input.disabled = ['inbox', 'workflow_rule'].includes(this.field.value)
+    this.cancelButton.disabled = this.input.disabled
     if (this.field.value && !this.input.disabled && !this.options.some(item => item.value === this.field.value)) {
       this.options.push({ value: this.field.value, name: this.field.value })
     }
@@ -77,6 +81,11 @@ export class CreativeTypeEditor {
   updateLink(data) {
     this.link.hidden = data.creative_type !== 'workflow' || !data.id
     this.link.href = `/creatives/${data.id}/edit`
+  }
+
+  acknowledgeSave(snapshot, data, currentTree, savedTree) {
+    if (!currentTree || currentTree === savedTree) this.saved(data, snapshot.creativeType)
+    return snapshot
   }
 
   saved(data, value) {
@@ -97,6 +106,14 @@ export class CreativeTypeEditor {
     return response
   }
 
+  dispose() {
+    this.popup?.hide()
+  }
+
+  needsFlush(pending, saving) {
+    return pending || saving || this.value !== undefined
+  }
+
   async flush(save) {
     let response = await save()
     while (this.value !== undefined && response?.ok !== false) response = await save()
@@ -105,6 +122,10 @@ export class CreativeTypeEditor {
 
   async beforeMove(close) {
     return this.value === undefined || await close() !== 'save-failed'
+  }
+
+  get selectedValue() {
+    return this.field?.value
   }
 
   get value() {

@@ -193,6 +193,23 @@ class CreativesControllerTypeTest < ActionDispatch::IntegrationTest
     assert @creative.reload.workflow?
   end
 
+  test "stale body and metadata requests preserve a newly committed type" do
+    [ :body, :metadata ].each do |request|
+      @creative.update!(data: {})
+      stale = Creative.find(@creative.id)
+      Creative.where(id: @creative.id).update_all(data: { "kind" => "workflow" })
+      Creative.stub(:find, stale) do
+        if request == :body
+          patch creative_path(@creative), params: { creative: { description: "New body", content_type_input: "markdown", markdown_source: "New body" } }, as: :json
+        else
+          patch update_metadata_creative_path(@creative), params: { data: { label: "New metadata" }.to_json }, as: :json
+        end
+      end
+      assert_response :success
+      assert @creative.reload.workflow?, "#{request} must preserve the committed type"
+    end
+  end
+
   private
 
   def share(creative, user, permission)
