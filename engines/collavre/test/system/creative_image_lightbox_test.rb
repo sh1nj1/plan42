@@ -118,6 +118,8 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
       if path.include?("?")
         # The title page opens chat automatically; finish that transition first.
         assert_docked_comments_loaded
+        # Composer focus is scheduled in the animation frame after list loading.
+        assert_selector "#comments-popup textarea:focus"
       end
       scope = path.include?("?") ? ".creative-title-content" : "#creative-#{@creative.id}"
       first = find("#{scope} img[alt='First'][role='button']")
