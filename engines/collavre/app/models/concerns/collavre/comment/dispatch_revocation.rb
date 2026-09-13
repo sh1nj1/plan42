@@ -14,6 +14,21 @@ module Collavre
 
       private
 
+      def reanchor_coalesced_task(task)
+        return false if task.workflow?
+        return false unless %w[queued pending].include?(task.status)
+
+        Task.transaction { reanchor_locked_task(task) }
+      rescue ActiveRecord::RecordNotFound
+        # The task went away between the scan and the lock (a cascading delete).
+        # Nothing to rescue, and nothing left to cancel either.
+        false
+      end
+
+      def cancel_source_task(task)
+        task.workflow? ? Workflow::FixedAnchor.withdraw!(task) : task.cancel_if_active!
+      end
+
       def dispatch_source_ids(task)
         payload = task.trigger_event_payload || {}
         (Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) + [ payload.dig("comment", "id") ])

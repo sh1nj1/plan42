@@ -1,6 +1,15 @@
 # PR4: workflow events and chained execution
 
-Status: implementation proposal. The emission timing question has been sent to
+Status: approved for implementation.
+
+On 2026-09-13, the product owner authorized implementation ("implement it")
+after reviewing this contract at f3a2fd721. This approves the proposed timing,
+handler outcomes, bounds, scope, producer limits, push policy and topic-move
+semantics below. Proposal/pending language in the review history records the
+state at those revisions and is superseded by this authorization. Runtime
+verification and independent code review are still required.
+
+Historical proposal status: The emission timing question has been sent to
 the product owner. Vrex recommends completion-based emission in review topic
 19327; the cross-post in topic 19326 is a reviewer report, not a separate product
 approval. The semantics and limits below are new PR4 proposals, not approvals
@@ -1223,3 +1232,25 @@ Task 21052 remains incomplete solely pending the product contract, including
 completion timing, human/login/review outcomes, budgets, scope and producer
 limits, push preferences/timing and topic-move semantics. Runtime implementation,
 integration validation, PR and preview remain unstarted.
+
+## Implementation clarification: pinned rule availability
+
+The existing pin model has no persisted pin-setting principal. Pending effects
+revalidate that the snapshotted rule remains an active direct child of an active
+workflow reachable through the current active pin/origin graph. This is the
+meaning of rule accessibility here; edits do not reparse or replace its snapshot.
+No new owner/agent read gate is introduced for the pinned configuration. This
+preserves the approved case where the handoff recipient cannot read the rule.
+Target/agent/recipient permissions use authoritative current share resolution.
+
+## Implementation clarification: Inbox System persistence
+
+Ordinary Comment creation locks its topic through TopicMembership. Workflow
+handoff uses a dedicated system-notice insert under the chain transaction,
+validating the recipient origin Inbox and its active System topic, fixing all
+author/quote/action/task fields to nil and private to false. It writes timestamps
+and increments the counter only for the insert winner. Foreign keys protect
+scope deletion. Broadcasts run after the outer commit, separately from push.
+The supported UI/tool paths prohibit System topic movement and deletion; this
+is not a new database-level immutability guarantee. Ordinary Comment topic
+membership locking is unchanged. No source-topic lock nests with a chain lock.

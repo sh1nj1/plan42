@@ -105,6 +105,22 @@ class WorkflowRuleEditorTest < ApplicationSystemTestCase
     assert_no_selector ".workflow-editor"
   end
 
+  test "execution limits and terminal handler warnings are localized in English and Korean" do
+    rule = create_workflow_rule(parent: @workflow)
+    data = rule.data.deep_dup
+    data["workflow_rule"]["emits"] = "workflow_step_completed"
+    rule.update!(data: data)
+    %w[en ko].each do |locale|
+      @user.update!(locale: locale)
+      visit collavre.edit_creative_path(@workflow)
+      find("summary", text: I18n.t("collavre.workflow.runtime.help_title", locale: locale)).click
+      %w[completion bounds delivery moves non_emitting].each do |key|
+        assert_text I18n.t("collavre.workflow.runtime.#{key}", locale: locale)
+      end
+      assert_no_text "translation missing"
+    end
+  end
+
   private
 
   def label(key)

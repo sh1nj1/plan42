@@ -5,7 +5,7 @@ const csrfFetch = jest.fn()
 jest.unstable_mockModule('../../../lib/api/csrf_fetch', () => ({ default: csrfFetch }))
 const { Application } = await import('@hotwired/stimulus')
 const Controller = (await import('../workflow_rule_controller')).default
-const labels = { title: 'Rules', add_rule: 'Add rule', saved: 'Saved', load_failed: 'Load failed', save_failed: 'Save failed', invalid_json: 'Invalid JSON', raw_pending: 'Apply JSON first', read_only: 'Read only', empty: 'No rules', remove_phrase: 'Remove phrase', agent_unavailable: 'Unavailable', agent_cannot_respond_here: 'Cannot respond', events: { comment_created: 'Comment' }, source_labels: { cron: 'Schedule' } }
+const labels = { non_emitting: 'This handler never emits', title: 'Rules', add_rule: 'Add rule', saved: 'Saved', load_failed: 'Load failed', save_failed: 'Save failed', invalid_json: 'Invalid JSON', raw_pending: 'Apply JSON first', read_only: 'Read only', empty: 'No rules', remove_phrase: 'Remove phrase', agent_unavailable: 'Unavailable', agent_cannot_respond_here: 'Cannot respond', events: { comment_created: 'Comment' }, source_labels: { cron: 'Schedule' } }
 const payload = { on: 'comment_created', handler: { type: 'human', future: true }, when: { source: [], body_contains: [], liquid: '', future: 3 }, emits: 'future_event', extra: { safe: true } }
 const rule = (raw = payload) => ({ id: 2, description: '<img src=x onerror=alert(1)>Title', rule: raw, errors: ['<b>Advisory</b>'], warnings: [], can_manage: true })
 const data = (rules = [rule()], manage = true) => ({ workflow_id: 1, event_names: ['comment_created', 'future_event'], sources_by_event: { comment_created: ['cron', 'a2a'], future_event: ['future_source'] }, agents: [{ id: 5, name: 'Bot', can_respond_here: false, warnings: ['Cannot respond'] }], rules, can_manage: manage, permission_note: 'Target permissions apply' })
@@ -287,4 +287,25 @@ test('network save failure and duplicate submit never discard changes', async ()
   const signal = csrfFetch.mock.calls[0][1].signal
   controller.disconnect()
   expect(signal.aborted).toBe(true)
+})
+
+
+test('terminal emits warnings follow handler changes and applied JSON', async () => {
+  await mount()
+  const warning = () => form().querySelector('[data-role="warnings"]').textContent
+  expect(warning()).toContain(labels.non_emitting)
+  const current = controller.forms.get(form())
+  for (const type of ['none', 'agent', 'human']) {
+    current.draft.handler.type = type
+    current.render()
+    expect(warning().includes(labels.non_emitting)).toBe(type !== 'agent')
+  }
+  for (const emits of [undefined, '', '   ', null, 5]) {
+    current.field('raw').value = JSON.stringify({ on: 'comment_created', handler: { type: 'human' }, emits })
+    current.applyRaw()
+    expect(warning()).toBe('')
+  }
+  current.field('raw').value = JSON.stringify({ handler: { type: 'none' }, emits: 'workflow_step_completed' })
+  current.applyRaw()
+  expect(warning()).toContain(labels.non_emitting)
 })

@@ -23,6 +23,7 @@ module Collavre
     #   - after_create_commit dispatch fails
     #   - Retry skips everything because comment already exists
     def perform(parent_creative_id, child_creative_id)
+      return if Workflow::Receipt.recover(source: "drop_trigger", event_name: "comment_created", job_id: job_id)
       parent = Creative.find_by(id: parent_creative_id)
       child = Creative.find_by(id: child_creative_id)
       return unless parent && child
@@ -203,11 +204,12 @@ module Collavre
     def dispatch_trigger(comment)
       # Use Comment#dispatch_payload — single source of truth shared with
       # the after_create_commit callback, preventing payload drift.
-      scheduled_agents = SystemEvents::Dispatcher.dispatch(
-        "comment_created", comment.dispatch_payload, source: "drop_trigger"
+      outcome = SystemEvents::Dispatcher.dispatch_with_outcome(
+        "comment_created", comment.dispatch_payload, source: "drop_trigger",
+        invocation: { source: "drop_trigger", job_id: job_id }
       )
 
-      if scheduled_agents.blank?
+      if !outcome.workflow_handled? && outcome.agents.blank?
         raise DispatchFailedError,
           "Dispatch returned no agents for comment #{comment.id} " \
           "(creative=#{comment.creative_id}, topic=#{comment.topic_id})"

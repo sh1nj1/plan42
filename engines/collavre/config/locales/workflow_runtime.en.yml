@@ -1,0 +1,18 @@
+en:
+  collavre:
+    workflow:
+      runtime:
+        title: "Action needed"
+        action_needed: "A workflow needs your attention. Open the conversation."
+        help_title: "Workflow execution and limits"
+        completion: "In on mode, an agent rule emits once after all admitted agents finish with a usable public reply. Human hands off to the target creative owner and stops; none ignores the event. Human and none never emit, even when emits is configured. Login cards and review-only updates stop without emitting; after login, send a new message. Off and shadow do not execute workflows. Saving a rule never starts it."
+        bounds: "Each topic-scoped chain permits relative depth 8, absolute depth 64, 16 agent tasks and 16 rule executions. A rule runs at most once in a chain. Retries preserve event identity and creation time, with 3 infrastructure attempts. Ordinary mentions and fallback routing use their existing limits. Independent cron runs, new trigger jobs and deliberate restarts may produce separate handoffs."
+        delivery: "The owner Inbox entry remains available. Workflow push permits unset or enabled notifications; explicit disabled suppresses push. Push allows 3 attempts, each with 30 minutes of queue waiting and 5 minutes of transport. A lost worker or crash before enqueue waits for the 30-minute deadline plus sweep and recovery-queue delay. If every queue wait exceeds 30 minutes, push may fail with no transport calls. These are best-effort limits, not delivery or recovery SLAs; external push may be duplicated."
+        moves: "Moving a topic may stop pending workflow work and suppress remaining push. It does not transfer the chain to the destination. Restoring access, re-enabling routing or moving back never reopens a stopped execution. A new message starts a new root."
+        non_emitting: "This handler never emits an event; the configured emits value has no effect."
+      editor:
+        non_emitting: "This handler never emits an event; the configured emits value has no effect."
+        events:
+          workflow_step_completed: "Workflow step completed"
+        source_labels:
+          workflow: "Workflow"

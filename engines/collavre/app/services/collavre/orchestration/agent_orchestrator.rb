@@ -12,8 +12,13 @@ module Collavre
     #   AgentOrchestrator.dispatch("comment_created", context)
     #
     class AgentOrchestrator
+      include WorkflowDispatch
       def self.dispatch(event_name, context, **options)
         new(event_name: event_name, context: context).dispatch(**options)
+      end
+
+      def self.dispatch_with_outcome(event_name, context, **options)
+        new(event_name: event_name, context: context).dispatch_with_outcome(**options)
       end
 
       def self.select(event_name, context) = new(event_name: event_name, context: context).select
@@ -128,6 +133,7 @@ module Collavre
       # trigger and run part of its turn, so folding new comments into it would
       # swallow them rather than answer them.
       def self.coalesce_at_start!(task)
+        return Workflow::FixedAnchor.validate!(task) if task.workflow?
         return unless task.status == "pending"
 
         context = task.trigger_event_payload || {}
@@ -424,6 +430,7 @@ module Collavre
           "[AgentOrchestrator] Cancelling queued task #{task.id}: topic #{task.topic_id} " \
           "no longer permits the recorded agent (agent=#{agent.id})"
         )
+        return unless Workflow::FixedAnchor.validate!(task)
         task.update!(status: "cancelled")
       end
       private_class_method :revalidate_assignment!
@@ -441,20 +448,6 @@ module Collavre
 
       def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, **options).call
 
-      def dispatch(selected_agents: nil, selection: nil, context_for: nil, scheduling_hooks: nil)
-        selected = selected_agents || (selection ||= prepare_selection).agents
-        return [] if selected.empty?
-
-        selection&.commit!
-
-        # Step 3: Schedule execution (Scheduler) - Phase 3
-        # For now, immediate execution
-        decisions = scheduler.schedule(selected, scheduling_hooks: scheduling_hooks)
-        scheduling_hooks&.scheduled(decisions.filter_map { |decision| decision[:agent] unless decision[:timing] == :rejected })
-
-        # Step 4: Enqueue jobs
-        enqueue_jobs(decisions, context_for: context_for)
-      end
 
       private
 
@@ -484,7 +477,7 @@ module Collavre
           # Handled, not unscheduled — see the drop guard below for why the two
           # are different answers and what reads them apart.
           comment_id = context.dig("comment", "id")
-          if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
+          if Workflow::TaskAdmission.duplicate_dispatch?(context, agent)
             Rails.logger.warn(
               "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
               "for comment #{comment_id}"
@@ -576,7 +569,9 @@ module Collavre
         Task.transaction do
           next unless TopicSlot.matches_context?(TopicSlot.lock!(topic_id, creative_id), topic_id, creative_id)
 
+          next unless Workflow::TaskAdmission.permitted?(context, agent)
           waiter = Task.create!(
+            **Workflow::TaskAdmission.attributes(context, agent),
             name: "Response to #{@event_name}",
             status: "queued",
             trigger_event_name: @event_name,

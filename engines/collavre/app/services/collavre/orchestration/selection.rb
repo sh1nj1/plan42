@@ -4,7 +4,7 @@ module Collavre
   module Orchestration
     # Resolves the exact responders for an event without scheduling work.
     class Selection
-      attr_reader :agents
+      attr_reader :agents, :workflow_rule, :workflow_snapshot
 
       def initialize(context, policy_resolver:, candidate_overrides: {})
         @context = context
@@ -30,7 +30,10 @@ module Collavre
       private
 
       def candidates_for_contexts
-        base = Matcher.new(@context).match
+        matcher = Matcher.new(@context)
+        base = matcher.match
+        @workflow_rule = matcher.workflow_rule
+        @workflow_snapshot = matcher.workflow_snapshot
         candidates = base
         @candidate_overrides.each do |agent_id, override|
           candidates = candidates.reject { |agent| agent.id == agent_id }

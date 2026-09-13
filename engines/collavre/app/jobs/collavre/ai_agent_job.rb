@@ -22,6 +22,7 @@ module Collavre
         end
 
         agent = task.agent
+        return unless Workflow::TaskAdmission.validate_start!(task)
 
         # Guard: same offline-session check as the agent_id branch below.
         # Queued Claude Channel tasks resumed via Orchestration::AgentOrchestrator
@@ -32,17 +33,7 @@ module Collavre
         # drains the queue, this task would otherwise be promoted to running →
         # delegated and broadcast to a clientless agent:user:<id> stream —
         # held until stuck recovery.
-        if agent.claude_channel_agent? && !agent.claude_channel_online?
-          Rails.logger.info(
-            "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
-            "session offline (no live presence)"
-          )
-          task.update!(status: "cancelled")
-          if task.trigger_event_payload&.key?("topic")
-            Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
-          end
-          return
-        end
+        return if reject_offline_resumption?(task, agent)
 
         # A claimed task holds the topic slot as `pending` from promotion until
         # this line, and a comment arriving in that window parks a waiter that
@@ -73,7 +64,8 @@ module Collavre
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
             "no longer permits the recorded agent (agent=#{agent.id})"
           )
-          task.update!(status: "cancelled")
+          Workflow::FixedAnchor.validate!(task)
+          task.cancel_if_active!
           # A pending_approval task kept its slot across the pause (the
           # ApprovalPendingError rescue sets should_release = false), and this
           # early return skips the ensure block that would give it back, so
@@ -84,10 +76,11 @@ module Collavre
           return
         end
 
-        task.update!(status: "running")
+        return unless Workflow::TaskAdmission.start!(task)
       else
         # Create new task
         agent = User.find(agent_id_or_task)
+        return :rejected unless Workflow::TaskAdmission.permitted?(context, agent)
 
         # Guard: skip if the Claude Channel session has unregistered (or its WS
         # dropped) during the window between Scheduler enqueue and this job
@@ -127,7 +120,7 @@ module Collavre
 
         # Guard: skip if there's already a running task for the same agent + comment
         comment_id = context&.dig("comment", "id")
-        if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
+        if Workflow::TaskAdmission.duplicate_dispatch?(context, agent)
           Rails.logger.warn(
             "[AiAgentJob] Skipping duplicate: agent #{agent.id} already has a running task " \
             "for comment #{comment_id} (event=#{event_name})"
@@ -201,6 +194,7 @@ module Collavre
           task.reload
         end
 
+        return unless Workflow::FixedAnchor.validate!(task)
         AiAgentService.new(task).call
 
         # Claude Channel agents delegate via MCP; no immediate response expected
@@ -261,6 +255,19 @@ module Collavre
     # last lifecycle checkpoint but before this job records its outcome. Lock
     # and re-check the row so normal completion/retry cannot overwrite that
     # external winner.
+    def reject_offline_resumption?(task, agent)
+      return false unless agent.claude_channel_agent? && !agent.claude_channel_online?
+          Rails.logger.info(
+            "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
+            "session offline (no live presence)"
+          )
+          task.update!(status: "cancelled")
+          if task.trigger_event_payload&.key?("topic")
+            Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          end
+          true
+    end
+
     def transition_running_task!(task, **attributes)
       task.with_lock do
         raise CancelledError unless task.status == "running"
@@ -280,8 +287,8 @@ module Collavre
     # a `queued` waiter when the topic's concurrency slot is already taken.
     #
     # Returns the admitted task, or nil when the dispatch was deferred.
-    def admit_or_defer!(agent, event_name, context)
-      attrs = {
+    def dispatch_attributes(agent, event_name, context)
+      {
         name: "Response to #{event_name}",
         trigger_event_name: event_name,
         trigger_event_payload: context,
@@ -289,6 +296,11 @@ module Collavre
         topic_id: context&.dig("topic", "id"),
         creative_id: context&.dig("creative", "id")
       }
+      .merge(Workflow::TaskAdmission.attributes(context, agent))
+    end
+
+    def admit_or_defer!(agent, event_name, context)
+      attrs = dispatch_attributes(agent, event_name, context)
       unless topic_admission_scoped?(context)
         return Task.create!(attrs.merge(status: "running")).tap { record_loop_breaker_turn(agent, context) }
       end
@@ -310,6 +322,7 @@ module Collavre
       Task.transaction do
         next unless Orchestration::TopicSlot.lock_matches_context?(attrs[:topic_id], attrs[:creative_id])
 
+        next unless Workflow::TaskAdmission.permitted?(context, agent)
         current_context = true
         admitted = Orchestration::TopicSlot.available_for?(agent.id, attrs[:topic_id], attrs[:creative_id], context)
         task = Task.create!(attrs.merge(

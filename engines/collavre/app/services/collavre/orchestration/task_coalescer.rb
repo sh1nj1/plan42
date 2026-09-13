@@ -178,7 +178,7 @@ module Collavre
       end
 
       def coalesce!
-        return [] if review_trigger?(@keep)
+        return [] if independent_trigger?(@keep)
 
         absorbed_ids = []
 
@@ -198,7 +198,7 @@ module Collavre
           locked = Task.where(id: superseded_scope.pluck(:id) + [ @keep.id ])
                        .order(:id).lock.index_by(&:id)
           keep = locked[@keep.id]
-          next unless keep && UNSTARTED_STATUSES.include?(keep.status)
+          next unless foldable_survivor?(keep)
 
           # Status is re-checked against the locked rows too: a sibling promoted
           # or cancelled since the id read above is no longer ours to supersede.
@@ -246,6 +246,14 @@ module Collavre
 
       private
 
+      def independent_trigger?(task)
+        task.workflow? || review_trigger?(task)
+      end
+
+      def foldable_survivor?(task)
+        task && !task.workflow? && UNSTARTED_STATUSES.include?(task.status)
+      end
+
       def supersede!(keep, siblings)
         CliProxy::ReplayClaims.transfer!(keep, siblings)
         siblings.map do |task|
@@ -264,7 +272,7 @@ module Collavre
       # coalescing concurrently would otherwise cancel each other and leave no
       # survivor. Each run only ever supersedes strictly older rows.
       def superseded_scope
-        rel = Task.where(
+        rel = Task.where(workflow_execution_id: nil).where(
           agent_id: @keep.agent_id,
           topic_id: @keep.topic_id,
           creative_id: @keep.creative_id,

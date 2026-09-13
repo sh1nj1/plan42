@@ -187,7 +187,7 @@ module Collavre
       def retry_payload(source)
         # Rebuild content and mentions after login, before matching current routing.
         # Merged comments are part of the original request, not delivery state.
-        stripped_keys = Orchestration::DeliveryRecord::TURN_SCOPED_KEYS - [ Orchestration::TaskCoalescer::PAYLOAD_KEY ]
+        stripped_keys = (Orchestration::DeliveryRecord::TURN_SCOPED_KEYS + Orchestration::DeliveryRecord::DISPATCH_SCOPED_KEYS) - [ Orchestration::TaskCoalescer::PAYLOAD_KEY ]
         payload = Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, source)
             .except("engine_login", *stripped_keys)
         # Preserve explicit principals, including nil. Shared workspaces have no

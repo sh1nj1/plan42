@@ -65,6 +65,7 @@ module Collavre
       end
 
       def rule_warnings(rule)
+        return [ I18n.t("collavre.workflow.runtime.non_emitting") ] if rule&.emits.present? && !rule.responder?
         return [] unless rule&.responder?
 
         options = agents.index_by { |agent| agent[:id] }

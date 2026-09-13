@@ -275,7 +275,7 @@ module Collavre
         # to say is cancelled.
         next if reanchor_coalesced_task(task)
 
-        previous_status = task.cancel_if_active!
+        previous_status = cancel_source_task(task)
         next unless previous_status
 
         # A waiter cancelled here leaves the queue without ever being promoted,
@@ -333,15 +333,6 @@ module Collavre
     # Only un-started tasks: a `running`/`delegated` task has already been handed
     # its payload, so re-anchoring changes nothing and deleting the prompt must
     # still stop the turn.
-    def reanchor_coalesced_task(task)
-      return false unless %w[queued pending].include?(task.status)
-
-      Task.transaction { reanchor_locked_task(task) }
-    rescue ActiveRecord::RecordNotFound
-      # The task went away between the scan and the lock (a cascading delete).
-      # Nothing to rescue, and nothing left to cancel either.
-      false
-    end
 
     # The lock body. `task` is the object cancel_pending_tasks' scan loaded, and
     # everything derived here has to come from the row as it stands *now*:
@@ -359,6 +350,7 @@ module Collavre
     # handed its payload — deleting the prompt must stop it, not re-target it.
     def reanchor_locked_task(task)
       task.lock!
+      return false if task.workflow?
       return false unless %w[queued pending].include?(task.status)
 
       payload = task.trigger_event_payload || {}

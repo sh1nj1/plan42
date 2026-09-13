@@ -135,7 +135,14 @@ module Collavre
 
       def capture_agent_jobs
         jobs = []
-        AiAgentJob.stub(:perform_later, ->(*args) { jobs << args }) { yield }
+        queue = ->(id, _token) do
+          row = Workflow::Outbox.find(id)
+          jobs << [ row.agent_id, row.context["event_name"], row.context ] if row.agent_id
+          Object.new.tap { |job| job.define_singleton_method(:successfully_enqueued?) { true } }
+        end
+        WorkflowOutboxJob.stub(:perform_later, queue) do
+          AiAgentJob.stub(:perform_later, ->(*args) { jobs << args }) { yield }
+        end
         jobs
       end
     end

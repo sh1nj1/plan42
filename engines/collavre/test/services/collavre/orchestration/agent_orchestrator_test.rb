@@ -107,6 +107,8 @@ module Collavre
         selected_agent = @ai_agent
         matcher = Object.new
         matcher.define_singleton_method(:match) { [ selected_agent, other_agent ] }
+        matcher.define_singleton_method(:workflow_rule) { nil }
+        matcher.define_singleton_method(:workflow_snapshot) { nil }
         arbiter = Object.new
         arbiter.define_singleton_method(:select) { |_candidates, **| [ selected_agent ] }
         arbiter.define_singleton_method(:commit_selection!) { }

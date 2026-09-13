@@ -9,11 +9,18 @@ module Collavre
     validates :delivery_key, :recipient_id, :message, presence: true
 
     scope :ready_for_push, -> {
-      where(push_enqueued_at: nil)
+      ordinary = where(workflow_execution_id: nil, push_enqueued_at: nil)
         .where("push_claimed_at IS NULL OR push_claimed_at < ?", CLAIM_TIMEOUT.ago)
+      ordinary.or(Workflow::PushDelivery.ready(where.not(workflow_execution_id: nil)))
     }
 
     def enqueue_push!
+      return Workflow::PushDelivery.new(self).enqueue! if workflow_execution_id
+
+      enqueue_ordinary_push!
+    end
+
+    def enqueue_ordinary_push!
       claim_token = SecureRandom.uuid
       claimed_at = Time.current
       claimed = self.class.ready_for_push
@@ -32,6 +39,17 @@ module Collavre
         raise enqueue_error || ActiveJob::EnqueueError.new("Push notification enqueue failed")
       end
 
+      acknowledge_ordinary_push!(claim_token)
+
+      true
+    rescue StandardError
+      release_claim(claim_token)
+      raise
+    end
+
+    private
+
+    def acknowledge_ordinary_push!(claim_token)
       acknowledged = self.class
         .where(id: id, push_claim_token: claim_token, push_enqueued_at: nil)
         .update_all(
@@ -41,14 +59,7 @@ module Collavre
           updated_at: Time.current
         )
       raise ActiveRecord::StaleObjectError.new(self, "enqueue push") unless acknowledged == 1
-
-      true
-    rescue StandardError
-      release_claim(claim_token)
-      raise
     end
-
-    private
 
     def release_claim(claim_token)
       self.class.where(id: id, push_claim_token: claim_token).update_all(

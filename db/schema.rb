@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_11_020000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_13_000100) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -149,13 +149,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_020000) do
     t.bigint "inbox_comment_id", null: false
     t.text "link"
     t.text "message", null: false
+    t.integer "push_attempts"
     t.string "push_claim_token"
     t.datetime "push_claimed_at"
     t.datetime "push_enqueued_at"
+    t.string "push_state"
     t.bigint "recipient_id", null: false
+    t.text "title"
     t.datetime "updated_at", null: false
+    t.integer "workflow_execution_id"
     t.index ["delivery_key"], name: "index_comment_notification_deliveries_on_delivery_key", unique: true
     t.index ["push_enqueued_at", "push_claimed_at"], name: "index_comment_notification_deliveries_pending"
+    t.index ["push_state", "push_claimed_at"], name: "workflow_push_recovery"
+    t.index ["workflow_execution_id"], name: "index_comment_notification_deliveries_on_workflow_execution_id"
   end
 
   create_table "comment_reactions", force: :cascade do |t|
@@ -955,9 +961,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_020000) do
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
     t.string "waiting_notice_scope"
+    t.integer "workflow_execution_id"
+    t.string "workflow_stop_reason"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
+    t.index ["workflow_execution_id", "agent_id"], name: "workflow_task_identity", unique: true
+    t.index ["workflow_execution_id"], name: "index_tasks_on_workflow_execution_id"
   end
 
   create_table "topics", force: :cascade do |t|
@@ -1084,6 +1094,68 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_020000) do
     t.index ["webauthn_id"], name: "index_webauthn_credentials_on_webauthn_id", unique: true
   end
 
+  create_table "workflow_chains", force: :cascade do |t|
+    t.string "correlation_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "creative_id", null: false
+    t.integer "root_depth", null: false
+    t.integer "step_count", default: 0, null: false
+    t.integer "task_count", default: 0, null: false
+    t.bigint "topic_id", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["correlation_id", "creative_id", "topic_id"], name: "workflow_chain_identity", unique: true
+  end
+
+  create_table "workflow_executions", force: :cascade do |t|
+    t.integer "chain_id", null: false
+    t.json "context", null: false
+    t.datetime "created_at", null: false
+    t.json "decisions", default: [], null: false
+    t.string "input_event_id", null: false
+    t.bigint "owner_id"
+    t.string "reason"
+    t.boolean "reserved", default: false, null: false
+    t.bigint "rule_id", null: false
+    t.json "rule_snapshot", null: false
+    t.datetime "sealed_at"
+    t.json "selected_agent_ids", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["chain_id", "input_event_id"], name: "workflow_execution_identity", unique: true
+    t.index ["chain_id", "rule_id"], name: "index_workflow_executions_on_chain_id_and_rule_id"
+    t.index ["chain_id"], name: "index_workflow_executions_on_chain_id"
+    t.index ["sealed_at"], name: "index_workflow_executions_on_sealed_at"
+  end
+
+  create_table "workflow_outboxes", force: :cascade do |t|
+    t.bigint "agent_id"
+    t.integer "attempts", default: 0, null: false
+    t.string "claim_token"
+    t.datetime "claimed_at"
+    t.json "context", null: false
+    t.datetime "created_at", null: false
+    t.datetime "due_at", null: false
+    t.integer "execution_id", null: false
+    t.string "key", null: false
+    t.string "reason"
+    t.bigint "reply_comment_id"
+    t.string "state", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_id", "key"], name: "index_workflow_outboxes_on_execution_id_and_key", unique: true
+    t.index ["execution_id"], name: "index_workflow_outboxes_on_execution_id"
+    t.index ["state", "due_at", "claimed_at"], name: "index_workflow_outboxes_on_state_and_due_at_and_claimed_at"
+  end
+
+  create_table "workflow_receipts", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_name", null: false
+    t.integer "execution_id", null: false
+    t.string "job_id", null: false
+    t.string "source", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_id"], name: "index_workflow_receipts_on_execution_id"
+    t.index ["source", "event_name", "job_id"], name: "workflow_receipt_identity", unique: true
+  end
+
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "activity_logs", "comments"
@@ -1096,6 +1168,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_020000) do
   add_foreign_key "calendar_events", "creatives"
   add_foreign_key "calendar_events", "users"
   add_foreign_key "channels", "topics"
+  add_foreign_key "comment_notification_deliveries", "workflow_executions"
   add_foreign_key "comment_reactions", "comments"
   add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"
@@ -1172,6 +1245,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_020000) do
   add_foreign_key "task_actions", "tasks"
   add_foreign_key "tasks", "creatives", on_delete: :nullify
   add_foreign_key "tasks", "users", column: "agent_id"
+  add_foreign_key "tasks", "workflow_executions"
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "topics", column: "source_topic_id", on_delete: :nullify
   add_foreign_key "topics", "users"
@@ -1182,4 +1256,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_11_020000) do
   add_foreign_key "users", "agent_gateways"
   add_foreign_key "users", "creatives", column: "last_visited_creative_id", on_delete: :nullify
   add_foreign_key "webauthn_credentials", "users"
+  add_foreign_key "workflow_executions", "workflow_chains", column: "chain_id"
+  add_foreign_key "workflow_outboxes", "workflow_executions", column: "execution_id"
+  add_foreign_key "workflow_receipts", "workflow_executions", column: "execution_id"
 end
