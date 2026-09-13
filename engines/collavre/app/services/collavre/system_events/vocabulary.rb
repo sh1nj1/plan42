@@ -11,7 +11,10 @@ module Collavre
         "comment_created" => Definition.new(
           name: "comment_created",
           required_keys: %w[comment creative],
-          sources: %w[comment_callback cron a2a drop_trigger trigger_restart]
+          sources: %w[comment_callback cron a2a drop_trigger trigger_restart workflow]
+        ),
+        "workflow_step_completed" => Definition.new(
+          name: "workflow_step_completed", required_keys: %w[comment creative workflow], sources: %w[workflow]
         )
       }.freeze
 

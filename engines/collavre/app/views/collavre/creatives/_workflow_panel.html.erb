@@ -6,6 +6,12 @@
          data-creatives--workflow-rule-labels-value="<%= labels.to_json %>">
   <h2><%= t('collavre.workflow.editor.title') %></h2>
   <p><%= t('collavre.workflow.editor.scope_note') %></p>
+  <details>
+    <summary><%= t("collavre.workflow.runtime.help_title") %></summary>
+    <% %w[completion bounds delivery moves].each do |key| %>
+      <p><%= t("collavre.workflow.runtime.#{key}") %></p>
+    <% end %>
+  </details>
   <p data-creatives--workflow-rule-target="permission"></p>
   <p><%= link_to t('collavre.workflow.editor.tree_link'), creative_path(@creative), data: { turbo_frame: '_top' } %></p>
   <p data-creatives--workflow-rule-target="status" role="status" aria-live="polite"></p>

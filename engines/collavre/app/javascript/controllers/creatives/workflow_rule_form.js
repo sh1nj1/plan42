@@ -158,8 +158,14 @@ export default class WorkflowRuleForm {
     const warnings = handler?.type === 'agent' ? array(handler.agent_ids).flatMap(id => {
       const agent = this.data.agents.find(option => option.id === id)
       return agent ? agent.warnings : [this.labels.agent_unavailable]
-    }) : []
+    }) : this.terminalWarnings()
     this.messages('warnings', [...new Set(warnings)])
+  }
+
+  terminalWarnings() {
+    const emits = this.draft?.emits
+    return ['human', 'none'].includes(this.draft?.handler?.type) && typeof emits === 'string' && emits.trim()
+      ? [this.labels.non_emitting] : []
   }
 
   applyRaw() {

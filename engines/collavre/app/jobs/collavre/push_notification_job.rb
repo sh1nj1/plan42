@@ -14,7 +14,8 @@ class PushNotificationJob < ApplicationJob
 
   queue_as :default
 
-  def perform(user_id, message:, link: nil)
+  def perform(user_id, message:, link: nil, title: TITLE)
+    @title = title
     tokens = Device.where(user_id: user_id).pluck(:fcm_token)
     return if tokens.empty?
 
@@ -28,7 +29,7 @@ class PushNotificationJob < ApplicationJob
     elsif (client = Rails.application.config.x.fcm_client)
       client.send(tokens, {
         notification: {
-          title: "새 알림",
+          title: @title || TITLE,
           body: message,
           click_action: link
         }
@@ -68,7 +69,7 @@ class PushNotificationJob < ApplicationJob
   def build_message(token, body, link)
     Google::Apis::FcmV1::Message.new(
       token: token,
-      notification: Google::Apis::FcmV1::Notification.new(title: TITLE, body: body),
+      notification: Google::Apis::FcmV1::Notification.new(title: @title || TITLE, body: body),
       webpush: Google::Apis::FcmV1::WebpushConfig.new(
         fcm_options: Google::Apis::FcmV1::WebpushFcmOptions.new(link: link)
       ),

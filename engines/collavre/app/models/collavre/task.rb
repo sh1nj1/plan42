@@ -2,6 +2,7 @@ module Collavre
   class Task < ApplicationRecord
     self.table_name = "tasks"
     include ReplayLoopCompletion
+    include WorkflowCompletion
 
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy
@@ -103,6 +104,7 @@ module Collavre
     # to drive the same side effects (trigger-loop continuation + stop-button
     # broadcast) once the related reply_comment has been persisted.
     def fire_completion_callbacks_after_external_claim
+      settle_workflow
       recheck_abandoned_replays
       check_trigger_loop_completion if trigger_loop_completion_eligible?
       broadcast_stop_button_removal if terminal_status?

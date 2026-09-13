@@ -403,6 +403,8 @@ module Collavre
         Rails.cache.delete(cache_key)
         matcher = Object.new
         matcher.define_singleton_method(:match) { [ coordinator, worker ] }
+        matcher.define_singleton_method(:workflow_rule) { nil }
+        matcher.define_singleton_method(:workflow_snapshot) { nil }
 
         Orchestration::Matcher.stub(:new, matcher) do
           assert_raises(ArgumentError) do

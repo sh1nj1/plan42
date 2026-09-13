@@ -5,6 +5,8 @@ module Collavre
     # The optional workflow tier between topic assignment and agent defaults.
     # An empty decision is exclusive; only a missing rule falls back.
     module WorkflowRouting
+      attr_reader :workflow_rule, :workflow_snapshot
+
       private
 
       def match_with_workflow
@@ -12,7 +14,10 @@ module Collavre
         when "off"
           match_by_expression
         when "on"
-          match_by_workflow || match_by_expression
+          result = match_by_workflow
+          @workflow_rule = @matched_workflow_rule
+          @workflow_snapshot = @workflow_resolver&.snapshot_for(@workflow_rule&.creative_id)
+          result || match_by_expression
         else
           decision = safe_match_by_workflow
           fallback = match_by_expression
@@ -27,6 +32,7 @@ module Collavre
           candidate.event_name == @context["event_name"] &&
             conditions.match?(candidate.conditions, rule_id: candidate.creative_id)
         end
+        @matched_workflow_rule = rule
         return nil unless rule
         return [] unless rule.responder?
 

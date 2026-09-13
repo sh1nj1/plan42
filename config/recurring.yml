@@ -1,4 +1,7 @@
 production: &production
+  workflow_recovery:
+    class: Collavre::WorkflowSweepJob
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -29,6 +32,9 @@ production: &production
     schedule: at 4:30am every day
 
 desktop:
+  workflow_recovery:
+    class: Collavre::WorkflowSweepJob
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -59,6 +65,9 @@ desktop:
     schedule: at 4:30am every day
 
 development:
+  workflow_recovery:
+    class: Collavre::WorkflowSweepJob
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default

@@ -28,6 +28,7 @@ module Collavre
     # answer it is the resolved payload itself. This module records the answer
     # off that payload and is the single door every reader goes through.
     module DeliveryRecord
+      extend RestoredDispatchContext
       # Comment ids a turn delivered as chat history although it was not created
       # for them. Sits beside TaskCoalescer::PAYLOAD_KEY and
       # TaskCoalescer::ACQUIRED_ANCHOR_KEY, which record the other two ways a
@@ -143,6 +144,8 @@ module Collavre
       # that at the call site is how HANDOFF_FAILED_KEY came to be left in — it
       # was added here long after restored_context had named the other four —
       # and the drift test on this constant is what will catch the sixth.
+      DISPATCH_SCOPED_KEYS = %w[workflow_execution_id].freeze
+
       TURN_SCOPED_KEYS = [
         KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, HANDED_OFF_IDS_KEY,
         RESTORED_KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
@@ -451,6 +454,7 @@ module Collavre
       # creative, or a different event over the same comment, is a different
       # question and not an answer to this one.
       def self.covering_task(agent, comment_id, context, trigger_event_name)
+        return if Workflow::DispatchIdentity.valid?(context, agent.id)
         return nil if agent.nil? || comment_id.blank?
         return nil unless context.is_a?(Hash) && context.key?("topic")
         return nil unless PolicyResolver.new(context).drop_delivered_dispatches_for?(agent)
@@ -733,12 +737,7 @@ module Collavre
       # succeeded unable to cover anything it read, its merged list would
       # re-send comments it was created for, and its acquired anchor would
       # label this turn's own trigger as borrowed.
-      def self.restored_context(payload, comment)
-        # Restoring a different dropped dispatch does not inherit the covering
-        # turn's authentication replay claim.
-        TaskCoalescer.reanchor_payload(payload, comment).except(*CliProxy::ReplayClaims::KEYS, *TURN_SCOPED_KEYS)
-      end
-      private_class_method :restored_context
+
 
       # Comment ids some other task in this turn's scope is already on the hook
       # for, as its trigger or as a merged block. Any status counts: what is

@@ -12,9 +12,22 @@ module Collavre
       def rules
         return @rules if defined?(@rules)
 
-        parsed = rule_creatives.filter_map { |creative| Rule.from(creative) }
+        @snapshots = {}
+        parsed = rule_creatives.filter_map do |creative|
+          @snapshots[creative.id] = creative.data&.dig("workflow_rule")&.deep_dup if creative.data.is_a?(Hash)
+          Rule.from(creative)
+        end
         warn_discarded(parsed.length - MAX_RULES) if parsed.length > MAX_RULES
         @rules = parsed.first(MAX_RULES)
+      end
+
+      def reachable_rule?(id)
+        rule_creatives.any? { |creative| creative.id == id && creative.workflow_rule? }
+      end
+
+      def snapshot_for(id)
+        rules
+        @snapshots[id]
       end
 
       def workflow_creative_ids

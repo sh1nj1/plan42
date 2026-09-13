@@ -47,6 +47,31 @@ module Collavre
       Rails.application.config.x.fcm_project_id = @original_project
     end
 
+    test "workflow title reaches v1 and its byte budget in both locales" do
+      %w[en ko].each do |locale|
+        title = I18n.t("collavre.workflow.runtime.title", locale: locale)
+        PushNotificationJob.perform_now(@user.id, message: "가" * 8000, link: "/creatives/1", title: title)
+        assert_equal title, @service.requests.last.last.message.notification.title
+        assert_operator @service.requests.last.last.to_json.bytesize, :<=, PushNotificationJob::MAX_REQUEST_BYTES
+      end
+    end
+
+    test "workflow title reaches legacy transport" do
+      old_client = Rails.application.config.x.fcm_client
+      calls = []
+      client = Object.new
+      client.define_singleton_method(:send) { |*args| calls << args }
+      Rails.application.config.x.fcm_service = nil
+      Rails.application.config.x.fcm_client = client
+      %w[en ko].each do |locale|
+        title = I18n.t("collavre.workflow.runtime.title", locale: locale)
+        PushNotificationJob.perform_now(@user.id, message: "Action", title: title)
+        assert_equal title, calls.last.last[:notification][:title]
+      end
+    ensure
+      Rails.application.config.x.fcm_client = old_client
+    end
+
     test "keeps the whole request inside the budget for an oversized message" do
       perform("가" * 8000, "/creatives/1")
 
