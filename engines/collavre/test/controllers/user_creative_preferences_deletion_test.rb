@@ -48,6 +48,16 @@ class UserCreativePreferencesDeletionTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a foreign key violation outside the insert still raises after creative deletion" do
+    error = ActiveRecord::InvalidForeignKey.new("unrelated foreign key")
+    Collavre::UserCreativePreference.stub(:find_by!, lambda { |*|
+      @creative.destroy!
+      raise error
+    }) do
+      assert_same error, assert_raises(ActiveRecord::InvalidForeignKey) { post @path, as: :json }
+    end
+  end
+
   test "root expansion preferences still work without a creative id" do
     post "/creative_expanded_states/toggle", params: { node_id: @creative.id, expanded: true }, as: :json
 
@@ -59,10 +69,11 @@ class UserCreativePreferencesDeletionTest < ActionDispatch::IntegrationTest
   private
 
   def delete_creative_before_preference_insert
-    insert = Collavre::UserCreativePreference.method(:insert_all)
-    Collavre::UserCreativePreference.stub(:insert_all, lambda { |*args, **options|
-      @creative.destroy!
-      insert.call(*args, **options)
+    transaction = Collavre::UserCreativePreference.method(:transaction)
+    Collavre::UserCreativePreference.stub(:transaction, lambda { |**options, &block|
+      # The concurrent deletion commits before the insert's savepoint begins.
+      @creative.destroy! unless @creative.destroyed?
+      transaction.call(**options, &block)
     }) { yield }
   end
 

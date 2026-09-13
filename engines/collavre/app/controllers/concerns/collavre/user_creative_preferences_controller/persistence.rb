@@ -6,10 +6,6 @@ module Collavre
     # Retrying twice covers that race; beyond it the row is not coming back.
     MAX_PREFERENCE_LOCK_ATTEMPTS = 3
 
-    included do
-      rescue_from ActiveRecord::InvalidForeignKey, with: :handle_deleted_preference_creative
-    end
-
     private
 
     # insert_all uses the unique preference key as the first-insert fence.
@@ -17,8 +13,19 @@ module Collavre
     def preference_for(creative_id)
       now = Time.current
       attributes = { creative_id: creative_id, user_id: Current.user.id, expanded_status: {}, created_at: now, updated_at: now }
-      UserCreativePreference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+      insert_preference(attributes)
       UserCreativePreference.find_by!(creative_id: creative_id, user_id: Current.user.id)
+    end
+
+    def insert_preference(attributes)
+      UserCreativePreference.transaction(requires_new: true) do
+        UserCreativePreference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+      end
+    rescue ActiveRecord::InvalidForeignKey
+      # Only the initial insert is covered, after its savepoint has rolled back.
+      # Check the actual origin id being written, not the linked request id.
+      Creative.find(attributes[:creative_id]) if attributes[:creative_id].present?
+      raise
     end
 
     # A collapse can remove an empty row after it is found but before with_lock
@@ -47,15 +54,6 @@ module Collavre
 
         retry
       end
-    end
-
-    # Run after the failed save transaction has unwound, so PostgreSQL can
-    # query again. A delayed browser save for a deleted creative is a 404;
-    # violations involving a live creative must still surface as errors.
-    def handle_deleted_preference_creative(error)
-      raise error if params[:creative_id].blank? || Creative.exists?(params[:creative_id])
-
-      head :not_found
     end
   end
 end
