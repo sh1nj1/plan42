@@ -1,0 +1,17 @@
+ko:
+  collavre:
+    creatives:
+      types:
+        cancel: 타입 변경 취소
+        label: 타입
+        general: 일반
+        workflow: 워크플로
+        search: 타입 검색
+        add: '"%{name}" 타입 추가'
+        edit_rules: 규칙 편집
+        errors:
+          invalid: 타입은 제어 문자가 없는 64자 이하의 텍스트여야 합니다.
+          protected: 시스템 인박스와 워크플로 규칙은 전용 생성·편집 경로에서만 관리할 수 있습니다.
+          data_present: 워크플로 설정이나 규칙이 남아 있습니다. 타입을 변경하기 전에 이를 명시적으로 보존하거나 제거하세요.
+          admin_required: 워크플로로 전환하거나 다른 타입으로 바꾸려면 관리자 권한이 필요합니다.
+          read_only: 보관되었거나 외부에서 관리하는 크리에이티브의 타입은 변경할 수 없습니다.

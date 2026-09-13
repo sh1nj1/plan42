@@ -1,3 +1,4 @@
+import { CreativeTypeEditor } from './creative_type_editor'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
 import { $getSelection } from 'lexical'
@@ -395,6 +396,8 @@ function setupEditorSession() {
       if (descriptionInput) descriptionInput.value = renderMarkdown(md);
     }
 
+    const typeEditor = new CreativeTypeEditor(form, scheduleSave);
+
     function applyCreativeData(data, tree) {
       if (!data) return;
       const creativeId = data.id;
@@ -402,6 +405,7 @@ function setupEditorSession() {
       form.action = `/creatives/${creativeId}`;
       if (methodInput) methodInput.value = 'patch';
       form.dataset.creativeId = creativeId;
+      typeEditor.load(data);
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
 
@@ -765,7 +769,7 @@ function setupEditorSession() {
           markdownEditor: markdownEditorInput?.value,
           progress,
           persistProgress,
-          originId: originIdInput?.value,
+          originId: originIdInput?.value, creativeType: typeEditor.value,
         });
         if (creativeSaveSnapshotIsEmpty(snapshot)) {
           pendingSave = false;
@@ -799,7 +803,7 @@ function setupEditorSession() {
         return creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) {
             applySaveStatus('error');
-            return r;
+            return typeEditor.failed(r);
           }
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
@@ -813,6 +817,7 @@ function setupEditorSession() {
             });
             snapshot = applied.snapshot;
 
+            if (!currentTree || tree === currentTree) typeEditor.saved(data, snapshot.creativeType);
             const reset = resetCreativeSaveState(snapshot, {
               content: markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value,
               progress: readProgressValue(),
@@ -1000,7 +1005,7 @@ function setupEditorSession() {
 
       const finalizeHide = function () {
         template.style.display = 'none';
-        const p = (pendingSave || saveQueue.saving) ? saveForm(tree, parentId) : Promise.resolve();
+        const p = (pendingSave || saveQueue.saving) ? typeEditor.flush(() => saveForm(tree, parentId)) : Promise.resolve();
         return p.then((result) => {
           if (isFailedSaveResult(result)) {
             recoverFromFailedSave();
@@ -1292,6 +1297,7 @@ function setupEditorSession() {
       if (!target) return;
 
       const prev = currentTree;
+      if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
@@ -1365,6 +1371,7 @@ function setupEditorSession() {
       setTimeout(() => { addNewInProgress = false; }, 300);
 
       const prev = currentTree;
+      if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
@@ -1430,6 +1437,7 @@ function setupEditorSession() {
     async function addChild() {
       if (!currentTree) return;
       const prev = currentTree;
+      if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
@@ -1703,6 +1711,7 @@ function setupEditorSession() {
       if (closeSaveInProgress) return;
       resetOriginTracking();
       const performStart = () => {
+        typeEditor.load();
         let targetContainer = container || document.getElementById('creatives');
         if (targetContainer && targetContainer.matches && targetContainer.matches('creative-tree-row')) {
           targetContainer = targetContainer.parentNode;

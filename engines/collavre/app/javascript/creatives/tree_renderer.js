@@ -277,6 +277,9 @@ function applyRowProperties(row, node) {
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_source')) {
     setDatasetValue(row, 'markdownSource', inlinePayload.markdown_source ?? '')
   }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'creative_type')) {
+    setDatasetValue(row, 'creativeType', inlinePayload.creative_type)
+  }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_editor')) {
     setDatasetValue(row, 'markdownEditor', inlinePayload.markdown_editor ?? '')
   }

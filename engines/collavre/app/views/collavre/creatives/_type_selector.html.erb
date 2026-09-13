@@ -1,0 +1,14 @@
+<div data-creative-type-editor
+     data-options="<%= [{ value: "", name: t('collavre.creatives.types.general') }, { value: "workflow", name: t('collavre.creatives.types.workflow') }].to_json %>"
+     data-save-failed="<%= t('collavre.creatives.index.save_failed_alert') %>"
+     data-add-label="<%= t('collavre.creatives.types.add', name: '%{name}') %>">
+  <label for="inline-creative-type"><%= t('collavre.creatives.types.label') %></label>
+  <input id="inline-creative-type" type="text" role="combobox" autocomplete="off"
+         aria-label="<%= t('collavre.creatives.types.label') %>"
+         placeholder="<%= t('collavre.creatives.types.search') %>" maxlength="64" style="width:10em;">
+  <input type="hidden" name="creative[creative_type]" disabled>
+  <div class="common-popup" style="display:none;"><ul class="common-popup-list"></ul></div>
+  <button type="button"><%= t('collavre.creatives.types.cancel') %></button>
+  <span role="alert"></span>
+  <a hidden data-turbo="false"><%= t('collavre.creatives.types.edit_rules') %></a>
+</div>

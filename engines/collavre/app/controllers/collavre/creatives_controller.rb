@@ -24,6 +24,7 @@ module Collavre
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
+    include Collavre::CreativeTypeEditable
     include Collavre::Concerns::CreativeHistoryTrackable
 
     def index
@@ -201,6 +202,7 @@ module Collavre
             end
             render json: {
               id: @creative.id,
+              creative_type: @creative.effective_origin(Set.new).creative_type,
               description: @creative.effective_description,
               # Embedded variant for read-only display (e.g. slide view): turns
               # bare YouTube links into preview iframes. `description` stays the
@@ -261,6 +263,7 @@ module Collavre
         # the next keystroke save.
         render json: {
           id: @creative.id,
+          creative_type: @creative.creative_type,
           content_type: @creative.data&.dig("content_type"),
           markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
@@ -317,6 +320,7 @@ module Collavre
             base.reload
             response_data = {
               id: base.id,
+              creative_type: base.creative_type,
               progress: base.progress,
               progress_html: view_context.render_creative_progress(base),
               has_children: base.children.exists?,
@@ -346,7 +350,7 @@ module Collavre
           end
         else
           format.html { render :edit, status: :unprocessable_entity }
-          format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
+          format.json { render json: { errors: base.errors.full_messages }, status: :unprocessable_entity }
         end
       end
     end
@@ -614,7 +618,7 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor, :creative_type)
       end
 
       # Whitelist of query parameters consumed by Creatives::IndexQuery and its
