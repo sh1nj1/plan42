@@ -48,13 +48,15 @@ module Collavre
     # Single method to update loop state — avoids multiple DB writes per Job execution.
     # Only the keys passed in `changes` are updated; others are preserved.
     def update_loop_data(child_creative, **changes)
-      data = child_creative.data || {}
-      trigger = data["trigger"] || {}
-      loop_data = trigger["loop"] || {}
-      changes.each { |key, value| loop_data[key.to_s] = value }
-      trigger["loop"] = loop_data
-      data["trigger"] = trigger
-      child_creative.update!(data: data)
+      child_creative.with_lock do
+        data = child_creative.data || {}
+        trigger = data["trigger"] || {}
+        loop_data = trigger["loop"] || {}
+        changes.each { |key, value| loop_data[key.to_s] = value }
+        trigger["loop"] = loop_data
+        data["trigger"] = trigger
+        child_creative.update!(data: data)
+      end
     end
 
     # Post a system notice (no specific user author) in the trigger topic.

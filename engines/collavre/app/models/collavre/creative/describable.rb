@@ -71,12 +71,14 @@ module Collavre
         target = effective_origin
         return target.embed_attachment_blob!(blob) unless target == self
 
-        node = attachment_node_html(blob)
-        new_html = "#{description}#{node}"
-        # Markdown-mode creatives derive description from markdown_source; demote
-        # to HTML so the embedded node is the persisted source of truth.
-        self.content_type_input = "html" if data&.dig("content_type") == "markdown"
-        update!(description: new_html)
+        with_lock do
+          node = attachment_node_html(blob)
+          new_html = "#{description}#{node}"
+          # Markdown-mode creatives derive description from markdown_source; demote
+          # to HTML so the embedded node is the persisted source of truth.
+          self.content_type_input = "html" if data&.dig("content_type") == "markdown"
+          update!(description: new_html)
+        end
       end
 
       # HTML for embedding a blob inline, branching on content type. The proxy
@@ -102,22 +104,24 @@ module Collavre
         target = effective_origin
         return target.remove_attachment!(signed_id) unless target == self
 
-        blob = ActiveStorage::Blob.find_signed(signed_id)
-        return false unless blob
+        with_lock do
+          blob = ActiveStorage::Blob.find_signed(signed_id)
+          return false unless blob
 
-        attachment = files.attachments.find_by(blob_id: blob.id)
-        return false unless attachment
+          attachment = files.attachments.find_by(blob_id: blob.id)
+          return false unless attachment
 
-        stripped = description_without_attachment_node(blob.signed_id)
-        if stripped
-          # Demote markdown -> html so the stripped HTML is the persisted source
-          # of truth (mirrors embed_attachment_blob!).
-          self.content_type_input = "html" if data&.dig("content_type") == "markdown"
-          update!(description: stripped)
-        else
-          detach_and_maybe_purge(attachment, schedule_during_history: true)
+          stripped = description_without_attachment_node(blob.signed_id)
+          if stripped
+            # Demote markdown -> html so the stripped HTML is the persisted source
+            # of truth (mirrors embed_attachment_blob!).
+            self.content_type_input = "html" if data&.dig("content_type") == "markdown"
+            update!(description: stripped)
+          else
+            detach_and_maybe_purge(attachment, schedule_during_history: true)
+          end
+          true
         end
-        true
       end
 
       private

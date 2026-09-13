@@ -24,6 +24,7 @@ module Collavre
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
+    include Collavre::CreativeTypeEditable
     include Collavre::Concerns::CreativeHistoryTrackable
 
     def index
@@ -192,15 +193,10 @@ module Collavre
             else
                       @creative.ancestors.count + 1
             end
-            sanitized_data = @creative.effective_origin(Set.new).data
-            # markdown_source is exposed via the top-level `markdown_source:` field for writers;
-            # exclude it from the editable `data` payload so the metadata YAML editor can't
-            # round-trip a stale copy back into data["markdown_source"] on update_metadata.
-            if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
-              sanitized_data = sanitized_data.except("markdown_source")
-            end
+            sanitized_data = editable_metadata_for(@creative)
             render json: {
               id: @creative.id,
+              creative_type: @creative.effective_origin(Set.new).creative_type,
               description: @creative.effective_description,
               # Embedded variant for read-only display (e.g. slide view): turns
               # bare YouTube links into preview iframes. `description` stays the
@@ -261,6 +257,7 @@ module Collavre
         # the next keystroke save.
         render json: {
           id: @creative.id,
+          creative_type: @creative.creative_type,
           content_type: @creative.data&.dig("content_type"),
           markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
@@ -306,7 +303,7 @@ module Collavre
         # or creates a self-cycle.
         permitted.except!("origin_id", :origin_id)
 
-        success &&= base.update(permitted)
+        success &&= update_creative_content(base, permitted)
         if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
           base.complete_self_and_descendants! if base.children.exists?
         end
@@ -315,14 +312,7 @@ module Collavre
           format.html { redirect_to @creative }
           format.json do
             base.reload
-            response_data = {
-              id: base.id,
-              progress: base.progress,
-              progress_html: view_context.render_creative_progress(base),
-              has_children: base.children.exists?,
-              content_type: base.data&.dig("content_type"),
-              markdown_editor: base.data&.dig("editor")
-            }
+            response_data = creative_update_payload(base)
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
             # Gated on write permission so a read-only share recipient moving a
@@ -346,7 +336,7 @@ module Collavre
           end
         else
           format.html { render :edit, status: :unprocessable_entity }
-          format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
+          format.json { render json: { errors: base.errors.full_messages }, status: :unprocessable_entity }
         end
       end
     end
@@ -448,7 +438,7 @@ module Collavre
       previous_enabled = creative.drop_trigger_enabled?
 
       if creative.update(data: new_data)
-        notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
+        @newly_enabled_drop_trigger = creative if !previous_enabled && creative.drop_trigger_enabled?
         head :ok
       else
         render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity
@@ -614,7 +604,7 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor, :creative_type)
       end
 
       # Whitelist of query parameters consumed by Creatives::IndexQuery and its

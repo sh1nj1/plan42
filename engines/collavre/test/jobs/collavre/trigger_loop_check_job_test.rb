@@ -62,6 +62,17 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "stale loop completion update preserves committed type and unrelated loop fields" do
+      stale = Creative.find(@child.id)
+      latest = @child.data.deep_merge("kind" => "project", "trigger" => { "loop" => { "max_iterations" => 42 } })
+      Creative.where(id: @child.id).update_all(data: latest)
+
+      TriggerLoopCheckJob.new.send(:update_loop_data, stale, state: "completed", last_task_id: 123)
+
+      expected = latest.deep_merge("trigger" => { "loop" => { "state" => "completed", "last_task_id" => 123 } })
+      assert_equal expected, @child.reload.data
+    end
+
     [ "failed", "cancelled", "escalated" ].product([ false, true ]).each do |status, external|
       test "abandonment is rechecked when newer turn becomes #{status} via #{external ? 'external claim' : 'callback'}" do
         @task.reload.update!(trigger_event_payload: { "engine_login" => { "replay_abandoned" => true } })

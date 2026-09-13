@@ -185,3 +185,11 @@ test('keeps in-flight cron controls disabled during DOM synchronization', () => 
   expect(template.content.querySelector('textarea').disabled).toBe(true)
   expect(template.content.querySelector('button').disabled).toBe(true)
 })
+
+test('rendered rows carry the server type into the inline editor cache', () => {
+  const row = document.createElement('creative-tree-row')
+  applyRowProperties(row, { inline_editor_payload: { creative_type: 'workflow' } })
+  expect(row.dataset.creativeType).toBe('workflow')
+  applyRowProperties(row, { inline_editor_payload: { creative_type: '' } })
+  expect(row.dataset.creativeType).toBe('')
+})

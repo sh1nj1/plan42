@@ -67,6 +67,7 @@ module Collavre
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
 
+    include TypeSelectable
     include Linkable
     include Permissible
     include Describable

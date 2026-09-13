@@ -170,25 +170,27 @@ module Collavre
     end
 
     def initialize_trigger_loop(child, topic)
-      data = child.data || {}
-      trigger = data["trigger"] || {}
+      child.with_lock do
+        data = child.data || {}
+        trigger = data["trigger"] || {}
 
-      # Only initialize if loop doesn't exist yet
-      return if trigger["loop"].present?
+        # Only initialize if loop doesn't exist yet
+        return if trigger["loop"].present?
 
-      trigger["loop"] = {
-        "state" => "running",
-        "current_iteration" => 0,
-        "max_iterations" => 10,
-        "completion_conditions" => [],
-        "stuck_conditions" => [],
-        "on_retry" => "continue",
-        "last_task_id" => nil,
-        "cooldown_seconds" => 10,
-        "trigger_topic_id" => topic&.id
-      }
-      data["trigger"] = trigger
-      child.update!(data: data)
+        trigger["loop"] = {
+          "state" => "running",
+          "current_iteration" => 0,
+          "max_iterations" => 10,
+          "completion_conditions" => [],
+          "stuck_conditions" => [],
+          "on_retry" => "continue",
+          "last_task_id" => nil,
+          "cooldown_seconds" => 10,
+          "trigger_topic_id" => topic&.id
+        }
+        data["trigger"] = trigger
+        child.update!(data: data)
+      end
     end
 
     def task_exists_for?(comment)

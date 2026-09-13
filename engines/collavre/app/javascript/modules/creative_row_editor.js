@@ -1,3 +1,5 @@
+import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
+import { CreativeTypeEditor } from './creative_type_editor'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
 import { $getSelection } from 'lexical'
@@ -227,6 +229,7 @@ function setupEditorSession() {
           onUploadStateChange: handleUploadStateChange
         });
         destroyActiveEditor = () => {
+          typeEditor.dispose();
           if (lexicalEditor && typeof lexicalEditor.destroy === 'function') lexicalEditor.destroy();
         };
       } catch (e) {
@@ -395,13 +398,14 @@ function setupEditorSession() {
       if (descriptionInput) descriptionInput.value = renderMarkdown(md);
     }
 
+    const typeEditor = new CreativeTypeEditor(form, scheduleSave, () => saveQueue.saving);
+
     function applyCreativeData(data, tree) {
       if (!data) return;
       const creativeId = data.id;
       if (!creativeId) return;
-      form.action = `/creatives/${creativeId}`;
-      if (methodInput) methodInput.value = 'patch';
-      form.dataset.creativeId = creativeId;
+      initializeEditorForm(form, methodInput, data);
+      typeEditor.load(data);
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
 
@@ -765,7 +769,7 @@ function setupEditorSession() {
           markdownEditor: markdownEditorInput?.value,
           progress,
           persistProgress,
-          originId: originIdInput?.value,
+          originId: originIdInput?.value, creativeType: typeEditor.value,
         });
         if (creativeSaveSnapshotIsEmpty(snapshot)) {
           pendingSave = false;
@@ -799,7 +803,7 @@ function setupEditorSession() {
         return creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) {
             applySaveStatus('error');
-            return r;
+            return typeEditor.failed(r);
           }
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
@@ -811,12 +815,11 @@ function setupEditorSession() {
                 syncMarkdownToForm();
               },
             });
-            snapshot = applied.snapshot;
-
+            snapshot = typeEditor.acknowledgeSave(applied.snapshot, data, currentTree, tree);
             const reset = resetCreativeSaveState(snapshot, {
               content: markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value,
               progress: readProgressValue(),
-              originId: originIdInput?.value || '',
+              originId: originIdInput?.value || '', creativeType: typeEditor.selectedValue,
 	    }, isDirty);
             originalContent = reset.originalContent;
             if (reset.originalProgress !== undefined) originalProgress = reset.originalProgress;
@@ -863,7 +866,7 @@ function setupEditorSession() {
               const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
               if (parentTree) refreshRow(parentTree);
             } else if (method === 'PATCH') {
-              if (tree) refreshRow(tree);
+              refreshRow(tree);
             }
             if (cascadeProgressUpdate && tree) {
               refreshChildren(tree);
@@ -1000,7 +1003,7 @@ function setupEditorSession() {
 
       const finalizeHide = function () {
         template.style.display = 'none';
-        const p = (pendingSave || saveQueue.saving) ? saveForm(tree, parentId) : Promise.resolve();
+        const p = typeEditor.needsFlush(pendingSave, saveQueue.saving) ? typeEditor.flush(() => saveForm(tree, parentId)) : Promise.resolve();
         return p.then((result) => {
           if (isFailedSaveResult(result)) {
             recoverFromFailedSave();
@@ -1285,13 +1288,11 @@ function setupEditorSession() {
 
     async function move(delta) {
       if (!currentTree) return;
-      const trees = Array.from(document.querySelectorAll('.creative-tree'));
-      const index = trees.indexOf(currentTree);
-      if (index === -1) return;
-      const target = trees[index + delta];
+      const target = nextEditorTree(currentTree, delta);
       if (!target) return;
 
       const prev = currentTree;
+      if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
@@ -1365,6 +1366,7 @@ function setupEditorSession() {
       setTimeout(() => { addNewInProgress = false; }, 300);
 
       const prev = currentTree;
+      if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
@@ -1430,6 +1432,7 @@ function setupEditorSession() {
     async function addChild() {
       if (!currentTree) return;
       const prev = currentTree;
+      if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
       const prevParent = parentInput.value;
 
@@ -1703,6 +1706,7 @@ function setupEditorSession() {
       if (closeSaveInProgress) return;
       resetOriginTracking();
       const performStart = () => {
+        typeEditor.load();
         let targetContainer = container || document.getElementById('creatives');
         if (targetContainer && targetContainer.matches && targetContainer.matches('creative-tree-row')) {
           targetContainer = targetContainer.parentNode;
@@ -1723,16 +1727,7 @@ function setupEditorSession() {
         rowComponent.level = level;
         rowComponent.setAttribute('level', level);
         const iconSource = document.querySelector('creative-tree-row[data-edit-icon-html]') || document.getElementById('creatives');
-        if (iconSource) {
-          if (iconSource.dataset.editIconHtml) {
-            rowComponent.dataset.editIconHtml = iconSource.dataset.editIconHtml;
-            rowComponent.editIconHtml = iconSource.dataset.editIconHtml;
-          }
-          if (iconSource.dataset.editOffIconHtml) {
-            rowComponent.dataset.editOffIconHtml = iconSource.dataset.editOffIconHtml;
-            rowComponent.editOffIconHtml = iconSource.dataset.editOffIconHtml;
-          }
-        }
+        copyEditorIcons(rowComponent, iconSource);
         if (parentId) {
           rowComponent.parentId = parentId;
           rowComponent.setAttribute('parent-id', parentId);

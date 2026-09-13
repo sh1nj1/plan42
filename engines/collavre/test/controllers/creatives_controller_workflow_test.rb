@@ -137,6 +137,17 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     assert_equal @payload, response.parsed_body.fetch("rule")
   end
 
+  test "stale rule updates preserve newly committed metadata" do
+    stale = Creative.find(@rule.id)
+    latest = @rule.data.merge("context_ids" => [ @workflow.id ], "custom" => "keep")
+    Creative.where(id: @rule.id).update_all(data: latest)
+    Creative.stub(:find, stale) do
+      patch rule_path(@rule), params: { workflow_rule: @payload }, as: :json
+    end
+    assert_response :success
+    assert_equal latest.merge("workflow_rule" => @payload), @rule.reload.data
+  end
+
   test "creates a titled direct workflow rule" do
     assert_difference -> { @workflow.children.count }, 1 do
       post rule_path(@workflow), params: { description: "Notify reviewer", workflow_rule: @payload }, as: :json
