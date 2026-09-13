@@ -31,7 +31,7 @@ templates are supported. Advisory
 warnings, including unknown condition keys and unknown `emits`, do not block
 saving. The editor preserves fields outside its controls. Advanced rule data can repair
 malformed values that the structured fields cannot express; changes are applied
-explicitly before saving. It does not emit events.
+explicitly before saving. Saving or previewing rules never executes them.
 
 ## Scope and rollout
 
@@ -48,6 +48,48 @@ shadow differences before using the admin orchestration policy editor to enable
 strings in YAML. `"off"` skips workflows; a workflow miss in `"on"` mode retains
 the agent defaults. Topic primary agents, mentions, and review authors retain
 their higher routing precedence.
+
+## Execution and recovery
+
+In `on`, set `emits` in Advanced rule data to a registered event, such as
+`workflow_step_completed`. An agent rule publishes one child after every admitted
+responder completes with a usable public reply. The child preserves correlation,
+advances depth, and uses the reply from the lowest admitted agent ID as its anchor.
+Generated text is not parsed again for explicit mentions. `comment_created` can
+also be emitted as a logical routing event without creating another comment.
+
+Human handlers create a generic, linked action-needed entry in the target
+creative owner's Inbox and stop. None handlers ignore the event. Neither emits;
+the editor warns when they have an `emits` value. Login cards, review-only updates
+without an anchor, failed tasks and unusable replies stop continuation. A separate
+login replay or manual retry cannot reopen a sealed workflow; send a new message.
+
+Each scope-local chain allows relative depth 8, absolute depth 64, 16 admitted
+agent tasks and 16 rule executions. A rule can run once per chain. Ordinary
+mentions, topic primary agents and expression fallback retain their existing
+routing and limits. Default `shadow`, `off`, and settings saves produce no workflow
+execution, child event or handoff notice.
+
+Executions freeze their rule and admitted responders. Durable outboxes and a
+recurring workflow sweep recover scheduling/publication gaps with at most three
+attempts. Drop Trigger redelivery preserves its serialized job ID receipt; new
+jobs, cron invocations and deliberate restarts can create separate handoffs.
+Current scope, mode and permissions are rechecked. A topic move can stop pending
+work without transferring its chain, and access restoration does not reopen it.
+
+Workflow push is best effort. The Inbox entry survives push failure. Only an
+explicitly disabled notification preference suppresses push; unset permits it.
+A queue attempt has 30 minutes to start, followed by a five-minute transport lease,
+with three total attempts. A lost job or pre-enqueue crash therefore waits for
+queue expiry plus sweep and recovery delay. Repeated queue delays can exhaust
+attempts with no transport calls, and a crash after transport acceptance can
+produce a duplicate push. These deadlines are not delivery or recovery SLAs.
+
+For diagnostics, inspect `Collavre::Workflow::Chain` by `correlation_id` and scope,
+its `executions`, their `reason`, and `outboxes`. Tasks carry
+`workflow_execution_id`; ordinary restored dispatches and separate login replays
+do not inherit that reference. Execution logs include IDs, depths and reason
+codes without copying message bodies.
 
 ## API
 
