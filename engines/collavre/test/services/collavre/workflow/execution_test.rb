@@ -273,6 +273,115 @@ module Collavre
         assert_equal "empty_reply", execution.reload.reason
       end
 
+      %i[rejected scope_changed].each do |result|
+        test "stale materialization #{result} preserves the replacement admission and execution" do
+          execution = execute
+          row = execution.admissions.first!
+          Recovery.execution(execution)
+          token = row.reload.claim_token
+          replacement_token = nil
+          replacement_claimed_at = nil
+          delayed = ->(*) do
+            travel 6.minutes
+            Recovery.outbox(Outbox.find(row.id))
+            row.reload
+            replacement_token = row.claim_token
+            replacement_claimed_at = row.claimed_at
+            result
+          end
+          AiAgentJob.stub(:perform_now, delayed) { row.deliver!(token) }
+
+          assert_not_equal token, replacement_token
+          assert_equal "enqueued", row.reload.state
+          assert_equal replacement_token, row.claim_token
+          assert_equal replacement_claimed_at, row.claimed_at
+          assert_equal 2, row.attempts
+          assert_nil row.reason
+          assert execution.reload.open?
+          assert_equal 0, execution.tasks.count
+          assert_equal [ 1, 1 ], execution.chain.reload.attributes.values_at("task_count", "step_count")
+
+          test_case = self
+          service = ->(task) { Object.new.tap { |object| object.define_singleton_method(:call) { test_case.send(:succeed, task) } } }
+          assert_difference "execution.tasks.count", 1 do
+            AiAgentService.stub(:new, service) { WorkflowOutboxJob.perform_now(row.id, replacement_token) }
+          end
+          assert_equal "completed", row.reload.state
+          assert_equal "completed", execution.reload.reason
+        ensure
+          travel_back
+        end
+
+        test "expired materialization #{result} cannot fail an admission before reclamation" do
+          execution = execute
+          row = execution.admissions.first!
+          Recovery.execution(execution)
+          token = row.reload.claim_token
+          delayed = ->(*) { travel_to(row.claimed_at + Outbox::LEASE, with_usec: true); result }
+          AiAgentJob.stub(:perform_now, delayed) { row.deliver!(token) }
+          assert_equal "delivering", row.reload.state
+          assert_equal token, row.claim_token
+          assert_nil row.reason
+          assert execution.reload.open?
+          Recovery.outbox(row)
+          assert_equal "enqueued", row.reload.state
+          assert_not_equal token, row.claim_token
+          assert_equal 2, row.attempts
+        ensure
+          travel_back
+        end
+
+        test "current materialization #{result} records and settles the admission failure" do
+          execution = execute
+          row = execution.admissions.first!
+          Recovery.execution(execution)
+          token = row.reload.claim_token
+          AiAgentJob.stub(:perform_now, result) { row.deliver!(token) }
+          reason = result == :rejected ? "scheduler_rejected" : "scope_changed"
+          assert_equal "failed", row.reload.state
+          assert_equal reason, row.reason
+          assert_equal reason, execution.reload.reason
+          assert_nil row.claim_token
+          assert_nil row.claimed_at
+          assert_equal 0, execution.tasks.count
+        end
+      end
+
+      test "materialization entry refuses a stale token or non-delivering admission" do
+        execution = execute
+        row = execution.admissions.first!
+        Recovery.execution(execution)
+        token = row.reload.claim_token
+        AiAgentJob.stub(:perform_now, ->(*) { flunk "unowned materialization must not start work" }) do
+          Materialization.new(row, token: token).call
+          row.update!(state: "delivering")
+          Materialization.new(row, token: "stale").call
+        end
+        assert_equal token, row.reload.claim_token
+        assert execution.reload.open?
+        assert_equal 0, execution.tasks.count
+      end
+
+      test "recovery settles a fenced materialization failure after settlement interruption" do
+        execution = execute
+        row = execution.admissions.first!
+        Recovery.execution(execution)
+        token = row.reload.claim_token
+        settlement = Settlement.new(execution)
+        settlement.stub(:stop!, ->(*) { raise IOError }) do
+          Settlement.stub(:new, settlement) do
+            AiAgentJob.stub(:perform_now, :rejected) { row.deliver!(token) }
+          end
+        end
+        assert_equal "failed", row.reload.state
+        assert_equal "scheduler_rejected", row.reason
+        assert execution.reload.open?
+        Recovery.execution(execution)
+        assert_equal "scheduler_rejected", execution.reload.reason
+        assert_nil row.reload.claim_token
+        assert_equal 0, execution.tasks.count
+      end
+
       test "queue crash gap and exhausted outbox attempts stop missing tasks" do
         execution = execute
         row = execution.admissions.first
