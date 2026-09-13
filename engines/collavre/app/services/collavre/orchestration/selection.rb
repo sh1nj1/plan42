@@ -37,10 +37,20 @@ module Collavre
         candidates = base
         @candidate_overrides.each do |agent_id, override|
           candidates = candidates.reject { |agent| agent.id == agent_id }
-          overridden = Matcher.new(@context.deep_merge(override.deep_stringify_keys)).match
-          candidates.concat(overridden.select { |agent| agent.id == agent_id })
+          candidates.concat(overridden_candidates(override).select { |agent| agent.id == agent_id })
         end
         restore_match_order(candidates.uniq(&:id), base)
+      end
+
+      def overridden_candidates(override)
+        matcher = Matcher.new(@context.deep_merge(override.deep_stringify_keys))
+        candidates = matcher.match
+        # A sender override can change Liquid's winning rule. Only candidates
+        # from the base decision may share its execution (or ordinary route).
+        # Compare the snapshot too, so an intervening rule edit fails closed.
+        return [] unless matcher.workflow_rule == @workflow_rule && matcher.workflow_snapshot == @workflow_snapshot
+
+        candidates
       end
 
       # The Matcher's order is the floor order: Scheduler#schedule walks the
