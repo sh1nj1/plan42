@@ -32,13 +32,13 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     within("#comment_#{@reply.id}") do
       assert_no_selector ".comment-execution-time"
       assert_selector "time[datetime]"
-      find(".comment-activity-log-block summary").click
+      open_activity_logs
       assert_selector ".activity-time", text: /ago\s*\(1m 23s\)/
       assert_no_selector ".activity-log-duration"
     end
     within("#comment_#{@reviewed.id}") do
       assert_no_selector ".comment-execution-time"
-      find(".comment-activity-log-block summary").click
+      open_activity_logs
       assert_selector ".activity-time .activity-execution-time", text: "(20s)"
     end
     within("#comment_#{@historical.id}") do
@@ -50,13 +50,22 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
       assert_no_selector ".comment-activity-log-block"
     end
     within("#comment_#{@logged.id}") do
-      find(".comment-activity-log-block summary").click
+      open_activity_logs
       assert_selector ".activity-name", text: "LLM"
       assert_no_selector ".activity-log-duration, .activity-execution-time"
     end
   end
 
   private
+
+  def open_activity_logs
+    find(".comment-activity-log-block summary").click
+    # Turbo's lazy frame below the summary may still be outside the chat's
+    # scroll viewport. Bring it into view so its request actually starts.
+    frame = find("turbo-frame[id^='activity_log_details_']", visible: :all)
+    page.execute_script("arguments[0].scrollIntoView({ block: 'center' })", frame)
+    assert_selector ".activity-log-list"
+  end
 
   def create_reviewed_reply
     @reviewed = Comment.create!(creative: @creative, user: @user, content: "Draft")
