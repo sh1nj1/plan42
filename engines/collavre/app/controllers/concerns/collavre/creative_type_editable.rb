@@ -12,6 +12,11 @@ module Collavre
 
     private
 
+    def update_creative_content(base, permitted)
+      base.creative_type_placement = @creative
+      base.update(permitted)
+    end
+
     def editable_metadata_for(creative)
       data = creative.effective_origin(Set.new).data
       data.is_a?(Hash) ? data.except("markdown_source") : data

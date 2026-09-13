@@ -1,7 +1,7 @@
 import SearchCombobox, { escapeOption } from '../lib/search_combobox'
 
 export class CreativeTypeEditor {
-  constructor(form, onChange) {
+  constructor(form, onChange, isSaving = () => false) {
     this.root = form.querySelector('[data-creative-type-editor]')
     if (!this.root) return
     this.input = this.root.querySelector('[role="combobox"]')
@@ -27,6 +27,7 @@ export class CreativeTypeEditor {
     })
     this.cancelButton.addEventListener('click', () => {
       this.field.value = this.baseline
+      this.field.disabled = !isSaving()
       this.restoreLabel()
       this.popup.hide()
       this.error.textContent = ''

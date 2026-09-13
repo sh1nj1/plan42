@@ -7,6 +7,7 @@ module Collavre
 
       included do
         attr_writer :creative_type
+        attr_accessor :creative_type_placement
         validate :validate_creative_type, if: -> { instance_variable_defined?(:@creative_type) }
       end
 
@@ -17,7 +18,7 @@ module Collavre
       private
 
       def validate_creative_type
-        Creatives::TypeTransition.new(self, @creative_type, Current.user).apply
+        Creatives::TypeTransition.new(self, @creative_type, Current.user, placement: creative_type_placement).apply
       end
     end
   end

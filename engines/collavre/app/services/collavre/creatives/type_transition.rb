@@ -6,8 +6,9 @@ module Collavre
       MAX_LENGTH = 64
       PROTECTED = %w[inbox workflow_rule].freeze
 
-      def initialize(creative, input, user)
+      def initialize(creative, input, user, placement: nil)
         @creative, @input, @user = creative, input, user
+        @placement = placement || creative
       end
 
       def apply
@@ -19,13 +20,17 @@ module Collavre
         return error(:protected) if PROTECTED.include?(target) || PROTECTED.include?(@creative.creative_type)
         return error(:data_present) if workflow_data?
         return error(:admin_required) if workflow_boundary?(target) && !admin?
-        return error(:read_only) if @creative.read_only_source? || @creative.archived_at.present?
+        return error(:read_only) if read_only?
 
         @creative.data = (@creative.data || {}).except("kind")
         @creative.data["kind"] = target unless target.empty?
       end
 
       private
+
+      def read_only?
+        @creative.read_only_source? || @creative.archived_at.present? || @placement.archived_at.present?
+      end
 
       def valid_input?
         @input.is_a?(String) && @input.valid_encoding? && !@input.match?(/[[:cntrl:]]/)

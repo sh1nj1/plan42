@@ -333,3 +333,89 @@ test('closing after a failed autosave retries the retained type instead of disca
   expect(document.getElementById('inline-edit-form').style.display).toBe('block')
   expect(document.getElementById('type').value).toBe('Workflow')
 })
+
+async function openEmptyRow() {
+  const { tree } = appendMarkdownRow('42', 'before')
+  openRow(tree)
+  document.getElementById('inline-add').click()
+  await jest.advanceTimersByTimeAsync(20)
+  save.mockClear()
+}
+
+test('canceling a type on a new empty row before debounce creates no creative', async () => {
+  jest.useFakeTimers()
+  await openEmptyRow()
+  selectType('Workflow')
+  document.querySelector('[data-creative-type-editor] button').click()
+  await jest.advanceTimersByTimeAsync(5000)
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(save).not.toHaveBeenCalled()
+  expect(enqueue).not.toHaveBeenCalled()
+})
+
+test('canceling a type preserves independent body edits on a new row', async () => {
+  jest.useFakeTimers()
+  await openEmptyRow()
+  editorOptions.onChange({ html: '<p>Keep this draft</p>', markdown: 'Keep this draft' })
+  selectType('Workflow')
+  document.querySelector('[data-creative-type-editor] button').click()
+  let submitted
+  save.mockImplementation((_path, _method, form) => {
+    submitted = new FormData(form)
+    return response({ id: 44, creative_type: '' })
+  })
+  await jest.advanceTimersByTimeAsync(5000)
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(submitted.get('creative[markdown_source]')).toBe('Keep this draft')
+  expect(submitted.has('creative[creative_type]')).toBe(false)
+})
+
+test('cancel during an in-flight type save persists the restored type after acknowledgment', async () => {
+  jest.useFakeTimers()
+  const { tree } = appendMarkdownRow('42', 'before')
+  openRow(tree)
+  let settle
+  const submitted = []
+  save.mockImplementation((_path, _method, form) => {
+    submitted.push(new FormData(form).get('creative[creative_type]'))
+    if (submitted.length === 1) return new Promise(resolve => { settle = resolve })
+    return response({ id: 42, creative_type: '' })
+  })
+  selectType('Workflow')
+  await jest.advanceTimersByTimeAsync(5000)
+  document.querySelector('[data-creative-type-editor] button').click()
+  settle({ ok: true, text: async () => JSON.stringify({ id: 42, creative_type: 'workflow' }) })
+  await jest.advanceTimersByTimeAsync(5000)
+  expect(submitted).toEqual(['workflow', ''])
+  expect(document.getElementById('type').value).toBe('General')
+})
+
+
+test('cancel during a failed in-flight save keeps the body and restored type for retry', async () => {
+  jest.useFakeTimers()
+  const { tree } = appendMarkdownRow('42', 'before')
+  openRow(tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'Retain this body'
+  textarea.dispatchEvent(new Event('input'))
+  let settle
+  save.mockImplementation(() => new Promise(resolve => { settle = resolve }))
+  selectType('Workflow')
+  await jest.advanceTimersByTimeAsync(5000)
+  document.querySelector('[data-creative-type-editor] button').click()
+  settle({ ok: false, clone: () => ({ json: async () => ({ errors: ['Denied'] }) }) })
+  await flushPromises()
+  expect(document.getElementById('type').value).toBe('General')
+  expect(textarea.value).toBe('Retain this body')
+  let submitted
+  save.mockImplementation((_path, _method, form) => {
+    submitted = new FormData(form)
+    return response({ id: 42, creative_type: '' })
+  })
+  document.getElementById('inline-close').click()
+  await jest.advanceTimersByTimeAsync(0)
+  expect(submitted.get('creative[creative_type]')).toBe('')
+  expect(submitted.get('creative[markdown_source]')).toBe('Retain this body')
+  expect(document.getElementById('inline-edit-form').style.display).toBe('none')
+})

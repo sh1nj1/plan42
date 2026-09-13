@@ -398,7 +398,7 @@ function setupEditorSession() {
       if (descriptionInput) descriptionInput.value = renderMarkdown(md);
     }
 
-    const typeEditor = new CreativeTypeEditor(form, scheduleSave);
+    const typeEditor = new CreativeTypeEditor(form, scheduleSave, () => saveQueue.saving);
 
     function applyCreativeData(data, tree) {
       if (!data) return;

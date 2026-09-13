@@ -75,6 +75,27 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     assert_includes @creative.reload.effective_description, "Keep this draft"
   end
 
+  test "canceling an unsent type on a new blank row does not create a creative" do
+    open_editor
+    find("#inline-add").click
+    assert_selector '#inline-edit-form-element[data-creative-id=""]'
+    assert_selector "[data-editor-ready=true] .lexical-content-editable:focus"
+    assert_no_difference "Creative.count" do
+      # Select and cancel in one browser task, before the autosave debounce fires.
+      page.execute_script <<~JS
+        const input = document.getElementById('inline-creative-type');
+        input.focus();
+        input.value = 'Workflow';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        document.querySelector('[data-creative-type-editor] button').click();
+      JS
+      assert_field "inline-creative-type", with: "General"
+      find("#inline-close").click
+      assert_no_selector "#inline-edit-form", visible: true
+    end
+  end
+
   test "Korean labels and reserved inbox control" do
     @user.update!(locale: "ko")
     @creative.update!(data: { "kind" => "inbox" })

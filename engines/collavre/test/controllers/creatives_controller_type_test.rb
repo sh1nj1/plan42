@@ -167,6 +167,36 @@ class CreativesControllerTypeTest < ActionDispatch::IntegrationTest
     Creative.read_only_source_types.delete("type-test")
   end
 
+  test "archived linked placement rejects origin type changes atomically in both languages" do
+    linked = create_workflow_creative(description: "Link", origin: @creative, archived_at: Time.current)
+    parent = create_workflow_creative(description: "Parent")
+    %w[en ko].each do |locale|
+      @user.update!(locale: locale)
+      patch creative_path(linked), params: { creative: { parent_id: parent.id, description: "Rejected", creative_type: "project" } }, as: :json
+      assert_response :unprocessable_entity
+      assert_equal [ I18n.t("collavre.creatives.types.errors.read_only", locale: locale) ], response.parsed_body["errors"]
+      assert_equal "Original", @creative.reload.description
+      assert_equal "", @creative.creative_type
+      assert_nil linked.reload.parent_id
+    end
+  end
+
+  test "active linked placement cannot change an archived origin type" do
+    linked = create_workflow_creative(description: "Link", origin: @creative)
+    @creative.update!(archived_at: Time.current)
+    patch creative_path(linked), params: { creative: { creative_type: "project" } }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "", @creative.reload.creative_type
+  end
+
+  test "archived linked placement still allows an unchanged type with body edits" do
+    linked = create_workflow_creative(description: "Link", origin: @creative, archived_at: Time.current)
+    patch creative_path(linked), params: { creative: { description: "Body edit", creative_type: "" } }, as: :json
+    assert_response :success
+    assert_equal "Body edit", @creative.reload.description
+    assert_equal "", @creative.creative_type
+  end
+
   test "creates general custom and workflow types while refusing system types" do
     [ "", "project", "workflow" ].each do |value|
       post creatives_path, params: { creative: { description: "New", creative_type: value } }, as: :json

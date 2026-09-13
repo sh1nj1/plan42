@@ -303,7 +303,7 @@ module Collavre
         # or creates a self-cycle.
         permitted.except!("origin_id", :origin_id)
 
-        success &&= base.update(permitted)
+        success &&= update_creative_content(base, permitted)
         if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
           base.complete_self_and_descendants! if base.children.exists?
         end

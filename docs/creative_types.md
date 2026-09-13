@@ -5,8 +5,11 @@ addition. It shares the searchable popup with the agent model picker. Search tex
 is not submitted: selecting an option or choosing Add stages a type alongside the
 body for the existing autosave/close save. Escape or Tab dismisses an uncommitted
 search. Closing the editor flushes edits, as before; it is not a discard action.
-The Cancel type change button restores the last acknowledged type without discarding body edits. Failed saves retain both inputs for correction and retry. The confirmed Workflow
-selection exposes Edit rules, which opens the existing workflow editor.
+The Cancel type change button restores the last acknowledged type without
+discarding body edits. Cancel omits a reverted type from pending saves so an empty
+new row is not created; independent body edits still save. If a request is already
+in flight, the restored type remains pending for a follow-up save. Failed saves
+retain both inputs for correction and retry. The confirmed Workflow selection exposes Edit rules, which opens the existing workflow editor.
 
 ## Storage and authorization
 
@@ -23,7 +26,9 @@ Type updates require write access to the actual placement and origin. A change
 across the Workflow boundary additionally requires admin permission, matching
 rule management. Body, type, metadata and context requests lock and reload the origin before changing JSON data;
 a rejected request rolls back linked placement changes as well. Archived and
-externally managed creatives cannot change type.
+externally managed creatives cannot change type. For linked updates, both the
+requested placement and its effective origin must be unarchived; an unchanged type
+remains a no-op.
 
 ## Known discriminators and reserved transitions
 
