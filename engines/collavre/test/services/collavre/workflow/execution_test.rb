@@ -1030,6 +1030,139 @@ module Collavre
         assert_equal "handled", child.ordinary_delivery[@agent.id.to_s]
       end
 
+      %w[archived unpinned].each do |change|
+        test "child recovery before rematching preserves ownership when its rule is #{change}" do
+          child, child_rule, execution = interrupted_workflow_child
+          task = materialize(execution)
+          if change == "archived"
+            child_rule.update!(archived_at: Time.current)
+          else
+            @creative.update!(data: { "context_ids" => [ @workflow.id ] })
+          end
+          assert_nil Safety.new(child.execution).reason
+          assert_equal "permission_revoked", Safety.new(execution).reason
+          original = child.context.deep_dup
+          assert_no_difference [ "Execution.count", "Task.count", "Outbox.count", "Comment.count" ] do
+            assert_no_enqueued_jobs(only: AiAgentJob) { deliver_child(child) }
+          end
+          assert_equal "completed", child.reload.state
+          assert_nil child.ordinary_delivery
+          assert_equal original, child.context
+          assert_equal "permission_revoked", execution.reload.reason
+          assert_equal [ task.id ], execution.tasks.pluck(:id)
+          assert_equal 2, execution.chain.reload.step_count
+          assert_equal 2, execution.chain.task_count
+        end
+      end
+
+      test "completed child execution is acknowledged without new work after routing changes" do
+        child, rule, execution = interrupted_workflow_child
+        succeed(materialize(execution))
+        Settlement.new(execution).call
+        assert_equal "completed", execution.reload.reason
+        rule.update!(archived_at: Time.current)
+        create_workflow_rule(parent: @workflow, event: "workflow_step_completed", handler: { "type" => "human" })
+        Orchestration::Selection.stub(:new, ->(*) { flunk "must recover before selecting" }) do
+          assert_no_difference [ "Execution.count", "Task.count", "Outbox.count", "Comment.count" ] do
+            assert_no_enqueued_jobs(only: AiAgentJob) { deliver_child(child) }
+          end
+        end
+        assert_equal "completed", child.reload.state
+        assert_nil child.ordinary_delivery
+        assert_equal "completed", execution.reload.reason
+      end
+
+      test "unmaterialized child recovery stops revoked work without ordinary fallback" do
+        child, rule, execution = interrupted_workflow_child
+        assert_empty execution.tasks
+        rule.update!(archived_at: Time.current)
+        Orchestration::Selection.stub(:new, ->(*) { flunk "must recover before selecting" }) do
+          assert_no_enqueued_jobs(only: AiAgentJob) { deliver_child(child) }
+        end
+        assert_equal "permission_revoked", execution.reload.reason
+        assert_equal "failed", execution.admissions.first.state
+        assert_empty execution.tasks
+        assert_nil child.reload.ordinary_delivery
+      end
+
+      %w[human none].each do |handler|
+        test "sealed #{handler} child remains owned after its rule is removed" do
+          child, rule, execution = interrupted_workflow_child(handler: handler)
+          original_reason = execution.reason
+          rule.update!(archived_at: Time.current)
+          assert_no_difference [ "Execution.count", "Task.count", "Comment.count", "CommentNotificationDelivery.count" ] do
+            assert_no_enqueued_jobs(only: AiAgentJob) { deliver_child(child) }
+          end
+          assert_equal original_reason, execution.reload.reason
+          assert_equal "completed", child.reload.state
+          assert_nil child.ordinary_delivery
+        end
+      end
+
+      test "child replay ignores a stale supplied selection and preserves its rule snapshot" do
+        child, rule, execution = interrupted_workflow_child
+        snapshot = execution.rule_snapshot.deep_dup
+        rule.update!(data: rule.data.deep_merge("workflow_rule" => { "handler" => { "type" => "none" } }))
+        selection = Orchestration::AgentOrchestrator.prepare_selection("workflow_step_completed", child.context)
+        assert_equal "none", selection.workflow_rule.handler_type
+        assert_no_difference [ "Execution.count", "Outbox.count" ] do
+          outcome = SystemEvents::Dispatcher.dispatch_with_outcome("workflow_step_completed", child.context,
+            source: "workflow", selection: selection)
+          assert_equal execution.id, outcome.workflow_execution_id
+          assert_equal [ @agent.id ], outcome.agents.map(&:id)
+        end
+        assert_equal snapshot, execution.reload.rule_snapshot
+        assert execution.open?
+      end
+
+      %w[off shadow].each do |mode|
+        test "persisted execution remains acknowledged in #{mode} without replay on reenable" do
+          execution = execute
+          @policy.update!(config: { "workflow_routing" => mode })
+          Orchestration::Selection.stub(:new, ->(*) { flunk "must not reselect disabled execution" }) do
+            assert_no_enqueued_jobs(only: AiAgentJob) { assert_equal execution.id, dispatch.workflow_execution_id }
+          end
+          assert_equal "routing_disabled", execution.reload.reason
+          @policy.update!(config: { "workflow_routing" => "on" })
+          assert_no_difference [ "Execution.count", "Outbox.count", "Task.count" ] do
+            assert_equal execution.id, dispatch.workflow_execution_id
+          end
+          assert_equal "routing_disabled", execution.reload.reason
+        end
+      end
+
+      test "execution recovery requires the whole scope-local event identity" do
+        execution = execute
+        assert_nil Recovery.dispatch({})
+        assert_nil Recovery.dispatch("event" => "invalid")
+        [ [ "event", "id" ], [ "event", "correlation_id" ], [ "creative", "id" ], [ "topic", "id" ] ].each do |path|
+          changed = @context.deep_dup
+          changed[path.first][path.last] = "different"
+          changed["workflow_execution_id"] = execution.id
+          changed["workflow"] = { "execution_id" => execution.id }
+          assert_nil Recovery.dispatch(changed), path.inspect
+        end
+        assert_equal execution.id, Recovery.dispatch(@context).workflow_execution_id
+        assert execution.reload.open?
+      end
+
+      test "the same correlation and event in another topic do not recover the source execution" do
+        execution = execute
+        topic = Topic.create!(creative: @creative, name: "Other scope", user: @owner)
+        comment = Comment.create!(creative: @creative, topic: topic, user: @owner, content: "Other input", skip_dispatch: true)
+        context = comment.dispatch_payload.deep_stringify_keys.merge("event" => @context["event"])
+        assert_difference "Execution.count", 1 do
+          result = SystemEvents::Dispatcher.dispatch_with_outcome("comment_created", context, source: "comment_callback")
+          other = Execution.find(result.workflow_execution_id)
+          assert_not_equal execution.id, other.id
+          assert_not_equal execution.chain_id, other.chain_id
+          assert_equal topic.id, other.chain.topic_id
+          assert_equal execution.chain.correlation_id, other.chain.correlation_id
+          assert_equal 1, other.chain.step_count
+        end
+        assert_equal 1, execution.chain.reload.step_count
+      end
+
       test "ordinary dispatch keeps legacy enqueue handling without child acknowledgement" do
         child = fallback_child
         AiAgentJob.stub(:perform_later, nil) do
@@ -1040,6 +1173,29 @@ module Collavre
       end
 
       private
+
+      def interrupted_workflow_child(handler: "agent")
+        child = fallback_child
+        workflow = create_workflow(description: "Child workflow")
+        @creative.update!(data: { "context_ids" => [ @workflow.id, workflow.id ] })
+        rule = create_workflow_rule(parent: workflow, event: "workflow_step_completed",
+          handler: { "type" => handler, "agent_ids" => [ @agent.id ] })
+        publication = Publication.method(:new)
+        interrupted = ->(row, token:) do
+          original = publication.call(row, token: token)
+          Object.new.tap do |proxy|
+            proxy.define_singleton_method(:call) do
+              original.call
+              raise IOError, "Publication acknowledgement lost"
+            end
+          end
+        end
+        Publication.stub(:new, interrupted) { deliver_child(child) }
+        assert_equal "pending", child.reload.state
+        assert_nil child.ordinary_delivery
+        execution = Execution.find_by!(input_event_id: child.context.dig("event", "id"))
+        [ child, rule, execution ]
+      end
 
       def fallback_child
         emits!

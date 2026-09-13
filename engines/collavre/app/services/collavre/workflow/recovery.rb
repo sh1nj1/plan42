@@ -3,6 +3,22 @@
 module Collavre
   module Workflow
     module Recovery
+      # A committed execution owns this event even if routing has since changed.
+      # Use the scope-local identity, never the parent's workflow payload ID.
+      def self.dispatch(context)
+        event = context["event"]
+        return unless event.is_a?(Hash)
+
+        execution = Execution.joins(:chain).find_by(input_event_id: event["id"], workflow_chains: {
+          correlation_id: event["correlation_id"], creative_id: context.dig("creative", "id"),
+          topic_id: context.dig("topic", "id").to_i
+        })
+        return unless execution
+
+        ActiveRecord.after_all_transactions_commit { self.execution(execution) }
+        execution.reload.outcome
+      end
+
       def self.execution(execution)
         Settlement.new(execution).call if execution.reload.open?
         execution.outboxes.unfinished.find_each { |row| outbox(row) }

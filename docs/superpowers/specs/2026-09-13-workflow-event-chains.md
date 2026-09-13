@@ -193,6 +193,11 @@ indexed execution reference on tasks. Normal tasks retain a null reference.
   rule snapshot (JSON `data["workflow_rule"]` plus rule creative ID, not a Ruby
   Rule object), selected responders, admission outcome, input envelope and
   context. Rule edits cannot alter an in-flight execution's configured `emits`.
+  Before rematching a redelivered envelope, recover any existing execution by
+  this scope-local identity. A child admission committed before its publisher's
+  acknowledgement retains ownership after rule archival, unpinning or edits;
+  it cannot become an ordinary fallback. Revalidate the stored execution through
+  recovery after the outer commit, preserving sealed outcomes and reservations.
 - Unique task identity is `(workflow_execution_id, agent_id)`. Enqueue retries
   may deliver another job but cannot create another workflow task for that agent.
 - Completion seals an execution and reserves its child in one primary-database

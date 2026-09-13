@@ -22,7 +22,7 @@ module Collavre
 
       def dispatch_with_outcome(selected_agents: nil, selection: nil, context_for: nil, scheduling_hooks: nil, invocation: nil, require_enqueue_ack: false, ordinary_delivery: nil)
         identity = Workflow::Receipt.identity(invocation, @event_name, @context.dig("event", "source"))
-        recovered = Workflow::Receipt.recover(identity)
+        recovered = Workflow::Receipt.recover(identity) || Workflow::Recovery.dispatch(@context)
         return recovered if recovered
         selection ||= prepare_selection unless selected_agents
         if selection&.workflow_rule

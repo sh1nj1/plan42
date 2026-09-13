@@ -31,6 +31,9 @@ module Collavre
         deliveries.delete_all
         Comment.where(id: notice_ids).destroy_all
         Receipt.delete_all
+        workflow_tasks = Task.where.not(workflow_execution_id: nil)
+        Comment.where(task_id: workflow_tasks.select(:id)).update_all(task_id: nil)
+        TaskAction.where(task_id: workflow_tasks.select(:id)).delete_all
         Task.where.not(workflow_execution_id: nil).delete_all
         Outbox.delete_all
         Execution.delete_all
@@ -77,6 +80,86 @@ module Collavre
         end
         assert_equal before, ActiveJob::Base.queue_adapter.enqueued_jobs.size
         assert_nil CommentNotificationDelivery.where.not(workflow_execution_id: nil).first.push_claim_token
+      end
+
+      test "committed envelope recovery waits for outer commit and survives rollback" do
+        context = @context.merge("event_name" => "comment_created",
+          "event" => SystemEvents::Envelope.root("comment_created", source: "comment_callback").to_h)
+        outcome = Recovery.stub(:execution, nil) do
+          SystemEvents::Dispatcher.dispatch_with_outcome("comment_created", context, source: "comment_callback")
+        end
+        execution = Execution.find(outcome.workflow_execution_id)
+        delivery = CommentNotificationDelivery.find_by!(workflow_execution_id: execution.id)
+        assert_equal "pending", delivery.push_state
+        recoveries = []
+        Recovery.stub(:execution, ->(row) { recoveries << row.id }) do
+          Execution.transaction do
+            assert_equal execution.id, Recovery.dispatch(context).workflow_execution_id
+            assert_empty recoveries
+            raise ActiveRecord::Rollback
+          end
+          assert_empty recoveries
+          Execution.transaction do
+            assert_equal execution.id, Recovery.dispatch(context).workflow_execution_id
+            assert_empty recoveries
+          end
+          assert_equal [ execution.id ], recoveries
+        end
+        @rule.update!(archived_at: Time.current)
+        Orchestration::Selection.stub(:new, ->(*) { flunk "must recover committed outcome" }) do
+          assert_equal execution.id, SystemEvents::Dispatcher.dispatch_with_outcome(
+            "comment_created", context, source: "comment_callback").workflow_execution_id
+        end
+        assert_equal "suppressed", delivery.reload.push_state
+        assert_equal "human_handoff", execution.reload.reason
+        assert_empty Receipt.all
+      end
+
+      test "publisher crash after child commit recovers the handoff before rematching" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, shared_by: @owner, permission: :feedback)
+        CreativeSharesCache.find_or_create_by!(creative: @creative, user: agent, permission: :feedback)
+        @rule.update!(data: @rule.data.deep_merge("workflow_rule" => {
+          "handler" => { "type" => "agent", "agent_ids" => [ agent.id ] }, "emits" => "workflow_step_completed"
+        }))
+        child_rule = create_workflow_rule(parent: @workflow, event: "workflow_step_completed")
+        parent = Execution.find(dispatch.workflow_execution_id)
+        assert parent.open?, parent.reason
+        task = Task.create!(name: "Committed responder", agent: agent, creative: @creative, topic_id: @topic.id,
+          status: "running", trigger_event_name: "comment_created", workflow_execution_id: parent.id,
+          trigger_event_payload: parent.admissions.first.context)
+        reply = Comment.create!(creative: @creative, topic: @topic, user: agent, task: task, content: "Committed reply", skip_dispatch: true)
+        task.task_actions.create!(action_type: "reply_created", status: "done", payload: { "comment_id" => reply.id })
+        task.update!(status: "done")
+        child = parent.outboxes.find_by!(key: "child")
+        Recovery.outbox(child)
+        publication = Publication.new(child, token: child.reload.claim_token)
+        original_call = publication.method(:call)
+        # Exception bypasses the worker's StandardError retry rescue, like a lost process.
+        publication.stub(:call, -> { original_call.call; raise Interrupt }) do
+          Publication.stub(:new, ->(*) { publication }) do
+            assert_raises(Interrupt) { child.deliver!(child.claim_token) }
+          end
+        end
+        assert_equal "delivering", child.reload.state
+        execution = Execution.find_by!(input_event_id: child.context.dig("event", "id"))
+        assert_equal "human_handoff", execution.reason
+        delivery = CommentNotificationDelivery.find_by!(workflow_execution_id: execution.id)
+        child_rule.update!(archived_at: Time.current)
+        child.update!(claimed_at: 6.minutes.ago)
+        original = child.context.deep_dup
+        Orchestration::Selection.stub(:new, ->(*) { flunk "must recover committed child" }) do
+          assert_no_difference [ "Execution.count", "Outbox.count", "Task.count", "Comment.count" ] do
+            Recovery.outbox(child)
+            child.reload.deliver!(child.claim_token)
+          end
+        end
+        assert_equal "completed", child.reload.state
+        assert_equal original, child.context
+        assert_nil child.ordinary_delivery
+        assert_equal "human_handoff", execution.reload.reason
+        assert_equal "suppressed", delivery.reload.push_state
+        assert_equal 1, Comment.where(notification_key: delivery.delivery_key).count
       end
 
       test "two independent push recovery connections claim one expired attempt" do
