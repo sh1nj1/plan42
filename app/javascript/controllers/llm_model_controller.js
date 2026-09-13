@@ -1,5 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
-import CommonPopup, { elementAnchor } from 'collavre/lib/common_popup.js'
+import SearchCombobox from 'collavre/lib/search_combobox.js'
 import csrfFetch, { refreshCsrfToken } from 'collavre/lib/api/csrf_fetch.js'
 import { alertDialog } from 'collavre/lib/utils/dialog.js'
 
@@ -19,7 +19,8 @@ export default class extends Controller {
 
         if (!this.menuElement || !this.listElement) return
 
-        this.popup = new CommonPopup(this.menuElement, {
+        this.popup = new SearchCombobox(this.menuElement, {
+            input: this.inputTarget,
             listElement: this.listElement,
             renderItem: (model) => this.renderModel(model),
             onSelect: this.select.bind(this)
@@ -83,20 +84,9 @@ export default class extends Controller {
     show(term) {
         if (!this.popup) return
 
-        const lowered = term.toLowerCase()
         const vendor = this.vendorTarget.value.toLowerCase()
-        const filtered = this.modelsValue.filter((model) => (
-            model.vendor === vendor && model.name.toLowerCase().includes(lowered)
-        ))
-
-        if (filtered.length === 0) {
-            this.hide()
-            return
-        }
-
-        this.popup.setItems(filtered)
+        this.popup.showOptions(this.modelsValue.filter(model => model.vendor === vendor), term)
         this.bindDeleteButtons()
-        this.popup.showAt(elementAnchor(this.inputTarget))
     }
 
     hide() {

@@ -1,0 +1,19 @@
+en:
+  collavre:
+    creatives:
+      types:
+        cancel: Cancel type change
+        label: Type
+        general: General
+        inbox: Inbox
+        workflow_rule: Workflow rule
+        workflow: Workflow
+        search: Search types
+        add: 'Add type "%{name}"'
+        edit_rules: Edit rules
+        errors:
+          invalid: Type must be text of at most 64 characters without control characters.
+          protected: System inboxes and workflow rules can only use their dedicated creation and editing paths.
+          data_present: This creative contains workflow settings or rules. Preserve or remove them explicitly before changing its type.
+          admin_required: Admin permission is required to switch to or from a workflow.
+          read_only: The type of an archived or externally managed creative cannot be changed.

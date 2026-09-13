@@ -1,3 +1,4 @@
+import { applyInlineDataset } from '../modules/creative_inline_dataset'
 function normalizeBoolean(value) {
   return value === true || value === 'true' || value === ''
 }
@@ -268,18 +269,7 @@ function applyRowProperties(row, node) {
       }
     }
   }
-  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'origin_id')) {
-    setDatasetValue(row, 'originId', inlinePayload.origin_id ?? '')
-  }
-  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'content_type')) {
-    setDatasetValue(row, 'contentType', inlinePayload.content_type ?? '')
-  }
-  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_source')) {
-    setDatasetValue(row, 'markdownSource', inlinePayload.markdown_source ?? '')
-  }
-  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_editor')) {
-    setDatasetValue(row, 'markdownEditor', inlinePayload.markdown_editor ?? '')
-  }
+  applyInlineDataset(row, inlinePayload)
 
   if (dirty && typeof row.requestUpdate === 'function') {
     row.requestUpdate()

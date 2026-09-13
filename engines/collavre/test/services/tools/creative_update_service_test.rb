@@ -17,6 +17,20 @@ module Collavre
         Current.user = nil
       end
 
+      test "stale MCP body update preserves a newly committed workflow type" do
+        stale = Creative.find(@creative.id)
+        Creative.where(id: stale.id).update_all(data: { "kind" => "workflow", "context_ids" => [ 123 ] })
+
+        result = Creative.stub(:find_by, stale) do
+          CreativeUpdateService.new.call(id: stale.id, description: "Updated body")
+        end
+
+        assert result[:success]
+        assert @creative.reload.workflow?
+        assert_equal [ 123 ], @creative.data["context_ids"]
+        assert_equal "Updated body", @creative.data["markdown_source"]
+      end
+
       test "updates description with HTML" do
         service = CreativeUpdateService.new
 

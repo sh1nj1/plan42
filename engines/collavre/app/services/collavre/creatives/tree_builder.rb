@@ -248,7 +248,8 @@ module Creatives
         origin_id: creative.origin_id,
         content_type: effective.data&.dig("content_type"),
         markdown_source: origin_writable ? effective.data&.dig("markdown_source") : nil,
-        markdown_editor: effective.data&.dig("editor")
+        markdown_editor: effective.data&.dig("editor"),
+        creative_type: effective.creative_type
       }
     end
 

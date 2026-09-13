@@ -40,11 +40,14 @@ module Collavre
       end
 
       def toggle_container
-        previous_enabled = target.drop_trigger_enabled?
-        data = (target.data || {}).deep_dup
-        data["trigger"] ||= {}
-        data["trigger"]["on_child_enter"] = ActiveModel::Type::Boolean.new.cast(enabled)
-        target.update!(data: data)
+        previous_enabled = nil
+        target.with_lock do
+          previous_enabled = target.drop_trigger_enabled?
+          data = (target.data || {}).deep_dup
+          data["trigger"] ||= {}
+          data["trigger"]["on_child_enter"] = ActiveModel::Type::Boolean.new.cast(enabled)
+          target.update!(data: data)
+        end
         notify_missing_agent if !previous_enabled && target.drop_trigger_enabled?
       end
 
@@ -72,13 +75,15 @@ module Collavre
       end
 
       def transition_loop(allowed_states)
-        data = (creative.data || {}).deep_dup
-        loop_data = data.dig("trigger", "loop")
-        return unless loop_data && allowed_states.include?(loop_data["state"])
+        creative.with_lock do
+          data = (creative.data || {}).deep_dup
+          loop_data = data.dig("trigger", "loop")
+          return unless loop_data && allowed_states.include?(loop_data["state"])
 
-        yield loop_data
-        creative.update!(data: data)
-        @transitioned_loop_data = loop_data
+          yield loop_data
+          creative.update!(data: data)
+          @transitioned_loop_data = loop_data
+        end
       end
 
       def post_continue_to_agent

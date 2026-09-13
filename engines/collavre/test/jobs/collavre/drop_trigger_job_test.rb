@@ -26,6 +26,30 @@ module Collavre
       Current.reset
     end
 
+    test "stale loop initialization preserves committed type and metadata" do
+      stale = Creative.find(@child.id)
+      latest = { "kind" => "project", "context_ids" => [ @parent.id ] }
+      Creative.where(id: @child.id).update_all(data: latest)
+      topic = @child.main_topic
+
+      DropTriggerJob.new.send(:initialize_trigger_loop, stale, topic)
+
+      assert_equal "project", @child.reload.creative_type
+      assert_equal [ @parent.id ], @child.data["context_ids"]
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal topic.id, @child.data.dig("trigger", "loop", "trigger_topic_id")
+    end
+
+    test "stale initialization does not reset an already initialized loop" do
+      stale = Creative.find(@child.id)
+      latest = { "kind" => "project", "trigger" => { "loop" => { "state" => "paused", "current_iteration" => 7 } } }
+      Creative.where(id: @child.id).update_all(data: latest)
+
+      DropTriggerJob.new.send(:initialize_trigger_loop, stale, @child.main_topic)
+
+      assert_equal latest, @child.reload.data
+    end
+
     test "creates trigger topic and comment on child creative" do
       SystemEvents::Dispatcher.stub(:dispatch_with_outcome, ->(*_args) { dispatch_outcome([ @ai_bot ]) }) do
         assert_difference -> { @child.comments.count }, 1 do

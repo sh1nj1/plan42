@@ -15,6 +15,7 @@ export function captureCreativeSaveSnapshot({
   markdownEditor = '',
   progress = 0,
   persistProgress = false,
+  creativeType,
   originId = '',
 }) {
   return {
@@ -27,6 +28,7 @@ export function captureCreativeSaveSnapshot({
     progress,
     persistProgress,
     originId: stringOrEmpty(originId),
+    creativeType,
   }
 }
 
@@ -40,6 +42,7 @@ export function captureDirectCreativeSaveSnapshot({
   progress,
   persistProgress,
   originId,
+  creativeType,
 }) {
   return captureCreativeSaveSnapshot({
     content: markdownMode ? markdownContent : htmlContent,
@@ -50,6 +53,7 @@ export function captureDirectCreativeSaveSnapshot({
     progress,
     persistProgress,
     originId,
+    creativeType,
   })
 }
 
@@ -61,6 +65,7 @@ export function captureQueuedCreativeSaveSnapshot({
   progress,
   persistProgress,
   originId,
+  creativeType,
 }) {
   const isMarkdown = contentType === 'markdown'
   return captureCreativeSaveSnapshot({
@@ -73,13 +78,14 @@ export function captureQueuedCreativeSaveSnapshot({
     progress,
     persistProgress,
     originId,
+    creativeType,
   })
 }
 
 export function creativeSaveSnapshotIsEmpty(snapshot) {
-  return snapshot.emptyContentType === 'markdown'
+  return snapshot.creativeType === undefined && (snapshot.emptyContentType === 'markdown'
     ? isMarkdownEmpty(snapshot.emptyContent)
-    : isHtmlEmpty(snapshot.emptyContent)
+    : isHtmlEmpty(snapshot.emptyContent))
 }
 
 export function applyCreativeSaveResponse(snapshot, data, {
@@ -121,7 +127,8 @@ export function resetCreativeSaveState(snapshot, current = null, currentDirty = 
   const matchesSnapshot = !current || (
     current.content === snapshot.content &&
     current.progress === snapshot.progress &&
-    current.originId === snapshot.originId
+    current.originId === snapshot.originId &&
+    (snapshot.creativeType === undefined || current.creativeType === snapshot.creativeType)
   )
 
   return {
