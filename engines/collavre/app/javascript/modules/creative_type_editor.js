@@ -69,13 +69,17 @@ export class CreativeTypeEditor {
     this.baseline = data.creative_type || ''
     this.field.value = this.baseline
     this.field.disabled = true
+    this.syncSelection()
+    this.updateLink(data)
+  }
+
+  syncSelection() {
     this.input.disabled = ['inbox', 'workflow_rule'].includes(this.field.value)
     this.cancelButton.disabled = this.input.disabled
     if (this.field.value && !this.input.disabled && !this.options.some(item => item.value === this.field.value)) {
       this.options.push({ value: this.field.value, name: this.field.value })
     }
     this.restoreLabel()
-    this.updateLink(data)
   }
 
   updateLink(data) {
@@ -90,12 +94,12 @@ export class CreativeTypeEditor {
 
   saved(data, value) {
     if (!this.root) return
-    this.updateLink(data)
     this.baseline = data.creative_type ?? this.baseline
-    if (this.field.value !== value) return
-    this.field.value = data.creative_type ?? value
+    if (this.value !== undefined && this.field.value !== value) return
+    this.field.value = data.creative_type ?? value ?? this.field.value
     this.field.disabled = true
-    this.restoreLabel()
+    this.syncSelection()
+    this.updateLink(data)
   }
 
   async failed(response) {

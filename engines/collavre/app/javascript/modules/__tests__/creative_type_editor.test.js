@@ -177,3 +177,26 @@ test('unsaved type remains flushable after an autosave failure and teardown clos
   expect(editor.popup.isOpen()).toBe(false)
   new CreativeTypeEditor(document.createElement('form'), onChange).dispose()
 })
+
+
+test('body-only acknowledgment refreshes a type changed by another session', () => {
+  editor.saved({ id: 7, creative_type: 'workflow' }, undefined)
+  expect(editor.input.value).toBe('Workflow')
+  expect(editor.link.hidden).toBe(false)
+  expect(editor.value).toBeUndefined()
+  editor.saved({ id: 7, creative_type: 'project' }, undefined)
+  expect(editor.input.value).toBe('project')
+  search('project')
+  expect(editor.popup.items).toEqual([{ name: 'project', value: 'project' }])
+})
+
+test('body-only acknowledgment preserves a new pending selection', () => {
+  search('custom')
+  key('Enter')
+  editor.saved({ id: 7, creative_type: 'workflow' }, undefined)
+  expect(editor.input.value).toBe('custom')
+  expect(editor.value).toBe('custom')
+  expect(editor.link.hidden).toBe(true)
+  form.querySelector('button').click()
+  expect(editor.input.value).toBe('Workflow')
+})
