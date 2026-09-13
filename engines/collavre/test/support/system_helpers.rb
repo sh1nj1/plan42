@@ -44,6 +44,12 @@ module SystemHelpers
         })(arguments[0])
       JS
     end
+    # Opening chat can schedule composer focus and scrolling after list loading.
+    # Let that render finish before a test moves focus or opens a lazy frame.
+    page.evaluate_async_script(<<~JS)
+      const done = arguments[0];
+      requestAnimationFrame(() => requestAnimationFrame(() => done()));
+    JS
   end
 
   def wait_for_network_idle(timeout: Capybara.default_max_wait_time)

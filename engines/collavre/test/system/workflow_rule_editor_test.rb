@@ -7,6 +7,7 @@ class WorkflowRuleEditorTest < ApplicationSystemTestCase
   include WorkflowCreativeHelper
 
   setup do
+    resize_window_to
     @user = users(:one)
     @user.update!(email_verified_at: Time.current, locale: "en")
     @workflow = create_workflow
