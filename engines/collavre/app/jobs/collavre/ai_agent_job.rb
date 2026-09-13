@@ -251,23 +251,25 @@ module Collavre
 
     private
 
+    def reject_offline_resumption?(task, agent)
+      return false unless agent.claude_channel_agent? && !agent.claude_channel_online?
+      Rails.logger.info(
+        "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
+        "session offline (no live presence)"
+      )
+      task.update!(status: "cancelled")
+      if task.workflow?
+        Workflow::TaskAdmission.cleanup(task)
+      elsif task.trigger_event_payload&.key?("topic")
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+      end
+      true
+    end
+
     # A terminal status can be written by Stop/StuckDetector after the service's
     # last lifecycle checkpoint but before this job records its outcome. Lock
     # and re-check the row so normal completion/retry cannot overwrite that
     # external winner.
-    def reject_offline_resumption?(task, agent)
-      return false unless agent.claude_channel_agent? && !agent.claude_channel_online?
-          Rails.logger.info(
-            "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
-            "session offline (no live presence)"
-          )
-          task.update!(status: "cancelled")
-          if task.trigger_event_payload&.key?("topic")
-            Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
-          end
-          true
-    end
-
     def transition_running_task!(task, **attributes)
       task.with_lock do
         raise CancelledError unless task.status == "running"

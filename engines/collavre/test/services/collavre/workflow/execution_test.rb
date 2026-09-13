@@ -601,6 +601,22 @@ module Collavre
         assert_equal "permission_revoked", task.reload.workflow_stop_reason
       end
 
+      test "offline approval resumption releases workflow resources without a safety reason" do
+        execution = execute
+        task = materialize(execution, status: "pending_approval")
+        @agent.update!(llm_vendor: "anthropic", llm_model: "claude-code")
+        tracker = Orchestration::ResourceTracker.for(@agent)
+        tracker.reserve!(task.id)
+        assert_equal 1, tracker.active_jobs
+        AiAgentService.stub(:new, ->(*) { flunk "offline workflow must not call the provider" }) do
+          AiAgentJob.perform_now(task)
+        end
+        assert task.reload.cancelled?
+        assert_nil task.workflow_stop_reason
+        assert_equal "task_failed", execution.reload.reason
+        assert_equal 0, tracker.active_jobs
+      end
+
       test "raw malformed depth is rejected before envelope coercion can authorize execution" do
         @context["event"]["depth"] = "not-a-depth"
         assert_equal "invalid_envelope", execute.reason
