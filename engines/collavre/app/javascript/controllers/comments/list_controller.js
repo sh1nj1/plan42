@@ -11,6 +11,7 @@ import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
 import CommentReadTracker from './comment_read_tracker'
 import PrevMessageNavigator from './prev_message_navigator'
+import { beginCommentsReload, resetPaginationState } from './pagination_state'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 // Gestures that mean the user moved the list themselves, invalidating the
@@ -23,10 +24,7 @@ export default class extends Controller {
 
   connect() {
     this.selection = new Set()
-    this.loadingOlder = false
-    this.loadingNewer = false
-    this.allOlderLoaded = false // Reached the beginning of time
-    this.allNewerLoaded = true  // Reached current time (initially true until we scroll up)
+    resetPaginationState(this)
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
@@ -182,10 +180,7 @@ export default class extends Controller {
   resetState() {
     this.selection.clear()
     this.notifySelectionChange()
-    this.loadingOlder = false
-    this.loadingNewer = false
-    this.allOlderLoaded = false
-    this.allNewerLoaded = true
+    resetPaginationState(this)
     this.movingComments = false
     this.manualSearchQuery = null
   }
@@ -202,10 +197,7 @@ export default class extends Controller {
     if (!this.creativeId) return
     if (this.selection.size > 0) return
 
-    // The list is about to be replaced wholesale; any anchor we hold is stale.
-    this.prevMsgNavigator.reset()
-
-    const requestVersion = ++this._loadCommentsVersion
+    const requestVersion = beginCommentsReload(this)
     const params = {}
     if (this.highlightAfterLoad) {
       params.around_comment_id = this.highlightAfterLoad
@@ -229,6 +221,7 @@ export default class extends Controller {
           String(this.currentTopicId || "") !== String(requestTopicId)) return
 
       replaceCommentsPreservingLogins(this.listTarget, html, this.currentTopicId)
+      resetPaginationState(this)
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
 
