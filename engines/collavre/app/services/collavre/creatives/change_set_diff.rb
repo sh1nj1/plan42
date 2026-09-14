@@ -93,7 +93,6 @@ module Collavre
           additions: line_diff.count { |change| %w[+ !].include?(change.action) },
           deletions: line_diff.count { |change| %w[- !].include?(change.action) },
           moved: moved_in_group?(root_id),
-          inline_html: inline_html(rows),
           split_rows: rows
         }
       end
@@ -209,38 +208,6 @@ module Collavre
 
       def gap_row(skipped)
         { action: GAP_ACTION, before: "", after: "", skipped: skipped }
-      end
-
-      def inline_html(rows)
-        rows.map { |row| inline_row_html(row) }.join
-      end
-
-      def inline_row_html(row)
-        return gap_html(row[:skipped]) if row[:action] == GAP_ACTION
-        return ERB::Util.html_escape(row[:before]) if row[:action] == "="
-
-        token_html(row[:before], row[:after])
-      end
-
-      def gap_html(skipped)
-        ERB::Util.html_escape("#{I18n.t('collavre.creative_history.skipped_lines', count: skipped)}\n")
-      end
-
-      def token_html(before, after)
-        Diff::LCS.sdiff(tokens(before), tokens(after)).map do |change|
-          old_value = ERB::Util.html_escape(change.old_element.to_s)
-          new_value = ERB::Util.html_escape(change.new_element.to_s)
-          case change.action
-          when "=" then old_value
-          when "-" then "<del>#{old_value}</del>"
-          when "+" then "<ins>#{new_value}</ins>"
-          else "<del>#{old_value}</del><ins>#{new_value}</ins>"
-          end
-        end.join
-      end
-
-      def tokens(markdown)
-        markdown.split(/(\s+|[[:punct:]])/).reject(&:empty?)
       end
     end
   end

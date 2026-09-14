@@ -1730,22 +1730,6 @@ body.chat-fullscreen {
   margin-top: 8px;
 }
 
-.creative-history-inline {
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.creative-history-inline ins {
-  background: var(--creative-history-addition-bg);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.creative-history-inline del {
-  background: var(--creative-history-deletion-bg);
-  color: var(--text-primary);
-}
-
 .creative-history-split {
   table-layout: fixed;
   width: 100%;
