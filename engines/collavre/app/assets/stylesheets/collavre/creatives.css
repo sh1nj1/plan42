@@ -257,6 +257,10 @@ creative-tree-row.show-edit .creative-row {
     word-break: break-word;
 }
 
+.creative-description-justified .creative-content {
+    text-align: justify;
+}
+
 /* Allow attachments, images, and videos to be interactive independently of the
    parent link. Without pointer-events on the video, the clickable creative row
    would swallow clicks on the native playback controls (play/pause/fullscreen). */

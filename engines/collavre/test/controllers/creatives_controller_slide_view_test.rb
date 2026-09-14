@@ -26,6 +26,16 @@ class CreativesControllerSlideViewTest < ActionDispatch::IntegrationTest
   test "slide_view renders successfully" do
     get collavre.slide_view_creative_path(@root)
     assert_response :success
+    assert_select "body.creative-description-justified"
+  end
+
+  test "slide_view omits justification class when the preference is disabled" do
+    @owner.update!(justify_creative_descriptions: false)
+
+    get collavre.slide_view_creative_path(@root)
+
+    assert_response :success
+    assert_select "body.creative-description-justified", count: 0
   end
 
   test "build_slide_ids returns the same DFS-by-sequence order as a recursive walk" do

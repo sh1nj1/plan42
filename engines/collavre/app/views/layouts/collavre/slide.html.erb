@@ -15,7 +15,7 @@
     <%= javascript_include_tag 'slide_view', defer: true %>
     <%= render 'collavre/shared/custom_theme_style' %>
   </head>
-  <body class="<%= body_theme_class %>">
+  <body class="<%= class_names(body_theme_class, creative_description_alignment_class) %>">
     <%= yield %>
   </body>
 </html>
