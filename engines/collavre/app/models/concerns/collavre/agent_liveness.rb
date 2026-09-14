@@ -11,7 +11,7 @@ module Collavre
     extend ActiveSupport::Concern
 
     ENDPOINT_HEALTH_TTL = 3.minutes
-    ENDPOINT_HEALTH_CONFIGURATION_ATTRIBUTES = %w[llm_vendor llm_api_key gateway_url].freeze
+    ENDPOINT_HEALTH_CONFIGURATION_ATTRIBUTES = %w[llm_vendor llm_model llm_api_key gateway_url].freeze
 
     included do
       # SQL TRIM/LOWER differ from Ruby for control whitespace and Unicode.
@@ -51,7 +51,7 @@ module Collavre
     end
 
     def endpoint_health_supported?
-      AgentHealth.checker_for(llm_vendor).present?
+      !claude_channel_agent? && AgentHealth.checker_for(llm_vendor).present?
     end
 
     def endpoint_health_fresh?
