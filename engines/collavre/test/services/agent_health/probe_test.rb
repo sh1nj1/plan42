@@ -82,6 +82,14 @@ module Collavre
         assert_predicate @agent, :endpoint_health_unknown?
       end
 
+      test "does not invoke an API checker for Claude Channel" do
+        @agent.update!(llm_vendor: "anthropic", llm_model: "claude-code")
+        OpenaiEndpointChecker.stub(:new, ->(**) { flunk "Channel agents must not be probed" }) do
+          assert_equal :unsupported, Probe.new(agent: @agent).call
+        end
+        assert_nil @agent.reload.endpoint_health_checked_at
+      end
+
       test "does not write a result over changed endpoint configuration" do
         checker = Class.new do
           def initialize(agent:)

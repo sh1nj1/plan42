@@ -33,13 +33,49 @@ module Collavre
       end
 
       assert_includes probed, @agent.id
-      assert_not_includes probed, users(:ai_bot).id
+      assert_includes probed, users(:ai_bot).id
+      assert_not_includes probed, users(:one).id
 
       probed.clear
       EndpointHealthProbeJob.stub(:perform_later, ->(id) { probed << id }) do
         AgentHealth.stub(:vendors, []) { EndpointHealthSweepJob.perform_now }
       end
       assert_empty probed
+    end
+
+    test "sweep includes direct vendors and excludes Claude Channel and specialized transports" do
+      %w[openai google gemini anthropic cli_proxy openclaw].each do |vendor|
+        @agent.update_column(:llm_vendor, vendor)
+        probed = []
+        EndpointHealthProbeJob.stub(:perform_later, ->(id) { probed << id }) do
+          EndpointHealthSweepJob.perform_now
+        end
+        assert_equal %w[openai google gemini anthropic].include?(vendor), probed.include?(@agent.id), vendor
+      end
+
+      @agent.update!(llm_vendor: "anthropic", llm_model: "claude-code")
+      probed = []
+      EndpointHealthProbeJob.stub(:perform_later, ->(id) { probed << id }) do
+        EndpointHealthSweepJob.perform_now
+      end
+      assert_not_includes probed, @agent.id
+    end
+
+    test "sweep preserves registered agents without a model" do
+      @agent.update_column(:llm_model, nil)
+      probed = []
+      EndpointHealthProbeJob.stub(:perform_later, ->(id) { probed << id }) do
+        EndpointHealthSweepJob.perform_now
+      end
+      assert_includes probed, @agent.id
+    end
+
+    test "a queued probe ignores an agent switched to Claude Channel" do
+      @agent.update!(llm_vendor: "anthropic", llm_model: "claude-code")
+      AgentHealth::Probe.stub(:new, ->(**) { flunk "Channel agents must not be probed" }) do
+        EndpointHealthProbeJob.perform_now(@agent.id)
+      end
+      assert_nil @agent.reload.endpoint_health_checked_at
     end
 
     test "sweep normalizes vendor whitespace and case" do

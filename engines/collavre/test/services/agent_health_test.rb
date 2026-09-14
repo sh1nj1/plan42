@@ -10,6 +10,14 @@ module Collavre
 
     teardown { AgentHealth.unregister("test-vendor") }
 
+    test "direct RubyLLM vendors share the HTTP checker" do
+      %w[openai google gemini anthropic].each do |vendor|
+        assert_equal AgentHealth::OpenaiEndpointChecker, AgentHealth.checker_for(vendor)
+      end
+      assert_nil AgentHealth.checker_for("cli_proxy")
+      assert_nil AgentHealth.checker_for("openclaw")
+    end
+
     test "registers and resolves checkers by normalized vendor" do
       AgentHealth.register(" Test-Vendor ", Checker)
 
