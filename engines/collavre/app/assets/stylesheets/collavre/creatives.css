@@ -261,6 +261,12 @@ creative-tree-row.show-edit .creative-row {
     text-align: justify;
 }
 
+/* Keep multiline headings readable in both tree and slide markup. */
+.creative-description-justified :is(h1, h2, h3, h4, h5, h6) .creative-content,
+.creative-description-justified :is(h1, h2, h3, h4, h5, h6).creative-content {
+    text-align: left;
+}
+
 /* Allow attachments, images, and videos to be interactive independently of the
    parent link. Without pointer-events on the video, the clickable creative row
    would swallow clicks on the native playback controls (play/pause/fullscreen). */

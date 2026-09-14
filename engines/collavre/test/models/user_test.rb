@@ -1,6 +1,14 @@
 require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
+  test "creative description justification defaults on and casts disabled form values" do
+    user = User.new
+
+    assert user.justify_creative_descriptions?
+    user.justify_creative_descriptions = "0"
+    refute user.justify_creative_descriptions?
+  end
+
   test "collapses line breaks in name to a single line" do
     user = User.create!(email: "multiline_name@example.com", password: "password123", name: "Line\nBreak Agent")
 
