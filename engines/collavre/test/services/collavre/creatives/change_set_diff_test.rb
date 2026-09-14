@@ -34,8 +34,10 @@ module Collavre
         assert_equal "Root", group.fetch(:label)
         assert_includes group.fetch(:before), "Old &lt;value&gt;"
         assert_includes group.fetch(:after), "New &lt;value&gt;"
-        assert_includes group.fetch(:inline_html), "<del>Old</del>"
-        assert_includes group.fetch(:inline_html), "&amp;lt;"
+        changed_row = group.fetch(:split_rows).find { |row| row.fetch(:action) == "!" }
+        assert_includes changed_row.fetch(:before), "Old &lt;value&gt;"
+        assert_includes changed_row.fetch(:after), "New &lt;value&gt;"
+        assert_not group.key?(:inline_html)
         assert_equal 1, group.fetch(:additions)
         assert_equal 1, group.fetch(:deletions)
       end
@@ -60,8 +62,6 @@ module Collavre
         assert_operator rows.size, :<, 40, "unchanged lines must not be rendered"
         assert rows.any? { |row| row.fetch(:after).include?("line 200 edited") }
         assert_not rows.any? { |row| row.fetch(:before).include?("line 10 ") || row.fetch(:before).strip == "line 10" }
-        assert_not_includes group.fetch(:inline_html), "line 10\n"
-        assert_includes group.fetch(:inline_html), "edited"
       end
 
       test "marks elided regions with a gap row carrying the skipped line count" do
@@ -87,8 +87,6 @@ module Collavre
         # Every line of the document is either rendered or accounted for by a gap.
         assert_equal group.fetch(:after).lines.size,
                      rendered + gaps.sum { |gap| gap.fetch(:skipped) }
-        assert_includes group.fetch(:inline_html),
-                        I18n.t("collavre.creative_history.skipped_lines", count: gaps.first.fetch(:skipped))
       end
 
       test "still counts additions and deletions across the whole document" do

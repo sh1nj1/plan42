@@ -35,6 +35,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".creative-history-item", count: 1
     assert_select ".creative-history-revert", count: 1
+    assert_select ".creative-history-diff > .creative-history-split", count: 1
+    assert_select ".creative-history-inline, .creative-history-diff details", count: 0
     assert_select ".creative-history-split th[scope='col']", text: I18n.t("collavre.creative_history.before")
     assert_select ".creative-history-split th[scope='col']", text: I18n.t("collavre.creative_history.after")
 
@@ -44,6 +46,34 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_response :forbidden
     assert_equal I18n.t("collavre.creative_history.read_only"), response.parsed_body["error"]
+  end
+
+  test "History split diff escapes markdown and renders context gaps" do
+    before_lines = Array.new(30) { |index| "line #{index}" }
+    after_lines = before_lines.dup
+    before_lines[15] = "<script>alert('before')</script>"
+    after_lines[15] = "<img src=x onerror=alert('after')>"
+    snapshot = Collavre::Creatives::History.snapshot(@creative).merge("content_type" => "markdown")
+    change_set = Collavre::CreativeChangeSet.create!(
+      anchor_creative: @creative, anchor_source: "view_root", user: @user,
+      actor_kind: "human", origin: "editor", status: "applied"
+    )
+    change_set.creative_changes.create!(
+      creative: @creative, operation: "update",
+      before: snapshot.merge("markdown_source" => before_lines.join("\n")),
+      after: snapshot.merge("markdown_source" => after_lines.join("\n")), position: 0
+    )
+
+    get creative_comments_path(@creative), params: { topic_id: @creative.reload.history_topic.id }
+
+    assert_response :success
+    assert_select ".creative-history-diff > .creative-history-split" do
+      assert_select "script, img", count: 0
+      assert_select ".diff-changed td:first-child", text: before_lines[15]
+      assert_select ".diff-changed td:last-child", text: after_lines[15]
+      assert_select ".diff-gap td[colspan='2']", text: I18n.t("collavre.creative_history.skipped_lines", count: 12)
+      assert_select ".diff-gap", count: 2
+    end
   end
 
   test "History keeps JSON snapshots out of the distinct change set query" do
