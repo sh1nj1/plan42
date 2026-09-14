@@ -4,6 +4,7 @@ require_relative "../application_system_test_case"
 
 class CommentActivityDurationTest < ApplicationSystemTestCase
   setup do
+    resize_window_to
     @user = User.create!(email: "activity-duration@example.com", password: SystemHelpers::PASSWORD,
                          name: "Timing User", email_verified_at: Time.current, locale: :en,
                          notifications_enabled: false)
@@ -32,13 +33,13 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     within("#comment_#{@reply.id}") do
       assert_no_selector ".comment-execution-time"
       assert_selector "time[datetime]"
-      find(".comment-activity-log-block summary").click
+      open_activity_log
       assert_selector ".activity-time", text: /ago\s*\(1m 23s\)/
       assert_no_selector ".activity-log-duration"
     end
     within("#comment_#{@reviewed.id}") do
       assert_no_selector ".comment-execution-time"
-      find(".comment-activity-log-block summary").click
+      open_activity_log
       assert_selector ".activity-time .activity-execution-time", text: "(20s)"
     end
     within("#comment_#{@historical.id}") do
@@ -50,13 +51,22 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
       assert_no_selector ".comment-activity-log-block"
     end
     within("#comment_#{@logged.id}") do
-      find(".comment-activity-log-block summary").click
+      open_activity_log
       assert_selector ".activity-name", text: "LLM"
       assert_no_selector ".activity-log-duration, .activity-execution-time"
     end
   end
 
   private
+
+  def open_activity_log
+    find(".comment-activity-log-block > details > summary").click
+    # Lazy Turbo frames load only after entering the scrollable comment viewport.
+    assert_selector "turbo-frame[id^='activity_log_details_']" do |frame|
+      page.scroll_to(frame, align: :center)
+      !frame["complete"].nil?
+    end
+  end
 
   def create_reviewed_reply
     @reviewed = Comment.create!(creative: @creative, user: @user, content: "Draft")
