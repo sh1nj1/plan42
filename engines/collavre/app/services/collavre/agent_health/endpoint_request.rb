@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module Collavre
   module AgentHealth
     # Request settings for the direct RubyLLM providers. Native providers ignore
@@ -36,7 +38,23 @@ module Collavre
         { "Accept" => "application/json" }.merge(authentication.compact)
       end
 
+      def authentication_failed?(response)
+        return true if [ 401, 403 ].include?(response.code)
+        return false unless %w[google gemini].include?(@vendor) && response.code == 400
+
+        invalid_google_api_key?(response.body)
+      end
+
       private
+
+      def invalid_google_api_key?(body)
+        payload = JSON.parse(body.to_s, symbolize_names: true)
+        return false unless payload in { error: { details: Array => details } }
+
+        details.any? { |detail| detail in { reason: "API_KEY_INVALID" } }
+      rescue JSON::ParserError
+        false
+      end
 
       def vendor_api_key(setting)
         @agent.llm_api_key.presence || IntegrationSettings.fetch(setting)

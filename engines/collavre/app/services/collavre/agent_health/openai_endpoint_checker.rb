@@ -59,11 +59,11 @@ module Collavre
       end
 
       def result_for(response)
+        return Result.new(status: :offline, error: "authentication_failed") if @request.authentication_failed?(response)
+
         case response.code
         when 200..299
           Result.new(status: :online)
-        when 401, 403
-          Result.new(status: :offline, error: "authentication_failed")
         when 404, 405
           Result.new(status: :unknown, error: "models_endpoint_unsupported")
         when 408, 425, 429, 500..599

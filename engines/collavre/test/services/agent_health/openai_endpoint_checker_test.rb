@@ -5,7 +5,7 @@ require "test_helper"
 module Collavre
   module AgentHealth
     class OpenaiEndpointCheckerTest < ActiveSupport::TestCase
-      Response = Struct.new(:code, keyword_init: true)
+      Response = Struct.new(:code, :body, keyword_init: true)
 
       class RecordingClient
         attr_reader :url, :headers
@@ -152,6 +152,50 @@ module Collavre
           assert_equal "authentication_failed", result.error
           assert_not client.headers.key?("x-goog-api-key")
           assert_not client.headers.key?("x-api-key")
+        end
+      end
+
+      test "maps Google invalid-key 400 responses to authentication failure for both vendor aliases" do
+        body = { error: { status: "INVALID_ARGUMENT", details: [
+          { "@type" => "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" }
+        ] } }.to_json
+
+        [ " GOOGLE ", " Gemini " ].each do |vendor|
+          @agent.update!(llm_vendor: vendor)
+          client = RecordingClient.new(response: Response.new(code: 400, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :offline, result.status
+          assert_equal "authentication_failed", result.error
+        end
+      end
+
+      test "preserves unrelated or malformed Google 400 responses as unknown" do
+        @agent.update!(llm_vendor: "gemini")
+        bodies = [ nil, "", "not JSON", "null", "[]", "1", '"error"', "{}",
+          { error: nil }.to_json, { error: [] }.to_json,
+          { error: { details: nil } }.to_json, { error: { details: {} } }.to_json,
+          { error: { status: "INVALID_ARGUMENT" } }.to_json,
+          { error: { details: [ nil, "invalid", {}, { reason: "OTHER_REASON" } ] } }.to_json ]
+
+        bodies.each do |body|
+          client = RecordingClient.new(response: Response.new(code: 400, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :unknown, result.status, body.inspect
+          assert_equal "http_400", result.error, body.inspect
+        end
+      end
+
+      test "does not apply Google invalid-key body semantics to other vendors or HTTP statuses" do
+        body = { error: { details: [ { reason: "API_KEY_INVALID" } ] } }.to_json
+        [ [ "openai", 400 ], [ "anthropic", 400 ], [ "gemini", 422 ] ].each do |vendor, code|
+          @agent.update!(llm_vendor: vendor)
+          client = RecordingClient.new(response: Response.new(code: code, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :unknown, result.status
+          assert_equal "http_#{code}", result.error
         end
       end
 
