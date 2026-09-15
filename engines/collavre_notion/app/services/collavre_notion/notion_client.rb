@@ -1,11 +1,12 @@
 module CollavreNotion
   class NotionClient
-    BASE_URL = "https://api.notion.com/v1"
+    DEFAULT_BASE_URL = "https://api.notion.com/v1"
     API_VERSION = "2022-06-28"
 
     def initialize(account)
       @account = account
       @token = account.token
+      @base_url = resolve_base_url
     end
 
     def search_pages(query: nil, start_cursor: nil, page_size: 10)
@@ -135,7 +136,7 @@ module CollavreNotion
     private
 
     def get(path, params = {})
-      url = "#{BASE_URL}/#{path}"
+      url = "#{@base_url}/#{path}"
       url += "?#{params.to_query}" if params.any?
 
       response = HTTParty.get(
@@ -149,7 +150,7 @@ module CollavreNotion
 
     def post(path, body)
       response = HTTParty.post(
-        "#{BASE_URL}/#{path}",
+        "#{@base_url}/#{path}",
         headers: headers,
         body: body.to_json,
         timeout: 30
@@ -160,7 +161,7 @@ module CollavreNotion
 
     def patch(path, body)
       response = HTTParty.patch(
-        "#{BASE_URL}/#{path}",
+        "#{@base_url}/#{path}",
         headers: headers,
         body: body.to_json,
         timeout: 30
@@ -171,7 +172,7 @@ module CollavreNotion
 
     def delete(path)
       response = HTTParty.delete(
-        "#{BASE_URL}/#{path}",
+        "#{@base_url}/#{path}",
         headers: headers,
         timeout: 30
       )
@@ -190,6 +191,31 @@ module CollavreNotion
     def format_id(id)
       # Keep dashes in UUIDs - Notion API expects them
       id.to_s
+    end
+
+    # Outside production an explicit endpoint wins: it is how the mock server and
+    # any local proxy are reached. Under RAILS_ENV=production it is ignored, the
+    # same early return CollavreNotion.mock_enabled? makes — Notion has no
+    # self-hosted edition, so there is no host to point at but api.notion.com,
+    # and #headers sends the user's real workspace token as a Bearer credential.
+    # One env var that redirects every user's token to an arbitrary host is not
+    # worth an override with no legitimate production use.
+    #
+    # GITHUB_API_ENDPOINT is deliberately not the same case: GitHub Enterprise
+    # Server is a real production target, which is why it is a registered
+    # integration setting (github_api_endpoint, admin UI, DB > ENV) rather than
+    # an ENV-only override. There is no notion_api_endpoint key to match it.
+    #
+    # Otherwise follow the same mock decision the OmniAuth middleware made, so
+    # the token in hand and the host it is sent to always come from the same
+    # integration. Deciding it here separately — on ENV["NOTION_CLIENT_ID"]
+    # alone — sent developers whose credentials live in Rails credentials or in
+    # the admin UI to the mock server, and ignored NOTION_MOCK in both directions.
+    def resolve_base_url
+      override = ENV["NOTION_API_ENDPOINT"].presence
+      return override if override && !Rails.env.production?
+
+      CollavreNotion.mock_enabled? ? CollavreNotion.mock_server_base_url : DEFAULT_BASE_URL
     end
 
     def handle_response(response)
