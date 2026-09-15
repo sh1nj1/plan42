@@ -1045,7 +1045,13 @@ creative-tree-row.is-being-edited .creative-tree {
     padding: 0 var(--space-2);
     border-radius: var(--radius-round, 9999px);
     background: transparent;
-    color: var(--text-muted);
+
+    /* Inherit the host row's text color instead of pinning --text-muted.
+       On a selected topic chip the background flips to --color-secondary-active
+       and the chip text to --color-badge-text; a pinned muted grey left the
+       count at ~1.1:1 contrast there, invisible in dark mode. Inheriting keeps
+       the count on whatever token the surrounding text already resolved to. */
+    color: inherit;
     font-size: var(--text-0);
     white-space: nowrap;
     border: 0;
@@ -1078,7 +1084,7 @@ creative-tree-row.is-being-edited .creative-tree {
 
 .cron-task {
     padding: var(--space-2) 0;
-    border-top: var(--border-1) solid var(--border-muted);
+    border-top: var(--border-1) solid var(--border-color);
 }
 
 .cron-task:first-of-type {
@@ -1093,7 +1099,7 @@ creative-tree-row.is-being-edited .creative-tree {
     margin-bottom: var(--space-1);
     color: var(--text-muted);
     font-size: var(--text-0);
-    font-weight: var(--weight-semibold);
+    font-weight: var(--weight-6);
 }
 
 .cron-task code,
