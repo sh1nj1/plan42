@@ -187,3 +187,23 @@ test('touch cancellation clears the workspace fallback before another drop', () 
   expect(document.querySelector('.touch-drag-proxy')).toBeNull()
   expect(document.querySelector('.is-dragging')).toBeNull()
 })
+
+// Both source adapters must restore the shared opacity after every exit path.
+test.each(['workspace-2', 'creative-1'])('%s clears source styling on touch cancellation', sourceId => {
+  const source = row(sourceId)
+  touch('touchstart', source)
+  jest.advanceTimersByTime(400)
+  expect(source.classList.contains('is-dragging')).toBe(true)
+  touch('touchcancel', source)
+  expect(source.classList.contains('is-dragging')).toBe(false)
+})
+
+test.each(['dragend', 'escape', 'destroy'])('%s clears right-tree source styling', action => {
+  const source = row('creative-1')
+  native('dragstart', source, emptyTransfer())
+  expect(source.classList.contains('is-dragging')).toBe(true)
+  if (action === 'dragend') native('dragend', source, emptyTransfer())
+  if (action === 'escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  if (action === 'destroy') right.destroy()
+  expect(source.classList.contains('is-dragging')).toBe(false)
+})
