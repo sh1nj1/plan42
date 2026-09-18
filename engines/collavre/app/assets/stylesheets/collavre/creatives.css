@@ -1481,11 +1481,17 @@ creative-tree-row.is-being-edited .creative-tree {
     box-shadow: inset 0 calc(-1 * var(--dnd-edge-width, 2px)) 0 var(--dnd-color, var(--color-active, #007bff));
 }
 
+/* Let the child arrow occupy the leading controls without moving the row. */
+.creative-workspace-tree-row.drag-over-child > .creative-workspace-tree-branch-toggle,
+.creative-tree.drag-over-child > .creative-row > .creative-row-start > :is(.creative-action-btn, .select-creative-checkbox) {
+    visibility: hidden;
+}
+
 :is(.creative-tree, .creative-workspace-tree-row).drag-over-child::after {
     content: '↳';
     position: absolute;
     top: 50%;
-    right: var(--dnd-child-icon-inset, 0.5rem);
+    left: var(--dnd-child-icon-inset, 0.5rem);
     color: var(--dnd-color, var(--color-active, #007bff));
     font-size: var(--dnd-child-icon-size, 1.25rem);
     line-height: var(--leading-0, 1);

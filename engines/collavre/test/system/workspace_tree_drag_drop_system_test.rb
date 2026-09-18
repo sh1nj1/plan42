@@ -124,6 +124,8 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
           for (const [direction, fraction] of [['top', 0.1], ['bottom', 0.9], ['child', 0.5]]) {
             const samples = targets.map(el => {
               const before = el.getBoundingClientRect();
+              const controls = [...el.querySelectorAll(':scope > .creative-workspace-tree-branch-toggle, :scope > .creative-row > .creative-row-start > .creative-action-btn')];
+              const visibility = controls.map(control => getComputedStyle(control).visibility);
               dispatch(source, 'dragstart');
               dispatch(el, 'dragover', before.top + before.height * fraction, true);
               const style = getComputedStyle(el);
@@ -135,11 +137,13 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
                 shadow: style.boxShadow, background: style.backgroundColor,
                 radius: style.borderRadius, borderTop: style.borderTopWidth,
                 borderBottom: style.borderBottomWidth,
-                icon: direction === 'child' ? [icon.content, icon.color, icon.fontSize, icon.right] : null,
+                icon: direction === 'child' ? [icon.content, icon.color, icon.fontSize, icon.left] : null,
+                controlsHidden: direction === 'child' ? controls.every(control => getComputedStyle(control).visibility === 'hidden') : null,
                 badge: getComputedStyle(document.querySelector('.creative-link-drop-indicator')).display
               };
               dispatch(el, 'dragleave');
               dispatch(source, 'dragend');
+              result.controlsRestored = controls.every((control, index) => getComputedStyle(control).visibility === visibility[index]);
               return result;
             });
             results.push({ theme, direction, samples });
@@ -156,12 +160,15 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
       assert_equal left, right, "D&D styles differ: #{result}"
       assert left.fetch("marked"), "Wrong drop direction: #{result}"
       assert left.fetch("geometry"), "D&D changed row geometry: #{result}"
+      assert left.fetch("controlsRestored"), "D&D did not restore leading controls: #{result}"
       assert_equal "block", left.fetch("badge")
       assert_equal "0px", left.fetch("borderTop")
       assert_equal "0px", left.fetch("borderBottom")
       refute_equal "rgba(0, 0, 0, 0)", left.fetch("background")
       if result.fetch("direction") == "child"
         assert_includes left.fetch("icon").first, "↳"
+        assert_equal "8px", left.fetch("icon").last, "Child arrow must lead the row: #{result}"
+        assert left.fetch("controlsHidden"), "Child arrow overlaps leading controls: #{result}"
       else
         assert_includes left.fetch("shadow"), "2px"
       end
@@ -187,7 +194,7 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
           bottom: style('.drag-over-bottom').boxShadow,
           background: style('.drag-over-child').backgroundColor,
           arrow: style('.drag-over-child', '::after').content,
-          arrowInset: style('.drag-over-child', '::after').right,
+          arrowInset: style('.drag-over-child', '::after').left,
           opacity: style('.is-dragging').opacity,
           badgeBackground: style('.creative-link-drop-indicator').backgroundColor,
           badgePosition: style('.creative-link-drop-indicator').position,
