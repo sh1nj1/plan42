@@ -90,9 +90,11 @@ Add to your application layout:
 ```
 
 The helper includes all engine stylesheets in order, including design tokens and
-workspace styles. Existing hosts that link `collavre/creatives` individually
-continue to receive shared tree drag-and-drop styles with default values.
-Use the helper to receive the complete theme token and stylesheet set.
+workspace styles. It is mixed into `ActionView::Base` by the engine, so it is
+available in host layouts and host-controller views without including
+`Collavre::ApplicationHelper`. Existing hosts that link `collavre/creatives`
+individually continue to receive shared tree drag-and-drop styles with default
+values. Use the helper to receive the complete theme token and stylesheet set.
 
 ### 6. Install Assets (jsbundling-rails)
 

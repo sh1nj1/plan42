@@ -1,5 +1,6 @@
 require "collavre/sensitive_request_silencer"
 require "collavre/hashed_access_token_lookup"
+require "collavre/stylesheets_helper"
 
 module Collavre
   class Engine < ::Rails::Engine
@@ -126,6 +127,17 @@ module Collavre
     initializer "collavre.view_paths" do
       ActiveSupport.on_load(:action_controller) do
         append_view_path Rails.root.join("app/views")
+      end
+    end
+
+    # Host apps mount this engine without necessarily including
+    # `Collavre::ApplicationHelper`, so `collavre_stylesheets` has to reach the
+    # host view context on its own — otherwise the documented layout call raises
+    # NoMethodError on host-controller pages and every engine style, including
+    # drag-and-drop feedback, is missing.
+    initializer "collavre.stylesheet_helper" do
+      ActiveSupport.on_load(:action_view) do
+        include Collavre::StylesheetsHelper
       end
     end
 
