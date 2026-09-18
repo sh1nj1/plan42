@@ -17,7 +17,6 @@ module Collavre
       collavre/popup
       collavre/comments_popup
       collavre/workspace
-      collavre/tree_drag_drop
       collavre/tables
       collavre/code_highlight
       collavre/comment_versions

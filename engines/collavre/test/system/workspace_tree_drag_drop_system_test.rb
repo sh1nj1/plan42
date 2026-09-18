@@ -170,6 +170,51 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
     assert_equal "rgb(170, 60, 180)", custom.fetch("samples").first.fetch("icon")[1]
   end
 
+  test "individually linked creative stylesheet preserves drag feedback without token assets" do
+    visit collavre.creatives_path(id: @left_root.id)
+    assert_workspace_and_center_rows(@right_root, @left_child)
+
+    styles = page.evaluate_async_script(<<~JS)
+      const done = arguments[arguments.length - 1];
+      const href = [...document.querySelectorAll('link[rel="stylesheet"]')]
+        .find(link => link.href.includes('/collavre/creatives')).href;
+      const frame = document.createElement('iframe');
+      frame.onload = () => {
+        const doc = frame.contentDocument;
+        const style = (selector, pseudo) => frame.contentWindow.getComputedStyle(doc.querySelector(selector), pseudo);
+        done({
+          top: style('.drag-over-top').boxShadow,
+          bottom: style('.drag-over-bottom').boxShadow,
+          background: style('.drag-over-child').backgroundColor,
+          arrow: style('.drag-over-child', '::after').content,
+          arrowInset: style('.drag-over-child', '::after').right,
+          opacity: style('.is-dragging').opacity,
+          badgeBackground: style('.creative-link-drop-indicator').backgroundColor,
+          badgePosition: style('.creative-link-drop-indicator').position,
+          badgeLayer: style('.creative-link-drop-indicator').zIndex
+        });
+        frame.remove();
+      };
+      frame.srcdoc = `<link rel="stylesheet" href="${href}">
+        <div class="creative-tree drag-over-top">Top</div>
+        <div class="creative-tree drag-over-bottom">Bottom</div>
+        <div class="creative-tree drag-over-child">Child</div>
+        <div class="creative-tree is-dragging">Source</div>
+        <div class="creative-link-drop-indicator">--&gt;</div>`;
+      document.body.appendChild(frame);
+    JS
+
+    assert_includes styles.fetch("top"), "2px"
+    assert_includes styles.fetch("bottom"), "-2px"
+    refute_equal "rgba(0, 0, 0, 0)", styles.fetch("background")
+    assert_includes styles.fetch("arrow"), "↳"
+    assert_equal "8px", styles.fetch("arrowInset")
+    assert_equal "0.55", styles.fetch("opacity")
+    assert_equal "rgb(255, 255, 255)", styles.fetch("badgeBackground")
+    assert_equal "fixed", styles.fetch("badgePosition")
+    assert_equal "9999", styles.fetch("badgeLayer")
+  end
+
   private
 
   def assert_workspace_and_center_rows(workspace_creative, center_creative)

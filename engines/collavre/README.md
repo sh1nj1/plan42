@@ -86,17 +86,13 @@ end
 Add to your application layout:
 
 ```erb
-<%= stylesheet_link_tag "collavre/creatives" %>
-<%= stylesheet_link_tag "collavre/actiontext" %>
-<%= stylesheet_link_tag "collavre/activity_logs" %>
-<%= stylesheet_link_tag "collavre/comments_popup" %>
-<%= stylesheet_link_tag "collavre/tables" %>
-<%= stylesheet_link_tag "collavre/dark_mode" %>
-<%= stylesheet_link_tag "collavre/mention_menu" %>
-<%= stylesheet_link_tag "collavre/popup" %>
-<%= stylesheet_link_tag "collavre/user_menu" %>
-<%= stylesheet_link_tag "collavre/print", media: 'print' %>
+<%= collavre_stylesheets %>
 ```
+
+The helper includes all engine stylesheets in order, including design tokens and
+workspace styles. Existing hosts that link `collavre/creatives` individually
+continue to receive shared tree drag-and-drop styles with default values.
+Use the helper to receive the complete theme token and stylesheet set.
 
 ### 6. Install Assets (jsbundling-rails)
 
