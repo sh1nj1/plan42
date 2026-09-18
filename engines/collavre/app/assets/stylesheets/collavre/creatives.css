@@ -261,9 +261,10 @@ creative-tree-row.show-edit .creative-row {
     text-align: justify;
 }
 
-/* Keep multiline headings readable in both tree and slide markup. */
+/* Keep multiline headings readable, including headings within descriptions. */
 .creative-description-justified :is(h1, h2, h3, h4, h5, h6) .creative-content,
-.creative-description-justified :is(h1, h2, h3, h4, h5, h6).creative-content {
+.creative-description-justified :is(h1, h2, h3, h4, h5, h6).creative-content,
+.creative-description-justified .creative-content :is(h1, h2, h3, h4, h5, h6) {
     text-align: left;
 }
 

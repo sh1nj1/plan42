@@ -9,7 +9,9 @@ class CreativeDescriptionAlignmentTest < ApplicationSystemTestCase
     3.times do |index|
       parent = Creative.create!(user: @user, parent: parent, description: "Slide level #{index + 2} " * 20)
     end
-    @body = Creative.create!(user: @user, description: "A long creative description with several words. " * 20)
+    markdown = (1..6).map { |level| "#{'#' * level} #{'A long nested heading ' * 8}\n\n#{'A long body paragraph. ' * 20}" }.join("\n\n")
+    parent.update!(content_type_input: "markdown", markdown_source: markdown)
+    @body = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: markdown)
     Creative.rebuild!
     sign_in_via_ui(@user)
   end
@@ -41,6 +43,7 @@ class CreativeDescriptionAlignmentTest < ApplicationSystemTestCase
     visit collavre.creatives_path
     assert_alignment "#creative-#{@heading.id} h1 .creative-content", enabled ? "left" : "start"
     assert_alignment "#creative-#{@body.id} .creative-content", enabled ? "justify" : "start"
+    assert_nested_alignment "#creative-#{@body.id} .creative-content", enabled
   end
 
   def assert_slide_alignment(enabled)
@@ -50,6 +53,14 @@ class CreativeDescriptionAlignmentTest < ApplicationSystemTestCase
       find("body").send_keys(:arrow_right)
     end
     assert_alignment "#slide-content div.creative-content", enabled ? "justify" : "start"
+    assert_nested_alignment "#slide-content div.creative-content", enabled
+  end
+
+  def assert_nested_alignment(selector, enabled)
+    (1..6).each do |level|
+      assert_alignment "#{selector} h#{level}", enabled ? "left" : "start"
+    end
+    assert_alignment "#{selector} p", enabled ? "justify" : "start"
   end
 
   def assert_alignment(selector, expected)
