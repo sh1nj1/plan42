@@ -102,6 +102,74 @@ class WorkspaceTreeDragDropSystemTest < ApplicationSystemTestCase
     assert_equal before, Creative.where(user: @user).order(:id).pluck(:id, :parent_id, :sequence)
   end
 
+  test "both trees share themed drop indicators without changing row geometry" do
+    visit collavre.creatives_path(id: @left_root.id)
+    assert_workspace_and_center_rows(@right_root, @left_child)
+
+    results = page.evaluate_script(<<~JS, @left_root.id, @right_root.id, @left_child.id)
+      ((sourceId, leftId, rightId) => {
+        const source = document.getElementById(`workspace-creative-${sourceId}`);
+        const targets = [document.getElementById(`workspace-creative-${leftId}`),
+                         document.getElementById(`creative-${rightId}`)];
+        const transfer = new DataTransfer();
+        const dispatch = (el, type, y = 0, shiftKey = false) => el.dispatchEvent(
+          new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer,
+                               clientX: 100, clientY: y, shiftKey }));
+        const originalClass = document.body.className;
+        const results = [];
+        for (const theme of ['light', 'dark', 'custom']) {
+          document.body.classList.toggle('dark-mode', theme === 'dark');
+          document.body.classList.toggle('light-mode', theme !== 'dark');
+          if (theme === 'custom') document.body.style.setProperty('--color-active', 'rgb(170, 60, 180)');
+          for (const [direction, fraction] of [['top', 0.1], ['bottom', 0.9], ['child', 0.5]]) {
+            const samples = targets.map(el => {
+              const before = el.getBoundingClientRect();
+              dispatch(source, 'dragstart');
+              dispatch(el, 'dragover', before.top + before.height * fraction, true);
+              const style = getComputedStyle(el);
+              const icon = getComputedStyle(el, '::after');
+              const after = el.getBoundingClientRect();
+              const result = {
+                marked: el.classList.contains(`drag-over-${direction}`),
+                geometry: before.height === after.height && before.width === after.width,
+                shadow: style.boxShadow, background: style.backgroundColor,
+                radius: style.borderRadius, borderTop: style.borderTopWidth,
+                borderBottom: style.borderBottomWidth,
+                icon: direction === 'child' ? [icon.content, icon.color, icon.fontSize, icon.right] : null,
+                badge: getComputedStyle(document.querySelector('.creative-link-drop-indicator')).display
+              };
+              dispatch(el, 'dragleave');
+              dispatch(source, 'dragend');
+              return result;
+            });
+            results.push({ theme, direction, samples });
+          }
+        }
+        document.body.className = originalClass;
+        document.body.style.removeProperty('--color-active');
+        return results;
+      })(...arguments)
+    JS
+
+    results.each do |result|
+      left, right = result.fetch("samples")
+      assert_equal left, right, "D&D styles differ: #{result}"
+      assert left.fetch("marked"), "Wrong drop direction: #{result}"
+      assert left.fetch("geometry"), "D&D changed row geometry: #{result}"
+      assert_equal "block", left.fetch("badge")
+      assert_equal "0px", left.fetch("borderTop")
+      assert_equal "0px", left.fetch("borderBottom")
+      refute_equal "rgba(0, 0, 0, 0)", left.fetch("background")
+      if result.fetch("direction") == "child"
+        assert_includes left.fetch("icon").first, "↳"
+      else
+        assert_includes left.fetch("shadow"), "2px"
+      end
+    end
+    custom = results.find { |result| result["theme"] == "custom" && result["direction"] == "child" }
+    assert_equal "rgb(170, 60, 180)", custom.fetch("samples").first.fetch("icon")[1]
+  end
+
   private
 
   def assert_workspace_and_center_rows(workspace_creative, center_creative)

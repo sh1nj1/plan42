@@ -192,33 +192,6 @@ creative-tree-row.show-edit .creative-row {
     display: none !important;
 }
 
-.creative-tree.child-drop-indicator-active::after {
-    content: '↳';
-    position: absolute;
-    top: 50%;
-    margin-left: 12px;
-    color: var(--color-active);
-    font-size: 1.3em;
-    transform: translateY(-50%);
-    pointer-events: none;
-}
-
-
-.creative-link-drop-indicator {
-    position: fixed;
-    display: none;
-    pointer-events: none;
-    background: color-mix(in srgb, var(--color-active) 90%, transparent);
-    color: var(--text-on-badge);
-    font-size: var(--text-0);
-    padding: 2px 8px;
-    border-radius: var(--radius-2);
-    transform: translate(-50%, -170%);
-    z-index: 9999;
-    font-weight: var(--weight-6);
-    letter-spacing: 1px;
-}
-
 .creative-tree-li {
     display: flex;
     align-items: flex-start;
