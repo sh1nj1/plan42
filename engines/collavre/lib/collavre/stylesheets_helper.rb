@@ -1,3 +1,5 @@
+require "active_support"
+
 module Collavre
   # Engine stylesheet tags for host layouts.
   #
@@ -52,4 +54,15 @@ module Collavre
       safe_join(tags, "\n    ")
     end
   end
+end
+
+# Host apps mount this engine without necessarily including
+# `Collavre::ApplicationHelper`, so `collavre_stylesheets` has to reach the host
+# view context on its own — otherwise the documented layout call raises
+# NoMethodError on host-controller pages and every engine style, including
+# drag-and-drop feedback, is missing. The hook is registered here rather than in
+# an engine initializer because `collavre/engine.rb` requires this file at load
+# time, long before ActionView::Base is defined.
+ActiveSupport.on_load(:action_view) do
+  include Collavre::StylesheetsHelper
 end
