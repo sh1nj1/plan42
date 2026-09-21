@@ -6,6 +6,7 @@ require "zip"
 
 module Collavre
   class PptImporter
+    include PptConnectors
     include PptBackgrounds
     include PptColors
     include PptNumbering
@@ -98,6 +99,8 @@ module Collavre
         case node.name
         when "sp"
           render_text_shape(node, namespaces, bounds)
+        when "cxnSp"
+          render_connector(node, namespaces, bounds)
         when "pic"
           render_picture(node, namespaces, relationships, bounds)
         when "graphicFrame"
@@ -127,6 +130,8 @@ module Collavre
           render_text_run(child, namespaces)
         when "br"
           "<br>"
+        when "tab"
+          "&#9;"
         end
       end.join
       content = ERB::Util.html_escape(paragraph.xpath(".//a:t", namespaces).map(&:text).join) if content.empty?

@@ -5,6 +5,46 @@ require "zip"
 class PptImporterTest < ActiveSupport::TestCase
   SAMPLE_IMAGE = Base64.decode64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=")
 
+  test "preserves explicit tabs between runs fields and line breaks" do
+    xml = slide_xml("Left").sub("</a:r>", '</a:r><a:tab/><a:tab/><a:fld><a:t>Right</a:t></a:fld><a:br/><a:tab/><a:r><a:t>Next</a:t></a:r>')
+    html = import_connector_fixture(xml)
+    assert_equal "Left\t\tRight\tNext", html.at_css("p").text
+    assert_equal 1, html.css("p br").length
+  end
+
+  test "persists connector geometry stroke and arrows including grouped connectors" do
+    connector = <<~XML
+      <p:cxnSp><p:spPr><a:xfrm rot="5400000" flipH="1"><a:off x="1219200" y="685800"/><a:ext cx="6096000" cy="0"/></a:xfrm>
+      <a:prstGeom prst="bentConnector3"><a:avLst><a:gd name="adj1" fmla="val 25000"/></a:avLst></a:prstGeom>
+      <a:ln w="25400"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:headEnd type="oval" w="sm" len="lg"/><a:tailEnd type="triangle"/></a:ln></p:spPr></p:cxnSp>
+    XML
+    html = import_connector_fixture(rich_slide_xml.sub("<p:spTree>", "<p:spTree>#{connector}").sub("</p:grpSp>", "#{connector}</p:grpSp>"))
+    assert_equal 2, html.css(".ppt-slide-connector").length
+    assert_equal 1, html.css(".ppt-slide-group .ppt-slide-connector").length
+    format = JSON.parse(html.at_css(".ppt-slide-connector")["data-ppt-format"])
+    assert_equal [ 10, 10, 50, 0, 90, true ], format.values_at("x", "y", "w", "h", "rotation", "flipH")
+    data = format.fetch("connector")
+    assert_equal [ "bentConnector3", 6096000, 0, "#FF0000", 25400, false ], data.values_at("kind", "width", "height", "stroke", "weight", "hidden")
+    assert_equal({ "adj1" => 0.25 }, data["adjustments"])
+    assert_equal({ "type" => "oval", "width" => "sm", "length" => "lg" }, data["head"])
+    assert_equal "triangle", data["tail"]["type"]
+  end
+
+  test "keeps hidden and missing connector properties safe" do
+    html = import_connector_fixture(slide_xml("Body").sub("<p:spTree>", '<p:spTree><p:cxnSp/><p:cxnSp><p:spPr><a:ln><a:noFill/></a:ln></p:spPr></p:cxnSp>'))
+    first, second = html.css(".ppt-slide-connector").map { |node| JSON.parse(node["data-ppt-format"])["connector"] }
+    assert_equal [ "line", nil, nil, "#000000", 12700, false ], first.values_at("kind", "width", "height", "stroke", "weight", "hidden")
+    assert second["hidden"]
+    assert_nil first["adjustments"]
+  end
+
+  def import_connector_fixture(xml)
+    Tempfile.create([ "connector", ".pptx" ]) do |file|
+      Zip::OutputStream.open(file.path) { |zip| write_entry(zip, "ppt/slides/slide1.xml", xml) }
+      Nokogiri::HTML.fragment(PptImporter.import(file, parent: nil, user: users(:one)).first.reload.description)
+    end
+  end
+
   test "persists precise geometry and presentation formatting through sanitization" do
     xml = slide_xml("Readable")
       .sub("<p:cSld>", '<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="222222"/></a:solidFill></p:bgPr></p:bg>')

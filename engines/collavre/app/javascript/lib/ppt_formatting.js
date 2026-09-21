@@ -1,3 +1,4 @@
+import { renderPptConnector } from "./ppt_connector"
 import { renderPptChart } from "./ppt_chart"
 
 // Do not interpret presentation data as CSS. Every accepted value has a bounded
@@ -30,6 +31,7 @@ function applyElementFormatting(element, slide) {
   try { data = JSON.parse(element.dataset.pptFormat) } catch { return }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return
   if (data.chart) renderPptChart(element, data.chart)
+  if (data.connector) renderPptConnector(element, data.connector)
   const style = element.style
   applyTableDimensions(element, data)
   applyGeometry(element, slide, data)
