@@ -1838,3 +1838,11 @@ creative-tree-row.is-being-edited .creative-tree {
 .ppt-preset-rendered > p {
     position: relative;
 }
+
+/* Imported backgrounds stay below content and never intercept interaction. */
+.ppt-slide--precise > .ppt-slide-background {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

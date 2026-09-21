@@ -1,3 +1,4 @@
+import { applyPptBackground } from "./ppt_background"
 import { renderPptShape, applyPptCrop } from "./ppt_media"
 import { renderPptConnector } from "./ppt_connector"
 import { renderPptChart } from "./ppt_chart"
@@ -40,6 +41,7 @@ function applyElementFormatting(element, slide) {
   applyShapeStyle(style, data)
   renderPptShape(element, data)
   applyPptCrop(element, data.crop)
+  applyPptBackground(element, data.background)
 }
 
 function applyTableDimensions(element, data) {

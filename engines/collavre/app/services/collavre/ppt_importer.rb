@@ -88,8 +88,8 @@ module Collavre
 
       <<~HTML.strip
         <div class="ppt-slide #{ratio_class}" data-ppt-slide="#{slide_number}"
-             data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}"#{format_attribute(fill: slide_background(slide))}>
-          <div class="ppt-slide-layout">#{inherited}#{elements}</div>
+             data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}"#{format_attribute(background_format(slide))}>
+          #{background_picture(slide)}<div class="ppt-slide-layout">#{inherited}#{elements}</div>
         </div>
         #{notes}
       HTML

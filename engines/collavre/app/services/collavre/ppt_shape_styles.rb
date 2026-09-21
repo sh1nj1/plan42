@@ -3,6 +3,31 @@ module Collavre
   module PptShapeStyles
     private
 
+    def theme_text_properties(shape)
+      return unless shape
+
+      style = effective_shape_properties(shape, "./p:style")
+      reference = style&.at_xpath("./*[local-name()='fontRef']")
+      return unless reference && %w[major minor].include?(reference["idx"])
+
+      properties = Nokogiri::XML::Node.new("rPr", shape.document)
+      properties.namespace = shape.document.root.namespace_definitions.find { |ns| ns.prefix == "a" }
+      font = resolved_font(reference["idx"] == "major" ? "+mj-lt" : "+mn-lt")
+      if font
+        latin = Nokogiri::XML::Node.new("latin", shape.document)
+        latin.namespace = properties.namespace
+        latin["typeface"] = font
+        properties.add_child(latin)
+      end
+      if ppt_color(reference)
+        fill = Nokogiri::XML::Node.new("solidFill", shape.document)
+        fill.namespace = properties.namespace
+        reference.element_children.each { |color| fill.add_child(color.dup) }
+        properties.add_child(fill)
+      end
+      properties
+    end
+
     def theme_shape_properties(shape)
       style = effective_shape_properties(shape, "./p:style")
       return unless style && @theme

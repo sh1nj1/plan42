@@ -778,6 +778,74 @@ class PptImporterTest < ActiveSupport::TestCase
 
   private
 
+  test "persists shape font references beneath explicit text formatting" do
+    entries = inheritance_entries
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme><a:majorFont><a:latin typeface="Cambria"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme><a:clrScheme><a:accent1><a:srgbClr val="204060"/></a:accent1></a:clrScheme></a:themeElements></a:theme>'
+    entries["ppt/slides/slide1.xml"] = slide_xml("Theme text").sub("<p:txBody>", '<p:style><a:fontRef idx="major"><a:schemeClr val="accent1"><a:alpha val="50000"/></a:schemeClr></a:fontRef></p:style><p:txBody>')
+    [ [ "", "Cambria", "#20406080" ], [ '<a:rPr><a:latin typeface="Arial"/><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:rPr>', "Arial", "#ABCDEF" ] ].each do |properties, font, color|
+      original = entries["ppt/slides/slide1.xml"]
+      entries["ppt/slides/slide1.xml"] = original.sub("<a:r>", "<a:r>#{properties}")
+      with_archive(entries) do |file|
+        html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+        data = JSON.parse(html.css('.ppt-slide-text').last.at_css('span')["data-ppt-format"])
+        assert_equal [ font, color ], data.values_at("font", "color")
+      end
+      entries["ppt/slides/slide1.xml"] = original
+    end
+  end
+
+  test "persists inherited and theme non solid backgrounds including attached pictures" do
+    entries = inheritance_entries
+    gradient = '<a:gradFill><a:gsLst><a:gs pos="100000"><a:srgbClr val="FFFFFF"/></a:gs><a:gs pos="0"><a:schemeClr val="phClr"><a:alphaMod val="50000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000"/></a:gradFill>'
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fmtScheme><a:bgFillStyleLst>' + gradient + '</a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+    entries["ppt/slideLayouts/layout.xml"] = slide_xml("Layout").sub('<p:cSld>', '<p:cSld><p:bg><p:bgRef idx="1001"><a:srgbClr val="204060"><a:alpha val="50000"/></a:srgbClr></p:bgRef></p:bg>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.at_css('.ppt-slide')["data-ppt-format"])["background"]
+      assert data
+      assert_equal [ "linear", 90, [ [ 0, "#20406040" ], [ 100, "#FFFFFF" ] ] ], data.values_at("type", "angle", "stops")
+    end
+    entries["ppt/slides/slide1.xml"] = slide_xml("Slide").sub('<p:cSld>', '<p:cSld><p:bg><p:bgPr><a:pattFill prst="diagCross"><a:fgClr><a:srgbClr val="112233"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></p:bgPr></p:bg>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.at_css('.ppt-slide')["data-ppt-format"])["background"]
+      assert data
+      assert_equal [ "pattern", "diagCross", "#112233", "#FFFFFF" ], data.values_at("type", "preset", "foreground", "background")
+    end
+    entries["ppt/slides/slide1.xml"] = slide_xml("Slide")
+    entries["ppt/slideLayouts/layout.xml"] = slide_xml("Layout").sub('<p:cSld>', '<p:cSld><p:bg><p:bgPr><a:blipFill><a:blip r:embed="background"/><a:srcRect l="10000" r="20000"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:bgPr></p:bg>')
+    entries["ppt/slideLayouts/_rels/layout.xml.rels"] = entries["ppt/slideLayouts/_rels/layout.xml.rels"].sub('</Relationships>', '<Relationship Id="background" Type="x/image" Target="../media/background.png"/></Relationships>')
+    entries["ppt/media/background.png"] = SAMPLE_IMAGE
+    with_archive(entries) do |file|
+      creative = import_file(file).last.reload
+      html = Nokogiri::HTML.fragment(creative.description)
+      image = html.at_css('.ppt-slide > .ppt-slide-background img')
+      assert image
+      assert_match %r{\A/public-assets/blobs/}, image['src']
+      assert_equal [ 0.1, 0, 0.2, 0 ], JSON.parse(image.parent['data-ppt-format'])['crop']
+      assert_equal SAMPLE_IMAGE, creative.files.blobs.find_by!(filename: 'background.png').download
+      assert_equal 'ppt-slide-layout', image.parent.next_element['class']
+    end
+  end
+
+  test "resolves theme background images from their owning part and rejects unsafe relationships" do
+    entries = inheritance_entries
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><a:themeElements><a:fmtScheme><a:bgFillStyleLst><a:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+    entries["ppt/slides/slide1.xml"] = slide_xml("Slide").sub('<p:cSld>', '<p:cSld><p:bg><p:bgRef idx="1001"/></p:bg>')
+    entries["ppt/media/theme.png"] = SAMPLE_IMAGE
+    relation = relationships_xml("image", "../media/theme.png")
+    [ [ relation, 1 ], [ relation.sub('Type="http', 'TargetMode="External" Type="http'), 0 ], [ relation.sub('/image"', '/hyperlink"'), 0 ], [ relation.sub('theme.png', 'missing.png'), 0 ], [ '<Relationships/>', 0 ] ].each do |rels, count|
+      entries["ppt/theme/_rels/theme1.xml.rels"] = rels
+      with_archive(entries) do |file|
+        html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+        assert_equal count, html.css('.ppt-slide-background img').size
+      end
+    end
+  end
+
   def inheritance_entries
     { "ppt/slides/slide1.xml" => slide_xml("Slide"),
       "ppt/slides/_rels/slide1.xml.rels" => relationships_xml("slideLayout", "../slideLayouts/layout.xml"),

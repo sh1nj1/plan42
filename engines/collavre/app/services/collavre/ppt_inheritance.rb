@@ -71,7 +71,7 @@ module Collavre
       end
       properties << paragraph.at_xpath("./a:pPr/a:defRPr", namespaces)
       properties << run.at_xpath("./a:rPr", namespaces)
-      merge_run_properties(properties.compact)
+      merge_run_properties([ theme_text_properties(shape), *properties ].compact)
     end
 
     def text_style_sources(shape, level)
