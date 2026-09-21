@@ -129,3 +129,44 @@ test('applies authored table proportions idempotently and rejects unsafe dimensi
   applyPptFormatting(root)
   expect(table.rows[0].style.height).toBe('20%')
 })
+
+
+test('table rendering settles under the document observer and preserves column nodes', async () => {
+  const { root, element } = slide()
+  element.innerHTML = '<table class="ppt-slide-table"><tbody><tr><td>A</td><td>B</td></tr></tbody></table>'
+  const table = element.firstElementChild
+  table.dataset.pptFormat = JSON.stringify({ columns: [25,75] })
+  const mutations = []
+  const observer = new MutationObserver(records => mutations.push(...records))
+  observer.observe(table, { childList: true, subtree: true })
+  try {
+    // Bounded microtask turns let the real document observer run without hanging
+    // the test runner if rendering starts an endless mutation feedback loop.
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve()
+    const group = table.querySelector('colgroup')
+    const column = group.firstElementChild
+    expect(column.style.width).toBe('25%')
+    expect(mutations).toHaveLength(1)
+    applyPptFormatting(root)
+    document.dispatchEvent(new window.Event('turbo:load'))
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve()
+    expect(table.querySelector('colgroup')).toBe(group)
+    expect(group.firstElementChild).toBe(column)
+    expect(mutations).toHaveLength(1)
+
+    table.dataset.pptFormat = JSON.stringify({ columns: [40,60] })
+    applyPptFormatting(root)
+    expect(group.firstElementChild).toBe(column)
+    expect(column.style.width).toBe('40%')
+    table.dataset.pptFormat = JSON.stringify({ columns: [100] })
+    applyPptFormatting(root)
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve()
+    expect(table.querySelectorAll('colgroup')).toHaveLength(1)
+    expect(table.querySelectorAll('col')).toHaveLength(1)
+    expect(table.querySelector('col').style.width).toBe('100%')
+    expect(mutations).toHaveLength(3)
+  } finally {
+    observer.disconnect()
+    root.remove()
+  }
+})

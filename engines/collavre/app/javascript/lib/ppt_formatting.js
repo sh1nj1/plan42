@@ -42,19 +42,22 @@ function applyElementFormatting(element, slide) {
 function applyTableDimensions(element, data) {
   if (!element.matches('table.ppt-slide-table')) return
   const proportions = values => Array.isArray(values) && values.length > 0 && values.every(value => finite(value, 0.000001, 100)) && Math.abs(values.reduce((sum, value) => sum + value, 0) - 100) < 0.01
-  if (proportions(data.columns)) {
-    element.querySelector(':scope > colgroup')?.remove()
-    const group = document.createElement('colgroup')
-    for (const width of data.columns) {
-      const column = document.createElement('col')
-      column.style.width = `${width}%`
-      group.append(column)
-    }
-    element.prepend(group)
-  }
+  if (proportions(data.columns)) applyTableColumns(element, data.columns)
   if (proportions(data.rows) && data.rows.length === element.rows.length) {
     Array.from(element.rows).forEach((row, index) => { row.style.height = `${data.rows[index]}%` })
   }
+}
+
+function applyTableColumns(table, widths) {
+  let group = table.querySelector(':scope > colgroup')
+  if (!group || group.children.length !== widths.length || [...group.children].some(column => column.tagName !== 'COL')) {
+    group?.remove()
+    group = document.createElement('colgroup')
+    for (let index = 0; index < widths.length; index++) group.append(document.createElement('col'))
+    table.prepend(group)
+  }
+  // Keep the nodes stable: the slide observer also sees renderer-owned children.
+  Array.from(group.children).forEach((column, index) => { column.style.width = `${widths[index]}%` })
 }
 
 function applyGeometry(element, slide, data) {
