@@ -96,6 +96,7 @@ function applyParagraphSpacing(style, data) {
 function applyTextStyle(style, data) {
   if (color(data.fill)) style.backgroundColor = data.fill
   if (color(data.color)) style.color = data.color
+  if (data.noFill === true) style.color = 'transparent'
   if (finite(data.fontSize, 0.01, 100)) style.fontSize = `${data.fontSize}cqw`
   if (typeof data.font === 'string' && /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,99}(?![\s\S])/u.test(data.font) && !['__proto__', 'constructor', 'toString'].includes(data.font)) {
     style.fontFamily = Object.hasOwn(fonts, data.font) ? fonts[data.font] : `"${data.font}", Arial, sans-serif`

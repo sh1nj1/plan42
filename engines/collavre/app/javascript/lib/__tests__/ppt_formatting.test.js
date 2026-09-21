@@ -215,3 +215,16 @@ test('applies resolved theme fonts as bounded literal font families', () => {
     expect(element.style.fontFamily).toBe('')
   }
 })
+
+test('renders explicit noFill as transparent and rejects nonboolean values', () => {
+  const { root, element } = slide({ noFill: true, color: '#112233', anchor: 'ctr', insets: [0,3,4,0] })
+  applyPptFormatting(root)
+  expect(element.style.color).toBe('transparent')
+  expect(element.style.justifyContent).toBe('center')
+  expect(element.style.padding).toBe('3cqw 4cqw 0cqw 0cqw')
+  for (const noFill of [false, 'true', 1, 'transparent']) {
+    element.dataset.pptFormat = JSON.stringify({ noFill, color: '#445566' })
+    applyPptFormatting(root)
+    expect(element.style.color).toBe('rgb(68, 85, 102)')
+  }
+})

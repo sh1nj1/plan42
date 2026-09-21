@@ -35,6 +35,18 @@ class PptFormattingTest < ActiveSupport::TestCase
     assert_nil @renderer.send(:effective_shape_properties, xml('<p:sp/>').root.element_children.first)
   end
 
+  test "run fill choices replace each other without mutating sources" do
+    %w[noFill gradFill blipFill pattFill grpFill solidFill].each do |variant|
+      inherited = xml('<a:rPr sz="2400"><a:solidFill/><a:latin typeface="Arial"/></a:rPr>').root.element_children.first
+      local = xml("<a:rPr><a:#{variant}/></a:rPr>").root.element_children.first
+      original = inherited.to_xml
+      merged = @renderer.send(:merge_run_properties, [ inherited, local ])
+      assert_equal [ "latin", variant ], merged.element_children.map(&:name)
+      assert_equal "2400", merged["sz"]
+      assert_equal original, inherited.to_xml
+    end
+  end
+
   private
 
   def xml(content)

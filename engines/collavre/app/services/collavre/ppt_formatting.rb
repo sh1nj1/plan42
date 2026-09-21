@@ -27,7 +27,7 @@ module Collavre
       values[:strokeWidth] = line["w"].to_f * 100 / @slide_size.first if line
       geometry = properties&.at_xpath("./a:prstGeom", namespaces)
       values[:shape] = geometry&.[]("prst")
-      body = shape.at_xpath("./p:txBody/a:bodyPr", namespaces)
+      body = effective_shape_properties(shape, "./p:txBody/a:bodyPr")
       if body
         values[:anchor] = body["anchor"] || "t"
         values[:insets] = %w[lIns tIns rIns bIns].map.with_index do |key, i|
@@ -41,15 +41,16 @@ module Collavre
       return {} unless properties
 
       values = { color: ppt_color(properties.at_xpath("./a:solidFill", namespaces)) }
+      values[:noFill] = true if properties.at_xpath("./a:noFill", namespaces)
       values[:fontSize] = properties["sz"].to_f * 127 * 100 / @slide_size.first if properties["sz"]
       values[:font] = resolved_font(properties.at_xpath("./a:latin", namespaces)&.[]("typeface"))
       values
     end
 
-    def effective_shape_properties(shape)
+    def effective_shape_properties(shape, path = "./p:spPr")
       inherited = @rendering_inherited ? [] : inherited_placeholders(shape).reverse
       properties = (inherited + [ shape ]).filter_map do |source|
-        source.at_xpath("./p:spPr", source.document.collect_namespaces)
+        source.at_xpath(path, source.document.collect_namespaces)
       end
       properties.reduce(nil) { |merged, source| merge_shape_properties(merged, source) }
     end

@@ -110,7 +110,8 @@ module Collavre
       properties.drop(1).each do |source|
         source.attribute_nodes.each { |attribute| merged[attribute.name] = attribute.value }
         source.element_children.each do |child|
-          names = %w[buNone buChar buAutoNum].include?(child.name) ? %w[buNone buChar buAutoNum] : [ child.name ]
+          choices = [ %w[buNone buChar buAutoNum], %w[noFill solidFill gradFill blipFill pattFill grpFill] ]
+          names = choices.find { |group| group.include?(child.name) } || [ child.name ]
           merged.element_children.select { |existing| names.include?(existing.name) }.each(&:remove)
           merged.add_child(child.dup)
         end

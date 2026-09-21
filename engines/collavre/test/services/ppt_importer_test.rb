@@ -658,6 +658,43 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+
+  test "persists inherited text body attributes and explicit local zero overrides" do
+    entries = inheritance_entries
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Slide", 'idx="4"').sub("<p:txBody>", '<p:txBody><a:bodyPr/>')
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="title"')
+      .sub("<p:txBody>", '<p:txBody><a:bodyPr anchor="ctr" lIns="243840"/>')
+    entries["ppt/slideMasters/master.xml"] = placeholder_slide("Master", 'type="title"')
+      .sub("<p:txBody>", '<p:txBody><a:bodyPr anchor="b" lIns="121920" tIns="365760" rIns="487680" bIns="609600"/>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.at_css(".ppt-slide-element")["data-ppt-format"])
+      assert_equal "ctr", data["anchor"]
+      assert_equal [ 2, 3, 4, 5 ], data["insets"]
+    end
+    entries["ppt/slides/slide1.xml"] = entries["ppt/slides/slide1.xml"].sub('<a:bodyPr/>', '<a:bodyPr anchor="t" lIns="0" bIns="0"/>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.at_css(".ppt-slide-element")["data-ppt-format"])
+      assert_equal "t", data["anchor"]
+      assert_equal [ 0, 3, 4, 0 ], data["insets"]
+    end
+  end
+
+  test "nearer paragraph and run fills replace inherited solid colors after persistence" do
+    entries = inheritance_entries
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="title"')
+      .sub("<a:p>", '<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:defRPr></a:pPr>')
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Slide", 'idx="4"')
+      .sub('<a:p><a:r><a:t>Slide</a:t></a:r></a:p>', '<a:p><a:pPr><a:defRPr><a:noFill/></a:defRPr></a:pPr><a:r><a:t>Hidden</a:t></a:r><a:r><a:rPr><a:solidFill><a:srgbClr val="445566"/></a:solidFill></a:rPr><a:t>Visible</a:t></a:r><a:r><a:rPr><a:gradFill/></a:rPr><a:t>Gradient</a:t></a:r></a:p>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = html.css("p > span").map { |span| JSON.parse(span["data-ppt-format"]) }
+      assert_equal [ { "noFill" => true }, { "color" => "#445566" }, {} ], data.last(3)
+      assert_includes html.text, "Hidden"
+    end
+  end
+
   private
 
   def inheritance_entries
