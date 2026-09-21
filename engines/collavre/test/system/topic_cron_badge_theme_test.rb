@@ -36,16 +36,14 @@ class TopicCronBadgeThemeTest < ApplicationSystemTestCase
 
     assert_includes page.evaluate_script("document.body.className").split, "dark-mode"
 
-    assert_equal(*chip_and_badge_color(".topic-tag:not(.active)"),
-                 "idle topic chip badge must read like its label")
+    assert_badge_matches_label(".topic-tag:not(.active)", "idle topic chip badge must read like its label")
 
     # Click the chip itself, not its centre — the badge and the archive/delete
     # buttons sit there and swallow the selection click.
     select_topic_chip("Alpha")
     assert_selector "#comment-topics .topic-tag.active .creative-cron-badge", wait: 5
 
-    assert_equal(*chip_and_badge_color(".topic-tag.active"),
-                 "selected topic chip badge must read like its label")
+    assert_badge_matches_label(".topic-tag.active", "selected topic chip badge must read like its label")
   end
 
   private
@@ -65,22 +63,45 @@ class TopicCronBadgeThemeTest < ApplicationSystemTestCase
     assert_docked_comments_loaded
   end
 
-  # Returns [chip label color, badge color] for the first chip matching
-  # +chip_selector+ that actually carries a cron badge.
+  # The chip animates color over 0.2s (`transition: all`) while the badge, a
+  # <button>, runs its own 0.15s color transition. Mid-flight the two differ
+  # by a few RGB steps — and right after selection both still sit on the idle
+  # color, so an early sample can match by accident. Only compare once no CSS
+  # transition is running anywhere in the chip.
+  def assert_badge_matches_label(chip_selector, message)
+    sample = nil
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Capybara.default_max_wait_time
+    loop do
+      sample = chip_and_badge_color(chip_selector)
+      break if sample["settled"] || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+      sleep 0.05
+    end
+    assert sample["settled"], "#{chip_selector} color transitions never finished"
+    assert_equal(*sample["colors"], message)
+  end
+
+  # Returns { "colors" => [chip label color, badge color], "settled" => bool }
+  # for the first chip matching +chip_selector+ that carries a cron badge.
   def chip_and_badge_color(chip_selector)
-    colors = page.evaluate_script(<<~JS)
+    sample = page.evaluate_script(<<~JS)
       (() => {
         const chip = Array.from(
           document.querySelectorAll('#comment-topics #{chip_selector}')
         ).find(node => node.querySelector('.creative-cron-badge'))
         if (!chip) return null
-        return [
+        // Reading computed style flushes pending style changes, so any
+        // transition the latest class change triggers is registered below.
+        const colors = [
           getComputedStyle(chip).color,
           getComputedStyle(chip.querySelector('.creative-cron-badge')).color
         ]
+        const running = chip.getAnimations({ subtree: true })
+          .filter(animation => animation instanceof CSSTransition)
+        return { colors, settled: running.length === 0 }
       })()
     JS
-    assert colors, "no topic chip matching #{chip_selector} carries a cron badge"
-    colors
+    assert sample, "no topic chip matching #{chip_selector} carries a cron badge"
+    sample
   end
 end
