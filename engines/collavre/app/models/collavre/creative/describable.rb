@@ -184,7 +184,7 @@ module Collavre
         task_list_attrs = %w[type disabled checked]
         media_tags = %w[video source]
         media_attrs = %w[controls src preload width height poster]
-        ppt_attrs = %w[data-ppt-slide data-ppt-width data-ppt-height]
+        ppt_attrs = %w[data-ppt-slide data-ppt-width data-ppt-height data-ppt-format]
 
         # GFM task list checkboxes (`- [ ]` / `- [x]`) render as
         # <input type="checkbox" disabled> via Commonmarker's tasklist

@@ -1130,6 +1130,9 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .ppt-slide-notes {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
     max-width: 960px;
     margin-top: var(--space-2, 8px);
     padding: var(--space-3, 12px);
@@ -1232,3 +1235,100 @@ creative-tree-row.is-being-edited .creative-tree {
 .ppt-col-span-24 { grid-column-end: span 24; }
 .ppt-row-24 { grid-row-start: 24; }
 .ppt-row-span-24 { grid-row-end: span 24; }
+
+/* Precise imports use original coordinates; legacy grid imports remain readable. */
+.ppt-slide--precise {
+    container-type: inline-size;
+    position: relative;
+    border: 0;
+    border-radius: 0;
+    color: var(--gray-12);
+    font-family: Arial, sans-serif;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+.ppt-slide--precise .ppt-slide-layout {
+    position: absolute;
+    inset: 0;
+    display: block;
+}
+
+.ppt-slide--precise .ppt-slide-group {
+    display: block;
+}
+
+.ppt-slide--precise .ppt-slide-element {
+    box-sizing: border-box;
+    padding: 0;
+    overflow: visible;
+    font-size: 1.5cqw;
+    font-weight: 400;
+    line-height: 1.2;
+    white-space: pre-wrap;
+    overflow-wrap: normal;
+}
+
+.ppt-slide--precise .ppt-slide-text,
+.ppt-slide--precise .ppt-slide-title {
+    display: flex;
+    flex-direction: column;
+}
+
+.ppt-slide--precise p {
+    margin: 0;
+    padding: 0;
+    font-size: inherit;
+    line-height: inherit;
+    flex-shrink: 0;
+    overflow-wrap: anywhere;
+}
+
+.ppt-slide--precise .ppt-slide-image img {
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    object-fit: fill;
+}
+
+.creative-row-start > div:has(> .creative-content > .ppt-slide--precise) {
+    flex: 1;
+    min-width: 0;
+}
+
+.creative-content:has(> .ppt-slide--precise) {
+    width: 100%;
+    min-width: 0;
+}
+
+.ppt-slide--precise .ppt-slide-chart,
+.ppt-chart-rendered > svg {
+    width: 100%;
+    height: 100%;
+}
+
+.ppt-chart-rendered > h3,
+.ppt-chart-rendered > table {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.ppt-slide--precise .ppt-slide-chart {
+    white-space: normal;
+}
+
+.ppt-chart-rendered > .table-download-wrapper {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.ppt-chart-rendered > svg {
+    display: block;
+}

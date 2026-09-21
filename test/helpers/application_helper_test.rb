@@ -10,11 +10,12 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "preserves PPT metadata while stripping unsafe and unrelated attributes" do
-    html = '<div class="ppt-slide" data-ppt-slide="2" data-ppt-width="12192000" data-ppt-height="6858000" data-other="no" onclick="alert(1)">Slide</div>'
+    html = '<div class="ppt-slide" data-ppt-slide="2" data-ppt-width="12192000" data-ppt-height="6858000" data-ppt-format="{&quot;fill&quot;:&quot;#222222&quot;}" data-other="no" onclick="alert(1)">Slide</div>'
     slide = Nokogiri::HTML.fragment(embed_youtube_iframe(html)).at_css(".ppt-slide")
     assert_equal "2", slide["data-ppt-slide"]
     assert_equal "12192000", slide["data-ppt-width"]
     assert_equal "6858000", slide["data-ppt-height"]
+    assert_equal({ "fill" => "#222222" }, JSON.parse(slide["data-ppt-format"]))
     assert_nil slide["onclick"]
     assert_nil slide["data-other"]
   end

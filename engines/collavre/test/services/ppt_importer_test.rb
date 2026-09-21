@@ -5,6 +5,49 @@ require "zip"
 class PptImporterTest < ActiveSupport::TestCase
   SAMPLE_IMAGE = Base64.decode64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=")
 
+  test "persists precise geometry and presentation formatting through sanitization" do
+    xml = slide_xml("Readable")
+      .sub("<p:cSld>", '<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="222222"/></a:solidFill></p:bgPr></p:bg>')
+      .sub("<p:sp>", <<~XML.strip)
+        <p:sp><p:spPr><a:xfrm><a:off x="-121920" y="685800"/><a:ext cx="6096000" cy="1371600"/></a:xfrm>
+        <a:prstGeom prst="roundRect"/><a:solidFill><a:srgbClr val="FEDF00"/></a:solidFill>
+        <a:ln w="12700"><a:solidFill><a:srgbClr val="0062E5"/></a:solidFill></a:ln></p:spPr>
+      XML
+    xml = xml.sub("<p:txBody>", '<p:txBody><a:bodyPr anchor="ctr" lIns="0" tIns="0" rIns="0" bIns="0"/>')
+      .sub("<a:p>", '<a:p><a:pPr algn="ctr"><a:buChar char="•"/><a:spcAft><a:spcPts val="1000"/></a:spcAft><a:lnSpc><a:spcPct val="120000"/></a:lnSpc><a:defRPr sz="2400"/></a:pPr>')
+      .sub("<a:r>", '<a:r><a:rPr sz="2400"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:latin typeface="Malgun Gothic"/></a:rPr>')
+    Tempfile.create([ "formatted", ".pptx" ]) do |tmp|
+      Zip::OutputStream.open(tmp.path) { |zip| write_entry(zip, "ppt/slides/slide1.xml", xml) }
+      creative = PptImporter.import(tmp, parent: nil, user: users(:one)).first.reload
+      html = Nokogiri::HTML.fragment(creative.description)
+      assert_equal({ "fill" => "#222222" }, JSON.parse(html.at_css(".ppt-slide")["data-ppt-format"]))
+      shape = JSON.parse(html.at_css(".ppt-slide-text")["data-ppt-format"])
+      assert_equal [ -1.0, 10.0, 50.0, 20.0 ], shape.values_at("x", "y", "w", "h")
+      assert_equal [ "#FEDF00", "#0062E5", "roundRect", "ctr", [ 0, 0, 0, 0 ] ], shape.values_at("fill", "stroke", "shape", "anchor", "insets")
+      assert_in_delta 0.104167, shape["strokeWidth"], 0.00001
+      assert_equal({ "fontSize" => 2.5, "align" => "ctr", "spaceAfter" => 1000.0 / 960, "lineHeight" => 1.2 }, JSON.parse(html.at_css("p")["data-ppt-format"]))
+      assert_equal({ "color" => "#FFFFFF", "fontSize" => 2.5, "font" => "Malgun Gothic" }, JSON.parse(html.at_css("span[data-ppt-format]")["data-ppt-format"]))
+      assert_equal "• Readable", html.text.strip
+    end
+  end
+
+  test "keeps unlabelled shapes and line chart data with explicit axis bounds" do
+    Tempfile.create([ "chart", ".pptx" ]) do |tmp|
+      xml = chart_xml.gsub("barChart", "lineChart").sub("</c:plotArea>", '<c:valAx><c:scaling><c:min val="0"/><c:max val="20"/></c:scaling></c:valAx></c:plotArea>')
+      Zip::OutputStream.open(tmp.path) do |zip|
+        write_entry(zip, "ppt/slides/slide1.xml", rich_slide_xml.sub("<p:spTree>", '<p:spTree><p:sp><p:spPr><a:prstGeom prst="ellipse"/></p:spPr></p:sp>'))
+        write_entry(zip, "ppt/slides/_rels/slide1.xml.rels", rich_slide_relationships_xml)
+        write_entry(zip, "ppt/charts/chart1.xml", xml)
+      end
+      html = Nokogiri::HTML.fragment(PptImporter.import(tmp, parent: nil, user: users(:one)).first.reload.description)
+      assert_equal "ellipse", JSON.parse(html.at_css(".ppt-slide-text")["data-ppt-format"])["shape"]
+      chart = JSON.parse(html.at_css(".ppt-slide-chart")["data-ppt-format"])["chart"]
+      assert_equal 0, chart["min"]
+      assert_equal 20, chart["max"]
+      assert_equal [ [ "Sales", { "0" => "Q1" }, { "0" => "10" } ] ], chart["series"]
+    end
+  end
+
   test "rejects missing or wrong-type slide relationships without partial imports" do
     [ presentation_relationships_xml.sub(/<Relationship Id="rId2"[^>]+\/>/, ""),
       presentation_relationships_xml.sub('relationships/slide" Target="slides/slide2.xml', 'relationships/notesSlide" Target="slides/slide2.xml') ].each do |relationships|

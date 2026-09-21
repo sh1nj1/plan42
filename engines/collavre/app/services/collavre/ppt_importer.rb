@@ -6,6 +6,7 @@ require "zip"
 
 module Collavre
   class PptImporter
+    include PptFormatting
     class InvalidArchive < StandardError; end
 
     MAX_ENTRIES = 2_000
@@ -16,8 +17,8 @@ module Collavre
 
     class << self
       # Imports one PPTX slide per Creative. The generated HTML keeps the slide,
-      # shape/group, text, image, table, and chart hierarchy while a small CSS
-      # grid approximates the original coordinates responsively.
+      # shape/group, text, image, table, and chart hierarchy with responsive
+      # coordinates and validated presentation formatting.
       def import(file, parent:, user:, create_root: false, filename: nil)
         new(file, parent: parent, user: user, create_root: create_root, filename: filename).import
       end
@@ -151,7 +152,7 @@ module Collavre
 
       <<~HTML.strip
         <div class="ppt-slide #{ratio_class}" data-ppt-slide="#{slide_number}"
-             data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}">
+             data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}"#{format_attribute(fill: ppt_color(slide.at_xpath("//*[local-name()='bgPr']/*[local-name()='solidFill']")) || "#ffffff")}>
           <div class="ppt-slide-layout">#{elements}</div>
         </div>
         #{notes}
@@ -177,12 +178,11 @@ module Collavre
       paragraphs = shape.xpath("./p:txBody/a:p", namespaces).filter_map do |paragraph|
         render_paragraph(paragraph, namespaces)
       end
-      return if paragraphs.empty?
 
       placeholder = shape.at_xpath("./p:nvSpPr/p:nvPr/p:ph", namespaces)&.[]("type")
       kind = %w[title ctrTitle subTitle].include?(placeholder) ? "title" : "text"
       classes = element_classes("ppt-slide-#{kind}", transform_for(shape, namespaces), bounds)
-      %(<div class="#{classes}">#{paragraphs.join}</div>)
+      %(<div class="#{classes}"#{format_attribute(shape_format(shape, namespaces, bounds))}>#{paragraphs.join}</div>)
     end
 
     def render_paragraph(paragraph, namespaces)
@@ -197,7 +197,10 @@ module Collavre
       content = ERB::Util.html_escape(paragraph.xpath(".//a:t", namespaces).map(&:text).join) if content.empty?
       return if ActionController::Base.helpers.strip_tags(content).strip.empty? && !content.include?("<br>")
 
-      "<p>#{content}</p>"
+      formatting = paragraph_format(paragraph, namespaces)
+      bullet = formatting.delete(:bullet)
+      content = %(<span class="ppt-bullet">#{ERB::Util.html_escape(bullet)} </span>) + content if bullet.present?
+      %(<p#{format_attribute(formatting)}>#{content}</p>)
     end
 
     def render_text_run(run, namespaces)
@@ -206,7 +209,7 @@ module Collavre
       text = "<strong>#{text}</strong>" if truthy_xml_attribute?(properties&.[]("b"))
       text = "<em>#{text}</em>" if truthy_xml_attribute?(properties&.[]("i"))
       text = "<u>#{text}</u>" if properties&.[]("u").present? && properties["u"] != "none"
-      text
+      %(<span#{format_attribute(text_format(properties, namespaces))}>#{text}</span>)
     end
 
     def render_picture(picture, namespaces, relationships, bounds)
@@ -222,7 +225,7 @@ module Collavre
       alt = metadata&.[]("descr").presence || metadata&.[]("name").presence || blob.filename.to_s
       classes = element_classes("ppt-slide-image", transform_for(picture, namespaces), bounds)
       src = "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
-      %(<div class="#{classes}"><img src="#{src}" alt="#{ERB::Util.html_escape(alt)}"></div>)
+      %(<div class="#{classes}"#{format_attribute(geometry_format(picture, namespaces, bounds))}><img src="#{src}" alt="#{ERB::Util.html_escape(alt)}"></div>)
     end
 
     def blob_for(entry)
@@ -251,7 +254,7 @@ module Collavre
       return if content.blank?
 
       classes = element_classes("ppt-slide-graphic", transform_for(frame, namespaces), bounds)
-      %(<div class="#{classes}">#{content}</div>)
+      %(<div class="#{classes}"#{format_attribute(geometry_format(frame, namespaces, bounds))}>#{content}</div>)
     end
 
     def render_table(table, namespaces)
@@ -294,7 +297,7 @@ module Collavre
         end
         "<tr><th>#{ERB::Util.html_escape(name)}</th><td>#{ERB::Util.html_escape(pairs.join(", "))}</td></tr>"
       end
-      %(<div class="ppt-slide-chart"><h3>#{ERB::Util.html_escape(caption)}</h3><table><tbody>#{rows.join}</tbody></table></div>)
+      %(<div class="ppt-slide-chart"#{format_attribute(chart: line_chart_format(chart, series))}><h3>#{ERB::Util.html_escape(caption)}</h3><table><tbody>#{rows.join}</tbody></table></div>)
     end
 
     def indexed_chart_values(series, axis)
@@ -310,7 +313,7 @@ module Collavre
       return if children.blank?
 
       classes = element_classes("ppt-slide-group", transform, bounds)
-      %(<div class="#{classes}">#{children}</div>)
+      %(<div class="#{classes}"#{format_attribute(geometry_format(group, namespaces, bounds))}>#{children}</div>)
     end
 
     def render_notes(relationships)
