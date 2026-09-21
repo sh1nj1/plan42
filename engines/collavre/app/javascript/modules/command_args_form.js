@@ -348,9 +348,6 @@ export default class CommandArgsForm {
     if (command.name === 'topic') {
       return this._buildTopicText(command, values)
     }
-    if (command.name === 'work') {
-      return this._buildWorkText(command, values)
-    }
     if (command.name === 'compress') {
       return this._buildCompressText(command, values)
     }
@@ -372,15 +369,6 @@ export default class CommandArgsForm {
     if (values.agent_name) {
       parts.push(values.agent_name)
     }
-    return parts.join(' ')
-  }
-
-  _buildWorkText(command, values) {
-    const parts = [command.label]
-    if (values.agent_name) {
-      parts.push(values.agent_name)
-    }
-    if (values.context) parts.push(values.context)
     return parts.join(' ')
   }
 

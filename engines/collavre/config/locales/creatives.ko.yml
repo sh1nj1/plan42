@@ -2,6 +2,17 @@
 ko:
   collavre:
     creatives:
+      drag_drop:
+        partial_failure: 일부 링크만 생성되었습니다. 누락된 링크만 다시 시도해 주세요.
+      workspace:
+        tree_title: 크리에이티브 트리
+        tree_label: 크리에이티브 탐색 트리
+        toggle_tree: 크리에이티브 트리 열기/닫기
+        empty: 하위 항목이 있는 크리에이티브가 없습니다.
+        load_error: 크리에이티브 트리를 불러오지 못했습니다.
+        select_chat: 채팅을 볼 크리에이티브를 선택하세요.
+        collapse_chat: 채팅 접기
+        expand_chat: 채팅 펼치기
       index:
         up: 위로
         new_creative: 추가
@@ -17,6 +28,8 @@ ko:
         unarchive: 복원
         show_archived: 아카이브 표시
         hide_archived: 아카이브 숨기기
+        cron_count: "예약 작업 %{count}개"
+        cron_schedule: "%{schedule} · 다음 실행 %{next_run}"
         delete_only_this: 이 항목만 삭제
         delete_with_children: 이 항목과 모든 하위 항목 삭제
         are_you_sure: 정말 삭제하시겠습니까?
@@ -40,9 +53,28 @@ ko:
         no_creatives: 크리에이티브가 없습니다.
         no_sub_creatives: 하위 크리에이티브가 없습니다.
         no_search_results: 검색 결과가 없습니다.
+        load_error: 크리에이티브 트리를 불러오지 못했습니다.
+        loading_creatives: 크리에이티브를 불러오는 중
+        empty_state_heading_root: 크리에이티브가 없습니다
+        empty_state_heading_sub: 아직 하위 크리에이티브가 없습니다
+        empty_state_concept_title: "💡 크리에이티브란?"
+        empty_state_facet_doc: 트리 구조 문서 조각
+        empty_state_facet_task: 실행 가능한 작업
+        empty_state_facet_chat: 관련 대화 채널
+        empty_state_block_label: 크리에이티브 1블록
+        empty_state_concept_caption: 하나의 블록이 문서·작업·대화 역할을 동시에 합니다. 트리로 쌓으면 진행률이 자동 집계되는 문서형 프로젝트가 됩니다.
+        empty_state_add_creative: 크리에이티브 추가
+        empty_state_add_sub_creative: 하위 크리에이티브 추가
+        empty_state_add_shortcut: Enter
+        empty_state_readonly_message: 이 크리에이티브에 쓰기 권한이 없어 하위 항목을 추가할 수 없습니다.
+        empty_state_request_pending: 권한 요청됨 · 소유자 승인 대기 중
+        empty_state_request_failed: 권한을 요청하지 못했습니다. 다시 시도해 주세요.
+        empty_state_loggedout_message: 하위 크리에이티브를 추가하려면 회원가입 또는 로그인하세요.
         link_loading: 불러오는 중…
+        link_create: “%{query}” 새로 만들기
+        link_creating: 크리에이티브를 만드는 중…
+        link_create_failed: 크리에이티브를 만들지 못했습니다.
         link_expand: 펼치기
-        recommend_parent: 카테고리 추천
         import_uploading: 업로드 중...
         import_success: 가져오기 성공! 새로고침 중...
         import_failed: 가져오기 실패
@@ -108,6 +140,9 @@ ko:
         progress_complete: 완료
         progress_incomplete: 미완료
         progress_complete_children_alert: 하위 크리에이티브도 모두 완료로 표시됩니다.
+        save_failed_alert: 변경사항을 저장하지 못했습니다. 수정한 내용은 편집기에 그대로 남아 있습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.
+        archive_failed_alert: 아카이브하지 못했습니다. 변경된 내용은 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.
+        unarchive_failed_alert: 복원하지 못했습니다. 변경된 내용은 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.
         mark_complete: 완료로 표시
         mark_incomplete: 미완료로 표시
         set_plan_title: 선택된 크리에이티브에 대한 계획 설정

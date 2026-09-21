@@ -72,6 +72,10 @@
         </div>
 
       </div>
+
+      <p class="landing-features-more">
+        <%= link_to t('collavre.landing.features.explore'), collavre.features_path(locale: I18n.locale, script_name: request.script_name), class: "landing-btn landing-btn-ghost" %>
+      </p>
     </div>
   </section>
 
@@ -166,7 +170,7 @@
   <%# ═══════════════════════════════════════ FOOTER ═══════════════════════════════════════════ %>
   <footer class="landing-footer">
     <div class="landing-container landing-footer-inner">
-      <p class="landing-footer-copy">© <%= Date.today.year %> <%= t('app.name') %>. <%= t('collavre.landing.footer.rights') %></p>
+      <p class="landing-footer-copy"><%= t('collavre.landing.footer.copyright', year: Date.today.year, app_name: t('app.name')) %></p>
     </div>
   </footer>
 </div>

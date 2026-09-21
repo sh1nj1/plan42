@@ -20,6 +20,9 @@ class PlansSystemTest < CollavrePlanSystemTestCase
 
     find_all(".plans-menu-btn").first.click
 
+    # The menu inserts the form before attaching its input handlers.
+    assert_selector "#plans-timeline[data-initialized='true']"
+
     # Click input to open search popup
     find("#plan-select-creative-input").click
 
@@ -46,6 +49,9 @@ class PlansSystemTest < CollavrePlanSystemTestCase
     creative = Creative.create!(user: @user, description: "Plan to be deleted")
 
     find_all(".plans-menu-btn").first.click
+
+    # The menu inserts the form before attaching its input handlers.
+    assert_selector "#plans-timeline[data-initialized='true']"
 
     # Click input to open search popup
     find("#plan-select-creative-input").click

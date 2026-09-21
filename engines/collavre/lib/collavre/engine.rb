@@ -1,9 +1,41 @@
+require "collavre/sensitive_request_silencer"
+require "collavre/hashed_access_token_lookup"
+# Registers the ActionView hook that exposes `collavre_stylesheets` to hosts.
+require "collavre/stylesheets_helper"
+
 module Collavre
   class Engine < ::Rails::Engine
+    PROVISIONING_CAPABILITY_PATH = %r{
+      \A(?:/[^/]+)*/agents/\d+/workspaces/[^/]+(?:/.*)?\z
+    }x
+
     isolate_namespace Collavre
 
     config.generators do |g|
       g.test_framework :minitest
+    end
+
+    # Manifest capabilities grant access to workspace callback credentials and
+    # therefore must not appear in Rails request logs. This middleware wraps the
+    # request logger as well as controller instrumentation while leaving public,
+    # content-addressed skill archive requests observable.
+    initializer "collavre.silence_provisioning_capability_paths" do |app|
+      app.middleware.insert_before(
+        Rails::Rack::Logger,
+        Collavre::SensitiveRequestSilencer,
+        path: PROVISIONING_CAPABILITY_PATH
+      )
+    end
+
+    # Workspace callback credentials retain their plaintext only in the
+    # encrypted AgentWorkspace column. Doorkeeper stores a one-way digest and
+    # resolves presented bearer values through this mixed plain/hashed lookup,
+    # preserving existing OAuth tokens without making stored digests usable.
+    initializer "collavre.hashed_workspace_callback_tokens" do
+      Rails.application.config.to_prepare do
+        token_class = Doorkeeper::AccessToken.singleton_class
+        token_class.prepend(Collavre::HashedAccessTokenLookup) unless token_class < Collavre::HashedAccessTokenLookup
+      end
     end
 
     # Path to engine's JavaScript sources for jsbundling-rails integration
@@ -148,6 +180,83 @@ module Collavre
       ActiveSupport::Reloader.to_prepare(prepend: true) do
         Navigation::Registry.instance.reset!
         Collavre::ViewExtensions.reset!
+        Collavre::FeatureCardRegistry.reset!
+      end
+    end
+
+    # Register the empty-chat feature discovery cards. Vendor engines may
+    # register additional cards from their own initializers (after this one)
+    # the same way they register integrations.
+    initializer "collavre.feature_cards", after: "collavre.navigation_reset" do
+      Rails.application.config.to_prepare do
+        Collavre::FeatureCardRegistry.register(:mention_agent, {
+          icon: "🤖",
+          title_key: "collavre.comments.empty_state.cards.mention_agent.title",
+          description_key: "collavre.comments.empty_state.cards.mention_agent.description",
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:slash_command, {
+          icon: "⚡",
+          title_key: "collavre.comments.empty_state.cards.slash_command.title",
+          description_key: "collavre.comments.empty_state.cards.slash_command.description",
+          action: { type: :command_menu, label_key: "collavre.comments.empty_state.cards.slash_command.action" },
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:chat_context, {
+          icon: "🔗",
+          title_key: "collavre.comments.empty_state.cards.chat_context.title",
+          description_key: "collavre.comments.empty_state.cards.chat_context.description",
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:automation_trigger, {
+          icon: "⚙️",
+          title_key: "collavre.comments.empty_state.cards.automation_trigger.title",
+          description_key: "collavre.comments.empty_state.cards.automation_trigger.description",
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:topic_management, {
+          icon: "🗂️",
+          title_key: "collavre.comments.empty_state.cards.topic_management.title",
+          description_key: "collavre.comments.empty_state.cards.topic_management.description",
+          action: { type: :topic_list, label_key: "collavre.comments.empty_state.cards.topic_management.action" },
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:add_user, {
+          icon: "👥",
+          title_key: "collavre.comments.empty_state.cards.add_user.title",
+          description_key: "collavre.comments.empty_state.cards.add_user.description",
+          action: { type: :share_modal, label_key: "collavre.comments.empty_state.cards.add_user.action" },
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:inbox_notifications, {
+          icon: "🔔",
+          title_key: "collavre.comments.empty_state.cards.inbox_notifications.title",
+          description_key: "collavre.comments.empty_state.cards.inbox_notifications.description",
+          surfaces: [ :inbox_system ],
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:inbox_reply, {
+          icon: "↩️",
+          title_key: "collavre.comments.empty_state.cards.inbox_reply.title",
+          description_key: "collavre.comments.empty_state.cards.inbox_reply.description",
+          surfaces: [ :inbox_system ],
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:inbox_source, {
+          icon: "🔗",
+          title_key: "collavre.comments.empty_state.cards.inbox_source.title",
+          description_key: "collavre.comments.empty_state.cards.inbox_source.description",
+          surfaces: [ :inbox_system ],
+          guide: true
+        })
       end
     end
 
@@ -178,7 +287,7 @@ module Collavre
           key: :home,
           label: "app.home",
           type: :button,
-          path: -> { main_app.root_path },
+          path: -> { home_navigation_path }, html_class: "home-nav-button",
           priority: 110
         )
 

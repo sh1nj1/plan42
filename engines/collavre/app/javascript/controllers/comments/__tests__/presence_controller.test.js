@@ -64,19 +64,21 @@ describe('CommentsPresenceController', () => {
     })
 
     expect(setCommentPermission).toHaveBeenCalledWith(false)
-    expect(loadParticipantsSpy).toHaveBeenCalledWith({ closeOnForbidden: false })
+    expect(loadParticipantsSpy).toHaveBeenCalledWith()
     expect(close).not.toHaveBeenCalled()
   })
 
-  test('closes popup when affected user loses access', async () => {
+  test('clears docked chat and invalidates the workspace tree when access is revoked', async () => {
     const close = jest.fn()
-    jest.spyOn(controller, 'popupController', 'get').mockReturnValue({ close })
-    jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission: jest.fn() })
-
-    global.fetch.mockResolvedValue({
-      ok: false,
-      json: async () => ({ error: 'No permission' }),
+    const resetDockedToEmpty = jest.fn()
+    const workspaceListener = jest.fn()
+    document.addEventListener('workspace-tree:invalidate', workspaceListener)
+    jest.spyOn(controller, 'popupController', 'get').mockReturnValue({
+      close,
+      isDocked: () => true,
+      resetDockedToEmpty,
     })
+    jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission: jest.fn() })
 
     controller.handlePresenceMessage({
       shares_changed: {
@@ -93,7 +95,37 @@ describe('CommentsPresenceController', () => {
     // alertDialog renders an in-app modal (replacing native alert for the
     // Tauri webview); assert the message surfaced there instead.
     expect(document.querySelector('.confirm-dialog-message')?.textContent).toBe('No permission')
+    expect(resetDockedToEmpty).toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+    expect(workspaceListener).toHaveBeenCalledTimes(1)
+    expect(workspaceListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: { creativeIds: ['123'] },
+    }))
+    expect(global.fetch).not.toHaveBeenCalled()
+    document.removeEventListener('workspace-tree:invalidate', workspaceListener)
+  })
+
+  test('closes a floating popup immediately when access is revoked', () => {
+    const close = jest.fn()
+    jest.spyOn(controller, 'popupController', 'get').mockReturnValue({
+      close,
+      isDocked: () => false,
+      resetDockedToEmpty: jest.fn(),
+    })
+    jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission: jest.fn() })
+
+    controller.handlePresenceMessage({
+      shares_changed: {
+        user_id: 7,
+        has_access: false,
+        can_comment: false,
+        has_access_changed: true,
+        can_comment_changed: true,
+      },
+    })
+
     expect(close).toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   test('keeps popup open for unaffected users and only refreshes participants', () => {
@@ -122,6 +154,17 @@ describe('CommentsPresenceController', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  test('broadcasts current presence for message author menus', () => {
+    const listener = jest.fn()
+    controller.element.addEventListener('comments--presence:changed', listener)
+
+    controller.handlePresenceMessage({ ids: ['7', '9'] })
+
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: { presentIds: [7, 9] },
+    }))
+  })
+
   test('bootstraps the selected and main topics when the popup opens', () => {
     const refreshChannelChips = jest.spyOn(controller, 'refreshChannelChips').mockImplementation(() => {})
     jest.spyOn(application, 'getControllerForElementAndIdentifier').mockReturnValue({
@@ -134,6 +177,24 @@ describe('CommentsPresenceController', () => {
     expect(controller.selectedTopicId).toBe('45')
     expect(controller.mainTopicId).toBe('10')
     expect(refreshChannelChips).toHaveBeenCalledWith('45')
+  })
+
+  test('marks channel chip refreshes as background requests', () => {
+    controller.element.insertAdjacentHTML(
+      'beforeend',
+      '<div data-comments--presence-target="channelChips"></div>',
+    )
+    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockReturnValue({
+      currentTopicId: '45',
+    })
+    global.fetch.mockResolvedValueOnce({ ok: false })
+
+    controller.refreshChannelChips('45')
+
+    expect(global.fetch).toHaveBeenCalledWith('/creatives/123/topics/45/channel_chips', {
+      headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+    })
   })
 
   test('clears topic timers when the popup closes', () => {
@@ -154,6 +215,55 @@ describe('CommentsPresenceController', () => {
 
     expect(perform).toHaveBeenNthCalledWith(1, 'typing', { topic_id: '45' })
     expect(perform).toHaveBeenNthCalledWith(2, 'stopped_typing', { topic_id: '45' })
+  })
+
+  test('renews the presence lease while the subscription is connected', () => {
+    jest.useFakeTimers()
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+
+    controller.startPresenceHeartbeat()
+    jest.advanceTimersByTime(30000)
+    controller.stopPresenceHeartbeat()
+    jest.useRealTimers()
+
+    expect(perform).toHaveBeenCalledWith('heartbeat')
+  })
+
+  test('reports the rendered All Messages topic snapshot', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = null
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '123', topicIds: ['10', '11'] } })
+
+    expect(perform).toHaveBeenCalledWith('viewing_topic', {
+      topic_id: null,
+      rendered_topic_ids: ['10', '11'],
+    })
+  })
+
+  test('reports a rendered legacy lane with the All Messages snapshot', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = null
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '123', topicIds: ['10'], includesLegacy: true } })
+
+    expect(perform).toHaveBeenCalledWith('viewing_topic', {
+      topic_id: null,
+      rendered_topic_ids: ['10'],
+      rendered_legacy_topic: true,
+    })
+  })
+
+  test('does not report a rendered snapshot from another creative', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+
+    controller.handleRenderedAllTopics({ detail: { creativeId: '456', topicIds: ['10'] } })
+
+    expect(perform).not.toHaveBeenCalled()
   })
 
   test('does not request running agents without a presence subscription', () => {
@@ -365,6 +475,78 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     scrollLeftValue = 0
     controller.handlePresenceMessage({ typing: { id: 7, name: 'Me', topic_id: '11' } })
     expect(scrollLeftValue).toBe(0)
+  })
+
+  describe('detaching a channel', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    const appendChannelChip = () => {
+      controller.channelChipsTarget.innerHTML = `
+        <span class="channel-chip" data-channel-id="42">
+          Pull request
+          <button data-channel-id="42">Detach</button>
+        </span>
+      `
+      return controller.channelChipsTarget.querySelector('button')
+    }
+
+    test('removes the channel chip immediately after a successful request', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ status: 204, redirected: false, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(global.fetch).toHaveBeenCalledWith('/channels/42', expect.objectContaining({
+        method: 'DELETE',
+      }))
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).toBeNull()
+    })
+
+    test('keeps the channel chip when the request fails', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ status: 500, redirected: false, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+    })
+
+    test('keeps the channel chip when the request is redirected', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ status: 200, redirected: true, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+    })
+
+    test('keeps the channel chip for an unexpected non-redirect response', async () => {
+      const button = appendChannelChip()
+      global.fetch.mockResolvedValueOnce({ status: 200, redirected: false, headers: new Headers() })
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+    })
+
+    test('keeps the channel chip when the request is interrupted', async () => {
+      const button = appendChannelChip()
+      jest.spyOn(console, 'warn').mockImplementation(() => {})
+      global.fetch.mockRejectedValueOnce(new Error('offline'))
+
+      controller.detachChannel({ currentTarget: button })
+      await flush()
+
+      expect(controller.channelChipsTarget.querySelector('.channel-chip')).not.toBeNull()
+      expect(console.warn).toHaveBeenCalledWith(
+        '[presence] detach channel failed:',
+        expect.any(Error),
+      )
+    })
   })
 
   describe('agent task status poll', () => {

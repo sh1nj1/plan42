@@ -3,13 +3,18 @@
 require "test_helper"
 
 class Navigation::RegistryTest < ActiveSupport::TestCase
+  # The registry is a process-wide singleton seeded by the engine initializer,
+  # so resetting it without putting the engine's items back leaves every later
+  # test in the process with an empty GNB.
   setup do
     @registry = Navigation::Registry.instance
+    @registry_snapshot = @registry.all
     @registry.reset!
   end
 
   teardown do
     @registry.reset!
+    @registry_snapshot.each { |item| @registry.register(item) }
   end
 
   test "register adds a navigation item" do
@@ -136,6 +141,13 @@ class Navigation::RegistryTest < ActiveSupport::TestCase
     @registry.reset!
 
     assert_empty @registry.all
+  end
+
+  test "suite guard restores initializer items before reporting a leak" do
+    error = assert_raises(RuntimeError) { NavigationRegistryTestGuard.verify! }
+
+    assert_match(/was left empty/, error.message)
+    assert_not_empty @registry.all
   end
 
   test "find returns item by key" do

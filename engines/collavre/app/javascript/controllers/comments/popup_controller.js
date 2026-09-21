@@ -1,5 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
+import chatDrafts from '../../lib/chat_drafts'
+import PopupFullscreen from './popup_fullscreen'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
@@ -12,6 +14,8 @@ export default class extends Controller {
     'list',
     'form',
     'closeButton',
+    'closeIcon',
+    'expandDockedIcon',
     'leftHandle',
     'rightHandle',
     'fullscreenButton',
@@ -24,6 +28,20 @@ export default class extends Controller {
     'typingIndicator',
   ]
 
+  initialize() {
+    this.fullscreen = new PopupFullscreen({
+      element: this.element,
+      isMobile: () => this.isMobile(),
+      isDocked: () => this.isDocked(),
+      syncUi: entering => this._syncFullscreenUI(entering),
+      syncDockedUi: () => this.syncDockedUI(),
+      getListController: () => this.listController,
+      getTopicsController: () => this.topicsController,
+      getCurrentButton: () => this.currentButton,
+      setCurrentButton: button => { this.currentButton = button },
+    })
+  }
+
   connect() {
     this.currentButton = null
     this.reservedHeight = 0
@@ -31,6 +49,9 @@ export default class extends Controller {
     this.touchStartY = null
     this.openFromUrlObserver = null
     this.openFromUrlTimeout = null
+    this.dockedOpenTimeout = null
+    this.openGeneration = 0
+    this._wakeLockRequest = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
     this.handleEditingStart = this.handleEditingStart.bind(this)
@@ -48,12 +69,12 @@ export default class extends Controller {
     this.handlePopupWheel = this.handlePopupWheel.bind(this)
     this.handleChatNavKeydown = this.handleChatNavKeydown.bind(this)
     this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
+    this.handleDockedMediaChange = this.handleDockedMediaChange.bind(this)
     this._longPressTimer = null
     this._longPressTriggered = false
     this._isNavigating = false
     this._headerSwipeStartX = null
     this._headerSwipeStartY = null
-
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
     document.addEventListener('creative-editing:start', this.handleEditingStart)
@@ -64,6 +85,16 @@ export default class extends Controller {
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('popstate', this.handlePopState)
     document.addEventListener('keydown', this.handleChatNavKeydown)
+    this.dockedMediaQuery = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 768px)')
+      : {
+          matches: window.innerWidth >= 768,
+          addEventListener() {},
+          removeEventListener() {},
+        }
+    if (this.element.dataset.docked === 'true') {
+      this.dockedMediaQuery.addEventListener('change', this.handleDockedMediaChange)
+    }
 
     // Long press on nav buttons
     this._setupNavLongPress()
@@ -94,8 +125,16 @@ export default class extends Controller {
       }
     }
 
-    document.querySelectorAll('form[action="/session"]').forEach((form) => {
-      form.addEventListener('submit', () => window.localStorage.removeItem(SIZE_STORAGE_KEY))
+    document.querySelectorAll('form[action$="/session"]').forEach((form) => {
+      form.addEventListener('submit', () => {
+        this.formController?.discardDraft()
+        chatDrafts.clearAll()
+        try {
+          window.localStorage.removeItem(SIZE_STORAGE_KEY)
+        } catch {
+          // Storage can be unavailable on restricted origins; logout must continue.
+        }
+      })
     })
 
     if (this.element.dataset.autoFullscreen === 'true') {
@@ -115,6 +154,8 @@ export default class extends Controller {
       this._syncFullscreenUI(true)
       // Defer to ensure all sibling controllers are connected
       requestAnimationFrame(() => this.openForCreative())
+    } else if (this.isDocked()) {
+      this.enterDockedMode()
     } else {
       this.openFromUrl()
     }
@@ -123,6 +164,7 @@ export default class extends Controller {
   disconnect() {
     this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
+    if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.removeEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
     document.removeEventListener('creative-editing:start', this.handleEditingStart)
@@ -133,6 +175,7 @@ export default class extends Controller {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('popstate', this.handlePopState)
     document.removeEventListener('keydown', this.handleChatNavKeydown)
+    this.dockedMediaQuery?.removeEventListener('change', this.handleDockedMediaChange)
     document.removeEventListener('click', this.handleDropdownOutsideClick)
     this._clearLongPressTimer()
     if (this.hasHeaderTarget) {
@@ -184,15 +227,97 @@ export default class extends Controller {
   handleCreativeClick(event) {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
+    const highlightId = event.detail?.highlightId
     if (!button) return
+    if (event.detail?.workspaceSync && !this.isDocked()) {
+      const nextCreativeId = creativeId || button.dataset.creativeId || ''
+      if (
+        this.element.style.display === 'flex' &&
+        this.element.dataset.creativeId !== String(nextCreativeId)
+      ) {
+        this.close()
+      }
+      return
+    }
+    if (!creativeId && button.dataset.workspaceNavigationState === 'true' && this.isDocked()) {
+      this.resetDockedToEmpty()
+      return
+    }
+    // A collapsed docked chat is a 3rem rail, so an explicit chat-icon click has
+    // to expand it. Workspace tree navigation must not: the user collapsed the
+    // chat on purpose and moving around the tree should leave it that way.
+    const userRequestedOpen = !event.detail?.workspaceSync
     if (
       this.element.style.display === 'flex' &&
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
+      if (this.isDocked()) {
+        if (userRequestedOpen) {
+          // Already loaded for this creative — expand only, so the draft and
+          // subscriptions survive.
+          this.expandDocked()
+        } else if (highlightId) {
+          this.reloadDockedHighlight(creativeId, highlightId)
+        }
+        return
+      }
       this.close()
       return
     }
-    this.open(button, { creativeId })
+    if (userRequestedOpen) this.expandDocked()
+    const openOptions = { creativeId }
+    if (highlightId) openOptions.highlightId = highlightId
+    this.open(button, openOptions)
+  }
+
+  reloadDockedHighlight(creativeId, highlightId) {
+    this.openGeneration += 1
+    const listController = this.listController
+    // This direct reload supersedes any full open that is still waiting for
+    // topics. That open will stop at its generation check, so release the
+    // suppression it installed before starting the replacement highlight load.
+    if (listController) listController.suppressTopicChangeLoad = false
+    const existingComment = document.getElementById(`comment_${highlightId}`)
+    if (existingComment && listController?.listTarget?.contains(existingComment)) {
+      listController.highlightComment(highlightId)
+      return
+    }
+
+    listController?.onPopupOpened({
+      creativeId,
+      highlightId,
+      topicId: this.topicsController?.currentTopicId,
+    })
+  }
+
+  resetDockedToEmpty() {
+    this.openGeneration += 1
+
+    if (this.isFullscreen()) this._exitFullscreenState()
+
+    if (this.dockedOpenTimeout) {
+      window.clearTimeout(this.dockedOpenTimeout)
+      this.dockedOpenTimeout = null
+    }
+
+    this.currentButton = null
+    this.element.dataset.creativeId = ''
+    this.element.dataset.canComment = 'false'
+    this.element.dataset.creativeSnippet = ''
+    this.titleTarget.textContent = this.element.dataset.defaultTitle || ''
+    this._clearChatActiveRow()
+    this._hideNavDropdown()
+
+    if (this.listController) this.listController.creativeId = null
+    this.closeChildControllers()
+    this.formController?.setCommentPermission(false)
+    this.element.querySelector('#comment-topics')?.replaceChildren()
+    if (this.hasListTarget) {
+      this.listTarget.classList.add('docked-empty')
+      this.listTarget.textContent = this.element.dataset.dockedEmptyText || ''
+    }
+    this.showPopup()
+    this.dispatchPopupClosed()
   }
 
   handleCreativeDestroyed(event) {
@@ -204,7 +329,11 @@ export default class extends Controller {
 
     if (this.element.style.display !== 'flex') return
     if (destroyedIds.includes(this.element.dataset.creativeId)) {
-      this.close()
+      if (this.isDocked() && !this.isFullscreen()) {
+        this.resetDockedToEmpty()
+      } else {
+        this.close()
+      }
     }
   }
 
@@ -219,6 +348,8 @@ export default class extends Controller {
   }
 
   async open(button, { creativeId, highlightId } = {}) {
+    const openGeneration = ++this.openGeneration
+    if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
@@ -236,7 +367,13 @@ export default class extends Controller {
     this.showPopup()
     this.updatePosition()
 
-    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+    const opened = await this.notifyChildControllers({
+      creativeId: resolvedCreativeId,
+      canComment,
+      highlightId,
+      openGeneration,
+    })
+    if (!opened) return
 
     // Track in chat navigation history (skip if navigating via back/forward)
     if (!this._isNavigating) {
@@ -254,7 +391,9 @@ export default class extends Controller {
     }))
   }
 
-  async openForCreative() {
+  async openForCreative({ highlightId } = {}) {
+    const openGeneration = ++this.openGeneration
+    if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     const resolvedCreativeId = this.element.dataset.creativeId
     const canComment = this.element.dataset.canComment === 'true'
     const snippet = this.element.dataset.creativeSnippet || ''
@@ -269,7 +408,13 @@ export default class extends Controller {
 
     this.showPopup()
 
-    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+    const opened = await this.notifyChildControllers({
+      creativeId: resolvedCreativeId,
+      canComment,
+      highlightId,
+      openGeneration,
+    })
+    if (!opened) return
 
     // Track in chat navigation history
     if (!this._isNavigating) {
@@ -287,7 +432,7 @@ export default class extends Controller {
     }))
   }
 
-  async notifyChildControllers({ creativeId, canComment, highlightId }) {
+  async notifyChildControllers({ creativeId, canComment, highlightId, openGeneration }) {
     this.topicsController?.clearOverrideTopicId()
     // Drop the previous creative's topic selection from the form controller
     // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
@@ -295,9 +440,17 @@ export default class extends Controller {
     // formController.onPopupOpened, which runs after the topics await — would
     // erase the topic that restoreSelection() just restored from the server.
     if (this.formController) {
+      this.formController.onChatWillOpen?.({ creativeId })
       this.formController.currentTopicId = ''
       this.formController._mainTopicId = null
     }
+    // Switching creatives reuses the context controller. Clear its previous
+    // creative synchronously so a slow topic load cannot leave stale context
+    // controls interactive under the new creative title.
+    this.contextsController?.onChatWillOpen?.({ creativeId })
+    // Participant rows can insert mentions, so clear them before the same topic
+    // await rather than leaving the previous creative's popup interactive.
+    this.presenceController?.onChatWillOpen?.({ creativeId })
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID
@@ -307,18 +460,28 @@ export default class extends Controller {
     // Without this, the topic change event fires loadInitialComments() before
     // onPopupOpened sets highlightAfterLoad, causing a race where the non-highlight
     // load can overwrite the deep-link highlight load.
-    if (this.listController) {
-      this.listController.creativeId = creativeId
-      this.listController.suppressTopicChangeLoad = true
+    const suppressedListController = this.listController
+    if (suppressedListController) {
+      suppressedListController.creativeId = creativeId
+      suppressedListController.suppressTopicChangeLoad = true
     }
 
     // Load topics first to establish context
-    if (this.topicsController) {
-      await this.topicsController.onPopupOpened({ creativeId })
+    try {
+      if (this.topicsController) {
+        await this.topicsController.onPopupOpened({ creativeId })
+      }
+    } catch (error) {
+      if (openGeneration === this.openGeneration && suppressedListController) {
+        suppressedListController.suppressTopicChangeLoad = false
+      }
+      throw error
     }
 
-    if (this.listController) {
-      this.listController.suppressTopicChangeLoad = false
+    if (openGeneration !== this.openGeneration) return false
+
+    if (suppressedListController) {
+      suppressedListController.suppressTopicChangeLoad = false
     }
 
     if (this.formController) {
@@ -340,63 +503,21 @@ export default class extends Controller {
     if (this.dropTriggerController) {
       this.dropTriggerController.onPopupOpened({ creativeId })
     }
+    return true
   }
 
   close() {
-    if (this.presenceController) {
-      this.presenceController.onPopupClosed()
-    }
-    if (this.formController) {
-      this.formController.onPopupClosed()
-    }
-    if (this.listController) {
-      this.listController.onPopupClosed()
-    }
-    if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupClosed()
-    }
-    if (this.topicsController) {
-      this.topicsController.onPopupClosed()
-    }
-    if (this.contextsController) {
-      this.contextsController.onPopupClosed()
-    }
-    if (this.dropTriggerController) {
-      this.dropTriggerController.onPopupClosed()
+    if (this.isDocked() && !this.isFullscreen()) {
+      this.toggleDocked()
+      return
     }
 
-    // Dispatch event for integrations
-    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
-      bubbles: true,
-      detail: {
-        badgeContainer: this.element.querySelector('[data-integration-badges]')
-      }
-    }))
+    this.openGeneration += 1
 
-    // Exit fullscreen state if active
-    if (this.isFullscreen()) {
-      this.element.dataset.fullscreen = 'false'
-      document.body.classList.remove('chat-fullscreen')
-      this._syncFullscreenUI(false)
-      this._savedStyles = null
+    this.closeChildControllers()
+    this.dispatchPopupClosed()
 
-      // Navigate back from fullscreen URL — use replaceState to consume the
-      // fullscreen history entry instead of pushing a new one, preventing a
-      // stale fullscreen entry from being reached via the Back button.
-      const creativeId = this.element.dataset.creativeId
-      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-      if (backUrl) {
-        const url = new URL(backUrl, window.location.origin)
-        // Strip comment auto-open markers so a refresh after close doesn't
-        // re-open the popup (handles ?open_comments, ?comment_id, #comment_*).
-        url.searchParams.delete('open_comments')
-        url.searchParams.delete('comment_id')
-        const cleanPath = url.pathname.replace(/\/comments\/\d+$/, '')
-        url.hash = url.hash.replace(/^#comment_\d+$/, '')
-        window.history.replaceState({ fullscreen: false }, '', cleanPath + url.search + url.hash)
-      }
-      this._previousUrl = null
-    }
+    this._exitFullscreenState()
 
     this._clearChatActiveRow()
     this._hideNavDropdown()
@@ -414,7 +535,32 @@ export default class extends Controller {
     delete this.element.dataset.resized
   }
 
+  _exitFullscreenState() {
+    this.fullscreen.exitState()
+  }
+
+  closeChildControllers() {
+    this.presenceController?.onPopupClosed()
+    this.formController?.onPopupClosed()
+    this.listController?.onPopupClosed()
+    this.mentionMenuController?.onPopupClosed()
+    this.topicsController?.onPopupClosed()
+    this.contextsController?.onPopupClosed()
+    this.dropTriggerController?.onPopupClosed()
+  }
+
+  dispatchPopupClosed() {
+    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
+      bubbles: true,
+      detail: {
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
+  }
+
   prepareSize() {
+    if (this.isDocked()) return
+
     const stored = window.localStorage.getItem(SIZE_STORAGE_KEY)
     if (!stored) return
     try {
@@ -432,22 +578,130 @@ export default class extends Controller {
 
   showPopup() {
     this.element.style.display = 'flex'
-    if (this.isMobile()) {
+    if (this.isDocked()) {
+      this.element.classList.add('docked')
+      this.syncDockedUI()
+    } else if (this.isMobile()) {
       this.element.classList.add('open')
     }
-    this._requestWakeLock()
+    this._syncWakeLock()
   }
 
   isFullscreen() {
     return this.element.dataset.fullscreen === 'true'
   }
 
+  get _savedStyles() {
+    return this.fullscreen?.savedStyles
+  }
+
+  set _savedStyles(value) {
+    if (this.fullscreen) this.fullscreen.savedStyles = value
+  }
+
+  get _previousUrl() {
+    return this.fullscreen?.previousUrl
+  }
+
+  set _previousUrl(value) {
+    if (this.fullscreen) this.fullscreen.previousUrl = value
+  }
+
   isMobile() {
     return window.innerWidth <= 600
   }
 
+  isDocked() {
+    return this.element.dataset.docked === 'true' && this.dockedMediaQuery?.matches === true
+  }
+
+  enterDockedMode() {
+    const el = this.element
+    if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
+    el.classList.add('docked')
+    el.classList.remove('open')
+    el.style.position = ''
+    el.style.top = ''
+    el.style.left = ''
+    el.style.right = ''
+    el.style.bottom = ''
+    el.style.width = ''
+    el.style.height = ''
+    delete el.dataset.resized
+    this.showPopup()
+
+    if (el.dataset.creativeId) {
+      requestAnimationFrame(() => {
+        this.dockedOpenTimeout = window.setTimeout(() => {
+          this.dockedOpenTimeout = null
+          if (!this.element.isConnected || !this.isDocked()) return
+
+          this.openForCreative({ highlightId: this.commentIdFromUrl() })
+        }, 0)
+      })
+    } else if (this.hasListTarget) {
+      this.listTarget.classList.add('docked-empty')
+      this.listTarget.textContent = el.dataset.dockedEmptyText || ''
+    }
+  }
+
+  handleDockedMediaChange(event) {
+    if (event.matches) {
+      this.enterDockedMode()
+    } else {
+      this.element.classList.remove('docked', 'docked-collapsed')
+      this.syncDockedUI()
+      this.close()
+    }
+  }
+
+  toggleDocked() {
+    if (!this.isDocked()) return
+
+    if (this.element.classList.contains('docked-collapsed')) {
+      this.expandDocked()
+      return
+    }
+
+    this.element.classList.add('docked-collapsed')
+    this.syncDockedUI()
+    this._syncWakeLock()
+  }
+
+  expandDocked() {
+    if (!this.isDocked()) return
+    if (!this.element.classList.contains('docked-collapsed')) return
+
+    this.element.classList.remove('docked-collapsed')
+    this.syncDockedUI()
+    this._syncWakeLock()
+    requestAnimationFrame(() => this.listController?.scrollToBottom())
+  }
+
+  syncDockedUI() {
+    if (!this.hasCloseButtonTarget) return
+
+    if (!this.isDocked()) {
+      const label = this.element.dataset.closeLabel || ''
+      this.closeIconTarget.style.display = ''
+      this.expandDockedIconTarget.style.display = 'none'
+      this.closeButtonTarget.setAttribute('aria-label', label)
+      this.closeButtonTarget.title = label
+      return
+    }
+
+    const collapsed = this.element.classList.contains('docked-collapsed')
+    const label = collapsed
+      ? (this.element.dataset.expandDockedLabel || '')
+      : (this.element.dataset.collapseDockedLabel || '')
+    this.closeIconTarget.style.display = collapsed ? 'none' : ''
+    this.expandDockedIconTarget.style.display = collapsed ? '' : 'none'
+    this.closeButtonTarget.setAttribute('aria-label', label)
+    this.closeButtonTarget.title = label
+  }
+
   updatePosition() {
-    if (this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
+    if (this.isDocked() || this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
     const rect = this.currentButton.getBoundingClientRect()
     const popupWidth = this.element.offsetWidth
     const popupHeight = this.element.offsetHeight
@@ -473,6 +727,8 @@ export default class extends Controller {
   }
 
   startResize(event, direction) {
+    if (this.isDocked()) return
+
     event.preventDefault()
     const rect = this.element.getBoundingClientRect()
     this.resizeStartX = event.clientX
@@ -542,7 +798,7 @@ export default class extends Controller {
       this.touchStartY = null
       return
     }
-    if (event.target.closest('#comments-list') || event.target.closest('.chat-nav-dropdown')) {
+    if (event.target.closest('#comments-list, .chat-nav-dropdown, .common-popup')) {
       this.touchStartY = null
     } else {
       this.touchStartY = event.touches[0].clientY
@@ -583,7 +839,7 @@ export default class extends Controller {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
       // Re-acquire wake lock — released automatically when tab loses visibility
-      this._requestWakeLock()
+      this._syncWakeLock()
     }
   }
 
@@ -647,347 +903,15 @@ export default class extends Controller {
 
   // Enter fullscreen immediately without animation (for auto-fullscreen on page load)
   _enterFullscreenImmediate() {
-    const el = this.element
-
-    // Save current inline styles so exit-fullscreen can restore them
-    this._savedStyles = {
-      top: el.style.top,
-      right: el.style.right,
-      left: el.style.left,
-      width: el.style.width,
-      height: el.style.height,
-    }
-
-    el.style.transition = 'none'
-    el.dataset.fullscreen = 'true'
-    document.body.classList.add('chat-fullscreen')
-    this._syncFullscreenUI(true)
-    // Clear any inline position styles so CSS fullscreen rules apply
-    el.style.top = ''
-    el.style.left = ''
-    el.style.right = ''
-    el.style.bottom = ''
-    el.style.width = ''
-    el.style.height = ''
-    el.style.position = ''
-    // Force layout then restore transition
-    el.offsetHeight // eslint-disable-line no-unused-expressions
-    el.style.transition = ''
-
-    // URL is already /comments/fullscreen, no pushState needed
-    requestAnimationFrame(() => this.listController?.scrollToBottom())
+    this.fullscreen.enterImmediate()
   }
 
   toggleFullscreen() {
-    const entering = !this.isFullscreen()
-    const el = this.element
-
-    if (entering) {
-      // Save current inline styles for later restore
-      this._savedStyles = {
-        top: el.style.top,
-        right: el.style.right,
-        left: el.style.left,
-        width: el.style.width,
-        height: el.style.height,
-      }
-
-      // Capture current visual position
-      const rect = el.getBoundingClientRect()
-
-      // Disable transition, pin to current position as fixed
-      el.style.transition = 'none'
-      el.style.position = 'fixed'
-      el.style.top = `${rect.top}px`
-      el.style.left = `${rect.left}px`
-      el.style.right = 'auto'
-      el.style.width = `${rect.width}px`
-      el.style.height = `${rect.height}px`
-
-      // Force layout so the pinned position is applied
-      el.offsetHeight // eslint-disable-line no-unused-expressions
-
-      // Now enable transition and expand to fullscreen
-      el.style.transition = ''
-      el.dataset.fullscreen = 'true'
-      document.body.classList.add('chat-fullscreen')
-      this._syncFullscreenUI(true)
-
-      // Clear inline position so CSS fullscreen rules take over
-      el.style.top = '0'
-      el.style.left = '0'
-      el.style.right = '0'
-      el.style.bottom = '0'
-      el.style.width = '100%'
-      el.style.height = '100%'
-
-      // Update URL
-      const creativeId = el.dataset.creativeId
-      if (creativeId) {
-        this._previousUrl = window.location.href
-        const fullscreenPath = `/creatives/${creativeId}/comments/fullscreen`
-        window.history.pushState({ fullscreen: true }, '', fullscreenPath)
-      }
-
-      // Clean up inline styles after transition ends
-      this._enterCleanupFn = () => {
-        el.removeEventListener('transitionend', this._enterCleanupFn)
-        this._enterCleanupTimer = null
-        this._enterCleanupFn = null
-        el.style.top = ''
-        el.style.left = ''
-        el.style.right = ''
-        el.style.bottom = ''
-        el.style.width = ''
-        el.style.height = ''
-        el.style.position = ''
-      }
-      el.addEventListener('transitionend', this._enterCleanupFn, { once: true })
-      // Fallback if transitionend doesn't fire
-      this._enterCleanupTimer = setTimeout(this._enterCleanupFn, 300)
-
-    } else {
-      // Cancel any pending enter-fullscreen cleanup to prevent it from
-      // wiping inline styles mid-exit animation (race condition fix)
-      if (this._enterCleanupTimer) {
-        clearTimeout(this._enterCleanupTimer)
-        this._enterCleanupTimer = null
-      }
-      if (this._enterCleanupFn) {
-        el.removeEventListener('transitionend', this._enterCleanupFn)
-        this._enterCleanupFn = null
-      }
-
-      const savedStyles = this._savedStyles
-      this._savedStyles = null
-      const creativeId = el.dataset.creativeId
-
-      // Mobile: skip animation, just clear inline styles and let CSS handle positioning
-      if (this.isMobile()) {
-        el.style.transition = 'none'
-        el.dataset.fullscreen = 'false'
-        document.body.classList.remove('chat-fullscreen')
-        this._syncFullscreenUI(false)
-
-        // Clear all inline styles so CSS media query rules apply
-        el.style.position = ''
-        el.style.top = ''
-        el.style.left = ''
-        el.style.right = ''
-        el.style.bottom = ''
-        el.style.width = ''
-        el.style.height = ''
-        el.style.transform = ''
-
-        // Force layout then restore transitions
-        el.offsetHeight // eslint-disable-line no-unused-expressions
-        el.style.transition = ''
-
-        // Update URL
-        let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-        if (backUrl) {
-          const url = new URL(backUrl, window.location.origin)
-          url.searchParams.set('open_comments', 'true')
-          window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
-        }
-        this._previousUrl = null
-
-        // Scroll to bottom after layout change
-        requestAnimationFrame(() => {
-          this.listController?.scrollToBottom()
-        })
-        return
-      }
-
-      // Desktop: animated exit to target position
-      // Calculate target position using viewport-relative coords (popup is position: fixed)
-      let finalTop = ''      // px string (viewport-relative)
-      let finalRight = ''    // px string
-      let finalWidth = savedStyles?.width || ''
-      let finalHeight = savedStyles?.height || ''
-
-      // Animation targets (viewport-relative, same as final since popup is fixed)
-      let animTop, animLeft, animWidth, animHeight
-
-      // Try to find the comment button for precise positioning
-      let targetButton = this.currentButton
-      if (!targetButton && creativeId) {
-        const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-        targetButton = row?.querySelector('.comments-btn')
-      }
-
-      // Scroll the creative row into view instantly BEFORE calculating positions,
-      // so getBoundingClientRect returns viewport-visible coordinates
-      if (targetButton) {
-        const row = targetButton.closest('creative-tree-row')
-        if (row) {
-          row.scrollIntoView({ behavior: 'instant', block: 'center' })
-        }
-      }
-
-      if (targetButton) {
-        this.currentButton = targetButton
-        const btnRect = targetButton.getBoundingClientRect()
-        const gap = 8
-
-        animWidth = parseFloat(finalWidth) || 420
-        animHeight = parseFloat(finalHeight) || 640
-
-        // Calculate top in viewport coords — same as updatePosition
-        let top = btnRect.bottom + 4
-        const bottom = top + animHeight
-        if (bottom > window.innerHeight) {
-          top = Math.max(4, window.innerHeight - animHeight - 4)
-        }
-
-        finalTop = `${top}px`
-
-        // Right-align if enough space to the right of the button
-        const spaceRight = window.innerWidth - btnRect.right - gap
-        if (spaceRight >= animWidth) {
-          this._exitToRight = true
-          animLeft = btnRect.right + gap
-          animTop = top
-        } else {
-          this._exitToRight = false
-          const rightPx = window.innerWidth - btnRect.right + 24
-          finalRight = `${rightPx}px`
-          animTop = top
-          animLeft = window.innerWidth - rightPx - animWidth
-        }
-      } else if (savedStyles && Object.values(savedStyles).some(v => v)) {
-        // Fallback to saved styles (already viewport-relative since popup is fixed)
-        const rightVal = parseFloat(savedStyles.right) || 32
-        animWidth = parseFloat(savedStyles.width) || 420
-        animHeight = parseFloat(savedStyles.height) || 640
-        animLeft = savedStyles.left ? parseFloat(savedStyles.left) : (window.innerWidth - rightVal - animWidth)
-        animTop = parseFloat(savedStyles.top) || 100
-
-        finalTop = savedStyles.top || ''
-        finalRight = savedStyles.right || ''
-      } else {
-        // No reference at all: use CSS defaults
-        animWidth = 420
-        animHeight = 640
-        animLeft = window.innerWidth - 32 - animWidth  // right: 2em
-        animTop = 100
-      }
-
-      // Animated exit: pin at fullscreen position, then shrink to target
-      const fsRect = el.getBoundingClientRect()
-
-      el.style.transition = 'none'
-      el.style.position = 'fixed'
-      el.style.top = `${fsRect.top}px`
-      el.style.left = `${fsRect.left}px`
-      el.style.right = 'auto'
-      el.style.bottom = 'auto'
-      el.style.width = `${fsRect.width}px`
-      el.style.height = `${fsRect.height}px`
-
-      el.dataset.fullscreen = 'false'
-      document.body.classList.remove('chat-fullscreen')
-      this._syncFullscreenUI(false)
-
-      // Force layout so the pinned position is applied
-      el.offsetHeight // eslint-disable-line no-unused-expressions
-
-      // Animate to target position (fixed coordinates)
-      el.style.transition = ''
-      el.style.top = `${animTop}px`
-      el.style.left = `${animLeft}px`
-      el.style.width = `${animWidth}px`
-      el.style.height = `${animHeight}px`
-
-      const cleanup = () => {
-        el.removeEventListener('transitionend', cleanup)
-        // Popup is always position: fixed — just apply final coords
-        el.style.transition = 'none'
-        el.style.position = ''
-        el.style.bottom = ''
-
-        if (targetButton) {
-          el.style.top = finalTop
-          el.style.width = finalWidth
-          el.style.height = finalHeight
-          if (this._exitToRight) {
-            el.style.left = `${animLeft}px`
-            el.style.right = ''
-          } else {
-            el.style.right = finalRight
-            el.style.left = ''
-          }
-        } else if (savedStyles) {
-          el.style.top = ''
-          el.style.left = ''
-          el.style.right = ''
-          el.style.width = ''
-          el.style.height = ''
-          Object.assign(el.style, savedStyles)
-        } else {
-          el.style.top = ''
-          el.style.left = ''
-          el.style.right = ''
-          el.style.width = ''
-          el.style.height = ''
-        }
-
-        // Force layout then restore transitions
-        el.offsetHeight // eslint-disable-line no-unused-expressions
-        el.style.transition = ''
-
-        // Scroll active topic into view after popup has settled at final size
-        this.topicsController?.scrollToActiveTopic()
-      }
-      el.addEventListener('transitionend', cleanup, { once: true })
-      setTimeout(cleanup, 300)
-
-      // Update URL — append open_comments=true so the popup stays open on refresh
-      let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-      if (backUrl) {
-        const url = new URL(backUrl, window.location.origin)
-        url.searchParams.set('open_comments', 'true')
-        window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
-      }
-      this._previousUrl = null
-
-    }
-
-    // Scroll to bottom after layout change
-    requestAnimationFrame(() => {
-      this.listController?.scrollToBottom()
-    })
+    this.fullscreen.toggle()
   }
 
   handlePopState(event) {
-    const isFs = event.state?.fullscreen === true
-    if (isFs !== this.isFullscreen()) {
-      const el = this.element
-      // Clear any animation inline styles to avoid stale positions
-      el.style.transition = 'none'
-      el.style.position = ''
-      el.style.top = ''
-      el.style.left = ''
-      el.style.right = ''
-      el.style.bottom = ''
-      el.style.width = ''
-      el.style.height = ''
-
-      el.dataset.fullscreen = isFs ? 'true' : 'false'
-      document.body.classList.toggle('chat-fullscreen', isFs)
-      this._syncFullscreenUI(isFs)
-
-      if (!isFs && this._savedStyles) {
-        Object.assign(el.style, this._savedStyles)
-        this._savedStyles = null
-      }
-
-      // Restore transition
-      el.offsetHeight // eslint-disable-line no-unused-expressions
-      el.style.transition = ''
-
-      requestAnimationFrame(() => this.listController?.scrollToBottom())
-    }
+    this.fullscreen.handlePopState(event)
   }
 
   _syncFullscreenUI(entering) {
@@ -998,10 +922,10 @@ export default class extends Controller {
       this.exitFullscreenIconTarget.style.display = entering ? '' : 'none'
     }
     if (this.hasLeftHandleTarget) {
-      this.leftHandleTarget.style.display = entering ? 'none' : ''
+      this.leftHandleTarget.style.display = entering || this.isDocked() ? 'none' : ''
     }
     if (this.hasRightHandleTarget) {
-      this.rightHandleTarget.style.display = entering ? 'none' : ''
+      this.rightHandleTarget.style.display = entering || this.isDocked() ? 'none' : ''
     }
     if (this.hasCloseButtonTarget) {
       this.closeButtonTarget.style.display = entering ? 'none' : ''
@@ -1012,11 +936,11 @@ export default class extends Controller {
         : (this.element.dataset.fullscreenLabel || 'Full screen')
       this.fullscreenButtonTarget.setAttribute('aria-label', label)
     }
+    if (!entering) this.syncDockedUI()
   }
 
-  openFromUrl() {
+  commentIdFromUrl() {
     const params = new URLSearchParams(window.location.search)
-    const openComments = params.get('open_comments') === 'true'
     let commentId = params.get('comment_id')
     if (!commentId) {
       const pathCommentMatch = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)
@@ -1030,6 +954,14 @@ export default class extends Controller {
         commentId = hashMatch[1]
       }
     }
+
+    return commentId || undefined
+  }
+
+  openFromUrl() {
+    const params = new URLSearchParams(window.location.search)
+    const openComments = params.get('open_comments') === 'true'
+    const commentId = this.commentIdFromUrl()
 
     let creativeId = params.get('id')
     if (!creativeId) {
@@ -1359,15 +1291,53 @@ export default class extends Controller {
   // is open.  The browser automatically releases the lock when the tab
   // loses visibility, so we re-acquire it in handleVisibilityChange().
 
-  async _requestWakeLock() {
-    if (!('wakeLock' in navigator)) return
+  _shouldHoldWakeLock() {
+    if (this.element.style.display !== 'flex') return false
+    if (this.isFullscreen()) return true
+    if (!this.isDocked()) return true
 
+    return Boolean(this.element.dataset.creativeId) &&
+      !this.element.classList.contains('docked-collapsed')
+  }
+
+  _syncWakeLock() {
+    if (this._shouldHoldWakeLock()) {
+      this._requestWakeLock()
+    } else {
+      this._releaseWakeLock()
+    }
+  }
+
+  async _requestWakeLock() {
+    if (
+      !this._shouldHoldWakeLock() ||
+      !('wakeLock' in navigator) ||
+      this._wakeLock ||
+      this._wakeLockRequest
+    ) return
+
+    let request
     try {
-      this._wakeLock = await navigator.wakeLock.request('screen')
-      this._wakeLock.addEventListener('release', () => {
-        this._wakeLock = null
+      request = navigator.wakeLock.request('screen')
+      this._wakeLockRequest = request
+      const wakeLock = await request
+      if (this._wakeLockRequest !== request) {
+        wakeLock.release()
+        return
+      }
+
+      this._wakeLockRequest = null
+      if (!this._shouldHoldWakeLock()) {
+        wakeLock.release()
+        return
+      }
+
+      this._wakeLock = wakeLock
+      wakeLock.addEventListener('release', () => {
+        if (this._wakeLock === wakeLock) this._wakeLock = null
       })
     } catch (err) {
+      if (this._wakeLockRequest === request) this._wakeLockRequest = null
       // Wake lock request can fail (e.g. low battery, browser policy).
       // This is non-critical — just log and continue.
       console.debug('[chat] Wake lock request failed:', err.message)
@@ -1375,9 +1345,9 @@ export default class extends Controller {
   }
 
   _releaseWakeLock() {
-    if (this._wakeLock) {
-      this._wakeLock.release()
-      this._wakeLock = null
-    }
+    this._wakeLockRequest = null
+    const wakeLock = this._wakeLock
+    this._wakeLock = null
+    wakeLock?.release()
   }
 }

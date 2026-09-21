@@ -1,7 +1,7 @@
 module Collavre
   module Creatives
     # Compact markdown tree formatter for AI Agent consumption.
-    # Used by: creative_retrieval_service, GeminiParentRecommender, Agent context injection.
+    # Used by: creative_retrieval_service and agent context injection.
     #
     # Output format (header declared once, rows are values only):
     #   <!-- format: [id] description (progress%) -->
@@ -34,10 +34,10 @@ module Collavre
         lines.join("\n")
       end
 
-      # Extract plain text description from a creative (shared helper)
+      # Extract plain text description from a creative (shared helper).
+      # One creative must occupy exactly one row, so this collapses newlines.
       def self.plain_description(creative)
-        raw = creative.effective_description(nil, true)
-        ActionView::Base.full_sanitizer.sanitize(raw).strip
+        Collavre::HtmlText.label(creative.effective_description(nil, true))
       end
 
       private
@@ -53,7 +53,7 @@ module Collavre
 
         if @include_comments
           node.comments.order(created_at: :desc).limit(3).reverse_each do |comment|
-            comment_text = ActionView::Base.full_sanitizer.sanitize(comment.content).strip.truncate(100)
+            comment_text = Collavre::HtmlText.truncated_label(comment.content, 100)
             lines << "#{indent}    > #{comment_text}"
           end
         end
@@ -67,7 +67,6 @@ module Collavre
         if @use_permissions
           node.linked_children
         else
-          # When children are pre-set on association target (e.g. GeminiParentRecommender)
           node.children
         end
       end

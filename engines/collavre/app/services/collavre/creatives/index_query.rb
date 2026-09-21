@@ -64,17 +64,7 @@ module Creatives
     end
 
     def any_filter_active?
-      params[:tags].present? ||
-        params[:min_progress].present? ||
-        params[:max_progress].present? ||
-        params[:search].present? ||
-        params[:comment] == "true" ||
-        params[:has_comments].present? ||
-        params[:due_before].present? ||
-        params[:due_after].present? ||
-        params[:has_due_date].present? ||
-        params[:assignee_id].present? ||
-        params[:unassigned].present?
+      FilterState.new(params).active?
     end
 
     def handle_filtered_query

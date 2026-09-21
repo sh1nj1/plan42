@@ -1,0 +1,77 @@
+# frozen_string_literal: true
+
+require "uri"
+
+module Collavre
+  module AgentHealth
+    # Shared HTTP checker for direct RubyLLM endpoint reachability and authentication.
+    # It deliberately avoids completion requests, which can incur cost or have
+    # provider-specific side effects.
+    class OpenaiEndpointChecker
+      OPEN_TIMEOUT = 3
+      READ_TIMEOUT = 8
+      REQUEST_TIMEOUT = OPEN_TIMEOUT + READ_TIMEOUT
+      MAX_RESPONSE_BYTES = 64 * 1024
+
+      class InvalidEndpoint < StandardError; end
+
+      def initialize(agent:, client: nil)
+        @agent = agent
+        @request = EndpointRequest.new(agent: agent)
+        @client = client || HttpClient.new(
+          open_timeout: OPEN_TIMEOUT,
+          read_timeout: READ_TIMEOUT,
+          request_timeout: REQUEST_TIMEOUT,
+          max_response_bytes: MAX_RESPONSE_BYTES,
+          endpoint_policy: endpoint_policy
+        )
+      end
+
+      def call
+        response = @client.get(models_url, headers: @request.headers)
+        result_for(response)
+      rescue InvalidEndpoint, CliProxy::EndpointPolicy::UnsafeEndpoint
+        Result.new(status: :offline, error: "invalid_endpoint")
+      rescue HttpClient::ConnectionError
+        Result.new(status: :offline, error: "connection_failed")
+      rescue HttpClient::ResponseTooLarge
+        Result.new(status: :unknown, error: "response_too_large")
+      end
+
+      private
+
+      def models_url
+        uri = URI.parse(@request.base_url)
+        valid = uri.is_a?(URI::HTTP) && uri.host.present? && uri.userinfo.blank? && uri.query.blank? && uri.fragment.blank?
+        raise InvalidEndpoint unless valid
+
+        base_path = uri.path.to_s.sub(%r{/+\z}, "")
+        uri.path = base_path.end_with?("/models") ? base_path : "#{base_path}/models"
+        uri.to_s
+      rescue URI::InvalidURIError
+        raise InvalidEndpoint
+      end
+
+      def endpoint_policy
+        return if @agent.creator&.system_admin?
+
+        CliProxy::EndpointPolicy.new
+      end
+
+      def result_for(response)
+        return Result.new(status: :offline, error: "authentication_failed") if @request.authentication_failed?(response)
+
+        case response.code
+        when 200..299
+          Result.new(status: :online)
+        when 404, 405
+          Result.new(status: :unknown, error: "models_endpoint_unsupported")
+        when 408, 425, 429, 500..599
+          Result.new(status: :offline, error: "http_#{response.code}")
+        else
+          Result.new(status: :unknown, error: "http_#{response.code}")
+        end
+      end
+    end
+  end
+end

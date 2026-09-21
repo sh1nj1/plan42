@@ -151,3 +151,47 @@ describe("highlightCodeBlocks", () => {
     expect(el.querySelector("pre code").innerHTML).toBe(first)
   })
 })
+
+// Server-generated inbox/system comments embed a creative's plain-text label in
+// a markdown link: `[#{label}](#{path})`. Collavre::HtmlText.markdown_label
+// backslash-escapes the label before that interpolation; these cases pin down
+// what those escapes have to survive on the rendering side.
+describe("generated creative links tolerate hostile labels once escaped", () => {
+  const link = (label) => renderCommentMarkdown(`[${label}](/creatives/1)`)
+  const hrefOf = (html) => {
+    const el = document.createElement("div")
+    el.innerHTML = html
+    return el.querySelector("a")?.getAttribute("href")
+  }
+  const textOf = (html) => {
+    const el = document.createElement("div")
+    el.innerHTML = html
+    return el.querySelector("a")?.textContent
+  }
+
+  it("keeps an unescaped angle-bracket label from being dropped once escaped", () => {
+    // Raw `<x>` reaches marked as inline HTML and the sanitizer deletes it.
+    expect(textOf(link("A <x> tag"))).toBe("A  tag")
+    // `\<x\>` renders the brackets as literal text instead.
+    expect(textOf(link("A \\<x\\> tag"))).toBe("A <x> tag")
+  })
+
+  it("keeps a bracket-injecting label from hijacking the link destination", () => {
+    // Unescaped, the label closes the link early and supplies its own href.
+    expect(hrefOf(link("x](https://evil.example)"))).toBe("https://evil.example")
+    // Escaped, the destination stays the creative path and the label is literal.
+    const safe = link("x\\]\\(https://evil.example\\)")
+    expect(hrefOf(safe)).toBe("/creatives/1")
+    expect(textOf(safe)).toBe("x](https://evil.example)")
+  })
+
+  it("renders escaped emphasis and code characters as literal label text", () => {
+    expect(textOf(link("a\\*b\\*c \\_d\\_ \\`e\\` \\~f\\~"))).toBe("a*b*c _d_ `e` ~f~")
+  })
+
+  it("leaves an ordinary label untouched", () => {
+    const html = link("버그: 채팅 컨텍스트 라벨")
+    expect(hrefOf(html)).toBe("/creatives/1")
+    expect(textOf(html)).toBe("버그: 채팅 컨텍스트 라벨")
+  })
+})

@@ -38,12 +38,12 @@ module Collavre
       end
 
       # Main entry point - checks all loop conditions
-      def check
+      def check(prospective_interaction: nil)
         return Result.new(should_break: false, reason: nil, details: {}) unless enabled?
 
         # Check each condition
         checks = [
-          check_ping_pong,
+          check_ping_pong(prospective_interaction),
           check_creative_retry,
           check_task_timeout,
           check_token_spike
@@ -110,13 +110,14 @@ module Collavre
       end
 
       # Detect ping-pong between agents
-      def check_ping_pong
+      def check_ping_pong(prospective_interaction)
         creative_id = @context.dig("creative", "id")
         return safe_result unless creative_id
 
         # Check the ping-pong tracking key for this creative
         key = "#{CACHE_PREFIX}:ping_pong_history:#{creative_id}"
-        interactions = Rails.cache.read(key) || []
+        interactions = Array(Rails.cache.read(key)).dup
+        interactions << prospective_interaction_entry(prospective_interaction) if prospective_interaction
 
         # Count exchanges for each agent pair
         pair_exchanges = count_pair_exchanges(interactions)
@@ -137,6 +138,11 @@ module Collavre
         end
 
         safe_result
+      end
+
+      def prospective_interaction_entry(interaction)
+        edge = interaction.with_indifferent_access
+        { at: Time.current.to_i, from: edge[:from_agent_id], to: edge[:to_agent_id] }
       end
 
       # Detect too many tasks on same topic (per-topic, not per-creative)
@@ -233,15 +239,20 @@ module Collavre
         return {} if interactions.size < 2
 
         pair_counts = Hash.new(0)
+        previous_by_pair = {}
         sorted = interactions.sort_by { |i| i[:at] }
 
-        sorted.each_cons(2) do |prev, curr|
-          # Count as exchange if direction reversed (A→B then B→A)
-          if prev[:from] == curr[:to] && prev[:to] == curr[:from]
-            # Normalize pair key (smaller id first)
-            pair = [ prev[:from], prev[:to] ].sort
+        sorted.each do |interaction|
+          pair = [ interaction[:from], interaction[:to] ].sort
+          previous = previous_by_pair[pair]
+
+          # Count direction reversals within this pair. Unrelated fan-out edges
+          # must not hide an otherwise consecutive exchange between two agents.
+          if previous && previous[:from] == interaction[:to] && previous[:to] == interaction[:from]
             pair_counts[pair] += 1
           end
+
+          previous_by_pair[pair] = interaction
         end
 
         pair_counts

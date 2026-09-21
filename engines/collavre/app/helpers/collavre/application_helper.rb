@@ -1,48 +1,9 @@
 module Collavre
   module ApplicationHelper
-    # All Collavre engine stylesheets in load order.
-    # Host apps should call <%= collavre_stylesheets %> in their layout <head>
-    # instead of listing individual stylesheet_link_tags.
-    COLLAVRE_STYLESHEETS = %w[
-      collavre/design_tokens
-      collavre/dark_mode
-      collavre/secret_fields
-      collavre/gnb
-      collavre/creatives
-      collavre/actiontext
-      collavre/activity_logs
-      collavre/user_menu
-      collavre/org_chart
-      collavre/popup
-      collavre/comments_popup
-      collavre/tables
-      collavre/code_highlight
-      collavre/comment_versions
-      collavre/mention_menu
-      collavre/modal_dialog
-      collavre/slide_view
-      collavre/image_lightbox
-      collavre/search_popup
-    ].freeze
-
-    COLLAVRE_PRINT_STYLESHEETS = %w[
-      collavre/print
-    ].freeze
-
-    # Renders all Collavre engine stylesheet tags.
-    # Call this once in the host app's layout <head> section.
-    #
-    #   <%= collavre_stylesheets %>
-    #
-    def collavre_stylesheets
-      tags = COLLAVRE_STYLESHEETS.map do |sheet|
-        stylesheet_link_tag(sheet)
-      end
-      tags += COLLAVRE_PRINT_STYLESHEETS.map do |sheet|
-        stylesheet_link_tag(sheet, media: "print")
-      end
-      safe_join(tags, "\n    ")
-    end
+    # Stylesheet tags live in lib/ so the engine initializer can expose them to
+    # host layouts directly; included here so engine views and existing hosts
+    # that include this helper keep `collavre_stylesheets`.
+    include Collavre::StylesheetsHelper
 
     def masked_secret_field(form, method, options = {})
       form.text_field(method, masked_secret_field_options(options))
@@ -67,6 +28,25 @@ module Collavre
       else
         "light-mode" # Custom theme: neutralize OS dark mode
       end
+    end
+
+    # The creative index is reachable at both "/" (root route) and
+    # "/creatives", so the list filters cannot decide "am I already on the
+    # index?" from the pathname alone — they read this instead.
+    def creative_index_page?
+      controller_path == "collavre/creatives" && action_name == "index"
+    end
+
+    def creative_workspace?
+      Current.user&.creative_workspace_enabled? &&
+        creative_index_page? &&
+        !@auto_fullscreen
+    end
+
+    # Identifies requests made by the packaged Tauri shell. Desktop-only UI
+    # fallbacks should use this rather than attempting platform browser checks.
+    def desktop?
+      request.user_agent.to_s.start_with?("CollavreDesktop/")
     end
 
     # Renders CSS for admin-configured default themes (light/dark mode)

@@ -6,6 +6,10 @@ module Collavre
   class CronSchedulerJobTest < ActiveSupport::TestCase
     include ActiveJob::TestHelper
 
+    class UnrelatedRecurringJob < ApplicationJob
+      def perform(once:); end
+    end
+
     setup do
       @now = Time.zone.parse("2026-02-20 10:05:00")
       travel_to @now
@@ -100,6 +104,100 @@ module Collavre
       assert_enqueued_with(job: Collavre::CronActionJob) do
         CronSchedulerJob.perform_now
       end
+    end
+
+    test "removes a run-once task after its first enqueue" do
+      creative = creatives(:tshirt)
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_test_once",
+        class_name: "Collavre::CronActionJob",
+        schedule: "*/5 * * * *",
+        queue_name: "default",
+        static: false,
+        arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "test", once: true } ]
+      )
+
+      changed_creative = nil
+      Crons::ChangeBroadcaster.stub(:call, ->(value) { changed_creative = value }) do
+        assert_enqueued_with(
+          job: Collavre::CronActionJob,
+          args: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "test" } ]
+        ) do
+          CronSchedulerJob.perform_now
+        end
+      end
+
+      assert_not SolidQueue::RecurringTask.exists?(task.id)
+      assert_equal creative, changed_creative
+    end
+
+    test "keeps a run-once task when enqueueing fails" do
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_test_once_retry",
+        class_name: "Collavre::CronActionJob",
+        schedule: "*/5 * * * *",
+        queue_name: "default",
+        static: false,
+        arguments: [ { creative_id: 1, topic_id: nil, agent_id: 1, message: "test", once: true } ]
+      )
+
+      Collavre::CronActionJob.stub(:perform_later, ->(**) { raise "queue unavailable" }) do
+        CronSchedulerJob.perform_now
+      end
+
+      assert SolidQueue::RecurringTask.exists?(task.id)
+    end
+
+    test "keeps a run-once task with an unknown job class" do
+      Collavre.const_set(:EphemeralCronJob, Class.new(ApplicationJob))
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_test_once_unknown",
+        class_name: "Collavre::EphemeralCronJob",
+        schedule: "*/5 * * * *",
+        queue_name: "default",
+        static: false,
+        arguments: [ { creative_id: 1, once: true } ]
+      )
+      Collavre.send(:remove_const, :EphemeralCronJob)
+
+      CronSchedulerJob.perform_now
+
+      assert SolidQueue::RecurringTask.exists?(task.id)
+    ensure
+      Collavre.send(:remove_const, :EphemeralCronJob) if Collavre.const_defined?(:EphemeralCronJob, false)
+    end
+
+    test "preserves once arguments for unrelated dynamic tasks" do
+      task = SolidQueue::RecurringTask.create!(
+        key: "unrelated_dynamic_task",
+        class_name: UnrelatedRecurringJob.name,
+        schedule: "*/5 * * * *",
+        queue_name: "default",
+        static: false,
+        arguments: [ { once: true } ]
+      )
+
+      assert_enqueued_with(job: UnrelatedRecurringJob, args: [ { once: true } ]) do
+        CronSchedulerJob.perform_now
+      end
+
+      assert SolidQueue::RecurringTask.exists?(task.id)
+    end
+
+    test "handles a run-once task removed by another scheduler" do
+      task = Struct.new(:class_name, :arguments).new(
+        CronActionJob.name,
+        [ { creative_id: 1, once: true } ]
+      )
+      def task.with_lock = raise(ActiveRecord::RecordNotFound)
+
+      assert_equal false, CronSchedulerJob.new.send(:dispatch_task, task)
+    end
+
+    test "treats malformed arguments as recurring" do
+      task = Struct.new(:class_name, :arguments).new(CronActionJob.name, nil)
+
+      assert_equal false, CronSchedulerJob.new.send(:run_once?, task)
     end
 
     test "reschedules itself after perform" do

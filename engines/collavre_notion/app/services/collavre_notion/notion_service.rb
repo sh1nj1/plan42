@@ -92,7 +92,7 @@ module CollavreNotion
     end
 
     def create_creative_page(creative, notion_link, parent_page_id)
-      title = ActionController::Base.helpers.strip_tags(creative.description).strip.presence || "Untitled Creative"
+      title = Collavre::HtmlText.label(creative.description).presence || "Untitled Creative"
 
       # Export only the children - the page title serves as the root creative
       children = creative.children.to_a
@@ -123,7 +123,7 @@ module CollavreNotion
     end
 
     def update_creative_page(creative, notion_link)
-      title = ActionController::Base.helpers.strip_tags(creative.description).strip.presence || "Untitled Creative"
+      title = Collavre::HtmlText.label(creative.description).presence || "Untitled Creative"
 
       # Update with only the children - page title serves as the root creative
       children = creative.children.to_a

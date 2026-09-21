@@ -4,7 +4,7 @@ module Collavre
 
     STREAMING_PLACEHOLDER_CONTENT = "..."
     # Authorless "⏳" waiting-notice system messages posted when an agent is
-    # deferred for topic concurrency. AgentOrchestrator.cleanup_waiting_notices!
+    # deferred for topic concurrency. WaitingNoticeManager.cleanup_waiting_notices!
     # matches the same prefix to remove them once the waiter is dequeued.
     WAITING_NOTICE_PREFIX = "⏳"
 
@@ -29,7 +29,7 @@ module Collavre
     #
     # It therefore comes down wherever the waiter leaves, which is why this
     # lives here beside the columns rather than in one of those callers: the
-    # promotion (AgentOrchestrator.cleanup_waiter_notice!) and the fold
+    # promotion (WaitingNoticeManager.cleanup_waiter_notice!) and the fold
     # (Orchestration::TaskCoalescer) are two doors onto the same rule, and a
     # third would otherwise write its own copy or forget.
     #
@@ -161,7 +161,6 @@ module Collavre
     has_many :comment_reactions, class_name: "Collavre::CommentReaction", dependent: :destroy
     has_many :comment_versions, class_name: "Collavre::CommentVersion", dependent: :destroy
     has_many :review_versions, class_name: "Collavre::CommentVersion", foreign_key: :review_comment_id, dependent: :nullify
-    has_many :inbox_items, class_name: "Collavre::InboxItem", dependent: :nullify
     has_many :quoting_comments, class_name: "Collavre::Comment", foreign_key: :quoted_comment_id, dependent: :destroy
     has_one :snapshot_as_result, class_name: "Collavre::CommentSnapshot", foreign_key: :result_comment_id, dependent: :nullify
     belongs_to :selected_version, class_name: "Collavre::CommentVersion", optional: true
@@ -177,14 +176,15 @@ module Collavre
     attribute :skip_dispatch, :boolean, default: false
     attribute :skip_link_preview, :boolean, default: false
     attribute :skip_notification_revision, :boolean, default: false
-    # Set by AgentOrchestrator.cleanup_waiting_notices! so destroying a notice as
+    # Set by WaitingNoticeManager.cleanup_waiting_notices! so destroying a notice as
     # part of *promoting* a waiter does not run the user-delete cancel cascade
     # (which would cancel other still-queued waiters in the same topic).
     attribute :suppress_waiter_cancellation, :boolean, default: false
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
-    before_validation :assign_main_topic, on: :create
+    include TopicMembership
+    include DispatchRevocation
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
@@ -192,8 +192,6 @@ module Collavre
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative
     validate :images_must_be_images
-
-    after_destroy_commit :cancel_pending_tasks
 
     def next_version_number
       (comment_versions.maximum(:version_number) || 0) + 1
@@ -260,14 +258,13 @@ module Collavre
     def cancel_pending_tasks
       stranded_scopes = []
 
-      # Cancel tasks triggered by this comment (no creative_id scoping —
+      # Cancel tasks anchored to or rendering this merged comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
       # existing tasks, so scoping would miss moved-comment tasks).
-      # Include "delegated" so a deleted prompt also cancels Claude Channel
-      # work that's still waiting on an external MCP reply — otherwise the
-      # delegated task keeps holding the topic/agent slot until stuck recovery.
-      Task.where(status: %w[pending running queued delegated]).find_each do |task|
-        next unless task.trigger_event_payload&.dig("comment", "id") == id
+      # Include approval-paused and delegated work: both can resume side effects
+      # after withdrawal and keep holding the topic/agent slot without a worker.
+      Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
+        next unless dispatch_source_ids(task).include?(id)
 
         # An un-started task can be the survivor of a coalesced burst, answering
         # several comments at once. Cancelling it because its anchor was deleted
@@ -278,8 +275,8 @@ module Collavre
         # to say is cancelled.
         next if reanchor_coalesced_task(task)
 
-        was_delegated = task.status == "delegated"
-        task.update!(status: "cancelled")
+        previous_status = cancel_source_task(task)
+        next unless previous_status
 
         # A waiter cancelled here leaves the queue without ever being promoted,
         # exactly as a folded one does — so the notice that spoke for it is left
@@ -298,23 +295,11 @@ module Collavre
         # loop, once every task this deletion cancels has left the queue.
         stranded_scopes << [ task.creative_id, task.topic_id ]
 
-        # Delegated tasks live past their job: the AiAgentJob already returned,
-        # holding the agent slot under task.id and counting against the per-topic
-        # serializer. Mirror the cancel path used elsewhere to free both.
-        next unless was_delegated
+        # Match explicit Stop: these states have no worker to release their
+        # reservation and drain the topic queue after cancellation.
+        next unless Task::HELD_SLOT_WITHOUT_WORKER.include?(previous_status)
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
-        end
-        if task.parent_task_id.present?
-          begin
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-              task, error_message: "Triggering comment was deleted"
-            )
-          rescue StandardError => e
-            Rails.logger.error(
-              "[Comment#cancel_pending_tasks] fail_subtask! failed for task #{task.id}: #{e.message}"
-            )
-          end
         end
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
@@ -348,15 +333,6 @@ module Collavre
     # Only un-started tasks: a `running`/`delegated` task has already been handed
     # its payload, so re-anchoring changes nothing and deleting the prompt must
     # still stop the turn.
-    def reanchor_coalesced_task(task)
-      return false unless %w[queued pending].include?(task.status)
-
-      Task.transaction { reanchor_locked_task(task) }
-    rescue ActiveRecord::RecordNotFound
-      # The task went away between the scan and the lock (a cascading delete).
-      # Nothing to rescue, and nothing left to cancel either.
-      false
-    end
 
     # The lock body. `task` is the object cancel_pending_tasks' scan loaded, and
     # everything derived here has to come from the row as it stands *now*:
@@ -374,11 +350,11 @@ module Collavre
     # handed its payload — deleting the prompt must stop it, not re-target it.
     def reanchor_locked_task(task)
       task.lock!
+      return false if task.workflow?
       return false unless %w[queued pending].include?(task.status)
 
       payload = task.trigger_event_payload || {}
-      merged = Array(payload[Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY])
-                 .compact.map(&:to_i).uniq - [ id ]
+      merged = dispatch_source_ids(task) - [ id ]
       return false if merged.empty?
 
       # Anything else in the merge window may have been deleted too. Newest by id:
@@ -409,7 +385,8 @@ module Collavre
                    .in_turn(merged, "creative" => { "id" => task.creative_id },
                                     "topic" => { "id" => task.topic_id })
                    .order(:id).to_a
-      replacement = in_scope.last
+      # Withdrawing a merged source need not move a still-valid anchor.
+      replacement = in_scope.find { |comment| comment.id == payload.dig("comment", "id").to_i } || in_scope.last
       return false unless replacement
 
       # Through the same door the refresh uses, so the promotion is recorded as
@@ -424,6 +401,8 @@ module Collavre
         Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY =>
           (in_scope.map(&:id) - [ replacement.id ]).sort
       )
+      return false unless replay_route_preserved?(task, payload)
+
       task.update!(trigger_event_payload: payload)
 
       Rails.logger.info(
@@ -438,7 +417,7 @@ module Collavre
     # Cancelling one was right while each deferral posted its own notice: the
     # newest queued task was the one that notice belonged to. A topic now gets
     # exactly one deduplicated notice
-    # (Orchestration::AgentOrchestrator.with_deduped_topic_notice), and with
+    # (Orchestration::WaitingNoticeManager.with_deduped_topic_notice), and with
     # topic_max_concurrent_jobs > 1 it can stand for waiters from several agents
     # — coalescing folds same-agent siblings only. Deleting it while cancelling
     # one of them leaves the rest queued with nothing on screen representing
@@ -577,7 +556,7 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
+      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback")
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \
@@ -655,14 +634,6 @@ module Collavre
         "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
         "#{e.class} #{e.message}"
       )
-    end
-
-    def assign_main_topic
-      return if topic_id.present?
-      return unless creative
-
-      fallback = user || Collavre.current_user || creative.user
-      self.topic = creative.main_topic(fallback_user: fallback)
     end
 
     def use_origin_creative

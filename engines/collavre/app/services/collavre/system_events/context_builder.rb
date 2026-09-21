@@ -11,7 +11,8 @@ module Collavre
 
         # Add helper objects/functions
         if ctx["chat"]
-          ctx["chat"]["mentioned_user"] ||= mentioned_user(ctx["chat"])
+          ctx["chat"]["mentioned_users"] ||= default_mentioned_users(ctx["chat"])
+          ctx["chat"]["mentioned_user"] ||= ctx["chat"]["mentioned_users"].first
         end
 
         # Add sender context for A2A communication
@@ -52,25 +53,52 @@ module Collavre
       # that belongs to someone else.
       #
       # The block is rebuilt rather than merged onto: a mention that finds
-      # nobody must leave the key absent, since Matcher reads its presence as
+      # nobody must leave the keys absent, since Matcher reads their presence as
       # the mention that outranks the assignment.
       def self.reanchor_chat(content)
         chat = { "content" => content }
-        mention = mentioned_user_for(content)
-        mention ? chat.merge("mentioned_user" => mention) : chat
+        mentions = mentioned_users_for(content)
+        return chat if mentions.empty?
+
+        chat.merge("mentioned_users" => mentions, "mentioned_user" => mentions.first)
       end
 
-      def self.mentioned_user_for(content)
-        return nil unless content
+      # Every mentioned user, in mention order. Plural because a comment that
+      # names two agents has to reach both: routing that keeps only the first
+      # silently drops the rest, and "@someone: report / @agent: your turn" —
+      # the shape the agent system prompt asks for — puts the human first.
+      def self.mentioned_users_for(content)
+        return [] unless content
 
-        MentionParser.resolve_user(content)&.as_json(only: [ :id, :name, :email ])
+        MentionParser.resolve_all_users(content).map { |user| user.as_json(only: [ :id, :name, :email ]) }
+      end
+
+      # The mentioned user ids carried by a payload, whatever shape it is in.
+      #
+      # The one reader for "who was mentioned", shared by Matcher and Arbiter:
+      # they ask the same question on either side of a dispatch, and two private
+      # copies of this lookup would drift the moment one of them learned about a
+      # new key. Reads the plural key, falling back to the singular one so a task
+      # queued before the plural key existed still routes to its agent.
+      def self.mentioned_ids_in(context)
+        chat = context["chat"] || context[:chat]
+        return [] unless chat.is_a?(Hash)
+
+        entries = chat["mentioned_users"] || chat[:mentioned_users]
+        entries = [ chat["mentioned_user"] || chat[:mentioned_user] ] if entries.nil?
+
+        Array(entries).filter_map do |entry|
+          next unless entry.is_a?(Hash)
+
+          id = entry["id"] || entry[:id]
+          id&.to_i
+        end
       end
 
       # Point a payload's sender at the comment the trigger has just been moved
       # onto. Only when the author actually changed: a payload may carry a sender
-      # its producer shaped deliberately (Comments::WorkflowExecutor attributes a
-      # sub-task to the user who issued /work), and re-anchoring inside one user's
-      # own burst is no reason to touch it.
+      # its producer shaped deliberately, and re-anchoring inside one user's own
+      # burst is no reason to touch it.
       #
       # A rebuild that finds no user drops the key rather than leaving a wrong
       # one: ClaudeChannelAdapter then falls back to the comment's own user_id and
@@ -92,8 +120,14 @@ module Collavre
         self.class.sender_context_for(User.find_by(id: user_id))
       end
 
-      def mentioned_user(chat_context)
-        self.class.mentioned_user_for(chat_context["content"])
+      # A payload that already named its targets keeps them: its producer
+      # resolved the mention against the roster it saw, and re-deriving from the
+      # raw content would widen an in-flight single-target task into everyone
+      # its text happens to name.
+      def default_mentioned_users(chat_context)
+        return [ chat_context["mentioned_user"] ] if chat_context["mentioned_user"]
+
+        self.class.mentioned_users_for(chat_context["content"])
       end
     end
   end

@@ -149,6 +149,33 @@ describe('updateRowFromData', () => {
     expect(row2.dataset.progressHtml).toBeUndefined();
   });
 
+  test('progress_html preserves a dirty cron message from the rendered row', () => {
+		const { row } = makeRow('1');
+		const currentProgressHtml = `
+			<span data-progress-toggle="true"><input class="progress-toggle-checkbox"></span>
+			<span data-cron-key="cron-1">
+				<textarea data-cron-badge-target="messageInput"
+					data-cron-saved-message="Saved message">Saved message</textarea>
+			</span>
+		`;
+		row.progressHtml = currentProgressHtml;
+		row.dataset.progressHtml = currentProgressHtml;
+		row.innerHTML = `<span class="creative-progress-area">${currentProgressHtml}</span>`;
+		row.querySelector('textarea').value = '\nDraft message';
+
+		updateRowFromData(row, {
+			description: 'd',
+			progress_html: '<span class="creative-progress-complete">100%</span>',
+		});
+
+		const template = document.createElement('template');
+		template.innerHTML = row.progressHtml;
+		expect(template.content.querySelector('.creative-progress-complete').textContent).toBe('100%');
+		expect(template.content.querySelector('[data-cron-key="cron-1"]')).not.toBeNull();
+		expect(template.content.querySelector('textarea').value).toBe('\nDraft message');
+		expect(row.dataset.progressHtml).toBe(row.progressHtml);
+  });
+
   test('progress written from own key; null clears dataset value', () => {
     const { row } = makeRow('1');
     updateRowFromData(row, { description: 'd', progress: 30 });
@@ -229,3 +256,11 @@ describe('updateRowFromData', () => {
     });
   });
 });
+
+test('confirmed custom types survive row cache round trips and General removes stale type', () => {
+  const { row, tree } = makeRow('42')
+  updateRowFromData(row, { creative_type: 'project' })
+  expect(inlinePayloadFromTree(tree).creative_type).toBe('project')
+  updateRowFromData(row, { creative_type: '' })
+  expect(inlinePayloadFromTree(tree).creative_type).toBe('')
+})

@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../../lib/api/csrf_fetch'
 import { confirmDialog } from '../../lib/utils/confirm_dialog'
+import { removeTreeElement } from '../../modules/creative_tree_dom'
 
 export default class extends Controller {
   static targets = [
@@ -12,11 +13,16 @@ export default class extends Controller {
     'setPlan',
   ]
 
-  connect() {
-    this.active = false
-    this.dragging = false
-    this.dragMode = 'toggle'
+  initialize() {
+    // Restored rows connect their targets before the controller connects.
     this.rowListeners = new Map()
+  }
+
+  connect() {
+    this.dragMode = 'toggle'
+    this.resetSelectionMode()
+    this.handleBeforeCache = this.resetSelectionMode.bind(this)
+    document.addEventListener('turbo:before-cache', this.handleBeforeCache)
 
     this.handleDocumentMouseUp = this.handleDocumentMouseUp.bind(this)
     document.addEventListener('mouseup', this.handleDocumentMouseUp)
@@ -28,6 +34,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    document.removeEventListener('turbo:before-cache', this.handleBeforeCache)
     document.removeEventListener('mouseup', this.handleDocumentMouseUp)
     document.removeEventListener('turbo:load', this.handleTurboLoad)
 
@@ -53,6 +60,19 @@ export default class extends Controller {
       }
     }
 
+    this.updateToggle()
+  }
+
+  resetSelectionMode() {
+    this.active = false
+    this.dragging = false
+    this.clearSelection()
+    if (this.hasSelectAllTarget) this.selectAllTarget.checked = false
+    this.updateUiForMode()
+    this.updateToggle()
+  }
+
+  updateToggle() {
     if (this.hasToggleTarget) {
       const selectText = this.toggleTarget.dataset.selectText
       const cancelText = this.toggleTarget.dataset.cancelText
@@ -102,15 +122,23 @@ export default class extends Controller {
       detail: { creativeIds: ids.map(String) }
     }))
 
+    // Route through the shared helper: it drops the enclosing <creative-tree-row>
+    // wrapper (removing only the inner .creative-tree left an empty wrapper behind,
+    // which reads as "still populated") and restores the empty-state placeholder
+    // once the last row is gone. The destroy broadcast excludes the initiating
+    // user, so nothing else repairs this window's DOM.
     ids.forEach((id) => {
-      const tree = document.getElementById(`creative-${id}`)
-      if (tree) tree.remove()
+      removeTreeElement(document.getElementById(`creative-${id}`))
     })
 
     this.clearSelection()
     if (this.hasSelectAllTarget) {
       this.selectAllTarget.checked = false
     }
+  }
+
+  checkboxTargetConnected(checkbox) {
+    checkbox.style.display = this.active ? '' : 'none'
   }
 
   rowTargetConnected(row) {

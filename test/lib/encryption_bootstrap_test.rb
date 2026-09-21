@@ -18,7 +18,8 @@ class EncryptionBootstrapTest < ActiveSupport::TestCase
       @encryption_config = FakeEncryptionConfig.new(primary, deterministic, salt, nil, nil)
     end
 
-    attr_reader :secret_key_base
+    # No attr_reader beside this: the ivar is @secret, so a generated reader
+    # would return nil and shadowing it is the only reason this fake works.
     def secret_key_base = @secret
 
     def config

@@ -126,6 +126,98 @@ module Collavre
         assert_equal "custom_value", result["custom_key"]
         assert_equal @creative.id, result["creative"]["id"]
       end
+
+      # --- Multi-mention context ---
+
+      test "builds mentioned_users for every mentioned user in order" do
+        context = {
+          chat: { content: "@John: done\n@dev-agent: your turn" },
+          creative: { id: @creative.id }
+        }
+
+        result = ContextBuilder.new(context).build
+
+        assert_equal [ @human_user.id, @ai_agent.id ],
+          result["chat"]["mentioned_users"].map { |u| u["id"] }
+      end
+
+      test "mentioned_user stays the first entry of mentioned_users" do
+        context = {
+          chat: { content: "@John: done\n@dev-agent: your turn" },
+          creative: { id: @creative.id }
+        }
+
+        result = ContextBuilder.new(context).build
+
+        assert_equal result["chat"]["mentioned_users"].first, result["chat"]["mentioned_user"]
+      end
+
+      test "an explicitly supplied mentioned_users list is not recomputed" do
+        context = {
+          chat: {
+            content: "@John: done\n@dev-agent: your turn",
+            mentioned_users: [ { "id" => @ai_agent.id, "name" => @ai_agent.name } ]
+          },
+          creative: { id: @creative.id }
+        }
+
+        result = ContextBuilder.new(context).build
+
+        assert_equal [ @ai_agent.id ], result["chat"]["mentioned_users"].map { |u| u["id"] }
+        assert_equal @ai_agent.id, result["chat"]["mentioned_user"]["id"]
+      end
+
+      test "a legacy payload carrying only mentioned_user keeps its single target" do
+        # An in-flight task predating the plural key must not widen: its content
+        # names two people but its producer resolved exactly one.
+        context = {
+          chat: {
+            content: "@John: done\n@dev-agent: your turn",
+            mentioned_user: { "id" => @ai_agent.id, "name" => @ai_agent.name }
+          },
+          creative: { id: @creative.id }
+        }
+
+        result = ContextBuilder.new(context).build
+
+        assert_equal [ @ai_agent.id ], result["chat"]["mentioned_users"].map { |u| u["id"] }
+      end
+
+      test "reanchor_chat carries both mention keys" do
+        chat = ContextBuilder.reanchor_chat("@John: done\n@dev-agent: your turn")
+
+        assert_equal [ @human_user.id, @ai_agent.id ], chat["mentioned_users"].map { |u| u["id"] }
+        assert_equal @human_user.id, chat["mentioned_user"]["id"]
+      end
+
+      test "reanchor_chat omits both mention keys when nobody is mentioned" do
+        chat = ContextBuilder.reanchor_chat("no mention at all")
+
+        refute chat.key?("mentioned_users")
+        refute chat.key?("mentioned_user")
+      end
+
+      test "mentioned_ids_in reads the plural key" do
+        context = { "chat" => { "mentioned_users" => [ { "id" => @human_user.id }, { "id" => @ai_agent.id } ] } }
+
+        assert_equal [ @human_user.id, @ai_agent.id ], ContextBuilder.mentioned_ids_in(context)
+      end
+
+      test "mentioned_ids_in falls back to the singular key" do
+        context = { "chat" => { "mentioned_user" => { "id" => @ai_agent.id } } }
+
+        assert_equal [ @ai_agent.id ], ContextBuilder.mentioned_ids_in(context)
+      end
+
+      test "mentioned_ids_in accepts symbol keys" do
+        context = { chat: { mentioned_user: { id: @ai_agent.id } } }
+
+        assert_equal [ @ai_agent.id ], ContextBuilder.mentioned_ids_in(context)
+      end
+
+      test "mentioned_ids_in returns empty without a chat block" do
+        assert_empty ContextBuilder.mentioned_ids_in({ "creative" => { "id" => @creative.id } })
+      end
     end
   end
 end

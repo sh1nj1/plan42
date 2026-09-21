@@ -4,9 +4,14 @@
 #   - ruby       (SimpleCov lcov: host app + all engines)
 #   - javascript (Jest lcov: app/javascript + engine JS + served PWA JS)
 #
-# Status checks are informational (never block a PR) — coverage here is for
-# visibility, not a hard gate. carryforward keeps a flag's last value when its
-# job doesn't upload on a given run (e.g. a JS-only PR).
+# These statuses BLOCK. They used to be informational, which meant nothing in CI
+# constrained coverage at all — a PR could add a thousand untested lines and go
+# green. Coverage is the cheapest complexity signal available here because it is
+# already being computed: making it blocking costs zero additional CI seconds.
+#
+# Targets are set from where the repo actually stands (measured 2026-08-11:
+# ruby 84.0%, javascript 47.5%), not from an aspiration. A gate nobody can pass
+# gets disabled, and a disabled gate controls nothing.
 
 codecov:
   require_ci_to_pass: true
@@ -15,13 +20,32 @@ coverage:
   precision: 2
   round: down
   status:
+    # Whole-repo erosion guard. `auto` compares against the base commit, so the
+    # only thing this forbids is going backwards — by more than a point.
     project:
       default:
         target: auto
         threshold: 1%
-        informational: true
+
     patch:
-      default:
+      # No combined patch status: the two flags are in very different places and
+      # averaging them would let well-tested Ruby paper over untested JS.
+      default: false
+
+      # Ruby sits at 84% overall, so 80% on the diff is "keep doing what you are
+      # already doing", not a new burden.
+      ruby:
+        flags:
+          - ruby
+        target: 80%
+        threshold: 0%
+
+      # JavaScript is at 47%. Blocking on a diff target here would fail honest
+      # PRs for a debt they did not create, so this stays advisory until the
+      # baseline is lifted — then it becomes a real target like Ruby's.
+      javascript:
+        flags:
+          - javascript
         informational: true
 
 flags:

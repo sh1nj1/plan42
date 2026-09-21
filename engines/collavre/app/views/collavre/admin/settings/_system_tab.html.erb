@@ -145,6 +145,26 @@
     </div>
 
     <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
+      <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.creative_history') %></h3>
+      <div style="display: flex; gap: 2em; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 200px; max-width: 300px;">
+          <%= f.label :creative_history_retention_count, t('admin.settings.creative_history_retention_count') %>
+          <%= f.number_field :creative_history_retention_count, value: @creative_history_retention_count, min: Collavre::SystemSetting::MIN_CREATIVE_HISTORY_RETENTION_COUNT, style: "width: 100%;" %>
+          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+            <%= t('admin.settings.creative_history_retention_count_hint') %>
+          </div>
+        </div>
+        <div style="flex: 1; min-width: 200px; max-width: 300px;">
+          <%= f.label :creative_history_retention_days, t('admin.settings.creative_history_retention_days') %>
+          <%= f.number_field :creative_history_retention_days, value: @creative_history_retention_days, min: Collavre::SystemSetting::MIN_CREATIVE_HISTORY_RETENTION_DAYS, style: "width: 100%;" %>
+          <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+            <%= t('admin.settings.creative_history_retention_days_hint') %>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
       <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.auth_providers') %></h3>
       <div style="display: flex; flex-direction: column; gap: 0.8em;">
         <% Rails.application.config.auth_providers.sort_by { |p| p[:priority] }.each do |provider| %>

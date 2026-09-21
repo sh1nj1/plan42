@@ -1,0 +1,23 @@
+ko:
+  collavre:
+    dnd:
+      move_title: "이동…"
+      choose_destination: "대상 선택…"
+      destination: "대상"
+      position: "위치"
+      child: "대상의 하위"
+      up: "대상의 앞"
+      down: "대상의 뒤"
+      operation: "작업"
+      move: "이동"
+      link: "링크 생성"
+      cancel: "취소"
+      confirm: "확정"
+      moving: "변경 적용 중…"
+      dropped: "변경을 적용했습니다."
+      cancelled: "이동을 취소했습니다."
+      invalid_target: "선택한 크리에이티브 이외의 대상을 선택하세요."
+      partial: "일부 변경에 실패했습니다. 다시 확정하면 실패한 항목만 재시도합니다."
+      failed: "변경을 적용하지 못했습니다. 권한과 대상을 확인한 후 다시 시도하세요."
+      archived_selection: "이동하거나 링크를 만들려면 아카이브된 크리에이티브의 선택을 해제하세요."
+      no_sources: "현재 화면에 선택할 수 있는 크리에이티브가 없습니다. 크리에이티브를 추가하거나 필터를 변경한 뒤 다시 시도하세요."

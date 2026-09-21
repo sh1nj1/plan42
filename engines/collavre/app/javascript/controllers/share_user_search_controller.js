@@ -1,5 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
-import CommonPopup from '../lib/common_popup'
+import CommonPopup, { elementAnchor } from '../lib/common_popup'
 
 export default class extends Controller {
     static targets = ['input']
@@ -78,7 +78,7 @@ export default class extends Controller {
 
             if (items.length > 0) {
                 this.popup?.setItems(items)
-                this.popup?.showAt(this.inputTarget.getBoundingClientRect())
+                this.popup?.showAt(elementAnchor(this.inputTarget))
             } else {
                 this.popup?.hide()
             }

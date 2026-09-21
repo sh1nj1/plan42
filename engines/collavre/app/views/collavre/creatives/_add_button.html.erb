@@ -1,20 +1,18 @@
-<% if @parent_creative %>
-  <%= button_tag(
-        type: 'button',
-        class: 'creative-header-outline-btn add-creative-btn',
-        data: { parent_id: @parent_creative.id },
-        aria: { label: t('collavre.creatives.index.new_creative') },
-        title: t('collavre.creatives.index.new_creative_shortcut')
-      ) do %>
-    <span aria-hidden="true"><%= svg_tag 'add.svg', class: 'icon-add', width: 16, height: 16 %></span>
-  <% end %>
-<% else %>
-  <%= button_tag(
-        type: 'button',
-        class: 'creative-header-outline-btn new-root-creative-btn',
-        aria: { label: t('collavre.creatives.index.new_creative') },
-        title: t('collavre.creatives.index.new_creative_shortcut')
-      ) do %>
-    <span aria-hidden="true"><%= svg_tag 'add.svg', class: 'icon-add', width: 16, height: 16 %></span>
-  <% end %>
+<%
+  label = local_assigns[:label]
+  shortcut_hint = local_assigns[:shortcut_hint]
+  base_class = @parent_creative ? 'add-creative-btn' : 'new-root-creative-btn'
+  css_class = label ? "btn btn-primary #{base_class} add-creative-btn--cta" : "creative-header-outline-btn #{base_class}"
+  data_attrs = @parent_creative ? { parent_id: @parent_creative.id } : {}
+%>
+<%= button_tag(
+      type: 'button',
+      class: css_class,
+      data: data_attrs,
+      aria: { label: t('collavre.creatives.index.new_creative') },
+      title: t('collavre.creatives.index.new_creative_shortcut')
+    ) do %>
+  <span aria-hidden="true"><%= svg_tag 'add.svg', class: 'icon-add', width: 16, height: 16 %></span>
+  <% if label %><span class="add-creative-btn-label"><%= label %></span><% end %>
+  <% if shortcut_hint %><kbd class="add-creative-btn-kbd"><%= shortcut_hint %></kbd><% end %>
 <% end %>

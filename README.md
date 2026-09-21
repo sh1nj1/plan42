@@ -107,9 +107,16 @@ Stated up front, because you would find them anyway:
 
 ```bash
 bin/dev                                   # dev server on :3000
-./script/install-hooks.sh                 # pre-push: rubocop, tests, i18n + dead-code checks
-bin/rake test && bin/rails test:system    # host app + every engine
+./script/install-hooks.sh                 # pre-push: changed-file RuboCop, i18n + dead-code checks
+./bin/rubocop -a                         # full lint required before PR
+bin/rake test && bin/rails test:system   # tests required before PR; pre-push tests are temporarily disabled
 ```
+
+System tests require a locally installed, trusted ChromeDriver on `PATH` or at
+`CHROMEDRIVER_PATH`. Install a driver compatible with your Chrome version through
+your trusted package manager or a verified Chrome for Testing distribution.
+Selenium Manager automatic downloads are disabled; a missing or invalid driver
+stops the test with a setup error. This applies to headless and visible Chrome.
 
 System tests run headless by default; `SYSTEM_TEST_DRIVER=chrome bin/rails test:system`
 to watch them in a real browser.

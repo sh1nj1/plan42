@@ -14,24 +14,17 @@ module Collavre
       def count
         return @count if @count
 
-        if @creative && @user
-          # Use CommentReadPointer-based unread count for inbox creative
-          unread_count_for_creative
-        else
-          # Legacy fallback: InboxItem count
-          InboxItem.where(owner: @user, state: "new").count
-        end
+        return 0 unless @creative && @user
+
+        unread_count_for_creative
       end
 
       private
 
       def unread_count_for_creative
-        visible_comments = @creative.comments.visible_to(@user)
-        pointer = CommentReadPointer.find_by(user: @user, creative: @creative)
-        last_read_id = pointer&.last_read_comment_id
-
-        scope = last_read_id ? visible_comments.where("comments.id > ?", last_read_id) : visible_comments
-        scope.count
+        badge_index = Creatives::CommentBadgeIndex.new(user: @user)
+        badge_index.index([ @creative.effective_origin ])
+        badge_index.unread_count_for(@creative.effective_origin)
       end
     end
   end

@@ -180,6 +180,12 @@ into `merged_comment_ids` instead of being dropped, and the payload's `"sender"`
 block is rebuilt with it (`ContextBuilder` fills that with `||=` and never re-runs
 on this path).
 
+The carried `workspace_user_id` is anchor-scoped as well. Moving onto another
+human's comment replaces it with that author's id, while moving onto an AI or
+system comment clears it because the initiating human cannot be reconstructed
+from the comment row. A no-op refresh keeps the carried principal so an ordinary
+A2A turn retains its initiating human.
+
 Both doors that move an anchor — this one and `Comment#reanchor_coalesced_task` —
 write it through `TaskCoalescer.reanchor_payload`, which also records the move
 under `acquired_comment_id`. A payload therefore *says* whether its anchor is the

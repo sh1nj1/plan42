@@ -7,12 +7,13 @@ function appendLinkHoverIndicator() {
 }
 
 export function initIndicator() {
-  if (initialized) return;
+  if (initialized) return appendLinkHoverIndicator();
   initialized = true;
 
   linkHoverIndicator = document.createElement('div');
   linkHoverIndicator.className = 'creative-link-drop-indicator';
   linkHoverIndicator.textContent = '-->';
+  linkHoverIndicator.setAttribute('aria-hidden', 'true');
   linkHoverIndicator.style.display = 'none';
 
   if (document.readyState === 'loading') {

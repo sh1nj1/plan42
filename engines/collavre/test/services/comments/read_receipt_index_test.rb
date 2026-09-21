@@ -13,6 +13,7 @@ module Collavre
         @owner = users(:one)
         @reader = users(:two)
         @creative = Creative.create!(user: @owner, description: "Receipts", sequence: 950)
+        CreativeShare.create!(creative: @creative, user: @reader, shared_by: @owner, permission: :read)
       end
 
       test "a receipt lands on the comment the pointer names" do
@@ -80,6 +81,72 @@ module Collavre
         assert_empty receipts_for([ first, last ])
       end
 
+      test "topic pointers only render receipts in their own topic" do
+        first_topic = Topic.create!(creative: @creative, name: "First", user: @owner)
+        second_topic = Topic.create!(creative: @creative, name: "Second", user: @owner)
+        first = comment("first", topic: first_topic)
+        second = comment("second", topic: second_topic)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: second_topic, last_read_comment_id: second.id)
+
+        assert_equal({ second.id => [ @reader ] }, receipts_for([ first, second ]))
+      end
+
+      test "legacy and topic pointers render their different receipts" do
+        first_topic = Topic.create!(creative: @creative, name: "First", user: @owner)
+        second_topic = Topic.create!(creative: @creative, name: "Second", user: @owner)
+        first = comment("first", topic: first_topic)
+        second = comment("second", topic: second_topic)
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: second.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: first_topic, last_read_comment_id: first.id)
+
+        assert_equal({ first.id => [ @reader ], second.id => [ @reader ] }, receipts_for([ first, second ]))
+      end
+
+      test "a legacy pointer still renders a topic-less comment for a reader with topic pointers" do
+        topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
+        legacy = comment("legacy")
+        legacy.update_column(:topic_id, nil)
+        named = comment("named", topic: topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: legacy.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: topic, last_read_comment_id: named.id)
+
+        assert_equal({ legacy.id => [ @reader ], named.id => [ @reader ] }, receipts_for([ legacy, named ]))
+      end
+
+      test "a legacy pointer does not override a named topic pointer" do
+        topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
+        legacy = comment("legacy")
+        first = comment("first", topic: topic)
+        second = comment("second", topic: topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: second.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: topic, last_read_comment_id: first.id)
+
+        assert_equal({ legacy.id => [ @reader ], first.id => [ @reader ] }, receipts_for([ legacy, first, second ]))
+      end
+
+      test "a topic-filtered page resolves a legacy fallback within its rendered topic" do
+        first_topic = Topic.create!(creative: @creative, name: "First", user: @owner)
+        second_topic = Topic.create!(creative: @creative, name: "Second", user: @owner)
+        first = comment("first", topic: first_topic)
+        second = comment("second", topic: second_topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: second.id)
+
+        assert_equal({ first.id => [ @reader ] }, receipts_for([ first ], topic_id: first_topic.id))
+      end
+
+      test "duplicate legacy and topic receipts render one avatar" do
+        topic = Topic.create!(creative: @creative, name: "Named", user: @owner)
+        named = comment("named", topic: topic)
+
+        CommentReadPointer.create!(user: @reader, creative: @creative, last_read_comment_id: named.id)
+        CommentReadPointer.create!(user: @reader, creative: @creative, topic: topic, last_read_comment_id: named.id)
+
+        assert_equal({ named.id => [ @reader ] }, receipts_for([ named ]))
+      end
+
       test "several readers on the same comment are grouped" do
         first = comment("a")
         second = comment("b")
@@ -90,6 +157,16 @@ module Collavre
 
         assert_equal [ second.id ], result.keys
         assert_equal [ @owner, @reader ].map(&:id).sort, result[second.id].map(&:id).sort
+      end
+
+      test "batches receipt permission checks for several topic pointers" do
+        topics = 3.times.map { |index| Topic.create!(creative: @creative, name: "Topic #{index}", user: @owner) }
+        comments = topics.map { |topic| comment(topic.name, topic: topic) }
+        comments.each do |comment|
+          CommentReadPointer.create!(user: @reader, creative: @creative, topic: comment.topic, last_read_comment_id: comment.id)
+        end
+
+        assert_equal 1, count_share_queries { receipts_for(comments) }
       end
 
       test "a page with no public comments has no receipts" do
@@ -112,10 +189,25 @@ module Collavre
         assert_empty receipts_for([ first ])
       end
 
+      test "a retained pointer does not render a receipt after access is revoked" do
+        comment = comment("read")
+        point_at(comment)
+        share = CreativeShare.find_by!(creative: @creative, user: @reader)
+
+        share.update!(permission: :no_access)
+
+        assert_empty receipts_for([ comment ])
+        assert CommentReadPointer.exists?(user: @reader, creative: @creative)
+
+        share.update!(permission: :read)
+
+        assert_equal({ comment.id => [ @reader ] }, receipts_for([ comment ]))
+      end
+
       private
 
-      def receipts_for(comments)
-        ReadReceiptIndex.new(creative: @creative, comments: comments).receipts
+      def receipts_for(comments, topic_id: nil)
+        ReadReceiptIndex.new(creative: @creative, comments: comments, topic_id: topic_id).receipts
       end
 
       def comment(content, private: false, topic: nil)
@@ -124,6 +216,19 @@ module Collavre
 
       def point_at(target, user: @reader)
         CommentReadPointer.create!(user: user, creative: @creative, last_read_comment_id: target.id)
+      end
+
+      def count_share_queries
+        CreativeShare.connection.clear_query_cache
+        queries = []
+        callback = lambda do |_name, _start, _finish, _id, payload|
+          if !payload[:cached] && payload[:sql].match?(/FROM [\"`]creative_shares[\"`]/i)
+            queries << payload[:sql]
+          end
+        end
+
+        ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+        queries.size
       end
     end
   end

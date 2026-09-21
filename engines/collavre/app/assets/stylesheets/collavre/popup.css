@@ -105,6 +105,20 @@ body.chat-fullscreen #topic-list-modal {
   display: flex;
   flex-direction: column;
   max-width: 90vw;
+  /* CommonPopup sets max-height inline from the space available beside the
+     anchor. Border-box keeps that number the rendered height (it is measured
+     back via offsetHeight), and hiding overflow stops content from spilling
+     past the cap instead of scrolling inside it. */
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* The scrollable list is what gives when the popup is capped: flex items do not
+   shrink past their content by default, so without this the list keeps its
+   max-height and the bottom of it is simply clipped away. */
+.common-popup-list {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .common-popup input[type="text"] {

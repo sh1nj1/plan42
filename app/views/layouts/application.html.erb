@@ -42,7 +42,7 @@
 
     <%= render 'collavre/shared/custom_theme_style' %>
   </head>
-  <body class="<%= body_theme_class %>" data-current-user-id="<%= Current.user&.id %>" data-system-admin="<%= Current.user&.system_admin? %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
+  <body class="<%= class_names(body_theme_class, 'creative-workspace': creative_workspace?) %>" data-current-user-id="<%= Current.user&.id %>" data-system-admin="<%= Current.user&.system_admin? %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= render 'collavre/shared/link_creative_modal' %>
     <% if Current.user %>
       <%= turbo_stream_from ["inbox", Current.user] %>
@@ -65,11 +65,21 @@
         </div>
       </div>
     </div>
-<% end %>
+    <% end %>
 
-    <main>
-      <%= yield %>
-    </main>
+    <% if creative_workspace? %>
+      <div class="creative-workspace-shell">
+        <%= render "collavre/creatives/workspace_tree" %>
+        <main>
+          <%= yield %>
+        </main>
+        <%= render "collavre/comments/comments_popup", docked: true, creative: @parent_creative %>
+      </div>
+    <% else %>
+      <main>
+        <%= yield %>
+      </main>
+    <% end %>
 
     <%= render 'shared/footer' %>
 

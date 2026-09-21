@@ -5,6 +5,7 @@ ko:
       no_agent: "⚠️ 드롭 트리거 실패 — '%{parent_description}'에 쓰기 권한을 가진 AI 에이전트가 없습니다. 자동 처리를 위해 AI 에이전트에 쓰기 권한을 부여해주세요."
 
       not_a_container: "부모가 트리거 컨테이너가 아닙니다"
+      unknown_action: "알 수 없는 작업입니다"
       toggle_on: "드롭 트리거 활성화됨"
       toggle_off: "드롭 트리거 비활성화됨"
     trigger_loop:

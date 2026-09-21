@@ -126,6 +126,22 @@ module Collavre
         assert_equal @system_prompt, result[:system_prompt]
       end
 
+      test "normalizes registered and stored vendors for incremental session payloads" do
+        AiClient.register_session_vendor(" Test-Stateful ")
+        agent = User.new(llm_vendor: " TEST-Stateful ")
+        messages_data = { messages: @full_messages, first_message: false, context_changed: false }
+
+        assert agent.supports_session?
+        result = SessionContextResolver.new(
+          agent: agent, messages_data: messages_data, system_prompt: @system_prompt
+        ).resolve
+
+        assert_equal [ @full_messages.last ], result[:messages]
+        assert_nil result[:system_prompt]
+      ensure
+        AiClient.session_vendors.delete("test-stateful")
+      end
+
       private
 
       def build_agent(supports_session:)

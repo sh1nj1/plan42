@@ -34,6 +34,38 @@
   cursor: pointer;
 }
 
+.llm-model-item {
+  display: flex;
+  gap: 0.75em;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.llm-model-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.llm-model-delete {
+  flex: 0 0 auto;
+  width: 1.75em;
+  height: 1.75em;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-round);
+}
+
+.llm-model-delete:hover,
+.llm-model-delete:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
 .mention-item:hover,
 .mention-item.active,
 .common-popup-item:hover,

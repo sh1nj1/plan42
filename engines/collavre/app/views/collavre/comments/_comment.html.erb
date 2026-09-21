@@ -2,6 +2,7 @@
 <% current_topic_id = local_assigns[:current_topic_id] %>
 <% has_pending_action = comment.approval_action? && comment.action_executed_at.blank? %>
 <% approver_id = comment.approver_id %>
+<% has_engine_login = comment.task&.trigger_event_payload&.key?("engine_login") %>
 <div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approver-id="<%= approver_id %>" data-ai-user="<%= comment.user&.ai_user? %>" data-streaming="<%= local_assigns.fetch(:streaming, false) %>">
   <div class="comment-select">
     <input type="checkbox"
@@ -10,7 +11,11 @@
            aria-label="<%= t('collavre.comments.select_label') %>" />
   </div>
   <div>
-    <%= render Collavre::AvatarComponent.new(user: comment.user, size: 20, classes: 'avatar comment-avatar') %>
+    <% if comment.user.present? %>
+      <%= render Collavre::CommentUserMenuComponent.new(user: comment.user, menu_id: dom_id(comment, :user_menu)) %>
+    <% else %>
+      <%= render Collavre::AvatarComponent.new(user: nil, size: 20, classes: 'avatar comment-avatar') %>
+    <% end %>
     <% display_name =
          if comment.user.present?
            comment.user.display_name
@@ -45,7 +50,7 @@
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
     <div class="comment-action-container">
-      <% if comment.task_id && comment.task&.status&.in?(%w[running pending queued pending_approval]) %>
+      <% if !has_engine_login && comment.task_id && comment.task&.status&.in?(%w[running pending queued pending_approval]) %>
         <button class="comment-stop-btn" type="button" data-action="click->comment#cancelTask" data-task-id="<%= comment.task_id %>" title="<%= t('collavre.comments.stop_agent') %>">
           <span class="agent-stop-icon">&#x25A0;</span> <%= t('collavre.comments.stop_agent') %>
         </button>
@@ -120,6 +125,9 @@
     <% images_list = comment.images.to_a %>
     <div class="comment-attachments"
          data-controller="image-lightbox"
+         data-image-lightbox-i18n-zoom-in-value="<%= t('collavre.comments.lightbox.zoom_in') %>"
+         data-image-lightbox-i18n-zoom-out-value="<%= t('collavre.comments.lightbox.zoom_out') %>"
+         data-image-lightbox-i18n-zoom-reset-value="<%= t('collavre.comments.lightbox.zoom_reset') %>"
          data-image-lightbox-download-all-url-value="<%= collavre.download_images_creative_comment_path(comment.creative, comment) %>"
          data-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
          data-image-lightbox-i18n-previous-value="<%= t('collavre.comments.lightbox.previous') %>"
@@ -173,6 +181,10 @@
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
     </div>
   <% end %>
+  <% if has_engine_login %>
+    <%= turbo_frame_tag "inline_agent_login_#{comment.id}", src: collavre.inline_agent_login_path(comment_id: comment.id), loading: :lazy %>
+  <% end %>
+
   <% if comment.approval_action? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
@@ -219,7 +231,7 @@
       <details>
         <summary><%= t("collavre.comments.activity_logs_summary") %></summary>
         <%= turbo_frame_tag "activity_log_details_#{comment.id}", src: collavre.creative_comment_activity_log_path(comment.creative, comment), loading: "lazy" do %>
-          Loading...
+          <%= t("collavre.comments.activity_logs.loading") %>
         <% end %>
       </details>
     </div>

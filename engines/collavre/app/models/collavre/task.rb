@@ -1,11 +1,11 @@
 module Collavre
   class Task < ApplicationRecord
     self.table_name = "tasks"
+    include ReplayLoopCompletion
+    include WorkflowCompletion
 
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy
-    belongs_to :parent_task, class_name: "Collavre::Task", optional: true
-    has_many :sub_tasks, class_name: "Collavre::Task", foreign_key: :parent_task_id, dependent: :destroy
     belongs_to :creative, class_name: "Collavre::Creative", optional: true
     has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
@@ -70,6 +70,19 @@ module Collavre
       ACTIVE_STATUSES.include?(status)
     end
 
+    # Cancellation callers often select an active row before waiting on another
+    # request's task lock. Reload under that lock so a completed reply cannot be
+    # overwritten by a stale running/delegated instance.
+    def cancel_if_active!(statuses: ACTIVE_STATUSES, **attributes)
+      with_lock do
+        next unless status.in?(statuses)
+
+        previous_status = status
+        update!(attributes.merge(status: "cancelled"))
+        previous_status
+      end
+    end
+
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same
@@ -91,6 +104,8 @@ module Collavre
     # to drive the same side effects (trigger-loop continuation + stop-button
     # broadcast) once the related reply_comment has been persisted.
     def fire_completion_callbacks_after_external_claim
+      settle_workflow
+      recheck_abandoned_replays
       check_trigger_loop_completion if trigger_loop_completion_eligible?
       broadcast_stop_button_removal if terminal_status?
     end
@@ -135,6 +150,8 @@ module Collavre
     # fire_completion_callbacks_after_external_claim for explicit replay.
     def trigger_loop_completion_eligible?
       return false unless status == "done"
+      # Pending and completed replays own completion instead of the login card.
+      return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
       return false unless trigger_event_name == "comment_created"
       return false unless creative&.parent&.drop_trigger_enabled?
 
@@ -219,6 +236,10 @@ module Collavre
     end
 
     def broadcast_stop_button_removal
+      # Login cards already omit Stop and have a queued comment replacement.
+      # Replacing them again would discard an in-progress authentication form.
+      return if trigger_event_payload&.key?("engine_login")
+
       comment = reply_comment
       return unless comment
 

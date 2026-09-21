@@ -10,6 +10,8 @@ module Collavre
 
     def new_ai
       @available_tools = load_available_tools
+      @llm_models = Collavre::LlmModel.suggestions
+      @agent_gateways = chat_capable_agent_gateways(Current.user)
 
       if params[:copy_from].present?
         source = Collavre::User.find_by(id: params[:copy_from])
@@ -34,6 +36,7 @@ module Collavre
         llm_model: params[:llm_model],
         llm_api_key: params[:llm_api_key],
         gateway_url: params[:gateway_url],
+        agent_gateway: selected_agent_gateway,
         tools: params[:tools] || [],
         searchable: searchable,
         email_verified_at: Time.current,
@@ -42,24 +45,37 @@ module Collavre
       )
       @user.agent_conf = params[:agent_conf] if @user.respond_to?(:agent_conf=) && params[:agent_conf].present?
 
-      if @user.save
+      saved = Collavre::User.transaction do
+        next false unless @user.save
+
+        remember_llm_model(@user)
         Collavre::Contact.ensure(user: Current.user, contact_user: @user)
         share_ai_agent_to_creative(@user, params[:creative_id])
-        redirect_to user_path(Current.user, tab: "contacts"), notice: I18n.t("collavre.users.create_ai.success")
+        true
+      end
+
+      if saved
+        redirect_to current_user_contacts_path, notice: I18n.t("collavre.users.create_ai.success")
       else
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         @available_tools = load_available_tools
+        @llm_models = Collavre::LlmModel.suggestions
+        @agent_gateways = chat_capable_agent_gateways(Current.user)
         render :new_ai, status: :unprocessable_entity
       end
     end
 
     def edit_ai
       @available_tools = load_available_tools
+      @llm_models = Collavre::LlmModel.suggestions
+      @agent_gateways = editable_agent_gateways(@user)
       @has_stored_llm_api_key = @user.llm_api_key.present?
+      @return_to = safe_return_to(params[:return_to].presence || request.referer)
     end
 
     def update_ai
-      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
+      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf, tools: [])
+      assign_ai_gateway(ai_params)
       clear_llm_api_key = ActiveModel::Type::Boolean.new.cast(ai_params.delete(:clear_llm_api_key))
       @has_stored_llm_api_key = @user.llm_api_key.present?
       @clear_llm_api_key = clear_llm_api_key
@@ -70,16 +86,69 @@ module Collavre
         ai_params.delete(:llm_api_key)
       end
 
-      if @user.update(ai_params)
-        redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
+      updated = Collavre::User.transaction do
+        next false unless @user.update(ai_params)
+
+        if @user.saved_change_to_llm_vendor? || @user.saved_change_to_llm_model?
+          remember_llm_model(@user)
+        end
+        true
+      end
+
+      if updated
+        redirect_to update_ai_destination, notice: I18n.t("collavre.users.update_ai.success")
       else
-        @available_tools = load_available_tools
-        flash.now[:alert] = @user.errors.full_messages.to_sentence
-        render :edit_ai, status: :unprocessable_entity
+        render_ai_edit_failure
       end
     end
 
     private
+
+    def current_user_contacts_path
+      user_path(Current.user, tab: "contacts")
+    end
+
+    def render_ai_edit_failure
+      @available_tools = load_available_tools
+      @llm_models = Collavre::LlmModel.suggestions
+      @agent_gateways = editable_agent_gateways(@user)
+      @return_to = safe_return_to(params[:return_to])
+      flash.now[:alert] = @user.errors.full_messages.to_sentence
+      render :edit_ai, status: :unprocessable_entity
+    end
+
+    # Saving should land back on whatever list opened the form (the admin user
+    # list, a profile's contacts tab, the org chart), not a fixed page.
+    def update_ai_destination
+      safe_return_to(params[:return_to]) || current_user_contacts_path
+    end
+
+    def safe_return_to(candidate)
+      path = local_path_for(candidate)
+      return nil if path.nil? || path.split("?").first == edit_ai_user_path(@user)
+
+      path
+    end
+
+    def local_path_for(candidate)
+      return nil if candidate.blank?
+
+      uri = URI.parse(candidate)
+      return nil if uri.host.present? && uri.host != request.host
+      return nil unless uri.path.to_s.start_with?("/") && !uri.path.start_with?("//")
+
+      [ uri.path, uri.query ].compact_blank.join("?")
+    rescue URI::InvalidURIError
+      nil
+    end
+
+    def remember_llm_model(user)
+      Collavre::LlmModel.remember!(
+        vendor: user.llm_vendor,
+        name: user.llm_model,
+        creator: Current.user
+      )
+    end
 
     def load_available_tools
       Collavre::McpService.available_tools(Current.user).map do |tool|
@@ -89,6 +158,41 @@ module Collavre
           parameters: tool[:params]
         }
       end
+    end
+
+    def assign_ai_gateway(ai_params)
+      effective_vendor = (ai_params[:llm_vendor].presence || @user.llm_vendor).to_s.strip.downcase
+      if effective_vendor == "cli_proxy" && ai_params.key?(:agent_gateway_id)
+        gateways = gateway_owner_for(@user).owned_agent_gateways
+        gateway = if ai_params[:agent_gateway_id].to_s == @user.agent_gateway_id.to_s
+          gateways.find_by(id: ai_params[:agent_gateway_id])
+        else
+          gateways.active.find_by(id: ai_params[:agent_gateway_id])
+        end
+        ai_params[:agent_gateway_id] = gateway&.id
+      elsif effective_vendor != "cli_proxy" && ai_params.key?(:llm_vendor)
+        ai_params[:agent_gateway_id] = nil
+      end
+    end
+
+    def selected_agent_gateway
+      return unless params[:llm_vendor].to_s.strip.downcase == "cli_proxy"
+
+      Current.user.owned_agent_gateways.active.find_by(id: params[:agent_gateway_id])
+    end
+
+    def gateway_owner_for(agent)
+      agent.creator || Current.user
+    end
+
+    def editable_agent_gateways(agent)
+      gateways = gateway_owner_for(agent).owned_agent_gateways
+      selected_gateway = gateways.find_by(id: agent.agent_gateway_id)
+      (chat_capable_agent_gateways(gateway_owner_for(agent)) + [ selected_gateway ]).compact.uniq.sort_by(&:name)
+    end
+
+    def chat_capable_agent_gateways(owner)
+      owner.owned_agent_gateways.active.order(:name).select(&:chat_capable?)
     end
 
     def set_user_for_ai_actions

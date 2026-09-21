@@ -25,6 +25,100 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     )
   end
 
+  test "engine login failure creates an inline card without dispatching another agent" do
+    workspace = Struct.new(:id).new(42)
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)
+    client = Object.new
+    client.define_singleton_method(:chat) { |*args, **kwargs| raise error }
+    client.define_singleton_method(:handed_off?) { false }
+    AiClient.stub(:new, client) do
+      Collavre::AiAgent::A2aDispatcher.stub(:new, ->(*) { flunk "login cards must not dispatch agents" }) do
+        assert_nil AiAgentService.new(@task).call
+      end
+    end
+    reply = @task.reload.reply_comment
+    assert_includes reply.content, "codex"
+    assert_nil reply.action
+    assert_not reply.private?, "Login cards require public reply broadcasts"
+    assert @task.trigger_event_payload["handoff_failed"]
+    assert_equal({ "engine" => "codex", "workspace_id" => 42, "retryable" => true }, @task.trigger_event_payload["engine_login"])
+  end
+
+  [ true, false ].each do |with_comment|
+    test "login requirement is logged with safe identifiers #{with_comment ? 'with' : 'without'} a reply" do
+      unless with_comment
+        @task.update!(trigger_event_name: "creative_updated", trigger_event_payload: @task.trigger_event_payload.except("comment"))
+      end
+      workspace = Struct.new(:id).new(42)
+      error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)
+      client = Object.new
+      client.define_singleton_method(:chat) { |*args, **kwargs| raise error }
+      client.define_singleton_method(:handed_off?) { false }
+      messages = []
+      Rails.logger.stub(:info, ->(message = nil, &block) { messages << (message || block&.call) }) do
+        AiClient.stub(:new, client) { assert_nil AiAgentService.new(@task).call }
+      end
+      reply = @task.reload.reply_comment
+      assert_nil reply unless with_comment
+      assert_includes messages, "[AiAgent] engine_unauthenticated task_id=#{@task.id} agent_id=#{@agent.id} " \
+                                "engine=codex workspace_id=42 reply_comment_id=#{reply&.id || 'none'}"
+    end
+  end
+
+  test "login failure after partial output preserves content without allowing automatic replay" do
+    workspace = Struct.new(:id).new(42)
+    error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "claude", workspace: workspace)
+    client = Object.new
+    client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+      block.call("Partial response")
+      raise error
+    end
+    client.define_singleton_method(:handed_off?) { true }
+    AiClient.stub(:new, client) { AiAgentService.new(@task).call }
+    assert_includes @task.reload.reply_comment.content, "Partial response"
+    assert_not @task.trigger_event_payload["engine_login"]["retryable"]
+    assert @task.trigger_event_payload["handed_off"]
+    assert_not @task.trigger_event_payload["handoff_failed"]
+  end
+
+  %w[cancelled failed].each do |status|
+    [ "", "Partial response" ].each do |content|
+      test "#{status} before login recording preserves #{content.empty? ? 'empty' : 'partial'} cancellation cleanup" do
+        error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: Struct.new(:id).new(42))
+        client = Object.new
+        client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+          block.call(content) if content.present?
+          raise error
+        end
+        client.define_singleton_method(:handed_off?) { content.present? }
+        record = Collavre::CliProxy::InlineLogin.method(:record!)
+        # Settle a separate instance after the lifecycle check but before the row lock.
+        interrupted_record = lambda do |task, *args, **kwargs|
+          Task.find(task.id).update!(status: status)
+          assert task.running?, "The worker must still hold a stale running instance"
+          record.call(task, *args, **kwargs)
+        end
+
+        AiClient.stub(:new, client) do
+          Collavre::CliProxy::InlineLogin.stub(:record!, interrupted_record) do
+            assert_raises(Collavre::CancelledError) { AiAgentService.new(@task).call }
+          end
+        end
+
+        assert_equal status, @task.reload.status
+        assert_nil @task.trigger_event_payload["engine_login"]
+        assert_nil @task.trigger_event_payload["handoff_failed"]
+        assert @task.task_actions.exists?(action_type: status)
+        if content.empty?
+          assert_nil @task.reply_comment
+        else
+          assert_equal content, @task.reply_comment.content
+          assert @task.trigger_event_payload["handed_off"]
+        end
+      end
+    end
+  end
+
   test "creates placeholder and streams content into it" do
     mock_client = Minitest::Mock.new
 
@@ -157,12 +251,12 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.handed_off? = true
 
     dispatched = false
-    original_dispatch = Collavre::SystemEvents::Dispatcher.method(:dispatch)
-
-    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(event_name, context) {
+    Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(event_name, context, **options) {
       dispatched = true
       assert_equal "comment_created", event_name
       assert_equal "@AgentB: 이 주제에 대해 어떻게 생각해?", context[:comment][:content]
+      assert_equal @user.id, context[:workspace_user_id]
+      assert_equal "a2a", options[:source]
     } do
       AiClient.stub :new, mock_client do
         AiAgentService.new(@task).call
@@ -170,6 +264,123 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     end
 
     assert dispatched, "Expected A2A dispatch to be called for AI agent mention"
+  end
+
+  test "uses the carried human workspace principal for an A2A turn" do
+    upstream_agent = User.create!(
+      email: "upstream-a2a-agent@ai.local",
+      password: SecureRandom.hex(24),
+      name: "UpstreamA2AAgent",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash"
+    )
+    upstream_reply = @creative.comments.create!(
+      content: "A2A request",
+      user: upstream_agent,
+      topic: @comment.topic,
+      skip_dispatch: true
+    )
+    parent = Collavre::SystemEvents::Envelope.root("comment_created", source: "test")
+    @task.update!(
+      trigger_event_payload: {
+        "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => upstream_reply.topic_id },
+        "workspace_user_id" => @user.id,
+        "event" => parent.to_h
+      }
+    )
+
+    mock_client = Minitest::Mock.new
+    def mock_client.chat(messages, tools: [])
+      yield "Downstream response"
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    captured_context = nil
+    current_agent_turn = nil
+    client_factory = lambda do |**options|
+      captured_context = options[:context]
+      current_agent_turn = Current.agent_turn
+      mock_client
+    end
+
+    AiClient.stub :new, client_factory do
+      AiAgentService.new(@task).call
+    end
+
+    assert_equal @user, captured_context[:workspace_user]
+    assert_not_equal upstream_agent, captured_context[:workspace_user]
+    assert_equal @user, current_agent_turn[:user]
+    assert_equal @task, current_agent_turn[:task]
+    assert_equal parent, Collavre::SystemEvents::Envelope.in(current_agent_turn[:task].trigger_event_payload)
+    assert_nil Current.agent_turn
+  end
+
+  test "does not fall back to the creator for an explicitly cleared workspace principal" do
+    upstream_agent = users(:ai_bot)
+    upstream_reply = @creative.comments.create!(
+      content: "Re-anchored A2A request",
+      user: upstream_agent,
+      topic: @comment.topic,
+      skip_dispatch: true
+    )
+    @task.update!(
+      trigger_event_payload: {
+        "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
+        "creative" => { "id" => @creative.id },
+        "workspace_user_id" => nil
+      }
+    )
+
+    service = AiAgentService.new(@task)
+    service.instance_variable_set(:@original_comment, upstream_reply)
+
+    assert_nil service.send(:workspace_user)
+  end
+
+  test "carries an explicitly cleared workspace principal across the next A2A hop" do
+    downstream_agent = User.create!(
+      email: "cleared-principal-downstream@ai.local",
+      password: SecureRandom.hex(24),
+      name: "ClearedPrincipalDownstream",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash",
+      system_prompt: "Help"
+    )
+    upstream_reply = @creative.comments.create!(
+      content: "Re-anchored A2A request",
+      user: @agent,
+      topic: @comment.topic,
+      skip_dispatch: true
+    )
+    @task.update!(
+      trigger_event_payload: {
+        "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => upstream_reply.topic_id },
+        "workspace_user_id" => nil
+      }
+    )
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) { |_messages, tools: [], &block| block.call("@#{downstream_agent.name}: continue") }
+    mock_client.define_singleton_method(:last_handoff_failed?) { false }
+    mock_client.define_singleton_method(:handed_off?) { true }
+    dispatched = nil
+    current_agent_turn = nil
+    client_factory = lambda do |**_options|
+      current_agent_turn = Current.agent_turn
+      mock_client
+    end
+
+    SystemEvents::Dispatcher.stub(:dispatch, ->(_event_name, payload, **_options) { dispatched = payload }) do
+      AiClient.stub(:new, client_factory) { AiAgentService.new(@task).call }
+    end
+
+    assert dispatched.key?(:workspace_user_id)
+    assert_nil dispatched[:workspace_user_id]
+    assert_nil current_agent_turn[:user]
   end
 
   test "does not dispatch A2A when AI response mentions a human user" do
@@ -504,6 +715,25 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_equal "failed", @task.reload.status
     assert_not @task.task_actions.exists?(action_type: "completion"),
                "an externally failed turn must not enter response finalization"
+  end
+
+  [ { private: true }, { action: '{"tool":"approval"}' } ].each do |change|
+    test "source revocation #{change.keys.first} after prompt preparation prevents provider handoff" do
+      source = @comment
+      client = Object.new
+      client.define_singleton_method(:chat) { |*| raise "revoked source must not reach the provider" }
+      client.define_singleton_method(:handed_off?) { false }
+      service = AiAgentService.new(@task)
+      service.define_singleton_method(:build_ai_client) do |_prompt|
+        source.update!(change)
+        client
+      end
+
+      assert_raises(Collavre::CancelledError) { service.call }
+      assert @task.reload.cancelled?
+      assert_not @task.task_actions.exists?(action_type: "completion")
+      assert_not Collavre::Orchestration::DeliveryRecord.handed_off?(@task.trigger_event_payload)
+    end
   end
 
   test "force-checks terminal status immediately before starting the provider call" do

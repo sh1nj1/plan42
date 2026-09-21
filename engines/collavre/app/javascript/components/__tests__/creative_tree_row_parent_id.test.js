@@ -14,17 +14,19 @@
 // The component calls `customElements.define(...)` at module-eval time and reads
 // `customElements` as a bare global. The jest environment only exposes it on
 // `window`, so bridge it before importing the component.
+import { jest } from '@jest/globals'
+
 beforeAll(() => {
   if (typeof globalThis.customElements === "undefined") {
     globalThis.customElements = window.customElements;
   }
 });
 
-async function mountRow(props) {
+async function mountRow(props, parent = document.body) {
   await import("../creative_tree_row.js");
   const el = document.createElement("creative-tree-row");
   Object.assign(el, props);
-  document.body.appendChild(el);
+  parent.appendChild(el);
   await el.updateComplete;
   return el;
 }
@@ -39,6 +41,17 @@ afterEach(() => {
 });
 
 describe("creative-tree-row parentId convention", () => {
+  test("uses the shared chevrons for collapsed and expanded branches", async () => {
+    const el = await mountRow({ creativeId: "8", hasChildren: true, expanded: true });
+
+    expect(el.querySelector(".creative-toggle-btn path").getAttribute("d")).toBe("M6 9L12 15L18 9");
+
+    el.expanded = false;
+    await el.updateComplete;
+
+    expect(el.querySelector(".creative-toggle-btn path").getAttribute("d")).toBe("M9 6L15 12L9 18");
+  });
+
   test("non-title row under a page-title parent keeps the parent id", async () => {
     const el = await mountRow({ creativeId: "8", parentId: "5", level: 2 });
     const tree = treeOf(el);
@@ -83,5 +96,22 @@ describe("creative-tree-row parentId convention", () => {
 
     const derivedParentId = prev.dataset.parentId || "";
     expect(derivedParentId).toBe("5"); // sibling inherits the page-title parent
+  });
+
+  test("content navigation stays inside the persistent workspace frame", async () => {
+    const frame = document.createElement("turbo-frame");
+    frame.id = "creative-workspace-content";
+    document.body.appendChild(frame);
+    const visit = jest.fn();
+    window.Turbo = { visit };
+    const el = await mountRow({ creativeId: "8", linkUrl: "/creatives/8" }, frame);
+
+    el.querySelector(".creative-content").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    expect(visit).toHaveBeenCalledWith("/creatives/8", {
+      action: "advance",
+      frame: "creative-workspace-content",
+    });
+    delete window.Turbo;
   });
 });

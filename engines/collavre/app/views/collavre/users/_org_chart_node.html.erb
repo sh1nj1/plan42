@@ -8,7 +8,7 @@
 <details class="org-chart-group" <%= 'open' if depth == 0 %>>
   <summary class="org-chart-creative-row <%= 'org-chart-depth-0' if depth == 0 %>" style="--depth: <%= depth %>">
     <span class="org-chart-creative-icon"><%= depth == 0 ? '📂' : '📁' %></span>
-    <%= link_to strip_tags(creative.effective_description.to_s).truncate(60),
+    <%= link_to Collavre::HtmlText.truncated_label(creative.effective_description, 60),
         collavre.creative_path(creative),
         class: "org-chart-creative-link" %>
     <% if effective.user_id == Current.user.id %>

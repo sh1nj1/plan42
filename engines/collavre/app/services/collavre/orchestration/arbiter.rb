@@ -22,7 +22,7 @@ module Collavre
       # Select which agents will respond from the candidates
       # @param candidates [Array<User>] Qualified agents from Matcher
       # @return [Array<User>] Agents that will actually respond
-      def select(candidates)
+      def select(candidates, commit: true)
         return [] if candidates.empty?
 
         # Review feedback is forced routing: the Matcher already restricts candidates
@@ -33,7 +33,7 @@ module Collavre
         return candidates if review_message?
 
         # Mentions are forced routing too: the Matcher already narrowed candidates
-        # to the single @mentioned agent. Arbitration must not second-guess it —
+        # to the @mentioned agents. Arbitration must not second-guess it —
         # with a topic primary agent pinned, arbitration_strategy is
         # "primary_first", and a mention of any OTHER agent would otherwise be
         # dropped for not being the primary. Explicitly inviting a second agent
@@ -47,7 +47,16 @@ module Collavre
         max = @policy_resolver.max_responders
         selected = selected.take(max) if max.present? && max.positive?
 
+        commit_selection! if commit
         selected
+      end
+
+      def commit_selection!
+        pending = @pending_round_robin
+        return unless pending
+
+        Rails.cache.write(pending.first, pending.second, expires_in: 24.hours)
+        @pending_round_robin = nil
       end
 
       private
@@ -62,13 +71,19 @@ module Collavre
       end
 
       # True when the Matcher routed by @mention (mirrors Matcher#match_by_mention).
-      # Only an AI mention produces candidates; a human mention yields [] and never
-      # reaches the Arbiter.
+      # Only an AI mention produces candidates; a mention naming nobody but humans
+      # yields [] and never reaches the Arbiter.
+      #
+      # Reads the mentions through the same ContextBuilder reader the Matcher
+      # uses: asked separately, the two would drift, and this side losing sight
+      # of a mention re-imposes the arbitration the mention exists to escape —
+      # in a pinned topic, primary_first would drop every non-primary agent that
+      # was explicitly invited.
       def mention_routed?
-        mentioned_id = @context.dig("chat", "mentioned_user", "id")
-        return false if mentioned_id.blank?
+        ids = SystemEvents::ContextBuilder.mentioned_ids_in(@context)
+        return false if ids.empty?
 
-        User.find_by(id: mentioned_id)&.ai_user? || false
+        User.where(id: ids).any?(&:ai_user?)
       end
 
       def apply_strategy(strategy, candidates)
@@ -140,8 +155,7 @@ module Collavre
                      sorted_candidates.first
         end
 
-        # Store current responder for next rotation
-        Rails.cache.write(cache_key, selected.id, expires_in: 24.hours)
+        @pending_round_robin = [ cache_key, selected.id ]
 
         [ selected ]
       end

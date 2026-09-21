@@ -1,20 +1,63 @@
+<% creative_index_content = capture do %>
+<% if creative_workspace? %>
+  <%= tag.div id: "workspace-navigation-state-#{@parent_creative&.id || 'root'}",
+              hidden: true,
+              data: {
+                workspace_navigation_state: true,
+                creative_id: @parent_creative&.id,
+                creative_path: @workspace_path_ids,
+                creative_snippet: @parent_creative&.creative_snippet,
+                can_comment: @parent_creative&.has_permission?(Current.user, :feedback),
+                last_visited_creative_visit_token: @last_visited_creative_token,
+                last_visited_creative_visit_sequence: @last_visited_creative_visit_sequence
+              } %>
+<% end %>
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
-<% if authenticated? %>
+<%# In workspace mode the creative-tree stream source lives in the persistent
+    shell (_workspace_tree) so center-frame swaps never drop the subscription %>
+<% if authenticated? && !creative_workspace? %>
   <%= turbo_stream_from Current.user, :creative_tree %>
+  <div id="creative-history-toast-container" class="creative-history-toast-container"></div>
 <% end %>
 <% if @auto_fullscreen %>
   <% content_for :comments_popup_auto_fullscreen, "true" %>
 <% end %>
+<% if authenticated? && !creative_workspace? && @parent_creative %>
+  <%= tag.div(
+        nil,
+        hidden: true,
+        data: {
+          controller: "last-visited-creative",
+          last_visited_creative_url_value: creatives_path,
+          last_visited_creative_creative_id_value: @parent_creative.id,
+          last_visited_creative_visit_token_value: @last_visited_creative_token,
+          last_visited_creative_visit_sequence_value: @last_visited_creative_visit_sequence
+        }
+      ) %>
+<% end %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal"
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal creative-image-lightbox"
+     data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
+     data-creative-image-lightbox-i18n-open-value="<%= t('collavre.comments.lightbox.open_image') %>"
+     data-creative-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
+     data-creative-image-lightbox-i18n-previous-value="<%= t('collavre.comments.lightbox.previous') %>"
+     data-creative-image-lightbox-i18n-next-value="<%= t('collavre.comments.lightbox.next') %>"
+     data-creative-image-lightbox-i18n-zoom-in-value="<%= t('collavre.comments.lightbox.zoom_in') %>"
+     data-creative-image-lightbox-i18n-zoom-out-value="<%= t('collavre.comments.lightbox.zoom_out') %>"
+     data-creative-image-lightbox-i18n-zoom-reset-value="<%= t('collavre.comments.lightbox.zoom_reset') %>"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('collavre.creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
      data-creatives--import-failed-value="<%= t('collavre.creatives.index.import_failed') %>"
      data-creatives--import-only-markdown-value="<%= t('collavre.creatives.index.only_markdown') %>"
+     data-creatives--drag-drop-partial-failure-text-value="<%= t('collavre.creatives.drag_drop.partial_failure') %>"
      data-creatives--import-dragover-class="dragover">
   <% current_creative = @parent_creative || @creative %>
   <% can_manage_integrations = current_creative&.has_permission?(Current.user, :admin) %>
+  <%# Reused for the header Add button, the Import menu item, and the empty-state
+      CTAs: root level is always addable for authenticated users; a nested level
+      additionally requires write permission on @parent_creative. %>
+  <% can_add = authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
 
   <div class="creative-actions-row">
     <%# Left: breadcrumb ancestry %>
@@ -22,21 +65,24 @@
       <% if @parent_creative && authenticated? %>
         <span id="creative-presence-avatars" class="creative-presence-avatars"></span>
       <% end %>
-      <a href="<%= creatives_path %>" class="creative-breadcrumb-link"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
+      <a href="<%= creatives_path %>" class="creative-breadcrumb-link" data-turbo-action="advance"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
       <% if @parent_creative %>
         <% @parent_creative.ancestors.reverse.each do |ancestor| %>
           <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" title="<%= strip_tags(ancestor.effective_description) %>"><%= truncate(strip_tags(ancestor.effective_description), length: 20) %></a>
+          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-turbo-action="advance" data-turbo-prefetch="false" title="<%= Collavre::HtmlText.label(ancestor.effective_description) %>"><%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %></a>
         <% end %>
         <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace"><%= truncate(strip_tags(@parent_creative.effective_description), length: 30) %></a>
+        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace" data-turbo-prefetch="false"><%= Collavre::HtmlText.truncated_label(@parent_creative.effective_description, 30) %></a>
       <% end %>
     </div>
 
     <%# Right: primary actions + overflow %>
     <div class="creative-header-actions">
+      <% if workflow_editor_creative?(current_creative) %>
+        <%= link_to t('collavre.workflow.editor.title'), edit_creative_path(current_creative), class: 'creative-header-outline-btn', data: { turbo_frame: '_top' } %>
+      <% end %>
       <%# Add button (always visible) %>
-      <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+      <%= render 'add_button' if can_add %>
 
       <%# Expand/collapse toggle (always visible) %>
       <button id="expand-all-btn" class="creative-header-outline-btn" title="<%= t('app.expand_all') %>" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand">
@@ -56,12 +102,16 @@
             button_content: '⋯',
             menu_id: 'creative-overflow-menu',
             align: :right,
-            button_classes: 'creative-header-outline-btn'
+            button_classes: 'creative-header-outline-btn',
+            button_attributes: { aria: { controls: 'creative-overflow-menu', expanded: false } }
           ) do %>
         <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
           <button type="button" id="share-creative-btn" class="popup-menu-item" data-action="click->share-modal#open" data-share-modal-url-param="<%= collavre.creative_creative_shares_path(current_creative) %>">
             <span aria-hidden="true"><%= svg_tag 'share.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.share') %>
           </button>
+        <% end %>
+        <% if current_creative %>
+          <%= render_creative_move_action(current_creative, current_creative&.has_permission?(Current.user, :write) && !current_creative.effective_origin.read_only_source?) %>
         <% end %>
         <% if authenticated? %>
           <button type="button" id="select-creative-btn" class="popup-menu-item" data-select-text="<%= t('app.select') %>" data-cancel-text="<%= t('app.cancel_select') %>" data-action="click->creatives--select-mode#toggle" data-creatives--select-mode-target="toggle">
@@ -69,12 +119,12 @@
           </button>
         <% end %>
         <% if @parent_creative.present? %>
-          <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' do %>
+          <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item', form: { data: { turbo_frame: '_top' } } do %>
             <span aria-hidden="true"><%= svg_tag 'slide.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.slide_view') %>
           <% end %>
         <% end %>
         <div class="creative-overflow-divider"></div>
-        <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+        <% if can_add %>
           <button type="button" id="import-markdown-btn" class="popup-menu-item" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle">
             <span aria-hidden="true"><%= svg_tag 'arrow-down.svg', width: 16, height: 16 %></span> <%= t('.import_markdown') %>
           </button>
@@ -144,7 +194,7 @@
 
 <% if @parent_creative %>
   <% content_for :head do %>
-    <meta property="og:title" content="<%= strip_tags(@parent_creative.effective_origin.description) %>">
+    <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
   <% end %>
   <% title_templates = [
         content_tag(:template, data: { part: "description" }) { embed_youtube_iframe(@parent_creative.effective_description) },
@@ -210,35 +260,55 @@
 <% end %>
 
 <%
-  empty_html = nil
-  if (@creatives || []).blank?
-    if params[:search].present?
-      empty_html = content_tag(:p, t('.no_search_results'), style: 'text-align: center;')
+  empty_body =
+    if any_filter_active?
+      content_tag(:p, t('.no_search_results'), style: 'text-align: center;')
     elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read)
       message = content_tag(:p, t('.no_permission'), style: 'text-align: center;')
       action = content_tag(:div, button_to(t('.request_permission'), request_permission_creative_path(@creative), method: :post), style: 'text-align: center;')
-      empty_html = message + action
+      message + action
     else
-      text = params[:id] ? t('.no_sub_creatives') : t('.no_creatives')
-      empty_html = content_tag(:p, text, style: 'text-align: center;')
+      render('empty_state', root: params[:id].blank?, can_add: can_add, creative: @parent_creative)
     end
-  end
+  # data-creatives-empty-state marks the placeholder so client-side row insertion
+  # (inline editor / websocket broadcast) can hide it as soon as the tree is no
+  # longer empty, and show it again when the last row is removed.
+  # See app/javascript/modules/creative_tree_empty_state.js.
+  empty_html = content_tag(:div, empty_body, data: { creatives_empty_state: '' })
+  # Distinct fallback for when the async tree fetch itself fails (non-2xx,
+  # JSON parse failure, or a non-transient network error after retries are
+  # exhausted). Must NOT include the Add/Import CTAs the empty state carries:
+  # the request never confirmed the tree is empty, so offering creation actions
+  # here would mislead a user whose workspace already has creatives. Passed as
+  # text, not markup — the client builds the element, so there is no HTML sink.
+  error_text = t('.load_error')
   # Only pass filter parameters to avoid unnecessary params in URL
   tree_params = params.to_unsafe_h.slice(
     "id", "tags", "min_progress", "max_progress", "search", "comment",
-    "has_comments", "due_before", "due_after", "has_due_date",
+    "has_comments", "has_cron", "due_before", "due_after", "has_due_date",
     "assignee_id", "unassigned", "show_archived", "search_mode"
   ).merge(format: :json)
   tree_url = creatives_path(tree_params)
 %>
 
+<%# The tree is client-rendered, so the empty state lives *only* in this template.
+    Rendering it inside #creatives would paint "No sub-creatives yet" on the very
+    first frame — before Stimulus has even booted, let alone confirmed the tree is
+    empty — which reads as a false empty state on every page load. #creatives gets
+    a loading placeholder instead, and the client clones this template once the
+    fetch actually reports zero rows (or the last row is removed). A <template> is
+    cloned, never parsed from a string, so no HTML sink is involved and the
+    button_to CSRF token stays intact. %>
+<%= tag.template(empty_html, id: 'creatives-empty-state-template') %>
+
 <%= tag.div(
-      empty_html,
+      render('tree_loading_placeholder'),
       id: 'creatives',
       data: {
         controller: 'creatives--tree creatives--sync',
         'creatives--tree-url-value': tree_url,
-        'creatives--tree-empty-html-value': empty_html.to_s,
+        'creatives--tree-error-text-value': error_text,
+        'creatives--tree-loading-text-value': t('.loading_creatives'),
         'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
         'creatives--sync-current-user-id-value': Current.user&.id,
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),
@@ -254,3 +324,11 @@
   <%= render 'integration_modals', creative: current_creative %>
 <% end %>
 </div>
+<% end %>
+<% if creative_workspace? %>
+  <%= turbo_frame_tag "creative-workspace-content" do %>
+    <%= creative_index_content %>
+  <% end %>
+<% else %>
+  <%= creative_index_content %>
+<% end %>

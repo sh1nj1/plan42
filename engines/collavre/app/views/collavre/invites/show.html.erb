@@ -1,4 +1,4 @@
-<% creative_title = CGI.unescapeHTML(strip_tags(@invitation.creative.effective_origin.description).to_s).squish %>
+<% creative_title = Collavre::HtmlText.label(@invitation.creative.effective_origin.description) %>
 <% meta_title = t(".meta.title", creative: creative_title) %>
 <% content_for :title, meta_title %>
 <% content_for :head do %>
@@ -12,7 +12,7 @@
 <% end %>
 
 <h1 class="no-top-margin"><%= t('.title') %></h1>
-<p><%= t('collavre.invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: strip_tags(@invitation.creative.effective_origin.description)) %></p>
+<p><%= t('collavre.invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: creative_title) %></p>
 <p><%= t('collavre.invites.show.prompt') %></p>
 <p>
   <%= link_to t('collavre.invites.show.login'), new_session_path(invite_token: params[:token]) %> |

@@ -1,0 +1,1386 @@
+/**
+ * @jest-environment jsdom
+ */
+
+import { Application } from '@hotwired/stimulus'
+import { jest } from '@jest/globals'
+import WorkspaceTreeController from '../workspace_tree_controller'
+
+describe('WorkspaceTreeController', () => {
+  let application
+  let controller
+  let fetchMock
+  let preventNavigation
+
+  test('keeps workspace rows free of move buttons', () => {
+    expect(controller.treeTarget.querySelector('[data-creative-move-id]')).toBeNull()
+    expect(controller.treeTarget.querySelectorAll('.creative-workspace-tree-link')).toHaveLength(2)
+  })
+
+  beforeEach(async () => {
+    window.localStorage.clear()
+    fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
+      url === '/creatives/next_last_visited_sequence'
+        ? { ok: true, headers: new Headers(), json: async () => ({ sequence: 2 }) }
+        : {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+        creatives: [
+          {
+            id: 1,
+            label: 'Root',
+            snippet: 'Root chat',
+            can_comment: true,
+            url: '/creatives?id=1',
+            children: [
+              {
+                id: 2,
+                label: 'Current branch',
+                snippet: 'Branch chat',
+                can_comment: false,
+                url: '/creatives?id=2',
+                children: [],
+              },
+            ],
+          },
+        ],
+          }),
+        }
+    ))
+    global.fetch = fetchMock
+    window.history.replaceState({}, '', '/creatives?id=2')
+    preventNavigation = (event) => event.preventDefault()
+    document.addEventListener('click', preventNavigation)
+    document.body.innerHTML = `
+      <section data-controller="workspace-tree"
+               data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
+               data-workspace-tree-last-visited-creative-url-value="/creatives"
+               data-workspace-tree-last-visited-creative-visit-token-value="server-token"
+               data-workspace-tree-last-visited-creative-visit-sequence-value="1"
+               data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-loading-text-value="Loading"
+               data-workspace-tree-empty-text-value="Empty"
+               data-workspace-tree-error-text-value="Error">
+        <button data-workspace-tree-target="panelToggle" data-action="workspace-tree#togglePanel" aria-expanded="false"></button>
+        <nav data-workspace-tree-target="tree"></nav>
+      </section>
+      <turbo-frame id="creative-workspace-content">
+        <div data-workspace-navigation-state
+             data-creative-id="2"
+             data-creative-snippet="Branch chat"
+             data-can-comment="false"
+             data-creative-path="[1,2,3]"
+             data-last-visited-creative-visit-token="server-token"
+             data-last-visited-creative-visit-sequence="1"></div>
+      </turbo-frame>
+    `
+
+    application = Application.start()
+    application.register('workspace-tree', WorkspaceTreeController)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const controllerElement = document.querySelector('[data-controller="workspace-tree"]')
+    controller = application.getControllerForElementAndIdentifier(controllerElement, 'workspace-tree')
+  })
+
+  afterEach(() => {
+    controller.disconnect()
+    application.stop()
+    document.removeEventListener('click', preventNavigation)
+    document.body.innerHTML = ''
+    window.localStorage.clear()
+    delete global.fetch
+  })
+
+  test('renders the tree, expands the current path, and marks the deepest visible node', () => {
+    const [requestUrl, requestOptions] = fetchMock.mock.calls[0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['1', '2', '3'])
+    expect(requestOptions).toEqual(expect.objectContaining({ headers: { Accept: 'application/json' } }))
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
+    expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
+    expect(document.querySelector('[data-creative-id="2"] a').getAttribute('aria-current')).toBe('page')
+    expect(document.querySelector('[data-creative-id="2"] a').dataset.turboFrame).toBe('creative-workspace-content')
+    expect(document.querySelector('[data-creative-id="2"] a').dataset.turboAction).toBe('advance')
+    expect(document.querySelector('[data-creative-id="2"] a').dataset.turboPrefetch).toBe('false')
+    expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
+    expect(document.querySelector('.creative-workspace-tree-branch-toggle svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
+  })
+
+
+  test('retains the actual parent of a branch displayed at the top level', () => {
+    const element = document.querySelector('[data-controller="workspace-tree"]')
+    const controller = application.getControllerForElementAndIdentifier(element, 'workspace-tree')
+    controller.render([{ id: 50, parent_id: 49, label: 'Shared branch', url: '/creatives?id=50', children: [] }])
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="50"]')
+    expect(item.dataset.parentId).toBe('49')
+    expect(item.querySelector('.creative-workspace-tree-row').dataset.parentId).toBe('49')
+    expect(item.dataset.level).toBe('1')
+  })
+
+  test('renders rows as creative drag handles without native link dragging', () => {
+    const rootItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    const childItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="2"]')
+    const childRow = childItem.querySelector(':scope > .creative-workspace-tree-row')
+    const childLink = childRow.querySelector('.creative-workspace-tree-link')
+
+    expect(rootItem.dataset.level).toBe('1')
+    expect(childItem.dataset.parentId).toBe('1')
+    expect(childItem.dataset.level).toBe('2')
+    expect(childRow.draggable).toBe(true)
+    expect(childRow.dataset.parentId).toBe('1')
+    expect(childLink.draggable).toBe(false)
+  })
+
+  test('expands a drag target without replacing the hovered row', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    const hoveredRow = item.querySelector(':scope > .creative-workspace-tree-row')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+
+    await controller.expandBranchForDrag('1')
+
+    expect(document.getElementById('workspace-creative-1')).toBe(hoveredRow)
+    expect(item.dataset.expanded).toBe('true')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).not.toBeNull()
+  })
+
+  // Nesting a row under a collapsed branch would drop it out of this partial
+  // view entirely, leaving the user with no sign the move landed.
+  test('opens the destination branch before refreshing after a nesting drop', () => {
+    controller.expandedCreativeIds.delete('1')
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '1', direction: 'child' },
+    }))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+  })
+
+  // The centre pane reloads its own tree on a drop, so a request that started
+  // before the drop can answer after it — and it must not close the branch the
+  // drop just revealed.
+  test('keeps the destination open when an older tree response lands after the drop', async () => {
+    let answerInFlight
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      answerInFlight = () => resolve({ ok: true, headers: new Headers(), json: async () => ({ creatives: [] }) })
+    }))
+    const inFlight = controller.load({ showLoading: false })
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '7', direction: 'child' },
+    }))
+    answerInFlight()
+    await inFlight
+
+    expect(controller.expandedCreativeIds.has('7')).toBe(true)
+
+    fetchMock.mockClear()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    const [requestedUrl] = fetchMock.mock.calls.find(([url]) => url.includes('workspace_tree=1'))
+    expect(requestedUrl).toContain('expand%5B%5D=7')
+  })
+
+  test('leaves the expansion set alone for a sibling drop', () => {
+    controller.expandedCreativeIds.delete('1')
+
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', {
+      detail: { creativeIds: ['9'], targetCreativeId: '1', direction: 'down' },
+    }))
+    window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', { detail: {} }))
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('collapses a stale drag target when its refreshed branch is empty', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1', has_children: false, children: [] }] }),
+    })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.hasChildren).toBe('false')
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).toBeNull()
+    expect(item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')).toBeNull()
+    expect(item.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-spacer')).not.toBeNull()
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('treats malformed children as empty while resolving a hover target among unrelated nodes', async () => {
+    const item = controller.findWorkspaceItem('1')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ creatives: [
+        { id: 99, children: { id: 100 } },
+        { id: 1, label: 'Root', children: null },
+      ] }),
+    })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.dataset.hasChildren).toBe('false')
+    expect(item.querySelector('.creative-workspace-tree-list')).toBeNull()
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+  })
+
+  test('renders a standalone root row with a useful action name when the optional label is absent', () => {
+    const item = controller.buildNode({ id: 20, label: 'Standalone root', url: '/creatives?id=20' })
+    const row = item.querySelector('.creative-workspace-tree-row')
+    expect(item.dataset.level).toBe('1')
+    expect(item.dataset.parentId).toBeUndefined()
+    expect(row.dataset.level).toBe('1')
+    expect(row.draggable).toBe(true)
+    expect(row.querySelector('[data-creative-move-id]')).toBeNull()
+  })
+
+  test('skips a branch request for a target that is already open', async () => {
+    fetchMock.mockClear()
+
+    await controller.expandBranchForDrag('1')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('collapses an empty nested drag target found deeper in the payload', async () => {
+    const childItem = document.querySelector('.creative-workspace-tree-item[data-creative-id="2"]')
+    childItem.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('2')
+
+    await controller.expandBranchForDrag('2')
+
+    expect(childItem.dataset.expanded).toBe('false')
+    expect(controller.expandedCreativeIds.has('2')).toBe(false)
+  })
+
+  test('leaves the hovered row untouched when the payload omits its branch', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    fetchMock.mockResolvedValueOnce({ ok: true, headers: new Headers(), json: async () => ({}) })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.dataset.expanded).toBe('false')
+  })
+
+  // A hover expansion that fails must not leave the pointer over a row the
+  // controller believes is open — the next re-render would drop the children.
+  test('ignores a hover expansion for a row that is not rendered', async () => {
+    fetchMock.mockClear()
+
+    await controller.expandBranchForDrag('999')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('rolls the expansion back when the branch request fails', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 })
+
+    await controller.expandBranchForDrag('1')
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Failed to expand workspace tree branch: 500' })
+    )
+    consoleError.mockRestore()
+  })
+
+  test('stays quiet when a newer hover supersedes an in-flight branch request', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockRejectedValueOnce(
+      Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' })
+    )
+
+    await controller.expandBranchForDrag('1')
+
+    expect(consoleError).not.toHaveBeenCalled()
+    // The branch never rendered, so it must not linger as expanded state that a
+    // later load would replay onto a row the user only passed over.
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    consoleError.mockRestore()
+  })
+
+  // Hovering a second branch aborts the first request. The abandoned id used to
+  // stay in `expandedCreativeIds`, so coming back to the still-collapsed branch
+  // short-circuited and it could never be expanded again.
+  test('retries a hover expansion whose earlier request was aborted', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+    fetchMock.mockRejectedValueOnce(
+      Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' })
+    )
+
+    await controller.expandBranchForDrag('1')
+    expect(item.dataset.expanded).toBe('false')
+
+    fetchMock.mockClear()
+    await controller.expandBranchForDrag('1')
+
+    expect(fetchMock).toHaveBeenCalled()
+    expect(item.dataset.expanded).toBe('true')
+    consoleError.mockRestore()
+  })
+
+  // A hover response that outlives the reload triggered by a completed drop
+  // would splice the pre-move children back in and overwrite `nodesData`.
+  test('discards a hover expansion answered after a full reload started', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds = new Set(controller.expandedCreativeIds)
+
+    let releaseHover
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseHover = () => resolve({
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({ creatives: [{ id: 1, label: 'Stale', url: '/creatives?id=1', children: [] }] }),
+      })
+    }))
+
+    const hover = controller.expandBranchForDrag('1')
+    await controller.load({ showLoading: false, syncChat: false })
+    const reloadedNodes = controller.nodesData
+    releaseHover()
+    await hover
+
+    expect(controller.nodesData).toBe(reloadedNodes)
+  })
+
+  test.each(['AbortError', 'TypeError'])('a stale %s cannot remove the latest hover expansion', async name => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    let rejectOld
+    fetchMock.mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject }))
+    const oldHover = controller.expandBranchForDrag('1')
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}))
+    controller.expandBranchForDrag('1')
+    rejectOld(Object.assign(new Error('stale request'), { name }))
+    await oldHover
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+  })
+
+  test('aborts an in-flight hover expansion when a full load starts', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    let signal
+    fetchMock.mockImplementationOnce((_url, options) => {
+      signal = options.signal
+      return new Promise(() => {})
+    })
+
+    controller.expandBranchForDrag('1')
+    expect(signal.aborted).toBe(false)
+
+    await controller.load({ showLoading: false, syncChat: false })
+
+    expect(signal.aborted).toBe(true)
+  })
+
+  test('discards a hover response after the drag preview is cleared', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    controller.expandedCreativeIds.delete('1')
+    controller.committedExpandedCreativeIds.delete('1')
+    const renderedNodes = controller.nodesData
+    let releaseResponse
+    let signal
+    fetchMock.mockImplementationOnce((_url, options) => {
+      signal = options.signal
+      return new Promise((resolve) => {
+        releaseResponse = () => resolve({
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            creatives: [{ id: 1, label: 'Stale', url: '/creatives?id=1', children: [{ id: 9 }] }],
+          }),
+        })
+      })
+    })
+
+    const hover = controller.expandBranchForDrag('1')
+    controller.cancelDragExpansion()
+    releaseResponse()
+    await hover
+
+    expect(signal.aborted).toBe(true)
+    expect(item.dataset.expanded).toBe('false')
+    expect(item.querySelector(':scope > .creative-workspace-tree-list')).toBeNull()
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.nodesData).toBe(renderedNodes)
+  })
+
+  test('keeps a successful child drop target expanded for the authoritative reload', () => {
+    controller.expandedCreativeIds.delete('2')
+
+    controller.revealDropDestination({ detail: { targetCreativeId: '2', direction: 'child' } })
+
+    expect(controller.expandedCreativeIds.has('2')).toBe(true)
+  })
+
+  test('nests a branch under a row that never declared its depth', async () => {
+    const item = document.querySelector('.creative-workspace-tree-item[data-creative-id="1"]')
+    item.querySelector(':scope > .creative-workspace-tree-list').remove()
+    item.dataset.expanded = 'false'
+    delete item.dataset.level
+    controller.expandedCreativeIds.delete('1')
+
+    await controller.expandBranchForDrag('1')
+
+    expect(item.querySelector(':scope > .creative-workspace-tree-list [data-creative-id="2"]').dataset.level).toBe('2')
+  })
+
+  test('records the visible creative after a cached Turbo history restore', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/2/remember_last_visited?visit_token=server-token')
+    expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
+    expect(options.headers.get('Accept')).toBe('application/json')
+    expect(options.headers.get('X-CSRF-Token')).toBe('token')
+    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
+  })
+
+  test('records a cached history restore after Turbo reconnects the workspace controller', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.body.innerHTML = `
+      <section data-controller="workspace-tree"
+               data-workspace-tree-url-value="/creatives.json?workspace_tree=1"
+               data-workspace-tree-last-visited-creative-url-value="/creatives"
+               data-workspace-tree-last-visited-creative-visit-token-value="server-token"
+               data-workspace-tree-last-visited-creative-visit-sequence-value="1"
+               data-workspace-tree-current-path-value="[1,2,3]"
+               data-workspace-tree-loading-text-value="Loading"
+               data-workspace-tree-empty-text-value="Empty"
+               data-workspace-tree-error-text-value="Error">
+        <button data-workspace-tree-target="panelToggle" data-action="workspace-tree#togglePanel" aria-expanded="false"></button>
+        <nav data-workspace-tree-target="tree"></nav>
+      </section>
+      <turbo-frame id="creative-workspace-content">
+        <div data-workspace-navigation-state
+             data-creative-id="2"
+             data-creative-snippet="Branch chat"
+             data-can-comment="false"
+             data-creative-path="[1,2,3]"
+             data-last-visited-creative-visit-token="server-token"
+             data-last-visited-creative-visit-sequence="1"></div>
+      </turbo-frame>
+    `
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="workspace-tree"]'),
+      'workspace-tree'
+    )
+
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/2/remember_last_visited?visit_token=server-token')
+    expect(options).toEqual(expect.objectContaining({ method: 'PATCH', credentials: 'same-origin' }))
+    expect(options.headers.get('Accept')).toBe('application/json')
+    expect(options.headers.get('X-CSRF-Token')).toBe('token')
+  })
+
+  test('retries a cached history restore after refreshing a stale CSRF token', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="stale-token">'
+    fetchMock.mockReset()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 2 }), headers: { get: () => null } })
+      .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
+      .mockResolvedValueOnce({ headers: { get: () => 'fresh-token' } })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 3 }), headers: { get: () => null } })
+      .mockResolvedValueOnce({ ok: true, status: 204, headers: { get: () => null } })
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://localhost/creatives?id=2', expect.objectContaining({
+      method: 'HEAD',
+      credentials: 'same-origin',
+      headers: { 'X-Sec-Purpose': 'prefetch' },
+      signal: expect.any(AbortSignal),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock.mock.calls[4][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
+  })
+
+  test('does not retry a restored visit after a newer navigation starts', async () => {
+    document.head.innerHTML = '<meta name="csrf-token" content="stale-token">'
+    let resolveRefresh
+    fetchMock.mockReset()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 2 }), headers: { get: () => null } })
+      .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'advance' } }))
+    resolveRefresh({ headers: { get: () => 'fresh-token' } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('uses the frame response token after workspace navigation', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    frame.innerHTML = `
+      <div data-workspace-navigation-state
+           data-creative-id="1"
+           data-creative-snippet="Root chat"
+           data-can-comment="true"
+           data-creative-path="[1]"
+           data-last-visited-creative-visit-token="new-server-token"
+           data-last-visited-creative-visit-sequence="2"></div>
+    `
+    frame.dispatchEvent(new Event('turbo:frame-load', { bubbles: true }))
+    window.history.replaceState({}, '', '/creatives?id=1')
+
+    document.head.innerHTML = '<meta name="csrf-token" content="token">'
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const [url, options] = fetchMock.mock.calls.at(-1)
+    expect(url).toBe('/creatives/1/remember_last_visited?visit_token=new-server-token')
+    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
+  })
+
+  test('lazily reloads toggled branches and restores focus and scroll', async () => {
+    let branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    controller.treeTarget.scrollTop = 24
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.querySelector('[data-creative-id="1"] > ul')).toBeNull()
+    branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    expect(branchToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(branchToggle.querySelector('svg path').getAttribute('d')).toBe('M9 6L15 12L9 18')
+    expect(document.activeElement).toBe(branchToggle)
+    expect(controller.treeTarget.scrollTop).toBe(24)
+    let requestUrl = fetchMock.mock.calls[1][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['2', '3'])
+
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
+    expect(branchToggle.getAttribute('aria-expanded')).toBe('true')
+    expect(branchToggle.querySelector('svg path').getAttribute('d')).toBe('M6 9L12 15L18 9')
+    expect(document.activeElement).toBe(branchToggle)
+    requestUrl = fetchMock.mock.calls[2][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['2', '3', '1'])
+
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    panelToggle.click()
+    expect(panelToggle.closest('section').classList.contains('is-open')).toBe(true)
+    expect(panelToggle.getAttribute('aria-expanded')).toBe('true')
+
+    document.querySelector('.creative-workspace-tree-link').click()
+    expect(panelToggle.closest('section').classList.contains('is-open')).toBe(false)
+  })
+
+  test.each([100, 260])('closes an open mobile drawer after a horizontal swipe in either direction (%i)', (endX) => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 430 })
+    panelToggle.click()
+    treeRegion.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true,
+      touches: [{ clientX: 180, clientY: 100 }],
+    }))
+    treeRegion.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true,
+      changedTouches: [{ clientX: endX, clientY: 110 }],
+    }))
+
+    expect(treeRegion.classList.contains('is-open')).toBe(false)
+    expect(panelToggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('keeps the drawer open for vertical swipes and desktop gestures', () => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 430 })
+    panelToggle.click()
+    treeRegion.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true,
+      touches: [{ clientX: 180, clientY: 100 }],
+    }))
+    treeRegion.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true,
+      changedTouches: [{ clientX: 170, clientY: 220 }],
+    }))
+    expect(treeRegion.classList.contains('is-open')).toBe(true)
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    treeRegion.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true,
+      touches: [{ clientX: 180, clientY: 100 }],
+    }))
+    treeRegion.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true,
+      changedTouches: [{ clientX: 100, clientY: 110 }],
+    }))
+    expect(treeRegion.classList.contains('is-open')).toBe(true)
+  })
+
+  test('closes an open drawer when the user clicks outside it', () => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 })
+    panelToggle.click()
+
+    document.getElementById('creative-workspace-content').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    expect(treeRegion.classList.contains('is-open')).toBe(false)
+    expect(panelToggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('keeps the tree open after an outside click at three-panel width', () => {
+    const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
+    const treeRegion = panelToggle.closest('section')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    treeRegion.classList.add('is-open')
+    panelToggle.setAttribute('aria-expanded', 'true')
+
+    document.getElementById('creative-workspace-content').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    expect(treeRegion.classList.contains('is-open')).toBe(true)
+    expect(panelToggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  test('preserves link focus across background tree refreshes', async () => {
+    let rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    rootLink.focus()
+
+    await controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    expect(document.activeElement).toBe(rootLink)
+
+    let leafLink = document.querySelector('[data-creative-id="2"] a')
+    leafLink.focus()
+
+    await controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    leafLink = document.querySelector('[data-creative-id="2"] a')
+    expect(document.activeElement).toBe(leafLink)
+  })
+
+  test('keeps the rendered branch state when a lazy reload fails', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    const branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
+    expect(branchToggle.disabled).toBe(false)
+    console.error.mockRestore()
+  })
+
+  test('ignores a stale non-abort failure after a newer tree request commits', async () => {
+    let rejectToggleRequest
+    fetchMock.mockReturnValueOnce(new Promise((_resolve, reject) => {
+      rejectToggleRequest = reject
+    }))
+    const branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1', has_children: true, children: [] }] }),
+    })
+    await controller.load({ showLoading: false, syncChat: false })
+    rejectToggleRequest(new Error('stale offline failure'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+    expect(document.querySelector('[data-creative-id="1"] > ul')).toBeNull()
+  })
+
+  test('reverts an aborted toggle when the latest owner request fails', async () => {
+    let rejectToggleRequest
+    fetchMock.mockReturnValueOnce(new Promise((_resolve, reject) => {
+      rejectToggleRequest = reject
+    }))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    document.querySelector('.creative-workspace-tree-branch-toggle').click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    fetchMock.mockRejectedValueOnce(new Error('refresh failed'))
+    await controller.load({ showLoading: false, syncChat: false })
+    rejectToggleRequest(new DOMException('Aborted', 'AbortError'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(true)
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
+    console.error.mockRestore()
+  })
+
+  test('does not replay a pending drop destination evicted by the expansion bound', async () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+    controller.revealDropDestination({ detail: { targetCreativeId: '9000', direction: 'child' } })
+    const path = Array.from({ length: 100 }, (_, index) => index + 1000)
+    controller.addExpandedPath(path)
+    expect(controller.pendingDropDestinationIds.has('9000')).toBe(false)
+    await controller.load({ showLoading: false, syncChat: false })
+    expect(controller.expandedCreativeIds.has('9000')).toBe(false)
+    expect(controller.expandedCreativeIds.size).toBe(100)
+  })
+
+  test('bounds the expanded branch request state', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+
+    controller.addExpandedPath(Array.from({ length: 101 }, (_value, index) => index + 1000))
+
+    expect(controller.expandedCreativeIds.size).toBe(100)
+    expect(new URL(controller.workspaceTreeUrl(), window.location.origin).searchParams.getAll('expand[]')).toHaveLength(100)
+  })
+
+  test('keeps a connected root prefix when the whole path exceeds the expansion bound', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+
+    const path = Array.from({ length: 101 }, (_value, index) => index + 1000)
+    controller.addExpandedPath(path)
+
+    // Lazy traversal descends only through expanded ancestors, so dropping the
+    // root would collapse the whole tree instead of showing the first 100 levels.
+    expect([...controller.expandedCreativeIds]).toEqual(path.slice(0, 100).map(String))
+  })
+
+  test('evicts unrelated branches before trimming the current path', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+    controller.expandedCreativeIds.add('9000')
+    controller.expandedCreativeIds.add('9001')
+
+    const path = Array.from({ length: 100 }, (_value, index) => index + 1000)
+    controller.addExpandedPath(path)
+
+    expect([...controller.expandedCreativeIds]).toEqual(path.map(String))
+  })
+
+  test('keeps the mounted tree state and switches chat while the center frame navigates', () => {
+    const treeRegion = document.querySelector('[data-controller="workspace-tree"]')
+    const rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+
+    rootLink.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }))
+    window.history.replaceState({}, '', '/creatives?id=1')
+
+    expect(rootLink.classList.contains('is-current')).toBe(true)
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '1', button: rootLink, workspaceSync: true }),
+    }))
+
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+    state.dataset.creativeId = '1'
+    state.dataset.creativePath = '[1]'
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(document.querySelector('[data-controller="workspace-tree"]')).toBe(treeRegion)
+    expect(rootLink.classList.contains('is-current')).toBe(true)
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('syncs leaf and root chat state independently of visible tree links', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+
+    state.dataset.creativeId = '3'
+    state.dataset.creativeSnippet = 'Leaf chat'
+    state.dataset.canComment = 'true'
+    state.dataset.creativePath = '[1,2,3]'
+    window.history.replaceState({}, '', '/creatives?id=3')
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '3', button: state, workspaceSync: true }),
+    }))
+
+    delete state.dataset.creativeId
+    state.dataset.creativePath = '[]'
+    window.history.replaceState({}, '', '/creatives')
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(document.querySelector('.creative-workspace-tree-link.is-current')).toBeNull()
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({
+        creativeId: undefined,
+        button: expect.any(HTMLElement),
+        workspaceSync: true,
+      }),
+    }))
+    expect(chatListener.mock.lastCall[0].detail.button.dataset.workspaceNavigationState).toBe('true')
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('forwards comment targets only from authoritative frame loads', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives/2/comments/456')
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-render', { bubbles: true }))
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', highlightId: undefined }),
+    }))
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', highlightId: '456' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('extracts query, path, and hash comment targets from workspace URLs', () => {
+    window.history.replaceState({}, '', '/creatives?id=2&comment_id=456')
+    expect(controller.commentIdFromLocation()).toBe('456')
+
+    window.history.replaceState({}, '', '/creatives?id=2&highlight_comment_id=567')
+    expect(controller.commentIdFromLocation()).toBe('567')
+
+    window.history.replaceState({}, '', '/creatives/2/comments/678')
+    expect(controller.commentIdFromLocation()).toBe('678')
+
+    window.history.replaceState({}, '', '/creatives?id=2#comment_789')
+    expect(controller.commentIdFromLocation()).toBe('789')
+
+    window.history.replaceState({}, '', '/creatives?id=2')
+    expect(controller.commentIdFromLocation()).toBeUndefined()
+  })
+
+  test('trusts the completed frame response when an inaccessible id falls back to root', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+
+    delete state.dataset.creativeId
+    state.dataset.creativePath = '[]'
+    window.history.replaceState({}, '', '/creatives?id=999999')
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(document.querySelector('.creative-workspace-tree-link.is-current')).toBeNull()
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: undefined }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('ignores a pre-load frame render while the URL and frame state disagree', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+
+    state.dataset.creativeId = '1'
+    state.dataset.creativePath = '[1]'
+    window.history.replaceState({}, '', '/creatives?id=2')
+    frame.dispatchEvent(new CustomEvent('turbo:frame-render', { bubbles: true }))
+
+    expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
+    expect(chatListener).not.toHaveBeenCalled()
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('refreshes stale data while preserving explicit branch state', async () => {
+    const branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-expanded')).toBe('false')
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Renamed root',
+          url: '/creatives?id=1',
+          children: [{ id: 2, label: 'Current branch', url: '/creatives?id=2', children: [] }],
+        }],
+      }),
+    })
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(document.querySelector('[data-creative-id="1"] > div > a').textContent).toBe('Renamed root')
+    expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('loads a newly navigated frame path without reopening chat', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Root',
+          url: '/creatives?id=1',
+          has_children: true,
+          children: [{ id: 4, label: 'New branch', url: '/creatives?id=4', has_children: true, children: [] }],
+        }],
+      }),
+    })
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+    state.dataset.creativeId = '5'
+    state.dataset.creativePath = '[1,4,5]'
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const requestUrl = fetchMock.mock.calls[1][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['1', '2', '3', '4', '5'])
+    expect(document.querySelector('[data-creative-id="4"] a').classList.contains('is-current')).toBe(true)
+    expect(chatListener).toHaveBeenCalledTimes(1)
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '5', workspaceSync: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('retries an unresolved frame path on the next tree refresh', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('path load failed'))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+    state.dataset.creativeId = '5'
+    state.dataset.creativePath = '[1,4,5]'
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.pendingRevealPath).toEqual([1, 4, 5])
+    expect(controller.expandedCreativeIds.has('4')).toBe(false)
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Root',
+          url: '/creatives?id=1',
+          has_children: true,
+          children: [{ id: 4, label: 'Recovered branch', url: '/creatives?id=4', has_children: true, children: [] }],
+        }],
+      }),
+    })
+    await controller.load({ showLoading: false, syncChat: false })
+
+    const requestUrl = fetchMock.mock.calls[2][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['1', '2', '3', '4', '5'])
+    expect(controller.pendingRevealPath).toBeNull()
+    expect(document.querySelector('[data-creative-id="4"] a').classList.contains('is-current')).toBe(true)
+    console.error.mockRestore()
+  })
+
+  test('does not replace an explicitly opened chat during a background tree refresh', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Refreshed root',
+          url: '/creatives?id=1',
+          children: [{ id: 2, label: 'Current branch', url: '/creatives?id=2', children: [] }],
+        }],
+      }),
+    })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.querySelector('[data-creative-id="1"] > div > a').textContent).toBe('Refreshed root')
+    expect(chatListener).not.toHaveBeenCalled()
+
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', workspaceSync: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not dispatch stale frame chat state after a delayed initial tree load', async () => {
+    controller.disconnect()
+    application.stop()
+
+    let resolveFetch
+    fetchMock.mockReset()
+    fetchMock.mockReturnValue(new Promise((resolve) => {
+      resolveFetch = resolve
+    }))
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+
+    application = Application.start()
+    application.register('workspace-tree', WorkspaceTreeController)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    resolveFetch({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const controllerElement = document.querySelector('[data-controller="workspace-tree"]')
+    controller = application.getControllerForElementAndIdentifier(controllerElement, 'workspace-tree')
+    expect(chatListener).not.toHaveBeenCalled()
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not reopen an invalidated chat from stale frame state after tree refresh', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(chatListener).not.toHaveBeenCalled()
+    expect(document.querySelector('.creative-workspace-tree-link.is-current')).toBeNull()
+
+    chatListener.mockClear()
+    document.getElementById('creative-workspace-content')
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: undefined, workspaceSync: true }),
+    }))
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('restores a re-shared creative after a successful tree refresh proves access', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Root',
+          url: '/creatives?id=1',
+          children: [{ id: 2, label: 'Re-shared branch', url: '/creatives?id=2', children: [] }],
+        }],
+      }),
+    })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    document.getElementById('creative-workspace-content')
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', workspaceSync: true }),
+    }))
+    expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('restores a re-granted leaf creative from an authoritative frame response', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1', children: [] }],
+      }),
+    })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+
+    chatListener.mockClear()
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', { bubbles: true }))
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(false)
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', workspaceSync: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not restore a leaf from a frame request started before invalidation', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', { bubbles: true }))
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('never restores destroyed creatives from an authoritative frame response', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', { bubbles: true }))
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not restore access from a tree request started before invalidation', async () => {
+    let resolveStaleFetch
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveStaleFetch = resolve
+    }))
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+    const staleLoad = controller.load({ showLoading: false, syncChat: false })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    resolveStaleFetch({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Stale root',
+          url: '/creatives?id=1',
+          children: [{ id: 2, label: 'Stale branch', url: '/creatives?id=2', children: [] }],
+        }],
+      }),
+    })
+    await staleLoad
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+  })
+
+  test('keeps destroyed creatives invalidated when a stale tree response contains them', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    document.getElementById('creative-workspace-content')
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: undefined, workspaceSync: true }),
+    }))
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not optimistically open an invalidated tree link', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    controller.rememberInvalidatedCreativeIds({ detail: { creativeIds: ['1'] } })
+
+    rootLink.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }))
+
+    expect(chatListener).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('reloads the center frame when a history restore renders mismatched state', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBe(window.location.href)
+  })
+
+  test('reloads the center frame when a history restore renders no navigation state', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    frame.innerHTML = ''
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBe(window.location.href)
+  })
+
+  test('leaves the center frame alone when a restore matches the URL', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBeUndefined()
+  })
+
+  test('does not reload the frame for non-restore visits with transient mismatches', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'advance' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBeUndefined()
+  })
+
+  test('shows the empty state', async () => {
+    const controllerElement = document.querySelector('[data-controller="workspace-tree"]')
+    const controller = application.getControllerForElementAndIdentifier(controllerElement, 'workspace-tree')
+
+    controller.render([])
+
+    expect(document.querySelector('.creative-workspace-tree-status').textContent).toBe('Empty')
+  })
+
+  test('shows the localized error state when loading fails', async () => {
+    const controllerElement = document.querySelector('[data-controller="workspace-tree"]')
+    const controller = application.getControllerForElementAndIdentifier(controllerElement, 'workspace-tree')
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    await controller.load()
+
+    expect(document.querySelector('.creative-workspace-tree-status').textContent).toBe('Error')
+    console.error.mockRestore()
+  })
+})

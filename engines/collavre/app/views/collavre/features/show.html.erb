@@ -1,0 +1,52 @@
+<%# Long-form guide for one feature card. Copy comes from
+    collavre.features.pages.<key>; the registry supplies only the icon/key. %>
+<% content_for :page_title, @page[:title].presence || t(@card.title_key) %>
+<% content_for :page_description, @page[:meta_description].presence || t(@card.description_key) %>
+
+<div class="landing">
+  <article class="landing-section">
+    <div class="landing-container feature-guide-container">
+      <nav class="feature-guide-breadcrumb">
+        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name) %>
+        <span aria-hidden="true"><%= t('collavre.features.nav.separator') %></span>
+        <%= link_to t('collavre.features.nav.all'), collavre.features_path(locale: I18n.locale, script_name: request.script_name) %>
+      </nav>
+
+      <header class="feature-guide-header">
+        <div class="landing-feature-icon" aria-hidden="true"><%= @card.icon %></div>
+        <h1 class="feature-guide-title"><%= @page[:title].presence || t(@card.title_key) %></h1>
+        <p class="feature-guide-tagline"><%= @page[:tagline].presence || t(@card.description_key) %></p>
+      </header>
+
+      <% @page[:sections].each do |section| %>
+        <section class="feature-guide-section">
+          <% if section[:heading].present? %>
+            <h2 class="feature-guide-heading"><%= section[:heading] %></h2>
+          <% end %>
+          <p class="feature-guide-body"><%= section[:body] %></p>
+        </section>
+      <% end %>
+
+      <% if @page[:tips].any? %>
+        <section class="feature-guide-section">
+          <h2 class="feature-guide-heading"><%= t('collavre.features.show.tips') %></h2>
+          <ul class="feature-guide-tips">
+            <% @page[:tips].each do |tip| %>
+              <li><%= tip %></li>
+            <% end %>
+          </ul>
+        </section>
+      <% end %>
+
+      <p class="feature-guide-back">
+        <%= link_to t('collavre.features.nav.all_arrow'), collavre.features_path(locale: I18n.locale, script_name: request.script_name), class: "landing-btn landing-btn-ghost" %>
+      </p>
+    </div>
+  </article>
+
+  <footer class="landing-footer">
+    <div class="landing-container landing-footer-inner">
+      <p class="landing-footer-copy"><%= t('collavre.landing.footer.copyright', year: Date.today.year, app_name: t('app.name')) %></p>
+    </div>
+  </footer>
+</div>

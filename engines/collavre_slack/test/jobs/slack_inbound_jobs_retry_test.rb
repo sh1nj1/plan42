@@ -27,7 +27,7 @@ module CollavreSlack
 
     # SlackInboundMessageJob handles transient contention with an in-place write
     # retry rather than a job-level retry_on: a whole-job retry would re-run its
-    # non-idempotent CommandProcessor side effects (/calendar, /work, MCP
+    # non-idempotent CommandProcessor side effects (/calendar, MCP
     # commands). Its transient-error handling is verified behaviorally in
     # slack_inbound_message_job_test.rb ("retries only the write on transient
     # deadlock and runs commands exactly once"). The other inbound jobs have no

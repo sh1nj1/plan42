@@ -114,5 +114,46 @@ module Creatives
       result = Creatives::TreeFormatter.plain_description(creative)
       assert_equal "Bold text", result
     end
+
+    test "plain_description decodes the nbsp reference emitted by tag stripping" do
+      creative = Creative.new(description: "<p>label shows</p>")
+
+      result = Creatives::TreeFormatter.plain_description(creative)
+
+      refute_includes result, "&nbsp;"
+      assert_equal "label shows", result
+    end
+
+    test "plain_description decodes ampersands and angle brackets" do
+      creative = Creative.new(description: "<p>A &amp; B &lt;x&gt;</p>")
+
+      assert_equal "A & B <x>", Creatives::TreeFormatter.plain_description(creative)
+    end
+
+    test "plain_description keeps a node on one line" do
+      # One creative must render as exactly one tree row; a description whose
+      # paragraphs are separated by newlines would otherwise corrupt the format.
+      creative = Creative.new(id: 1, description: "<p>first</p>\n<p>second</p>", progress: 0.0)
+      creative.association(:children).target = []
+
+      formatter = Creatives::TreeFormatter.new(include_header: false, use_permissions: false)
+
+      assert_equal "- [1] first second (0%)", formatter.format(creative)
+    end
+
+    test "include_comments decodes comment bodies and keeps each on one line" do
+      user = users(:one)
+      Current.session = OpenStruct.new(user: user)
+      creative = Creative.create!(user: user, description: "Root", progress: 0.0)
+      Comment.create!(creative: creative, user: user, content: "<p>hi there &amp; bye</p>")
+
+      formatter = Creatives::TreeFormatter.new(include_header: false, use_permissions: false, include_comments: true)
+      result = formatter.format(creative.reload)
+
+      refute_includes result, "&nbsp;"
+      assert_includes result, "    > hi there & bye"
+    ensure
+      Current.reset
+    end
   end
 end

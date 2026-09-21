@@ -41,7 +41,7 @@ module Collavre
       latest_alarm = @creative.comments
         .where(topic: @comment.topic, user_id: nil)
         .where("comments.id < ?", @comment.id)
-        .order(created_at: :desc)
+        .order(id: :desc)
         .first
 
       return nil unless latest_alarm

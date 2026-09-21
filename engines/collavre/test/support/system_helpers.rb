@@ -32,6 +32,26 @@ module SystemHelpers
     # Ignore for drivers that do not support resizing.
   end
 
+  def assert_docked_comments_loaded
+    assert_selector "#comments-popup", wait: 10 do |popup|
+      page.evaluate_script(<<~JS, popup)
+        ((element) => {
+          const controller = window.Stimulus?.getControllerForElementAndIdentifier(
+            element,
+            'comments--list'
+          );
+          return controller?.initialLoadComplete === true;
+        })(arguments[0])
+      JS
+    end
+    # Opening chat can schedule composer focus and scrolling after list loading.
+    # Let that render finish before a test moves focus or opens a lazy frame.
+    page.evaluate_async_script(<<~JS)
+      const done = arguments[0];
+      requestAnimationFrame(() => requestAnimationFrame(() => done()));
+    JS
+  end
+
   def wait_for_network_idle(timeout: Capybara.default_max_wait_time)
     start = Time.now
     while Time.now - start < timeout

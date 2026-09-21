@@ -1,0 +1,31 @@
+<%= turbo_frame_tag "inline_agent_login_#{@comment.id}" do %>
+  <% if @login.data["replay_abandoned"] %>
+    <p class="text-muted"><%= t("collavre.inline_agent_login.replay_abandoned") %></p>
+  <% elsif @login.data["resumed"] %>
+    <p class="text-muted"><%= t("collavre.inline_agent_login.resumed") %></p>
+  <% elsif @login.manageable? %>
+    <div class="comment-action-block" data-controller="agent-connection"
+         data-agent-connection-status-url-value="<%= collavre.inline_agent_login_status_path(comment_id: @comment.id) %>"
+         data-agent-connection-session-url-value="<%= collavre.inline_agent_login_sessions_path(comment_id: @comment.id) %>"
+         data-agent-connection-session-detail-url-value="<%= collavre.inline_agent_login_session_path(comment_id: @comment.id, session_id: '__SESSION__') %>"
+         <% if @login.data["retryable"] %>
+           data-agent-connection-resume-url-value="<%= collavre.inline_agent_login_resume_path(comment_id: @comment.id) %>"
+         <% end %>
+         data-agent-connection-resumed-value="<%= t('collavre.inline_agent_login.resumed') %>"
+         data-agent-connection-expired-value="<%= t('collavre.inline_agent_login.expired') %>"
+         data-agent-connection-login-value="<%= t('collavre.agent_connections.login') %>"
+         data-agent-connection-submit-value="<%= t('collavre.agent_connections.submit') %>"
+         data-agent-connection-cancel-value="<%= t('common.cancel') %>"
+         data-agent-connection-open-url-value="<%= t('collavre.agent_connections.open_url') %>"
+         data-agent-connection-error-value="<%= t('collavre.agent_connections.error') %>"
+         data-agent-connection-status-labels-value="<%= t('collavre.agent_connections.statuses').to_json %>">
+      <p><%= t(@login.data["retryable"] ? "collavre.inline_agent_login.help" : "collavre.inline_agent_login.partial") %></p>
+      <div data-agent-connection-target="error" class="alert alert-danger" role="alert" hidden></div>
+      <div data-agent-connection-target="engines"></div>
+      <div data-agent-connection-target="session"></div>
+      <button type="button" class="btn btn-sm btn-secondary" data-action="agent-connection#refresh"><%= t('collavre.agent_connections.refresh') %></button>
+    </div>
+  <% else %>
+    <p class="text-muted"><%= t(@login.workspace.agent_gateway.shared? ? "collavre.inline_agent_login.owner_required" : "collavre.inline_agent_login.requester_required") %></p>
+  <% end %>
+<% end %>

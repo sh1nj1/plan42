@@ -192,33 +192,6 @@ creative-tree-row.show-edit .creative-row {
     display: none !important;
 }
 
-.creative-tree.child-drop-indicator-active::after {
-    content: '↳';
-    position: absolute;
-    top: 50%;
-    margin-left: 12px;
-    color: var(--color-active);
-    font-size: 1.3em;
-    transform: translateY(-50%);
-    pointer-events: none;
-}
-
-
-.creative-link-drop-indicator {
-    position: fixed;
-    display: none;
-    pointer-events: none;
-    background: color-mix(in srgb, var(--color-active) 90%, transparent);
-    color: var(--text-on-badge);
-    font-size: var(--text-0);
-    padding: 2px 8px;
-    border-radius: var(--radius-2);
-    transform: translate(-50%, -170%);
-    z-index: 9999;
-    font-weight: var(--weight-6);
-    letter-spacing: 1px;
-}
-
 .creative-tree-li {
     display: flex;
     align-items: flex-start;
@@ -334,64 +307,79 @@ creative-tree-row.show-edit .creative-row {
     color: var(--text-muted);
 }
 
-/* Progress toggle (hover-to-complete) */
+/* Leaf creatives with binary progress are directly actionable. The checkbox and
+   the completion mark share one grid cell so the control keeps a single width
+   whichever state is showing. */
 .progress-toggle-wrap {
-    position: relative;
     cursor: pointer;
-    display: inline-flex;
+    display: inline-grid;
+    grid-template-areas: "progress-state";
     align-items: center;
-    padding-top: 4px;
+    justify-items: center;
+    min-width: 1.5em;
 }
 
-.progress-toggle-wrap .creative-progress-complete,
-.progress-toggle-wrap .creative-progress-incomplete {
-    padding-top: 0;
+.progress-toggle-wrap > * {
+    grid-area: progress-state;
 }
 
 .progress-toggle-checkbox {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
+    width: 1em;
+    height: 1em;
     margin: 0;
-    z-index: 1;
+    cursor: pointer;
+    accent-color: var(--color-brand);
+    transition: opacity 0.12s ease;
 }
 
-/* Desktop: show checkbox on row hover (same pattern as edit-btn, comments-btn) */
+/* A completed leaf shows the admin completion mark (blank by default) instead of
+   a checked box, so finished rows read as quietly as completed parent rows. */
+.progress-toggle-mark {
+    color: var(--color-brand);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-checkbox {
+    opacity: 0;
+}
+
+.progress-toggle-wrap[data-current-progress="1"] .progress-toggle-mark {
+    opacity: 1;
+}
+
+/* Hover or keyboard focus brings the checked box back, so an accidental
+   completion is undone in place instead of through the inline editor. */
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-checkbox,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-checkbox {
+    opacity: 1;
+}
+
+.progress-toggle-wrap[data-current-progress="1"]:hover .progress-toggle-mark,
+.progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-mark {
+    opacity: 0;
+}
+
+/* On pointer devices, incomplete leaves keep their checkbox visible so the
+   next action is always apparent. Completed leaves stay quiet at rest and swap
+   their completion mark for the checked box when the row is hovered. */
 @media (hover: hover) {
-    .progress-toggle-checkbox {
-        width: 1em;
-        height: 1em;
-        visibility: hidden;
-        opacity: 0;
-        position: absolute;
-        margin: auto;
-        pointer-events: none;
-    }
-
-    .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
-    .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
-        visibility: hidden;
-    }
-
-    .creative-row:hover .progress-toggle-checkbox {
-        visibility: visible;
+    .creative-row:hover .progress-toggle-wrap[data-current-progress="1"] .progress-toggle-checkbox,
+    .creative-row .progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-checkbox {
         opacity: 1;
-        position: absolute;
-        inset: 0;
-        margin: auto;
-        pointer-events: auto;
-        accent-color: var(--color-brand);
+    }
+
+    .creative-row:hover .progress-toggle-wrap[data-current-progress="1"] .progress-toggle-mark,
+    .creative-row .progress-toggle-wrap[data-current-progress="1"]:focus-within .progress-toggle-mark {
+        opacity: 0;
     }
 }
 
-/* Touch devices: always show both text and clickable area */
-@media (hover: none) {
-    .progress-toggle-checkbox {
-        opacity: 0;
-        pointer-events: auto;
+@media (prefers-reduced-motion: reduce) {
+    .progress-toggle-checkbox,
+    .progress-toggle-mark {
+        transition: none;
     }
 }
 
@@ -430,6 +418,30 @@ creative-tree-row.show-edit .creative-row {
     color: var(--text-muted);
     font-size: 1.2em;
     letter-spacing: 2px;
+
+    /*
+     * Hold the dots back for the first ~180ms. Most tree fetches resolve well
+     * inside that window, and an indicator that appears and vanishes again is
+     * itself the flicker we are trying to remove; a slow fetch still gets
+     * feedback.
+     *
+     * Deliberately animated *up* from transparent rather than declaring
+     * `opacity: 0` on the element: where animations are suppressed
+     * (reduced-motion overrides, headless test harnesses) the placeholder falls
+     * back to fully visible instead of disappearing altogether.
+     */
+    animation: creative-tree-loading-fade-in 300ms ease-out;
+}
+
+@keyframes creative-tree-loading-fade-in {
+    0%,
+    60% {
+        opacity: 0;
+    }
+
+    100% {
+        opacity: 1;
+    }
 }
 
 .creative-tree-loading-placeholder .creative-loading-indicator {
@@ -988,6 +1000,168 @@ creative-tree-row.is-being-edited .creative-tree {
     display: contents;
 }
 
+.cron-badge-wrapper {
+    display: inline-flex;
+    position: relative;
+}
+
+.creative-row-end > .progress-toggle-wrap,
+.creative-row-end > .cron-badge-wrapper {
+    align-self: center;
+}
+
+.creative-cron-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: var(--space-1);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-round, 9999px);
+    background: transparent;
+
+    /* Inherit the host row's text color instead of pinning --text-muted.
+       On a selected topic chip the background flips to --color-secondary-active
+       and the chip text to --color-badge-text; a pinned muted grey left the
+       count at ~1.1:1 contrast there, invisible in dark mode. Inheriting keeps
+       the count on whatever token the surrounding text already resolved to. */
+    color: inherit;
+    font-size: var(--text-0);
+    white-space: nowrap;
+    border: 0;
+    cursor: pointer;
+    line-height: 1.5;
+}
+
+.popup-menu.cron-badge-popup {
+    width: min(360px, calc(100vw - 8px));
+    max-height: min(480px, calc(100vh - 8px));
+    padding: var(--space-3);
+    overflow-y: auto;
+    cursor: default;
+    color: var(--text-primary);
+    white-space: normal;
+}
+
+.cron-badge-popup-title,
+.cron-task,
+.cron-task-field,
+.cron-task-label,
+.cron-task-message {
+    display: block;
+}
+
+.cron-badge-popup-title {
+    margin-bottom: var(--space-2);
+    font-size: var(--text-1);
+}
+
+.cron-task {
+    padding: var(--space-2) 0;
+    border-top: var(--border-1) solid var(--border-color);
+}
+
+.cron-task:first-of-type {
+    border-top: 0;
+}
+
+.cron-task-field {
+    margin-bottom: var(--space-2);
+}
+
+.cron-task-label {
+    margin-bottom: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-0);
+    font-weight: var(--weight-6);
+}
+
+.cron-task code,
+.cron-task time,
+.cron-task-message {
+    font-size: var(--text-0);
+}
+
+.cron-task-message {
+    max-height: 8em;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.cron-task-message-input {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 5em;
+    padding: var(--space-2);
+    border: var(--border-1) solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-input);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--text-0);
+    resize: vertical;
+}
+
+.cron-task-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.cron-task-save,
+.cron-task-delete {
+    flex: 1;
+    justify-content: center;
+}
+
+.cron-task-actions button:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.creative-type-editor {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.creative-type-editor input[role="combobox"] {
+    box-sizing: border-box;
+    flex: 1 1 var(--space-12);
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: var(--space-1) var(--space-2);
+    border: var(--border-1) solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-input);
+    color: var(--text-input);
+    font: inherit;
+}
+
+.creative-type-editor input[role="combobox"],
+.creative-type-editor .btn {
+    min-height: var(--space-7);
+}
+
+.creative-type-editor label {
+    margin: 0;
+}
+
+.creative-type-editor [role="alert"]:not(:empty) {
+    flex-basis: 100%;
+    color: var(--color-danger);
+    overflow-wrap: anywhere;
+}
+
+.creative-type-editor button:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
 /* ─── Bundle drag image (shared by creatives + comments) ─── */
 
 .drag-bundle-image {
@@ -1332,3 +1506,322 @@ creative-tree-row.is-being-edited .creative-tree {
 .ppt-chart-rendered > svg {
     display: block;
 }
+
+/* ============================================================================
+ * Creative tree — actionable empty state
+ * engines/collavre/app/views/collavre/creatives/_empty_state.html.erb
+ * Uses semantic tokens only, so dark mode (body.dark-mode) is automatic.
+ * ============================================================================ */
+.creative-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-7) var(--space-3) var(--space-8);
+}
+
+/* The disc is painted by a gradient rather than by a border-radius background
+ * on purpose. Some Android devices (reproduced on a Galaxy S24 / Android 16,
+ * screenshot measured pixel by pixel) draw the *last* corner of a rounded-rect
+ * background fill — bottom-left — as the straight chord of its arc instead of
+ * the arc, which reads as a folded-over corner. It is the fill only; rounded
+ * borders on the same page come out correct. It is also independent of the
+ * radius value: `1e5px`, `9999px` and `50%` all resolve to the identical used
+ * radius (exactly 28 for this 56px box), so swapping the radius cannot help.
+ * A gradient never asks the rasteriser for a rounded rect in the first place.
+ *
+ * So: no border-radius on this rule. Putting one back reinstates the rounded
+ * background clip, and the artifact with it.
+ */
+.creative-empty-state-icon {
+    width: 56px;
+    height: 56px;
+    background: radial-gradient(circle closest-side,
+                                var(--surface-btn) calc(100% - 0.5px),
+                                transparent 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--space-3);
+    color: var(--text-muted);
+}
+
+.creative-empty-state-icon svg {
+    width: 28px;
+    height: 28px;
+}
+
+.creative-empty-state-heading {
+    font-size: var(--text-3);
+    font-weight: var(--weight-6);
+    color: var(--text-primary);
+    margin: 0 0 var(--space-4);
+}
+
+/* --- Concept card: "what's a creative?" --- */
+.creative-empty-state-concept {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    border: 1px solid var(--border-color);
+    background: var(--surface-bg);
+    border-radius: 8px;
+    max-width: 560px;
+    width: 100%;
+}
+
+.creative-empty-state-concept-title {
+    font-size: var(--text-1);
+    font-weight: var(--weight-6);
+    color: var(--text-primary);
+    margin-bottom: var(--space-3);
+}
+
+.creative-empty-state-concept-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.creative-empty-state-facet {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    /* Wide enough that the longest label (empty_state_facet_task) wraps to two
+       lines at --text-0 instead of shredding into a four-line stack. */
+    width: 108px;
+}
+
+.creative-empty-state-facet-chip {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-section);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.creative-empty-state-facet-chip svg {
+    width: 20px;
+    height: 20px;
+}
+
+.creative-empty-state-facet-label {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    line-height: 1.3;
+    text-align: center;
+    /* CJK text breaks mid-word by default; wrap at spaces instead. */
+    word-break: keep-all;
+}
+
+.creative-empty-state-op {
+    color: var(--text-muted);
+    font-weight: var(--weight-6);
+    font-size: var(--text-1);
+    padding: 0 2px;
+    align-self: flex-start;
+    margin-top: 12px;
+}
+
+/* Glues each operator to the term it introduces, so a diagram too narrow for one
+   row wraps before an operator instead of leaving one dangling at a row end. */
+.creative-empty-state-term {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+}
+
+/* Center the "=" beside the shorter result block instead of using the facet
+   chip offset. */
+.creative-empty-state-result .creative-empty-state-op {
+    align-self: center;
+    margin-top: 0;
+}
+
+.creative-empty-state-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    border: 1.5px solid var(--color-active);
+    border-radius: 10px;
+    padding: 8px 12px;
+    background: var(--surface-section);
+}
+
+.creative-empty-state-block-icons {
+    display: flex;
+    gap: 6px;
+    color: var(--color-active);
+}
+
+.creative-empty-state-block-icons svg {
+    width: 15px;
+    height: 15px;
+}
+
+.creative-empty-state-block-label {
+    font-size: var(--text-0);
+    font-weight: var(--weight-6);
+    color: var(--text-primary);
+}
+
+.creative-empty-state-concept-caption {
+    font-size: var(--text-1);
+    color: var(--text-muted);
+    line-height: 1.55;
+    margin: var(--space-3) 0 0;
+    text-align: center;
+}
+
+/* --- Writable CTAs --- */
+.creative-empty-state-actions-row {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.add-creative-btn--cta {
+    gap: 6px;
+}
+
+.add-creative-btn--cta svg {
+    width: 14px;
+    height: 14px;
+}
+
+.add-creative-btn-kbd {
+    font-family: inherit;
+    font-size: 10px;
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 2px;
+}
+
+/* --- Read-only variant: write-access request --- */
+.creative-empty-state-readonly {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.creative-empty-state-readonly-message {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 340px;
+}
+
+/* Author-origin `display` beats the UA stylesheet's `[hidden] { display: none }`
+   regardless of selector specificity, so the [hidden] overrides below are
+   required or these elements would always render even while hidden — the
+   request button carries the global `.btn` class (display: inline-flex from
+   dark_mode.css), and the pending pill sets its own inline-flex below. */
+.creative-empty-state-readonly .btn[hidden],
+.creative-empty-state-request-pending[hidden] {
+    display: none;
+}
+
+.creative-empty-state-request-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-btn);
+}
+
+.creative-empty-state-request-pending-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-round);
+    background: var(--color-brand);
+    animation: creative-empty-state-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes creative-empty-state-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+/* --- Unauthenticated variant: sign up / log in --- */
+.creative-empty-state-loggedout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.creative-empty-state-loggedout-message {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 340px;
+}
+
+/* Shared presentation for both creative trees. Inset edges never move rows.
+   Keep this in the individually linked creative asset for existing hosts.
+   Fallbacks preserve feedback when a host does not load design_tokens.css. */
+/* stylelint-disable color-no-hex -- Compatibility fallbacks for hosts without design_tokens.css. */
+:is(.creative-tree, .creative-workspace-tree-row).is-dragging {
+    opacity: var(--dnd-source-opacity, 0.55);
+}
+
+:is(.creative-tree, .creative-workspace-tree-row):is(.drag-over-top, .drag-over-bottom, .drag-over-child) {
+    background: var(--dnd-target-bg, color-mix(in srgb, var(--color-active, #007bff) 12%, transparent));
+    border-radius: var(--dnd-radius, 5px);
+}
+
+:is(.creative-tree, .creative-workspace-tree-row).drag-over-top {
+    box-shadow: inset 0 var(--dnd-edge-width, 2px) 0 var(--dnd-color, var(--color-active, #007bff));
+}
+
+:is(.creative-tree, .creative-workspace-tree-row).drag-over-bottom {
+    box-shadow: inset 0 calc(-1 * var(--dnd-edge-width, 2px)) 0 var(--dnd-color, var(--color-active, #007bff));
+}
+
+/* Let the child arrow occupy the leading controls without moving the row. */
+.creative-workspace-tree-row.drag-over-child > .creative-workspace-tree-branch-toggle,
+.creative-tree.drag-over-child > .creative-row > .creative-row-start > :is(.creative-action-btn, .select-creative-checkbox) {
+    visibility: hidden;
+}
+
+:is(.creative-tree, .creative-workspace-tree-row).drag-over-child::after {
+    content: '↳';
+    position: absolute;
+    top: 50%;
+    left: var(--dnd-child-icon-inset, 0.5rem);
+    color: var(--dnd-color, var(--color-active, #007bff));
+    font-size: var(--dnd-child-icon-size, 1.25rem);
+    line-height: var(--leading-0, 1);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.creative-link-drop-indicator {
+    position: fixed;
+    display: none;
+    pointer-events: none;
+    background: var(--dnd-badge-bg, var(--surface-section, #fff));
+    color: var(--dnd-badge-text, var(--color-active, #007bff));
+    border: var(--border-1, 1px) solid var(--dnd-color, var(--color-active, #007bff));
+    font-size: var(--dnd-badge-font-size, 0.75rem);
+    padding: var(--dnd-badge-padding, 2px 0.5rem);
+    border-radius: var(--dnd-radius, 5px);
+    transform: var(--dnd-badge-offset, translate(-50%, -170%));
+    z-index: var(--dnd-indicator-layer, 9999);
+    font-weight: var(--weight-6, 600);
+}
+/* stylelint-enable color-no-hex */

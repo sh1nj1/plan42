@@ -1,9 +1,14 @@
+import { createDragDropRegistry } from '../../lib/dnd/registry'
+import { getDragKind, readDragData } from '../../lib/dnd/envelope'
+import { previewDrop } from '../../lib/dnd/preview'
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
 import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
+import FormDraftManager from './form_draft_manager'
 import { alertDialog } from '../../lib/utils/dialog'
+import chatDrafts from '../../lib/chat_drafts'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -34,16 +39,28 @@ export default class extends Controller {
     'quoteCancelButton',
   ]
 
+  get _drafts() {
+    this.__drafts ||= new FormDraftManager(this)
+    return this.__drafts
+  }
+
   connect() {
+    this.dnd = createDragDropRegistry({ root: this.formTarget, getKind: getDragKind, readData: readDragData })
+    this.dnd.registerDropZone({ selector: '#new-comment-form', accepts: ['creative'],
+      preview: previewDrop, dropEffect: 'copy',
+      onDrop: ({ ids, event }) => {
+        event.stopPropagation()
+        this.insertCreativeLinks(ids.map(id => ({ id, label: this.getCreativeLabelFromDom(id) || `Creative #${id}` })))
+      } })
     this.creativeId = null
-    this.editingId = null
+    this.editingId ??= null
     this.sending = false
-    this._reviewStore = new ReviewQuotesStore()
+    this._reviewStore ||= new ReviewQuotesStore()
     this.cachedImageFiles = null
 
     this.handleSubmit = this.handleSubmit.bind(this)
     this.handleSend = this.handleSend.bind(this)
-    this.defaultSubmitHTML = this.submitTarget.innerHTML
+    this.defaultSubmitHTML ??= this.submitTarget.innerHTML
     this.handlePointerSend = this.handlePointerSend.bind(this)
     this.handleTouchSend = this.handleTouchSend.bind(this)
     this.handleCancel = this.handleCancel.bind(this)
@@ -56,7 +73,6 @@ export default class extends Controller {
     this.handleImageButtonClick = this.handleImageButtonClick.bind(this)
     this.handleImageChange = this.handleImageChange.bind(this)
     this.handleDragOver = this.handleDragOver.bind(this)
-    this.handleDragLeave = this.handleDragLeave.bind(this)
     this.handleDrop = this.handleDrop.bind(this)
 
     this.formTarget.addEventListener('submit', this.handleSubmit)
@@ -70,7 +86,6 @@ export default class extends Controller {
     this.imageButtonTarget?.addEventListener('click', this.handleImageButtonClick)
     this.imageInputTarget?.addEventListener('change', this.handleImageChange)
     this.formTarget.addEventListener('dragover', this.handleDragOver)
-    this.formTarget.addEventListener('dragleave', this.handleDragLeave)
     this.formTarget.addEventListener('drop', this.handleDrop)
     this.handlePaste = this.handlePaste.bind(this)
     this.textareaTarget.addEventListener('paste', this.handlePaste)
@@ -89,11 +104,17 @@ export default class extends Controller {
     }
     this.textareaTarget.addEventListener('input', this._autoResize)
 
+    this._drafts.connect()
+
     this.textareaTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         this.presenceController?.cancelAllAgentTasks()
         return
       }
+      // While an IME is composing (Korean, Japanese, Chinese), Enter confirms
+      // the pending syllable rather than submitting. keyCode 229 covers
+      // browsers that leave isComposing unset on the keydown itself.
+      if (event.isComposing || event.keyCode === 229) return
       if (event.key === 'Enter' && !event.shiftKey) {
         if (this.isMentionMenuVisible()) return
         this.handleSend(event)
@@ -107,13 +128,23 @@ export default class extends Controller {
 
     this.handleListLoaded = () => this._updateInboxReplyMode()
     this.element.addEventListener('comments--list:loaded', this.handleListLoaded)
+
+    // A slash command with an input schema takes over the textarea and submits
+    // itself (modules/command_menu.js), so a draft the user had already typed
+    // cannot go out with it. The menu hands the draft over here instead of
+    // discarding it, and we put it back once the send settles.
+    this.handleStashDraft = this.handleStashDraft.bind(this)
+    this.element.addEventListener('comments--form:stash-draft', this.handleStashDraft)
   }
 
   handleTopicChange(event) {
+    this._drafts.handleTopicChange()
     this.currentTopicId = event.detail.topicId
+    this.readOnlyTopic = event.detail.readOnly || false
     this._isInbox = event.detail.isInbox || false
     this._systemTopicId = event.detail.systemTopicId || null
     this._mainTopicId = event.detail.mainTopicId || null
+    this.updateFormVisibility()
     this._updateInboxReplyMode()
   }
 
@@ -125,6 +156,8 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.dnd?.destroy()
+    this._drafts.disconnect()
     this.formTarget.removeEventListener('submit', this.handleSubmit)
     this.submitTarget.removeEventListener('click', this.handleSend)
     this.submitTarget.removeEventListener('pointerup', this.handlePointerSend)
@@ -137,11 +170,11 @@ export default class extends Controller {
     this.imageInputTarget?.removeEventListener('change', this.handleImageChange)
     this.textareaTarget.removeEventListener('input', this._autoResize)
     this.formTarget.removeEventListener('dragover', this.handleDragOver)
-    this.formTarget.removeEventListener('dragleave', this.handleDragLeave)
     this.formTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
     this.element.removeEventListener('comments--list:loaded', this.handleListLoaded)
+    this.element.removeEventListener('comments--form:stash-draft', this.handleStashDraft)
   }
 
   get listController() {
@@ -155,31 +188,56 @@ export default class extends Controller {
   onPopupOpened({ creativeId, canComment }) {
     this.creativeId = creativeId
     this.element.dataset.creativeId = creativeId || ''
+    if (canComment) this._drafts._draftSaveSuspendedForPermission = false
     // Stale topic ids from the previous creative are cleared by the popup
     // controller BEFORE topics loadTopics() dispatches comments--topics:change,
     // so by the time we get here, currentTopicId already reflects the new
     // creative's restored topic. Do not re-clear it.
-    this.formTarget.style.display = canComment ? '' : 'none'
+    this.canComment = canComment
+    this.updateFormVisibility()
+    // Capture input entered while topics were loading before reset clears it.
+    // Without a pending input timer, a blank textarea must not erase a draft
+    // that is waiting in storage to be restored below.
+    if (this._drafts._draftSaveTimer) this._flushDraftSave()
     this.resetForm()
+    this._drafts._draftSaveSuspendedForPermission = !canComment
     if (canComment && this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
+    this._restoreDraft()
+  }
+
+  onChatWillOpen({ creativeId }) {
+    this._drafts.onChatWillOpen({ creativeId })
   }
 
   onPopupClosed() {
+    this._flushDraftSave()
+    this._drafts._activeDraftKey = null
+    this._drafts._activeDraftCreativeId = null
+    this._drafts._awaitingEffectiveDraftKeyFor = null
     this.stopSpeechRecognition()
     this.resetForm()
   }
 
+  discardDraft() {
+    this._drafts.discardDraft()
+  }
+
   setCommentPermission(canComment) {
-    this.formTarget.style.display = canComment ? '' : 'none'
+    this.canComment = canComment
+    this.updateFormVisibility()
 
     if (!canComment) {
+      this._flushDraftSave()
+      this._drafts._draftSaveSuspendedForPermission = true
       this.stopSpeechRecognition()
       this.resetForm()
       return
     }
 
+    this._drafts._draftSaveSuspendedForPermission = false
+    this._restoreDraft()
     if (this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
@@ -190,8 +248,13 @@ export default class extends Controller {
   }
 
   shouldAutoFocusOnOpen() {
+    if (this.readOnlyTopic) return false
     if (window.innerWidth <= 768) return false
     return this.element.dataset.autoFocusOnOpen !== 'false'
+  }
+
+  updateFormVisibility() {
+    this.formTarget.style.display = this.canComment && !this.readOnlyTopic ? '' : 'none'
   }
 
   focusTextarea() {
@@ -200,6 +263,7 @@ export default class extends Controller {
   }
 
   startEditing({ id, content, private: isPrivate }) {
+    this._flushDraftSave()
     this.editingId = id
     this.textareaTarget.value = content || ''
     if (this.privateCheckboxTarget) {
@@ -213,6 +277,18 @@ export default class extends Controller {
     this.focusTextarea()
   }
 
+  handleStashDraft(event) {
+    this._drafts.handleStashDraft(event)
+  }
+
+  _stashedDraftBelongsToCurrentCreative() {
+    return this._drafts._stashedDraftBelongsToCurrentCreative()
+  }
+
+  _restoreStashedDraft(submittedText) {
+    this._drafts._restoreStashedDraft(submittedText)
+  }
+
   resetForm() {
     this.formTarget.reset()
     this.editingId = null
@@ -224,9 +300,33 @@ export default class extends Controller {
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
-    this.textareaTarget.placeholder = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
     // Reset textarea height after clearing content
     this.textareaTarget.style.height = 'auto'
+  }
+
+  _flushDraftSave() {
+    this._drafts._flushDraftSave()
+  }
+
+  _restoreDraft() {
+    this._drafts._restoreDraft()
+  }
+
+  _draftPersistenceDisabled(namespace) {
+    return this._drafts._draftPersistenceDisabled(namespace)
+  }
+
+  _observeDraft(...args) {
+    this._drafts._observeDraft(...args)
+  }
+
+  _clearMigratedSubmittedSources(submission) {
+    this._drafts._clearMigratedSubmittedSources(submission)
+  }
+
+  _persistFailedSubmissionDraft(submission) {
+    this._drafts._persistFailedSubmissionDraft(submission)
   }
 
   setSendingState(isSending) {
@@ -248,6 +348,7 @@ export default class extends Controller {
 
   handleSend(event) {
     event.preventDefault()
+    const commandSubmissionId = event.commandSubmissionId || null
 
     // If active quote exists, handle based on type
     const store = this._reviewStore
@@ -271,6 +372,19 @@ export default class extends Controller {
     this.sending = true
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
+    if (commandSubmissionId) {
+      this.element.dispatchEvent(new CustomEvent('comments--form:submit-started', {
+        detail: { submissionId: commandSubmissionId },
+      }))
+    }
+
+    // Cancel any pending input debounce before capturing the submission. A
+    // write while the request is in flight looks like a newer draft and can
+    // restore the already-sent text on success. Failures persist below.
+    if (this._drafts._draftSaveTimer) {
+      clearTimeout(this._drafts._draftSaveTimer)
+      this._drafts._draftSaveTimer = null
+    }
 
     // Build final content from review quotes + user text
     if (hasQuotes) {
@@ -280,6 +394,56 @@ export default class extends Controller {
     }
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
+
+    // Captured after the review-quote rewrite above, so it is the exact content
+    // going to the server. _restoreStashedDraft compares against it to tell a
+    // failure that left the command text behind from text typed mid-flight.
+    const submittedText = this.textareaTarget.value
+    const initialSubmittedDraftKey = this._drafts._activeDraftKey
+    const submittedDraftNamespace = chatDrafts.namespace()
+    const initialSubmittedDraftRevisionKey =
+      `${submittedDraftNamespace}:${initialSubmittedDraftKey}`
+    const initialSubmittedDraft = chatDrafts.snapshot(initialSubmittedDraftKey)
+    const submittedHadStash = this._stashedDraftBelongsToCurrentCreative()
+    const submittedBackup = chatDrafts.latestSubmissionBackup(initialSubmittedDraftKey)
+    const submittedBackupUpdatedAt = Math.max(
+      Date.now(),
+      (initialSubmittedDraft.updatedAt || 0) + 1,
+    )
+    const observedSubmittedText =
+      this._drafts._observedDrafts?.get(initialSubmittedDraftRevisionKey)
+    const observedSubmittedStoredRevision =
+      this._drafts._observedStoredDraftRevisions?.get(initialSubmittedDraftRevisionKey) || null
+    const submittedTextChangedOutsideController =
+      observedSubmittedText !== initialSubmittedDraft.text
+    const submittedRevisionChangedOutsideController =
+      observedSubmittedStoredRevision !== initialSubmittedDraft.revision
+    const submittedStoredDraftChangedOutsideController =
+      this._drafts._observedDrafts?.has(initialSubmittedDraftRevisionKey) &&
+      (submittedTextChangedOutsideController || submittedRevisionChangedOutsideController)
+    const submittedDraft = {
+      key: initialSubmittedDraftKey,
+      namespace: submittedDraftNamespace,
+      revisionKey: initialSubmittedDraftRevisionKey,
+      storedChangedOutsideController: submittedStoredDraftChangedOutsideController,
+      keyRevision: this._drafts._draftRevisions?.get(initialSubmittedDraftRevisionKey) || 0,
+      storedRevision: initialSubmittedDraft.revision,
+      storedUpdatedAt: initialSubmittedDraft.updatedAt,
+      backupUpdatedAt: submittedBackupUpdatedAt,
+      text: submittedText,
+      hadStash: submittedHadStash,
+      backupKey: submittedBackup?.text === submittedText ? submittedBackup.key : null,
+      migratedSources: [],
+    }
+    this._drafts._pendingDraftSubmissions ||= new Set()
+    this._drafts._pendingDraftSubmissions.add(submittedDraft)
+    const submittedEditingId = this.editingId
+    const submittedHadReview = hasQuotes
+    submittedDraft.editing = Boolean(submittedEditingId)
+    submittedDraft.hadReview = submittedHadReview
+    if (submittedHadStash) {
+      this._drafts._stashedDraft.submittedText = submittedText
+    }
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -293,11 +457,12 @@ export default class extends Controller {
 
     let url = `/creatives/${this.creativeId}/comments`
     let method = 'POST'
-    if (this.editingId) {
-      url += `/${this.editingId}`
+    if (submittedEditingId) {
+      url += `/${submittedEditingId}`
       method = 'PATCH'
     }
 
+    let settlementUi = Promise.resolve()
     const doFetch = () => fetch(url, {
       method,
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
@@ -323,12 +488,97 @@ export default class extends Controller {
         })
       })
       .then((html) => {
-        const wasEditing = this.editingId
+        if (submittedDraft.backupKey) {
+	  chatDrafts.clearSubmissionBackupsThrough(
+            submittedDraft.backupKey,
+            submittedDraft.namespace,
+          )
+          submittedDraft.backupKey = null
+        }
+        if (
+          submittedDraft.invalidated ||
+          submittedDraft.namespace !== chatDrafts.namespace()
+        ) return
+
+        const {
+          key: submittedDraftKey,
+          namespace: submittedDraftNamespace,
+          revisionKey: submittedDraftRevisionKey,
+          storedChangedOutsideController: submittedStoredDraftChangedOutsideController,
+          keyRevision: submittedDraftKeyRevision,
+          storedRevision: submittedDraftStoredRevision,
+          hadStash: submittedHadStash,
+        } = submittedDraft
+        const ownsSubmittedDraftNamespace =
+          !submittedDraft.invalidated &&
+          submittedDraftNamespace === chatDrafts.namespace()
+        const switchedChats =
+          ownsSubmittedDraftNamespace &&
+          submittedDraftKey &&
+          this._drafts._activeDraftKey &&
+          String(submittedDraftKey) !== String(this._drafts._activeDraftKey)
+        const submittedChatStillActive =
+          submittedDraftKey &&
+          this._drafts._activeDraftKey &&
+          String(submittedDraftKey) === String(this._drafts._activeDraftKey)
+        const hasNewerActiveDraft =
+          ownsSubmittedDraftNamespace &&
+          !submittedEditingId &&
+          !submittedHadReview &&
+          submittedChatStillActive &&
+          (this._drafts._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
+            submittedDraftKeyRevision
+        const hasNewerStoredDraft =
+          ownsSubmittedDraftNamespace &&
+          !submittedEditingId &&
+          !submittedHadReview &&
+          submittedDraftKey &&
+          (
+            (this._drafts._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
+              submittedDraftKeyRevision ||
+            submittedStoredDraftChangedOutsideController ||
+            chatDrafts.revision(submittedDraftKey) !== submittedDraftStoredRevision
+          )
+        const hasNewerDraft = hasNewerActiveDraft || hasNewerStoredDraft
+        const newerDraft = hasNewerActiveDraft
+          ? (
+            this._drafts._draftSaveSuspendedForPermission
+              ? chatDrafts.get(submittedDraftKey)
+              : this.textareaTarget.value
+          )
+          : null
+        if (switchedChats) this._flushDraftSave()
+        clearTimeout(this._drafts._draftSaveTimer)
+        this._drafts._draftSaveTimer = null
         this.resetForm()
-        if (wasEditing) {
+        if (submittedEditingId) {
+          if (ownsSubmittedDraftNamespace) this._restoreDraft()
           // If editing, just replace the item in place
           this.renderCommentHtml(html, { replaceExisting: true })
         } else {
+          if (submittedHadReview && ownsSubmittedDraftNamespace) {
+            this._restoreDraft()
+          } else if (hasNewerActiveDraft) {
+            this.textareaTarget.value = newerDraft
+            this._autoResize()
+            this._updateSubmitButton()
+            chatDrafts.set(submittedDraftKey, newerDraft)
+						this._observeDraft(submittedDraftKey, newerDraft, { namespace: submittedDraftNamespace })
+          } else if (hasNewerStoredDraft && submittedChatStillActive) {
+            this._restoreDraft()
+          } else if (
+            !submittedHadStash &&
+            !hasNewerDraft &&
+            submittedDraftKey &&
+            ownsSubmittedDraftNamespace
+          ) {
+            chatDrafts.clear(submittedDraftKey)
+						this._observeDraft(submittedDraftKey, null, { namespace: submittedDraftNamespace })
+          }
+          if (ownsSubmittedDraftNamespace && !submittedHadReview) {
+            this._clearMigratedSubmittedSources(submittedDraft)
+          }
+          if (switchedChats && !submittedHadReview) this._restoreDraft()
           // New Comment:
           // 1. If we are in "History Mode" (scrolled up), sending a message should jump us to the latest.
           // 2. Ideally, we just reload the "Latest" page to ensure sync and Live Mode.
@@ -363,6 +613,8 @@ export default class extends Controller {
         }
       })
       .catch((error) => {
+        if (submittedDraft.invalidated) return
+
         // Restore review quotes state on failure so user doesn't lose work
         if (this._reviewStore.hasBackup()) {
           const restoredText = this._reviewStore.restore()
@@ -370,12 +622,28 @@ export default class extends Controller {
           this._renderReviewQuoteChips()
           this._updateSubmitButton()
         }
-        alertDialog(error?.message || 'Failed to submit comment')
+        this._persistFailedSubmissionDraft(submittedDraft)
+        settlementUi = alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
+        this._drafts._pendingDraftSubmissions.delete(submittedDraft)
         inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
+        if (
+          !submittedDraft.invalidated &&
+          submittedDraft.namespace === chatDrafts.namespace()
+        ) {
+          this._restoreStashedDraft(submittedText)
+        } else {
+          this._drafts._stashedDraft = null
+        }
+        const announceSettlement = () => {
+          this.element.dispatchEvent(new CustomEvent('comments--form:submit-settled', {
+            detail: { submissionId: commandSubmissionId },
+          }))
+        }
+        settlementUi.then(announceSettlement, announceSettlement)
       })
   }
 
@@ -393,6 +661,7 @@ export default class extends Controller {
   handleCancel(event) {
     event.preventDefault()
     this.resetForm()
+    this._restoreDraft()
   }
 
   handleSearch(event) {
@@ -565,63 +834,19 @@ export default class extends Controller {
   }
 
   handleDragOver(event) {
-    const isCreative = this.hasCreativeFromDataTransfer(event.dataTransfer)
-    const isImage = this.hasImageFromDataTransfer(event.dataTransfer)
-    if (isImage || isCreative) {
+    if (getDragKind(event.dataTransfer) === 'creative' || this.hasImageFromDataTransfer(event.dataTransfer)) {
       event.preventDefault()
       event.stopPropagation()
-      if (isCreative) {
-        this.formTarget.classList.add('creative-drop-hover')
-      }
-    }
-  }
-
-  handleDragLeave(event) {
-    // Only remove highlight if truly leaving the form
-    if (!this.formTarget.contains(event.relatedTarget)) {
-      this.formTarget.classList.remove('creative-drop-hover')
     }
   }
 
   handleDrop(event) {
-    this.formTarget.classList.remove('creative-drop-hover')
-
-    // Handle creative drop — stop propagation so contexts_controller doesn't intercept
-    if (this.hasCreativeFromDataTransfer(event.dataTransfer)) {
-      event.preventDefault()
-      event.stopPropagation()
-      const creativeData = this.extractCreativeData(event.dataTransfer)
-      if (creativeData) {
-        this.insertCreativeLink(creativeData)
-      }
-      return
-    }
-
     // Handle image drop
     const imageFiles = this.extractImageFiles(event.dataTransfer)
     if (!imageFiles.length) return
     event.preventDefault()
     this.setImageFiles([...this.currentImageFiles(), ...imageFiles])
     this.updateAttachmentList()
-  }
-
-  hasCreativeFromDataTransfer(dataTransfer) {
-    if (!dataTransfer || !dataTransfer.types) return false
-    return Array.from(dataTransfer.types).includes('application/x-collavre-creative')
-  }
-
-  extractCreativeData(dataTransfer) {
-    if (!dataTransfer) return null
-    const raw = dataTransfer.getData('application/x-collavre-creative') || dataTransfer.getData('text/plain')
-    if (!raw) return null
-    try {
-      const parsed = JSON.parse(raw)
-      if (!parsed || !parsed.creativeId) return null
-      const label = this.getCreativeLabelFromDom(parsed.creativeId)
-      return { id: parsed.creativeId, label: label || `Creative #${parsed.creativeId}` }
-    } catch {
-      return null
-    }
   }
 
   getCreativeLabelFromDom(creativeId) {
@@ -635,7 +860,12 @@ export default class extends Controller {
   }
 
   insertCreativeLink({ id, label }) {
-    const link = `[${label}](/creatives/${id})`
+    this.insertCreativeLinks([{ id, label }])
+  }
+
+  insertCreativeLinks(creatives) {
+    if (!creatives.length) return
+    const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
     const textarea = this.textareaTarget
     const pos = textarea.selectionStart
     const before = textarea.value.substring(0, pos)
@@ -729,6 +959,7 @@ export default class extends Controller {
     if (!selectedText) return
 
     const store = this._reviewStore
+    if (store.isEmpty) this._flushDraftSave()
     store.saveActiveFeedback(this.textareaTarget.value)
 
     if (commentId) {
@@ -767,7 +998,7 @@ export default class extends Controller {
     this.textareaTarget.value = ''
 
     if (store.isEmpty) {
-      this.textareaTarget.placeholder = ''
+      this._restoreOrdinaryDraft()
     } else if (!store.hasActive) {
       this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
     }
@@ -924,7 +1155,7 @@ export default class extends Controller {
         store.remove(quote.id)
         if (wasActive) this.textareaTarget.value = ''
         if (store.isEmpty) {
-          this.textareaTarget.placeholder = ''
+          this._restoreOrdinaryDraft()
         } else if (!store.hasActive) {
           this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
         }
@@ -959,8 +1190,18 @@ export default class extends Controller {
     this.submitTarget.textContent = labels[state]
   }
 
+  _restoreOrdinaryDraft() {
+    this.textareaTarget.value = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
+    this._restoreDraft()
+  }
+
   _getI18nText(key, fallback) {
     return this.element.dataset[key] || fallback
+  }
+
+  _defaultPlaceholder() {
+    return this._getI18nText('chatInputHint', 'Type a message, or use / for commands')
   }
 
   // --- Inbox inline reply mode ---
@@ -1038,7 +1279,7 @@ export default class extends Controller {
     this._reviewStore.clear()
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
-    this.textareaTarget.placeholder = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
     // Re-apply inbox reply mode indicator if we're in inbox System topic
     if (this._isInboxSystemTopic) {
       requestAnimationFrame(() => this._updateInboxReplyMode())
@@ -1054,6 +1295,20 @@ export default class extends Controller {
     const commentElement = doc.querySelector('.comment-item')
     if (!commentElement) return
 
+    // A search-filtered list is the result set of a server-side query, and a
+    // freshly posted comment carries no verdict on whether it matches. Splicing
+    // it in drops an unrelated message among the results and — when there were
+    // none — takes the "no results" notice with it, since removePlaceholder
+    // below clears whatever empty state is on screen. Leave search and reload
+    // the live list instead, the same exit the history-mode branch takes.
+    // Edits are exempt: that comment is already in the result set, matching the
+    // stream path, which blocks `append` but never `replace`/`remove`.
+    const listCtrl = this.listController
+    if (!replaceExisting && listCtrl?.manualSearchQuery) {
+      listCtrl.resetToLatest()
+      return
+    }
+
     this.removePlaceholder()
 
     const existing = listElement.querySelector(`#${commentElement.id}`)
@@ -1063,6 +1318,14 @@ export default class extends Controller {
       listElement.appendChild(commentElement)
     }
 
+    // The submit response can win the race against its Turbo Stream echo. Keep
+    // the All Messages read snapshot in step with this visible local append;
+    // the stream then deduplicates without getting a second chance to do it.
+    const addedTopic = listCtrl?.recordRenderedAllTopicWatermarks(
+      commentElement,
+      { includeNewTopics: !replaceExisting },
+    )
+    if (addedTopic) listCtrl?.reportRenderedAllTopics()
     renderMarkdownInContainer(commentElement)
     if (replaceExisting) {
       this.listController?.markCommentsRead()
@@ -1071,7 +1334,9 @@ export default class extends Controller {
 
   removePlaceholder() {
     const listElement = document.getElementById('comments-list')
-    const placeholder = listElement?.querySelector('#no-comments')
-    if (placeholder) placeholder.remove()
+    // Every empty-list state carries .comments-placeholder: the discovery
+    // cards (#no-comments) and the no-search-results notice. Either can be on
+    // screen when the user posts.
+    listElement?.querySelectorAll('.comments-placeholder').forEach((el) => el.remove())
   }
 }

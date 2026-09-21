@@ -21,6 +21,7 @@
 // apply here. The only DOM writes are element mutations (insertBefore, appendChild,
 // setAttribute, dataset, style, requestUpdate) invoked on the passed nodes.
 import { treeRowElement, readRowLevel, buildChildrenLoadUrl } from './creative_row_editor_helpers';
+import { restoreTreeEmptyState } from './creative_tree_empty_state';
 
 export function creativeTreeElement(node) {
   if (!node) return null;
@@ -257,4 +258,7 @@ export function removeTreeElement(tree) {
   } else if (tree.remove) {
     tree.remove();
   }
+  // Covers every editor-side removal: abandoned new row, delete, level moves that
+  // empty the tree. No-op while any row remains.
+  restoreTreeEmptyState();
 }

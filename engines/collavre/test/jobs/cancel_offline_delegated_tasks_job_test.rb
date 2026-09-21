@@ -12,8 +12,6 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       password: SecureRandom.hex(32),
       llm_vendor: "anthropic",
       llm_model: "claude-code",
-      # offline state — routing_expression nil, expected_token captured
-      routing_expression: nil,
       routing_subscription_token: nil,
       created_by_id: @owner.id,
       searchable: false
@@ -40,7 +38,7 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     assert_equal "cancelled", delegated_task.reload.status
   end
 
-  test "no-op when agent came back online (routing_expression restored)" do
+  test "no-op when agent came back online (presence restored)" do
     topic = Topic.create!(creative: @creative, name: "cc-online-topic", user: @owner)
     delegated_task = Task.create!(
       name: "Delegated task",
@@ -55,8 +53,8 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     )
 
     # Reconnect-grace path: the same MCP session resubscribed during the grace
-    # window and restored routing_expression.
-    @claude_agent.update_column(:routing_expression, "true")
+    # window and restored presence.
+    Collavre::AgentSubscription.create!(agent_id: @claude_agent.id, token: "expected-token-value")
     @claude_agent.update_column(:routing_subscription_token, "expected-token-value")
 
     Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
@@ -147,7 +145,6 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     # rechecks would no-op — but the dropped session's own session topic is
     # private to it and no sibling will /reply. The session-scoped invocation
     # targets only that topic's delegated work.
-    @claude_agent.update_column(:routing_expression, "true")
     Collavre::AgentSubscription.create!(
       agent_id: @claude_agent.id, token: "sibling", session_id: "sess-other"
     )
@@ -237,38 +234,5 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       "the dropped session's delegated work must be cancelled"
     assert_equal "cancelled", queued_task.reload.status,
       "queued work on the dropped session topic must be cancelled, not promoted into a clientless topic"
-  end
-
-  test "fails parent workflow when cancelling a delegated subtask" do
-    parent_task = Task.create!(
-      name: "Workflow Parent",
-      status: "running",
-      agent: @owner,
-      creative_id: @creative.id
-    )
-
-    sub_task = Task.create!(
-      name: "Claude subtask",
-      status: "delegated",
-      agent: @claude_agent,
-      parent_task_id: parent_task.id,
-      creative_id: @creative.id
-    )
-
-    fail_called_with = nil
-    fake_executor = Class.new do
-      define_method(:fail_subtask!) do |child, error_message: nil|
-        fail_called_with = { sub_task: child, error_message: error_message }
-      end
-    end.new
-
-    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
-      Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
-    end
-
-    assert_equal "cancelled", sub_task.reload.status
-    assert_not_nil fail_called_with, "Expected WorkflowExecutor#fail_subtask! to be invoked for workflow subtasks"
-    assert_equal sub_task.id, fail_called_with[:sub_task].id
-    assert_match(/connection/i, fail_called_with[:error_message].to_s)
   end
 end

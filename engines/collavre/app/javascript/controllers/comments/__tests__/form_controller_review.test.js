@@ -282,7 +282,7 @@ describe('FormController - Review Quote Chips', () => {
 
       expect(getQuotes(controller)).toHaveLength(0)
       expect(getActiveId(controller)).toBeNull()
-      expect(controller.textareaTarget.placeholder).toBe('')
+      expect(controller.textareaTarget.placeholder).toBe('Type a message, or use / for commands')
       expect(container.querySelector('.review-quotes-container').style.display).toBe('none')
     })
 
@@ -306,7 +306,7 @@ describe('FormController - Review Quote Chips', () => {
 
       expect(getQuotes(controller)).toHaveLength(0)
       expect(getActiveId(controller)).toBeNull()
-      expect(controller.textareaTarget.placeholder).toBe('')
+      expect(controller.textareaTarget.placeholder).toBe('Type a message, or use / for commands')
     })
   })
 

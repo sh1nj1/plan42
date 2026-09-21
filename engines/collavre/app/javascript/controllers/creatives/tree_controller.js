@@ -1,25 +1,47 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderCreativeTree, appendCreativeNodes, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { parseEmojis } from '../../utils/emoji_parser'
+import {
+  hideTreeEmptyState,
+  restoreTreeEmptyState,
+  PAGINATION_PENDING_ATTRIBUTE,
+} from '../../modules/creative_tree_empty_state'
+import {
+  captureCreativeTreeViewState,
+  restoreCreativeTreeViewState,
+} from '../../creatives/tree_view_state'
 
 const TREE_RETRY_DELAYS_MS = [200, 600]
 
 export default class extends Controller {
   static values = {
     url: String,
-    emptyHtml: String,
+    // Neither fallback is an HTML string any more: showEmptyState() clones the
+    // server-rendered <template>, and the load-error fallback is a bare
+    // translated sentence the client wraps in a <p> itself. Reading markup back
+    // out of a data attribute and assigning it is an innerHTML sink as far as
+    // CodeQL (js/xss-through-dom) is concerned, and neither needs to be one.
+    errorText: String,
+    // Accessible name for a loading placeholder built by this controller.
+    // Renderers that do not provide a translated server placeholder must pass
+    // this value so extensions cannot expose a hardcoded label in another locale.
+    loadingText: String,
   }
 
   connect() {
     this.abortController = null
     this.loadingIndicator = null
     this._editing = false
+    this._reloadHoldCount = 0
     this._pagination = null
     this._sentinel = null
     this._sentinelObserver = null
     this._loadingMore = false
     this._loadMoreAbort = null
     this._loadMoreIndicator = null
+    this._pendingViewState = null
+    this._pendingCronMessageDrafts = null
+    this._viewRestoreGeneration = 0
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
     this._handleEditStart = () => { this._editing = true }
@@ -27,10 +49,7 @@ export default class extends Controller {
       this._editing = false
       // Apply any pending sync data that was deferred while editing
       this._applyPendingSyncData()
-      if (this._pendingRefetch) {
-        this._pendingRefetch = false
-        this.debouncedLoad()
-      }
+      this._drainPendingReload()
     }
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
@@ -41,18 +60,15 @@ export default class extends Controller {
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.addEventListener('creative-editing:start', this._handleEditStart)
     document.addEventListener('creative-editing:stop', this._handleEditStop)
-    this._handleSyncRefetch = () => {
-      if (this._editing) {
-        this._pendingRefetch = true
-        return
-      }
-      this.debouncedLoad()
-    }
+    this._handleSyncRefetch = () => this.requestReload()
     document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
+    this._handleCreativeDrop = () => this.requestReload()
+    window.addEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
     this._setupArchiveToggle()
   }
 
   disconnect() {
+    this._viewRestoreGeneration += 1
     if (this.abortController) {
       this.abortController.abort()
       this.abortController = null
@@ -66,6 +82,7 @@ export default class extends Controller {
     document.removeEventListener('creative-editing:start', this._handleEditStart)
     document.removeEventListener('creative-editing:stop', this._handleEditStop)
     document.removeEventListener('creative-sync:refetch', this._handleSyncRefetch)
+    window.removeEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
     this._teardownPagination()
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
@@ -139,13 +156,82 @@ export default class extends Controller {
     })
   }
 
-  debouncedLoad() {
+  debouncedLoad({ preserveView = false } = {}) {
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
-    this._debouncedLoadTimer = setTimeout(() => this.load(), 300)
+    this._debouncedPreserveView = this._debouncedPreserveView || preserveView
+    this._debouncedLoadTimer = setTimeout(() => {
+      // Re-check rather than trusting the check requestReload() already made.
+      // Switching rows is a `creative-editing:stop` immediately followed by a
+      // `creative-editing:start`, so a refetch drained on the stop is still
+      // sitting in this debounce window when the next row opens — and load()
+      // replaces the whole container, which would take that row, the editor
+      // attached inside it and the unsaved draft out of the document. Re-pend
+      // instead of dropping it: the reload is still owed, just not yet safe.
+      if (this._editing || this._reloadHoldCount > 0) {
+        this._pendingRefetch = true
+        return
+      }
+      const shouldPreserveView = this._debouncedPreserveView
+      this._debouncedPreserveView = false
+      this.load({ preserveView: shouldPreserveView })
+    }, 300)
   }
 
-  load() {
+  // Editing-aware reload — the entry point for anything that wants the tree
+  // refetched in response to something that already happened elsewhere (the sync
+  // channel, an archive/unarchive that landed, a delete that promoted children to
+  // the root). load() replaces the whole container, which takes the row an open
+  // editor is attached to out of the document along with the unsaved draft inside
+  // it; those callers can land at any moment, including long after the user has
+  // moved on to editing a different row. So the reload waits for
+  // `creative-editing:stop`, which _handleEditStop drains.
+  //
+  // Call load() directly only for reloads the user just asked for and is waiting
+  // on (filter change, archive toggle), where re-rendering is the point.
+  requestReload() {
+    if (this._editing || this._reloadHoldCount > 0) {
+      this._pendingRefetch = true
+      return
+    }
+    this.debouncedLoad({ preserveView: true })
+  }
+
+  // Keep editing-aware reloads pending while an operation is between its local
+  // edit flush and its server response. The counter makes overlapping requests
+  // release independently without allowing an early reload between them.
+  beginReloadHold() {
+    this._reloadHoldCount += 1
+  }
+
+  endReloadHold() {
+    if (this._reloadHoldCount > 0) this._reloadHoldCount -= 1
+    this._drainPendingReload()
+  }
+
+  _drainPendingReload() {
+    if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0) return
+    this._pendingRefetch = false
+    this.debouncedLoad({ preserveView: true })
+  }
+
+  load({ preserveView = false } = {}) {
     if (!this.hasUrlValue) return
+
+    const viewRestoreGeneration = this._viewRestoreGeneration + 1
+    this._viewRestoreGeneration = viewRestoreGeneration
+
+    // A superseding preserved load starts after the first load replaced the tree
+    // with its loading placeholder. Keep the state captured from the real rows;
+    // capturing the placeholder would overwrite it with empty expansion/focus.
+    this._pendingViewState = preserveView
+      ? (this._pendingViewState || captureCreativeTreeViewState(this.element))
+      : null
+    this._pendingCronMessageDrafts = preserveView
+      ? new Map([
+        ...(this._pendingCronMessageDrafts || []),
+        ...this.captureCronMessageDrafts(),
+      ])
+      : null
 
     // A fresh load replaces the whole list (filter change, archive toggle, sync
     // refetch), so any active load-more session is stale — tear it down before
@@ -158,10 +244,12 @@ export default class extends Controller {
     this.abortController = new AbortController()
     this._retryCount = 0
     this.showLoadingIndicator()
-    this._fetchTree()
+    this._fetchTree(viewRestoreGeneration)
   }
 
-  _fetchTree() {
+  _fetchTree(viewRestoreGeneration) {
+    if (viewRestoreGeneration !== this._viewRestoreGeneration) return
+
     fetch(this.urlValue, {
       headers: { Accept: 'application/json' },
       signal: this.abortController.signal,
@@ -171,23 +259,24 @@ export default class extends Controller {
         return response.json()
       })
       .then((data) => {
+        if (viewRestoreGeneration !== this._viewRestoreGeneration) return
         this.hideLoadingIndicator()
-        this.renderData(data)
+        return this.renderData(data, viewRestoreGeneration)
       })
       .catch((error) => {
-        if (error.name === 'AbortError') return
+        if (error.name === 'AbortError' || viewRestoreGeneration !== this._viewRestoreGeneration) return
         // Transient network failures (ERR_NETWORK_CHANGED, offline blips, VPN
         // toggles) surface as TypeError "Failed to fetch". Retry briefly so a
         // momentary network event doesn't leave the user with an empty tree.
         if (this._isTransientNetworkError(error) && this._retryCount < TREE_RETRY_DELAYS_MS.length) {
           const delay = TREE_RETRY_DELAYS_MS[this._retryCount]
           this._retryCount += 1
-          this._retryTimer = setTimeout(() => this._fetchTree(), delay)
+          this._retryTimer = setTimeout(() => this._fetchTree(viewRestoreGeneration), delay)
           return
         }
         console.error(error)
         this.hideLoadingIndicator()
-        this.showEmptyState()
+        this.showErrorState()
       })
   }
 
@@ -195,20 +284,83 @@ export default class extends Controller {
     return error instanceof TypeError && /fetch|network/i.test(error.message || '')
   }
 
-  renderData(data) {
+  async renderData(data, viewRestoreGeneration = this._viewRestoreGeneration) {
     const nodes = Array.isArray(data?.creatives) ? data.creatives : []
+    const viewState = this._pendingViewState
+    const cronMessageDrafts = this._pendingCronMessageDrafts
+    const isCurrent = () => viewRestoreGeneration === this._viewRestoreGeneration
 
     if (nodes.length === 0) {
       this.showEmptyState()
       dispatchCreativeTreeUpdated(this.element)
+      await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
+      if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
+      if (isCurrent() && this._pendingCronMessageDrafts === cronMessageDrafts) {
+        this._pendingCronMessageDrafts = null
+      }
       return
     }
 
     renderCreativeTree(this.element, nodes)
+    await this.waitForCreativeTreeRows()
+    if (!isCurrent()) return
+    const deferredCronMessageDrafts = this.restoreCronMessageDrafts(cronMessageDrafts)
+    if (this._pendingCronMessageDrafts === cronMessageDrafts) {
+      this._pendingCronMessageDrafts = deferredCronMessageDrafts
+    }
     this.markContentLoaded()
     dispatchCreativeTreeUpdated(this.element)
     this.queueAlignmentUpdate()
     this._setupPagination(data?.pagination)
+    await restoreCreativeTreeViewState(this.element, viewState, { isCurrent })
+    if (!isCurrent()) return
+    await this.waitForCreativeTreeRows()
+    if (!isCurrent()) return
+    const remainingCronMessageDrafts = this.restoreCronMessageDrafts(deferredCronMessageDrafts)
+    if (this._pendingCronMessageDrafts === deferredCronMessageDrafts) {
+      this._pendingCronMessageDrafts = this._pagination?.has_more
+        ? remainingCronMessageDrafts
+        : null
+    }
+    if (isCurrent() && this._pendingViewState === viewState) this._pendingViewState = null
+  }
+
+  waitForCreativeTreeRows() {
+    return Promise.all(
+      Array.from(
+        this.element.querySelectorAll('creative-tree-row'),
+        row => row.updateComplete
+      )
+    )
+  }
+
+  captureCronMessageDrafts() {
+    const drafts = new Map()
+    this.element.querySelectorAll('[data-cron-key]').forEach(task => {
+      const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+      if (input && input.value !== input.dataset.cronSavedMessage) {
+        drafts.set(task.dataset.cronKey, input.value)
+      }
+    })
+    return drafts
+  }
+
+  restoreCronMessageDrafts(drafts) {
+    if (!drafts) return null
+
+    const deferredDrafts = new Map(drafts)
+
+    this.element.querySelectorAll('[data-cron-key]').forEach(task => {
+      if (!drafts.has(task.dataset.cronKey)) return
+
+      const input = task.querySelector('[data-cron-badge-target="messageInput"]')
+      if (!input) return
+
+      input.value = drafts.get(task.dataset.cronKey)
+      deferredDrafts.delete(task.dataset.cronKey)
+    })
+
+    return deferredDrafts.size > 0 ? deferredDrafts : null
   }
 
   // --- Load-more (paginated "Chats" feed) -------------------------------------
@@ -221,6 +373,9 @@ export default class extends Controller {
     this._pagination = pagination || null
     if (!this._pagination || !this._pagination.has_more) return
     if (typeof IntersectionObserver === 'undefined') return
+    // Deleting every rendered row does not empty the feed while further pages are
+    // queued, so suppress the empty-state placeholder until the last page lands.
+    this.element.setAttribute(PAGINATION_PENDING_ATTRIBUTE, 'true')
     this._createSentinel()
   }
 
@@ -261,12 +416,20 @@ export default class extends Controller {
         if (!response.ok) throw new Error(`Failed to load more chats: ${response.status}`)
         return response.json()
       })
-      .then((data) => {
+      .then(async (data) => {
         if (signal.aborted) return
         this._hideLoadMoreIndicator()
         const nodes = Array.isArray(data?.creatives) ? data.creatives : []
         if (nodes.length > 0) {
+          // Belt and braces alongside the pagination-pending guard: a placeholder
+          // that slipped through must never sit above the rows being appended.
+          hideTreeEmptyState(this.element)
           appendCreativeNodes(this.element, nodes)
+          await this.waitForCreativeTreeRows()
+          if (signal.aborted) return
+          this._pendingCronMessageDrafts = this.restoreCronMessageDrafts(
+            this._pendingCronMessageDrafts
+          )
           dispatchCreativeTreeUpdated(this.element)
           this.queueAlignmentUpdate()
         }
@@ -275,7 +438,12 @@ export default class extends Controller {
         if (this._pagination && this._pagination.has_more) {
           this._repositionSentinel()
         } else {
+          this._pendingCronMessageDrafts = null
           this._teardownPagination()
+          // Last page in, and the rows that were on screen when it was requested
+          // may since have been deleted. Nothing is pending any more, so an empty
+          // container now genuinely is an empty feed.
+          restoreTreeEmptyState(this.element)
         }
       })
       .catch((error) => {
@@ -298,6 +466,7 @@ export default class extends Controller {
   }
 
   _teardownPagination() {
+    this.element.removeAttribute(PAGINATION_PENDING_ATTRIBUTE)
     if (this._loadMoreAbort) {
       this._loadMoreAbort.abort()
       this._loadMoreAbort = null
@@ -340,32 +509,74 @@ export default class extends Controller {
   }
 
   showEmptyState() {
-    const html = this.hasEmptyHtmlValue ? this.emptyHtmlValue : ''
-    this.element.innerHTML = html
+    // The placeholder comes from the server-rendered <template> rather than an
+    // HTML string on a data attribute: no innerHTML sink, and the button_to CSRF
+    // token in the "request permission" variant survives.
+    this.element.replaceChildren()
+    restoreTreeEmptyState(this.element)
     this.markContentLoaded()
+    document.documentElement.classList.add('creative-alignment-ready')
+  }
+
+  // Distinct from showEmptyState(): used when the tree fetch itself fails
+  // (non-2xx, JSON parse failure, or a non-transient network error after
+  // retries are exhausted). The request never actually confirmed the tree is
+  // empty, so this must NOT render the Add/Import creation CTAs — a workspace
+  // that genuinely has creatives would otherwise look empty and invite
+  // duplicate creation.
+  showErrorState() {
+    this.element.replaceChildren()
+    if (this.hasErrorTextValue && this.errorTextValue) {
+      const message = document.createElement('p')
+      message.className = 'creative-tree-error'
+      message.style.textAlign = 'center'
+      message.textContent = this.errorTextValue
+      this.element.appendChild(message)
+    }
+    this.markContentLoaded('error')
     document.documentElement.classList.add('creative-alignment-ready')
   }
 
   showLoadingIndicator() {
     if (!this.loadingIndicator) {
-      const indicator = document.createElement('div')
-      indicator.className = 'creative-tree-loading-placeholder'
-      indicator.setAttribute('role', 'status')
-      indicator.setAttribute('aria-live', 'polite')
-      indicator.setAttribute('aria-label', 'Loading creatives')
-      indicator.innerHTML = `
-        <span class="creative-loading-indicator" aria-hidden="true">
-          <span class="creative-loading-dot">.</span>
-          <span class="creative-loading-dot">.</span>
-          <span class="creative-loading-dot">.</span>
-        </span>
-      `
-      this.loadingIndicator = indicator
+      // The first load's placeholder is already in the DOM: index.html.erb renders
+      // it inside #creatives so the initial paint says "loading" rather than
+      // flashing the empty state until Stimulus boots. Adopt that node instead of
+      // building a replacement — swapping it out would blank the container for a
+      // frame, which is the flicker this whole arrangement exists to avoid.
+      this.loadingIndicator =
+        this.element.querySelector(':scope > [data-creatives-tree-loading]') || this.buildLoadingIndicator()
     }
     this.clearLoadedState()
-    this.element.innerHTML = ''
-    this.element.appendChild(this.loadingIndicator)
+    // replaceChildren over `innerHTML = ''` + appendChild: the adopted placeholder
+    // is a child of the container, so wiping first would detach the very node
+    // being re-inserted.
+    this.element.replaceChildren(this.loadingIndicator)
     this.startAnimation()
+  }
+
+  buildLoadingIndicator() {
+    const indicator = document.createElement('div')
+    indicator.className = 'creative-tree-loading-placeholder'
+    indicator.setAttribute('data-creatives-tree-loading', '')
+    indicator.setAttribute('role', 'status')
+    indicator.setAttribute('aria-live', 'polite')
+    indicator.setAttribute('aria-label', this.loadingLabel())
+    indicator.innerHTML = `
+      <span class="creative-loading-indicator" aria-hidden="true">
+        <span class="creative-loading-dot">.</span>
+        <span class="creative-loading-dot">.</span>
+        <span class="creative-loading-dot">.</span>
+      </span>
+    `
+    return indicator
+  }
+
+  loadingLabel() {
+    if (this.hasLoadingTextValue && this.loadingTextValue) return this.loadingTextValue
+    throw new Error(
+      'creatives--tree requires a translated loadingText value when no server loading placeholder is present',
+    )
   }
 
   hideLoadingIndicator() {
@@ -444,11 +655,13 @@ export default class extends Controller {
     return Boolean(this.element.querySelector('creative-tree-row') || this.element.innerHTML.trim() !== '')
   }
 
-  markContentLoaded() {
+  markContentLoaded(state = 'success') {
+    this.element.dataset.loadState = state
     this.element.dataset.loaded = 'true'
   }
 
   clearLoadedState() {
+    delete this.element.dataset.loadState
     delete this.element.dataset.loaded
   }
 

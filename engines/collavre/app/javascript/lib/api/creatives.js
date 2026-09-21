@@ -2,14 +2,15 @@ import csrfFetch from './csrf_fetch'
 
 const JSON_HEADERS = { Accept: 'application/json' }
 
-export function get(id) {
-  return csrfFetch(`/creatives/${id}.json`, {
-    headers: JSON_HEADERS,
-  }).then((response) => response.json())
+function invalidateWorkspaceTreeOnSuccess(response) {
+  if (response.ok && typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+  }
+  return response
 }
 
-export function parentSuggestions(id) {
-  return csrfFetch(`/creatives/${id}/parent_suggestions.json`, {
+export function get(id) {
+  return csrfFetch(`/creatives/${id}.json`, {
     headers: JSON_HEADERS,
   }).then((response) => response.json())
 }
@@ -43,12 +44,30 @@ export function search(query, { simple = false } = {}) {
   }).then((response) => response.json())
 }
 
+export function createFromTitle(title) {
+  const body = new FormData()
+  body.append('creative[description]', title)
+  body.append('creative[content_type_input]', 'markdown')
+  body.append('creative[markdown_source]', title)
+  body.append('creative[markdown_editor]', 'rich')
+
+  return csrfFetch('/creatives', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body,
+  }).then((response) => {
+    if (!response.ok) throw new Error(`Failed to create creative: ${response.status}`)
+    invalidateWorkspaceTreeOnSuccess(response)
+    return response.json()
+  })
+}
+
 export function save(action, method, form) {
   return csrfFetch(action, {
     method,
     headers: JSON_HEADERS,
     body: new FormData(form),
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function linkExisting(parentId, originId) {
@@ -60,33 +79,33 @@ export function linkExisting(parentId, originId) {
     method: 'POST',
     headers: JSON_HEADERS,
     body,
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function destroy(id, withChildren = false) {
   const query = withChildren ? '?delete_with_children=true' : ''
   return csrfFetch(`/creatives/${id}${query}`, {
     method: 'DELETE',
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function archive(id) {
   return csrfFetch(`/creatives/${id}/archive`, {
     method: 'PATCH',
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function unarchive(id) {
   return csrfFetch(`/creatives/${id}/unarchive`, {
     method: 'PATCH',
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function unconvert(id) {
   return csrfFetch(`/creatives/${id}/unconvert`, {
     method: 'POST',
     headers: JSON_HEADERS,
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function updateMetadata(id, data) {
@@ -102,10 +121,10 @@ export function updateMetadata(id, data) {
 
 const creativesApi = {
   get,
-  parentSuggestions,
   loadChildren,
   browse,
   search,
+  createFromTitle,
   save,
   linkExisting,
   destroy,

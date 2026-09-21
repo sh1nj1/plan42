@@ -7,13 +7,14 @@ module Tools
     extend ToolMeta
 
     tool_name "cron_create"
-    tool_description "Create a new recurring scheduled job. The job will periodically post a message to a creative's topic, triggering agent orchestration. Schedule uses cron syntax (e.g., '*/5 * * * *' for every 5 minutes, '0 9 * * *' for daily at 9am)."
+    tool_description "Create a scheduled job. It posts a message to a creative's topic, creating the named topic when it does not exist, and triggers agent orchestration. Jobs recur by default; set once to true to remove the schedule after its first successful enqueue. Schedule uses cron syntax (e.g., '*/5 * * * *' for every 5 minutes, '0 9 * * *' for daily at 9am)."
 
     tool_param :creative_id, description: "The creative ID to post recurring messages to.", required: true
-    tool_param :topic_name, description: "The topic name within the creative to post to. Use 'Main' for the default main topic.", required: true
+    tool_param :topic_name, description: "The topic name within the creative to post to. Missing topics are created automatically. Use 'Main' for the default main topic.", required: true
     tool_param :schedule, description: "Cron schedule expression (e.g., '0 9 * * *' for daily at 9am, '*/30 * * * *' for every 30 minutes).", required: true
     tool_param :message, description: "The message content to post on each execution. This triggers the agent orchestration pipeline.", required: true
     tool_param :description, description: "Human-readable description of what this cron job does.", required: false
+    tool_param :once, description: "Run only on the first matching schedule, then remove the job. Defaults to false.", required: false
 
     sig do
       params(
@@ -21,10 +22,11 @@ module Tools
         topic_name: String,
         schedule: String,
         message: String,
-        description: T.nilable(String)
+        description: T.nilable(String),
+        once: T::Boolean
       ).returns(T::Hash[Symbol, T.untyped])
     end
-    def call(creative_id:, topic_name:, schedule:, message:, description: nil)
+    def call(creative_id:, topic_name:, schedule:, message:, description: nil, once: false)
       raise "Current.user is required" unless Current.user
 
       creative = Creative.find_by(id: creative_id)
@@ -33,18 +35,81 @@ module Tools
         return { error: "No write permission on this Creative", id: creative_id }
       end
 
-      topic_id = resolve_topic_id(creative, topic_name)
-      return topic_id if topic_id.is_a?(Hash) && topic_id[:error]
-
-      parsed = Fugit.parse(schedule)
-      unless parsed.is_a?(Fugit::Cron)
+      unless Fugit.parse(schedule).is_a?(Fugit::Cron)
         return { error: "Invalid cron schedule: #{schedule}. Use cron syntax like '0 9 * * *'." }
       end
 
-      suffix = SecureRandom.hex(4)
-      key = "cron_#{creative_id}_#{suffix}"
+      topic, topic_created = resolve_topic(creative, topic_name)
+      return topic if topic.is_a?(Hash) && topic[:error]
 
-      task = SolidQueue::RecurringTask.create!(
+      key = "cron_#{creative_id}_#{SecureRandom.hex(4)}"
+
+      task = create_task(
+        topic: topic, creative: creative, topic_created: topic_created,
+        key: key, schedule: schedule, message: message, description: description, once: once
+      )
+      return task if task.is_a?(Hash) && task[:error]
+
+      topic_created ? broadcast_topic_created(topic) : Crons::ChangeBroadcaster.call(creative)
+
+      task_result(task, creative_id: creative_id, topic_name: topic_name, once: once)
+    end
+
+    private
+
+    def task_result(task, creative_id:, topic_name:, once:)
+      {
+        success: true,
+        key: task.key,
+        schedule: task.schedule,
+        description: task.description,
+        once: once,
+        creative_id: creative_id,
+        topic_name: topic_name,
+        next_run: task.next_time&.iso8601
+      }
+    end
+
+    def create_task(topic:, creative:, key:, schedule:, message:, description:, once:, topic_created:)
+      creation_error = nil
+      retained_created_topic = false
+      task = topic.with_lock do
+        return { error: I18n.t("collavre.creative_history.read_only") } if topic.history?
+        unless topic.creative_id == creative.effective_origin.id
+          return { error: I18n.t("collavre.comments.invalid_topic") }
+        end
+
+        persist_task(
+          topic: topic, creative_id: creative.id, key: key, schedule: schedule,
+          message: message, description: description, once: once
+        )
+      rescue StandardError => e
+        retained_created_topic = clean_up_failed_topic_creation(topic) if topic_created
+        creation_error = e
+        nil
+      end
+      broadcast_topic_created(topic) if retained_created_topic
+      raise creation_error if creation_error
+
+      task
+    end
+
+    def clean_up_failed_topic_creation(topic)
+      return true if recurring_topic_adopted?(topic)
+
+      topic.destroy!
+      false
+    end
+
+    def recurring_topic_adopted?(topic)
+      Crons::RecurringTopicTasks.new(topic.id).any?
+    rescue StandardError => e
+      Rails.logger.warn("[CronCreateService] Failed to check topic #{topic.id} adoption: #{e.message}")
+      false
+    end
+
+    def persist_task(topic:, creative_id:, key:, schedule:, message:, description:, once:)
+      SolidQueue::RecurringTask.create!(
         key: key,
         class_name: "Collavre::CronActionJob",
         schedule: schedule,
@@ -53,35 +118,38 @@ module Tools
         description: description || "Cron job for creative #{creative_id}",
         arguments: [ {
           creative_id: creative_id,
-          topic_id: topic_id,
+          topic_id: topic.id,
           agent_id: Current.user.id,
-          message: message
+          message: message,
+          once: once
         } ]
       )
-
-      {
-        success: true,
-        key: task.key,
-        schedule: task.schedule,
-        description: task.description,
-        creative_id: creative_id,
-        topic_name: topic_name,
-        next_run: task.next_time&.iso8601
-      }
     end
 
-    private
-
-    def resolve_topic_id(creative, topic_name)
+    def resolve_topic(creative, topic_name)
       origin = creative.effective_origin
       if topic_name.casecmp(Creative::MAIN_TOPIC_NAME).zero?
-        origin.main_topic(fallback_user: Current.user).id
-      else
-        topic = Topic.find_by(name: topic_name, creative_id: origin.id)
-        return { error: "Topic '#{topic_name}' not found for this creative" } unless topic
-
-        topic.id
+        return [ origin.main_topic(fallback_user: Current.user), false ]
       end
+
+      topic = origin.topics.find_by(name: topic_name)
+      return [ { error: I18n.t("collavre.creative_history.read_only") }, false ] if topic&.history?
+      return [ topic, false ] if topic
+      return [ { error: I18n.t("collavre.topics.reserved_name") }, false ] if Topics::ReservedName.reserved?(origin, topic_name)
+
+      topic = origin.topics.find_or_create_by!(name: topic_name) { |created| created.user = Current.user }
+      [ topic, topic.previously_new_record? ]
+    end
+
+    def broadcast_topic_created(topic)
+      TopicsChannel.broadcast_to(
+        topic.creative,
+        { action: "created", topic: topic.slice(:id, :name), user_id: Current.user.id, cron_changed: true }
+      )
+    rescue StandardError => e
+      Rails.logger.warn("[CronCreateService] Failed to broadcast created topic #{topic.id}: #{e.message}")
+    ensure
+      Crons::ChangeBroadcaster.tree_only(topic.creative)
     end
   end
 end

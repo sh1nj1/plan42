@@ -6,6 +6,7 @@ module Collavre
   # - ResponseFinalizer: comment finalization, review workflow
   # - A2aDispatcher: agent-to-agent event dispatch
   class AiAgentService
+    include AiAgent::WorkspaceAuthentication
     # Compatibility alias for constants moved to AgentLifecycleManager
     CANCEL_CHECK_INTERVAL = AiAgent::AgentLifecycleManager::CANCEL_CHECK_INTERVAL
 
@@ -13,11 +14,12 @@ module Collavre
       @task = task
       @agent = task.agent
       @context = task.trigger_event_payload
+      @original_comment = find_original_comment
     end
 
     def call
       begin
-        Current.set(user: @agent) do
+        Creatives::AgentTurnHistory.call(@agent, workspace_user, @task) do
           if @agent.claude_channel_agent?
             delegate_to_claude_channel
           else
@@ -73,7 +75,6 @@ module Collavre
     def execute_llm_conversation
       log_action("start", { message: "Starting agent execution" })
 
-      @original_comment = find_original_comment
       messages_data = build_messages
       log_action("prompt_generated", { messages: messages_data[:messages] })
 
@@ -107,18 +108,7 @@ module Collavre
       @lifecycle_manager.broadcast_status("thinking")
 
       @client = build_ai_client(resolved[:system_prompt])
-      begin
-        stream_response(@client, resolved)
-      ensure
-        # Write down that the payload got there, whatever became of the turn
-        # afterwards. In an `ensure` because the ending this is for leaves by
-        # exception: a user pressing Stop mid-answer raises CancelledError out
-        # of the block above, and the task ends `cancelled` — an undelivered
-        # ending to every reader, although the agent has read this turn's
-        # payload and every comment it swallowed. See
-        # Orchestration::DeliveryRecord::HANDED_OFF_KEY.
-        Orchestration::DeliveryRecord.mark_handed_off!(@task) if @client.handed_off?
-      end
+      stream_with_handoff(resolved)
 
       # ...and write down when the handing over did not happen. The record
       # above licences discarding other dispatches on the strength of the agent
@@ -145,6 +135,8 @@ module Collavre
       @lifecycle_manager.broadcast_status("idle")
 
       @streamer.content
+    rescue CliProxy::EngineUnauthenticatedError => error
+      handle_engine_login(error)
     end
 
     def find_original_comment
@@ -221,7 +213,8 @@ module Collavre
           creative: @creative,
           user: @agent,
           task: @task,
-          comment: @reply_comment || @original_comment
+          comment: @reply_comment || @original_comment,
+          workspace_user: workspace_user
         },
         request_timeout_seconds: @lifecycle_manager.method(:remaining_deadline_seconds),
         # The streaming block below checks cancellation only when a text delta
@@ -237,6 +230,7 @@ module Collavre
       # Bypass the new manager's initial polling throttle at this handoff
       # boundary so a terminal turn cannot start remote tool side effects.
       @lifecycle_manager.check_cancelled!(force: true)
+      check_replay_authorization!
       response = client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
         @streamer.append(delta)
@@ -268,7 +262,8 @@ module Collavre
       dispatcher = AiAgent::A2aDispatcher.new(
         agent: @agent,
         reply_comment: finalized_comment,
-        context: @context
+        context: @context,
+        workspace_user: workspace_user
       )
       dispatcher.dispatch
     end

@@ -10,10 +10,12 @@ module CollavreGithub
       user = link.creative.user
       return unless user
 
-      CollavreGithub::MarkdownSync::InitialImportService.new(
-        repository_link: link,
-        user: user
-      ).call
+      Collavre::Creatives::History.track(actor: nil, origin: :sync) do
+        CollavreGithub::MarkdownSync::InitialImportService.new(
+          repository_link: link,
+          user: user
+        ).call
+      end
     end
   end
 end

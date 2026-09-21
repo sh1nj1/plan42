@@ -40,15 +40,13 @@ module Collavre
         )
       end
 
-      def create_policy_with_stuck_detection(enabled: true, task_threshold: 30, creative_threshold: 120,
-                                             queued_orphan_threshold: 5)
+      def create_policy_with_stuck_detection(enabled: true, task_threshold: 30, queued_orphan_threshold: 5)
         Collavre::OrchestratorPolicy.create!(
           policy_type: "stuck_detection",
           scope_type: nil,
           config: {
             "enabled" => enabled,
             "task_stuck_threshold_minutes" => task_threshold,
-            "creative_stall_threshold_minutes" => creative_threshold,
             "queued_orphan_threshold_minutes" => queued_orphan_threshold,
             "create_system_comment" => true
           }
@@ -125,70 +123,23 @@ module Collavre
         policy&.destroy
       end
 
-      test "detects stalled creative" do
-        policy = create_policy_with_stuck_detection(enabled: true, creative_threshold: 60)
-
-        # Give AI agent access to creative
+      test "does not alert for inactive creatives" do
+        policy = create_policy_with_stuck_detection(enabled: true)
         Collavre::CreativeShare.create!(
           creative: @creative,
           user: @ai_agent,
           permission: :write
         )
-
-        # Make creative stale
         @creative.update_columns(updated_at: 3.hours.ago)
 
-        detector = StuckDetector.new
-        stuck_items = detector.detect
+        inbox = Collavre::Creative.inbox_for(@human_user)
 
-        creative_stuck = stuck_items.find { |item| item.type == :creative }
-        assert_not_nil creative_stuck
-        assert_equal :stalled, creative_stuck.reason
-        assert_equal @creative.id, creative_stuck.item.id
-      ensure
-        policy&.destroy
-      end
+        assert_no_difference -> { inbox.comments.count } do
+          result = StuckDetector.new.detect_and_escalate
 
-      test "does not detect completed creative as stalled" do
-        policy = create_policy_with_stuck_detection(enabled: true, creative_threshold: 60)
-
-        # Complete the creative
-        @creative.update!(progress: 1.0)
-        @creative.update_columns(updated_at: 3.hours.ago)
-
-        detector = StuckDetector.new
-        stuck_items = detector.detect
-
-        creative_stuck = stuck_items.find { |item| item.type == :creative && item.item.id == @creative.id }
-        assert_nil creative_stuck
-      ensure
-        policy&.destroy
-      end
-
-      test "detects stalled creative that also has a public share" do
-        policy = create_policy_with_stuck_detection(enabled: true, creative_threshold: 60)
-
-        Collavre::CreativeShare.create!(
-          creative: @creative,
-          user: @ai_agent,
-          permission: :write
-        )
-
-        # A public share carries no user (see CreativeShare: user is optional)
-        Collavre::CreativeShare.create!(
-          creative: @creative,
-          user: nil,
-          permission: :read
-        )
-
-        @creative.update_columns(updated_at: 3.hours.ago)
-
-        detector = StuckDetector.new
-        stuck_items = detector.detect
-
-        creative_stuck = stuck_items.find { |item| item.type == :creative && item.item.id == @creative.id }
-        assert_not_nil creative_stuck
-        assert_equal :stalled, creative_stuck.reason
+          assert_empty result.stuck_items
+          assert_equal 0, result.escalated_count
+        end
       ensure
         policy&.destroy
       end
@@ -810,45 +761,6 @@ module Collavre
         assert_nil stuck_items.find { |i| i.type == :queued_orphan }
       ensure
         sched&.destroy
-        policy&.destroy
-      end
-
-      test "fails parent workflow when auto-recovering delegated subtask" do
-        policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
-
-        parent = Collavre::Task.create!(
-          name: "Parent workflow",
-          agent: @ai_agent,
-          status: "running",
-          topic_id: @topic.id,
-          creative_id: @creative.id
-        )
-
-        sub = Collavre::Task.create!(
-          name: "Delegated subtask",
-          agent: @ai_agent,
-          status: "delegated",
-          trigger_event_payload: { "creative" => { "id" => @creative.id } },
-          topic_id: @topic.id,
-          creative_id: @creative.id,
-          parent_task_id: parent.id
-        )
-        sub.update_columns(created_at: 1.hour.ago, updated_at: 1.hour.ago)
-
-        executor = Minitest::Mock.new
-        executor.expect(:fail_subtask!, nil) do |passed_sub, error_message:|
-          passed_sub.id == sub.id && error_message.is_a?(String)
-        end
-
-        Collavre::Comments::WorkflowExecutor.stub(:new, ->(_pt) { executor }) do
-          Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(_t, _c) { nil }) do
-            StuckDetector.new.detect_and_escalate
-          end
-        end
-
-        assert_equal "failed", sub.reload.status
-        executor.verify
-      ensure
         policy&.destroy
       end
     end

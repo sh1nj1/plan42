@@ -1,0 +1,16 @@
+<%# Server-rendered twin of tree_controller#showLoadingIndicator's markup.
+    Rendered inside #creatives so the very first paint already shows "loading"
+    instead of the empty state; tree_controller adopts this exact node when it
+    boots (see data-creatives-tree-loading), so nothing is torn down and
+    rebuilt. Keep the markup in sync with showLoadingIndicator(). %>
+<%= tag.div(
+      tag.span(
+        safe_join(Array.new(3) { tag.span('.', class: 'creative-loading-dot') }),
+        class: 'creative-loading-indicator',
+        aria: { hidden: true }
+      ),
+      class: 'creative-tree-loading-placeholder',
+      role: 'status',
+      aria: { live: 'polite', label: t('collavre.creatives.index.loading_creatives') },
+      data: { creatives_tree_loading: '' }
+    ) %>

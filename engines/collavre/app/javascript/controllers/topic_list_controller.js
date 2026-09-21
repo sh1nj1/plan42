@@ -25,21 +25,55 @@ export default class extends CommonPopupController {
 
     openForTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }, anchorRect, onSelectCallback, boundsElement = null) {
         this.onSelectCallback = onSelectCallback
-        this._allItems = this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel })
         this.inputTarget.value = ''
-        this.setItems(this._allItems)
+        this.updateTopics({ topics, archivedTopics, mainTopicId, allMessagesLabel })
         super.open(anchorRect, boundsElement)
+        if (this.isMobile()) {
+            // Autofocusing the search box raises the virtual keyboard, which covers
+            // the very list the user just asked to see. Drop focus instead — tapping
+            // the box still opens the keyboard when the user actually wants to search.
+            this._blurActiveElement()
+            return
+        }
         requestAnimationFrame(() => this.inputTarget.focus())
+    }
+
+    updateTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }) {
+        const activeItem = this.popup.items[this.popup.activeIndex]
+        this._allItems = this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel })
+        this._onInput()
+        if (!activeItem) return
+
+        const activeIndex = this.popup.items.findIndex(item => String(item.id) === String(activeItem.id))
+        if (activeIndex >= 0) this.popup.setActiveIndex(activeIndex)
+    }
+
+    isMobile() {
+        return window.innerWidth <= 600
+    }
+
+    _blurActiveElement() {
+        const active = document.activeElement
+        if (active && active !== document.body && typeof active.blur === 'function') active.blur()
     }
 
     _buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel }) {
         const main = mainTopicId ? topics.find(t => String(t.id) === String(mainTopicId)) : null
         const others = topics.filter(t => !main || String(t.id) !== String(mainTopicId))
+        const topicItem = (topic, archived) => {
+            const unreadCount = Number(topic.unread_count)
+            return {
+                id: topic.id,
+                label: `#${topic.name}`,
+                archived,
+                unreadCount: Number.isFinite(unreadCount) ? unreadCount : 0
+            }
+        }
         const items = []
-        if (main) items.push({ id: main.id, label: `#${main.name}`, archived: false })
-        others.forEach(t => items.push({ id: t.id, label: `#${t.name}`, archived: false }))
+        if (main) items.push(topicItem(main, false))
+        others.forEach(t => items.push(topicItem(t, false)))
         items.push({ id: '', label: `📋 ${allMessagesLabel}`, archived: false })
-        archivedTopics.forEach(t => items.push({ id: t.id, label: `#${t.name}`, archived: true }))
+        archivedTopics.forEach(t => items.push(topicItem(t, true)))
         return items
     }
 
@@ -65,10 +99,13 @@ export default class extends CommonPopupController {
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
+        const unreadBadge = item.unreadCount > 0
+            ? `<span class="topic-unread-badge">${item.unreadCount}</span>`
+            : ''
         if (item.archived) {
-            return `<span class="topic-list-item topic-list-item--archived">${ICON_ARCHIVE} ${escaped}</span>`
+            return `<span class="topic-list-item topic-list-item--archived">${ICON_ARCHIVE}<span class="topic-list-item-label">${escaped}</span>${unreadBadge}</span>`
         }
-        return `<span class="topic-list-item">${escaped}</span>`
+        return `<span class="topic-list-item"><span class="topic-list-item-label">${escaped}</span>${unreadBadge}</span>`
     }
 
     dispatchClose(reason) {

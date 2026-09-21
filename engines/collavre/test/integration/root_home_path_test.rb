@@ -3,6 +3,7 @@ require "test_helper"
 class RootHomePathTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:one)
+    @user.update!(last_visited_creative_id: nil)
     Rails.cache.clear
     SystemSetting.where(key: [ "home_page_path", "home_page_path_authenticated", "creatives_login_required" ]).destroy_all
     Rails.cache.clear
@@ -76,6 +77,88 @@ class RootHomePathTest < ActionDispatch::IntegrationTest
     assert_equal "/creatives", URI.parse(response.location).path
   end
 
+  test "authenticated user hitting / returns to their last visited creative" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+
+    sign_in_as(@user, password: "password")
+    get "/"
+
+    assert_response :redirect
+    location = URI.parse(response.location)
+    assert_equal "/creatives", location.path
+    assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
+  end
+
+  test "authenticated user returns to their last visited creative when the home path has a trailing slash" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+    SystemSetting.create!(key: "home_page_path_authenticated", value: "/creatives/")
+    Rails.cache.clear
+
+    sign_in_as(@user, password: "password")
+    get "/"
+
+    assert_response :redirect
+    location = URI.parse(response.location)
+    assert_equal "/creatives", location.path
+    assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
+  end
+
+  test "authenticated user returns to their last visited creative when the home path uses the HTML format" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+    SystemSetting.create!(key: "home_page_path_authenticated", value: "/creatives.html")
+    Rails.cache.clear
+
+    sign_in_as(@user, password: "password")
+    get "/"
+
+    assert_response :redirect
+    location = URI.parse(response.location)
+    assert_equal "/creatives", location.path
+    assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
+  end
+
+  test "authenticated user redirect preserves the engine mount prefix" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+
+    sign_in_as(@user, password: "password")
+    get "/", env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :redirect
+    location = URI.parse(response.location)
+    assert_equal "/collavre/creatives", location.path
+    assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
+  end
+
+  test "authenticated user returns to their last visited creative with a mounted Creative home path" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+    SystemSetting.create!(key: "home_page_path_authenticated", value: "/collavre/creatives")
+    Rails.cache.clear
+
+    sign_in_as(@user, password: "password")
+    get "/", env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :redirect
+    location = URI.parse(response.location)
+    assert_equal "/collavre/creatives", location.path
+    assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
+  end
+
+  test "authenticated user cannot be redirected to a creative they no longer can read" do
+    private_creative = Collavre::Creative.create!(user: users(:two), description: "Private")
+    @user.update!(last_visited_creative: private_creative)
+
+    sign_in_as(@user, password: "password")
+    get "/"
+
+    assert_response :redirect
+    assert_equal "/creatives", URI.parse(response.location).path
+  end
+
   test "authenticated user falls back to unauth rewrite when admin sets authenticated path to '/'" do
     SystemSetting.create!(key: "home_page_path", value: "/users")
     SystemSetting.create!(key: "home_page_path_authenticated", value: "/")
@@ -86,6 +169,31 @@ class RootHomePathTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     # "/" sentinel disables the redirect - middleware rewrite still applies
+  end
+
+  test "home button targets the top level even when a last visited creative exists" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+
+    sign_in_as(@user, password: "password")
+    get "/creatives"
+
+    assert_response :success
+    assert_select "form[action='/creatives'] .home-nav-button", minimum: 1
+    assert_select "form[action='/'] .home-nav-button", count: 0
+  end
+
+  test "home button follows through to the top level list" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+
+    sign_in_as(@user, password: "password")
+    get "/creatives"
+    home_action = css_select("form:has(.home-nav-button)").first["action"]
+    get home_action
+
+    assert_response :success
+    assert_nil response.location
   end
 
   test "authenticated user visiting the authenticated home directly does not loop" do

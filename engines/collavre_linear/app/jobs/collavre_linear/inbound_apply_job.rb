@@ -50,7 +50,9 @@ module CollavreLinear
         return
       end
 
-      CollavreLinear::InboundApplier.new(payload).apply!
+      Collavre::Creatives::History.track(actor: nil, origin: :sync) do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
     end
   end
 end

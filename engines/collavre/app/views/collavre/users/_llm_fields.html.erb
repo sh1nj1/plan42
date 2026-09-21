@@ -1,0 +1,65 @@
+<% models = @llm_models.map do |model|
+     {
+       id: model.id,
+       vendor: model.llm_vendor,
+       name: model.name,
+       delete_url: collavre.llm_model_path(model)
+     }
+   end %>
+
+<div data-controller="llm-model"
+     data-llm-model-menu-id-value="llm-model-suggestions"
+     data-llm-model-models-value="<%= models.to_json %>"
+     data-llm-model-delete-label-value="<%= t('collavre.users.new_ai.remove_model') %>"
+     data-llm-model-delete-failed-value="<%= t('collavre.users.new_ai.remove_model_failed') %>">
+  <div class="form-group">
+    <%= form.label :llm_vendor, t('collavre.users.new_ai.vendor_label') %>
+    <%= form.select :llm_vendor,
+                    options_for_select(Collavre::User::LLM_VENDOR_OPTIONS, selected_vendor),
+                    {},
+                    class: "stacked-form-control",
+                    data: {
+                      agent_vendor_target: "vendor",
+                      llm_model_target: "vendor",
+                      action: "change->llm-model#vendorChanged agent-vendor#update"
+                    } %>
+    <small class="form-text text-muted"><%= t('collavre.users.new_ai.vendor_help') %></small>
+  </div>
+
+  <div class="form-group" data-agent-vendor-target="gateway">
+    <%= form.label :agent_gateway_id, t("collavre.users.new_ai.agent_gateway_label") %>
+    <%= form.select :agent_gateway_id,
+                    options_from_collection_for_select(@agent_gateways, :id, :name, selected_gateway_id),
+                    { include_blank: t("collavre.users.new_ai.agent_gateway_blank") },
+                    class: "stacked-form-control",
+                    data: { agent_vendor_target: "gatewaySelect" } %>
+    <small class="form-text text-muted">
+      <%= t("collavre.users.new_ai.agent_gateway_help") %>
+      <%= link_to t("collavre.users.new_ai.manage_gateways"), collavre.agent_gateways_path,
+                  data: { turbo: false } %>
+    </small>
+    <% if selected_gateway %>
+      <div class="alert alert-info mt-2">
+        <%= t("collavre.users.edit_ai.gateway_mode", mode: t("collavre.agent_gateways.workspace_mode.#{selected_gateway.workspace_mode}")) %>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="form-group">
+    <%= form.label :llm_model, t('collavre.users.new_ai.model_label') %>
+    <div style="position: relative;">
+      <%= form.text_field :llm_model,
+                          required: true,
+                          maxlength: Collavre::LlmModel::MAX_NAME_LENGTH,
+                          class: "stacked-form-control",
+                          autocomplete: "off",
+                          value: selected_model,
+                          data: {
+                            agent_vendor_target: "model",
+                            llm_model_target: "input",
+                            action: "input->llm-model#search focus->llm-model#focus blur->llm-model#blur keydown->llm-model#handleKeydown"
+                          } %>
+      <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'llm-model-suggestions') %>
+    </div>
+  </div>
+</div>

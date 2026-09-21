@@ -29,7 +29,6 @@ module Collavre
         [
           Collavre::Comments::CalendarCommand.new(comment: comment, user: user),
           Collavre::Comments::TopicCommand.new(comment: comment, user: user),
-          Collavre::Comments::WorkCommand.new(comment: comment, user: user),
           Collavre::Comments::CompressCommand.new(comment: comment, user: user)
         ]
       end

@@ -52,6 +52,33 @@ module Collavre
         assert_includes creative.files.map { |f| f.blob.signed_id }, body["signed_id"]
       end
 
+      test "stores a bearer upload as a draft under review policy" do
+        creative = Collavre::Creative.create!(
+          description: "<p>x</p>", user: @owner,
+          data: { "ai_write_policy" => "review" }
+        )
+        assert creative.ai_write_review?
+
+        post path_for(creative),
+             params: { file: upload(content_type: "image/png", filename: "proposal.png") },
+             headers: { "Authorization" => "Bearer #{token_for(@owner)}" }
+
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert body["pending_review"], body.inspect
+        assert_equal "<p>x</p>", creative.reload.description
+        assert_empty creative.files
+        draft = CreativeChangeSet.find(body.fetch("change_set_id"))
+        assert_equal "mcp", draft.origin
+        retained_blob = draft.creative_changes.sole.history_file_attachments.sole.blob
+
+        applied = Creatives::ChangeSetApplyService.new(source: draft, user: @owner, mode: :draft).call
+
+        assert_equal :applied, applied.status
+        assert_equal retained_blob.id, creative.reload.files.blobs.sole.id
+        assert_includes creative.description, retained_blob.signed_id
+      end
+
       test "uploads an mp4 and embeds <video controls>" do
         creative = Collavre::Creative.create!(description: "<p>x</p>", user: @owner)
         post path_for(creative),
