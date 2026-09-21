@@ -8,6 +8,7 @@ module Creatives
     PPTX_MIME_TYPES = %w[
       application/vnd.openxmlformats-officedocument.presentationml.presentation
       application/octet-stream
+      application/vnd.ms-powerpoint
     ].freeze
 
     def initialize(file:, user:, parent: nil)

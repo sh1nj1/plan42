@@ -116,9 +116,11 @@ module Collavre
       presentation = xml_document("ppt/presentation.xml")
       if presentation
         relationships = relationships_for("ppt/presentation.xml")
-        paths = presentation.xpath("//*[local-name()='sldId']").filter_map do |slide_id|
+        paths = presentation.xpath("//*[local-name()='sldId']").map do |slide_id|
           relationship = relationships[relationship_id(slide_id)]
-          relationship&.fetch(:path, nil) if relationship&.fetch(:type, "")&.end_with?("/slide")
+          raise InvalidArchive unless relationship && relationship[:type].end_with?("/slide")
+
+          relationship.fetch(:path)
         end
         return paths if paths.any?
       end

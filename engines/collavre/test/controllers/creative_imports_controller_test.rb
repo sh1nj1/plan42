@@ -46,6 +46,21 @@ class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Invalid file type", JSON.parse(response.body)["error"]
   end
 
+  test "accepts pptx uploads with the generic PowerPoint MIME label" do
+    Tempfile.create([ "presentation", ".pptx" ]) do |tmp|
+      Zip::OutputStream.open(tmp.path) do |zip|
+        zip.put_next_entry("ppt/slides/slide1.xml")
+        zip.write('<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>')
+      end
+      file = Rack::Test::UploadedFile.new(tmp.path, "application/vnd.ms-powerpoint", original_filename: "slides.pptx")
+      assert_difference("Creative.count", 2) do
+        post collavre.creative_imports_path, params: { markdown: file }
+      end
+      assert_response :success
+      assert JSON.parse(response.body)["success"]
+    end
+  end
+
   test "rejects corrupt pptx bytes as a validation error" do
     file = Rack::Test::UploadedFile.new(
       file_fixture("invalid.txt"),

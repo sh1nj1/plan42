@@ -5,6 +5,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  test "PPT metadata survives parent title and slide view rendering" do
+    creative = Creative.create!(user: users(:one), description: '<div class="ppt-slide" data-ppt-slide="2" data-ppt-width="12192000" data-ppt-height="6858000">Slide</div>')
+
+    [ creatives_path(id: creative.id), slide_view_creative_path(creative) ].each do |path|
+      get path
+      assert_response :success
+      slide = Nokogiri::HTML.fragment(response.body).at_css(".ppt-slide")
+      assert slide, "expected PPT slide in #{path}"
+      assert_equal "2", slide["data-ppt-slide"]
+      assert_equal "12192000", slide["data-ppt-width"]
+      assert_equal "6858000", slide["data-ppt-height"]
+    end
+  end
+
   test "title row emits markdown editor flag so cached rich rows reopen in Lexical" do
     rich = Creative.create!(
       user: users(:one), content_type_input: "markdown", markdown_editor: "rich", markdown_source: "# hi"

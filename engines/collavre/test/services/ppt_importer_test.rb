@@ -5,6 +5,27 @@ require "zip"
 class PptImporterTest < ActiveSupport::TestCase
   SAMPLE_IMAGE = Base64.decode64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=")
 
+  test "rejects missing or wrong-type slide relationships without partial imports" do
+    [ presentation_relationships_xml.sub(/<Relationship Id="rId2"[^>]+\/>/, ""),
+      presentation_relationships_xml.sub('relationships/slide" Target="slides/slide2.xml', 'relationships/notesSlide" Target="slides/slide2.xml') ].each do |relationships|
+      Tempfile.create([ "incomplete", ".pptx" ]) do |tmp|
+        Zip::OutputStream.open(tmp.path) do |zip|
+          write_entry(zip, "ppt/presentation.xml", presentation_xml)
+          write_entry(zip, "ppt/_rels/presentation.xml.rels", relationships)
+          write_entry(zip, "ppt/slides/slide1.xml", slide_xml("First"))
+          write_entry(zip, "ppt/slides/slide2.xml", slide_xml("Second"))
+        end
+        Creative::RealtimeBroadcastable.stub(:broadcast_batch_created, ->(*) { flunk "must not broadcast" }) do
+          assert_no_difference("Creative.count") do
+            assert_raises(PptImporter::InvalidArchive) do
+              PptImporter.import(tmp, parent: nil, user: users(:one), create_root: true)
+            end
+          end
+        end
+      end
+    end
+  end
+
   test "preserves presentation order and slide structure as responsive html" do
     user = users(:one)
     parent = Creative.create!(user: user, description: "Root")
