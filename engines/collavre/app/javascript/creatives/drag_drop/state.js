@@ -6,6 +6,7 @@ const state = {
 
 export function setDraggedState(payload) {
   state.dragged = payload;
+  payload.tree?.classList.add('is-dragging');
 }
 
 export function getDraggedState() {
@@ -13,6 +14,7 @@ export function getDraggedState() {
 }
 
 export function resetDraggedState() {
+  state.dragged?.tree?.classList.remove('is-dragging');
   state.dragged = null;
   state.lastOverRow = null;
   state.lastOverPosition = null;
