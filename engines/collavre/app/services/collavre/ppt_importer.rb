@@ -6,6 +6,7 @@ require "zip"
 
 module Collavre
   class PptImporter
+    include PptBackgrounds
     include PptColors
     include PptParagraphs
     include PptFormatting
@@ -81,7 +82,7 @@ module Collavre
 
       <<~HTML.strip
         <div class="ppt-slide #{ratio_class}" data-ppt-slide="#{slide_number}"
-             data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}"#{format_attribute(fill: ppt_color(slide.at_xpath("//*[local-name()='bgPr']/*[local-name()='solidFill']")) || "#ffffff")}>
+             data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}"#{format_attribute(fill: slide_background(slide))}>
           <div class="ppt-slide-layout">#{inherited}#{elements}</div>
         </div>
         #{notes}

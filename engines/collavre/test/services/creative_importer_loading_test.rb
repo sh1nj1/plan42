@@ -12,6 +12,7 @@ class CreativeImporterLoadingTest < ActiveSupport::TestCase
         autoload :PptGeometry, File.expand_path("engines/collavre/app/services/collavre/ppt_geometry.rb")
         autoload :PptArchive, File.expand_path("engines/collavre/app/services/collavre/ppt_archive.rb")
         autoload :PptInheritance, File.expand_path("engines/collavre/app/services/collavre/ppt_inheritance.rb")
+        autoload :PptBackgrounds, File.expand_path("engines/collavre/app/services/collavre/ppt_backgrounds.rb")
         autoload :PptColors, File.expand_path("engines/collavre/app/services/collavre/ppt_colors.rb")
         autoload :PptParagraphs, File.expand_path("engines/collavre/app/services/collavre/ppt_paragraphs.rb")
         autoload :PptFormatting, File.expand_path("engines/collavre/app/services/collavre/ppt_formatting.rb")

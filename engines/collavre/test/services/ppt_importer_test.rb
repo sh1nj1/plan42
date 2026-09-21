@@ -503,6 +503,26 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "inherits backgrounds in slide layout master order and resolves theme fill references" do
+    entries = inheritance_entries
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme><a:accent1><a:srgbClr val="204060"/></a:accent1></a:clrScheme><a:fmtScheme><a:fillStyleLst><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:fillStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"><a:shade val="50000"/></a:schemeClr></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+    cases = [
+      [ "ppt/slideMasters/master.xml", '<p:bgPr><a:solidFill><a:srgbClr val="102030"/></a:solidFill></p:bgPr>', "#102030" ],
+      [ "ppt/slideLayouts/layout.xml", '<p:bgRef idx="1001"><a:schemeClr val="accent1"><a:tint val="50000"/></a:schemeClr></p:bgRef>', "#485058" ],
+      [ "ppt/slides/slide1.xml", '<p:bgRef idx="1"><a:schemeClr val="accent1"/></p:bgRef>', "#123456" ],
+      [ "ppt/slides/slide1.xml", '<p:bgPr><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></p:bgPr>', "#ABCDEF" ],
+      [ "ppt/slides/slide1.xml", '<p:bgPr><a:noFill/></p:bgPr>', "#ffffff" ]
+    ]
+    cases.each do |path, background, expected|
+      entries[path] = slide_xml("Background").sub('<p:cSld>', "<p:cSld><p:bg>#{background}</p:bg>")
+      with_archive(entries) do |file|
+        html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+        assert_equal expected, JSON.parse(html.at_css(".ppt-slide")["data-ppt-format"])["fill"]
+      end
+    end
+  end
+
   private
 
   def inheritance_entries
