@@ -8,19 +8,14 @@ module Collavre
       %( data-ppt-format="#{ERB::Util.html_escape(values.compact.to_json)}")
     end
 
-    def ppt_color(node)
-      color = node&.at_xpath("./a:srgbClr", node.document.collect_namespaces)&.[]("val")
-      "##{color}" if color&.match?(/\A[0-9a-f]{6}\z/i)
-    end
-
     def geometry_format(node, namespaces, bounds)
       transform = transform_for(node, namespaces)
       return {} unless transform
 
-      x, y, width, height = transform
+      x, y, width, height, orientation = transform
       bw, bh, ox, oy = bounds
       { x: (x - ox.to_i) * 100.0 / bw, y: (y - oy.to_i) * 100.0 / bh,
-        w: width * 100.0 / bw, h: height * 100.0 / bh }
+        w: width * 100.0 / bw, h: height * 100.0 / bh }.merge(orientation_format(orientation))
     end
 
     def shape_format(shape, namespaces, bounds)
@@ -61,16 +56,11 @@ module Collavre
         max: maximum && Float(maximum, exception: false) }
     end
 
-    def paragraph_format(paragraph, namespaces)
-      properties = paragraph.at_xpath("./a:pPr", namespaces)
-      defaults = properties&.at_xpath("./a:defRPr", namespaces) || paragraph.at_xpath("./a:endParaRPr", namespaces)
-      values = text_format(defaults, namespaces)
-      values[:align] = properties&.[]("algn")
-      after = properties&.at_xpath("./a:spcAft/a:spcPts", namespaces)
-      values[:spaceAfter] = after["val"].to_f * 127 * 100 / @slide_size.first if after
-      values[:bullet] = properties&.at_xpath("./a:buChar", namespaces)&.[]("char")
-      spacing = properties&.at_xpath("./a:lnSpc/a:spcPct", namespaces)
-      values[:lineHeight] = spacing["val"].to_f / 100_000 if spacing
+    def orientation_format(transform)
+      values = {}
+      rotation = Float(transform["rot"], exception: false)
+      values[:rotation] = (rotation / 60_000) % 360 if rotation&.finite?
+      %w[flipH flipV].each { |key| values[key] = truthy_xml_attribute?(transform[key]) if transform[key] }
       values
     end
   end

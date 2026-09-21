@@ -431,7 +431,7 @@ class PptImporterTest < ActiveSupport::TestCase
   test "uses body list levels and presentation defaults without mutating inherited styles" do
     entries = inheritance_entries
     entries["ppt/presentation.xml"] = presentation_xml.sub(/<p:sldIdLst>.*?<\/p:sldIdLst>/m, "")
-      .sub('</p:presentation>', '<p:defaultTextStyle><a:lvl2pPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:defRPr sz="1800"><a:latin typeface="Calibri"/></a:defRPr></a:lvl2pPr></p:defaultTextStyle></p:presentation>')
+      .sub('</p:presentation>', '<p:defaultTextStyle><a:lvl2pPr algn="ctr" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:defRPr sz="1800"><a:latin typeface="Calibri"/></a:defRPr></a:lvl2pPr></p:defaultTextStyle></p:presentation>')
     entries["ppt/slides/slide1.xml"] = placeholder_slide("Body", 'idx="4" type="body"').sub('<a:p>', '<a:p><a:pPr lvl="1"/>')
     entries["ppt/slides/slide2.xml"] = entries["ppt/slides/slide1.xml"].sub('<a:t>Body', '<a:t>Second')
     entries["ppt/slides/_rels/slide2.xml.rels"] = entries["ppt/slides/_rels/slide1.xml.rels"]
@@ -446,7 +446,60 @@ class PptImporterTest < ActiveSupport::TestCase
         span = Nokogiri::HTML.fragment(slide.reload.description).at_css("p > span")
         assert_equal({ "fontSize" => 3.125, "font" => "Calibri" }, JSON.parse(span["data-ppt-format"]))
         assert span.at_css("strong")
+        paragraph = span.parent
+        assert_equal "ctr", JSON.parse(paragraph["data-ppt-format"])["align"]
       end
+    end
+  end
+
+  test "persists rotations and flips on nested groups pictures shapes and frames" do
+    xml = rich_slide_xml.gsub('<a:xfrm>', '<a:xfrm rot="5400000" flipH="1" flipV="false">')
+      .gsub('<p:xfrm>', '<p:xfrm rot="-5400000" flipV="true">')
+    with_archive("ppt/slides/slide1.xml" => xml,
+                 "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+                 "ppt/media/image1.png" => SAMPLE_IMAGE, "ppt/charts/chart1.xml" => chart_xml) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      %w[.ppt-slide-title .ppt-slide-image .ppt-slide-group].each do |selector|
+        data = JSON.parse(html.at_css(selector)["data-ppt-format"])
+        assert_equal [ 90, true, false ], data.values_at("rotation", "flipH", "flipV"), selector
+      end
+      html.css(".ppt-slide-graphic").each do |frame|
+        assert_equal [ 270, true ], JSON.parse(frame["data-ppt-format"]).values_at("rotation", "flipV")
+      end
+    end
+  end
+
+  test "resolves theme colors and slide color map overrides in persisted output" do
+    entries = inheritance_entries
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="Test"><a:accent1><a:srgbClr val="204060"/></a:accent1><a:accent2><a:srgbClr val="804020"/></a:accent2><a:dk1><a:sysClr val="windowText" lastClr="123456"/></a:dk1></a:clrScheme></a:themeElements></a:theme>'
+    entries["ppt/slideMasters/master.xml"] = entries["ppt/slideMasters/master.xml"].sub('</p:sld>', '<p:clrMap tx1="dk1" accent1="accent2"/></p:sld>')
+    entries["ppt/slides/slide1.xml"] = slide_xml("Theme")
+      .sub('<p:sp>', '<p:sp><p:spPr><a:solidFill><a:schemeClr val="accent1"><a:tint val="50000"/></a:schemeClr></a:solidFill><a:ln w="12700"><a:solidFill><a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr></a:solidFill></a:ln></p:spPr>')
+      .sub('<a:r>', '<a:r><a:rPr><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:rPr>')
+      .sub('</p:sld>', '<p:clrMapOvr><a:overrideClrMapping accent1="accent1" tx1="dk1"/></p:clrMapOvr></p:sld>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.css(".ppt-slide-text").last["data-ppt-format"])
+      assert_equal [ "#90A0B0", "#102030" ], data.values_at("fill", "stroke")
+      assert_equal "#123456", JSON.parse(html.css("span[data-ppt-format]").last["data-ppt-format"])["color"]
+    end
+  end
+
+  test "cascades paragraph defaults and respects local spacing and bullet cancellation" do
+    entries = inheritance_entries
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Inherited", 'idx="4" type="body"')
+      .sub('</p:txBody>', '<a:p><a:pPr algn="r"><a:buNone/><a:spcAft><a:spcPts val="0"/></a:spcAft><a:lnSpc><a:spcPts val="2400"/></a:lnSpc></a:pPr><a:r><a:t>Local</a:t></a:r></a:p></p:txBody>')
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="body"')
+      .sub('<p:txBody>', '<p:txBody><a:lstStyle><a:lvl1pPr algn="ctr"><a:spcBef><a:spcPts val="960"/></a:spcBef></a:lvl1pPr></a:lstStyle>')
+    entries["ppt/slideMasters/master.xml"] = placeholder_slide("Master", 'type="body"')
+      .sub('</p:sld>', '<p:txStyles><p:bodyStyle><a:lvl1pPr algn="l"><a:buChar char="•"/><a:spcAft><a:spcPct val="50000"/></a:spcAft><a:lnSpc><a:spcPct val="120000"/></a:lnSpc></a:lvl1pPr></p:bodyStyle></p:txStyles></p:sld>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      paragraphs = html.css('p')
+      assert_equal [ "• Inherited", "Local" ], paragraphs.map(&:text)
+      assert_equal({ "align" => "ctr", "spaceBefore" => 1.0, "spaceAfterEm" => 0.5, "lineHeight" => 1.2 }, JSON.parse(paragraphs.first["data-ppt-format"]))
+      assert_equal({ "align" => "r", "spaceBefore" => 1.0, "spaceAfter" => 0.0, "lineHeightPoints" => 2.5 }, JSON.parse(paragraphs.last["data-ppt-format"]))
     end
   end
 

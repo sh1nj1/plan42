@@ -89,3 +89,23 @@ test('formats chart data embedded in a sanitized slide', () => {
   applyPptFormatting()
   expect(element.querySelectorAll('svg')).toHaveLength(1)
 })
+
+test('applies bounded orientation and inherited paragraph spacing', () => {
+  const {root, element} = slide({rotation:90, flipH:true, flipV:false, spaceBefore:2, spaceAfterEm:0.5, lineHeightPoints:2.5})
+  applyPptFormatting(root)
+  expect(element.style.transform).toBe('rotate(90deg) scaleX(-1) scaleY(1)')
+  expect(element.style.transformOrigin).toBe('center center')
+  expect(element.style.marginTop).toBe('2cqw')
+  expect(element.style.marginBottom).toBe('0.5em')
+  expect(element.style.lineHeight).toBe('2.5cqw')
+  element.dataset.pptFormat = JSON.stringify({rotation:270, flipH:false, flipV:true, spaceBeforeEm:1})
+  applyPptFormatting(root)
+  expect(element.style.transform).toBe('rotate(270deg) scaleX(1) scaleY(-1)')
+  expect(element.style.marginTop).toBe('1em')
+})
+
+test('rejects orientation and spacing injection or invalid types', () => {
+  const {root, element} = slide({rotation:'90deg);background:red', flipH:'true', flipV:1, spaceBefore:-1, spaceAfterEm:'2', lineHeightPoints:1000})
+  applyPptFormatting(root)
+  expect(element.getAttribute('style')).toBeNull()
+})

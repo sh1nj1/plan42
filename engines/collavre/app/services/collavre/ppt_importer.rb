@@ -6,6 +6,8 @@ require "zip"
 
 module Collavre
   class PptImporter
+    include PptColors
+    include PptParagraphs
     include PptFormatting
     include PptInheritance
     include PptArchive
@@ -70,6 +72,7 @@ module Collavre
       namespaces = slide.collect_namespaces
       relationships = relationships_for(slide_path)
       @placeholder_sources = placeholder_sources(relationships)
+      prepare_colors(slide)
       shape_tree = slide.at_xpath("//p:cSld/p:spTree", namespaces)
       inherited = render_inherited_shapes(slide)
       elements = shape_tree ? render_nodes(shape_tree.element_children, namespaces, relationships, @slide_size) : ""

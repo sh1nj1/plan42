@@ -8,7 +8,18 @@ module Collavre
     end
 
     def local_transform(node, namespaces)
-      transform = case node.name
+      transform = transform_node(node, namespaces)
+      return unless transform
+
+      offset = transform.at_xpath("./a:off", namespaces)
+      extent = transform.at_xpath("./a:ext", namespaces)
+      return unless offset && extent
+
+      [ offset["x"].to_i, offset["y"].to_i, extent["cx"].to_i, extent["cy"].to_i, transform ]
+    end
+
+    def transform_node(node, namespaces)
+      case node.name
       when "graphicFrame"
         node.at_xpath("./p:xfrm", namespaces)
       when "grpSp"
@@ -16,13 +27,6 @@ module Collavre
       else
         node.at_xpath("./p:spPr/a:xfrm", namespaces)
       end
-      return unless transform
-
-      offset = transform.at_xpath("./a:off", namespaces)
-      extent = transform.at_xpath("./a:ext", namespaces)
-      return unless offset && extent
-
-      [ offset["x"].to_i, offset["y"].to_i, extent["cx"].to_i, extent["cy"].to_i ]
     end
 
     def placeholder_sources(relationships)

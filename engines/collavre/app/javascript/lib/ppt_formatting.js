@@ -42,8 +42,29 @@ function applyGeometry(element, slide, data) {
     for (const [key, property] of Object.entries({ x: 'left', y: 'top', w: 'width', h: 'height' })) {
       if (finite(data[key], key === 'x' || key === 'y' ? -1000 : 0, 1000)) style[property] = `${data[key]}%`
     }
+    applyOrientation(style, data)
     if (['x', 'y', 'w', 'h'].every(key => finite(data[key], -1000, 1000))) style.position = 'absolute'
   }
+}
+
+function applyOrientation(style, data) {
+  const transforms = []
+  if (finite(data.rotation, 0, 360)) transforms.push(`rotate(${data.rotation}deg)`)
+  if (typeof data.flipH === 'boolean') transforms.push(`scaleX(${data.flipH ? -1 : 1})`)
+  if (typeof data.flipV === 'boolean') transforms.push(`scaleY(${data.flipV ? -1 : 1})`)
+  if (transforms.length) {
+    style.transformOrigin = 'center center'
+    style.transform = transforms.join(' ')
+  }
+}
+
+function applyParagraphSpacing(style, data) {
+  for (const [key, property] of Object.entries({spaceBefore:'marginTop', spaceAfter:'marginBottom'})) {
+    if (finite(data[key], 0, 100)) style[property] = `${data[key]}cqw`
+    if (finite(data[`${key}Em`], 0, 100)) style[property] = `${data[`${key}Em`]}em`
+  }
+  if (finite(data.lineHeight, 0.5, 5)) style.lineHeight = String(data.lineHeight)
+  if (finite(data.lineHeightPoints, 0.01, 100)) style.lineHeight = `${data.lineHeightPoints}cqw`
 }
 
 function applyTextStyle(style, data) {
@@ -51,8 +72,7 @@ function applyTextStyle(style, data) {
   if (color(data.color)) style.color = data.color
   if (finite(data.fontSize, 0.01, 100)) style.fontSize = `${data.fontSize}cqw`
   if (Object.hasOwn(fonts, data.font)) style.fontFamily = fonts[data.font]
-  if (finite(data.spaceAfter, 0, 100)) style.marginBottom = `${data.spaceAfter}cqw`
-  if (finite(data.lineHeight, 0.5, 5)) style.lineHeight = String(data.lineHeight)
+  applyParagraphSpacing(style, data)
   if (Object.hasOwn({ l: 1, ctr: 1, r: 1, just: 1 }, data.align)) style.textAlign = { l: 'left', ctr: 'center', r: 'right', just: 'justify' }[data.align]
 }
 
