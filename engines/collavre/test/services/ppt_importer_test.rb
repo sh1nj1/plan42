@@ -624,6 +624,40 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "persists placeholder shape cascade and explicit visual overrides" do
+    entries = inheritance_entries
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Slide", 'idx="4"')
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="title"')
+      .sub("<p:txBody>", '<p:spPr><a:solidFill><a:srgbClr val="AABBCC"/></a:solidFill><a:ln w="24384"/></p:spPr><p:txBody>')
+    entries["ppt/slideMasters/master.xml"] = placeholder_slide("Master", 'type="title"')
+      .sub("<p:txBody>", '<p:spPr><a:solidFill><a:srgbClr val="112233"/></a:solidFill><a:ln w="12192"><a:solidFill><a:srgbClr val="445566"/></a:solidFill></a:ln><a:prstGeom prst="ellipse"/></p:spPr><p:txBody>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      shapes = html.css(".ppt-slide-element")
+      assert_equal 1, shapes.size
+      assert_equal({ "fill" => "#AABBCC", "stroke" => "#445566", "strokeWidth" => 0.2, "shape" => "ellipse" }, JSON.parse(shapes.first["data-ppt-format"]))
+    end
+    entries["ppt/slides/slide1.xml"] = entries["ppt/slides/slide1.xml"].sub("<p:txBody>", '<p:spPr><a:noFill/><a:ln w="0"><a:noFill/></a:ln><a:prstGeom prst="roundRect"/></p:spPr><p:txBody>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal({ "strokeWidth" => 0.0, "shape" => "roundRect" }, JSON.parse(html.at_css(".ppt-slide-element")["data-ppt-format"]))
+    end
+  end
+
+  test "resolves inherited major and minor theme fonts before persistence" do
+    entries = inheritance_entries
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Slide", 'idx="4"')
+      .sub('</a:r></a:p>', '</a:r><a:r><a:rPr><a:latin typeface="+mn-lt"/></a:rPr><a:t>Minor</a:t></a:r><a:r><a:rPr><a:latin typeface="Georgia"/></a:rPr><a:t>Local</a:t></a:r></a:p>')
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="title"')
+      .sub('<a:p>', '<a:p><a:pPr><a:defRPr><a:latin typeface="+mj-lt"/></a:defRPr></a:pPr>')
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme><a:majorFont><a:latin typeface="Cambria"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>'
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal [ "Cambria", "Aptos", "Georgia" ], html.css("p > span").to_a.last(3).map { |span| JSON.parse(span["data-ppt-format"])["font"] }
+    end
+  end
+
   private
 
   def inheritance_entries

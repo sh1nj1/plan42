@@ -20,7 +20,7 @@ module Collavre
 
     def shape_format(shape, namespaces, bounds)
       values = geometry_format(shape, namespaces, bounds)
-      properties = shape.at_xpath("./p:spPr", namespaces)
+      properties = effective_shape_properties(shape)
       values[:fill] = ppt_color(properties&.at_xpath("./a:solidFill", namespaces))
       line = properties&.at_xpath("./a:ln", namespaces)
       values[:stroke] = ppt_color(line&.at_xpath("./a:solidFill", namespaces))
@@ -42,8 +42,41 @@ module Collavre
 
       values = { color: ppt_color(properties.at_xpath("./a:solidFill", namespaces)) }
       values[:fontSize] = properties["sz"].to_f * 127 * 100 / @slide_size.first if properties["sz"]
-      values[:font] = properties.at_xpath("./a:latin", namespaces)&.[]("typeface")
+      values[:font] = resolved_font(properties.at_xpath("./a:latin", namespaces)&.[]("typeface"))
       values
+    end
+
+    def effective_shape_properties(shape)
+      inherited = @rendering_inherited ? [] : inherited_placeholders(shape).reverse
+      properties = (inherited + [ shape ]).filter_map do |source|
+        source.at_xpath("./p:spPr", source.document.collect_namespaces)
+      end
+      properties.reduce(nil) { |merged, source| merge_shape_properties(merged, source) }
+    end
+
+    def merge_shape_properties(merged, source)
+      return source.dup unless merged
+
+      source.attribute_nodes.each { |attribute| merged[attribute.name] = attribute.value }
+      source.element_children.each do |child|
+        choices = [ %w[noFill solidFill gradFill blipFill pattFill grpFill], %w[prstGeom custGeom] ]
+        names = choices.find { |group| group.include?(child.name) } || [ child.name ]
+        previous = merged.element_children.select { |existing| names.include?(existing.name) }
+        replacement = child.name == "ln" ? merge_shape_properties(previous.first, child) : child.dup
+        previous.each(&:remove)
+        merged.add_child(replacement)
+      end
+      merged
+    end
+
+    def resolved_font(typeface)
+      token = typeface&.match(/\A\+(mj|mn)-(lt|ea|cs)\z/)
+      if token
+        family = token[1] == "mj" ? "majorFont" : "minorFont"
+        script = { "lt" => "latin", "ea" => "ea", "cs" => "cs" }.fetch(token[2])
+        typeface = @theme&.at_xpath("//*[local-name()='fontScheme']/*[local-name()='#{family}']/*[local-name()='#{script}']")&.[]("typeface")
+      end
+      typeface if typeface&.match?(/\A[\p{L}\p{N}][\p{L}\p{N} ._-]{0,99}\z/)
     end
 
     def line_chart_format(chart, series)

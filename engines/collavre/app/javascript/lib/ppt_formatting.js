@@ -2,7 +2,7 @@ import { renderPptConnector } from "./ppt_connector"
 import { renderPptChart } from "./ppt_chart"
 
 // Do not interpret presentation data as CSS. Every accepted value has a bounded
-// numeric type or a closed vocabulary; positions stay clipped by the canvas.
+// numeric type, a bounded font name, or a closed vocabulary; positions stay clipped by the canvas.
 const finite = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
 const color = value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)
 const fonts = {
@@ -97,7 +97,9 @@ function applyTextStyle(style, data) {
   if (color(data.fill)) style.backgroundColor = data.fill
   if (color(data.color)) style.color = data.color
   if (finite(data.fontSize, 0.01, 100)) style.fontSize = `${data.fontSize}cqw`
-  if (Object.hasOwn(fonts, data.font)) style.fontFamily = fonts[data.font]
+  if (typeof data.font === 'string' && /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,99}(?![\s\S])/u.test(data.font) && !['__proto__', 'constructor', 'toString'].includes(data.font)) {
+    style.fontFamily = Object.hasOwn(fonts, data.font) ? fonts[data.font] : `"${data.font}", Arial, sans-serif`
+  }
   applyParagraphSpacing(style, data)
   if (Object.hasOwn({ l: 1, ctr: 1, r: 1, just: 1 }, data.align)) style.textAlign = { l: 'left', ctr: 'center', r: 'right', just: 'justify' }[data.align]
 }

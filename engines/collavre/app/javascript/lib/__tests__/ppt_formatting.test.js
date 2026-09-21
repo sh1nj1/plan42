@@ -200,3 +200,18 @@ test('rejects invalid paragraph indentation while permitting bounded positive in
   expect(element.style.marginLeft).toBe('100cqw')
   expect(element.style.textIndent).toBe('100cqw')
 })
+
+
+test('applies resolved theme fonts as bounded literal font families', () => {
+  for (const font of ['Cambria', 'Aptos', 'Times New Roman', '맑은 고딕', 'Source Sans 3', 'A'.repeat(100)]) {
+    const { root, element } = slide({ font })
+    applyPptFormatting(root)
+    expect(element.style.fontFamily).toContain(font)
+    expect(element.style.fontFamily).toContain('sans-serif')
+  }
+  for (const font of ['+mn-lt', '+mj-lt', 'Arial; color:red', 'A"', 'url(https://invalid)', 'A'.repeat(101), '', null, 42, 'Font\n', 'constructor', 'toString']) {
+    const { root, element } = slide({ font })
+    applyPptFormatting(root)
+    expect(element.style.fontFamily).toBe('')
+  }
+})
