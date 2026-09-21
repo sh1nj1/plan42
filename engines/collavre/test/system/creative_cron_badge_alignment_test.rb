@@ -53,6 +53,17 @@ class CreativeCronBadgeAlignmentTest < ApplicationSystemTestCase
     row_selector = "#creative-#{@creative.id}"
 
     find("#{row_selector} .creative-cron-badge").click
+    assert page.evaluate_script(<<~JS)
+      (() => {
+        const popup = document.querySelector('#{row_selector} .cron-badge-popup');
+        const label = popup.querySelector('.cron-task-label');
+        const save = popup.querySelector('.cron-task-save');
+        const remove = popup.querySelector('.cron-task-delete');
+        return getComputedStyle(label).fontWeight === '600' &&
+          getComputedStyle(save).backgroundColor !== getComputedStyle(remove).backgroundColor &&
+          getComputedStyle(popup.querySelector('.cron-task-actions')).flexWrap === 'wrap';
+      })()
+    JS
     find("#{row_selector} .cron-task-message-input").set("Updated scheduled message")
     find("#{row_selector} .cron-task-save").click
 

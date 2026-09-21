@@ -56,13 +56,13 @@
         <% if can_manage? %>
           <span class="cron-task-actions">
             <button type="button"
-                    class="cron-task-save"
+                    class="cron-task-save btn btn-primary btn-sm"
                     data-action="click->cron-badge#saveMessage"
                     data-cron-update-url="<%= update_path(task) %>">
               <%= t('app.save') %>
             </button>
             <button type="button"
-                    class="cron-task-delete"
+                    class="cron-task-delete btn btn-danger btn-sm"
                     data-action="click->cron-badge#destroy"
                     data-cron-delete-url="<%= destroy_path(task) %>">
               <%= t('collavre.crons.delete') %>

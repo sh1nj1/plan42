@@ -57,15 +57,38 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     end
   end
 
+  test "long activity names and timing fit a narrow dark panel" do
+    @reply.activity_logs.first.update!(activity: "LongActivity" * 20)
+    visit collavre.creatives_path(id: @creative.id)
+    find("button[name='show-comments-btn'][data-creative-id='#{@creative.id}']").click
+    assert_docked_comments_loaded
+    within("#comment_#{@reply.id}") { open_activity_log }
+    assert_selector "#comment_#{@reply.id} .activity-log-list"
+    page.execute_script <<~JS
+      document.body.classList.add('dark-mode');
+      const list = document.querySelector('#comment_#{@reply.id} .activity-log-list');
+      list.style.width = '240px';
+    JS
+    assert page.evaluate_script(<<~JS)
+      (() => {
+        const item = document.querySelector('#comment_#{@reply.id} .activity-log-item');
+        const summary = item.querySelector('.activity-log-summary');
+        const duration = item.querySelector('.activity-execution-time');
+        return item.scrollWidth <= item.clientWidth &&
+          getComputedStyle(summary).flexWrap === 'wrap' &&
+          getComputedStyle(duration).whiteSpace === 'nowrap';
+      })()
+    JS
+  end
+
   private
 
   def open_activity_log
     find(".comment-activity-log-block > details > summary").click
-    # Lazy Turbo frames load only after entering the scrollable comment viewport.
-    assert_selector "turbo-frame[id^='activity_log_details_']" do |frame|
-      page.scroll_to(frame, align: :center)
-      !frame["complete"].nil?
-    end
+    # Keep timing assertions independent of the chat panel auto-scroll and lazy loading.
+    frame = find("turbo-frame[id^='activity_log_details_']")
+    frame.execute_script("this.loading = 'eager'")
+    assert_selector "turbo-frame[complete] .activity-log-list"
   end
 
   def create_reviewed_reply

@@ -32,6 +32,7 @@ class WorkflowRuleEditorTest < ApplicationSystemTestCase
     fill_in label(:phrase), with: "review"
     find("input[name='phrase']").send_keys(:enter)
     assert_button "review ×"
+    assert_selector ".workflow-tags .btn.btn-secondary.btn-sm"
     find("summary", text: label(:advanced)).click
     fill_in label(:liquid), with: "comment.content != blank"
     click_button label(:save)
@@ -50,6 +51,15 @@ class WorkflowRuleEditorTest < ApplicationSystemTestCase
     page.save_screenshot(Rails.root.join("tmp/workflow-editor-desktop.png"))
     resize_window_to(390, 844)
     page.execute_script("window.scrollTo(0, 0)")
+    assert page.evaluate_script(<<~JS)
+      (() => {
+        const panel = document.querySelector('.workflow-editor');
+        const save = panel.querySelector('button[type="submit"]');
+        const reload = panel.querySelector('[data-action$="#load"]');
+        return panel.scrollWidth <= panel.clientWidth &&
+          getComputedStyle(save).backgroundColor !== getComputedStyle(reload).backgroundColor;
+      })()
+    JS
     page.save_screenshot(Rails.root.join("tmp/workflow-editor-mobile.png"))
     assert_equal [ "review" ], @workflow.children.sole.data.dig("workflow_rule", "when", "body_contains")
   end

@@ -15,6 +15,9 @@ class CreativesControllerWorkflowPanelTest < ActionDispatch::IntegrationTest
     get edit_creative_path(@workflow)
     assert_response :success
     assert_select "[data-controller='creatives--workflow-rule']"
+    assert_select "template button.btn.btn-primary[type=submit]"
+    assert_select "button.btn.btn-secondary[data-action='creatives--workflow-rule#load']"
+    assert_select "button.btn.btn-secondary[data-action='creatives--workflow-rule#add']"
     assert_select "template [name='event']"
     assert_select "template input[type='radio'][value='agent']"
     assert_select "template select[multiple]"

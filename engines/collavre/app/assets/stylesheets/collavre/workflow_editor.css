@@ -9,9 +9,9 @@
   gap: var(--space-2);
   margin-block: var(--space-3);
   padding: var(--space-3);
-  border: 1px solid var(--color-border);
+  border: var(--border-1) solid var(--border-color);
   border-radius: var(--radius-2);
-  background: var(--color-bg);
+  background: var(--surface-bg);
   overflow-wrap: anywhere;
 }
 
@@ -19,7 +19,7 @@
   min-width: 0;
   margin: 0;
   padding: var(--space-2);
-  border: 1px solid var(--color-border);
+  border: var(--border-1) solid var(--border-color);
 }
 
 .workflow-rule [data-role="controls"] {
@@ -89,14 +89,10 @@
   margin: 0;
 }
 
-.workflow-editor button {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2);
-  background: var(--color-btn-bg);
-  color: var(--color-btn-text);
-  font: inherit;
-  cursor: pointer;
+.workflow-rule .btn {
+  justify-self: start;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .workflow-editor button:disabled {
