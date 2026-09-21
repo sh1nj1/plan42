@@ -9,6 +9,9 @@ class CreativeImporterLoadingTest < ActiveSupport::TestCase
       abort "Nokogiri was already loaded" if defined?(Nokogiri)
 
       module Collavre
+        autoload :PptGeometry, File.expand_path("engines/collavre/app/services/collavre/ppt_geometry.rb")
+        autoload :PptArchive, File.expand_path("engines/collavre/app/services/collavre/ppt_archive.rb")
+        autoload :PptInheritance, File.expand_path("engines/collavre/app/services/collavre/ppt_inheritance.rb")
         autoload :PptFormatting, File.expand_path("engines/collavre/app/services/collavre/ppt_formatting.rb")
         autoload :PptImporter, File.expand_path("engines/collavre/app/services/collavre/ppt_importer.rb")
       end

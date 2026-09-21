@@ -242,6 +242,7 @@ class PptImporterTest < ActiveSupport::TestCase
     importer = PptImporter.new(nil, parent: nil, user: users(:one), create_root: false, filename: nil)
     importer.instance_variable_set(:@read_bytes, 0)
     entry = Object.new
+    entry.define_singleton_method(:name) { "oversized" }
     entry.define_singleton_method(:get_input_stream) { |&block| block.call(StringIO.new("x" * (PptImporter::MAX_ENTRY_BYTES + 1))) }
     assert_raises(PptImporter::InvalidArchive) { importer.send(:read_entry, entry) }
   end
@@ -274,7 +275,7 @@ class PptImporterTest < ActiveSupport::TestCase
                  "ppt/slideLayouts/layout.xml" => rich_slide_xml) do |file|
       html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
       assert_equal 1, html.css("p br").size
-      assert_equal "FirstSecond", html.at_css("p").text
+      assert_equal "FirstSecond", html.css(".ppt-slide-layout > .ppt-slide-text p").last.text
     end
   end
 
@@ -323,7 +324,136 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "counts shared archive parts once without weakening actual size limits" do
+    entries = { "ppt/presentation.xml" => presentation_xml,
+                "ppt/_rels/presentation.xml.rels" => presentation_relationships_xml,
+                "ppt/slides/slide1.xml" => slide_xml("One"),
+                "ppt/slides/slide2.xml" => slide_xml("Two") }
+    original = PptImporter::MAX_TOTAL_BYTES
+    PptImporter.send(:remove_const, :MAX_TOTAL_BYTES)
+    PptImporter.const_set(:MAX_TOTAL_BYTES, entries.values.sum(&:bytesize))
+    with_archive(entries) { |file| assert_equal 3, import_file(file).size }
+    importer = PptImporter.new(nil, parent: nil, user: users(:one), create_root: false, filename: nil)
+    importer.instance_variable_set(:@read_bytes, 0)
+    [ "a", "b" ].each_with_index do |name, index|
+      entry = Object.new
+      entry.define_singleton_method(:name) { name }
+      entry.define_singleton_method(:get_input_stream) { |&block| block.call(StringIO.new("x" * entries.values.sum(&:bytesize))) }
+      if index.zero?
+        assert_equal entries.values.sum(&:bytesize), importer.send(:read_entry, entry).bytesize
+      else
+        assert_raises(PptImporter::InvalidArchive) { importer.send(:read_entry, entry) }
+      end
+    end
+  ensure
+    PptImporter.send(:remove_const, :MAX_TOTAL_BYTES)
+    PptImporter.const_set(:MAX_TOTAL_BYTES, original)
+  end
+
+  test "renders only one supported compatibility branch including nested pictures and charts" do
+    slide = rich_slide_xml.sub('<p:cSld>', '<p:cSld xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:new="urn:unsupported">')
+    slide = slide.sub('<p:spTree>', '<p:spTree><mc:AlternateContent><mc:Choice Requires="new"><p:sp><p:txBody><a:p><a:r><a:t>Unsupported</a:t></a:r></a:p></p:txBody></p:sp></mc:Choice><mc:Fallback>')
+                 .sub('</p:spTree>', '</mc:Fallback></mc:AlternateContent></p:spTree>')
+    [ slide, slide.sub('<mc:Fallback>', '<mc:Choice Requires="p a c">').sub('</mc:Fallback>', '</mc:Choice><mc:Fallback><p:sp/></mc:Fallback>') ].each do |xml|
+      with_archive("ppt/slides/slide1.xml" => xml,
+                   "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+                   "ppt/media/image1.png" => SAMPLE_IMAGE, "ppt/charts/chart1.xml" => chart_xml) do |file|
+        html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+        assert_equal 1, html.css(".ppt-slide-title").size
+        assert_equal 1, html.css("img").size
+        assert_equal 1, html.css(".ppt-slide-chart").size
+        assert_includes html.text, "Grouped text"
+        assert_not_includes html.text, "Unsupported"
+      end
+    end
+    with_archive("ppt/slides/slide1.xml" => slide.sub(/<mc:Fallback>.*?<\/mc:Fallback>/m, "")) do |file|
+      assert_empty Nokogiri::HTML.fragment(import_file(file).last.reload.description).css(".ppt-slide-element")
+    end
+  end
+
+  test "renders master and layout decorations behind slide content with their own relationships" do
+    entries = inheritance_entries
+    entries["ppt/slideLayouts/layout.xml"] = rich_slide_xml
+    entries["ppt/slideLayouts/_rels/layout.xml.rels"] = rich_slide_relationships_xml.sub('</Relationships>', '<Relationship Id="master" Type="x/slideMaster" Target="../slideMasters/master.xml"/></Relationships>')
+    entries["ppt/media/image1.png"] = SAMPLE_IMAGE
+    entries["ppt/charts/chart1.xml"] = chart_xml
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal [ "Master", "AlphaBeta", "RevenueSalesQ1:10", "Groupedtext", "Slide" ], html.css(".ppt-slide-layout > div").map { |n| n.text.gsub(/\s+/, "") }.reject(&:empty?)
+      assert_equal 1, html.css("img").size
+      assert_not_includes html.text, "Title & intro"
+    end
+    entries["ppt/slides/slide1.xml"] = entries["ppt/slides/slide1.xml"].sub('<p:sld ', '<p:sld showMasterSp="0" ')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal "Slide", html.text.strip
+      assert_empty html.css("img")
+    end
+    entries["ppt/slides/slide1.xml"] = slide_xml("Slide")
+    entries["ppt/slideLayouts/layout.xml"] = entries["ppt/slideLayouts/layout.xml"].sub('<p:sld ', '<p:sld showMasterSp="false" ')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_not_includes html.text, "Master"
+      assert_equal 1, html.css("img").size
+    end
+  end
+
+  test "cascades placeholder typography and honors explicit run overrides" do
+    entries = inheritance_entries
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Slide", 'idx="4"')
+      .sub('<a:p>', '<a:p><a:pPr><a:defRPr i="1"/></a:pPr>')
+      .sub('</a:r></a:p>', '</a:r><a:r><a:rPr b="0" i="0" u="none" sz="1200"/><a:t>Override</a:t></a:r></a:p>')
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="title"')
+      .sub('<a:p>', '<a:p><a:pPr><a:defRPr u="sng"><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:defRPr></a:pPr>')
+    entries["ppt/slideMasters/master.xml"] = placeholder_slide("Master", 'type="title"')
+      .sub('</p:sld>', '<p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr sz="2400" b="1"><a:latin typeface="Arial"/><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:defRPr></a:lvl1pPr></p:titleStyle></p:txStyles></p:sld>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      spans = html.css("p > span")
+      assert_equal 2, spans.size
+      assert_equal({ "fontSize" => 2.5, "font" => "Arial", "color" => "#123456" }, JSON.parse(spans.first["data-ppt-format"]))
+      assert_equal "Slide", spans.first.text
+      %w[strong em u].each { |tag| assert spans.first.at_css(tag), spans.first.to_html }
+      assert_equal 1.25, JSON.parse(spans.last["data-ppt-format"])["fontSize"]
+      assert_empty spans.last.css("strong, em, u")
+    end
+  end
+
+  test "uses body list levels and presentation defaults without mutating inherited styles" do
+    entries = inheritance_entries
+    entries["ppt/presentation.xml"] = presentation_xml.sub(/<p:sldIdLst>.*?<\/p:sldIdLst>/m, "")
+      .sub('</p:presentation>', '<p:defaultTextStyle><a:lvl2pPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:defRPr sz="1800"><a:latin typeface="Calibri"/></a:defRPr></a:lvl2pPr></p:defaultTextStyle></p:presentation>')
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Body", 'idx="4" type="body"').sub('<a:p>', '<a:p><a:pPr lvl="1"/>')
+    entries["ppt/slides/slide2.xml"] = entries["ppt/slides/slide1.xml"].sub('<a:t>Body', '<a:t>Second')
+    entries["ppt/slides/_rels/slide2.xml.rels"] = entries["ppt/slides/_rels/slide1.xml.rels"]
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="body"')
+      .sub('<p:txBody>', '<p:txBody><a:lstStyle><a:lvl2pPr><a:defRPr b="1"/></a:lvl2pPr></a:lstStyle>')
+    entries["ppt/slideMasters/master.xml"] = placeholder_slide("Master", 'type="body"')
+      .sub('</p:sld>', '<p:txStyles><p:bodyStyle><a:lvl2pPr><a:defRPr sz="3000"/></a:lvl2pPr></p:bodyStyle></p:txStyles></p:sld>')
+    with_archive(entries) do |file|
+      slides = import_file(file).drop(1)
+      assert_equal 2, slides.size
+      slides.each do |slide|
+        span = Nokogiri::HTML.fragment(slide.reload.description).at_css("p > span")
+        assert_equal({ "fontSize" => 3.125, "font" => "Calibri" }, JSON.parse(span["data-ppt-format"]))
+        assert span.at_css("strong")
+      end
+    end
+  end
+
   private
+
+  def inheritance_entries
+    { "ppt/slides/slide1.xml" => slide_xml("Slide"),
+      "ppt/slides/_rels/slide1.xml.rels" => relationships_xml("slideLayout", "../slideLayouts/layout.xml"),
+      "ppt/slideLayouts/layout.xml" => slide_xml("Layout"),
+      "ppt/slideLayouts/_rels/layout.xml.rels" => relationships_xml("slideMaster", "../slideMasters/master.xml"),
+      "ppt/slideMasters/master.xml" => slide_xml("Master") }
+  end
+
+  def placeholder_slide(text, attributes)
+    slide_xml(text).sub("<p:txBody>", "<p:nvSpPr><p:nvPr><p:ph #{attributes}/></p:nvPr></p:nvSpPr><p:txBody>")
+  end
 
   def import_file(file)
     PptImporter.import(file, parent: nil, user: users(:one), create_root: true)
@@ -470,5 +600,44 @@ class PptImporterTest < ActiveSupport::TestCase
         </p:sp></p:spTree></p:cSld>
       </p:notes>
     XML
+  end
+end
+
+# Real commits are essential here: transactional fixtures defer after_commit.
+class PptImporterCommitTest < ActiveSupport::TestCase
+  self.use_transactional_tests = false
+
+  test "keeps uploaded bytes when a creative after_commit callback raises" do
+    marker = "PPT commit failure regression"
+    callback = -> { raise IOError, "enqueue failed" if description.include?(marker) }
+    Creative.set_callback(:commit, :after, callback)
+    blobs = []
+    original = ActiveStorage::Blob.method(:build_after_unfurling)
+    track = ->(**args) { original.call(**args).tap { |blob| blobs << blob } }
+    Tempfile.create([ "commit", ".pptx" ]) do |file|
+      Zip::OutputStream.open(file.path) do |zip|
+        zip.put_next_entry("ppt/slides/slide1.xml")
+        zip.write <<~XML
+          <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+            <p:cSld><p:spTree><p:pic><p:nvPicPr><p:cNvPr name="#{marker}"/></p:nvPicPr><p:blipFill><a:blip r:embed="image"/></p:blipFill></p:pic></p:spTree></p:cSld>
+          </p:sld>
+        XML
+        zip.put_next_entry("ppt/slides/_rels/slide1.xml.rels")
+        zip.write '<Relationships><Relationship Id="image" Type="x/image" Target="../media/image.png"/></Relationships>'
+        zip.put_next_entry("ppt/media/image.png")
+        zip.write PptImporterTest::SAMPLE_IMAGE
+      end
+      ActiveStorage::Blob.stub(:build_after_unfurling, track) do
+        assert_difference([ "Creative.count", "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ], 1) do
+          assert_raises(IOError) { PptImporter.import(file, parent: nil, user: users(:one)) }
+        end
+      end
+    end
+    assert_equal 1, blobs.size
+    assert_equal PptImporterTest::SAMPLE_IMAGE, blobs.first.download
+  ensure
+    Creative.skip_callback(:commit, :after, callback)
+    Creative.where("description LIKE ?", "%#{marker}%").destroy_all
+    blobs.each(&:purge)
   end
 end

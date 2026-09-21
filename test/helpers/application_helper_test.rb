@@ -9,6 +9,14 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal sanitize(html), embed_youtube_iframe(html)
   end
 
+  test "preserves default-safe attributes and rejects unsafe attributes" do
+    html = '<p lang="ko"><del datetime="2026-09-22" cite="https://example.com" onclick="alert(1)">Item</del></p>'
+    assert_equal sanitize(html), embed_youtube_iframe(html)
+    assert_includes embed_youtube_iframe(html), 'lang="ko"'
+    assert_includes embed_youtube_iframe(html), 'datetime="2026-09-22"'
+    assert_not_includes embed_youtube_iframe(html), "onclick"
+  end
+
   test "preserves PPT metadata while stripping unsafe and unrelated attributes" do
     html = '<div class="ppt-slide" data-ppt-slide="2" data-ppt-width="12192000" data-ppt-height="6858000" data-ppt-format="{&quot;fill&quot;:&quot;#222222&quot;}" data-other="no" onclick="alert(1)">Slide</div>'
     slide = Nokogiri::HTML.fragment(embed_youtube_iframe(html)).at_css(".ppt-slide")

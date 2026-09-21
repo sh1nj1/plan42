@@ -7,13 +7,15 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "default-safe formatting survives parent title and slide view rendering" do
-    html = '<del>removed</del><ins>added</ins><sub>low</sub><sup>high</sup><dl><dt>term</dt><dd>definition</dd></dl>'
+    html = '<del datetime="2026-09-22" cite="https://example.com">removed</del><ins>added</ins><sub>low</sub><sup>high</sup><dl><dt>term</dt><dd>definition</dd></dl>'
     creative = Creative.create!(user: users(:one), description: html)
 
     [ creatives_path(id: creative.id), slide_view_creative_path(creative) ].each do |path|
       get path
       assert_response :success
       document = Nokogiri::HTML.fragment(response.body)
+      assert_equal "2026-09-22", document.at_css("del")["datetime"]
+      assert_equal "https://example.com", document.at_css("del")["cite"]
       %w[del ins sub sup dl dt dd].each do |tag|
         assert document.at_css(tag), "expected #{tag} formatting in #{path}"
       end

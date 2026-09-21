@@ -7,6 +7,9 @@ require "zip"
 module Collavre
   class PptImporter
     include PptFormatting
+    include PptInheritance
+    include PptArchive
+    include PptGeometry
     class InvalidArchive < StandardError; end
 
     MAX_ENTRIES = 2_000
@@ -44,54 +47,6 @@ module Collavre
 
     private
 
-    def import_archive(created)
-      Creative.transaction(requires_new: true) do
-        Zip::File.open(@file) do |zip|
-          @zip = zip
-          validate_archive!
-          paths = ordered_slide_paths
-          raise InvalidArchive if paths.empty?
-
-          @slide_size = presentation_slide_size
-          root = create_import_root(created)
-          sequence = next_sequence(root)
-          paths.each_with_index do |path, index|
-            slide = xml_document(path)
-            raise InvalidArchive unless slide
-
-            created << Creative.create!(
-              user: @user, parent: root,
-              description: render_slide(slide, path, index + 1),
-              sequence: sequence + index
-            )
-          end
-        end
-      end
-    rescue StandardError
-      # Database rollback cannot remove bytes already uploaded to storage.
-      @blob_cache.each_value(&:delete)
-      raise
-    end
-
-    def validate_archive!
-      entries = @zip.entries
-      raise InvalidArchive if entries.size > MAX_ENTRIES
-      raise InvalidArchive if entries.any? { |entry| entry.size > MAX_ENTRY_BYTES }
-      raise InvalidArchive if entries.sum(&:size) > MAX_TOTAL_BYTES
-
-      @read_bytes = 0
-    end
-
-    def read_entry(entry)
-      data = entry.get_input_stream do |stream|
-        stream.read(MAX_ENTRY_BYTES + 1)
-      end
-      @read_bytes += data.bytesize
-      raise InvalidArchive if data.bytesize > MAX_ENTRY_BYTES || @read_bytes > MAX_TOTAL_BYTES
-
-      data
-    end
-
     def create_import_root(created)
       return @parent unless @create_root
 
@@ -111,41 +66,12 @@ module Collavre
       (siblings.maximum(:sequence) || -1) + 1
     end
 
-    # slideN.xml filenames do not necessarily reflect presentation order after
-    # users reorder slides. Follow presentation.xml relationships first.
-    def ordered_slide_paths
-      presentation = xml_document("ppt/presentation.xml")
-      if presentation
-        relationships = relationships_for("ppt/presentation.xml")
-        paths = presentation.xpath("//*[local-name()='sldId']").map do |slide_id|
-          relationship = relationships[relationship_id(slide_id)]
-          raise InvalidArchive unless relationship && relationship[:type].end_with?("/slide")
-
-          relationship.fetch(:path)
-        end
-        return paths if paths.any?
-      end
-
-      @zip.glob("ppt/slides/slide*.xml")
-        .sort_by { |entry| entry.name[/slide(\d+)/, 1].to_i }
-        .map(&:name)
-    end
-
-    def presentation_slide_size
-      presentation = xml_document("ppt/presentation.xml")
-      size = presentation&.at_xpath("//*[local-name()='sldSz']")
-      width = size&.[]("cx").to_i
-      height = size&.[]("cy").to_i
-      return DEFAULT_SLIDE_SIZE if width <= 0 || height <= 0
-
-      [ width, height ]
-    end
-
     def render_slide(slide, slide_path, slide_number)
       namespaces = slide.collect_namespaces
       relationships = relationships_for(slide_path)
       @placeholder_sources = placeholder_sources(relationships)
       shape_tree = slide.at_xpath("//p:cSld/p:spTree", namespaces)
+      inherited = render_inherited_shapes(slide)
       elements = shape_tree ? render_nodes(shape_tree.element_children, namespaces, relationships, @slide_size) : ""
       notes = render_notes(relationships)
       ratio_class = slide_ratio_class(*@slide_size)
@@ -153,7 +79,7 @@ module Collavre
       <<~HTML.strip
         <div class="ppt-slide #{ratio_class}" data-ppt-slide="#{slide_number}"
              data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}"#{format_attribute(fill: ppt_color(slide.at_xpath("//*[local-name()='bgPr']/*[local-name()='solidFill']")) || "#ffffff")}>
-          <div class="ppt-slide-layout">#{elements}</div>
+          <div class="ppt-slide-layout">#{inherited}#{elements}</div>
         </div>
         #{notes}
       HTML
@@ -161,6 +87,8 @@ module Collavre
 
     def render_nodes(nodes, namespaces, relationships, bounds)
       nodes.filter_map do |node|
+        next if @rendering_inherited && node.at_xpath("./*[local-name()='nvSpPr' or local-name()='nvPicPr' or local-name()='nvGraphicFramePr']//*[local-name()='ph']")
+
         case node.name
         when "sp"
           render_text_shape(node, namespaces, bounds)
@@ -168,6 +96,9 @@ module Collavre
           render_picture(node, namespaces, relationships, bounds)
         when "graphicFrame"
           render_graphic_frame(node, namespaces, relationships, bounds)
+        when "AlternateContent"
+          branch = compatibility_branch(node)
+          render_nodes(branch.element_children, namespaces, relationships, bounds) if branch
         when "grpSp"
           render_group(node, namespaces, relationships, bounds)
         end
@@ -205,7 +136,7 @@ module Collavre
 
     def render_text_run(run, namespaces)
       text = ERB::Util.html_escape(run.xpath(".//a:t", namespaces).map(&:text).join)
-      properties = run.at_xpath("./a:rPr", namespaces)
+      properties = effective_run_properties(run, namespaces)
       text = "<strong>#{text}</strong>" if truthy_xml_attribute?(properties&.[]("b"))
       text = "<em>#{text}</em>" if truthy_xml_attribute?(properties&.[]("i"))
       text = "<u>#{text}</u>" if properties&.[]("u").present? && properties["u"] != "none"
@@ -280,14 +211,7 @@ module Collavre
       return unless chart
 
       title = chart.xpath("//*[local-name()='title']//*[local-name()='t']").map(&:text).join(" ").strip
-      series = chart.xpath("//*[local-name()='ser']").filter_map do |item|
-        name = item.xpath("./*[local-name()='tx']//*[local-name()='v']").map(&:text).join(" ").strip
-        categories = indexed_chart_values(item, "cat")
-        values = indexed_chart_values(item, "val")
-        next if name.blank? && categories.empty? && values.empty?
-
-        [ name, categories, values ]
-      end
+      series = chart_series(chart)
       return if title.blank? && series.empty?
 
       caption = title.presence || I18n.t("collavre.creatives.index.imported_chart")
@@ -298,6 +222,17 @@ module Collavre
         "<tr><th>#{ERB::Util.html_escape(name)}</th><td>#{ERB::Util.html_escape(pairs.join(", "))}</td></tr>"
       end
       %(<div class="ppt-slide-chart"#{format_attribute(chart: line_chart_format(chart, series))}><h3>#{ERB::Util.html_escape(caption)}</h3><table><tbody>#{rows.join}</tbody></table></div>)
+    end
+
+    def chart_series(chart)
+      chart.xpath("//*[local-name()='ser']").filter_map do |item|
+        name = item.xpath("./*[local-name()='tx']//*[local-name()='v']").map(&:text).join(" ").strip
+        categories = indexed_chart_values(item, "cat")
+        values = indexed_chart_values(item, "val")
+        next if name.blank? && categories.empty? && values.empty?
+
+        [ name, categories, values ]
+      end
     end
 
     def indexed_chart_values(series, axis)
@@ -334,139 +269,6 @@ module Collavre
 
       title = ERB::Util.html_escape(I18n.t("collavre.creatives.index.imported_speaker_notes"))
       %(<div class="ppt-slide-notes"><h3>#{title}</h3>#{paragraphs.join}</div>)
-    end
-
-    def transform_for(node, namespaces)
-      local_transform(node, namespaces) || inherited_transform(node)
-    end
-
-    def local_transform(node, namespaces)
-      transform = case node.name
-      when "graphicFrame"
-        node.at_xpath("./p:xfrm", namespaces)
-      when "grpSp"
-        node.at_xpath("./p:grpSpPr/a:xfrm", namespaces)
-      else
-        node.at_xpath("./p:spPr/a:xfrm", namespaces)
-      end
-      return unless transform
-
-      offset = transform.at_xpath("./a:off", namespaces)
-      extent = transform.at_xpath("./a:ext", namespaces)
-      return unless offset && extent
-
-      [ offset["x"].to_i, offset["y"].to_i, extent["cx"].to_i, extent["cy"].to_i ]
-    end
-
-    def placeholder_sources(relationships)
-      layout_rel = relationships.values.find { |item| item[:type].end_with?("/slideLayout") }
-      return [] unless layout_rel
-
-      layout = xml_document(layout_rel[:path])
-      master_rel = relationships_for(layout_rel[:path]).values.find { |item| item[:type].end_with?("/slideMaster") }
-      [ layout, master_rel && xml_document(master_rel[:path]) ].compact
-    end
-
-    def inherited_transform(node)
-      placeholder = node.at_xpath(".//*[local-name()='ph']")
-      return unless placeholder
-
-      @placeholder_sources.to_a.each_with_index do |source, index|
-        candidates = source.xpath("//*[local-name()='ph']")
-        match = if index.zero?
-          candidates.find { |candidate| candidate["idx"].to_i == placeholder["idx"].to_i }
-        else
-          candidates.find { |candidate| (candidate["type"] || "obj") == (placeholder["type"] || "obj") }
-        end
-        next unless match
-
-        shape = match.parent.parent.parent
-        transform = local_transform(shape, source.collect_namespaces)
-        return transform if transform
-
-        placeholder = match
-      end
-      nil
-    end
-
-    def group_child_bounds(group, namespaces)
-      transform = group.at_xpath("./p:grpSpPr/a:xfrm", namespaces)
-      extent = transform&.at_xpath("./a:chExt", namespaces)
-      width = extent&.[]("cx").to_i
-      height = extent&.[]("cy").to_i
-      offset = transform&.at_xpath("./a:chOff", namespaces)
-      width.positive? && height.positive? ? [ width, height, offset&.[]("x").to_i, offset&.[]("y").to_i ] : @slide_size
-    end
-
-    def element_classes(kind, transform, bounds)
-      classes = [ "ppt-slide-element", kind ]
-      return classes.join(" ") unless transform
-
-      x, y, width, height = transform
-      bound_width, bound_height, origin_x, origin_y = bounds
-      column = grid_start(x - origin_x.to_i, bound_width)
-      row = grid_start(y - origin_y.to_i, bound_height)
-      classes.concat([
-        "ppt-col-#{column}",
-        "ppt-col-span-#{grid_span(width, bound_width, column)}",
-        "ppt-row-#{row}",
-        "ppt-row-span-#{grid_span(height, bound_height, row)}"
-      ])
-      classes.join(" ")
-    end
-
-    def grid_start(offset, total)
-      return 1 unless total.positive?
-
-      ((offset.to_f / total) * GRID_SIZE).floor.clamp(0, GRID_SIZE - 1) + 1
-    end
-
-    def grid_span(length, total, start)
-      return 1 unless total.positive?
-
-      ((length.to_f / total) * GRID_SIZE).round.clamp(1, GRID_SIZE - start + 1)
-    end
-
-    def slide_ratio_class(width, height)
-      ratio = width.to_f / height
-      return "ppt-slide--portrait" if ratio < 0.9
-      return "ppt-slide--square" if ratio < 1.2
-      return "ppt-slide--standard" if ratio < 1.55
-
-      "ppt-slide--wide"
-    end
-
-    def relationships_for(part_path)
-      directory = File.dirname(part_path)
-      relationships_path = File.join(directory, "_rels", "#{File.basename(part_path)}.rels")
-      document = xml_document(relationships_path)
-      return {} unless document
-
-      document.xpath("//*[local-name()='Relationship']").to_h do |relationship|
-        target = relationship["Target"].to_s
-        [ relationship["Id"], {
-          path: normalize_part_path(part_path, target),
-          type: relationship["Type"].to_s
-        } ]
-      end
-    end
-
-    def normalize_part_path(part_path, target)
-      return target.delete_prefix("/") if target.start_with?("/")
-
-      Pathname.new(File.dirname(part_path)).join(target).cleanpath.to_s
-    end
-
-    def relationship_id(node, attribute = "id")
-      return unless node
-
-      node.attribute_with_ns(attribute, "http://schemas.openxmlformats.org/officeDocument/2006/relationships")&.value ||
-        node["r:#{attribute}"]
-    end
-
-    def xml_document(path)
-      entry = @zip.find_entry(path)
-      Nokogiri::XML(read_entry(entry)) { |config| config.strict.nonet } if entry
     end
 
     def truthy_xml_attribute?(value)

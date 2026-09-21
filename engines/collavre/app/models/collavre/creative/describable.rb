@@ -216,7 +216,7 @@ module Collavre
 
         self.description = ActionController::Base.helpers.sanitize(
           scrubbed.to_html,
-          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input],
+          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input u],
           attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + ppt_attrs + %w[data-lexical style]
         )
       end
