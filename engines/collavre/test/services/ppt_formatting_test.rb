@@ -18,6 +18,21 @@ class PptFormattingTest < ActiveSupport::TestCase
     assert_nil @renderer.send(:resolved_font, "+mj-lt")
   end
 
+  test "selects validated script faces and resolves their theme tokens" do
+    @renderer.instance_variable_set(:@theme, xml('<a:fontScheme><a:majorFont><a:ea typeface="맑은 고딕"/><a:cs typeface="Amiri"/></a:majorFont></a:fontScheme>'))
+    properties = xml('<a:rPr><a:latin typeface="Arial"/><a:ea typeface="+mj-ea"/><a:cs typeface="+mj-cs"/></a:rPr>').root.element_children.first
+    namespaces = properties.document.collect_namespaces
+    { "Hello" => "Arial", "한글" => "맑은 고딕", "مرحبا" => "Amiri" }.each do |text, expected|
+      assert_equal expected, @renderer.send(:run_font, properties, namespaces, text)
+    end
+    properties.at_xpath('./a:latin', namespaces).remove
+    assert_equal "맑은 고딕", @renderer.send(:run_font, properties, namespaces, "")
+    properties.at_xpath('./a:ea', namespaces)['typeface'] = 'bad; color:red'
+    assert_equal "Amiri", @renderer.send(:run_font, properties, namespaces, "한글")
+    properties.at_xpath('./a:cs', namespaces)['typeface'] = ''
+    assert_nil @renderer.send(:run_font, properties, namespaces, "مرحبا")
+  end
+
   test "shape property merge keeps source XML immutable and replaces exclusive choices" do
     master = xml('<p:spPr bwMode="auto"><a:solidFill/><a:prstGeom prst="ellipse"/><a:ln w="100"><a:solidFill/></a:ln></p:spPr>').root.element_children.first
     layout = xml('<p:spPr bwMode="black"><a:gradFill/><a:custGeom/><a:ln><a:noFill/></a:ln></p:spPr>').root.element_children.first

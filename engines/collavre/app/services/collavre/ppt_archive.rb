@@ -59,7 +59,7 @@ module Collavre
       presentation = xml_document("ppt/presentation.xml")
       if presentation
         relationships = relationships_for("ppt/presentation.xml")
-        slide_ids = presentation.xpath("//*[local-name()='sldId']")
+        slide_ids = presentation.xpath("/p:presentation/p:sldIdLst/p:sldId", "p" => "http://schemas.openxmlformats.org/presentationml/2006/main")
         raise self.class::InvalidArchive if slide_ids.size > self.class::MAX_SLIDES
 
         paths = slide_ids.map do |slide_id|

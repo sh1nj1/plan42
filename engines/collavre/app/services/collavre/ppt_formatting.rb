@@ -37,13 +37,13 @@ module Collavre
       values
     end
 
-    def text_format(properties, namespaces)
+    def text_format(properties, namespaces, text = "")
       return {} unless properties
 
       values = { color: ppt_color(properties.at_xpath("./a:solidFill", namespaces)) }
       values[:noFill] = true if properties.at_xpath("./a:noFill", namespaces)
       values[:fontSize] = properties["sz"].to_f * 127 * 100 / @slide_size.first if properties["sz"]
-      values[:font] = resolved_font(properties.at_xpath("./a:latin", namespaces)&.[]("typeface"))
+      values[:font] = run_font(properties, namespaces, text)
       values
     end
 
@@ -69,6 +69,15 @@ module Collavre
         merged.add_child(replacement)
       end
       merged
+    end
+
+    def run_font(properties, namespaces, text)
+      scripts = %w[latin ea cs]
+      scripts.unshift("ea") if text.match?(/[\p{Han}\p{Hangul}\p{Hiragana}\p{Katakana}\p{Bopomofo}]/)
+      scripts.unshift("cs") if text.match?(/[\p{Arabic}\p{Hebrew}\p{Syriac}\p{Thaana}\p{Devanagari}\p{Bengali}\p{Tamil}\p{Thai}]/)
+      scripts.uniq.filter_map do |script|
+        resolved_font(properties.at_xpath("./a:#{script}", namespaces)&.[]("typeface"))
+      end.first
     end
 
     def resolved_font(typeface)

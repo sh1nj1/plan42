@@ -776,6 +776,50 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "ignores section slide IDs and extension lookalikes when ordering slides" do
+    sections = '<p:extLst><p:ext uri="sections"><p14:sectionLst xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"><p14:section><p14:sldIdLst>' + '<p14:sldId id="256"/>' * (PptImporter::MAX_SLIDES + 1) + '</p14:sldIdLst></p14:section></p14:sectionLst><p:sldIdLst><p:sldId/></p:sldIdLst></p:ext></p:extLst>'
+    entries = {
+      "ppt/presentation.xml" => presentation_xml.sub('</p:presentation>', sections + '</p:presentation>'),
+      "ppt/_rels/presentation.xml.rels" => presentation_relationships_xml,
+      "ppt/slides/slide1.xml" => slide_xml("First"),
+      "ppt/slides/slide2.xml" => slide_xml("Second")
+    }
+    with_archive(entries) do |file|
+      slides = import_file(file).drop(1)
+      assert_equal [ "Second", "First" ], slides.map { |slide| Nokogiri::HTML.fragment(slide.reload.description).at_css("p").text }
+    end
+    entries["ppt/presentation.xml"] = entries["ppt/presentation.xml"].sub('r:id="rId2"', '')
+    with_archive(entries) do |file|
+      assert_no_difference("Creative.count") { assert_raises(PptImporter::InvalidArchive) { import_file(file) } }
+    end
+  end
+
+  test "persists East Asian and complex script run typefaces" do
+    entries = { "ppt/slides/slide1.xml" => slide_xml("Text") }
+    [ [ "한국어", "ea", "맑은 고딕" ], [ "中文", "ea", "Noto Sans CJK" ], [ "日本語", "ea", "Yu Gothic" ], [ "مرحبا", "cs", "Noto Naskh Arabic" ] ].each do |text, script, font|
+      entries["ppt/slides/slide1.xml"] = slide_xml(text).sub('<a:r>', %(<a:r><a:rPr><a:latin typeface="Arial"/><a:#{script} typeface="#{font}"/></a:rPr>))
+      with_archive(entries) do |file|
+        span = Nokogiri::HTML.fragment(import_file(file).last.reload.description).at_css("p > span")
+        assert_equal font, JSON.parse(span["data-ppt-format"])["font"]
+        assert_equal text, span.text
+      end
+    end
+  end
+
+  test "persists inherited script theme fonts and direct run overrides" do
+    entries = inheritance_entries
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("한글", 'idx="4"')
+      .sub('</a:r></a:p>', '</a:r><a:r><a:rPr><a:cs typeface="+mn-cs"/></a:rPr><a:t>مرحبا</a:t></a:r><a:r><a:rPr><a:ea typeface="Yu Gothic"/></a:rPr><a:t>日本語</a:t></a:r></a:p>')
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="title"')
+      .sub('<a:p>', '<a:p><a:pPr><a:defRPr><a:latin typeface="Arial"/><a:ea typeface="+mj-ea"/></a:defRPr></a:pPr>')
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme><a:majorFont><a:ea typeface="맑은 고딕"/></a:majorFont><a:minorFont><a:cs typeface="Amiri"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>'
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal [ "맑은 고딕", "Amiri", "Yu Gothic" ], html.css("p > span").to_a.last(3).map { |span| JSON.parse(span["data-ppt-format"])["font"] }
+    end
+  end
+
   test "bounds repeated relationship slides before creating records or blobs" do
     entries = {
       "ppt/presentation.xml" => '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst>' + '<p:sldId r:id="rId1"/>' * (PptImporter::MAX_SLIDES + 1) + '</p:sldIdLst></p:presentation>',

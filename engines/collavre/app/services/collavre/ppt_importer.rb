@@ -149,12 +149,13 @@ module Collavre
     end
 
     def render_text_run(run, namespaces)
-      text = ERB::Util.html_escape(run.xpath(".//a:t", namespaces).map(&:text).join)
+      content = run.xpath(".//a:t", namespaces).map(&:text).join
+      text = ERB::Util.html_escape(content)
       properties = effective_run_properties(run, namespaces)
       text = "<strong>#{text}</strong>" if truthy_xml_attribute?(properties&.[]("b"))
       text = "<em>#{text}</em>" if truthy_xml_attribute?(properties&.[]("i"))
       text = "<u>#{text}</u>" if properties&.[]("u").present? && properties["u"] != "none"
-      text = %(<span#{format_attribute(text_format(properties, namespaces))}>#{text}</span>)
+      text = %(<span#{format_attribute(text_format(properties, namespaces, content))}>#{text}</span>)
       linked_run(run, text)
     end
 
