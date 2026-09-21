@@ -44,7 +44,7 @@ gem "kamal", require: false
 gem "thruster", require: false
 
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-gem "image_processing", "~> 2.0"
+gem "image_processing", "~> 2.1"
 # Rails defaults to the :vips variant processor. image_processing 2.0 makes ruby-vips a soft
 # dependency, so declare it explicitly for avatar and comment image processing.
 # require: false leaves loading to ActiveStorage/image_processing rather than Bundler.
