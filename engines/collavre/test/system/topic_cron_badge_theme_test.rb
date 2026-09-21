@@ -36,16 +36,14 @@ class TopicCronBadgeThemeTest < ApplicationSystemTestCase
 
     assert_includes page.evaluate_script("document.body.className").split, "dark-mode"
 
-    assert_equal(*chip_and_badge_color(".topic-tag:not(.active)"),
-                 "idle topic chip badge must read like its label")
+    assert_badge_matches_label(".topic-tag:not(.active)", "idle topic chip badge must read like its label")
 
     # Click the chip itself, not its centre — the badge and the archive/delete
     # buttons sit there and swallow the selection click.
     select_topic_chip("Alpha")
     assert_selector "#comment-topics .topic-tag.active .creative-cron-badge", wait: 5
 
-    assert_equal(*chip_and_badge_color(".topic-tag.active"),
-                 "selected topic chip badge must read like its label")
+    assert_badge_matches_label(".topic-tag.active", "selected topic chip badge must read like its label")
   end
 
   private
@@ -63,6 +61,21 @@ class TopicCronBadgeThemeTest < ApplicationSystemTestCase
     assert_selector "#comments-popup", wait: 5
     assert_selector "#comment-topics .topic-tag .creative-cron-badge", wait: 10
     assert_docked_comments_loaded
+  end
+
+  # The chip animates color over 0.2s (`transition: all`) while the badge, a
+  # <button>, runs its own 0.15s color transition. Mid-flight the two differ
+  # by a few RGB steps, so retry until both settle before comparing.
+  def assert_badge_matches_label(chip_selector, message)
+    colors = nil
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Capybara.default_max_wait_time
+    loop do
+      colors = chip_and_badge_color(chip_selector)
+      break if colors.uniq.size == 1 || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+      sleep 0.05
+    end
+    assert_equal(*colors, message)
   end
 
   # Returns [chip label color, badge color] for the first chip matching
