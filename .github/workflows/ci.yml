@@ -232,6 +232,8 @@ jobs:
           # which is a no-op otherwise. Both `rake test` and `rake test:system`
           # run in separate processes and merge into one report via merge_timeout.
           COVERAGE: "1"
+          # Fail closed if the runner no longer supplies a trusted Chrome driver.
+          CHROMEDRIVER_PATH: /usr/bin/chromedriver
           # REDIS_URL: redis://localhost:6379/0
         run: bin/rails db:test:prepare && bundle exec rake test && bundle exec rake test:system
 
