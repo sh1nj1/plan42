@@ -40,6 +40,10 @@ en:
               completion_key_required: "requires a completion key for AI agent chat"
   collavre:
     agent_gateways:
+      sections:
+        connection: Connection
+        authentication: Authentication
+        workspace: Workspace and availability
       title: My Agent Gateways
       manage: Agent gateway settings
       description: Register CLI OpenAI proxies you own. Keys remain server-side and are never sent to the browser.
