@@ -1,3 +1,4 @@
+import { renderPptShape, applyPptCrop } from "./ppt_media"
 import { renderPptConnector } from "./ppt_connector"
 import { renderPptChart } from "./ppt_chart"
 
@@ -37,6 +38,8 @@ function applyElementFormatting(element, slide) {
   applyGeometry(element, slide, data)
   applyTextStyle(style, data)
   applyShapeStyle(style, data)
+  renderPptShape(element, data)
+  applyPptCrop(element, data.crop)
 }
 
 function applyTableDimensions(element, data) {

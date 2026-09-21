@@ -98,7 +98,8 @@ module Collavre
         target = relationship["Target"].to_s
         [ relationship["Id"], {
           path: normalize_part_path(part_path, target),
-          type: relationship["Type"].to_s
+          type: relationship["Type"].to_s,
+          target: target, external: relationship["TargetMode"] == "External"
         } ]
       end
     end

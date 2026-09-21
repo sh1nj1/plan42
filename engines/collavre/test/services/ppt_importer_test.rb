@@ -695,6 +695,53 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "persists safe run hyperlinks using each source parts relationships" do
+    entries = inheritance_entries
+    entries["ppt/slides/slide1.xml"] = linked_slide("Slide")
+    entries["ppt/slideLayouts/layout.xml"] = linked_slide("Layout")
+    entries["ppt/slides/_rels/slide1.xml.rels"] = link_relationships(entries["ppt/slides/_rels/slide1.xml.rels"], "https://example.com/?a=1&amp;b=2")
+    entries["ppt/slideLayouts/_rels/layout.xml.rels"] = link_relationships(entries["ppt/slideLayouts/_rels/layout.xml.rels"], "mailto:team@example.com")
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal [ "mailto:team@example.com", "https://example.com/?a=1&b=2" ], html.css("a").map { |link| link["href"] }
+      assert_equal [ "Layout", "Slide" ], html.css("a span").map(&:text)
+    end
+  end
+
+  test "drops unsafe missing and non hyperlink targets while preserving labels" do
+    [ "javascript:alert(1)", "data:text/html,hello", "file:///tmp/file", "//example.com", "https://", "https://example.com/ bad", "https://example.com/%ZZ" ].each do |target|
+      entries = { "ppt/slides/slide1.xml" => linked_slide("Label"),
+                  "ppt/slides/_rels/slide1.xml.rels" => link_relationships(relationships_xml("image", "../image.png"), target) }
+      with_archive(entries) do |file|
+        html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+        assert_empty html.css("a"), target
+        assert_includes html.text, "Label"
+      end
+    end
+  end
+
+  test "persists picture crop offsets alongside frame geometry" do
+    entries = { "ppt/slides/slide1.xml" => rich_slide_xml.sub("</p:blipFill>", '<a:srcRect l="25000" r="25000" t="10000" b="20000"/></p:blipFill>'),
+                "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+                "ppt/media/image1.png" => SAMPLE_IMAGE }
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      format = JSON.parse(html.at_css(".ppt-slide-image")["data-ppt-format"])
+      assert_equal [ 0.25, 0.1, 0.25, 0.2 ], format["crop"]
+      assert_equal [ 50, 5, 45, 40 ], format.values_at("x", "y", "w", "h")
+      assert html.at_css(".ppt-slide-image img")["src"].start_with?("/public-assets/blobs/")
+    end
+  end
+
+  def linked_slide(text)
+    slide_xml(text).sub('<p:sld ', '<p:sld xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ')
+      .sub("<a:r>", '<a:r><a:rPr><a:hlinkClick r:id="link"/></a:rPr>')
+  end
+
+  def link_relationships(xml, target)
+    xml.sub("</Relationships>", %(<Relationship Id="link" Type="x/hyperlink" TargetMode="External" Target="#{target}"/></Relationships>))
+  end
+
   private
 
   def inheritance_entries

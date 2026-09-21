@@ -1825,3 +1825,16 @@ creative-tree-row.is-being-edited .creative-tree {
     font-weight: var(--weight-6, 600);
 }
 /* stylelint-enable color-no-hex */
+
+.ppt-preset-rendered > svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.ppt-preset-rendered > p {
+    position: relative;
+}

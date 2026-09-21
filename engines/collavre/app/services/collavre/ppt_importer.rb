@@ -6,6 +6,7 @@ require "zip"
 
 module Collavre
   class PptImporter
+    include PptMedia
     include PptDiagrams
     include PptConnectors
     include PptBackgrounds
@@ -150,7 +151,8 @@ module Collavre
       text = "<strong>#{text}</strong>" if truthy_xml_attribute?(properties&.[]("b"))
       text = "<em>#{text}</em>" if truthy_xml_attribute?(properties&.[]("i"))
       text = "<u>#{text}</u>" if properties&.[]("u").present? && properties["u"] != "none"
-      %(<span#{format_attribute(text_format(properties, namespaces))}>#{text}</span>)
+      text = %(<span#{format_attribute(text_format(properties, namespaces))}>#{text}</span>)
+      linked_run(run, text)
     end
 
     def render_picture(picture, namespaces, relationships, bounds)
@@ -166,7 +168,7 @@ module Collavre
       alt = metadata&.[]("descr").presence || metadata&.[]("name").presence || blob.filename.to_s
       classes = element_classes("ppt-slide-image", transform_for(picture, namespaces), bounds)
       src = "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
-      %(<div class="#{classes}"#{format_attribute(geometry_format(picture, namespaces, bounds))}><img src="#{src}" alt="#{ERB::Util.html_escape(alt)}"></div>)
+      %(<div class="#{classes}"#{format_attribute(geometry_format(picture, namespaces, bounds).merge(crop: picture_crop(picture)))}><img src="#{src}" alt="#{ERB::Util.html_escape(alt)}"></div>)
     end
 
     def blob_for(entry)
