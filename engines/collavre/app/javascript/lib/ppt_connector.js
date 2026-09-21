@@ -29,7 +29,7 @@ export function renderPptConnector(element, data) {
 }
 
 function validConnector(data) {
-  return data && /^#[\da-f]{6}$/i.test(data.stroke) && finite(data.width,0,1e9) && finite(data.height,0,1e9) &&
+  return data && /^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(data.stroke) && finite(data.width,0,1e9) && finite(data.height,0,1e9) &&
     finite(data.weight,0,1e7) && finite(data.slideWidth,1,1e9) && typeof data.hidden === 'boolean' &&
     /^(line|straightConnector1|bentConnector[2-5]|curvedConnector[2-5])$/.test(data.kind)
 }

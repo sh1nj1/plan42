@@ -5,7 +5,7 @@ import { renderPptChart } from "./ppt_chart"
 // Do not interpret presentation data as CSS. Every accepted value has a bounded
 // numeric type, a bounded font name, or a closed vocabulary; positions stay clipped by the canvas.
 const finite = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
-const color = value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)
+const color = value => typeof value === 'string' && /^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(value)
 const fonts = {
   'Malgun Gothic': '"Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif',
   Arial: 'Arial, sans-serif', Calibri: 'Calibri, Arial, sans-serif'

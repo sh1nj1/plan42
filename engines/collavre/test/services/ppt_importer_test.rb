@@ -742,6 +742,18 @@ class PptImporterTest < ActiveSupport::TestCase
     xml.sub("</Relationships>", %(<Relationship Id="link" Type="x/hyperlink" TargetMode="External" Target="#{target}"/></Relationships>))
   end
 
+  test "persists independent fill stroke and text alpha through sanitization" do
+    slide = slide_xml("Translucent")
+      .sub('<p:sp>', '<p:sp><p:spPr><a:solidFill><a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="00FF00"><a:alphaOff val="-75000"/></a:srgbClr></a:solidFill></a:ln></p:spPr>')
+      .sub('<a:r>', '<a:r><a:rPr><a:solidFill><a:srgbClr val="0000FF"><a:alphaMod val="0"/></a:srgbClr></a:solidFill></a:rPr>')
+    with_archive("ppt/slides/slide1.xml" => slide) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.at_css(".ppt-slide-text")["data-ppt-format"])
+      assert_equal [ "#FF000080", "#00FF0040" ], data.values_at("fill", "stroke")
+      assert_equal "#0000FF00", JSON.parse(html.at_css("span[data-ppt-format]")["data-ppt-format"])["color"]
+    end
+  end
+
   private
 
   def inheritance_entries

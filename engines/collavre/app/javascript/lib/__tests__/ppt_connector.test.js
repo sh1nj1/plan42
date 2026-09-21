@@ -66,3 +66,15 @@ test('rejects invalid connector metadata and ignores untrusted arrow and adjustm
   expect(node.querySelectorAll('marker')).toHaveLength(0)
   expect(node.querySelector('path').getAttribute('d')).toBe('M0 0H3000000V3000000H6000000')
 })
+
+test('preserves alpha for connector strokes and arrowheads with strict hex validation', () => {
+  const node = element()
+  renderPptConnector(node, {...source(),stroke:'#ff000080'})
+  expect(node.querySelector('svg > path').getAttribute('stroke')).toBe('#ff000080')
+  expect(node.querySelector('marker path').getAttribute('fill')).toBe('#ff000080')
+  for (const stroke of ['#1234567','#123456789','#123456zz','#12345680; color:red']) {
+    const invalid = element()
+    renderPptConnector(invalid, {...source(),stroke})
+    expect(invalid.querySelector('svg')).toBeNull()
+  }
+})

@@ -73,3 +73,14 @@ test('rejects malformed crop rectangles and absent images', () => {
   const element = fixture('ppt-slide-image', {crop:[0,0,0,0]}, '')
   expect(element.hasAttribute('style')).toBe(false)
 })
+
+test('preserves alpha in polygon fill and outline and rejects malformed hex', () => {
+  const element = fixture('ppt-slide-text', {shape:'triangle',fill:'#ff000080',stroke:'#00ff0040',strokeWidth:0.2})
+  expect(element.querySelector('polygon').getAttribute('fill')).toBe('#ff000080')
+  expect(element.querySelector('polygon').getAttribute('stroke')).toBe('#00ff0040')
+  for (const value of ['#1234567','#123456789','#123456zz','#12345680; color:red']) {
+    const invalid = fixture('ppt-slide-text', {shape:'diamond',fill:value,stroke:value,strokeWidth:0.2})
+    expect(invalid.querySelector('polygon').getAttribute('fill')).toBe('none')
+    expect(invalid.querySelector('polygon').hasAttribute('stroke')).toBe(false)
+  }
+})

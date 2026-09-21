@@ -11,7 +11,7 @@ const shapes = {
   leftRightArrow: '0,50 25,0 25,25 75,25 75,0 100,50 75,100 75,75 25,75 25,100'
 }
 const finite = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
-const color = value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)
+const color = value => typeof value === 'string' && /^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(value)
 const rendered = new WeakMap()
 
 // The polygon vocabulary is code-owned; presentation strings never become SVG.

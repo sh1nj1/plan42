@@ -41,6 +41,38 @@ class PptColorsTest < ActiveSupport::TestCase
     assert_equal "#804020", color('<a:schemeClr val="accent1"/>')
   end
 
+  test "preserves ordered alpha transforms with independent RGB transforms" do
+    cases = {
+      '<a:alpha val="50000"/>' => "80",
+      '<a:alpha val="0"/>' => "00",
+      '<a:alphaMod val="50000"/>' => "80",
+      '<a:alphaOff val="-25000"/>' => "BF",
+      '<a:alpha val="50000"/><a:alphaMod val="50000"/><a:alphaOff val="10000"/>' => "59",
+      '<a:alphaOff val="-50000"/><a:alpha val="25000"/>' => "40",
+      '<a:alpha val="75000"/><a:alphaMod val="200000"/><a:alphaOff val="-50000"/>' => "80",
+      '<a:alpha val="25000"/><a:alphaOff val="-50000"/><a:alphaOff val="25000"/>' => "40",
+      '<a:alpha val="50000"/><a:alphaMod val="300000"/>' => ""
+    }
+    cases.each do |modifiers, suffix|
+      assert_equal "#102030#{suffix}", color(%(<a:schemeClr val="accent1"><a:shade val="50000"/>#{modifiers}</a:schemeClr>))
+    end
+    assert_equal "#12345680", color('<a:sysClr lastClr="123456"><a:alpha val="50000"/></a:sysClr>')
+  end
+
+  test "rejects malformed and out of range alpha modifiers" do
+    %w[alpha alphaMod alphaOff].each do |kind|
+      [ nil, "bad", "NaN", "Infinity", "1.5", "1e4", "50000px", "2147483648", "1" * 100, "50000\n" ].each do |value|
+        attribute = value ? %( val="#{value}") : ""
+        assert_equal "#204060", color(%(<a:srgbClr val="204060"><a:#{kind}#{attribute}/></a:srgbClr>))
+      end
+    end
+    { "alpha" => [ -1, 100001 ], "alphaMod" => [ -1 ], "alphaOff" => [ -100001, 100001 ] }.each do |kind, values|
+      values.each do |value|
+        assert_equal "#204060", color(%(<a:srgbClr val="204060"><a:#{kind} val="#{value}"/></a:srgbClr>))
+      end
+    end
+  end
+
   private
 
   def xml(content)

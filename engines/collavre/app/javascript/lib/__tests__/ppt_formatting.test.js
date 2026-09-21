@@ -228,3 +228,17 @@ test('renders explicit noFill as transparent and rejects nonboolean values', () 
     expect(element.style.color).toBe('rgb(68, 85, 102)')
   }
 })
+
+test('applies independent alpha to fills strokes and text without fading children', () => {
+  const { element } = slide({fill:'#ff000080',color:'#0000ff00',stroke:'#00ff0040',strokeWidth:0.2})
+  applyPptFormatting()
+  expect(element.style.backgroundColor).toBe('rgba(255, 0, 0, 0.5)')
+  expect(element.style.color).toBe('rgba(0, 0, 255, 0)')
+  expect(element.style.boxShadow).toContain('#00ff0040')
+  expect(element.style.opacity).toBe('')
+  for (const color of ['#1234567','#123456789','#123456zz','#12345680; color:red',{},null]) {
+    const { element: invalid } = slide({fill:color,color,stroke:color,strokeWidth:0.2})
+    applyPptFormatting()
+    expect(invalid.getAttribute('style')).toBeNull()
+  }
+})

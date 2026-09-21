@@ -22,7 +22,32 @@ module Collavre
 
       rgb = value.scan(/../).map { |channel| channel.to_i(16) / 255.0 }
       color.element_children.each { |modifier| rgb = transform_color(rgb, modifier) }
-      "#" + rgb.map { |channel| format("%02X", (channel.clamp(0, 1) * 255).round) }.join
+      "#" + rgb.map { |channel| format("%02X", (channel.clamp(0, 1) * 255).round) }.join + color_alpha(color)
+    end
+
+    def color_alpha(color)
+      alpha = color.element_children.reduce(1.0) do |current, modifier|
+        amount = alpha_amount(modifier)
+        next current unless amount
+
+        value = case modifier.name
+        when "alpha" then amount
+        when "alphaMod" then current * amount
+        when "alphaOff" then current + amount
+        end
+        value.clamp(0, 1)
+      end
+      alpha == 1 ? "" : format("%02X", (alpha * 255).round)
+    end
+
+    def alpha_amount(modifier)
+      limits = { "alpha" => 0..100_000, "alphaMod" => 0..2_147_483_647, "alphaOff" => -100_000..100_000 }
+      range = limits[modifier.name]
+      value = modifier["val"]
+      return unless range && value&.match?(/\A[+-]?[0-9]{1,10}\z/)
+
+      integer = value.to_i
+      integer / 100_000.0 if range.cover?(integer)
     end
 
     def literal_color(node)
