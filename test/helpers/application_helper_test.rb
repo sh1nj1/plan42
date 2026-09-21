@@ -3,6 +3,12 @@ require "test_helper"
 class ApplicationHelperTest < ActionView::TestCase
   include ApplicationHelper
 
+  test "embed_youtube_iframe preserves default-safe formatting" do
+    html = "<del>removed</del><ins>added</ins><sub>low</sub><sup>high</sup><dl><dt>term</dt><dd>definition</dd></dl>"
+
+    assert_equal sanitize(html), embed_youtube_iframe(html)
+  end
+
   test "preserves PPT metadata while stripping unsafe and unrelated attributes" do
     html = '<div class="ppt-slide" data-ppt-slide="2" data-ppt-width="12192000" data-ppt-height="6858000" data-other="no" onclick="alert(1)">Slide</div>'
     slide = Nokogiri::HTML.fragment(embed_youtube_iframe(html)).at_css(".ppt-slide")
