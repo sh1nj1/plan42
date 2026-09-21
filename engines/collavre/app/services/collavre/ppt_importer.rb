@@ -6,6 +6,7 @@ require "zip"
 
 module Collavre
   class PptImporter
+    include PptDiagrams
     include PptConnectors
     include PptBackgrounds
     include PptColors
@@ -190,6 +191,8 @@ module Collavre
         render_table(frame.at_xpath(".//*[local-name()='tbl']"), namespaces)
       elsif (chart = frame.at_xpath(".//*[local-name()='chart']"))
         render_chart(relationships[relationship_id(chart)])
+      elsif (diagram = frame.at_xpath(".//*[local-name()='relIds']"))
+        render_diagram(relationships[relationship_id(diagram, "dm")])
       end
       return if content.blank?
 
