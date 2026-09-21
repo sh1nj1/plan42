@@ -1,3 +1,6 @@
+require "nokogiri"
+require "zip"
+
 module Collavre
 module Creatives
   class Importer
