@@ -21,6 +21,17 @@ class Collavre::StylesheetsHelperTest < ActionView::TestCase
     end
   end
 
+  test "host layout includes gateway styles without a head content slot" do
+    lookup_context = ActionView::LookupContext.new([])
+    host_view = ActionView::Base.with_empty_template_cache.new(lookup_context, {}, nil)
+
+    html = host_view.render(inline: "<head><%= collavre_stylesheets %></head>")
+    links = Nokogiri::HTML(html).css('head link[href*="collavre/agent_gateways"]')
+
+    assert_equal 1, links.size
+    assert_equal "stylesheet", links.first["rel"]
+  end
+
   test "collavre_stylesheets renders print stylesheets with print media" do
     html = collavre_stylesheets
 

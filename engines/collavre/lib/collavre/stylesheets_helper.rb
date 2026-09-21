@@ -33,6 +33,7 @@ module Collavre
       collavre/slide_view
       collavre/image_lightbox
       collavre/search_popup
+      collavre/agent_gateways
     ].freeze
 
     COLLAVRE_PRINT_STYLESHEETS = %w[

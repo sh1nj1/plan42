@@ -1,7 +1,3 @@
-<% content_for :head do %>
-  <%= stylesheet_link_tag "collavre/agent_gateways", "data-turbo-track": "reload" %>
-<% end %>
-
 <div class="gateway-settings gateway-settings--form">
   <h1 class="no-top-margin"><%= t("collavre.agent_gateways.edit_title") %></h1>
   <%= render "form", agent_gateway: @agent_gateway %>
