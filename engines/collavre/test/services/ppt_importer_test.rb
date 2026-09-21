@@ -237,6 +237,28 @@ class PptImporterTest < ActiveSupport::TestCase
     assert_not blob.service.exist?(blob.key)
   end
 
+  test "pairs sparse chart categories and values by point index in numeric order" do
+    chart = Nokogiri::XML(chart_xml)
+    chart.at_xpath("//*[local-name()='strCache']").inner_html = <<~XML
+      <c:pt idx="10"><c:v>Q11</c:v></c:pt>
+      <c:pt idx="2"><c:v>Q3</c:v></c:pt>
+      <c:pt idx="0"><c:v>Q1</c:v></c:pt>
+    XML
+    chart.at_xpath("//*[local-name()='numCache']").inner_html = <<~XML
+      <c:pt idx="2"><c:v>30</c:v></c:pt>
+      <c:pt idx="0"><c:v>10</c:v></c:pt>
+      <c:pt idx="1"><c:v>20</c:v></c:pt>
+    XML
+
+    with_archive("ppt/slides/slide1.xml" => rich_slide_xml,
+                 "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+                 "ppt/charts/chart1.xml" => chart.to_xml) do |file|
+      slide = import_file(file).last.reload
+      html = Nokogiri::HTML.fragment(slide.description)
+      assert_equal "Q1: 10, 20, Q3: 30, Q11", html.at_css(".ppt-slide-chart td").text
+    end
+  end
+
   private
 
   def import_file(file)

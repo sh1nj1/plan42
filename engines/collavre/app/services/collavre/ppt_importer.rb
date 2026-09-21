@@ -287,7 +287,7 @@ module Collavre
 
       caption = title.presence || I18n.t("collavre.creatives.index.imported_chart")
       rows = series.map do |name, categories, values|
-        pairs = [ categories.length, values.length ].max.times.map do |index|
+        pairs = (categories.keys | values.keys).sort.map do |index|
           [ categories[index], values[index] ].compact.join(": ")
         end
         "<tr><th>#{ERB::Util.html_escape(name)}</th><td>#{ERB::Util.html_escape(pairs.join(", "))}</td></tr>"
@@ -297,8 +297,8 @@ module Collavre
 
     def indexed_chart_values(series, axis)
       points = series.xpath("./*[local-name()='#{axis}']//*[local-name()='pt']")
-      points.sort_by { |point| point["idx"].to_i }.map do |point|
-        point.at_xpath("./*[local-name()='v']")&.text.to_s
+      points.to_h do |point|
+        [ point["idx"].to_i, point.at_xpath("./*[local-name()='v']")&.text.to_s ]
       end
     end
 
