@@ -10,20 +10,22 @@ class AgentGatewaySettingsTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  teardown do
+    page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
+  end
+
   test "gateway list and edit form fit mobile in both themes and preserve saved keys" do
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height: 812, deviceScaleFactor: 1, mobile: true)
     visit collavre.agent_gateways_path
     assert_selector ".gateway-card h2", text: @gateway.name
     page.execute_script("document.body.classList.remove('dark-mode'); document.body.classList.add('light-mode')")
     assert_no_horizontal_overflow
-    page.save_screenshot(Rails.root.join("tmp/screenshots/gateway-list-mobile.png"))
     page.execute_script("document.body.classList.remove('light-mode'); document.body.classList.add('dark-mode')")
     assert_no_horizontal_overflow
     click_link I18n.t("collavre.agent_gateways.edit")
     assert_selector ".gateway-form__section", count: 3
     page.execute_script("document.body.classList.remove('light-mode'); document.body.classList.add('dark-mode')")
     assert_no_horizontal_overflow
-    page.save_screenshot(Rails.root.join("tmp/screenshots/gateway-form-mobile.png"))
     page.execute_script("document.body.classList.remove('dark-mode'); document.body.classList.add('light-mode')")
     assert_no_horizontal_overflow
     assert_equal "", find("input[name='agent_gateway[admin_key]']").value
