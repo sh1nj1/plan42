@@ -97,7 +97,166 @@ class PptImporterTest < ActiveSupport::TestCase
     assert_equal [ "Two", "Ten" ], @created.map { |creative| Nokogiri::HTML.fragment(creative.description).text.strip }
   end
 
+  test "preserves significant whitespace after persistence" do
+    text = "  indented  code\n    next line"
+    with_archive("ppt/slides/slide1.xml" => slide_xml(text)) do |file|
+      created = import_file(file)
+      assert_equal text, Nokogiri::HTML.fragment(created.last.reload.description).at_css("p").text
+    end
+  end
+
+  test "inherits placeholder geometry from layout and master" do
+    slide = slide_xml("Inherited").sub("<p:txBody>", '<p:nvSpPr><p:nvPr><p:ph idx="4"/></p:nvPr></p:nvSpPr><p:txBody>')
+    layout = rich_slide_xml.sub('type="title"', 'type="title" idx="4"')
+    rels = relationships_xml("slideLayout", "../slideLayouts/layout.xml")
+    with_archive("ppt/slides/slide1.xml" => slide,
+                 "ppt/slides/_rels/slide1.xml.rels" => rels,
+                 "ppt/slideLayouts/layout.xml" => layout) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert html.at_css(".ppt-slide-text.ppt-col-2.ppt-row-2.ppt-col-span-11")
+    end
+
+    layout_without_transform = layout.sub(/<p:spPr>.*?<\/p:spPr>/m, "")
+    with_archive("ppt/slides/slide1.xml" => slide,
+                 "ppt/slides/_rels/slide1.xml.rels" => rels,
+                 "ppt/slideLayouts/layout.xml" => layout_without_transform,
+                 "ppt/slideLayouts/_rels/layout.xml.rels" => relationships_xml("slideMaster", "../slideMasters/master.xml"),
+                 "ppt/slideMasters/master.xml" => rich_slide_xml) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert html.at_css(".ppt-slide-text.ppt-col-2.ppt-row-2")
+    end
+  end
+
+  test "preserves merged table cells and skips continuation cells" do
+    slide = rich_slide_xml.sub('<a:tc>', '<a:tc gridSpan="2" rowSpan="2">')
+                          .sub('<a:tc><a:txBody><a:p><a:r><a:t>Beta', '<a:tc hMerge="1"><a:txBody><a:p><a:r><a:t>Beta')
+                          .sub('</a:tbl>', '<a:tr><a:tc vMerge="true"/><a:tc hMerge="1" vMerge="1"/></a:tr></a:tbl>')
+    with_archive("ppt/slides/slide1.xml" => slide) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal 1, html.css(".ppt-slide-table td").size
+      assert_equal "2", html.at_css(".ppt-slide-table td")["colspan"]
+      assert_equal "2", html.at_css(".ppt-slide-table td")["rowspan"]
+    end
+  end
+
+  test "subtracts group child origins before placing children" do
+    slide = rich_slide_xml.sub('<a:chOff x="0" y="0"/>', '<a:chOff x="1000000" y="2000000"/>')
+                          .sub('<a:off x="0" y="0"/>', '<a:off x="1000000" y="2000000"/>')
+    with_archive("ppt/slides/slide1.xml" => slide) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert html.at_css(".ppt-slide-group .ppt-col-1.ppt-row-1.ppt-col-span-12.ppt-row-span-12")
+    end
+  end
+
+  test "rejects empty archives without creating or broadcasting a root" do
+    with_archive("readme.txt" => "empty") do |file|
+      Creative::RealtimeBroadcastable.stub(:broadcast_batch_created, ->(*) { flunk "Unexpected broadcast" }) do
+        assert_no_difference("Creative.count") do
+          assert_raises(PptImporter::InvalidArchive) { import_file(file) }
+        end
+      end
+    end
+  end
+
+  test "rejects archives exceeding entry count individual size and total size limits" do
+    [ :MAX_ENTRIES, :MAX_ENTRY_BYTES, :MAX_TOTAL_BYTES ].each do |constant|
+      original = PptImporter.const_get(constant)
+      PptImporter.send(:remove_const, constant)
+      PptImporter.const_set(constant, 1)
+      with_archive("ppt/slides/slide1.xml" => slide_xml("Large"), "extra" => "x") do |file|
+        assert_no_difference("Creative.count") do
+          assert_raises(PptImporter::InvalidArchive) { import_file(file) }
+        end
+      end
+    ensure
+      PptImporter.send(:remove_const, constant)
+      PptImporter.const_set(constant, original)
+    end
+  end
+
+  test "bounds actual decompression even when entry metadata understates size" do
+    importer = PptImporter.new(nil, parent: nil, user: users(:one), create_root: false, filename: nil)
+    importer.instance_variable_set(:@read_bytes, 0)
+    entry = Object.new
+    entry.define_singleton_method(:get_input_stream) { |&block| block.call(StringIO.new("x" * (PptImporter::MAX_ENTRY_BYTES + 1))) }
+    assert_raises(PptImporter::InvalidArchive) { importer.send(:read_entry, entry) }
+  end
+
+  test "rolls back records and removes uploaded bytes when a later slide is corrupt" do
+    blobs = []
+    original = ActiveStorage::Blob.method(:build_after_unfurling)
+    track = ->(**args) { original.call(**args).tap { |blob| blobs << blob } }
+    with_archive("ppt/slides/slide1.xml" => rich_slide_xml,
+                 "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+                 "ppt/media/image1.png" => SAMPLE_IMAGE,
+                 "ppt/slides/slide2.xml" => "<invalid") do |file|
+      Creative::RealtimeBroadcastable.stub(:broadcast_batch_created, ->(*) { flunk "Unexpected broadcast" }) do
+        ActiveStorage::Blob.stub(:build_after_unfurling, track) do
+          assert_no_difference([ "Creative.count", "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ]) do
+            assert_raises(Nokogiri::XML::SyntaxError) { import_file(file) }
+          end
+        end
+      end
+    end
+    assert_equal 1, blobs.size
+    assert_not blobs.first.service.exist?(blobs.first.key)
+  end
+
+  test "keeps explicit line breaks and unmatched placeholders readable" do
+    slide = slide_xml("First").sub("</a:r></a:p>", "</a:r><a:br/><a:r><a:t>Second</a:t></a:r></a:p>")
+                             .sub("<p:txBody>", '<p:nvSpPr><p:nvPr><p:ph idx="99"/></p:nvPr></p:nvSpPr><p:txBody>')
+    with_archive("ppt/slides/slide1.xml" => slide,
+                 "ppt/slides/_rels/slide1.xml.rels" => relationships_xml("slideLayout", "../slideLayouts/layout.xml"),
+                 "ppt/slideLayouts/layout.xml" => rich_slide_xml) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal 1, html.css("p br").size
+      assert_equal "FirstSecond", html.at_css("p").text
+    end
+  end
+
+  test "cleans up a partially uploaded image on storage failure" do
+    blob = nil
+    original = ActiveStorage::Blob.method(:build_after_unfurling)
+    fail_upload = lambda do |**args|
+      blob = original.call(**args)
+      blob.define_singleton_method(:upload_without_unfurling) do |io|
+        service.upload(key, io, checksum: checksum)
+        raise IOError, "Upload interrupted"
+      end
+      blob
+    end
+    with_archive("ppt/slides/slide1.xml" => rich_slide_xml,
+                 "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+                 "ppt/media/image1.png" => SAMPLE_IMAGE) do |file|
+      ActiveStorage::Blob.stub(:build_after_unfurling, fail_upload) do
+        assert_no_difference([ "Creative.count", "ActiveStorage::Blob.count" ]) do
+          assert_raises(IOError) { import_file(file) }
+        end
+      end
+    end
+    assert_not blob.service.exist?(blob.key)
+  end
+
   private
+
+  def import_file(file)
+    PptImporter.import(file, parent: nil, user: users(:one), create_root: true)
+  end
+
+  def with_archive(entries)
+    Tempfile.create([ "review", ".pptx" ]) do |tmp|
+      Zip::OutputStream.open(tmp.path) do |zip|
+        entries.each { |path, content| write_entry(zip, path, content) }
+      end
+      tmp.rewind
+      yield tmp
+    end
+  end
+
+  def relationships_xml(type, target)
+    %(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/#{type}" Target="#{target}"/></Relationships>)
+  end
+
 
   def build_sample_pptx(tmp)
     Zip::OutputStream.open(tmp.path) do |zip|

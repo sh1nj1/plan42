@@ -6,6 +6,11 @@ require "zip"
 
 module Collavre
   class PptImporter
+    class InvalidArchive < StandardError; end
+
+    MAX_ENTRIES = 2_000
+    MAX_ENTRY_BYTES = 20.megabytes
+    MAX_TOTAL_BYTES = 100.megabytes
     GRID_SIZE = 24
     DEFAULT_SLIDE_SIZE = [ 12_192_000, 6_858_000 ].freeze
 
@@ -30,33 +35,61 @@ module Collavre
     def import
       created = []
 
-      Zip::File.open(@file) do |zip|
-        @zip = zip
-        @slide_size = presentation_slide_size
-        root = create_import_root(created)
-        sequence = next_sequence(root)
-
-        ordered_slide_paths.each_with_index do |slide_path, index|
-          slide = xml_document(slide_path)
-          next unless slide
-
-          html = render_slide(slide, slide_path, index + 1)
-          creative = Creative.create!(
-            user: @user,
-            parent: root,
-            description: html,
-            sequence: sequence
-          )
-          created << creative
-          sequence += 1
-        end
-      end
+      import_archive(created)
 
       Creative::RealtimeBroadcastable.broadcast_batch_created(created)
       created
     end
 
     private
+
+    def import_archive(created)
+      Creative.transaction(requires_new: true) do
+        Zip::File.open(@file) do |zip|
+          @zip = zip
+          validate_archive!
+          paths = ordered_slide_paths
+          raise InvalidArchive if paths.empty?
+
+          @slide_size = presentation_slide_size
+          root = create_import_root(created)
+          sequence = next_sequence(root)
+          paths.each_with_index do |path, index|
+            slide = xml_document(path)
+            raise InvalidArchive unless slide
+
+            created << Creative.create!(
+              user: @user, parent: root,
+              description: render_slide(slide, path, index + 1),
+              sequence: sequence + index
+            )
+          end
+        end
+      end
+    rescue StandardError
+      # Database rollback cannot remove bytes already uploaded to storage.
+      @blob_cache.each_value(&:delete)
+      raise
+    end
+
+    def validate_archive!
+      entries = @zip.entries
+      raise InvalidArchive if entries.size > MAX_ENTRIES
+      raise InvalidArchive if entries.any? { |entry| entry.size > MAX_ENTRY_BYTES }
+      raise InvalidArchive if entries.sum(&:size) > MAX_TOTAL_BYTES
+
+      @read_bytes = 0
+    end
+
+    def read_entry(entry)
+      data = entry.get_input_stream do |stream|
+        stream.read(MAX_ENTRY_BYTES + 1)
+      end
+      @read_bytes += data.bytesize
+      raise InvalidArchive if data.bytesize > MAX_ENTRY_BYTES || @read_bytes > MAX_TOTAL_BYTES
+
+      data
+    end
 
     def create_import_root(created)
       return @parent unless @create_root
@@ -108,12 +141,13 @@ module Collavre
     def render_slide(slide, slide_path, slide_number)
       namespaces = slide.collect_namespaces
       relationships = relationships_for(slide_path)
+      @placeholder_sources = placeholder_sources(relationships)
       shape_tree = slide.at_xpath("//p:cSld/p:spTree", namespaces)
       elements = shape_tree ? render_nodes(shape_tree.element_children, namespaces, relationships, @slide_size) : ""
       notes = render_notes(relationships)
       ratio_class = slide_ratio_class(*@slide_size)
 
-      <<~HTML.squish
+      <<~HTML.strip
         <div class="ppt-slide #{ratio_class}" data-ppt-slide="#{slide_number}"
              data-ppt-width="#{@slide_size.first}" data-ppt-height="#{@slide_size.last}">
           <div class="ppt-slide-layout">#{elements}</div>
@@ -193,11 +227,16 @@ module Collavre
       @blob_cache[entry.name] ||= begin
         filename = File.basename(entry.name)
         content_type = Marcel::MimeType.for(name: filename) || "application/octet-stream"
-        ActiveStorage::Blob.create_and_upload!(
-          io: StringIO.new(entry.get_input_stream.read),
+        data = read_entry(entry)
+        blob = ActiveStorage::Blob.build_after_unfurling(
+          io: StringIO.new(data),
           filename: filename,
           content_type: content_type
         )
+        @blob_cache[entry.name] = blob
+        blob.save!
+        blob.upload_without_unfurling(StringIO.new(data))
+        blob
       end
     end
 
@@ -215,13 +254,16 @@ module Collavre
 
     def render_table(table, namespaces)
       rows = table.xpath("./a:tr", namespaces).map do |row|
-        cells = row.xpath("./a:tc", namespaces).map do |cell|
+        cells = row.xpath("./a:tc", namespaces).filter_map do |cell|
+          next if truthy_xml_attribute?(cell["hMerge"]) || truthy_xml_attribute?(cell["vMerge"])
+
           content = cell.xpath("./a:txBody/a:p", namespaces).filter_map do |paragraph|
             render_paragraph(paragraph, namespaces)
           end.join
-          span = cell.at_xpath("./a:tcPr/a:gridSpan", namespaces)&.[]("val").to_i
+          span = cell["gridSpan"].to_i
           colspan = span > 1 ? %( colspan="#{span}") : ""
-          "<td#{colspan}>#{content}</td>"
+          rowspan = cell["rowSpan"].to_i > 1 ? %( rowspan="#{cell["rowSpan"].to_i}") : ""
+          "<td#{colspan}#{rowspan}>#{content}</td>"
         end
         "<tr>#{cells.join}</tr>"
       end
@@ -290,6 +332,10 @@ module Collavre
     end
 
     def transform_for(node, namespaces)
+      local_transform(node, namespaces) || inherited_transform(node)
+    end
+
+    def local_transform(node, namespaces)
       transform = case node.name
       when "graphicFrame"
         node.at_xpath("./p:xfrm", namespaces)
@@ -307,12 +353,44 @@ module Collavre
       [ offset["x"].to_i, offset["y"].to_i, extent["cx"].to_i, extent["cy"].to_i ]
     end
 
+    def placeholder_sources(relationships)
+      layout_rel = relationships.values.find { |item| item[:type].end_with?("/slideLayout") }
+      return [] unless layout_rel
+
+      layout = xml_document(layout_rel[:path])
+      master_rel = relationships_for(layout_rel[:path]).values.find { |item| item[:type].end_with?("/slideMaster") }
+      [ layout, master_rel && xml_document(master_rel[:path]) ].compact
+    end
+
+    def inherited_transform(node)
+      placeholder = node.at_xpath(".//*[local-name()='ph']")
+      return unless placeholder
+
+      @placeholder_sources.to_a.each_with_index do |source, index|
+        candidates = source.xpath("//*[local-name()='ph']")
+        match = if index.zero?
+          candidates.find { |candidate| candidate["idx"].to_i == placeholder["idx"].to_i }
+        else
+          candidates.find { |candidate| (candidate["type"] || "obj") == (placeholder["type"] || "obj") }
+        end
+        next unless match
+
+        shape = match.parent.parent.parent
+        transform = local_transform(shape, source.collect_namespaces)
+        return transform if transform
+
+        placeholder = match
+      end
+      nil
+    end
+
     def group_child_bounds(group, namespaces)
       transform = group.at_xpath("./p:grpSpPr/a:xfrm", namespaces)
       extent = transform&.at_xpath("./a:chExt", namespaces)
       width = extent&.[]("cx").to_i
       height = extent&.[]("cy").to_i
-      width.positive? && height.positive? ? [ width, height ] : @slide_size
+      offset = transform&.at_xpath("./a:chOff", namespaces)
+      width.positive? && height.positive? ? [ width, height, offset&.[]("x").to_i, offset&.[]("y").to_i ] : @slide_size
     end
 
     def element_classes(kind, transform, bounds)
@@ -320,9 +398,9 @@ module Collavre
       return classes.join(" ") unless transform
 
       x, y, width, height = transform
-      bound_width, bound_height = bounds
-      column = grid_start(x, bound_width)
-      row = grid_start(y, bound_height)
+      bound_width, bound_height, origin_x, origin_y = bounds
+      column = grid_start(x - origin_x.to_i, bound_width)
+      row = grid_start(y - origin_y.to_i, bound_height)
       classes.concat([
         "ppt-col-#{column}",
         "ppt-col-span-#{grid_span(width, bound_width, column)}",
@@ -383,7 +461,7 @@ module Collavre
 
     def xml_document(path)
       entry = @zip.find_entry(path)
-      Nokogiri::XML(entry.get_input_stream.read) if entry
+      Nokogiri::XML(read_entry(entry)) { |config| config.strict.nonet } if entry
     end
 
     def truthy_xml_attribute?(value)

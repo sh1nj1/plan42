@@ -32,6 +32,8 @@ module Creatives
       else
         raise UnsupportedFile, "Invalid file type"
       end
+    rescue Zip::Error, Nokogiri::XML::SyntaxError, PptImporter::InvalidArchive
+      raise UnsupportedFile, "Invalid file type"
     end
 
     private

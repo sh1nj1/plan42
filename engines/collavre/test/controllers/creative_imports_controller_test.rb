@@ -46,6 +46,19 @@ class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Invalid file type", JSON.parse(response.body)["error"]
   end
 
+  test "rejects corrupt pptx bytes as a validation error" do
+    file = Rack::Test::UploadedFile.new(
+      file_fixture("invalid.txt"),
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      original_filename: "broken.pptx"
+    )
+    assert_no_difference("Creative.count") do
+      post collavre.creative_imports_path, params: { markdown: file }
+    end
+    assert_response :unprocessable_entity
+    assert_equal "Invalid file type", JSON.parse(response.body)["error"]
+  end
+
   test "returns unauthorized when user not signed in" do
     delete session_path
 
