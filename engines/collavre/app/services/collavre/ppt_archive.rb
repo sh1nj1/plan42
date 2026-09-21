@@ -69,7 +69,12 @@ module Collavre
       end
 
       @zip.glob("ppt/slides/slide*.xml")
-        .sort_by { |entry| entry.name[/slide(\d+)/, 1].to_i }
+        .sort_by do |entry|
+          match = entry.name.match(%r{\Appt/slides/slide(\d+)\.xml\z})
+          raise self.class::InvalidArchive unless match
+
+          match[1].to_i
+        end
         .map(&:name)
     end
 

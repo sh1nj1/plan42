@@ -212,6 +212,15 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "orders numeric fallback slide names numerically" do
+    with_archive("ppt/slides/slide10.xml" => slide_xml("Tenth"),
+                 "ppt/slides/slide2.xml" => slide_xml("Second"),
+                 "ppt/slides/slide1.xml" => slide_xml("First")) do |file|
+      slides = import_file(file).drop(1)
+      assert_equal [ "First", "Second", "Tenth" ], slides.map { |slide| Nokogiri::HTML.fragment(slide.reload.description).text.strip }
+    end
+  end
+
   test "rejects empty archives without creating or broadcasting a root" do
     with_archive("readme.txt" => "empty") do |file|
       Creative::RealtimeBroadcastable.stub(:broadcast_batch_created, ->(*) { flunk "Unexpected broadcast" }) do
