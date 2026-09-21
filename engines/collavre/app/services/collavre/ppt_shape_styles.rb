@@ -12,13 +12,7 @@ module Collavre
 
       properties = Nokogiri::XML::Node.new("rPr", shape.document)
       properties.namespace = shape.document.root.namespace_definitions.find { |ns| ns.prefix == "a" }
-      font = resolved_font(reference["idx"] == "major" ? "+mj-lt" : "+mn-lt")
-      if font
-        latin = Nokogiri::XML::Node.new("latin", shape.document)
-        latin.namespace = properties.namespace
-        latin["typeface"] = font
-        properties.add_child(latin)
-      end
+      theme_script_fonts(properties, reference["idx"])
       if ppt_color(reference)
         fill = Nokogiri::XML::Node.new("solidFill", shape.document)
         fill.namespace = properties.namespace
@@ -26,6 +20,19 @@ module Collavre
         properties.add_child(fill)
       end
       properties
+    end
+
+    def theme_script_fonts(properties, family)
+      prefix = family == "major" ? "mj" : "mn"
+      { "latin" => "lt", "ea" => "ea", "cs" => "cs" }.each do |script, token|
+        font = resolved_font("+#{prefix}-#{token}")
+        next unless font
+
+        node = Nokogiri::XML::Node.new(script, properties.document)
+        node.namespace = properties.namespace
+        node["typeface"] = font
+        properties.add_child(node)
+      end
     end
 
     def theme_shape_properties(shape)

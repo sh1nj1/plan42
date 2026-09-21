@@ -10,7 +10,7 @@ module Collavre
           @zip = zip
           validate_archive!
           paths = ordered_slide_paths
-          raise self.class::InvalidArchive if paths.empty? || paths.size > self.class::MAX_SLIDES
+          raise self.class::InvalidArchive if paths.empty? || paths.size > self.class::MAX_SLIDES || paths.uniq.size != paths.size
 
           @slide_size = presentation_slide_size
           root = create_import_root(created)
@@ -108,7 +108,7 @@ module Collavre
     end
 
     def normalize_part_path(part_path, target)
-      return target.delete_prefix("/") if target.start_with?("/")
+      return Pathname.new(target).cleanpath.to_s.delete_prefix("/") if target.start_with?("/")
 
       Pathname.new(File.dirname(part_path)).join(target).cleanpath.to_s
     end

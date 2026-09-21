@@ -837,6 +837,40 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "rejects repeated and aliased slide targets before rendering or writing" do
+    [ [ "rId1", "slides/slide1.xml" ], [ "rId2", "slides/./slide1.xml" ], [ "rId2", "/ppt/slides/slide1.xml" ], [ "rId2", "/ppt/slides/../slides/slide1.xml" ] ].each do |id, target|
+      entries = {
+        "ppt/presentation.xml" => presentation_xml.sub('r:id="rId2"', %(r:id="#{id}")),
+        "ppt/_rels/presentation.xml.rels" => presentation_relationships_xml.sub('slides/slide2.xml', target),
+        "ppt/slides/slide1.xml" => rich_slide_xml
+      }
+      with_archive(entries) do |file|
+        Creative::RealtimeBroadcastable.stub(:broadcast_batch_created, ->(*) { flunk "Unexpected broadcast" }) do
+          assert_no_difference([ "Creative.count", "ActiveStorage::Blob.count" ]) do
+            Creative.stub(:create!, ->(*) { flunk "Must reject before creating any Creative" }) do
+              assert_raises(PptImporter::InvalidArchive) { import_file(file) }
+            end
+          end
+        end
+      end
+    end
+  end
+
+  test "persists major and minor font references for each run script and explicit overrides" do
+    entries = inheritance_entries
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme><a:majorFont><a:latin typeface="Cambria"/><a:ea typeface="맑은 고딕"/><a:cs typeface="Amiri"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/><a:ea typeface="Yu Gothic"/><a:cs typeface="Noto Naskh Arabic"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>'
+    { "major" => [ "Cambria", "맑은 고딕", "Amiri", "Arial" ], "minor" => [ "Aptos", "Yu Gothic", "Noto Naskh Arabic", "Arial" ] }.each do |family, expected|
+      entries["ppt/slides/slide1.xml"] = slide_xml("English")
+        .sub('<p:txBody>', %(<p:style><a:fontRef idx="#{family}"/></p:style><p:txBody>))
+        .sub('</a:r></a:p>', '</a:r><a:r><a:t>한국어</a:t></a:r><a:r><a:t>مرحبا</a:t></a:r><a:r><a:rPr><a:ea typeface="Arial"/></a:rPr><a:t>日本語</a:t></a:r></a:p>')
+      with_archive(entries) do |file|
+        spans = Nokogiri::HTML.fragment(import_file(file).last.reload.description).css("p > span")
+        assert_equal expected, spans.to_a.last(4).map { |span| JSON.parse(span["data-ppt-format"])["font"] }
+      end
+    end
+  end
+
   test "bounds filename fallback slide count before creating a root" do
     entries = (1..PptImporter::MAX_SLIDES + 1).to_h { |i| [ "ppt/slides/slide#{i}.xml", slide_xml("Slide") ] }
     with_archive(entries) do |file|
@@ -844,14 +878,15 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
-  test "accepts the exact slide limit in relationship order without deduplicating" do
+  test "accepts the exact slide limit with distinct targets in relationship order" do
     original = PptImporter::MAX_SLIDES
     PptImporter.send(:remove_const, :MAX_SLIDES)
     PptImporter.const_set(:MAX_SLIDES, 2)
     entries = {
-      "ppt/presentation.xml" => '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId r:id="rId1"/><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>',
-      "ppt/_rels/presentation.xml.rels" => relationships_xml("slide", "slides/slide1.xml"),
-      "ppt/slides/slide1.xml" => slide_xml("Repeated")
+      "ppt/presentation.xml" => presentation_xml,
+      "ppt/_rels/presentation.xml.rels" => presentation_relationships_xml,
+      "ppt/slides/slide1.xml" => slide_xml("First"),
+      "ppt/slides/slide2.xml" => slide_xml("Second")
     }
     with_archive(entries) do |file|
       assert_equal 3, import_file(file).size

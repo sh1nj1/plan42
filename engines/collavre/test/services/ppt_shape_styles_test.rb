@@ -59,7 +59,7 @@ class PptShapeStylesTest < ActiveSupport::TestCase
   end
 
   test "cascades placeholder font references without changing shared XML" do
-    @theme = xml('<a:fontScheme><a:majorFont><a:latin typeface="Cambria"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme>')
+    @theme = xml('<a:fontScheme><a:majorFont><a:latin typeface="Cambria"/><a:ea typeface="맑은 고딕"/><a:cs typeface="Amiri"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme>')
     @renderer.instance_variable_set(:@theme, @theme)
     master = xml('<p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:style><a:fontRef idx="major"><a:srgbClr val="112233"/></a:fontRef></p:style></p:sp>')
     shape = xml('<p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr></p:sp>').root.element_children.first
@@ -68,6 +68,8 @@ class PptShapeStylesTest < ActiveSupport::TestCase
     properties = @renderer.send(:theme_text_properties, shape)
     assert_equal 'Cambria', properties.at_xpath('./a:latin', shape.document.collect_namespaces)['typeface']
     assert_equal '#112233', @renderer.send(:ppt_color, properties.at_xpath('./a:solidFill', shape.document.collect_namespaces))
+    assert_equal '맑은 고딕', @renderer.send(:run_font, properties, shape.document.collect_namespaces, '한국어')
+    assert_equal 'Amiri', @renderer.send(:run_font, properties, shape.document.collect_namespaces, 'مرحبا')
     assert_equal originals, [ master.to_xml, shape.to_xml, @theme.to_xml ]
     shape.add_child('<p:style><a:fontRef idx="minor"/></p:style>')
     assert_equal 'Aptos', @renderer.send(:theme_text_properties, shape).element_children.first['typeface']
