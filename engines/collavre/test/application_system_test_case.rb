@@ -8,6 +8,9 @@ require "securerandom"
 
 require_relative "support/system_test_chrome_locator"
 
+# Rails preloads Chrome with its own service before applying driver options.
+Selenium::WebDriver::Chrome::Service.driver_path = -> { SystemTestChromeLocator.chromedriver_path }
+
 at_exit { SystemTestChromeLocator.cleanup_temp_dirs }
 
 BUILD_CHROME_DRIVER = lambda do |app, extra_arguments|
@@ -67,6 +70,10 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   end
 
   driver_name = ENV.fetch(DRIVER_ENV_KEY, "custom_headless_chrome")
+  unless %w[custom_headless_chrome hovering_pointer_headless_chrome chrome].include?(driver_name)
+    raise ArgumentError, "Unsupported SYSTEM_TEST_DRIVER: #{driver_name}. Use a configured local Chrome driver."
+  end
+
   if driver_name == "chrome"
     driven_by :selenium, using: :chrome, screen_size: [ 1920, 1080 ],
               options: { service: SystemTestChromeLocator.chrome_service }

@@ -1,5 +1,6 @@
 require "test_helper"
 require "tempfile"
+require "open3"
 require_relative "../support/system_test_chrome_locator"
 
 class SystemTestChromeLocatorTest < ActiveSupport::TestCase
@@ -52,6 +53,51 @@ class SystemTestChromeLocatorTest < ActiveSupport::TestCase
         assert_equal file.path, finder.driver_path
         assert_nil finder.browser_path
       end
+    end
+  end
+
+  test "Rails driver preload never invokes Manager for supported browser modes" do
+    Tempfile.create("driver") do |file|
+      File.chmod(0o700, file.path)
+      script = <<~RUBY
+        require "selenium-webdriver"
+        Selenium::WebDriver::SeleniumManager.define_singleton_method(:binary_paths) do |*|
+          abort "Manager must not run"
+        end
+        require_relative "engines/collavre/test/application_system_test_case"
+        service = Selenium::WebDriver::Chrome::Service.new
+        finder = Selenium::WebDriver::DriverFinder.new(Selenium::WebDriver::Chrome::Options.new, service)
+        abort "Wrong driver" unless finder.driver_path == ENV.fetch("CHROMEDRIVER_PATH")
+      RUBY
+      %w[custom_headless_chrome hovering_pointer_headless_chrome chrome].each do |mode|
+        output, status = Open3.capture2e(
+          { "SYSTEM_TEST_DRIVER" => mode, "CHROMEDRIVER_PATH" => file.path },
+          RbConfig.ruby, "-Itest", "-e", script, chdir: Rails.root
+        )
+        assert status.success?, "#{mode}: #{output}"
+      end
+    end
+  end
+
+  test "unconfigured browser modes fail before Manager can run" do
+    script = <<~RUBY
+      require "selenium-webdriver"
+      Selenium::WebDriver::SeleniumManager.define_singleton_method(:binary_paths) do |*|
+        abort "Manager must not run"
+      end
+      begin
+        require_relative "engines/collavre/test/application_system_test_case"
+      rescue ArgumentError => error
+        abort error.message unless error.message.include?("Unsupported SYSTEM_TEST_DRIVER")
+        exit 0
+      end
+      abort "Unconfigured driver was accepted"
+    RUBY
+    %w[selenium selenium_headless selenium_chrome_headless].each do |mode|
+      output, status = Open3.capture2e(
+        { "SYSTEM_TEST_DRIVER" => mode }, RbConfig.ruby, "-Itest", "-e", script, chdir: Rails.root
+      )
+      assert status.success?, "#{mode}: #{output}"
     end
   end
 end
