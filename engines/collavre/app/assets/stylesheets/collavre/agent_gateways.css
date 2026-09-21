@@ -1,0 +1,153 @@
+.gateway-settings {
+  max-width: 60rem;
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.gateway-settings--form {
+  max-width: 42rem;
+}
+
+.gateway-settings__header,
+.gateway-card__heading,
+.gateway-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.gateway-settings__header {
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.gateway-settings__header > div {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.gateway-settings__header p {
+  margin: 0;
+}
+
+.gateway-list,
+.gateway-form__section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.gateway-card,
+.gateway-form__section {
+  padding: var(--space-4);
+  border: var(--border-1) solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--surface-section);
+  min-width: 0;
+  margin: 0;
+}
+
+.gateway-card h2 {
+  margin: 0;
+  font-size: var(--text-2);
+}
+
+.gateway-card__url {
+  display: block;
+  margin-top: var(--space-2);
+  font-size: var(--text-1);
+  color: var(--text-muted);
+  white-space: normal;
+}
+
+.gateway-card__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-7);
+  margin-block: var(--space-4);
+}
+
+.gateway-card__details dt {
+  color: var(--text-muted);
+  font-size: var(--text-0);
+}
+
+.gateway-card__details dd {
+  margin: 0;
+}
+
+.gateway-badge {
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-input);
+  border-radius: var(--radius-2);
+  font-size: var(--text-0);
+}
+
+.gateway-actions form {
+  margin: 0;
+}
+
+.gateway-check-result {
+  flex-basis: 100%;
+  font-size: var(--text-1);
+}
+
+.gateway-check-result:empty {
+  display: none;
+}
+
+.gateway-form.stacked-form {
+  max-width: none;
+  gap: var(--space-5);
+}
+
+.gateway-form legend {
+  padding-inline: var(--space-2);
+  font-size: var(--text-1);
+  font-weight: var(--weight-6);
+}
+
+.gateway-form .form-group > label,
+.gateway-form .form-text {
+  display: block;
+  margin-block: var(--space-2);
+}
+
+.gateway-form .form-text {
+  font-size: var(--text-1);
+  line-height: var(--leading-3);
+}
+
+.gateway-form__modes {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.gateway-form__modes legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+}
+
+.gateway-form__mode {
+  padding: var(--space-3);
+  border: var(--border-1) solid var(--color-border);
+  border-radius: var(--radius-2);
+  margin-bottom: var(--space-2);
+}
+
+.gateway-form__mode:has(input:checked) {
+  border-color: var(--color-link);
+  background: var(--surface-input);
+}
+
+.gateway-form .form-check > label {
+  display: inline;
+}
+
+.gateway-form .gateway-actions input[type="submit"] {
+  background: var(--color-brand);
+  color: var(--text-on-badge);
+}

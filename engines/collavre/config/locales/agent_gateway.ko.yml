@@ -40,6 +40,10 @@ ko:
               completion_key_required: "은(는) AI Agent 채팅에 Completion key가 필요합니다"
   collavre:
     agent_gateways:
+      sections:
+        connection: 연결 정보
+        authentication: 인증 정보
+        workspace: 워크스페이스 및 사용 설정
       title: 내 Agent Gateway
       manage: Agent Gateway 설정
       description: 내가 소유한 CLI OpenAI 프록시를 등록합니다. 키는 서버에만 보관되며 브라우저로 전달되지 않습니다.
