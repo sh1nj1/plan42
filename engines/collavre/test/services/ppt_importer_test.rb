@@ -754,6 +754,28 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "persists theme shape references with placeholder colors and explicit overrides" do
+    entries = inheritance_entries
+    entries["ppt/slideMasters/master.xml"] = placeholder_slide("Master", 'type="title"')
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Slide", 'idx="4"')
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="title"')
+      .sub("<p:txBody>", '<p:style><a:fillRef idx="1"><a:schemeClr val="accent1"><a:alpha val="50000"/></a:schemeClr></a:fillRef><a:lnRef idx="1"><a:srgbClr val="804020"/></a:lnRef></p:style><p:txBody>')
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme><a:accent1><a:srgbClr val="204060"/></a:accent1></a:clrScheme><a:fmtScheme><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"><a:shade val="50000"/><a:alphaMod val="50000"/></a:schemeClr></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="24384"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.at_css(".ppt-slide-element")["data-ppt-format"])
+      assert_equal [ "#10203040", "#804020", 0.2 ], data.values_at("fill", "stroke", "strokeWidth")
+    end
+    entries["ppt/slides/slide1.xml"] = entries["ppt/slides/slide1.xml"].sub("<p:txBody>", '<p:spPr><a:noFill/><a:ln w="12192"/></p:spPr><p:txBody>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      data = JSON.parse(html.at_css(".ppt-slide-element")["data-ppt-format"])
+      assert_nil data["fill"]
+      assert_equal [ "#804020", 0.1 ], data.values_at("stroke", "strokeWidth")
+    end
+  end
+
   private
 
   def inheritance_entries

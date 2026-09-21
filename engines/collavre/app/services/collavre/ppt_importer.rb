@@ -14,6 +14,7 @@ module Collavre
     include PptNumbering
     include PptTables
     include PptParagraphs
+    include PptShapeStyles
     include PptFormatting
     include PptInheritance
     include PptArchive

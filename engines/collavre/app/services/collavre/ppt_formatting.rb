@@ -52,7 +52,8 @@ module Collavre
       properties = (inherited + [ shape ]).filter_map do |source|
         source.at_xpath(path, source.document.collect_namespaces)
       end
-      properties.reduce(nil) { |merged, source| merge_shape_properties(merged, source) }
+      base = path == "./p:spPr" ? theme_shape_properties(shape) : nil
+      properties.reduce(base) { |merged, source| merge_shape_properties(merged, source) }
     end
 
     def merge_shape_properties(merged, source)

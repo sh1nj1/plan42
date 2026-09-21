@@ -11,7 +11,7 @@ module Collavre
     end
 
     def connector_format(node, namespaces)
-      properties = node.at_xpath("./p:spPr", namespaces)
+      properties = effective_shape_properties(node)
       line = properties&.at_xpath("./a:ln", namespaces)
       preset = properties&.at_xpath("./a:prstGeom", namespaces)
       transform = transform_for(node, namespaces)
