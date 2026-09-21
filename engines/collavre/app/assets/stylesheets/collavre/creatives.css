@@ -1051,7 +1051,7 @@ creative-tree-row.is-being-edited .creative-tree {
 
 .cron-task {
     padding: var(--space-2) 0;
-    border-top: var(--border-1) solid var(--border-muted);
+    border-top: var(--border-1) solid var(--border-color);
 }
 
 .cron-task:first-of-type {
@@ -1066,7 +1066,7 @@ creative-tree-row.is-being-edited .creative-tree {
     margin-bottom: var(--space-1);
     color: var(--text-muted);
     font-size: var(--text-0);
-    font-weight: var(--weight-semibold);
+    font-weight: var(--weight-6);
 }
 
 .cron-task code,
@@ -1098,38 +1098,62 @@ creative-tree-row.is-being-edited .creative-tree {
 
 .cron-task-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-2);
 }
 
 .cron-task-save,
 .cron-task-delete {
-    display: inline-flex;
     flex: 1;
     justify-content: center;
-    padding: var(--space-2);
+}
+
+.cron-task-actions button:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.creative-type-editor {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.creative-type-editor input[role="combobox"] {
+    box-sizing: border-box;
+    flex: 1 1 var(--space-12);
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: var(--space-1) var(--space-2);
+    border: var(--border-1) solid var(--border-color);
     border-radius: var(--radius-2);
-    background: transparent;
-    cursor: pointer;
+    background: var(--surface-input);
+    color: var(--text-input);
+    font: inherit;
 }
 
-.cron-task-save {
-    border: var(--border-1) solid var(--color-active);
-    color: var(--color-active);
+.creative-type-editor input[role="combobox"],
+.creative-type-editor .btn {
+    min-height: var(--space-7);
 }
 
-.cron-task-save:hover,
-.cron-task-save:focus-visible {
-    background: color-mix(in srgb, var(--color-active) 12%, transparent);
+.creative-type-editor label {
+    margin: 0;
 }
 
-.cron-task-delete {
-    border: var(--border-1) solid var(--color-danger);
+.creative-type-editor [role="alert"]:not(:empty) {
+    flex-basis: 100%;
     color: var(--color-danger);
+    overflow-wrap: anywhere;
 }
 
-.cron-task-delete:hover,
-.cron-task-delete:focus-visible {
-    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+.creative-type-editor button:disabled {
+    cursor: default;
+    opacity: 0.7;
 }
 
 /* ─── Bundle drag image (shared by creatives + comments) ─── */

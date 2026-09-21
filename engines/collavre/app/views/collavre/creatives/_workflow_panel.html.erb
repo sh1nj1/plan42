@@ -15,9 +15,9 @@
   <p data-creatives--workflow-rule-target="permission"></p>
   <p><%= link_to t('collavre.workflow.editor.tree_link'), creative_path(@creative), data: { turbo_frame: '_top' } %></p>
   <p data-creatives--workflow-rule-target="status" role="status" aria-live="polite"></p>
-  <button type="button" data-action="creatives--workflow-rule#load"><%= t('collavre.workflow.editor.reload') %></button>
+  <button class="btn btn-secondary" type="button" data-action="creatives--workflow-rule#load"><%= t('collavre.workflow.editor.reload') %></button>
   <div data-creatives--workflow-rule-target="rules"></div>
-  <button type="button" disabled data-creatives--workflow-rule-target="create" data-action="creatives--workflow-rule#add"><%= t('collavre.workflow.editor.add_rule') %></button>
+  <button class="btn btn-secondary" type="button" disabled data-creatives--workflow-rule-target="create" data-action="creatives--workflow-rule#add"><%= t('collavre.workflow.editor.add_rule') %></button>
   <template data-creatives--workflow-rule-target="template">
     <form class="workflow-rule" data-action="submit->creatives--workflow-rule#save change->creatives--workflow-rule#change input->creatives--workflow-rule#input keydown->creatives--workflow-rule#key">
       <h3 data-role="heading"></h3>
@@ -49,7 +49,7 @@
           <label class="workflow-choice"><input type="checkbox" name="any-body" data-field="any-body"><%= t('collavre.workflow.editor.any_body') %></label>
           <div data-role="tags" class="workflow-tags"></div>
           <label><%= t('collavre.workflow.editor.phrase') %><input name="phrase"></label>
-          <button type="button" data-action="creatives--workflow-rule#addPhrase"><%= t('collavre.workflow.editor.add_phrase') %></button>
+          <button class="btn btn-secondary" type="button" data-action="creatives--workflow-rule#addPhrase"><%= t('collavre.workflow.editor.add_phrase') %></button>
           <p><%= t('collavre.workflow.editor.empty_conditions') %></p>
         </fieldset>
         <details>
@@ -58,9 +58,9 @@
           <label><%= t('collavre.workflow.editor.liquid') %><textarea name="expression" data-field="when.liquid" rows="4"></textarea></label>
           <p><%= t('collavre.workflow.editor.raw_note') %></p>
           <label><%= t('collavre.workflow.editor.raw') %><textarea name="raw" rows="6" spellcheck="false"></textarea></label>
-          <button type="button" data-action="creatives--workflow-rule#applyRaw"><%= t('collavre.workflow.editor.apply_raw') %></button>
+          <button class="btn btn-secondary" type="button" data-action="creatives--workflow-rule#applyRaw"><%= t('collavre.workflow.editor.apply_raw') %></button>
         </details>
-        <button type="submit"><%= t('collavre.workflow.editor.save') %></button>
+        <button class="btn btn-primary" type="submit"><%= t('collavre.workflow.editor.save') %></button>
       </fieldset>
       <div data-role="diagnostics" role="status" aria-live="polite"></div>
       <div data-role="warnings" role="status" aria-live="polite"></div>

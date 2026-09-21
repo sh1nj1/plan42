@@ -92,6 +92,7 @@ export default class WorkflowRuleForm {
       if (typeof phrase !== 'string') return []
       const button = document.createElement('button')
       button.type = 'button'
+      button.className = 'btn btn-secondary btn-sm'
       button.textContent = `${phrase} ×`
       button.setAttribute('aria-label', `${this.labels.remove_phrase}: ${phrase}`)
       button.dataset.action = 'creatives--workflow-rule#removePhrase'

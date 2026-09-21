@@ -55,6 +55,16 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     assert_no_selector "[role=option]", text: 'Add type "project plan"'
     page.save_screenshot(Rails.root.join("tmp/creative-type-desktop.png"))
     resize_window_to(390, 844)
+    assert_selector ".creative-type-editor .btn.btn-secondary"
+    assert page.evaluate_script(<<~JS)
+      (() => {
+        const editor = document.querySelector('.creative-type-editor');
+        const bounds = editor.getBoundingClientRect();
+        return editor.scrollWidth <= editor.clientWidth &&
+          bounds.right <= window.innerWidth &&
+          getComputedStyle(editor).flexWrap === 'wrap';
+      })()
+    JS
     page.save_screenshot(Rails.root.join("tmp/creative-type-mobile.png"))
   end
 
