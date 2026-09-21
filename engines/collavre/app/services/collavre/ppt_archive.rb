@@ -13,19 +13,33 @@ module Collavre
           raise self.class::InvalidArchive if paths.empty? || paths.size > self.class::MAX_SLIDES || paths.uniq.size != paths.size
 
           @slide_size = presentation_slide_size
+          descriptions = rendered_slides(paths)
           root = create_import_root(created)
           sequence = next_sequence(root)
-          paths.each_with_index do |path, index|
-            slide = xml_document(path)
-            raise self.class::InvalidArchive unless slide
-
+          descriptions.each_with_index do |description, index|
             created << Creative.create!(
               user: @user, parent: root,
-              description: render_slide(slide, path, index + 1),
+              description: description,
               sequence: sequence + index
             )
           end
         end
+      end
+    end
+
+    # Related parts may be cached once but serialized on every slide. Charge
+    # actual UTF-8 HTML bytes, including notes and metadata, before any Creative.
+    def rendered_slides(paths)
+      bytes = 0
+      paths.map.with_index do |path, index|
+        slide = xml_document(path)
+        raise self.class::InvalidArchive unless slide
+
+        description = render_slide(slide, path, index + 1)
+        bytes += description.bytesize
+        raise self.class::InvalidArchive if bytes > self.class::MAX_RENDERED_BYTES
+
+        description
       end
     end
 

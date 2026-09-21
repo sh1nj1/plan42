@@ -62,6 +62,28 @@ class PptFormattingTest < ActiveSupport::TestCase
     end
   end
 
+  test "matches supplemental script fonts with bounded names and language-aware Han fallback" do
+    faces = { "Hang" => "한글", "Jpan" => "かな", "Arab" => "مرحبا", "Hans" => "中文", "Hant" => "注音", "Hebr" => "שלום", "Syrc" => "ܫ", "Thaa" => "ހ", "Deva" => "न", "Beng" => "ব", "Taml" => "த", "Thai" => "ท" }
+    fonts = faces.map { |script, _| %(<a:font script="#{script}" typeface="Font #{script}"/>) }.join
+    theme = xml('<a:fontScheme><a:majorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/>' + fonts + '</a:majorFont></a:fontScheme>')
+    @renderer.instance_variable_set(:@theme, theme)
+    faces.each do |script, text|
+      language = script == "Hant" ? "zh-TW" : nil
+      assert_equal "Font #{script}", @renderer.send(:resolved_font, "+mj-ea", text, language)
+    end
+    { "ja-JP" => "Jpan", "ko-KR" => "Hang", "zh-Hant" => "Hant", "zh-HK" => "Hant", "zh-CN" => "Hans" }.each do |language, script|
+      assert_equal "Font #{script}", @renderer.send(:resolved_font, "+mj-ea", "漢字", language)
+    end
+    assert_equal "Hant", @renderer.send(:supplemental_script, "ㄅ", nil)
+    assert_equal "Arial", @renderer.send(:resolved_font, "+mj-lt", "한글")
+    assert_nil @renderer.send(:resolved_font, "+mj-ea", "English")
+    assert_nil @renderer.send(:resolved_font, "+mn-ea", "한글")
+    theme.at_xpath("//a:font[@script='Hang']", theme.collect_namespaces)["typeface"] = "bad; color:red"
+    assert_nil @renderer.send(:resolved_font, "+mj-ea", "한글")
+    theme.at_xpath("//a:ea", theme.collect_namespaces)["typeface"] = "Explicit Face"
+    assert_equal "Explicit Face", @renderer.send(:resolved_font, "+mj-ea", "한글")
+  end
+
   private
 
   def xml(content)

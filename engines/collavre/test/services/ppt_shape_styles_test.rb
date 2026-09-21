@@ -66,13 +66,13 @@ class PptShapeStylesTest < ActiveSupport::TestCase
     @renderer.instance_variable_set(:@placeholder_sources, [ master ])
     originals = [ master.to_xml, shape.to_xml, @theme.to_xml ]
     properties = @renderer.send(:theme_text_properties, shape)
-    assert_equal 'Cambria', properties.at_xpath('./a:latin', shape.document.collect_namespaces)['typeface']
+    assert_equal 'Cambria', @renderer.send(:run_font, properties, shape.document.collect_namespaces, 'English')
     assert_equal '#112233', @renderer.send(:ppt_color, properties.at_xpath('./a:solidFill', shape.document.collect_namespaces))
     assert_equal '맑은 고딕', @renderer.send(:run_font, properties, shape.document.collect_namespaces, '한국어')
     assert_equal 'Amiri', @renderer.send(:run_font, properties, shape.document.collect_namespaces, 'مرحبا')
     assert_equal originals, [ master.to_xml, shape.to_xml, @theme.to_xml ]
     shape.add_child('<p:style><a:fontRef idx="minor"/></p:style>')
-    assert_equal 'Aptos', @renderer.send(:theme_text_properties, shape).element_children.first['typeface']
+    assert_equal 'Aptos', @renderer.send(:run_font, @renderer.send(:theme_text_properties, shape), shape.document.collect_namespaces, 'English')
     @renderer.instance_variable_set(:@theme, nil)
     assert_empty @renderer.send(:theme_text_properties, shape).element_children
     shape.at_xpath('./p:style/a:fontRef', shape.document.collect_namespaces)['idx'] = 'unsafe'

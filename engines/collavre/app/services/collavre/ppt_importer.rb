@@ -25,6 +25,7 @@ module Collavre
     MAX_SLIDES = 500
     MAX_ENTRIES = 2_000
     MAX_ENTRY_BYTES = 20.megabytes
+    MAX_RENDERED_BYTES = 20.megabytes
     MAX_TOTAL_BYTES = 100.megabytes
     GRID_SIZE = 24
     DEFAULT_SLIDE_SIZE = [ 12_192_000, 6_858_000 ].freeze

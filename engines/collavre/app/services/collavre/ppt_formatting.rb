@@ -76,18 +76,41 @@ module Collavre
       scripts.unshift("ea") if text.match?(/[\p{Han}\p{Hangul}\p{Hiragana}\p{Katakana}\p{Bopomofo}]/)
       scripts.unshift("cs") if text.match?(/[\p{Arabic}\p{Hebrew}\p{Syriac}\p{Thaana}\p{Devanagari}\p{Bengali}\p{Tamil}\p{Thai}]/)
       scripts.uniq.filter_map do |script|
-        resolved_font(properties.at_xpath("./a:#{script}", namespaces)&.[]("typeface"))
+        resolved_font(properties.at_xpath("./a:#{script}", namespaces)&.[]("typeface"), text, properties["lang"])
       end.first
     end
 
-    def resolved_font(typeface)
+    def resolved_font(typeface, text = "", language = nil)
       token = typeface&.match(/\A\+(mj|mn)-(lt|ea|cs)\z/)
-      if token
-        family = token[1] == "mj" ? "majorFont" : "minorFont"
-        script = { "lt" => "latin", "ea" => "ea", "cs" => "cs" }.fetch(token[2])
-        typeface = @theme&.at_xpath("//*[local-name()='fontScheme']/*[local-name()='#{family}']/*[local-name()='#{script}']")&.[]("typeface")
-      end
+      typeface = theme_font(token, text, language) if token
       typeface if typeface&.match?(/\A[\p{L}\p{N}][\p{L}\p{N} ._-]{0,99}\z/)
+    end
+
+    def theme_font(token, text, language)
+      family = token[1] == "mj" ? "majorFont" : "minorFont"
+      script = { "lt" => "latin", "ea" => "ea", "cs" => "cs" }.fetch(token[2])
+      scheme = @theme&.at_xpath("//*[local-name()='fontScheme']/*[local-name()='#{family}']")
+      face = scheme&.at_xpath("./*[local-name()='#{script}']")&.[]("typeface")
+      return face if face.present? || script == "latin"
+
+      supplemental = supplemental_script(text, language)
+      scheme&.element_children&.find { |node| node.name == "font" && node["script"] == supplemental }&.[]("typeface")
+    end
+
+    def supplemental_script(text, language)
+      scripts = {
+        /\p{Hangul}/ => "Hang", /[\p{Hiragana}\p{Katakana}]/ => "Jpan", /\p{Bopomofo}/ => "Hant",
+        /\p{Arabic}/ => "Arab", /\p{Hebrew}/ => "Hebr", /\p{Syriac}/ => "Syrc", /\p{Thaana}/ => "Thaa",
+        /\p{Devanagari}/ => "Deva", /\p{Bengali}/ => "Beng", /\p{Tamil}/ => "Taml", /\p{Thai}/ => "Thai"
+      }
+      matched = scripts.find { |pattern, _| text.match?(pattern) }&.last
+      return matched if matched
+      return unless text.match?(/\p{Han}/)
+
+      return "Jpan" if language.to_s.match?(/\Aja(?:-|\z)/i)
+      return "Hang" if language.to_s.match?(/\Ako(?:-|\z)/i)
+
+      language.to_s.match?(/\Azh-(TW|HK|MO|Hant)(?:-|\z)/i) ? "Hant" : "Hans"
     end
 
     def line_chart_format(chart, series)

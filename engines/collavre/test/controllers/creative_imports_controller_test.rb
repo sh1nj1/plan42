@@ -93,6 +93,27 @@ class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "rejects excessive rendered output as a validation error without records" do
+    limit = Collavre::PptImporter::MAX_RENDERED_BYTES
+    Collavre::PptImporter.send(:remove_const, :MAX_RENDERED_BYTES)
+    Collavre::PptImporter.const_set(:MAX_RENDERED_BYTES, 1)
+    Tempfile.create([ "presentation", ".pptx" ]) do |tmp|
+      Zip::OutputStream.open(tmp.path) do |zip|
+        zip.put_next_entry("ppt/slides/slide1.xml")
+        zip.write('<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>')
+      end
+      file = Rack::Test::UploadedFile.new(tmp.path, "application/vnd.ms-powerpoint", original_filename: "slides.pptx")
+      assert_no_difference([ "Creative.count", "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ]) do
+        post collavre.creative_imports_path, params: { markdown: file }
+      end
+      assert_response :unprocessable_entity
+      assert_equal "Invalid file type", JSON.parse(response.body)["error"]
+    end
+  ensure
+    Collavre::PptImporter.send(:remove_const, :MAX_RENDERED_BYTES)
+    Collavre::PptImporter.const_set(:MAX_RENDERED_BYTES, limit)
+  end
+
   test "rejects corrupt pptx bytes as a validation error" do
     file = Rack::Test::UploadedFile.new(
       file_fixture("invalid.txt"),

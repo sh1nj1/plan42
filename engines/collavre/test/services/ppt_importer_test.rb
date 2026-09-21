@@ -958,6 +958,88 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "bounds cumulative rendered bytes for distinct slides sharing chart and notes parts" do
+    original_limit = PptImporter::MAX_RENDERED_BYTES
+    entries = {
+      "ppt/slides/slide1.xml" => rich_slide_xml,
+      "ppt/slides/slide2.xml" => rich_slide_xml,
+      "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+      "ppt/slides/_rels/slide2.xml.rels" => rich_slide_relationships_xml,
+      "ppt/charts/chart1.xml" => chart_xml.gsub("barChart", "lineChart").gsub("Q1", "한국어 &amp; " * 100),
+      "ppt/notesSlides/notesSlide1.xml" => notes_xml
+    }
+    with_archive(entries) do |file|
+      bytes = 0
+      # Measure the unsanitized serialization, which is the storage upper bound.
+      importer = PptImporter.new(file, parent: nil, user: users(:one), create_root: false, filename: nil)
+      Zip::File.open(file) do |zip|
+        importer.instance_variable_set(:@zip, zip)
+        importer.send(:validate_archive!)
+        importer.instance_variable_set(:@slide_size, PptImporter::DEFAULT_SLIDE_SIZE)
+        bytes = %w[ppt/slides/slide1.xml ppt/slides/slide2.xml].each_with_index.sum do |path, index|
+          importer.send(:render_slide, importer.send(:xml_document, path), path, index + 1).bytesize
+        end
+      end
+      PptImporter.send(:remove_const, :MAX_RENDERED_BYTES)
+      PptImporter.const_set(:MAX_RENDERED_BYTES, bytes)
+      assert_equal 3, import_file(file).size
+      PptImporter.send(:remove_const, :MAX_RENDERED_BYTES)
+      PptImporter.const_set(:MAX_RENDERED_BYTES, bytes - 1)
+      Creative::RealtimeBroadcastable.stub(:broadcast_batch_created, ->(*) { flunk "Unexpected broadcast" }) do
+        Creative.stub(:create!, ->(*) { flunk "Must reject before creating any Creative" }) do
+          assert_no_difference([ "Creative.count", "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ]) do
+            assert_raises(PptImporter::InvalidArchive) { import_file(file) }
+          end
+        end
+      end
+    end
+  ensure
+    PptImporter.send(:remove_const, :MAX_RENDERED_BYTES)
+    PptImporter.const_set(:MAX_RENDERED_BYTES, original_limit)
+  end
+
+  test "rendered output rejection cleans uploaded pictures and rejects a single oversized slide" do
+    original_limit = PptImporter::MAX_RENDERED_BYTES
+    PptImporter.send(:remove_const, :MAX_RENDERED_BYTES)
+    PptImporter.const_set(:MAX_RENDERED_BYTES, 1)
+    blobs = []
+    original = ActiveStorage::Blob.method(:build_after_unfurling)
+    track = ->(**args) { original.call(**args).tap { |blob| blobs << blob } }
+    with_archive("ppt/slides/slide1.xml" => rich_slide_xml,
+                 "ppt/slides/_rels/slide1.xml.rels" => rich_slide_relationships_xml,
+                 "ppt/media/image1.png" => SAMPLE_IMAGE) do |file|
+      ActiveStorage::Blob.stub(:build_after_unfurling, track) do
+        assert_no_difference([ "Creative.count", "ActiveStorage::Blob.count", "ActiveStorage::Attachment.count" ]) do
+          assert_raises(PptImporter::InvalidArchive) { import_file(file) }
+        end
+      end
+    end
+    assert_equal 1, blobs.size
+    assert_not blobs.first.service.exist?(blobs.first.key)
+  ensure
+    PptImporter.send(:remove_const, :MAX_RENDERED_BYTES)
+    PptImporter.const_set(:MAX_RENDERED_BYTES, original_limit)
+  end
+
+  test "persists supplemental major and minor theme fonts from tokens and fontRef" do
+    entries = inheritance_entries
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    families = %w[major minor].map do |family|
+      %(<a:#{family}Font><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Hang" typeface="#{family} Korean"/><a:font script="Jpan" typeface="#{family} Japanese"/><a:font script="Arab" typeface="#{family} Arabic"/></a:#{family}Font>)
+    end.join
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme>' + families + '</a:fontScheme></a:themeElements></a:theme>'
+    %w[major minor].each do |family|
+      prefix = family == "major" ? "mj" : "mn"
+      entries["ppt/slides/slide1.xml"] = slide_xml("한국어")
+        .sub('<p:txBody>', %(<p:style><a:fontRef idx="#{family}"/></p:style><p:txBody>))
+        .sub('</a:r></a:p>', %(</a:r><a:r><a:t>مرحبا</a:t></a:r><a:r><a:rPr lang="ja-JP"><a:ea typeface="+#{prefix}-ea"/></a:rPr><a:t>日本語</a:t></a:r><a:r><a:rPr><a:ea typeface="Explicit Korean"/></a:rPr><a:t>한국어</a:t></a:r></a:p>))
+      with_archive(entries) do |file|
+        spans = Nokogiri::HTML.fragment(import_file(file).last.reload.description).css("p > span")
+        assert_equal [ "#{family} Korean", "#{family} Arabic", "#{family} Japanese", "Explicit Korean" ], spans.to_a.last(4).map { |span| JSON.parse(span["data-ppt-format"])["font"] }
+      end
+    end
+  end
+
   private
 
   test "persists shape font references beneath explicit text formatting" do

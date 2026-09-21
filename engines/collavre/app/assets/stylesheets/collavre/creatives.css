@@ -1826,6 +1826,10 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 /* stylelint-enable color-no-hex */
 
+.ppt-preset-rendered {
+    isolation: isolate;
+}
+
 .ppt-preset-rendered > svg {
     z-index: 1;
     position: absolute;
@@ -1838,6 +1842,7 @@ creative-tree-row.is-being-edited .creative-tree {
 
 .ppt-preset-rendered > p {
     position: relative;
+    z-index: 2;
 }
 
 /* Imported backgrounds stay below content and never intercept interaction. */

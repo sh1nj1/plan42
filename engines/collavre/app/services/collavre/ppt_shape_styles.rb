@@ -23,14 +23,13 @@ module Collavre
     end
 
     def theme_script_fonts(properties, family)
+      return unless @theme
+
       prefix = family == "major" ? "mj" : "mn"
       { "latin" => "lt", "ea" => "ea", "cs" => "cs" }.each do |script, token|
-        font = resolved_font("+#{prefix}-#{token}")
-        next unless font
-
         node = Nokogiri::XML::Node.new(script, properties.document)
         node.namespace = properties.namespace
-        node["typeface"] = font
+        node["typeface"] = "+#{prefix}-#{token}"
         properties.add_child(node)
       end
     end
