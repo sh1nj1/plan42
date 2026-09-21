@@ -31,9 +31,28 @@ function applyElementFormatting(element, slide) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return
   if (data.chart) renderPptChart(element, data.chart)
   const style = element.style
+  applyTableDimensions(element, data)
   applyGeometry(element, slide, data)
   applyTextStyle(style, data)
   applyShapeStyle(style, data)
+}
+
+function applyTableDimensions(element, data) {
+  if (!element.matches('table.ppt-slide-table')) return
+  const proportions = values => Array.isArray(values) && values.length > 0 && values.every(value => finite(value, 0.000001, 100)) && Math.abs(values.reduce((sum, value) => sum + value, 0) - 100) < 0.01
+  if (proportions(data.columns)) {
+    element.querySelector(':scope > colgroup')?.remove()
+    const group = document.createElement('colgroup')
+    for (const width of data.columns) {
+      const column = document.createElement('col')
+      column.style.width = `${width}%`
+      group.append(column)
+    }
+    element.prepend(group)
+  }
+  if (proportions(data.rows) && data.rows.length === element.rows.length) {
+    Array.from(element.rows).forEach((row, index) => { row.style.height = `${data.rows[index]}%` })
+  }
 }
 
 function applyGeometry(element, slide, data) {

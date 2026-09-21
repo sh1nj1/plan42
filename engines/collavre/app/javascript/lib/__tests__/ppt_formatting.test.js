@@ -109,3 +109,23 @@ test('rejects orientation and spacing injection or invalid types', () => {
   applyPptFormatting(root)
   expect(element.getAttribute('style')).toBeNull()
 })
+
+test('applies authored table proportions idempotently and rejects unsafe dimensions', () => {
+  const { root, element } = slide()
+  element.innerHTML = '<table class="ppt-slide-table"><tbody><tr><td>A</td><td>B</td></tr><tr><td colspan="2">C</td></tr></tbody></table>'
+  const table = element.firstElementChild
+  table.dataset.pptFormat = JSON.stringify({ columns: [25,75], rows: [20,80] })
+  applyPptFormatting(root)
+  applyPptFormatting(root)
+  expect([...table.querySelectorAll('col')].map(col => col.style.width)).toEqual(['25%', '75%'])
+  expect([...table.rows].map(row => row.style.height)).toEqual(['20%', '80%'])
+  for (const invalid of [[], [-1,101], ['25',75], [10,10], [null,100], [1e9,1], 'bad']) {
+    table.dataset.pptFormat = JSON.stringify({ columns: invalid, rows: invalid })
+    applyPptFormatting(root)
+    expect(table.querySelectorAll('col')).toHaveLength(2)
+    expect(table.rows[0].style.height).toBe('20%')
+  }
+  table.dataset.pptFormat = JSON.stringify({ rows: [100] })
+  applyPptFormatting(root)
+  expect(table.rows[0].style.height).toBe('20%')
+})

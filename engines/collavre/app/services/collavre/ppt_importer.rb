@@ -8,6 +8,8 @@ module Collavre
   class PptImporter
     include PptBackgrounds
     include PptColors
+    include PptNumbering
+    include PptTables
     include PptParagraphs
     include PptFormatting
     include PptInheritance
@@ -110,9 +112,7 @@ module Collavre
     end
 
     def render_text_shape(shape, namespaces, bounds)
-      paragraphs = shape.xpath("./p:txBody/a:p", namespaces).filter_map do |paragraph|
-        render_paragraph(paragraph, namespaces)
-      end
+      paragraphs = render_paragraphs(shape.at_xpath("./p:txBody", namespaces), namespaces)
 
       placeholder = shape.at_xpath("./p:nvSpPr/p:nvPr/p:ph", namespaces)&.[]("type")
       kind = %w[title ctrTitle subTitle].include?(placeholder) ? "title" : "text"
@@ -120,7 +120,7 @@ module Collavre
       %(<div class="#{classes}"#{format_attribute(shape_format(shape, namespaces, bounds))}>#{paragraphs.join}</div>)
     end
 
-    def render_paragraph(paragraph, namespaces)
+    def render_paragraph(paragraph, namespaces, counters = {})
       content = paragraph.element_children.filter_map do |child|
         case child.name
         when "r", "fld"
@@ -132,7 +132,7 @@ module Collavre
       content = ERB::Util.html_escape(paragraph.xpath(".//a:t", namespaces).map(&:text).join) if content.empty?
       return if ActionController::Base.helpers.strip_tags(content).strip.empty? && !content.include?("<br>")
 
-      formatting = paragraph_format(paragraph, namespaces)
+      formatting = paragraph_format(paragraph, namespaces, counters)
       bullet = formatting.delete(:bullet)
       content = %(<span class="ppt-bullet">#{ERB::Util.html_escape(bullet)} </span>) + content if bullet.present?
       %(<p#{format_attribute(formatting)}>#{content}</p>)
@@ -192,24 +192,6 @@ module Collavre
       %(<div class="#{classes}"#{format_attribute(geometry_format(frame, namespaces, bounds))}>#{content}</div>)
     end
 
-    def render_table(table, namespaces)
-      rows = table.xpath("./a:tr", namespaces).map do |row|
-        cells = row.xpath("./a:tc", namespaces).filter_map do |cell|
-          next if truthy_xml_attribute?(cell["hMerge"]) || truthy_xml_attribute?(cell["vMerge"])
-
-          content = cell.xpath("./a:txBody/a:p", namespaces).filter_map do |paragraph|
-            render_paragraph(paragraph, namespaces)
-          end.join
-          span = cell["gridSpan"].to_i
-          colspan = span > 1 ? %( colspan="#{span}") : ""
-          rowspan = cell["rowSpan"].to_i > 1 ? %( rowspan="#{cell["rowSpan"].to_i}") : ""
-          "<td#{colspan}#{rowspan}>#{content}</td>"
-        end
-        "<tr>#{cells.join}</tr>"
-      end
-      %(<table class="ppt-slide-table"><tbody>#{rows.join}</tbody></table>)
-    end
-
     def render_chart(relationship)
       chart = relationship && xml_document(relationship[:path])
       return unless chart
@@ -265,9 +247,7 @@ module Collavre
         type = shape.at_xpath("./p:nvSpPr/p:nvPr/p:ph", namespaces)&.[]("type")
         next unless type.nil? || type == "body"
 
-        shape.xpath("./p:txBody/a:p", namespaces).filter_map do |paragraph|
-          render_paragraph(paragraph, namespaces)
-        end.join.presence
+        render_paragraphs(shape.at_xpath("./p:txBody", namespaces), namespaces).join.presence
       end
       return "" if paragraphs.empty?
 

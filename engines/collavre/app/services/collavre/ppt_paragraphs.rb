@@ -3,12 +3,12 @@ module Collavre
   module PptParagraphs
     private
 
-    def paragraph_format(paragraph, namespaces)
+    def paragraph_format(paragraph, namespaces, counters = {})
       properties = effective_paragraph_properties(paragraph, namespaces)
       defaults = properties&.at_xpath("./a:defRPr", namespaces) || paragraph.at_xpath("./a:endParaRPr", namespaces)
       values = text_format(defaults, namespaces)
       values[:align] = properties&.[]("algn")
-      values[:bullet] = properties&.at_xpath("./a:buChar", namespaces)&.[]("char")
+      values[:bullet] = paragraph_marker(paragraph, properties, namespaces, counters)
       values.merge(paragraph_spacing(properties, namespaces))
     end
 

@@ -523,6 +523,33 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "preserves inherited numbering starts levels restarts and independent text bodies" do
+    entries = inheritance_entries
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Template", 'type="body" idx="1"').sub("<p:txBody>", '<p:txBody><a:lstStyle><a:lvl1pPr><a:buAutoNum type="arabicPeriod" startAt="5"/></a:lvl1pPr><a:lvl2pPr><a:buAutoNum type="alphaLcParenR"/></a:lvl2pPr></a:lstStyle>')
+    paragraphs = [ "", '<a:pPr lvl="1"/>', '<a:pPr lvl="1"/>', "", '<a:pPr><a:buAutoNum type="romanUcParenBoth" startAt="4"/></a:pPr>', '<a:pPr><a:buAutoNum type="romanUcParenBoth"/></a:pPr>', '<a:pPr><a:buNone/></a:pPr>', "", '<a:pPr><a:buChar char="•"/></a:pPr>', "" ].map do |properties|
+      "<a:p>#{properties}<a:r><a:t>Item</a:t></a:r></a:p>"
+    end.join
+    xml = placeholder_slide("Slide", 'type="body" idx="1"').sub('<a:p><a:r><a:t>Slide</a:t></a:r></a:p>', paragraphs)
+    entries["ppt/slides/slide1.xml"] = xml
+    with_archive(entries) do |tmp|
+      html = Nokogiri::HTML.fragment(PptImporter.import(tmp, parent: nil, user: users(:one)).first.reload.description)
+      assert_equal [ "5. Item", "a) Item", "b) Item", "6. Item", "(IV) Item", "(V) Item", "Item", "5. Item", "• Item", "5. Item" ], html.css('.ppt-slide-text').last.css('p').map(&:text)
+    end
+  end
+
+  test "persists unequal table geometry and isolates numbering in table cells" do
+    xml = rich_slide_xml.sub('<a:tbl>', '<a:tbl><a:tblGrid><a:gridCol w="100"/><a:gridCol w="300"/></a:tblGrid>')
+    xml = xml.sub('<a:tr>', '<a:tr h="100">').sub('</a:tbl>', '<a:tr h="300"><a:tc gridSpan="2"><a:txBody><a:p><a:r><a:t>Wide</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl>')
+    xml = xml.gsub('<a:p>', '<a:p><a:pPr><a:buAutoNum type="arabicPeriod" startAt="3"/></a:pPr>')
+    with_archive("ppt/slides/slide1.xml" => xml) do |tmp|
+      html = Nokogiri::HTML.fragment(PptImporter.import(tmp, parent: nil, user: users(:one)).first.reload.description)
+      table = html.at_css('.ppt-slide-table')
+      assert_equal({ "columns" => [ 25.0, 75.0 ], "rows" => [ 25.0, 75.0 ] }, JSON.parse(table['data-ppt-format']))
+      assert_equal [ "3. Alpha", "3. Beta", "3. Wide" ], table.css('td').map { |cell| cell.text.strip }
+      assert_equal '2', table.css('td').last['colspan']
+    end
+  end
+
   private
 
   def inheritance_entries
