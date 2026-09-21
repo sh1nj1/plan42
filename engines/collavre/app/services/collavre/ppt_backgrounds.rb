@@ -20,14 +20,18 @@ module Collavre
 
     def background_format(slide)
       fill = background_fill(slide)
+      fill_format(fill).reverse_merge(fill: "#ffffff")
+    end
+
+    def fill_format(fill, size = @slide_size)
       case fill&.name
-      when "gradFill" then { fill: ppt_color(fill.at_xpath("./*[local-name()='gsLst']/*[local-name()='gs']")), background: gradient_background(fill) }
+      when "gradFill" then { fill: ppt_color(fill.at_xpath("./*[local-name()='gsLst']/*[local-name()='gs']")), background: gradient_background(fill, size) }
       when "pattFill" then { fill: ppt_color(fill.at_xpath("./*[local-name()='bgClr']")), background: pattern_background(fill) }
-      else { fill: ppt_color(fill) || "#ffffff" }
+      else { fill: ppt_color(fill) }.compact
       end
     end
 
-    def gradient_background(fill)
+    def gradient_background(fill, size = @slide_size)
       stops = fill.xpath("./*[local-name()='gsLst']/*[local-name()='gs']")
       return unless stops.length.between?(2, 100)
 
@@ -41,16 +45,16 @@ module Collavre
       path = fill.at_xpath("./*[local-name()='path']")
       return if path
 
-      { type: "linear", angle: background_angle(angle, linear),
+      { type: "linear", angle: background_angle(angle, linear, size),
         stops: values.sort_by(&:first).map { |position, color| [ position / 1000.0, color ] } }
     end
 
-    def background_angle(angle, linear)
+    def background_angle(angle, linear, size)
       degrees = angle / 60_000.0
       return degrees unless %w[1 true on].include?(linear&.[]("scaled"))
 
       radians = degrees * Math::PI / 180
-      width, height = @slide_size
+      width, height = size
       Math.atan2(height * Math.sin(radians), width * Math.cos(radians)) * 180 / Math::PI % 360
     end
 
@@ -72,9 +76,12 @@ module Collavre
       fill = background_fill(slide)
       return "" unless fill&.name == "blipFill"
 
+      picture_fill_markup(fill, "ppt-slide-background ppt-slide-image")
+    end
+
+    def picture_fill_markup(fill, classes, part = @xml_cache.key(fill.document))
       # Theme fill copies retain their owning document, so relationship IDs are
       # resolved against the source part rather than the current slide.
-      part = @xml_cache.key(fill.document)
       relationship = part && relationships_for(part)[relationship_id(fill.at_xpath("./*[local-name()='blip']"), "embed")]
       return "" unless relationship && !relationship[:external] && relationship[:type].end_with?("/image")
 
@@ -85,7 +92,7 @@ module Collavre
       src = "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
       wrapper = Nokogiri::XML::Node.new("picture", fill.document)
       wrapper.add_child(fill.dup)
-      %(<div class="ppt-slide-background ppt-slide-image"#{format_attribute(crop: picture_crop(wrapper))}><img src="#{ERB::Util.html_escape(src)}" alt=""></div>)
+      %(<div class="#{classes}"#{format_attribute(crop: picture_crop(wrapper))}><img src="#{ERB::Util.html_escape(src)}" alt=""></div>)
     end
   end
 end

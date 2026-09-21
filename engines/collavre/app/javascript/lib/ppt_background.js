@@ -1,3 +1,5 @@
+import { clipPptShapeFill } from './ppt_media'
+
 // Only validated colors and numeric stops become CSS; PPT XML never supplies CSS.
 const finite = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
 const color = value => typeof value === 'string' && /^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(value)
@@ -27,4 +29,20 @@ function patternImage(data) {
   const spacing = data.preset.startsWith('wd') ? 8 : 4
   const layers = angles.map(angle => `repeating-linear-gradient(${angle}deg, ${data.foreground} 0px, ${data.foreground} ${width}px, transparent ${width}px, transparent ${spacing}px)`)
   return [...layers, `linear-gradient(${data.background}, ${data.background})`].join(', ')
+}
+
+export function applyPptShapeFill(element, data) {
+  if (!element.matches('.ppt-slide-text, .ppt-slide-title')) return
+  let layer = element.querySelector(':scope > .ppt-shape-fill')
+  const image = data.background && typeof data.background === 'object' && backgroundImage(data.background)
+  if (!image && !layer) return
+  if (!layer) {
+    layer = document.createElement('div')
+    layer.className = 'ppt-shape-fill'
+    element.prepend(layer)
+  }
+  layer.setAttribute('aria-hidden', 'true')
+  if (image) layer.style.backgroundImage = image
+  clipPptShapeFill(element, layer, data.shape)
+  element.style.backgroundColor = 'transparent'
 }

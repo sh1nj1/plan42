@@ -46,3 +46,41 @@ test('uses only closed hatch vocabulary and independently validates all browser 
   expect(slide.style.backgroundImage).toBe('')
   applyPptBackground(document.createElement('p'),gradient)
 })
+
+test('clips non-solid shape fills while preserving labels outlines crops and DOM identity', async () => {
+  document.body.innerHTML = '<div class="ppt-slide" data-ppt-format="{}"><div class="ppt-slide-text ppt-slide-element"><p>Label</p></div><div class="ppt-slide-title"><div class="ppt-shape-fill ppt-slide-image" data-ppt-format=\'{"crop":[0.1,0,0.2,0]}\'><img src="/public-assets/blobs/test/image.png" alt=""></div><p>Picture</p></div></div>'
+  const shape = document.querySelector('.ppt-slide-text')
+  const picture = document.querySelector('.ppt-slide-title')
+  shape.dataset.pptFormat = JSON.stringify({shape:'triangle', fill:'#20406080', background:gradient, stroke:'#123456', strokeWidth:0.1})
+  picture.dataset.pptFormat = JSON.stringify({shape:'ellipse'})
+  applyPptFormatting()
+  const layer = shape.querySelector('.ppt-shape-fill')
+  expect(layer.style.backgroundImage).toContain('linear-gradient')
+  expect(layer.style.clipPath).toBe('polygon(50% 0%, 100% 100%, 0% 100%)')
+  expect(shape.querySelector('polygon').getAttribute('fill')).toBe('none')
+  expect(shape.querySelector('polygon').getAttribute('stroke')).toBe('#123456')
+  expect(picture.firstElementChild.style.borderRadius).toBe('50%')
+  expect(picture.querySelector('img').style.width).toBe('142.85714285714286%')
+  const mutations=[]
+  const observer=new MutationObserver(records=>mutations.push(...records))
+  observer.observe(document.body,{childList:true,subtree:true})
+  applyPptFormatting()
+  await Promise.resolve()
+  expect(mutations).toHaveLength(0)
+  expect(shape.querySelector('.ppt-shape-fill')).toBe(layer)
+  observer.disconnect()
+  shape.dataset.pptFormat=JSON.stringify({shape:'triangle', background:{type:'pattern',preset:'cross',foreground:'#123456',background:'#ffffff'}})
+  applyPptFormatting()
+  expect(layer.style.backgroundImage).toContain('repeating-linear-gradient')
+  expect(shape.textContent).toBe('Label')
+})
+
+test('rejects malformed shape fills and does not create arbitrary image URLs', () => {
+  document.body.innerHTML='<div class="ppt-slide" data-ppt-format="{}"><div class="ppt-slide-text"><p>Label</p></div></div>'
+  const shape=document.querySelector('.ppt-slide-text')
+  for(const background of [null, 'url(https://evil)', {}, {type:'image',url:'javascript:evil'}, {...gradient,stops:[[0,'red'],[100,'#ffffff']]}]) {
+    shape.dataset.pptFormat=JSON.stringify({background})
+    applyPptFormatting()
+    expect(shape.querySelector('.ppt-shape-fill')).toBeNull()
+  }
+})

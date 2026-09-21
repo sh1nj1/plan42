@@ -21,7 +21,7 @@ module Collavre
     def shape_format(shape, namespaces, bounds)
       values = geometry_format(shape, namespaces, bounds)
       properties = effective_shape_properties(shape)
-      values[:fill] = ppt_color(properties&.at_xpath("./a:solidFill", namespaces))
+      values.merge!(shape_fill_format(shape, properties, namespaces))
       line = properties&.at_xpath("./a:ln", namespaces)
       values[:stroke] = ppt_color(line&.at_xpath("./a:solidFill", namespaces))
       values[:strokeWidth] = line["w"].to_f * 100 / @slide_size.first if line
@@ -57,14 +57,14 @@ module Collavre
     end
 
     def merge_shape_properties(merged, source)
-      return source.dup unless merged
+      return copy_shape_properties(source) unless merged
 
       source.attribute_nodes.each { |attribute| merged[attribute.name] = attribute.value }
       source.element_children.each do |child|
         choices = [ %w[noFill solidFill gradFill blipFill pattFill grpFill], %w[prstGeom custGeom] ]
         names = choices.find { |group| group.include?(child.name) } || [ child.name ]
         previous = merged.element_children.select { |existing| names.include?(existing.name) }
-        replacement = child.name == "ln" ? merge_shape_properties(previous.first, child) : child.dup
+        replacement = child.name == "ln" ? merge_shape_properties(previous.first, child) : copy_shape_properties(child)
         previous.each(&:remove)
         merged.add_child(replacement)
       end

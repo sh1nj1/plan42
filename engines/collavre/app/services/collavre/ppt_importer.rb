@@ -6,6 +6,7 @@ require "zip"
 
 module Collavre
   class PptImporter
+    include PptShapeFills
     include PptMedia
     include PptDiagrams
     include PptConnectors
@@ -21,6 +22,7 @@ module Collavre
     include PptGeometry
     class InvalidArchive < StandardError; end
 
+    MAX_SLIDES = 500
     MAX_ENTRIES = 2_000
     MAX_ENTRY_BYTES = 20.megabytes
     MAX_TOTAL_BYTES = 100.megabytes
@@ -123,7 +125,7 @@ module Collavre
       placeholder = shape.at_xpath("./p:nvSpPr/p:nvPr/p:ph", namespaces)&.[]("type")
       kind = %w[title ctrTitle subTitle].include?(placeholder) ? "title" : "text"
       classes = element_classes("ppt-slide-#{kind}", transform_for(shape, namespaces), bounds)
-      %(<div class="#{classes}"#{format_attribute(shape_format(shape, namespaces, bounds))}>#{paragraphs.join}</div>)
+      %(<div class="#{classes}"#{format_attribute(shape_format(shape, namespaces, bounds))}>#{shape_fill_picture(shape)}#{paragraphs.join}</div>)
     end
 
     def render_paragraph(paragraph, namespaces, counters = {})

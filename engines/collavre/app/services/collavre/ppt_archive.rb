@@ -10,7 +10,7 @@ module Collavre
           @zip = zip
           validate_archive!
           paths = ordered_slide_paths
-          raise self.class::InvalidArchive if paths.empty?
+          raise self.class::InvalidArchive if paths.empty? || paths.size > self.class::MAX_SLIDES
 
           @slide_size = presentation_slide_size
           root = create_import_root(created)
@@ -59,7 +59,10 @@ module Collavre
       presentation = xml_document("ppt/presentation.xml")
       if presentation
         relationships = relationships_for("ppt/presentation.xml")
-        paths = presentation.xpath("//*[local-name()='sldId']").map do |slide_id|
+        slide_ids = presentation.xpath("//*[local-name()='sldId']")
+        raise self.class::InvalidArchive if slide_ids.size > self.class::MAX_SLIDES
+
+        paths = slide_ids.map do |slide_id|
           relationship = relationships[relationship_id(slide_id)]
           raise self.class::InvalidArchive unless relationship && relationship[:type].end_with?("/slide")
 

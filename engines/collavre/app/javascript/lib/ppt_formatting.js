@@ -1,4 +1,4 @@
-import { applyPptBackground } from "./ppt_background"
+import { applyPptBackground, applyPptShapeFill } from "./ppt_background"
 import { renderPptShape, applyPptCrop } from "./ppt_media"
 import { renderPptConnector } from "./ppt_connector"
 import { renderPptChart } from "./ppt_chart"
@@ -39,6 +39,7 @@ function applyElementFormatting(element, slide) {
   applyGeometry(element, slide, data)
   applyTextStyle(style, data)
   applyShapeStyle(style, data)
+  applyPptShapeFill(element, data)
   renderPptShape(element, data)
   applyPptCrop(element, data.crop)
   applyPptBackground(element, data.background)

@@ -1827,6 +1827,7 @@ creative-tree-row.is-being-edited .creative-tree {
 /* stylelint-enable color-no-hex */
 
 .ppt-preset-rendered > svg {
+    z-index: 1;
     position: absolute;
     inset: 0;
     width: 100%;
@@ -1846,3 +1847,16 @@ creative-tree-row.is-being-edited .creative-tree {
   overflow: hidden;
   pointer-events: none;
 }
+
+.ppt-slide--precise .ppt-shape-fill {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.ppt-slide--precise .ppt-slide-text > p,
+.ppt-slide--precise .ppt-slide-title > p {
+    position: relative;
+}
+

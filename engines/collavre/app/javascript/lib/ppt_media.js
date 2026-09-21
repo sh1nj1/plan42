@@ -27,7 +27,7 @@ export function renderPptShape(element, data) {
   svg.setAttribute('aria-hidden', 'true')
   const polygon = document.createElementNS(svg.namespaceURI, 'polygon')
   polygon.setAttribute('points', shapes[data.shape])
-  polygon.setAttribute('fill', color(data.fill) ? data.fill : 'none')
+  polygon.setAttribute('fill', element.querySelector(':scope > .ppt-shape-fill') ? 'none' : (color(data.fill) ? data.fill : 'none'))
   if (color(data.stroke) && finite(data.strokeWidth, 0, 10)) {
     polygon.setAttribute('stroke', data.stroke)
     polygon.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -49,4 +49,13 @@ export function applyPptCrop(element, crop) {
   if (!image) return
   element.style.overflow = 'hidden'
   Object.assign(image.style, {position:'absolute', width:`${100 / width}%`, height:`${100 / height}%`, left:`${-100 * left / width}%`, top:`${-100 * top / height}%`})
+}
+
+// Clip only the fill layer; text and the SVG outline remain unobstructed.
+export function clipPptShapeFill(element, layer, shape) {
+  layer.style.borderRadius = element.style.borderRadius
+  if (Object.hasOwn(shapes, shape)) {
+    const points = shapes[shape].split(' ').map(pair => pair.split(',').map(value => `${value}%`).join(' '))
+    layer.style.clipPath = `polygon(${points.join(', ')})`
+  }
 }

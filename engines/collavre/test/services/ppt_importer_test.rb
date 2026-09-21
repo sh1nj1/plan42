@@ -776,6 +776,109 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "bounds repeated relationship slides before creating records or blobs" do
+    entries = {
+      "ppt/presentation.xml" => '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst>' + '<p:sldId r:id="rId1"/>' * (PptImporter::MAX_SLIDES + 1) + '</p:sldIdLst></p:presentation>',
+      "ppt/_rels/presentation.xml.rels" => relationships_xml("slide", "slides/slide1.xml"),
+      "ppt/slides/slide1.xml" => rich_slide_xml
+    }
+    with_archive(entries) do |file|
+      Creative::RealtimeBroadcastable.stub(:broadcast_batch_created, ->(*) { flunk "Unexpected broadcast" }) do
+        assert_no_difference([ "Creative.count", "ActiveStorage::Blob.count" ]) do
+          Creative.stub(:create!, ->(*) { flunk "Must reject before creating any Creative" }) do
+            assert_raises(PptImporter::InvalidArchive) { import_file(file) }
+          end
+        end
+      end
+    end
+  end
+
+  test "bounds filename fallback slide count before creating a root" do
+    entries = (1..PptImporter::MAX_SLIDES + 1).to_h { |i| [ "ppt/slides/slide#{i}.xml", slide_xml("Slide") ] }
+    with_archive(entries) do |file|
+      assert_no_difference("Creative.count") { assert_raises(PptImporter::InvalidArchive) { import_file(file) } }
+    end
+  end
+
+  test "accepts the exact slide limit in relationship order without deduplicating" do
+    original = PptImporter::MAX_SLIDES
+    PptImporter.send(:remove_const, :MAX_SLIDES)
+    PptImporter.const_set(:MAX_SLIDES, 2)
+    entries = {
+      "ppt/presentation.xml" => '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId r:id="rId1"/><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>',
+      "ppt/_rels/presentation.xml.rels" => relationships_xml("slide", "slides/slide1.xml"),
+      "ppt/slides/slide1.xml" => slide_xml("Repeated")
+    }
+    with_archive(entries) do |file|
+      assert_equal 3, import_file(file).size
+    end
+    entries.delete("ppt/presentation.xml")
+    entries["ppt/slides/slide2.xml"] = slide_xml("Second")
+    with_archive(entries) { |file| assert_equal 3, import_file(file).size }
+  ensure
+    PptImporter.send(:remove_const, :MAX_SLIDES)
+    PptImporter.const_set(:MAX_SLIDES, original)
+  end
+
+  test "persists local and theme shape gradients and patterns with explicit overrides" do
+    gradient = '<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="204060"><a:alpha val="50000"/></a:srgbClr></a:gs><a:gs pos="100000"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst><a:lin ang="2700000" scaled="1"/></a:gradFill>'
+    pattern = '<a:pattFill prst="diagCross"><a:fgClr><a:srgbClr val="112233"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>'
+    entries = inheritance_entries
+    entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")
+    entries["ppt/theme/theme1.xml"] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fmtScheme><a:fillStyleLst>' + gradient + '</a:fillStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+    [ [ "", "linear" ], [ pattern, "pattern" ], [ '<a:noFill/>', nil ] ].each do |fill, type|
+      entries["ppt/slides/slide1.xml"] = slide_xml("Shape").sub('<p:txBody>', '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="200000" cy="100000"/></a:xfrm><a:prstGeom prst="triangle"/>' + fill + '</p:spPr><p:style><a:fillRef idx="1"/></p:style><p:txBody>')
+      with_archive(entries) do |file|
+        html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+        data = JSON.parse(html.css('.ppt-slide-text').last['data-ppt-format'])
+        if type
+          assert_equal type, data.fetch('background')['type']
+          assert_equal 'triangle', data['shape']
+          if type == 'linear'
+            assert_in_delta 26.565, data['background']['angle'], 0.001
+            assert_equal '#20406080', data['background']['stops'].first.last
+          end
+        else
+          assert_nil data['background']
+          assert_nil data['fill']
+        end
+      end
+    end
+    html = import_connector_fixture(slide_xml("Local").sub('<p:txBody>', '<p:spPr>' + gradient + '</p:spPr><p:txBody>'))
+    assert_equal 'linear', JSON.parse(html.at_css('.ppt-slide-text')['data-ppt-format']).fetch('background')['type']
+  end
+
+  test "persists shape pictures from slide layout and theme relationships" do
+    fill = '<a:blipFill data-source-part="evil"><a:blip r:embed="rId1"/><a:srcRect l="10000" r="20000"/></a:blipFill>'
+    %w[slide layout theme].each do |owner|
+      entries = inheritance_entries
+      entries['ppt/media/fill.png'] = SAMPLE_IMAGE
+      entries['ppt/slides/slide1.xml'] = placeholder_slide('Shape', 'idx="1"')
+      part, rels = case owner
+      when 'slide' then [ 'ppt/slides/slide1.xml', 'ppt/slides/_rels/slide1.xml.rels' ]
+      when 'layout' then [ 'ppt/slideLayouts/layout.xml', 'ppt/slideLayouts/_rels/layout.xml.rels' ]
+      else [ 'ppt/theme/theme1.xml', 'ppt/theme/_rels/theme1.xml.rels' ]
+      end
+      entries[part] = placeholder_slide('Shape', 'idx="1"').sub('<p:txBody>', '<p:spPr>' + fill + '</p:spPr><p:txBody>')
+      if owner == 'theme'
+        entries['ppt/slideMasters/_rels/master.xml.rels'] = relationships_xml('theme', '../theme/theme1.xml')
+        entries[part] = '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><a:themeElements><a:fmtScheme><a:fillStyleLst>' + fill + '</a:fillStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+        entries['ppt/slides/slide1.xml'] = slide_xml('Shape').sub('<p:txBody>', '<p:style><a:fillRef idx="1"/></p:style><p:txBody>')
+      end
+      # Keep the inheritance relationship while reusing the same ID in each part.
+      entries[rels] ||= '<Relationships></Relationships>'
+      entries[rels] = entries[rels].sub('Id="rId1"', 'Id="inherit"').sub('</Relationships>', '<Relationship Id="rId1" Type="x/image" Target="../media/fill.png"/></Relationships>')
+      with_archive(entries) do |file|
+        creative = import_file(file).last.reload
+        html = Nokogiri::HTML.fragment(creative.description)
+        image = html.at_css('.ppt-slide-text > .ppt-shape-fill img')
+        assert image, owner
+        assert_equal [ 0.1, 0, 0.2, 0 ], JSON.parse(image.parent['data-ppt-format'])['crop']
+        assert_equal SAMPLE_IMAGE, creative.files.blobs.find_by!(filename: 'fill.png').download
+      end
+    end
+  end
+
   private
 
   test "persists shape font references beneath explicit text formatting" do

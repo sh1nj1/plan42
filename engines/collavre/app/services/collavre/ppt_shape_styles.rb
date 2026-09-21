@@ -36,7 +36,7 @@ module Collavre
       %w[fillRef lnRef].each do |name|
         reference = style.element_children.find { |child| child.name == name }
         entry = shape_style_entry(reference, name)
-        properties.add_child(entry) if entry
+        properties.add_child(copy_shape_properties(entry)) if entry
       end
       properties
     end

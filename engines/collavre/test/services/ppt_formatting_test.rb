@@ -2,7 +2,7 @@ require "test_helper"
 
 class PptFormattingTest < ActiveSupport::TestCase
   setup do
-    @renderer = Object.new.extend(Collavre::PptShapeStyles).extend(Collavre::PptFormatting).extend(Collavre::PptInheritance)
+    @renderer = Object.new.extend(Collavre::PptShapeFills).extend(Collavre::PptShapeStyles).extend(Collavre::PptFormatting).extend(Collavre::PptInheritance)
   end
 
   test "resolves font tokens and rejects missing and unsafe font names" do
