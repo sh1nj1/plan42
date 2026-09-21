@@ -83,6 +83,8 @@ function applyOrientation(style, data) {
 }
 
 function applyParagraphSpacing(style, data) {
+  if (finite(data.marginLeft, 0, 100)) style.marginLeft = `${data.marginLeft}cqw`
+  if (finite(data.textIndent, -100, 100)) style.textIndent = `${data.textIndent}cqw`
   for (const [key, property] of Object.entries({spaceBefore:'marginTop', spaceAfter:'marginBottom'})) {
     if (finite(data[key], 0, 100)) style[property] = `${data[key]}cqw`
     if (finite(data[`${key}Em`], 0, 100)) style[property] = `${data[`${key}Em`]}em`

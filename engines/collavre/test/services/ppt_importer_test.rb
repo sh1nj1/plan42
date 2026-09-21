@@ -543,6 +543,40 @@ class PptImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "persists inherited list indentation with hanging and local zero overrides" do
+    entries = inheritance_entries
+    paragraphs = [ "", '<a:pPr lvl="1"/>', '<a:pPr lvl="1" marL="0" indent="0"/>' ].map do |properties|
+      "<a:p>#{properties}<a:r><a:t>Item</a:t></a:r></a:p>"
+    end.join
+    entries["ppt/slides/slide1.xml"] = placeholder_slide("Slide", 'idx="4" type="body"')
+      .sub('<a:p><a:r><a:t>Slide</a:t></a:r></a:p>', paragraphs)
+    entries["ppt/slideLayouts/layout.xml"] = placeholder_slide("Layout", 'idx="4" type="body"')
+      .sub('<p:txBody>', '<p:txBody><a:lstStyle><a:lvl2pPr marL="731520"/></a:lstStyle>')
+    entries["ppt/slideMasters/master.xml"] = placeholder_slide("Master", 'type="body"')
+      .sub('</p:sld>', '<p:txStyles><p:bodyStyle><a:lvl1pPr marL="365760" indent="-182880"><a:buChar char="•"/></a:lvl1pPr><a:lvl2pPr marL="548640" indent="-182880"><a:buChar char="•"/></a:lvl2pPr></p:bodyStyle></p:txStyles></p:sld>')
+    with_archive(entries) do |file|
+      html = Nokogiri::HTML.fragment(import_file(file).last.reload.description)
+      assert_equal [ "• Item" ] * 3, html.css("p").map(&:text)
+      assert_equal [ [ 3.0, -1.5 ], [ 6.0, -1.5 ], [ 0.0, 0.0 ] ], html.css("p").map { |p| JSON.parse(p["data-ppt-format"]).values_at("marginLeft", "textIndent") }
+    end
+  end
+
+  test "validates paragraph indentation before serializing responsive lengths" do
+    importer = Object.new.extend(Collavre::PptParagraphs)
+    importer.instance_variable_set(:@slide_size, [ 1000, 750 ])
+    [ [ nil, nil ], [ "bad", "NaN" ], [ "-1", "1001" ], [ "1.5", "-1001" ], [ "1001", "1e2" ] ].each do |margin, indent|
+      properties = Nokogiri::XML('<p/>').root
+      properties["marL"] = margin if margin
+      properties["indent"] = indent if indent
+      assert_empty importer.send(:paragraph_indentation, properties)
+    end
+    assert_empty importer.send(:paragraph_indentation, nil)
+    properties = Nokogiri::XML('<p marL="+1000" indent="1000"/>').root
+    assert_equal({ marginLeft: 100.0, textIndent: 100.0 }, importer.send(:paragraph_indentation, properties))
+    properties["indent"] = "-1000"
+    assert_equal(-100.0, importer.send(:paragraph_indentation, properties)[:textIndent])
+  end
+
   test "inherits backgrounds in slide layout master order and resolves theme fill references" do
     entries = inheritance_entries
     entries["ppt/slideMasters/_rels/master.xml.rels"] = relationships_xml("theme", "../theme/theme1.xml")

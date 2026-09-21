@@ -170,3 +170,33 @@ test('table rendering settles under the document observer and preserves column n
     root.remove()
   }
 })
+
+
+test('applies responsive hanging indentation and explicit zero overrides', () => {
+  const { root, element } = slide()
+  const paragraph = element.querySelector('p')
+  paragraph.textContent = '• Wrapped list item'
+  paragraph.dataset.pptFormat = JSON.stringify({ marginLeft: 6, textIndent: -1.5 })
+  applyPptFormatting(root)
+  expect(paragraph.style.marginLeft).toBe('6cqw')
+  expect(paragraph.style.textIndent).toBe('-1.5cqw')
+  root.style.width = '400px'
+  applyPptFormatting(root)
+  expect(paragraph.style.marginLeft).toBe('6cqw')
+  paragraph.dataset.pptFormat = JSON.stringify({ marginLeft: 0, textIndent: 0 })
+  applyPptFormatting(root)
+  expect(paragraph.style.marginLeft).toBe('0cqw')
+  expect(paragraph.style.textIndent).toBe('0cqw')
+})
+
+test('rejects invalid paragraph indentation while permitting bounded positive indents', () => {
+  for (const [marginLeft, textIndent] of [[-1, -101], [101, 101], ['2', '3'], [null, null], ['0;background:red', 'url(x)']]) {
+    const {root, element} = slide({marginLeft, textIndent})
+    applyPptFormatting(root)
+    expect(element.getAttribute('style')).toBeNull()
+  }
+  const {root, element} = slide({marginLeft:100, textIndent:100})
+  applyPptFormatting(root)
+  expect(element.style.marginLeft).toBe('100cqw')
+  expect(element.style.textIndent).toBe('100cqw')
+})

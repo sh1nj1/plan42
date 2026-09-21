@@ -9,7 +9,7 @@ module Collavre
       values = text_format(defaults, namespaces)
       values[:align] = properties&.[]("algn")
       values[:bullet] = paragraph_marker(paragraph, properties, namespaces, counters)
-      values.merge(paragraph_spacing(properties, namespaces))
+      values.merge(paragraph_spacing(properties, namespaces)).merge(paragraph_indentation(properties))
     end
 
     def effective_paragraph_properties(paragraph, namespaces)
@@ -17,6 +17,17 @@ module Collavre
       shape = paragraph.ancestors.find { |node| node.name == "sp" }
       level = (local&.[]("lvl").to_i + 1).clamp(1, 9)
       merge_run_properties((text_style_sources(shape, level) + [ local ]).compact)
+    end
+
+    def paragraph_indentation(properties)
+      { marginLeft: "marL", textIndent: "indent" }.each_with_object({}) do |(key, attribute), values|
+        raw = properties&.[](attribute)
+        next unless raw&.match?(/\A[+-]?[0-9]+\z/)
+
+        value = raw.to_i * 100.0 / @slide_size.first
+        minimum = key == :textIndent ? -100 : 0
+        values[key] = value if value.finite? && value.between?(minimum, 100)
+      end
     end
 
     def paragraph_spacing(properties, namespaces)
