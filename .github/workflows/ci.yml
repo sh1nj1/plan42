@@ -225,6 +225,12 @@ jobs:
       - name: Build JavaScript assets
         run: npm run build
 
+      - name: Resolve installed ChromeDriver
+        run: |
+          driver_path="$(command -v chromedriver)"
+          test -f "$driver_path" && test -x "$driver_path"
+          echo "CHROMEDRIVER_PATH=$driver_path" >> "$GITHUB_ENV"
+
       - name: Run tests
         env:
           RAILS_ENV: test
