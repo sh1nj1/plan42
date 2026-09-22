@@ -48,9 +48,7 @@ import FileUploadPlugin, {
   INSERT_IMAGE_COMMAND,
   INSERT_FILE_COMMAND
 } from "./plugins/image_upload_plugin"
-import { ImageNode } from "../lib/lexical/image_node"
-import { AttachmentNode } from "../lib/lexical/attachment_node"
-import { VideoNode } from "../lib/lexical/video_node"
+import { UPLOAD_NODES } from "../lib/lexical/upload_nodes"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
@@ -1090,9 +1088,7 @@ export default function InlineLexicalEditor({
         LinkNode,
         AutoLinkNode,
         CreativeLinkNode,
-        ImageNode,
-        AttachmentNode,
-        VideoNode,
+        ...UPLOAD_NODES,
         TableNode,
         TableRowNode,
         TableCellNode
