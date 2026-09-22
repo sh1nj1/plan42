@@ -1,7 +1,7 @@
 module Collavre
   module Creatives
     # A retained floor makes eviction safe: retired requests stay stale forever.
-    # The counter and floor are shared by every browser using this preference.
+    # The counter and floor are shared by every context and browser belonging to this user.
     class ExpansionSaveOrder
       MAX_NODES = 1_000
       attr_reader :state
@@ -17,7 +17,7 @@ module Collavre
       end
 
       def accept?(fence, node_id)
-        # Older bundles remain usable until this context starts using fences.
+        # Older bundles remain usable until this user starts using fences.
         return state.empty? if fence.nil?
         return false unless fence.to_s.match?(/\A[1-9]\d{0,15}\z/)
 

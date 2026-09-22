@@ -997,7 +997,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000001) do
     t.datetime "created_at", null: false
     t.integer "creative_id"
     t.json "expanded_status", default: {}, null: false
-    t.json "expansion_save_sequences", default: {}, null: false
     t.boolean "last_topic_all_messages", default: false, null: false
     t.integer "last_topic_id"
     t.integer "last_topic_revision", default: 0, null: false
@@ -1038,6 +1037,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000001) do
     t.datetime "endpoint_health_checked_at"
     t.string "endpoint_health_error"
     t.integer "endpoint_health_status", default: 0, null: false
+    t.json "expansion_save_sequences", default: {}, null: false
     t.integer "failed_login_attempts", default: 0, null: false
     t.string "gateway_url"
     t.string "google_access_token"

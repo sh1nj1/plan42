@@ -8,6 +8,18 @@ module Collavre
 
     private
 
+    # Keep bounded watermarks on the user, independently of disposable
+    # preferences. The same transaction commits both the fence and the toggle.
+    def with_expansion_order
+      user = Current.user.class.find(Current.user.id)
+      user.with_lock do
+        order = Creatives::ExpansionSaveOrder.new(user.expansion_save_sequences)
+        result = yield order
+        user.update_columns(expansion_save_sequences: order.state)
+        result
+      end
+    end
+
     # insert_all uses the unique preference key as the first-insert fence.
     # Root inserts instead rely on the user lock held by with_preference.
     def preference_for(creative_id)

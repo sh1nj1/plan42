@@ -17,24 +17,9 @@ module Collavre
       self.expanded_status = state
     end
 
-    # Both operations run under the preference lock, across all tabs/documents.
-    def issue_expansion_save_fence
-      order = Creatives::ExpansionSaveOrder.new(expansion_save_sequences)
-      fence = order.issue
-      self.expansion_save_sequences = order.state
-      fence
-    end
-
-    def accept_expansion_save?(fence, node_id)
-      order = Creatives::ExpansionSaveOrder.new(expansion_save_sequences)
-      accepted = order.accept?(fence, node_id)
-      self.expansion_save_sequences = order.state if accepted
-      accepted
-    end
-
     validates :expanded_status, presence: true, unless: -> {
       last_topic_id? || last_topic_all_messages? || last_topic_revision.to_i.positive? ||
-        last_topic_save_fence_issued.to_i.positive? || expansion_save_sequences.present?
+        last_topic_save_fence_issued.to_i.positive?
     }
     validates :creative_id, uniqueness: { scope: :user_id }, allow_nil: true
   end

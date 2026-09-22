@@ -9,14 +9,13 @@ module Collavre
       node_id = params[:node_id].to_s
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])
 
-      saved = with_preference(creative_id) do |record|
-        next false unless record.accept_expansion_save?(params[:expansion_save_fence], node_id)
+      saved = with_expansion_order do |order|
+        key = [ creative_id.to_s.presence, node_id ].to_json
+        next false unless order.accept?(params[:expansion_save_fence], key)
 
-        state = record.set_expanded(node_id, expanded)
-        if empty_preference?(record, state)
-          record.destroy!
-        else
-          record.save!
+        with_preference(creative_id) do |record|
+          state = record.set_expanded(node_id, expanded)
+          empty_preference?(record, state) ? record.destroy! : record.save!
         end
       end
 
@@ -24,11 +23,7 @@ module Collavre
     end
 
     def issue_expansion_save_fence
-      fence = with_preference(params[:creative_id]) do |record|
-        value = record.issue_expansion_save_fence
-        record.save!
-        value
-      end
+      fence = with_expansion_order(&:issue)
       render json: { expansion_save_fence: fence }
     end
 
@@ -85,7 +80,7 @@ module Collavre
     end
 
     def empty_preference?(record, state)
-      record.expansion_save_sequences.blank? && state.empty? && record.last_topic_id.nil? && !record.last_topic_all_messages? &&
+      state.empty? && record.last_topic_id.nil? && !record.last_topic_all_messages? &&
         record.last_topic_revision.to_i.zero? &&
         record.last_topic_save_fence_issued.to_i.zero? && record.last_topic_save_fence_applied.to_i.zero?
     end

@@ -19,18 +19,21 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
       post "/creative_expanded_states/toggle", params: intent.merge(expanded: false, expansion_save_fence: new_fence), as: :json
       assert_response :success
       assert_equal true, response.parsed_body["success"]
-      record = Collavre::UserCreativePreference.find_by!(user: @user, creative_id: context)
-      assert_empty record.expanded_status
+      assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: context)
 
       [ old_fence, new_fence, nil ].each do |fence|
         post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_fence: fence), as: :json
         assert_response :success
         assert_equal true, response.parsed_body["stale_expansion_save"]
-        assert_empty record.reload.expanded_status
+        assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: context)
       end
 
       post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_fence: expansion_fence(context)), as: :json
       assert_equal true, response.parsed_body["success"]
+      record = Collavre::UserCreativePreference.find_by!(user: @user, creative_id: context)
+      assert_equal({ @creative.id.to_s => true }, record.expanded_status)
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: false, expansion_save_fence: old_fence), as: :json
+      assert_equal true, response.parsed_body["stale_expansion_save"]
       assert_equal({ @creative.id.to_s => true }, record.reload.expanded_status)
     end
   end
@@ -64,10 +67,50 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
 
   test "an unused fence never changes expansion state and subsequent issuance advances" do
     first = expansion_fence(nil)
-    record = Collavre::UserCreativePreference.find_by!(user: @user, creative_id: nil)
-    assert_empty record.expanded_status
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
     assert_operator expansion_fence(nil), :>, first
-    assert_empty record.reload.expanded_status
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
+  end
+
+  test "fenced expand and collapse reclaim preferences in every context" do
+    [ nil, @creative.id ].each do |context|
+      [ true, false ].each do |expanded|
+        post "/creative_expanded_states/toggle", params: { creative_id: context, node_id: @creative.id,
+          expanded: expanded, expansion_save_fence: expansion_fence(context) }, as: :json
+        assert_equal true, response.parsed_body["success"]
+        assert_equal expanded, Collavre::UserCreativePreference.exists?(user: @user, creative_id: context)
+      end
+    end
+    assert_equal 2, @user.reload.expansion_save_sequences.fetch("nodes").size
+  end
+
+  test "the same node has independent watermarks in different contexts" do
+    first = expansion_fence(nil)
+    second = expansion_fence(@creative.id)
+    post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id,
+      expanded: false, expansion_save_fence: second }, as: :json
+    post "/creative_expanded_states/toggle", params: { node_id: @creative.id,
+      expanded: true, expansion_save_fence: first }, as: :json
+    assert_equal true, response.parsed_body["success"]
+    assert Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: @creative.id)
+  end
+
+  test "failed preference saves roll back their watermarks" do
+    fence = expansion_fence(nil)
+    before = @user.reload.expansion_save_sequences
+    original_find = Collavre::UserCreativePreference.method(:find_by!)
+    Collavre::UserCreativePreference.stub(:find_by!, lambda { |**attributes|
+      record = original_find.call(**attributes)
+      record.define_singleton_method(:save!) { raise ActiveRecord::RecordInvalid, self }
+      record
+    }) do
+      post "/creative_expanded_states/toggle", params: { node_id: @creative.id,
+        expanded: true, expansion_save_fence: fence }, as: :json
+      assert_response :unprocessable_entity
+    end
+    assert_equal before, @user.reload.expansion_save_sequences
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
   end
 
   def expansion_fence(context)

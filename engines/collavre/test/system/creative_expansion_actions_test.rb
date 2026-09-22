@@ -101,10 +101,20 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
   test "clears expanded state after toggling twice" do
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
+    assert_selector row_selector(@child), visible: :visible
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert UserCreativePreference.exists?(user: @user, creative_id: nil)
+    end
+
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
+    refute_selector row_selector(@child), visible: :visible
 
-    assert_nil UserCreativePreference.find_by(user: @user, creative: @root_creative)
+    # fetch-based queued saves are not tracked by wait_for_network_idle's XHR hook.
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_nil UserCreativePreference.find_by(user: @user, creative_id: nil)
+    end
+    assert_not_empty @user.reload.expansion_save_sequences
   end
 
   test "visiting a comment share link opens popup and highlights comment" do
