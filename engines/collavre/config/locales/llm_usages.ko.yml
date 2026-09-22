@@ -17,6 +17,7 @@ ko:
       owner_id: "소유자"
       requester_id: "요청자"
       agent_id: "Agent"
+      total: "총계"
       records: "사용량 기록 수"
       executions: "실행 수"
       input_tokens: "전체 입력"

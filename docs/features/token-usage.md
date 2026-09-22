@@ -6,7 +6,10 @@ accepts `.json`, with `from`, `to`, `period` (`day`, `week`, `month`), `group`
 `agent_id`, `model` filters. Dates are inclusive in Asia/Seoul, weeks begin on
 Monday, and a query spans at most 367 days. SQL aggregation supports SQLite and
 PostgreSQL and returns sums of reported values plus missing counts per metric.
-Token sums are integers; a wholly unreported metric remains null.
+Token sums are integers; a wholly unreported metric remains null. The table
+footer shows totals for the visible, filtered date range, including missing
+counts. Executions are counted distinctly across the entire result, even when
+one execution appears in multiple groups or periods.
 
 ## Collection
 

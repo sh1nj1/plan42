@@ -17,6 +17,7 @@ en:
       owner_id: "Owner"
       requester_id: "Requester"
       agent_id: "Agent"
+      total: "Total"
       records: "Usage records"
       executions: "Executions"
       input_tokens: "Total input"

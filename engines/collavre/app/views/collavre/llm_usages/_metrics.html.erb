@@ -1,0 +1,10 @@
+<td><%= number_with_delimiter(row[:records]) %></td>
+<td><%= number_with_delimiter(row[:executions]) %></td>
+<% Collavre::LlmUsage::TOKEN_FIELDS.each do |field| %>
+  <td>
+    <%= row[field].nil? ? t("collavre.llm_usages.unknown") : number_with_delimiter(row[field]) %>
+    <% if row["#{field}_missing".to_sym].positive? %>
+      <small><%= t("collavre.llm_usages.missing", count: row["#{field}_missing".to_sym]) %></small>
+    <% end %>
+  </td>
+<% end %>
