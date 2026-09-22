@@ -1,4 +1,5 @@
-import { $createRangeSelection, $createTextNode, $getRoot, $getSelection, $isRangeSelection, $setSelection } from 'lexical'
+import { $copyNode, $isTextNode, $createRangeSelection, $createTextNode, $getRoot, $getSelection, $isRangeSelection, $setSelection } from 'lexical'
+import { $isLinkNode } from '@lexical/link'
 import { $isCodeNode } from '@lexical/code'
 import { $findMatchingParent } from '@lexical/utils'
 import { createDragDropRegistry } from '../dnd/registry'
@@ -29,6 +30,33 @@ function selectDropPosition(root, event) {
   return selection
 }
 
+function insertDroppedLinks(selection, nodes) {
+  const anchor = selection.anchor.getNode()
+  const link = $findMatchingParent(anchor, $isLinkNode)
+  if (!link) return selection.insertNodes(nodes)
+
+  let node = anchor
+  let offset = selection.anchor.offset
+  if ($isTextNode(node)) {
+    const index = node.getIndexWithinParent()
+    node.splitText(offset)
+    offset = index + (offset > 0 ? 1 : 0)
+    node = node.getParentOrThrow()
+  }
+  // Split inline ancestors explicitly: AutoLinkNode.insertNewAfter splits its parent block.
+  while (true) {
+    const right = $copyNode(node)
+    right.append(...node.getChildren().slice(offset))
+    node.insertAfter(right)
+    if (node.is(link)) {
+      link.getParentOrThrow().splice(right.getIndexWithinParent(), 0, nodes)
+      return
+    }
+    offset = right.getIndexWithinParent()
+    node = right.getParentOrThrow()
+  }
+}
+
 export function registerCreativeLinkDrop(editor) {
   let registry = null
   const unregisterRoot = editor.registerRootListener((root) => {
@@ -53,7 +81,7 @@ export function registerCreativeLinkDrop(editor) {
             link.append($createTextNode(getCreativeDropLabel(id, payload)))
             return [link, $createTextNode(' ')]
           })
-          selection.insertNodes(nodes)
+          insertDroppedLinks(selection, nodes)
           nodes[nodes.length - 1].selectEnd()
         }, { discrete: true })
         editor.focus()

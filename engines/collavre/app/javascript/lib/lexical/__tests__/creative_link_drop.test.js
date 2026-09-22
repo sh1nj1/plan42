@@ -3,8 +3,10 @@ import { jest } from '@jest/globals'
 import { COMMAND_PRIORITY_HIGH, DROP_COMMAND, createEditor, $createParagraphNode, $createTextNode, $getRoot, $setSelection } from 'lexical'
 import { registerRichText } from '@lexical/rich-text'
 import { $createCodeNode, CodeNode, CodeHighlightNode } from '@lexical/code'
-import { LinkNode } from '@lexical/link'
-import { CreativeLinkNode } from '../creative_link_node'
+import { LinkNode, AutoLinkNode, $createLinkNode, $createAutoLinkNode, $isLinkNode } from '@lexical/link'
+import { MarkNode, $createMarkNode } from '@lexical/mark'
+import { $generateHtmlFromNodes } from '@lexical/html'
+import { CreativeLinkNode, $createCreativeLinkNode } from '../creative_link_node'
 import { registerCreativeLinkDrop } from '../creative_link_drop'
 import { lexicalToMarkdown } from '../markdown_serialize'
 import { createDragDropRegistry } from '../../dnd/registry'
@@ -37,7 +39,7 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="outer"><div contenteditable="true"></div></div><creative-tree-row creative-id="12"></creative-tree-row>'
   document.querySelector('creative-tree-row').descriptionHtml = '<b>Target &amp; title</b>'
   root = document.querySelector('[contenteditable]')
-  editor = createEditor({ namespace: 'drop-test', nodes: [LinkNode, CreativeLinkNode, CodeNode, CodeHighlightNode], onError: error => { throw error } })
+  editor = createEditor({ namespace: 'drop-test', nodes: [LinkNode, AutoLinkNode, MarkNode, CreativeLinkNode, CodeNode, CodeHighlightNode], onError: error => { throw error } })
   editor.setRootElement(root)
   editor.update(() => {
     const text = $createTextNode('Before after')
@@ -271,4 +273,67 @@ test.each([undefined, null, {}, { 34: 42 }, { 34: '' }])('falls back for absent 
     }
   })
   expect(lexicalToMarkdown(editor)).toBe('Before [34](/creatives/34) after')
+})
+
+
+describe.each([
+  ['link', () => $createLinkNode('https://example.com/original')],
+  ['autolink', () => $createAutoLinkNode('https://example.com/original')],
+  ['creative-link', () => $createCreativeLinkNode('/creatives/99', '99')]
+])('dropping into an existing %s', (_kind, createLink) => {
+  test.each([0, 3, 8])('splits at offset %i without nested links in state or exported HTML', async offset => {
+    editor.update(() => {
+      const text = $createTextNode('original')
+      $getRoot().clear().append($createParagraphNode().append(
+        $createTextNode('Before '), createLink().append(text), $createTextNode(' after')
+      ))
+      text.select(0, 0)
+    }, { discrete: true })
+    const range = document.createRange()
+    range.setStart(root.querySelector('a span').firstChild, offset)
+    range.collapse(true)
+    document.caretRangeFromPoint = () => range
+
+    const event = drag('drop')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(event.defaultPrevented).toBe(true)
+    expect(root.textContent).toBe(`Before ${'original'.slice(0, offset)}Target & title 34 ${'original'.slice(offset)} after`)
+    expect(root.querySelector('a a')).toBeNull()
+    expect([...root.querySelectorAll('a[data-creative-id]')]
+      .filter(link => link.dataset.creativeId !== '99')
+      .map(link => [link.getAttribute('href'), link.textContent]))
+      .toEqual([['/creatives/12', 'Target & title'], ['/creatives/34', '34']])
+    editor.getEditorState().read(() => {
+      const paragraph = $getRoot().getFirstChild()
+      const links = paragraph.getChildren().filter($isLinkNode)
+      expect(links.filter(link => ['/creatives/12', '/creatives/34'].includes(link.getURL()))).toHaveLength(2)
+      for (const link of links) {
+        expect(link.getChildren().every(child => !$isLinkNode(child))).toBe(true)
+      }
+      expect(links.filter(link => !['/creatives/12', '/creatives/34'].includes(link.getURL()))
+        .map(link => link.getTextContent()).join('')).toBe('original')
+      const exported = new DOMParser().parseFromString($generateHtmlFromNodes(editor), 'text/html')
+      expect(exported.querySelector('a a')).toBeNull()
+      expect(exported.body.textContent).toBe(root.textContent)
+      expect(exported.querySelectorAll('a').length).toBe(links.length)
+    })
+  })
+})
+
+
+test.each(['element', 'nested', 'text-end', 'text-start'])('splits a link with a %s caret', kind => {
+  editor.update(() => {
+    const text = $createTextNode('original')
+    const link = $createLinkNode('https://example.com/original')
+    link.append(kind === 'nested' ? $createMarkNode(['annotation']).append(text) : text)
+    $getRoot().clear().append($createParagraphNode().append(link, $createTextNode(' after')))
+    if (kind === 'element') link.select(0, 0)
+    else if (kind === 'text-start') text.select(0, 0)
+    else if (kind === 'text-end') text.select(8, 8)
+    else text.select(3, 3)
+  }, { discrete: true })
+  drag('drop', { ids: ['34'] })
+  expect(root.querySelector('a a')).toBeNull()
+  expect(root.textContent).toBe({ element: '34 original after', nested: 'ori34 ginal after', 'text-end': 'original34  after', 'text-start': '34 original after' }[kind])
+  expect(root.querySelector('a[data-creative-id="34"]').parentElement.tagName).toBe('P')
 })
