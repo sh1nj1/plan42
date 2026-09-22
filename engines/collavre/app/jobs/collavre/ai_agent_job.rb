@@ -148,6 +148,10 @@ module Collavre
         return if task.nil?
       end
 
+      # This attempt's generation. If the turn is suspended and resumed while
+      # this worker is still unwinding, the resumed attempt owns the row.
+      attempt_generation = Orchestration::ExecutionFence.generation(task)
+
       # Reserve resources before starting work
       tracker = Orchestration::ResourceTracker.for(agent)
       # Reserve under the stable task.id, not the per-run job_id: a task can
@@ -190,7 +194,7 @@ module Collavre
           # Hold agent capacity until reply / cancel / stuck-recovery releases it.
           should_release = false
         else
-          transition_running_task!(task, status: "done")
+          transition_running_task!(task, attempt_generation, status: "done")
         end
       rescue ApprovalPendingError
         # Task status already set to pending_approval by AiAgentService
@@ -218,24 +222,34 @@ module Collavre
         fail_turn!(task, e)
       ensure
         # Guarantee resource release for all paths except pending_approval
-        tracker.release!(resource_id, tokens_used: 0) if should_release && tracker && resource_id
-        settled_task = task&.reload
-        if settled_task &&
-           Orchestration::DeliveryRecord.worker_settling?(settled_task.trigger_event_payload)
-          # StuckDetector failed this row while this worker was still in the
-          # provider call. The worker is out now, so remove the deferral and ask
-          # the restore question from the handoff evidence AiAgentService wrote.
-          Orchestration::DeliveryRecord.settle_worker!(settled_task)
-          Orchestration::DeliveryRecord.restore_if_undelivered!(settled_task.reload)
-        end
-        if settled_task&.trigger_event_payload&.key?("topic") &&
-           %w[done failed cancelled escalated].include?(settled_task.status)
-          Orchestration::AgentOrchestrator.dequeue_next_for_topic(settled_task.topic_id, settled_task.creative_id)
-        end
+        settle_attempt!(task, attempt_generation, (tracker if should_release))
       end
     end
 
     private
+
+    # Give back what the attempt held once its worker is out — unless the turn
+    # was suspended and resumed under it: the resumed attempt now owns the
+    # task-keyed reservation, the row's settling and the drain when it ends.
+    def settle_attempt!(task, attempt_generation, tracker)
+      settled_task = Task.find_by(id: task.id)
+      return if settled_task && Orchestration::ExecutionFence.superseded?(settled_task, attempt_generation)
+
+      tracker&.release!(task.id, tokens_used: 0)
+      return unless settled_task
+
+      if Orchestration::DeliveryRecord.worker_settling?(settled_task.trigger_event_payload)
+        # StuckDetector failed this row while this worker was still in the
+        # provider call. The worker is out now, so remove the deferral and ask
+        # the restore question from the handoff evidence AiAgentService wrote.
+        Orchestration::DeliveryRecord.settle_worker!(settled_task)
+        Orchestration::DeliveryRecord.restore_if_undelivered!(settled_task.reload)
+      end
+      return unless settled_task.trigger_event_payload&.key?("topic") &&
+                    %w[done failed cancelled escalated].include?(settled_task.status)
+
+      Orchestration::AgentOrchestrator.dequeue_next_for_topic(settled_task.topic_id, settled_task.creative_id)
+    end
 
     # A queue retry of a run that died runs the row that run left behind, which
     # TaskResumer.reclaim_for_retry! handed back as pending under this job id —
@@ -295,8 +309,9 @@ module Collavre
     # last lifecycle checkpoint but before this job records its outcome. Lock
     # and re-check the row so normal completion/retry cannot overwrite that
     # external winner.
-    def transition_running_task!(task, **attributes)
+    def transition_running_task!(task, attempt_generation, **attributes)
       task.with_lock do
+        raise TaskSuspendedError if Orchestration::ExecutionFence.superseded?(task, attempt_generation)
         raise CancelledError unless task.status == "running"
 
         task.update!(attributes)

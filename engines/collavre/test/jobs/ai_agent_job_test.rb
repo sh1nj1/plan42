@@ -633,6 +633,33 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal 0, Collavre::Orchestration::ResourceTracker.for(@agent).active_jobs
   end
 
+  test "an interrupted attempt that returns after its turn was resumed leaves the new attempt alone" do
+    tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+    captured_task = nil
+    new_generation = nil
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      # Suspended, resumed and started again by another worker while this
+      # attempt's provider call was still out.
+      Collavre::Orchestration::TaskResumer.suspend!(captured_task, reason: :server_restart)
+      Collavre::Orchestration::TaskResumer.resume!(captured_task)
+      captured_task.reload.update!(status: "pending") unless captured_task.status == "pending"
+      Collavre::Workflow::TaskAdmission.start!(captured_task, execution_job_id: "resumed-job")
+      tracker.reserve!(captured_task.id)
+      new_generation = Collavre::Orchestration::ExecutionFence.generation(captured_task.reload)
+      "late answer"
+    end
+
+    Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service } do
+      assert_nothing_raised { AiAgentJob.perform_now(@agent.id, "test_event", @context) }
+    end
+
+    captured_task.reload
+    assert_equal "running", captured_task.status, "the old attempt must not finish the new one"
+    assert_equal new_generation, Collavre::Orchestration::ExecutionFence.generation(captured_task)
+    assert_equal 1, tracker.active_jobs, "the new attempt keeps its reservation"
+  end
+
   test "does not release resources on approval pending" do
     # Stub AiAgentService to raise ApprovalPendingError directly
     fake_service = Minitest::Mock.new

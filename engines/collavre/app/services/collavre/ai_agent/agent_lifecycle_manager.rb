@@ -32,6 +32,10 @@ module Collavre
         @task = task
         @agent = agent
         @creative = creative
+        # The attempt this worker runs. A suspend + resume keeps the Task row
+        # but stamps a new generation, so the row's status alone cannot tell
+        # this worker that the turn it sees running is no longer its own.
+        @attempt_generation = Orchestration::ExecutionFence.generation(task)
         @last_cancel_check_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @last_heartbeat_at = @last_cancel_check_at
         # Captured once so a setting changed mid-turn cannot make the deadline
@@ -64,9 +68,12 @@ module Collavre
 
         @last_cancel_check_at = now
         status = @task.reload.status
+        # Orchestration::TaskResumer set this turn aside from another process —
+        # and may already have resumed it as a new attempt, whose status
+        # (including a Stop of it) is not this worker's to act on. The turn is
+        # re-run, so this attempt stops without ending the task.
+        raise Collavre::TaskSuspendedError if superseded?
         raise Collavre::CancelledError if TERMINAL_STATUSES.include?(status)
-        # Orchestration::TaskResumer set this turn aside from another process;
-        # it will be re-run, so this attempt stops without ending the task.
         raise Collavre::TaskSuspendedError if status == "suspended"
 
         return if now < @deadline_at
@@ -136,6 +143,10 @@ module Collavre
       end
 
       private
+
+      def superseded?
+        Orchestration::ExecutionFence.superseded?(@task, @attempt_generation)
+      end
 
       def log_action(type, payload, result = nil)
         @task.task_actions.create!(

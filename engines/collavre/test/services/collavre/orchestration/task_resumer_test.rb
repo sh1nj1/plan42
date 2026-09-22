@@ -691,6 +691,72 @@ module Collavre
         assert_enqueued_with(job: AiAgentJob, args: [ task ])
       end
 
+      test "a resume stopped before it starts is neither started nor announced" do
+        task = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
+
+        Task.transaction do
+          assert_equal :resumed, TaskResumer.resume!(task)
+          task.update!(status: "cancelled")
+        end
+
+        assert_equal "cancelled", task.reload.status
+        assert_no_enqueued_jobs only: AiAgentJob
+        assert_empty notices
+      end
+
+      test "a topic-less resume that is suspended again before it starts gets no job" do
+        task = Task.create!(name: "Event turn", status: "suspended", agent: @agent, suspend_reason: "server_restart",
+                            suspended_at: Time.current, trigger_event_name: "system_event",
+                            trigger_event_payload: { "creative" => { "id" => @creative.id } })
+
+        Task.transaction do
+          assert_equal :resumed, TaskResumer.resume!(task)
+          task.update!(status: "suspended")
+        end
+
+        assert_equal "suspended", task.reload.status
+        assert_equal 1, task.resume_count
+        assert_no_enqueued_jobs only: AiAgentJob
+      end
+
+      test "only the latest of two resumes in one transaction starts and announces" do
+        task = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
+
+        Task.transaction do
+          assert_equal :resumed, TaskResumer.resume!(task)
+          task.update!(status: "suspended")
+          assert_equal :resumed, TaskResumer.resume!(task)
+        end
+
+        assert_equal "pending", task.reload.status
+        assert_enqueued_jobs 1, only: AiAgentJob
+        assert_equal [ I18n.t("collavre.orchestration.suspension.resumed", agent: @agent.display_name) ],
+                     notices.pluck(:content)
+      end
+
+      test "an expiry escalation stopped before its effects is not announced" do
+        task = task_for(status: "suspended", suspended_at: 25.hours.ago, suspend_reason: "agent_offline")
+
+        Task.transaction do
+          assert_equal :escalated, TaskResumer.resume!(task)
+          task.update!(status: "cancelled")
+        end
+
+        assert_empty notices
+      end
+
+      test "resume effects of a task deleted before they run do nothing" do
+        task = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
+
+        Task.transaction do
+          assert_equal :resumed, TaskResumer.resume!(task)
+          task.destroy!
+        end
+
+        assert_no_enqueued_jobs only: AiAgentJob
+        assert_empty notices
+      end
+
       test "a resumed turn absorbs newer waiters and keeps its id and resume context" do
         # Promoted (pending) resumed turn folding the waiters behind it, as
         # AgentOrchestrator.coalesce_promoted! does.
