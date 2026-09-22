@@ -22,11 +22,17 @@ module Collavre
       done: "done",
       failed: "failed",
       cancelled: "cancelled",
-      escalated: "escalated"
+      escalated: "escalated",
+      suspended: "suspended"
     }, default: :pending
+
+    # Why a turn was set aside to be resumed later rather than ended. See
+    # Orchestration::TaskResumer, the only writer of the suspension columns.
+    SUSPEND_REASONS = %w[agent_offline server_restart quota].freeze
 
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
+    after_update_commit :refresh_suspension_notices, if: :left_suspension?
     after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
@@ -66,7 +72,19 @@ module Collavre
     # job returned holding the slot while it awaits an MCP /reply or a tool
     # approval, and #cancel still accepts both. Kept here rather than in the
     # client so one list decides it.
-    ACTIVE_STATUSES = %w[running delegated pending pending_approval queued].freeze
+    #
+    # suspended counts too: it is still work the user is waiting on, so Stop and
+    # deleting the trigger comment must be able to end it. It does not occupy a
+    # slot — TaskResumer released that when it suspended the turn.
+    ACTIVE_STATUSES = %w[running delegated pending pending_approval queued suspended].freeze
+
+    # A turn that was waiting on a Claude Channel /reply when it was suspended.
+    # The agent may still answer the dispatch it was sent, and that reply is the
+    # turn's answer — TaskClaimService claims these rows exactly like delegated
+    # ones, so a late reply completes the turn instead of being refused.
+    scope :awaiting_reply, -> {
+      where(status: "delegated").or(where(status: "suspended", suspended_from: "delegated"))
+    }
 
     def active?
       ACTIVE_STATUSES.include?(status)
@@ -88,9 +106,10 @@ module Collavre
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same
-    # comment would produce duplicate replies.
+    # comment would produce duplicate replies. "suspended" likewise: it will be
+    # resumed to answer the same comment.
     def self.duplicate_running_for_comment?(agent_id, comment_id)
-      where(agent_id: agent_id, status: %w[running delegated], trigger_event_name: "comment_created")
+      where(agent_id: agent_id, status: %w[running delegated suspended], trigger_event_name: "comment_created")
         .find_each do |task|
         return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
       end
@@ -170,6 +189,12 @@ module Collavre
       saved_change_to_attribute?("status") && terminal_status?
     end
 
+    # Terminal transitions refresh the notices in broadcast_stop_button_removal.
+    def left_suspension?
+      saved_change_to_attribute?("status") && attribute_before_last_save("status") == "suspended" &&
+        !terminal_status?
+    end
+
     # This turn refused other dispatches on the strength of having read their
     # comments, and then died without answering anything. Those dispatches have
     # to come back — see Orchestration::DeliveryRecord.restore!.
@@ -238,6 +263,8 @@ module Collavre
     end
 
     def broadcast_stop_button_removal
+      refresh_suspension_notices
+
       # Login cards already omit Stop and have a queued comment replacement.
       # Replacing them again would discard an in-progress authentication form.
       return if trigger_event_payload&.key?("engine_login")
@@ -250,6 +277,20 @@ module Collavre
         partial: "collavre/comments/comment",
         locals: { comment: comment, streaming: false }
       )
+    end
+
+    # Re-render the "⏸️" notices of this turn so their Stop control goes away
+    # once the turn is resumed or ended.
+    def refresh_suspension_notices
+      Comment.where(creative_id: creative_id, topic_id: topic_id,
+                    waiting_notice_scope: Comment::SuspensionNotice::SCOPE, waiting_notice_task_id: id)
+             .find_each do |notice|
+        notice.broadcast_replace_to(
+          [ notice.creative, :comments ],
+          partial: "collavre/comments/comment",
+          locals: { comment: notice, streaming: false }
+        )
+      end
     end
 
     def check_trigger_loop_completion

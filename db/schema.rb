@@ -731,6 +731,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
   end
 
+  create_table "retired_task_executions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "execution_job_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_job_id"], name: "index_retired_task_executions_on_execution_job_id", unique: true
+  end
+
   create_table "sessions", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address"
@@ -997,7 +1004,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.integer "creative_id"
     t.string "name"
     t.json "pending_tool_call"
+    t.integer "resume_count", default: 0, null: false
+    t.datetime "resume_not_before"
     t.string "status", default: "pending"
+    t.string "suspend_reason"
+    t.datetime "suspended_at"
+    t.string "suspended_from"
     t.integer "topic_id"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
@@ -1008,6 +1020,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.string "workflow_stop_reason"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
+    t.index ["status", "resume_not_before"], name: "index_tasks_on_status_and_resume_not_before"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
     t.index ["workflow_execution_id", "agent_id"], name: "workflow_task_identity", unique: true
     t.index ["workflow_execution_id"], name: "index_tasks_on_workflow_execution_id"
@@ -1102,6 +1115,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.string "name", null: false
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
+    t.datetime "quota_blocked_until"
+    t.string "quota_probe_generation"
+    t.bigint "quota_probe_task_id"
+    t.integer "quota_retry_count", default: 0, null: false
+    t.boolean "quota_retry_exhausted", default: false, null: false
     t.text "routing_expression"
     t.string "routing_subscription_token"
     t.boolean "searchable", default: false, null: false

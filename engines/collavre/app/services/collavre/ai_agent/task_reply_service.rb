@@ -19,7 +19,9 @@ module Collavre
       end
 
       def call
-        topic.with_lock { build_result }
+        result = topic.with_lock { build_result }
+        Quota::Recovery.succeeded!(result.agent, task: result.task) if result.comment && result.task
+        result
       end
 
       private
@@ -55,7 +57,7 @@ module Collavre
       end
 
       def failed_result(comment, task)
-        task&.update!(status: "delegated")
+        claim_service.release(task) if task
         result(:unprocessable_entity, errors: comment.errors.full_messages)
       end
 

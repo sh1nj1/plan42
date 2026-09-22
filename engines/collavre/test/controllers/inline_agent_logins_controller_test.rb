@@ -1828,7 +1828,8 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     service = Object.new
     service.define_singleton_method(:call) { nil }
     Collavre::AiAgentService.stub(:new, ->(task) {
-      payloads << task.trigger_event_payload
+      # The execution stamp is AiAgentJob's own, not part of the replayed dispatch.
+      payloads << Collavre::Orchestration::ExecutionFence.clear(task.trigger_event_payload)
       task.task_actions.create!(action_type: "reply_created", status: "done", payload: { content: "Replayed response" })
       service
     }) do

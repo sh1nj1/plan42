@@ -281,8 +281,13 @@ module Collavre
       # `id < keep.id` rather than "every other sibling": two dispatches
       # coalescing concurrently would otherwise cancel each other and leave no
       # survivor. Each run only ever supersedes strictly older rows.
+      #
+      # A resumed turn (resume_count > 0) is never superseded either. It carries
+      # the interrupted attempt's resume context and delivery record, which a
+      # newer waiter would silently drop; being older, it is promoted first and
+      # absorbs the newer waiters itself through the :all scope.
       def superseded_scope
-        rel = Task.where(workflow_execution_id: nil).where(
+        rel = Task.where(workflow_execution_id: nil, resume_count: 0).where(
           agent_id: @keep.agent_id,
           topic_id: @keep.topic_id,
           creative_id: @keep.creative_id,

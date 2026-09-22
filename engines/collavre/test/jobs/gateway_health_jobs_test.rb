@@ -8,6 +8,13 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
   end
 
   setup do
+    @previous_queue_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+  end
+
+  teardown { ActiveJob::Base.queue_adapter = @previous_queue_adapter }
+
+  setup do
     @gateway = create_gateway
   end
 
@@ -50,6 +57,24 @@ class Collavre::GatewayHealthJobsTest < ActiveSupport::TestCase
 
     agent.update_column(:llm_vendor, "cli_\tproxy")
     assert_not_includes Collavre::AgentGateway.health_probe_targets.pluck(:id), @gateway.id
+  end
+
+  test "gateway recovery wakes only agents whose engine is online" do
+    agent = assign_gateway
+    Collavre::Task.create!(name: "Interrupted gateway turn", agent: agent, status: "suspended",
+      suspend_reason: "agent_offline", suspended_at: Time.current, suspended_from: "running")
+    body = { "status" => "ok", "engines" => { "ready" => 1, "total" => 1 } }
+    Collavre::CliProxy::Client.stub(:new, FakeClient.new(body)) do
+      assert_enqueued_with(job: Collavre::ResumeSuspendedTasksJob, args: [ { agent_id: agent.id } ]) do
+        Collavre::GatewayHealthProbeJob.perform_now(@gateway.id)
+      end
+    end
+    body["status"] = "down"
+    Collavre::CliProxy::Client.stub(:new, FakeClient.new(body)) do
+      assert_no_enqueued_jobs only: Collavre::ResumeSuspendedTasksJob do
+        Collavre::GatewayHealthProbeJob.perform_now(@gateway.id)
+      end
+    end
   end
 
   test "the probe records a verdict for the gateway it names" do

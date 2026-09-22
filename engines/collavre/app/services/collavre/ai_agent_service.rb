@@ -7,6 +7,7 @@ module Collavre
   # - A2aDispatcher: agent-to-agent event dispatch
   class AiAgentService
     include AiAgent::WorkspaceAuthentication
+    prepend Quota::AgentExecution
     # Compatibility alias for constants moved to AgentLifecycleManager
     CANCEL_CHECK_INTERVAL = AiAgent::AgentLifecycleManager::CANCEL_CHECK_INTERVAL
 

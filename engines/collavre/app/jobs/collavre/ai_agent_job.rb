@@ -4,6 +4,9 @@ module Collavre
 
     # Allow resuming a task that was pending approval
     def perform(agent_id_or_task, event_name = nil, context = nil, replay_identity = nil)
+      return if Orchestration::ExecutionFence.retired?(job_id)
+
+      agent_id_or_task = Orchestration::TaskResumer.reclaimed_task(job_id) || agent_id_or_task
       if agent_id_or_task.is_a?(Task)
         # Resume existing task
         task = agent_id_or_task
@@ -68,7 +71,7 @@ module Collavre
           return
         end
 
-        return unless Workflow::TaskAdmission.start!(task)
+        return unless Workflow::TaskAdmission.start!(task, execution_job_id: job_id)
       else
         # Create new task
         agent = User.find(agent_id_or_task)
@@ -147,6 +150,10 @@ module Collavre
         return if task.nil?
       end
 
+      # This attempt's generation. If the turn is suspended and resumed while
+      # this worker is still unwinding, the resumed attempt owns the row.
+      attempt_generation = Orchestration::ExecutionFence.generation(task)
+
       # Reserve resources before starting work
       tracker = Orchestration::ResourceTracker.for(agent)
       # Reserve under the stable task.id, not the per-run job_id: a task can
@@ -169,21 +176,16 @@ module Collavre
         if is_claude_channel_agent
           # Atomic running -> delegated transition. If AgentsController#destroy
           # races us between reserve! above and this line and flips the task
-          # to "cancelled", the WHERE filter excludes us, rows_updated == 0,
-          # we skip dispatch, and the ensure block releases the slot. A
-          # separate reload + update! would let the cancel slip in between.
-          rows_updated = Task.where(id: task.id, status: "running").update_all(
-            status: "delegated", updated_at: Time.current
-          )
-          if rows_updated.zero?
-            task.reload
+          # to "cancelled", the locked status check fails, we skip dispatch,
+          # and the ensure block releases the slot. A separate reload +
+          # update! would let the cancel slip in between.
+          unless delegate_to_channel!(task, attempt_generation)
             Rails.logger.info(
               "[AiAgentJob] Claude Channel task #{task.id} not in running state " \
               "(status=#{task.status}); skipping dispatch"
             )
             return
           end
-          task.reload
         end
 
         return unless Workflow::FixedAnchor.validate!(task)
@@ -194,7 +196,7 @@ module Collavre
           # Hold agent capacity until reply / cancel / stuck-recovery releases it.
           should_release = false
         else
-          transition_running_task!(task, status: "done")
+          transition_running_task!(task, attempt_generation, status: "done")
         end
       rescue ApprovalPendingError
         # Task status already set to pending_approval by AiAgentService
@@ -219,40 +221,67 @@ module Collavre
         # Reloaded because the status was written to the row by somebody else.
         Orchestration::DeliveryRecord.restore_if_undelivered!(task.reload)
       rescue StandardError => e
-        task.update!(status: "failed")
-        Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
-        raise e
+        fail_turn!(task, e)
       ensure
         # Guarantee resource release for all paths except pending_approval
-        tracker.release!(resource_id, tokens_used: 0) if should_release && tracker && resource_id
-        settled_task = task&.reload
-        if settled_task &&
-           Orchestration::DeliveryRecord.worker_settling?(settled_task.trigger_event_payload)
-          # StuckDetector failed this row while this worker was still in the
-          # provider call. The worker is out now, so remove the deferral and ask
-          # the restore question from the handoff evidence AiAgentService wrote.
-          Orchestration::DeliveryRecord.settle_worker!(settled_task)
-          Orchestration::DeliveryRecord.restore_if_undelivered!(settled_task.reload)
-        end
-        if settled_task&.trigger_event_payload&.key?("topic") &&
-           %w[done failed cancelled escalated].include?(settled_task.status)
-          Orchestration::AgentOrchestrator.dequeue_next_for_topic(settled_task.topic_id, settled_task.creative_id)
-        end
+        settle_attempt!(task, attempt_generation, (tracker if should_release))
       end
     end
 
     private
 
+    # Give back what the attempt held once its worker is out — unless the turn
+    # was suspended and resumed under it: the resumed attempt now owns the
+    # task-keyed reservation, the row's settling and the drain when it ends.
+    def settle_attempt!(task, attempt_generation, tracker)
+      settled_task = Task.find_by(id: task.id)
+      return if settled_task && Orchestration::ExecutionFence.superseded?(settled_task, attempt_generation)
+
+      tracker&.release!(task.id, tokens_used: 0)
+      return unless settled_task
+
+      if Orchestration::DeliveryRecord.worker_settling?(settled_task.trigger_event_payload)
+        # StuckDetector failed this row while this worker was still in the
+        # provider call. The worker is out now, so remove the deferral and ask
+        # the restore question from the handoff evidence AiAgentService wrote.
+        Orchestration::DeliveryRecord.settle_worker!(settled_task)
+        Orchestration::DeliveryRecord.restore_if_undelivered!(settled_task.reload)
+      end
+      return unless settled_task.trigger_event_payload&.key?("topic") &&
+                    %w[done failed cancelled escalated].include?(settled_task.status)
+
+      Orchestration::AgentOrchestrator.dequeue_next_for_topic(settled_task.topic_id, settled_task.creative_id)
+    end
+
+    def fail_turn!(task, error)
+      # Orchestration::TaskResumer already suspended the task and handed back
+      # its slot; it will be resumed as the same row. Writing `failed` here
+      # would end a turn that is only paused.
+      if error.is_a?(TaskSuspendedError)
+        return Rails.logger.info("AiAgentJob suspended for task #{task.id} (reason=#{task.reload.suspend_reason})")
+      end
+
+      task.update!(status: "failed")
+      Rails.logger.error("AiAgentJob failed for task #{task.id}: #{error.message}")
+      raise error
+    end
+
+    # The offline session is expected back (reconnect grace, a restarted
+    # client), so the turn is suspended rather than cancelled: the reconnect
+    # resumes it as the same row. A session topic's turn waits for that session
+    # specifically — another live session of the agent does not answer it.
     def reject_offline_resumption?(task, agent)
-      return false unless agent.claude_channel_agent? && !agent.claude_channel_online?
+      return false if Orchestration::TaskResumer.claude_channel_reachable?(agent, task)
       Rails.logger.info(
-        "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
+        "[AiAgentJob] Suspending resumed Claude Channel task #{task.id}: " \
         "session offline (no live presence)"
       )
       if task.workflow?
         Workflow::TaskAdmission.reject_resumption!(task)
-      else
-        task.update!(status: "cancelled")
+      elsif !Orchestration::TaskResumer.suspend!(task, reason: "agent_offline")
+        # Not suspendable — an approval-paused turn waits on a person, so it
+        # ends as before rather than resume past its approval.
+        task.cancel_if_active!
         if task.trigger_event_payload&.key?("topic")
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
@@ -272,8 +301,9 @@ module Collavre
     # last lifecycle checkpoint but before this job records its outcome. Lock
     # and re-check the row so normal completion/retry cannot overwrite that
     # external winner.
-    def transition_running_task!(task, **attributes)
+    def transition_running_task!(task, attempt_generation, **attributes)
       task.with_lock do
+        raise TaskSuspendedError if Orchestration::ExecutionFence.superseded?(task, attempt_generation)
         raise CancelledError unless task.status == "running"
 
         task.update!(attributes)
@@ -303,10 +333,37 @@ module Collavre
       .merge(Workflow::TaskAdmission.attributes(context, agent))
     end
 
+    # The handoff marker is written with the status so recovery never sees a
+    # delegated row without it. Columns only, as the update_all this replaced:
+    # the Channel reply path owns what happens once the row is delegated.
+    def delegate_to_channel!(task, attempt_generation)
+      task.with_lock do
+        next false unless task.status == "running"
+        next false if Orchestration::ExecutionFence.superseded?(task, attempt_generation)
+
+        task.update_columns(
+          status: "delegated",
+          trigger_event_payload: Orchestration::ExecutionFence.pending_handoff(task.trigger_event_payload),
+          updated_at: Time.current
+        )
+        true
+      end
+    end
+
+    # An admitted row starts executing under this job, so it carries the
+    # ExecutionFence stamp from creation; a parked waiter is stamped when it is
+    # promoted and started (Workflow::TaskAdmission.start!).
+    def running_attributes(attrs)
+      attrs.merge(
+        status: "running",
+        trigger_event_payload: Orchestration::ExecutionFence.stamp(attrs[:trigger_event_payload], job_id: job_id)
+      )
+    end
+
     def admit_or_defer!(agent, event_name, context)
       attrs = dispatch_attributes(agent, event_name, context)
       unless topic_admission_scoped?(context)
-        return Task.create!(attrs.merge(status: "running")).tap { record_loop_breaker_turn(agent, context) }
+        return Task.create!(running_attributes(attrs)).tap { record_loop_breaker_turn(agent, context) }
       end
 
       task, admitted, current_context = nil, false, false
@@ -329,7 +386,7 @@ module Collavre
         next unless Workflow::TaskAdmission.permitted?(context, agent)
         current_context = true
         admitted = Orchestration::TopicSlot.available_for?(agent.id, attrs[:topic_id], attrs[:creative_id], context)
-        task = Task.create!(attrs.merge(
+        task = Task.create!((admitted ? running_attributes(attrs) : attrs).merge(
           status: admitted ? "running" : "queued",
           # Left nil on an admitted row: it is not waiting, so no notice speaks
           # for it and there is nothing for a stop control to represent.

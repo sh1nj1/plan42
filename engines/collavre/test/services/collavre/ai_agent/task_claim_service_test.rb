@@ -41,6 +41,25 @@ module Collavre
         assert_equal :created, reply.status
       end
 
+      test "an invalid late reply leaves a suspended turn suspended" do
+        @task.update!(status: "suspended", suspended_from: "delegated", suspend_reason: "agent_offline",
+                      suspended_at: Time.current)
+
+        assert_equal :unprocessable_entity, reply(text: "").status
+        assert_equal "suspended", @task.reload.status
+        assert_equal "delegated", @task.suspended_from
+        assert_not @task.task_actions.exists?(action_type: "completion")
+      end
+
+      test "releasing a failed reply claim keeps a Stop that cancelled the turn" do
+        claimed = @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
+        Task.where(id: @task.id).update_all(status: "cancelled")
+
+        @claim_service.release(claimed)
+
+        assert_equal "cancelled", @task.reload.status
+      end
+
       test "completion failure rolls back the claim and reply" do
         TaskAction.stub(:_insert_record, ->(*) { raise ActiveRecord::RecordNotSaved, "completion failed" }) do
           assert_no_difference "Comment.count" do
@@ -59,6 +78,28 @@ module Collavre
           @claim_service.finalize(agent: @user, task: @task, comment: comment)
         end
         assert_not @task.task_actions.exists?(action_type: "completion")
+      end
+
+      test "a reply naming the current execution generation claims the task" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+        generation = Orchestration::ExecutionFence.generation(@task)
+
+        assert_equal @task, @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id,
+                                                 requested_generation: generation)
+      end
+
+      test "a reply from an earlier execution of a resumed task is refused" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+
+        assert_nil @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id,
+                                        requested_generation: "earlier-attempt")
+        assert_equal "delegated", @task.reload.status
+      end
+
+      test "a reply naming no generation is not fenced" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+
+        assert_equal @task, @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
       end
 
       private

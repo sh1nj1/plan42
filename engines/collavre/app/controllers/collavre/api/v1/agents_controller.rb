@@ -355,7 +355,7 @@ module Collavre
         # must not silently post as primary_agent.
         def resolve_notify_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.awaiting_reply.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 
@@ -397,7 +397,7 @@ module Collavre
         # completed/cancelled. Return nil so reply renders 403.
         def resolve_reply_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.awaiting_reply.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 
@@ -434,7 +434,7 @@ module Collavre
         # this topic are unambiguously the ending session's — its session topic
         # is private to it.
         def cancel_tasks_for_topic(agent, topic)
-          cancel_pending_tasks(Task.where(topic_id: topic.id, status: %w[queued pending running]), agent)
+          cancel_pending_tasks(Task.where(topic_id: topic.id, status: %w[queued pending running suspended]), agent)
           cancel_delegated_tasks(Task.where(topic_id: topic.id, status: "delegated"), agent)
         end
 
@@ -455,7 +455,8 @@ module Collavre
           end
         end
 
-        # Cancel pre-delegation tasks for this session's agent:
+        # Cancel pre-delegation and suspended tasks for this session's agent:
+        #   - suspended: explicitly ended turns must never resume on reconnect
         #   - queued: waiting in topic queue, no slot reserved
         #   - pending: between dequeue and AiAgentJob#perform, no slot reserved
         #   - running: AiAgentJob is mid-perform; for Claude Channel agents the
@@ -468,7 +469,7 @@ module Collavre
         # idempotent (Set#delete no-ops on missing key) and we don't know from
         # the DB whether AiAgentJob had already reached tracker.reserve!.
         def cancel_pending_tasks_for_session(agent)
-          cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running]), agent)
+          cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running suspended]), agent)
         end
 
         def cancel_pending_tasks(tasks, agent)
@@ -477,7 +478,7 @@ module Collavre
           tracker = Orchestration::ResourceTracker.for(agent)
           drained_topics = {}
           tasks.find_each do |task|
-            previous_status = task.cancel_if_active!(statuses: %w[queued pending running])
+            previous_status = task.cancel_if_active!(statuses: %w[queued pending running suspended])
             next unless previous_status
 
             was_running = previous_status == "running"
@@ -546,7 +547,7 @@ module Collavre
         # test that patches AgentsController#claim_delegated_task to inject a race
         # keeps exercising the same seam.
         def claim_delegated_task(agent, topic, requested_task_id)
-          task_claim_service.claim(agent: agent, topic: topic, requested_task_id: requested_task_id)
+          task_claim_service.claim(agent:, topic:, requested_task_id:, requested_generation: params[:execution_generation])
         end
       end
     end

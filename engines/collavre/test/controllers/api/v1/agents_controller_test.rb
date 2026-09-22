@@ -1309,6 +1309,108 @@ module Collavre
           assert_equal "done", task.reload.status
         end
 
+        test "a late reply completes a dispatch suspended while its session was offline" do
+          reg = register_agent("late-reply-test")
+          ai_user = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Late reply creative")
+          topic = creative.topics.create!(name: "Late reply topic", user: @user)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+
+          task = Collavre::Task.create!(
+            name: "Suspended dispatch", status: "suspended", suspended_from: "delegated",
+            suspend_reason: "agent_offline", suspended_at: Time.current,
+            trigger_event_name: "comment_created", agent: ai_user, topic_id: topic.id, creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Answer after reconnecting", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal "done", task.reload.status
+          assert_equal task.id, Comment.find(JSON.parse(response.body)["comment_id"]).task_id
+          assert_nil Collavre::Orchestration::TaskResumer.resume!(task),
+                     "a reply that already answered the turn leaves nothing to resume"
+        end
+
+        test "a reply from an earlier execution of a resumed dispatch is refused" do
+          reg = register_agent("stale-generation-test")
+          ai_user = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Generation creative")
+          topic = creative.topics.create!(name: "Generation topic", user: @user)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+          task = Collavre::Task.create!(
+            name: "Resumed dispatch", status: "delegated", resume_count: 1,
+            trigger_event_name: "comment_created", agent: ai_user, topic_id: topic.id, creative_id: creative.id,
+            trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp({})
+          )
+
+          ai_user.update!(quota_retry_count: 2, quota_blocked_until: 1.minute.ago)
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Stale answer", task_id: task.id, execution_generation: "earlier" },
+            headers: auth_headers, as: :json
+          assert_response :conflict
+          assert_equal "delegated", task.reload.status
+          assert_equal 2, ai_user.reload.quota_retry_count
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Current answer", task_id: task.id,
+                      execution_generation: Collavre::Orchestration::ExecutionFence.generation(task) },
+            headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal "done", task.reload.status
+        end
+
+        test "successful Channel replies reset probes across independent quota incidents" do
+          previous_adapter = ActiveJob::Base.queue_adapter
+          ActiveJob::Base.queue_adapter = :test
+          reg = register_agent("quota-recovery-test")
+          agent = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Quota recovery")
+          topic = creative.topics.create!(name: "Quota", user: @user)
+          CreativeShare.create!(creative: creative, user: agent, permission: "feedback")
+
+          4.times do
+            task = Collavre::Task.create!(name: "Quota probe", status: "delegated", agent: agent,
+              topic_id: topic.id, creative: creative, trigger_event_name: "comment_created",
+              trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp({}))
+            Collavre::Quota::Recovery.suspend!(task, Collavre::Quota::ExceededError.new)
+            assert_equal 1, agent.reload.quota_retry_count
+            refute agent.quota_retry_exhausted?
+            travel_to agent.quota_blocked_until + 1 do
+              task.update!(status: "delegated", resume_count: 1)
+              Collavre::Quota::Recovery.guard!(task)
+              post "/api/v1/agent/reply", params: { topic_id: topic.id, text: "Recovered", task_id: task.id,
+                execution_generation: Collavre::Orchestration::ExecutionFence.generation(task) },
+                headers: auth_headers, as: :json
+              assert_response :created
+              assert_equal "done", task.reload.status
+              assert_equal 0, agent.reload.quota_retry_count
+              assert_nil agent.quota_blocked_until
+            end
+          end
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        test "late Channel reply preserves a newer quota block" do
+          reg = register_agent("quota-sibling-test")
+          agent = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Quota sibling")
+          topic = creative.topics.create!(name: "Quota", user: @user)
+          CreativeShare.create!(creative: creative, user: agent, permission: "feedback")
+          task = Collavre::Task.create!(name: "Late reply", status: "delegated", agent: agent,
+            topic_id: topic.id, creative: creative, trigger_event_name: "comment_created")
+          deadline = 1.hour.from_now.change(usec: 0)
+          agent.update!(quota_retry_count: 2, quota_blocked_until: deadline)
+          post "/api/v1/agent/reply", params: { topic_id: topic.id, text: "Late answer", task_id: task.id },
+            headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal 2, agent.reload.quota_retry_count
+          assert_equal deadline, agent.quota_blocked_until
+        end
+
         test "reply with task_id refuses when task agent is not owned by current_user" do
           # task_id must not become a back-door to ventriloquize someone else's
           # agent — the resolved agent still has to be owned by the token holder.
@@ -1761,6 +1863,60 @@ module Collavre
           assert_includes dequeue_calls, [ work_topic.id, work_creative.id ],
             "work topic queue must be drained on unregister"
           assert Topic.find(inbox_topic_id).archived?
+        end
+
+        test "destroy cancels suspended work across topics and prevents resumption after registration" do
+          reg = register_agent("suspended-teardown")
+          agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          work_topic = creatives(:tshirt).topics.create!(name: "Suspended work", user: @user)
+          tasks = %w[queued pending running delegated].map do |status|
+            Task.create!(name: "Suspended #{status}", agent: agent,
+              topic_id: status == "delegated" ? work_topic.id : topic.id,
+              creative_id: status == "delegated" ? work_topic.creative_id : topic.creative_id,
+              status: "suspended", suspended_from: status,
+              suspend_reason: "agent_offline", suspended_at: Time.current)
+          end
+
+          delete "/api/v1/agent/#{agent.id}", params: { topic_id: topic.id },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+          tasks.each { |task| assert_equal "cancelled", task.reload.status }
+
+          reopened = register_agent("suspended-teardown")
+          assert_equal topic.id, reopened["topic_id"]
+          assert_not topic.reload.archived?
+          tasks.each do |task|
+            assert_nil Orchestration::TaskResumer.resume!(task.reload)
+            assert_equal "cancelled", task.reload.status
+          end
+        end
+
+        test "destroy cancels only its session's suspended work while a sibling is live" do
+          registrations = %w[sess-a sess-b].map do |session_id|
+            post "/api/v1/agent/register",
+              params: { agent_name: "suspended-shared", session_id: session_id },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            JSON.parse(response.body)
+          end
+          agent = User.find(registrations.first["agent_id"])
+          topics = registrations.map { |reg| Topic.find(reg["topic_id"]) }
+          AgentSubscription.create!(agent: agent, token: "live-sibling", session_id: "sess-b")
+          tasks = topics.map do |topic|
+            Task.create!(name: "Suspended session", agent: agent, topic_id: topic.id,
+              creative_id: topic.creative_id, status: "suspended", suspended_from: "delegated",
+              suspend_reason: "agent_offline", suspended_at: Time.current)
+          end
+
+          delete "/api/v1/agent/#{agent.id}", params: { topic_id: topics.first.id },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+          assert_equal "cancelled", tasks.first.reload.status
+          assert_equal "suspended", tasks.last.reload.status
+          assert topics.first.reload.archived?
+          assert_not topics.last.reload.archived?
+          assert agent.claude_channel_online?
         end
 
         test "destroy cancels queued and pending tasks so dequeue does not activate clientless work" do

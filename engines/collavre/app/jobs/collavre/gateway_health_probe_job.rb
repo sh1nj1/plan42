@@ -22,6 +22,7 @@ module Collavre
       return unless gateway
 
       CliProxy::HealthProbe.new(gateway: gateway).call
+      gateway.reload.agents.find_each { |agent| Orchestration::AgentRecoveryTrigger.call(agent) }
     rescue StandardError => e
       # The probe already turns every transport failure into a recorded verdict,
       # so anything arriving here is a bug in this code path. Retrying it would
