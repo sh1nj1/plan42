@@ -24,7 +24,8 @@ and does not grant additional permissions to execute the proposed action.
 Invalid questions or approvers return a tool error so the agent can correct them.
 
 The designated person sees the existing approve/deny buttons and an optional
-reason field. Either response resumes the original call with:
+reason field. Administrators who are not the designated approver cannot decide
+the gate and do not see these controls. Either response resumes the original call with:
 
 ```json
 {"decision":"denied","reason":"Revise the release date first","decided_by":123}
@@ -52,7 +53,9 @@ Decision recording locks both task and comment. Duplicate clicks cannot schedule
 multiple decisions. The resume job is enqueued only after the decision transaction
 commits, including any outer transaction. The resume job uses the existing agent
 lifecycle with an atomic pending-to-running admission check; duplicate delivery cannot start a
-second worker. Before admission, an interrupted resume can be retried.
+second worker. Before admission, an interrupted resume can be retried. The gate
+payload, including embedded image data, is retained while work is active and
+cleared atomically when the task finishes, fails, is cancelled, or is escalated.
 
 The gate comment is the only surface that can decide its task. Deleting it, or
 moving it to another topic or creative, cancels a still-undecided gate task and

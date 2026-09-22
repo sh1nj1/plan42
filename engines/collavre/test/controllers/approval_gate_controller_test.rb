@@ -26,7 +26,7 @@ class ApprovalGateControllerTest < ActionDispatch::IntegrationTest
   test "pending gate renders approve deny and optional reason without editable action" do
     get creative_comments_path(@creative), params: { topic_id: @task.topic_id }
     assert_response :success
-    assert_select "#comment_#{@comment.id}" do
+    assert_select "#comment_#{@comment.id}[data-approval-gate=true]" do
       assert_select ".approve-comment-btn", count: 1
       assert_select ".deny-comment-btn", count: 1
       assert_select "textarea[data-approval-reason]", count: 1

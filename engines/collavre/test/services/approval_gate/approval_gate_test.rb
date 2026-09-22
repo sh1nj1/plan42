@@ -83,6 +83,29 @@ class ApprovalGateTest < ActiveSupport::TestCase
     end
   end
 
+  test "resumed job retains its snapshot during execution and clears it on completion" do
+    comment = pause
+    Collavre::Comments::ApprovalGateDecision.new(comment, @user).call("approved")
+    executed = false
+    service = Object.new
+    service.define_singleton_method(:call) do
+      executed = true
+    end
+    factory = lambda do |task|
+      assert task.running?
+      assert task.pending_tool_call["messages"].present?
+      @task.reload
+      assert @client.send(:restore_approval_gate)
+      service
+    end
+    Collavre::AiAgentService.stub(:new, factory) do
+      Collavre::ApprovalGateResumeJob.new.perform(@task.id, @call.id)
+    end
+    assert executed
+    assert @task.reload.done?
+    assert_nil @task.pending_tool_call
+  end
+
   test "resumption claims once and ignores stale or cancelled jobs" do
     comment = pause
     Collavre::Comments::ApprovalGateDecision.new(comment, @user).call("approved")
