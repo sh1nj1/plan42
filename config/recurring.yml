@@ -22,6 +22,10 @@ production: &production
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
     schedule: every 10 minutes
+  resume_suspended_tasks:
+    class: Collavre::ResumeSuspendedTasksJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
@@ -55,6 +59,10 @@ desktop:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
     schedule: every 10 minutes
+  resume_suspended_tasks:
+    class: Collavre::ResumeSuspendedTasksJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
@@ -88,6 +96,10 @@ development:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
     schedule: every 10 minutes
+  resume_suspended_tasks:
+    class: Collavre::ResumeSuspendedTasksJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default

@@ -8,6 +8,25 @@ en:
         busy: "agent concurrency limit reached"
         rate_limited: "rate limit reached"
         unknown: "waiting for resources"
+      suspension:
+        suspended:
+          agent_offline: "⏸️ @%{agent} went offline, so this reply is paused. It resumes automatically when @%{agent} reconnects."
+          server_restart: "⏸️ The server restarted while @%{agent} was replying. The reply resumes automatically."
+          quota: "⏸️ @%{agent} reached its usage limit. The reply resumes automatically once the limit resets."
+          quota_until: "⏸️ @%{agent} reached its usage limit. The reply resumes automatically after %{time}."
+        resumed: "▶️ Resuming @%{agent}'s paused reply."
+        escalated: "⚠️ @%{agent}'s paused reply could not be resumed (%{cause}). Please send your message again."
+        escalation_causes:
+          expired: "it waited too long"
+          too_many_resumes: "it was interrupted too many times"
+        resume_context: |
+          [System] Your previous attempt at this turn was interrupted (%{reason}) before it finished. This is resume attempt %{attempt}. Continue the same task instead of starting over, and do not repeat work or text you have already delivered.
+        resume_reasons:
+          agent_offline: "you went offline"
+          server_restart: "the server restarted"
+          quota: "your usage limit was reached"
+        resume_partial_reply: "Reply text already shown to the user:"
+        resume_actions: "Actions already recorded for this turn:"
     workflow:
       rule:
         errors:

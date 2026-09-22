@@ -32,7 +32,9 @@ module Collavre
       # both callbacks after the comment is persisted via
       # Task#fire_completion_callbacks_after_external_claim.
       def claim(agent:, topic:, requested_task_id:)
-        scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
+        # A dispatch suspended while it waited (its session went offline) is
+        # still answered by its reply when that finally lands.
+        scope = Task.awaiting_reply.where(agent_id: agent.id, topic_id: topic.id)
         candidate =
           if requested_task_id.present?
             scope.find_by(id: requested_task_id)
@@ -44,7 +46,7 @@ module Collavre
         claimed = nil
         Task.transaction do
           locked = Task.lock.find_by(id: candidate.id)
-          next unless locked && locked.status == "delegated"
+          next unless locked && Task.awaiting_reply.exists?(id: locked.id)
 
           Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
           claimed = locked.reload

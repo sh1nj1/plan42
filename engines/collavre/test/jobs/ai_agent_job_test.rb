@@ -614,6 +614,23 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected active_jobs to be 0 after error"
   end
 
+  test "a turn suspended inside the service is left suspended, not failed" do
+    captured_task = nil
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      Collavre::Orchestration::TaskResumer.suspend!(captured_task, reason: :quota)
+      raise Collavre::TaskSuspendedError
+    end
+
+    Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service } do
+      assert_nothing_raised { AiAgentJob.perform_now(@agent.id, "test_event", @context) }
+    end
+
+    assert_equal "suspended", captured_task.reload.status
+    assert_equal "quota", captured_task.suspend_reason
+    assert_equal 0, Collavre::Orchestration::ResourceTracker.for(@agent).active_jobs
+  end
+
   test "does not release resources on approval pending" do
     # Stub AiAgentService to raise ApprovalPendingError directly
     fake_service = Minitest::Mock.new

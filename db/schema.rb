@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_13_000100) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_22_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -955,7 +955,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_13_000100) do
     t.integer "creative_id"
     t.string "name"
     t.json "pending_tool_call"
+    t.integer "resume_count", default: 0, null: false
+    t.datetime "resume_not_before"
     t.string "status", default: "pending"
+    t.string "suspend_reason"
+    t.datetime "suspended_at"
+    t.string "suspended_from"
     t.integer "topic_id"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
@@ -965,6 +970,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_13_000100) do
     t.string "workflow_stop_reason"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
+    t.index ["status", "resume_not_before"], name: "index_tasks_on_status_and_resume_not_before"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
     t.index ["workflow_execution_id", "agent_id"], name: "workflow_task_identity", unique: true
     t.index ["workflow_execution_id"], name: "index_tasks_on_workflow_execution_id"

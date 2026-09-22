@@ -8,6 +8,25 @@ ko:
         busy: "에이전트 동시 실행 한도 도달"
         rate_limited: "요청 속도 제한 도달"
         unknown: "리소스 대기 중"
+      suspension:
+        suspended:
+          agent_offline: "⏸️ @%{agent} 연결이 끊겨 답변을 일시중지했습니다. @%{agent}가 다시 연결되면 자동으로 이어서 답변합니다."
+          server_restart: "⏸️ @%{agent}가 답변하는 도중 서버가 재시작되었습니다. 자동으로 이어서 답변합니다."
+          quota: "⏸️ @%{agent}가 사용량 한도에 도달했습니다. 한도가 초기화되면 자동으로 이어서 답변합니다."
+          quota_until: "⏸️ @%{agent}가 사용량 한도에 도달했습니다. %{time} 이후 자동으로 이어서 답변합니다."
+        resumed: "▶️ @%{agent}의 일시중지된 답변을 이어서 진행합니다."
+        escalated: "⚠️ @%{agent}의 일시중지된 답변을 재개하지 못했습니다(%{cause}). 메시지를 다시 보내 주세요."
+        escalation_causes:
+          expired: "대기 시간이 너무 길어졌습니다"
+          too_many_resumes: "너무 여러 번 중단되었습니다"
+        resume_context: |
+          [System] 이 턴의 이전 시도는 끝나기 전에 중단되었습니다(%{reason}). 이번이 %{attempt}번째 재개입니다. 처음부터 다시 하지 말고 같은 작업을 이어서 진행하고, 이미 전달한 작업이나 내용은 반복하지 마세요.
+        resume_reasons:
+          agent_offline: "연결이 끊김"
+          server_restart: "서버 재시작"
+          quota: "사용량 한도 도달"
+        resume_partial_reply: "사용자에게 이미 표시된 답변:"
+        resume_actions: "이 턴에 이미 기록된 작업:"
     workflow:
       rule:
         errors:

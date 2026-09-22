@@ -130,6 +130,21 @@ module Collavre
         assert_nothing_raised { lifecycle.check_cancelled! }
         assert_raises(Collavre::CancelledError) { lifecycle.check_cancelled!(force: true) }
       end
+
+      test "a turn suspended from another process stops without ending" do
+        task = Task.create!(
+          name: "Suspended response",
+          status: "running",
+          trigger_event_name: "workflow",
+          trigger_event_payload: { "creative" => { "id" => @creative.id } },
+          agent: @agent
+        )
+        lifecycle = AgentLifecycleManager.new(task: task, agent: @agent, creative: @creative)
+        task.update!(status: "suspended")
+
+        assert_raises(Collavre::TaskSuspendedError) { lifecycle.check_cancelled!(force: true) }
+        assert_equal "suspended", task.reload.status
+      end
     end
   end
 end

@@ -1309,6 +1309,31 @@ module Collavre
           assert_equal "done", task.reload.status
         end
 
+        test "a late reply completes a dispatch suspended while its session was offline" do
+          reg = register_agent("late-reply-test")
+          ai_user = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Late reply creative")
+          topic = creative.topics.create!(name: "Late reply topic", user: @user)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+
+          task = Collavre::Task.create!(
+            name: "Suspended dispatch", status: "suspended", suspended_from: "delegated",
+            suspend_reason: "agent_offline", suspended_at: Time.current,
+            trigger_event_name: "comment_created", agent: ai_user, topic_id: topic.id, creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Answer after reconnecting", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal "done", task.reload.status
+          assert_equal task.id, Comment.find(JSON.parse(response.body)["comment_id"]).task_id
+          assert_nil Collavre::Orchestration::TaskResumer.resume!(task),
+                     "a reply that already answered the turn leaves nothing to resume"
+        end
+
         test "reply with task_id refuses when task agent is not owned by current_user" do
           # task_id must not become a back-door to ventriloquize someone else's
           # agent — the resolved agent still has to be owned by the token holder.

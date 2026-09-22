@@ -46,8 +46,9 @@ module Collavre
             # chat history — so comments that Orchestration::TaskCoalescer
             # folded into this turn have to be rendered inline here or they
             # never reach the agent at all.
-            content: MergedTriggerComments.prepend_to(
-              @context.dig("comment", "content"), @context, agent: @agent
+            content: Orchestration::ResumeContext.prepend_to(
+              MergedTriggerComments.prepend_to(@context.dig("comment", "content"), @context, agent: @agent),
+              @context
             ),
             author_id: @context.dig("sender", "id") || @context.dig("comment", "user_id"),
             author_name: @context.dig("sender", "name") || comment&.user&.display_name,

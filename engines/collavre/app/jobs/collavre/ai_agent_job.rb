@@ -219,9 +219,7 @@ module Collavre
         # Reloaded because the status was written to the row by somebody else.
         Orchestration::DeliveryRecord.restore_if_undelivered!(task.reload)
       rescue StandardError => e
-        task.update!(status: "failed")
-        Rails.logger.error("AiAgentJob failed for task #{task.id}: #{e.message}")
-        raise e
+        fail_turn!(task, e)
       ensure
         # Guarantee resource release for all paths except pending_approval
         tracker.release!(resource_id, tokens_used: 0) if should_release && tracker && resource_id
@@ -242,6 +240,19 @@ module Collavre
     end
 
     private
+
+    def fail_turn!(task, error)
+      # Orchestration::TaskResumer already suspended the task and handed back
+      # its slot; it will be resumed as the same row. Writing `failed` here
+      # would end a turn that is only paused.
+      if error.is_a?(TaskSuspendedError)
+        return Rails.logger.info("AiAgentJob suspended for task #{task.id} (reason=#{task.reload.suspend_reason})")
+      end
+
+      task.update!(status: "failed")
+      Rails.logger.error("AiAgentJob failed for task #{task.id}: #{error.message}")
+      raise error
+    end
 
     def reject_offline_resumption?(task, agent)
       return false unless agent.claude_channel_agent? && !agent.claude_channel_online?

@@ -276,6 +276,9 @@ module Collavre
         # :trigger message, so history-only placement would lose them entirely.
         merged_blocks = merged_trigger.blocks
         payload_text = (merged_blocks.map(&:text) + [ payload_text ]).join("\n\n") if merged_blocks.any?
+        # A resumed turn is told what its interrupted attempt already did, in the
+        # trigger for the same reason as the merged blocks above.
+        payload_text = Orchestration::ResumeContext.prepend_to(payload_text, @context)
 
         trigger_parts = [ { text: payload_text } ]
 

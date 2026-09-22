@@ -355,7 +355,7 @@ module Collavre
         # must not silently post as primary_agent.
         def resolve_notify_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.awaiting_reply.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 
@@ -397,7 +397,7 @@ module Collavre
         # completed/cancelled. Return nil so reply renders 403.
         def resolve_reply_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.awaiting_reply.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 

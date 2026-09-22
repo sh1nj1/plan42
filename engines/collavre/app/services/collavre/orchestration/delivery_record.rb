@@ -149,7 +149,7 @@ module Collavre
       TURN_SCOPED_KEYS = [
         KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, HANDED_OFF_IDS_KEY,
         RESTORED_KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
-        TaskCoalescer::ACQUIRED_ANCHOR_KEY
+        TaskCoalescer::ACQUIRED_ANCHOR_KEY, ResumeContext::KEY
       ].freeze
 
       # Statuses in which a turn is still the thing that will answer.

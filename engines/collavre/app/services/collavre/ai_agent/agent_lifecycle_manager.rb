@@ -63,7 +63,11 @@ module Collavre
         return if !force && (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
 
         @last_cancel_check_at = now
-        raise Collavre::CancelledError if TERMINAL_STATUSES.include?(@task.reload.status)
+        status = @task.reload.status
+        raise Collavre::CancelledError if TERMINAL_STATUSES.include?(status)
+        # Orchestration::TaskResumer set this turn aside from another process;
+        # it will be re-run, so this attempt stops without ending the task.
+        raise Collavre::TaskSuspendedError if status == "suspended"
 
         return if now < @deadline_at
 
