@@ -5,10 +5,13 @@ module Collavre
   class McpService
     # --- Registration Logic (from MetaToolService) ---
 
-    def self.register_tool_from_source(source_code)
+    # expected_name is the McpTool name recorded from the Creative. The name the
+    # evaluated class actually declares must match it, otherwise the tool would
+    # run without its McpTool row and filter_tools would treat it as a system tool.
+    def self.register_tool_from_source(source_code, expected_name: nil)
       # Extract tool name for logging context
       tool_name_match = source_code.match(/tool_name\s+["'](.+?)["']/)
-      tool_name = tool_name_match ? tool_name_match[1] : "unknown_tool"
+      tool_name = expected_name || (tool_name_match ? tool_name_match[1] : "unknown_tool")
 
       before_call = proc do |tool_instance, method_name, args|
         # Store args for after_call access if needed, or just log start
@@ -43,11 +46,7 @@ module Collavre
         Rails.logger.error("Failed to log tool activity: #{e.message}")
       end
 
-      result = ::Tools::MetaToolWriteService.new.register_tool_from_source(
-        source: source_code,
-        before_call: before_call,
-        after_call: after_call
-      )
+      result = register_with_writer(source_code, expected_name, before_call: before_call, after_call: after_call)
       Rails.logger.info("Registered tool: #{result}")
 
       if result[:error]
@@ -59,6 +58,37 @@ module Collavre
       Rails.logger.error("Failed to register tool from source: #{e.message}")
       raise e
     end
+
+    def self.register_with_writer(source_code, expected_name, before_call:, after_call:)
+      writer = ::Tools::MetaToolWriteService.new
+      return writer.register_tool_from_source(source: source_code, before_call: before_call, after_call: after_call) unless expected_name
+
+      register_verified_source(writer, source_code, expected_name, before_call: before_call, after_call: after_call)
+    end
+    private_class_method :register_with_writer
+
+    # Same steps as MetaToolWriteService#register_tool_from_source, with a name
+    # check between evaluating the source and building the tool classes.
+    def self.register_verified_source(writer, source_code, expected_name, before_call:, after_call:)
+      class_name = writer.send(:extract_class_name, source_code)
+      return { error: "class_name is required for register" } if class_name.blank?
+
+      begin
+        Object.class_eval(source_code)
+      rescue StandardError => e
+        return { error: "Failed to evaluate source: #{e.message}" }
+      end
+
+      service_class = class_name.safe_constantize
+      declared = service_class.try(:tool_metadata)&.dig(:name)
+      if service_class && declared != expected_name
+        ToolMeta.registry.delete(service_class)
+        return { error: "#{class_name} declares tool_name #{declared.inspect}, expected #{expected_name.inspect}" }
+      end
+
+      writer.register_tool(class_name, before_call: before_call, after_call: after_call)
+    end
+    private_class_method :register_verified_source
 
     def self.filter_tools(tools, user)
       return [] if tools.blank?
@@ -107,7 +137,9 @@ module Collavre
 
     def self.load_active_tools
       McpTool.active.find_each do |tool|
-        register_tool_from_source(tool.source_code)
+        register_tool_from_source(tool.source_code, expected_name: tool.name)
+      rescue StandardError => e
+        Rails.logger.error("Skipped MCP tool #{tool.name}: #{e.message}")
       end
     end
 

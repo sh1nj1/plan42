@@ -229,6 +229,26 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
 
     shadowed = scaffold.sub("    tool_name", "    # tool_name \"other_probe\"\n    tool_name")
     assert_includes invalid(shadowed), 'tool_name is read as "other_probe" by the server, not "authored_probe"'
+
+    redeclared = scaffold.sub("    tool_description", "    tool_name \"other_probe\"\n    tool_description")
+    assert_includes invalid(redeclared), "tool_name appears 2 times; declare it exactly once"
+  end
+
+  test "approval refuses a source whose class declares a different tool_name" do
+    user = users(:one)
+    source = scaffold.sub("    tool_description", "    tool_name \"shadow_probe\"\n    tool_description")
+    host = Creative.new(user: user)
+    host.content_type_input = "markdown"
+    host.markdown_source = "# probe\n\n```ruby\n#{source}```\n"
+    host.save!
+    Collavre::McpService.new.update_from_creative(host)
+
+    tool = McpTool.find_by!(name: "authored_probe")
+    error = assert_raises(RuntimeError) { tool.approve! }
+    assert_match(/declares tool_name "shadow_probe", expected "authored_probe"/, error.message)
+    assert_not tool.reload.active?
+    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_nil Tools::MetaToolService.new.find_schema("shadow_probe")
   end
 
   private

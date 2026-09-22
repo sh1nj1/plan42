@@ -312,4 +312,30 @@ class McpServiceTest < ActiveSupport::TestCase
     assert_equal [], McpService.filter_tools([], user)
     assert_equal [], McpService.filter_tools(nil, user)
   end
+
+  test "register_tool_from_source with expected_name reports source it cannot evaluate" do
+    error = assert_raises(RuntimeError) { McpService.register_tool_from_source("1 + 1", expected_name: "x") }
+    assert_match(/class_name is required/, error.message)
+
+    broken = "class Tools::BrokenProbe\n  raise 'boom'\nend\n"
+    error = assert_raises(RuntimeError) { McpService.register_tool_from_source(broken, expected_name: "x") }
+    assert_match(/Failed to evaluate source: boom/, error.message)
+  end
+
+  test "load_active_tools passes the recorded name and keeps going after a failure" do
+    creative = Creative.create!(user: users(:one), description: "Tools")
+    McpTool.create!(creative: creative, name: "bad_tool", source_code: "bad", approved_at: Time.current)
+    McpTool.create!(creative: creative, name: "good_tool", source_code: "good", approved_at: Time.current)
+
+    calls = []
+    register = lambda do |source, expected_name:|
+      calls << [ source, expected_name ]
+      raise "mismatch" if source == "bad"
+    end
+    McpService.stub :register_tool_from_source, register do
+      McpService.load_active_tools
+    end
+
+    assert_equal [ [ "bad", "bad_tool" ], [ "good", "good_tool" ] ], calls.sort
+  end
 end

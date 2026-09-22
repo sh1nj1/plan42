@@ -21,7 +21,7 @@ module Collavre
 
     def approve!
       # Register the tool immediately upon approval
-      ::McpService.register_tool_from_source(source_code)
+      ::McpService.register_tool_from_source(source_code, expected_name: name)
       update!(approved_at: Time.current)
     end
 
