@@ -117,6 +117,19 @@ class LlmUsageTest < ActiveSupport::TestCase
     assert_equal "unknown", Collavre::LlmUsage::Attribution.snapshot({})[:requester_kind]
   end
 
+  test "standalone explicit requester can see usage for another owners agent" do
+    collector = Collavre::LlmUsage::Recorder.new(
+      context: { user: @agent, requester: @requester, creative: @creative, topic_id: @comment.topic_id },
+      vendor: "openai", model: "test")
+    collector.finish(response)
+    row = Collavre::LlmUsage.last
+    assert_equal @requester.id, row.requester_id
+    assert_equal @owner.id, row.owner_id
+    assert_equal @comment.topic_id, row.topic_id
+    assert_equal [ row.id ], Collavre::LlmUsage.visible_to(@requester).pluck(:id)
+    assert_equal "unknown", Collavre::LlmUsage::Attribution.snapshot(requester: @agent)[:requester_kind]
+  end
+
   test "run measurements and database idempotency are explicit" do
     recorder(measurement: "run").finish(response)
     original = Collavre::LlmUsage.last

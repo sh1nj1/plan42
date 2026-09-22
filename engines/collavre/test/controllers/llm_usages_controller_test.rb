@@ -25,7 +25,7 @@ class LlmUsagesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(user, password: "password")
     Collavre::LlmUsage.create!(event_key: "view", execution_id: "view", owner_id: user.id,
       requester_kind: "unknown", vendor: "openai", model: "test", occurred_at: Time.current,
-      input_tokens: 0, output_tokens: 2, raw_usage: { secret: "secret-usage-payload-should-not-render" })
+      input_tokens: 0, output_tokens: 2, raw_usage: { internal_marker: "usage-payload-should-not-render" })
     %w[en ko].each do |locale|
       user.update!(locale: locale)
       get llm_usages_path, params: { locale: locale, group: "owner" }
@@ -34,7 +34,7 @@ class LlmUsagesControllerTest < ActionDispatch::IntegrationTest
       assert_select "tbody tr", 1
       assert_select "td", text: user.name
       assert_select "td", text: "0"
-      refute_includes response.body, "secret-usage-payload-should-not-render"
+      refute_includes response.body, "usage-payload-should-not-render"
     end
   end
 end

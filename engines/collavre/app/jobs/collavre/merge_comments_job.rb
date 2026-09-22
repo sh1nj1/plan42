@@ -14,7 +14,7 @@ module Collavre
       Use markdown formatting for readability.
     PROMPT
 
-    def perform(creative_id, comment_ids, user_id) # rubocop:disable Lint/UnusedMethodArgument -- user_id reserved for future audit/notification use
+    def perform(creative_id, comment_ids, user_id)
       creative = Creative.find(creative_id)
 
       # Fetch comments in chronological order
@@ -43,18 +43,7 @@ module Collavre
         return
       end
 
-      client = AiClient.new(
-        vendor: agent.llm_vendor,
-        model: agent.llm_model,
-        system_prompt: SYSTEM_PROMPT,
-        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
-        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
-        context: {
-          creative: creative,
-          user: agent,
-          topic_id: topic_id
-        }
-      )
+      client = build_client(agent, creative, topic_id, User.find(user_id))
 
       merged_content = String.new
       result = client.chat([ { role: "user", text: conversation } ]) do |delta|
@@ -77,6 +66,22 @@ module Collavre
     end
 
     private
+
+    def build_client(agent, creative, topic_id, user)
+      AiClient.new(
+        vendor: agent.llm_vendor,
+        model: agent.llm_model,
+        system_prompt: SYSTEM_PROMPT,
+        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
+        context: {
+          creative: creative,
+          user: agent,
+          requester: user,
+          topic_id: topic_id
+        }
+      )
+    end
 
     def mergeable_selection?(comments)
       comments.size >= 2 && comments.map(&:topic_id).uniq.size == 1

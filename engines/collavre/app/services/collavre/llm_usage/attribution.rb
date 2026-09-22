@@ -61,8 +61,14 @@ module Collavre
 
       def self.standalone(context)
         comment = context[:comment]
-        attribution = from_comments([ comment&.id ].compact).merge("owner_id" => context[:user]&.created_by_id)
-        attributes(attribution).merge(creative_id: context[:creative]&.id, topic_id: comment&.topic_id)
+        requester = context[:requester]
+        attribution = if requester && !requester.ai_user?
+          { "requester_ids" => [ requester.id ], "source_comment_ids" => [ comment&.id ].compact }
+        else
+          from_comments([ comment&.id ].compact)
+        end
+        attributes(attribution.merge("owner_id" => context[:user]&.created_by_id))
+          .merge(creative_id: context[:creative]&.id, topic_id: comment&.topic_id || context[:topic_id])
       end
 
       def self.attributes(attribution)
