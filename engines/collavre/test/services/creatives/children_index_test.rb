@@ -2,9 +2,9 @@ require "test_helper"
 
 module Creatives
   class ChildrenIndexTest < ActiveSupport::TestCase
-    test "candidate budget bounds SQL rows and permission checks across batches" do
+    test "candidate budget reserves later parent probes and bounds SQL rows across batches" do
       user = users(:one)
-      roots = Array.new(2) { Creative.create!(user: user, description: "Root") }
+      roots = Array.new(4) { Creative.create!(user: user, description: "Root") }
       children = roots.map do |root|
         Creative.insert_all!(Array.new(8) do |sequence|
           { user_id: user.id, parent_id: root.id, description: "Child", sequence: sequence }
@@ -22,7 +22,7 @@ module Creatives
         queries << event.payload if event.payload[:sql].include?('"creatives"."parent_id"') &&
           event.payload[:sql].start_with?("SELECT")
       end
-      index = Collavre::Creatives::ChildrenIndex.new(user: user, show_archived: false, candidate_limit: 10)
+      index = Collavre::Creatives::ChildrenIndex.new(user: user, show_archived: false, candidate_limit: 3)
       ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
         PermissionFilter.stub(:new, filter) do
           roots.each { |root| index.index([ root ]) }
@@ -30,12 +30,12 @@ module Creatives
         end
       end
 
-      assert_equal children.first + children.last.first(2), checked
-      assert_equal children.first, index.child_ids(roots.first)
-      assert_equal children.last.first(2), index.child_ids(roots.last)
-      assert_equal 2, queries.size
+      assert_equal children.first.first(4) + children[1].first(1) + children[2].first(1), checked
+      assert_equal children.first.first(4), index.child_ids(roots.first)
+      assert_equal children[2].first(1), index.child_ids(roots[2])
+      assert_equal 3, queries.size
       assert queries.all? { |query| query[:sql].include?("LIMIT") }
-      assert_equal 10, queries.sum { |query| query[:row_count] }
+      assert_equal 6, queries.sum { |query| query[:row_count] }
 
       other = Creative.create!(user: user, description: "Other")
       Creative.create!(user: user, parent: other, description: "Not inspected")
@@ -52,7 +52,7 @@ module Creatives
         { user_id: user.id, parent_id: root.id, description: "Child", sequence: sequence }
       end).rows.flatten
       index = Collavre::Creatives::ChildrenIndex.new(user: user, show_archived: false,
-        candidate_limit: 2, candidate_ids: ids.last(3))
+        candidate_limit: 1, candidate_ids: ids.last(3))
       filter = Minitest::Mock.new
       filter.expect(:readable_ids, ids.last(3).first(2), [ ids.last(3).first(2) ])
       queries = []
@@ -65,6 +65,34 @@ module Creatives
       assert_equal 2, queries.sum { |query| query[:row_count] }
       assert queries.first[:sql].include?("LIMIT")
       filter.verify
+    end
+
+    test "saved candidate allowance is shared fairly between origins in a level" do
+      user = users(:one)
+      roots = Array.new(2) { Creative.create!(user: user, description: "Root") }
+      roots.each do |root|
+        Creative.insert_all!(Array.new(8) do |sequence|
+          { user_id: user.id, parent_id: root.id, description: "Child", sequence: sequence }
+        end)
+      end
+      index = Collavre::Creatives::ChildrenIndex.new(user: user, show_archived: false, candidate_limit: 10)
+      index.index(roots)
+
+      roots.each { |root| assert_equal root.children.order(:sequence, :id).limit(6).pluck(:id), index.child_ids(root) }
+    end
+
+    test "empty and linked origins preserve remaining candidate allowance" do
+      user = users(:one)
+      empty = Creative.create!(user: user, description: "Empty")
+      origin = Creative.create!(user: user, description: "Origin")
+      shell = Creative.create!(user: user, origin: origin)
+      children = Array.new(3) { Creative.create!(user: user, parent: origin, description: "Child") }
+      index = Collavre::Creatives::ChildrenIndex.new(user: user, show_archived: false, candidate_limit: 2)
+      index.index([ empty, origin, shell ])
+
+      assert_empty index.child_ids(empty)
+      assert_equal children.map(&:id), index.child_ids(origin)
+      assert_equal index.child_ids(origin), index.child_ids(shell)
     end
 
     test "normal rendering does not truncate children and retains archive filtering" do

@@ -16,7 +16,7 @@ module Creatives
   # indexing it, or that resolution costs a query per shell.
   class ChildrenIndex
     def initialize(user:, show_archived:, allowed_creative_ids: nil, candidate_limit: nil, candidate_ids: nil)
-      @remaining_candidates = candidate_limit
+      @candidates = WorkspaceExpansionCandidates.new(limit: candidate_limit) if candidate_limit
       @candidate_ids = candidate_ids
       @user = user
       @show_archived = show_archived
@@ -33,13 +33,7 @@ module Creatives
 
       origin_id_by_id = pending.to_h { |c| [ c.id, c.effective_origin.id ] }
 
-      candidates = Creative.where(parent_id: origin_id_by_id.values.uniq)
-      candidates = candidates.where(archived_at: nil) unless show_archived
-      candidates = candidates.where(id: @candidate_ids) if @candidate_ids
-      # Restoration may truncate candidates; normal rendering remains exhaustive.
-      candidates = candidates.limit(@remaining_candidates) if @remaining_candidates
-      rows = candidates.order(:sequence, :id).pluck(:id, :parent_id)
-      @remaining_candidates -= rows.size if @remaining_candidates
+      rows = candidate_rows(origin_id_by_id.values.uniq)
 
       visible_by_origin = visible_child_ids_by_origin(rows)
       pending.each do |creative|
@@ -74,6 +68,16 @@ module Creatives
     private
 
     attr_reader :user, :show_archived, :allowed_creative_ids
+
+    def candidate_rows(origin_ids)
+      candidates = Creative.where(parent_id: origin_ids)
+      candidates = candidates.where(archived_at: nil) unless show_archived
+      candidates = candidates.where(id: @candidate_ids) if @candidate_ids
+      candidates = candidates.order(:sequence, :id)
+      return @candidates.rows(candidates, origin_ids) if @candidates
+
+      candidates.pluck(:id, :parent_id)
+    end
 
     # `rows` arrive in sequence order, so the per-origin lists inherit it.
     def visible_child_ids_by_origin(rows)

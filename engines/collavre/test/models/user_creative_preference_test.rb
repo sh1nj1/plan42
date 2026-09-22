@@ -174,6 +174,23 @@ module Collavre
       assert_equal [ live.id.to_s ], preference.expanded_ids_root_first
     end
 
+    test "unreadable saved shells cannot displace a saved child under another root" do
+      user = users(:one)
+      stale = Creative.create!(user: user, description: "Stale root")
+      live = Creative.create!(user: user, description: "Live root")
+      hidden_origin = Creative.create!(user: users(:two), description: "Private origin")
+      hidden_ids = Creative.insert_all!(Array.new(1_000) do |sequence|
+        { user_id: user.id, parent_id: stale.id, origin_id: hidden_origin.id,
+          description: "Unreadable saved shell", sequence: sequence }
+      end).rows.flatten
+      child = Creative.create!(user: user, parent: live, description: "Saved child", sequence: 1_001)
+      Creative.create!(user: user, parent: child, description: "Leaf")
+      saved = [ stale.id, live.id, *hidden_ids, child.id ].to_h { |id| [ id.to_s, true ] }
+      preference = UserCreativePreference.new(user: user, expanded_status: saved)
+
+      assert_equal [ live.id.to_s, child.id.to_s ], preference.expanded_ids_root_first
+    end
+
     test "unsaved siblings cannot displace a late saved branch from restoration" do
       user = users(:one)
       root = Creative.create!(user: user, description: "Root")
@@ -273,7 +290,7 @@ module Collavre
 
       assert_equal(root ? [ root.id.to_s ] : [], restored)
       assert_equal limit, indexed.size
-      assert_equal(root ? limit : 0, inspected_children.size)
+      assert_equal(root ? limit + 1 : 0, inspected_children.size)
       assert_not_includes inspected_children, leaves.last
       assert_not_includes indexed, leaves.last
       assert_equal saved, preference.reload.expanded_status
