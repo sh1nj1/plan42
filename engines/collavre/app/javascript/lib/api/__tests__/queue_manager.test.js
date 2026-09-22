@@ -76,9 +76,48 @@ describe('ApiQueueManager', () => {
         // A Turbo session reinitializes the queue without replacing the JS singleton.
         apiQueue.initialize('test_user');
         expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(true);
-        expect(await fetchReconciledCreative(apiQueue, 42, row, async () => ({ description: 'persisted draft' })))
+        expect(await fetchReconciledCreative(apiQueue, 42, row, { fetch: async () => ({ description: 'persisted draft' }) }))
             .toEqual({ description: 'persisted draft' });
         expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(false);
+    });
+
+    test.each([false, true])('reconciles an in-flight completion after a frame swap: %s', async swap => {
+        const { needsCreativeReconciliation, fetchReconciledCreative } = await import('../queue_reconciliation');
+        const detachedRow = document.createElement('div');
+        const onSuccess = jest.fn(() => { detachedRow.textContent = 'saved draft'; });
+        apiQueue.enqueue({ path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'saved draft' }, onSuccess });
+        let complete;
+        mockCsrfFetch.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+        apiQueue.processQueue.mockRestore();
+        const processing = apiQueue.processQueue();
+        const executing = apiQueue.queue[0];
+        if (swap) {
+            apiQueue.initialize('test_user');
+            expect(apiQueue.queue[0].id).toBe(executing.id);
+            expect(apiQueue.queue[0].onSuccess).toBeUndefined();
+            apiQueue.start();
+        }
+        const row = document.createElement('div');
+        row.textContent = 'stale server';
+        complete({ ok: true, text: async () => '{}' });
+        await processing;
+        expect(onSuccess).toHaveBeenCalledTimes(1);
+        expect(apiQueue.queue).toEqual([]);
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(swap);
+        if (swap) {
+            await fetchReconciledCreative(apiQueue, 42, row, {
+                fetch: async () => ({ description: 'saved draft' }),
+                apply: data => { row.textContent = data.description; return true; },
+            });
+            expect(row.textContent).toBe('saved draft');
+            expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(false);
+            expect(needsCreativeReconciliation(apiQueue, 42, row.cloneNode())).toBe(true);
+            apiQueue.enqueue({ path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+                body: { 'creative[description]': row.textContent + ' continued' } });
+            expect(apiQueue.queue[0].body['creative[description]']).toBe('saved draft continued');
+            await apiQueue.waitFor('creative_42');
+        }
     });
 
     test.each(['failed', 'in-flight', 'reloaded'])('carries %s attachment cleanup into a successful replacement', async state => {

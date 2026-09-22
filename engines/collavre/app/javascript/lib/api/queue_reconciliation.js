@@ -1,4 +1,5 @@
-// Completed restored requests have no editor callback. Keep a session-scoped
+// Restored requests have no live editor callback, even when an executing copy
+// still holds a callback for a detached frame. Keep a session-scoped
 // invalidation until each row instance has fetched an acknowledged server view.
 // Turbo may restore another stale DOM instance, so consuming a key is unsafe.
 const sessions = new WeakMap()
@@ -16,7 +17,10 @@ function versions(queue) {
 export function recordRestoredCompletion(queue, item) {
   if (!item.dedupeKey) return
   const completed = versions(queue)
-  if (!item.onSuccess || completed.has(item.dedupeKey)) completed.set(item.dedupeKey, {})
+  const liveItem = queue.queue?.find(queued => queued.id === item.id)
+  if (!item.onSuccess || liveItem?.onSuccess !== item.onSuccess || completed.has(item.dedupeKey)) {
+    completed.set(item.dedupeKey, {})
+  }
 }
 
 export function needsCreativeReconciliation(queue, id, row) {

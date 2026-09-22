@@ -3,11 +3,13 @@ import { jest } from '@jest/globals'
 import { recordRestoredCompletion, needsCreativeReconciliation, fetchReconciledCreative, clearQueueReconciliation } from '../queue_reconciliation'
 
 test('invalidates restored completions per row instance and isolates users', async () => {
-  const queue = { userId: 1 }
+  const queue = { userId: 1, queue: [] }
   const row = document.createElement('div')
   const item = { dedupeKey: 'creative_42' }
   recordRestoredCompletion(queue, {})
-  recordRestoredCompletion(queue, { ...item, onSuccess: () => {} })
+  const liveItem = { ...item, id: 'request-42', onSuccess: () => {} }
+  queue.queue = [liveItem]
+  recordRestoredCompletion(queue, liveItem)
   expect(needsCreativeReconciliation(queue, 42, row)).toBe(false)
   recordRestoredCompletion(queue, item)
   expect(needsCreativeReconciliation(queue, 42, row)).toBe(true)
