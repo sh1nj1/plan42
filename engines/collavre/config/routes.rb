@@ -110,6 +110,7 @@ Collavre::Engine.routes.draw do
         delete :remove_image
       end
 
+      resource :resend, only: :create, module: :comments
       resources :reactions, only: [ :create ], module: :comments
       resource :activity_log, only: [ :show ], module: :comments
       resources :versions, only: [ :index, :destroy ], module: :comments do

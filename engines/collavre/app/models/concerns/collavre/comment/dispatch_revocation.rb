@@ -12,6 +12,15 @@ module Collavre
         after_destroy_commit :abandon_pending_logins
       end
 
+      # Prepare withdrawal inside a caller's transaction; queue/session cleanup
+      # remains the caller's responsibility after commit.
+      def cancel_task_for_withdrawn_source(task)
+        return unless dispatch_source_ids(task).include?(id)
+        return if reanchor_coalesced_task(task)
+
+        cancel_source_task(task)
+      end
+
       private
 
       def reanchor_coalesced_task(task)

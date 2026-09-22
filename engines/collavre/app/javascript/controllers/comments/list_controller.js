@@ -1,3 +1,4 @@
+import { installResendAction } from './resend_action'
 import { approvalRequestOptions } from './approval_request_options'
 import { replaceCommentsPreservingLogins } from "./inline_login_preservation"
 import { createDragDropRegistry } from '../../lib/dnd/registry'
@@ -774,6 +775,8 @@ export default class extends Controller {
         💡 ${i18n('selectionDragHintText', 'Drag & drop to move to topic')}
       </div>
     `
+
+    installResendAction(this, bar)
 
     // Set indeterminate state if partially selected
     const selectAllCheckbox = bar.querySelector('.selection-action-bar-select-all-checkbox')
