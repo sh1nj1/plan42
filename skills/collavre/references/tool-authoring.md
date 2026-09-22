@@ -100,6 +100,9 @@ Rules the CLI cannot check, so follow them yourself:
   it, so `Tools::CreativeRetrievalServiceService` or a second `FooService` in
   another module is refused. Rename the class if approval reports what it
   builds as already defined.
+  Approved tools on other server processes count too: approval refuses any
+  of these names that an earlier approved tool uses ("which another approved
+  tool already uses").
 - The service class is the first class in the source, and that class itself
   has `extend ToolMeta` and `tool_name`. Approval registers the first class and
   refuses it if the source did not declare it again, so a class body that only
