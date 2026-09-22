@@ -27,8 +27,13 @@ module Collavre
     end
 
     # Collavre tools report expected failures as { error: "..." } instead of raising.
+    # meta_tool's run action wraps the inner tool's result as { tool:, result: }.
     def self.failed_result?(result)
-      result.is_a?(Hash) && (result[:error].present? || result["error"].present?)
+      return false unless result.is_a?(Hash)
+      return true if result[:error].present? || result["error"].present?
+
+      wrapped = result.key?(:tool) || result.key?("tool")
+      wrapped && failed_result?(result[:result] || result["result"])
     end
 
     def self.elapsed_ms(started_at)
