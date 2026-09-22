@@ -373,6 +373,15 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
   end
 
+  test "a class the source freezes leaves the registry when its owner cannot be recorded" do
+    tool = approvable_tool(scaffold + "Tools::AuthoredProbeService.freeze\n")
+    assert_no_changes -> { ToolMeta.registry.dup } do
+      assert_raises(RuntimeError, match: /Failed to record the owner of Tools::AuthoredProbeService/) { tool.approve! }
+    end
+    assert_not tool.reload.active?
+    assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
+  end
+
   test "a tool can re-approve its class after the service is reloaded" do
     tool = approvable_tool(scaffold)
     tool.approve!

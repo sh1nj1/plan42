@@ -99,16 +99,29 @@ module Collavre
 
       ToolMeta.registry.delete(existing) if existing
       registered_before = ToolMeta.registry.dup
-      result = evaluate_and_verify(source_code, class_name, expected_name)
-      defined_now = class_name.safe_constantize
-      defined_now.instance_variable_set(OWNER_IVAR, expected_name) if !existing && defined_now.is_a?(Module)
-      keep = result.is_a?(Class) ? [ result ] : []
-      ToolMeta.registry.reject! { |klass| !registered_before.include?(klass) && !keep.include?(klass) }
+      keep = []
+      begin
+        result = evaluate_and_verify(source_code, class_name, expected_name)
+        result = mark_owner(class_name, expected_name, result) unless existing
+        keep << result if result.is_a?(Class)
+      ensure
+        ToolMeta.registry.reject! { |klass| !registered_before.include?(klass) && !keep.include?(klass) }
+      end
       return result unless keep.any?
 
       register_or_roll_back(writer, result, class_name, before_call: before_call, after_call: after_call)
     end
     private_class_method :register_verified_source
+
+    # A class the source froze cannot take the owner mark, so it is not approved.
+    def self.mark_owner(class_name, expected_name, result)
+      defined_now = class_name.safe_constantize
+      defined_now.instance_variable_set(OWNER_IVAR, expected_name) if defined_now.is_a?(Module)
+      result
+    rescue FrozenError => e
+      { error: "Failed to record the owner of #{class_name}: #{e.message}" }
+    end
+    private_class_method :mark_owner
 
     def self.owner_of(klass)
       klass.instance_variable_get(OWNER_IVAR) if klass.is_a?(Module)
