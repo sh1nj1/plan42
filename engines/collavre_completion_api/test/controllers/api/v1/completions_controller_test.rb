@@ -91,6 +91,45 @@ module CollavreCompletionApi
           assert_response :bad_request
         end
 
+        [ false, true ].each do |stream|
+          test "records selected agent and human caller for stream=#{stream}" do
+            owner = users(:two)
+            @ai_bot.update!(created_by_id: owner.id, searchable: true)
+            factory = lambda do |**options|
+              context = options.fetch(:context)
+              assert_equal @user, context[:user]
+              collector = Collavre::LlmUsage::Recorder.new(
+                context: context, vendor: options[:vendor], model: options[:model])
+              client = Object.new
+              client.define_singleton_method(:last_input_tokens) { 10 }
+              client.define_singleton_method(:last_output_tokens) { 4 }
+              client.define_singleton_method(:chat) do |_contents, &block|
+                collector.finish(RubyLLM::Message.new(role: :assistant, content: "done",
+                  input_tokens: 10, output_tokens: 4))
+                block&.call("done")
+                "done"
+              end
+              client
+            end
+            Collavre::AiClient.stub(:new, factory) do
+              assert_difference "Collavre::LlmUsage.count", 1 do
+                post "/api/v1/chat/completions",
+                     params: { model: "collavre/#{@ai_bot.id}", stream: stream,
+                               messages: [ { role: "user", content: "hi" } ] }.to_json,
+                     headers: auth_headers
+                assert_response :success
+                assert_includes response.body, "done"
+              end
+            end
+            usage = Collavre::LlmUsage.last
+            assert_equal @ai_bot.id, usage.agent_id
+            assert_equal owner.id, usage.owner_id
+            assert_equal @user.id, usage.requester_id
+            assert_includes Collavre::LlmUsage.visible_to(@user), usage
+            assert_includes Collavre::LlmUsage.visible_to(owner), usage
+          end
+        end
+
         private
 
         def auth_headers

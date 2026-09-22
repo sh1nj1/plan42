@@ -63,6 +63,33 @@ module Collavre
       )
     end
 
+    test "evaluator usage inherits causal requesters and uses evaluator ownership" do
+      verifier = users(:two)
+      verifier.update!(llm_vendor: "google", llm_model: "test", created_by_id: users(:three).id)
+      CreativeShare.create!(creative: @parent, user: verifier, permission: :feedback)
+      @task.update!(usage_attribution: { "requester_ids" => [ @human.id ], "owner_id" => @human.id })
+      factory = ->(**options) {
+        LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
+        client = Object.new
+        client.define_singleton_method(:chat) { |*, &block| block.call("VERIFIED") }
+        client
+      }
+      job = TriggerLoopVerifyJob.new
+      job.stub(:pick_verifier_agent, verifier) do
+        AiClient.stub(:new, factory) { job.perform(@task.id) }
+      end
+      usage = LlmUsage.last
+      assert_equal verifier.id, usage.agent_id
+      assert_equal verifier.created_by_id, usage.owner_id
+      assert_equal @human.id, usage.requester_id
+      assert_equal @task.id, usage.task_id
+      assert_equal @child.id, usage.creative_id
+      assert_equal @topic.id, usage.topic_id
+      assert_equal @human.id, @task.reload.usage_attribution["owner_id"]
+      assert_includes LlmUsage.visible_to(@human), usage
+      assert_includes LlmUsage.visible_to(verifier.creator), usage
+    end
+
     test "completes loop when verification returns VERIFIED" do
       mock_client = mock_ai_client("VERIFIED")
 

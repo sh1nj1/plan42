@@ -62,6 +62,35 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "evaluator usage inherits causal requesters and uses evaluator ownership" do
+      verifier = users(:two)
+      verifier.update!(llm_vendor: "google", llm_model: "test", created_by_id: users(:three).id)
+      CreativeShare.create!(creative: @parent, user: verifier, permission: :feedback)
+      @task.update!(usage_attribution: { "requester_ids" => [ @human.id ], "owner_id" => @human.id })
+      @child.comments.create!(content: "Finished the work", topic: @topic, user: @ai_bot,
+        skip_dispatch: true, created_at: @task.created_at + 1.second)
+      factory = ->(**options) {
+        LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
+        client = Object.new
+        client.define_singleton_method(:chat) { |*, &block| block.call("DONE") }
+        client
+      }
+      job = TriggerLoopCheckJob.new
+      job.stub(:pick_fallback_agent, verifier) do
+        AiClient.stub(:new, factory) { job.perform(@task.id) }
+      end
+      usage = LlmUsage.last
+      assert_equal verifier.id, usage.agent_id
+      assert_equal verifier.created_by_id, usage.owner_id
+      assert_equal @human.id, usage.requester_id
+      assert_equal @task.id, usage.task_id
+      assert_equal @child.id, usage.creative_id
+      assert_equal @topic.id, usage.topic_id
+      assert_equal @human.id, @task.reload.usage_attribution["owner_id"]
+      assert_includes LlmUsage.visible_to(@human), usage
+      assert_includes LlmUsage.visible_to(verifier.creator), usage
+    end
+
     test "stale loop completion update preserves committed type and unrelated loop fields" do
       stale = Creative.find(@child.id)
       latest = @child.data.deep_merge("kind" => "project", "trigger" => { "loop" => { "max_iterations" => 42 } })

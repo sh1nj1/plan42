@@ -141,6 +141,7 @@ module Tools
       comment.dispatch_payload.merge(workspace_user_id: principal&.id).tap do |payload|
         payload[SystemEvents::Envelope::KEY] = envelope.to_h
         payload[:comment][:from_ai] = comment.user.ai_user?
+        payload[:usage_requester_attribution] = LlmUsage::Attribution.current_requesters
       end
     end
 

@@ -46,18 +46,7 @@ module Collavre
         return
       end
 
-      client = AiClient.new(
-        vendor: agent.llm_vendor,
-        model: agent.llm_model,
-        system_prompt: system_prompt,
-        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
-        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
-        context: {
-          creative: creative,
-          user: agent,
-          topic_id: topic_id
-        }
-      )
+      client = build_client(agent, creative, topic_id, user, system_prompt)
 
       summary = String.new
       result = client.chat([ { role: "user", text: conversation } ]) do |delta|
@@ -84,6 +73,22 @@ module Collavre
     end
 
     private
+
+    def build_client(agent, creative, topic_id, user, system_prompt)
+      AiClient.new(
+        vendor: agent.llm_vendor,
+        model: agent.llm_model,
+        system_prompt: system_prompt,
+        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
+        context: {
+          creative: creative,
+          user: agent,
+          requester: user,
+          topic_id: topic_id
+        }
+      )
+    end
 
     def persist_summary(comments, summary_content, agent, user, compress_pattern)
       comments = lock_matching_comments(comments)

@@ -33,7 +33,12 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
       true
     end
 
-    Collavre::AiClient.stub(:new, mock_client) do
+    build_client = lambda do |**options|
+      assert_equal @user, options[:context][:requester]
+      assert_equal @topic.id, options[:context][:topic_id]
+      mock_client
+    end
+    Collavre::AiClient.stub(:new, build_client) do
       Collavre::MergeCommentsJob.perform_now(@creative.id, [ @comment1.id, @comment2.id, @comment3.id ], @user.id)
     end
 

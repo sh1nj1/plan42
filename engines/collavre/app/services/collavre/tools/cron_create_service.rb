@@ -120,6 +120,7 @@ module Tools
           creative_id: creative_id,
           topic_id: topic.id,
           agent_id: Current.user.id,
+          usage_requester_attribution: LlmUsage::Attribution.current_requesters,
           message: message,
           once: once
         } ]

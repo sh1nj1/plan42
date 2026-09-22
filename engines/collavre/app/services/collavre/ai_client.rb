@@ -1,6 +1,7 @@
 module Collavre
   class AiClient
-    include ErrorHandling, ApprovalGate
+    include ErrorHandling
+    include AiUsageTracking, ApprovalGate
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
       - Be concise and focus on the essentials (avoid unnecessary verbosity).
@@ -138,6 +139,7 @@ module Collavre
         # product's tools write creatives and post comments. A turn classified
         # as a failed handoff has everything it swallowed dispatched again, and
         # the restored turn runs those tools a second time.
+        observe_usage(chunk)
         @handed_off = true
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
@@ -190,18 +192,7 @@ module Collavre
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
       nil
     ensure
-      @last_input_tokens = input_tokens || 0
-      @last_output_tokens = output_tokens || 0
-      if @log_interactions
-        log_interaction(
-          messages: @conversation&.messages&.to_a || Array(contents),
-          tools: @conversation&.tools&.to_a || [],
-          response_content: response_content.presence,
-          error_message: error_message,
-          input_tokens: input_tokens,
-          output_tokens: output_tokens
-        )
-      end
+      finalize_chat_usage(response, contents, response_content, error_message, input_tokens, output_tokens)
     end
 
     # Ask a follow-up question using the existing conversation context.
@@ -210,6 +201,7 @@ module Collavre
     def ask(prompt)
       return nil unless @conversation
 
+      start_usage_tracking
       refresh_turn_boundary!(@conversation)
       # Disable tool calls for summary generation to avoid recursive approval
       @conversation.with_tools(replace: true)
@@ -224,6 +216,8 @@ module Collavre
       refresh_turn_boundary!(@conversation)
       Rails.logger.warn("AiClient#ask failed: #{e.class} #{e.message}")
       nil
+    ensure
+      finish_usage_tracking(response) if @conversation
     end
 
     private
@@ -460,22 +454,6 @@ module Collavre
       else
         chunk.to_s
       end
-    end
-
-    def log_interaction(messages:, tools:, response_content:, error_message: nil, input_tokens: nil, output_tokens: nil)
-      RubyLlmInteractionLogger.log(
-        vendor: @vendor,
-        model: @model,
-        messages: messages,
-        tools: tools,
-        response_content: response_content,
-        error_message: error_message,
-        creative: context&.dig(:creative),
-        user: context&.dig(:user),
-        comment: context&.dig(:comment),
-        input_tokens: input_tokens,
-        output_tokens: output_tokens
-      )
     end
   end
 end

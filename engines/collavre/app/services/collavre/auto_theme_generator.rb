@@ -52,8 +52,8 @@ module Collavre
       --creative-h3-bg
     ].freeze
 
-    def initialize(client: default_client)
-      @client = client
+    def initialize(client: nil, requester: nil)
+      @client = client || default_client(requester)
     end
 
     def generate(prompt)
@@ -196,12 +196,9 @@ module Collavre
       PROMPT
     end
 
-    def default_client
-      AiClient.new(
-        vendor: "google",
-        model: "gemini-3.1-flash-lite",
-        system_prompt: nil
-      )
+    def default_client(requester)
+      AiClient.new(vendor: "google", model: "gemini-3.1-flash-lite", system_prompt: nil,
+        context: { requester: requester })
     end
 
     def parse_response(content)
