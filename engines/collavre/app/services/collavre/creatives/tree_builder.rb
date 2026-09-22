@@ -187,13 +187,13 @@ module Creatives
       false
     end
 
-    # The chats feed and flat search render rows, not a tree: no node has children
+    # The chats feed and flat text/reaction searches render rows: no node has children
     # there, so the whole child resolution is skipped.
     def children_suppressed?
       return @children_suppressed if defined?(@children_suppressed)
 
       @children_suppressed = raw_params["comment"] == "true" ||
-        (raw_params["search"].present? && raw_params["search_mode"] != "tree")
+        ((raw_params["search"].present? || raw_params["reaction_emoji"].present?) && raw_params["search_mode"] != "tree")
     end
 
     def load_children_now?(creative)

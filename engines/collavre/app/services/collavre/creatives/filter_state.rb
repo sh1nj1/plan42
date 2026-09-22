@@ -4,7 +4,7 @@ module Collavre
 module Creatives
   class FilterState
     FILTER_KEYS = %i[
-      tags min_progress max_progress search has_comments has_cron due_before
+      tags min_progress max_progress search has_comments has_cron reaction_emoji due_before
       due_after has_due_date assignee_id unassigned
     ].freeze
 

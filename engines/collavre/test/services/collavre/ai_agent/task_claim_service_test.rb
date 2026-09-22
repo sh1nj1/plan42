@@ -51,6 +51,15 @@ module Collavre
         assert_not @task.task_actions.exists?(action_type: "completion")
       end
 
+      test "releasing a failed reply claim keeps a Stop that cancelled the turn" do
+        claimed = @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
+        Task.where(id: @task.id).update_all(status: "cancelled")
+
+        @claim_service.release(claimed)
+
+        assert_equal "cancelled", @task.reload.status
+      end
+
       test "completion failure rolls back the claim and reply" do
         TaskAction.stub(:_insert_record, ->(*) { raise ActiveRecord::RecordNotSaved, "completion failed" }) do
           assert_no_difference "Comment.count" do
