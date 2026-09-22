@@ -265,6 +265,36 @@ module Collavre
         Workflow::Resolver.stub(:new, ->(*) { flunk "mention must win" }) { assert_equal [ @agent ], match }
       end
 
+      %w[on off shadow].each do |routing_mode|
+        test "#{routing_mode} preserves the session identity before resolving workflows" do
+          mode(routing_mode)
+          pin_session
+          agent_rule
+          matcher = Matcher.new(@context)
+          Workflow::Resolver.stub(:new, ->(*) { flunk "session topics must not resolve workflows" }) do
+            assert_equal [ @agent ], matcher.match
+          end
+          assert_nil matcher.workflow_rule
+          assert_nil matcher.workflow_snapshot
+        end
+      end
+
+      test "ineligible session identity blocks workflow and expression fallback" do
+        pin_session
+        agent_rule
+        @other.update!(routing_expression: "true")
+        CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
+        CreativeShare.where(creative: @creative, user: @agent).delete_all
+        assert_empty match
+      end
+
+      test "explicit mention still precedes session identity and workflow" do
+        pin_session
+        agent_rule
+        @context["chat"] = { "mentioned_user" => { "id" => @other.id } }
+        assert_equal [ @other ], match
+      end
+
       test "matched workflow precedes the topic primary agent and retains its snapshot" do
         rule = agent_rule
         pin_primary
@@ -493,6 +523,15 @@ module Collavre
       end
 
       private
+
+      def pin_session
+        @creative.update!(data: @creative.data.merge("kind" => "inbox"))
+        @agent.update!(llm_vendor: "anthropic", llm_model: "claude-code", routing_expression: nil)
+        topic = AiAgent::SessionProvisioner.new(@user).find_or_create_topic(
+          @creative, @agent, "workflow-priority-session", "Workflow priority"
+        )
+        @context["topic"] = { "id" => topic.id }
+      end
 
       def pin_primary
         topic = @creative.topics.create!(name: "Assigned", user: @user)

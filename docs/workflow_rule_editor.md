@@ -48,7 +48,10 @@ shadow differences before using the admin orchestration policy editor to enable
 strings in YAML. `"off"` skips workflows; a workflow miss in `"on"` mode retains
 topic assignment, then agent defaults. Routing precedence is review author →
 explicit mention → matching enabled workflow → topic primary agent → agent defaults.
-Matched human, none, or ineligible workflow handlers block topic assignment too.
+Session topics (with `session_id`) retain primary-agent routing before workflows:
+their immutable pin identifies the registered client. They skip workflow evaluation
+in every mode; explicit mentions and review routing retain their precedence.
+Matched human, none, or ineligible workflow handlers block ordinary topic assignment too.
 Durable workflow admissions retain this precedence when queued or resumed;
 current scope, routing mode, and permissions still gate execution.
 
