@@ -41,7 +41,11 @@ module Collavre
 
         task.with_lock do
           next unless task.running? && task.trigger_event_payload["execution_job_id"] == execution_job_id
-          Orchestration::TaskResumer.suspend!(task, reason: "server_restart")
+          Orchestration::TaskResumer.suspend!(task, reason: "server_restart").tap do |result|
+            # Retry takes this same failure lock. Retire the original execution
+            # before releasing the task lock or dispatching a replacement.
+            failure.discard if result
+          end
         end
       end
       Orchestration::TaskResumer.resume!(task.reload) if outcome == :suspended

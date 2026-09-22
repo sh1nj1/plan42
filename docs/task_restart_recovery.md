@@ -40,6 +40,11 @@ The implementation targets the installed Solid Queue 1.7.0 behavior:
   a matching failed `Collavre::AiAgentJob` and one of those process
   failures. A surviving claim, missing owner metadata, missing job, ready job,
   or ordinary application error does not authorize recovery.
+- Successful recovery discards the original failed queue job while holding
+  the failure and task locks, before resuming the task. Solid Queue's manual
+  retry uses the same failure lock: if retry wins, recovery leaves that job
+  alone; if recovery wins, the old failure is no longer retryable. Escalation
+  at the resume limit also retires the old job.
 
 Worker startup schedules recovery. The real `on_worker_stop` hook schedules
 another sweep after the drain timeout. It does not install a signal handler:

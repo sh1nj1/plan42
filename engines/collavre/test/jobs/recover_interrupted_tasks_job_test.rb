@@ -51,6 +51,49 @@ module Collavre
       assert_equal 1, @task.resume_count
     end
 
+    test "recovery retires the failed job before enqueueing its replacement" do
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      failure = @job.reload.failed_execution
+      stale_failure = SolidQueue::FailedExecution.includes(:job).find(failure.id)
+      resume = Orchestration::TaskResumer.method(:resume!)
+
+      Orchestration::TaskResumer.stub(:resume!, ->(task) {
+        assert_not SolidQueue::Job.exists?(@job.id)
+        assert_not SolidQueue::FailedExecution.exists?(failure.id)
+        resume.call(task)
+      }) do
+        assert_enqueued_jobs 1, only: AiAgentJob do
+          RecoverInterruptedTasksJob.perform_now
+        end
+      end
+
+      assert_raises(ActiveRecord::RecordNotFound) { stale_failure.retry }
+      assert_not SolidQueue::ReadyExecution.exists?(job_id: @job.id)
+      assert_equal "pending", @task.reload.status
+    end
+
+    test "a manual retry winning before recovery preserves the original ready job" do
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      @job.reload.retry
+
+      assert_no_enqueued_jobs only: AiAgentJob do
+        RecoverInterruptedTasksJob.perform_now
+      end
+      assert SolidQueue::ReadyExecution.exists?(job_id: @job.id)
+      assert_equal "running", @task.reload.status
+    end
+
+    test "recovery also retires a failed job when the resume limit escalates the task" do
+      @task.update!(resume_count: Orchestration::TaskResumer::MAX_RESUMES)
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+
+      assert_no_enqueued_jobs only: AiAgentJob do
+        RecoverInterruptedTasksJob.perform_now
+      end
+      assert_equal "escalated", @task.reload.status
+      assert_not SolidQueue::Job.exists?(@job.id)
+    end
+
     test "restart recovery keeps delivered partial output and action history in the resumed context" do
       creative = creatives(:tshirt)
       topic = Topic.create!(creative: creative, user: users(:one), name: "Partial recovery")
@@ -92,6 +135,18 @@ module Collavre
       }) { RecoverInterruptedTasksJob.perform_now }
       assert_equal "running", @task.reload.status
       assert_no_enqueued_jobs only: AiAgentJob
+    end
+
+    test "a suspension that loses its transition leaves the failure retryable" do
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      Orchestration::TaskResumer.stub(:suspend!, nil) do
+        assert_no_enqueued_jobs only: AiAgentJob do
+          RecoverInterruptedTasksJob.perform_now
+        end
+      end
+      assert SolidQueue::Job.exists?(@job.id)
+      assert @job.reload.failed_execution
+      assert_equal "running", @task.reload.status
     end
 
     test "a failure concurrently removed by queue retry does not authorize recovery" do
