@@ -61,6 +61,44 @@ describe('moves with queued edits', () => {
     expect(sendNewOrder).toHaveBeenCalledTimes(1)
   })
 
+  test.each(['42', '20'])('rechecks %s when a new save arrives while another row is pending', async id => {
+    const saves = [deferred(), deferred(), deferred()]
+    let parent = '10'
+    const execute = jest.spyOn(apiQueue, 'executeRequest')
+    saves.forEach(save => execute.mockImplementationOnce(async item => {
+      await save.promise
+      if (item.dedupeKey === `creative_${id}`) parent = item.body['creative[parent_id]']
+    }))
+    sendNewOrder.mockImplementation(async () => { parent = '20'; return { ok: true } })
+    enqueue(id); enqueue('43')
+    const result = move({ ...intent, ids: ['42', '43'] })
+    saves[0].resolve()
+    await tick()
+    enqueue(id)
+    saves[1].resolve()
+    await tick()
+    expect(sendNewOrder).not.toHaveBeenCalled()
+    saves[2].resolve()
+    expect((await result).ok).toBe(true)
+    expect(parent).toBe('20')
+  })
+
+  test('a new save failure after an earlier wait completed prevents movement', async () => {
+    const saves = [deferred(), deferred(), deferred()]
+    const execute = jest.spyOn(apiQueue, 'executeRequest')
+    saves.forEach(save => execute.mockImplementationOnce(() => save.promise))
+    enqueue('42'); enqueue('43')
+    const result = move({ ...intent, ids: ['42', '43'] })
+    saves[0].resolve()
+    await tick()
+    enqueue('42')
+    saves[1].resolve()
+    await tick()
+    saves[2].reject(Object.assign(new Error('Forbidden'), { status: 403 }))
+    expect(await result).toMatchObject({ ok: false, failedIds: ['42', '43'] })
+    expect(sendNewOrder).not.toHaveBeenCalled()
+  })
+
   test('a permanent save failure prevents the whole move', async () => {
     const save = deferred()
     jest.spyOn(apiQueue, 'executeRequest').mockImplementation(() => save.promise)

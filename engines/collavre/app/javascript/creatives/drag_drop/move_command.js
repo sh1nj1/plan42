@@ -188,7 +188,11 @@ function buildResult(command, { succeeded, failures, payloads = [] }) {
 
 async function waitForMoveSaves(ids) {
   const keys = ids.map(id => `creative_${id}`);
-  await Promise.all(keys.map(key => apiQueue.waitFor(key)));
+  // A row can receive another save while a different row is still pending.
+  // Recheck the entire selection and destination after each completed batch.
+  do {
+    await Promise.all(keys.map(key => apiQueue.waitFor(key)));
+  } while (apiQueue.queue.some(item => keys.includes(item.dedupeKey)));
   // A failed snapshot can still restore its old parent on a later retry.
   // Keep the move reversible until that draft has been saved successfully.
   const failed = apiQueue.failedItems.find(item => keys.includes(item.dedupeKey));
