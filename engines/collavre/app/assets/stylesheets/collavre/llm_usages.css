@@ -55,3 +55,9 @@
   display: block;
   color: var(--text-muted);
 }
+
+.usage-report tfoot {
+  font-weight: var(--weight-6);
+  background: var(--surface-section);
+  border-top: var(--border-2) solid var(--color-border);
+}

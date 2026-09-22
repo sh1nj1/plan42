@@ -45,19 +45,16 @@
             <tr>
               <td><%= row[:period] %></td>
               <td><%= @report.group == "requester" && row[:group] == "joint" ? t("collavre.llm_usages.joint") : (@names[row[:group].to_s] || row[:group] || t("collavre.llm_usages.unknown")) %></td>
-              <td><%= number_with_delimiter(row[:records]) %></td>
-              <td><%= number_with_delimiter(row[:executions]) %></td>
-              <% Collavre::LlmUsage::TOKEN_FIELDS.each do |field| %>
-                <td>
-                  <%= row[field].nil? ? t("collavre.llm_usages.unknown") : number_with_delimiter(row[field]) %>
-                  <% if row["#{field}_missing".to_sym].positive? %>
-                    <small><%= t("collavre.llm_usages.missing", count: row["#{field}_missing".to_sym]) %></small>
-                  <% end %>
-                </td>
-              <% end %>
+              <%= render "metrics", row: row %>
             </tr>
           <% end %>
         </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="2"><%= t("collavre.llm_usages.total") %></th>
+            <%= render "metrics", row: @report.totals %>
+          </tr>
+        </tfoot>
       </table>
     </div>
   <% end %>

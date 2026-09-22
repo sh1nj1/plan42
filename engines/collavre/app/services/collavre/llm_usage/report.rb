@@ -26,6 +26,11 @@ module Collavre
         ).map { |values| row(values) }.sort_by { |item| [ item[:period].to_s, item[:group].to_s ] }
       end
 
+      def totals
+        values = relation.pick(Arel.sql("COUNT(*)"), Arel.sql("COUNT(DISTINCT execution_id)"), *token_aggregates)
+        row([ nil, nil, *values ]).except(:period, :group)
+      end
+
       private
 
       def date(key, fallback)
