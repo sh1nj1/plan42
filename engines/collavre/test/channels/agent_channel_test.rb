@@ -53,6 +53,7 @@ module Collavre
 
       assert subscription.confirmed?
       assert_has_stream "agent:user:#{agent.id}"
+      assert_enqueued_with(job: ResumeSuspendedTasksJob, args: [ { agent_id: agent.id } ])
     end
 
     test "rejects agent_id subscription when current_user does not own the agent" do
@@ -658,6 +659,42 @@ module Collavre
 
       refute payloads.any? { |p| p["type"] == "permission_decision" },
         "subscribe must not auto-replay; replay is pull-driven via replay_permissions"
+    end
+
+    test "heartbeat recovery clears old disconnect grace before a second loss of presence" do
+      agent = create_claude_channel_agent("heartbeat-grace-recovery")
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id, session_id: "heartbeat-session"
+      task = Task.create!(name: "Heartbeat turn", agent: agent, status: "delegated", updated_at: 1.hour.ago)
+      row = AgentSubscription.find_by!(agent_id: agent.id)
+      row.update_column(:last_seen_at, 1.hour.ago)
+      OfflineTaskSweepJob.perform_now
+      assert task.reload.trigger_event_payload[Orchestration::OfflineTaskGrace::KEY]
+
+      assert_enqueued_with(job: ResumeSuspendedTasksJob, args: [ { agent_id: agent.id } ]) do
+        subscription.send(:touch_presence)
+      end
+      assert_nil task.reload.trigger_event_payload[Orchestration::OfflineTaskGrace::KEY]
+      assert_no_enqueued_jobs only: ResumeSuspendedTasksJob do
+        subscription.send(:touch_presence)
+      end
+
+      travel AgentSubscription::STALE_AFTER + 1.second
+      OfflineTaskSweepJob.perform_now
+      CancelOfflineDelegatedTasksJob.perform_now(agent.id, nil)
+      assert_equal "delegated", task.reload.status
+      assert_operator Time.iso8601(task.trigger_event_payload[Orchestration::OfflineTaskGrace::KEY]), :>, Time.current
+    end
+
+    test "heartbeat does not resurrect a reaped subscription or its recovery timer" do
+      agent = create_claude_channel_agent("heartbeat-removed-presence")
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      AgentSubscription.where(agent_id: agent.id).delete_all
+      assert_no_enqueued_jobs only: ResumeSuspendedTasksJob do
+        subscription.send(:touch_presence)
+      end
+      assert_empty AgentSubscription.where(agent_id: agent.id)
     end
 
     test "heartbeat refreshes the live session's presence last_seen_at" do

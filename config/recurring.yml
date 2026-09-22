@@ -1,4 +1,10 @@
 production: &production
+  interrupted_task_recovery:
+    class: Collavre::RecoverInterruptedTasksJob
+    schedule: every minute
+  offline_task_recovery:
+    class: Collavre::OfflineTaskSweepJob
+    schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
@@ -36,6 +42,12 @@ production: &production
     schedule: at 4:30am every day
 
 desktop:
+  interrupted_task_recovery:
+    class: Collavre::RecoverInterruptedTasksJob
+    schedule: every minute
+  offline_task_recovery:
+    class: Collavre::OfflineTaskSweepJob
+    schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
@@ -73,6 +85,12 @@ desktop:
     schedule: at 4:30am every day
 
 development:
+  interrupted_task_recovery:
+    class: Collavre::RecoverInterruptedTasksJob
+    schedule: every minute
+  offline_task_recovery:
+    class: Collavre::OfflineTaskSweepJob
+    schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute

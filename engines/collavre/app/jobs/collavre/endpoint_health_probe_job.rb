@@ -15,6 +15,7 @@ module Collavre
       return unless agent&.endpoint_health_supported?
 
       AgentHealth::Probe.new(agent: agent).call
+      Orchestration::AgentRecoveryTrigger.call(agent.reload)
     rescue StandardError => e
       Rails.logger.error("[EndpointHealthProbeJob] agent=#{agent_id} orchestration_error=#{e.class}")
     end
