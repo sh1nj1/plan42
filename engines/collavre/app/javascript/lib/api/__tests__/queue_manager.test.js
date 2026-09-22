@@ -265,3 +265,58 @@ describe('ApiQueueManager', () => {
         expect(stored ? JSON.parse(stored) : []).toHaveLength(0);
     });
 });
+
+describe('ordered creative saves', () => {
+    beforeEach(() => {
+        apiQueue.processing = false
+        apiQueue.clear()
+        mockCsrfFetch.mockReset()
+        jest.spyOn(console, 'error').mockImplementation(() => {})
+    })
+    afterEach(() => jest.restoreAllMocks())
+
+    test('merges partial updates without losing an unacknowledged progress change', () => {
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { progress: 1, description: 'first' } })
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })
+        expect(apiQueue.queue[0].body).toEqual({ progress: 1, description: 'second' })
+        expect(JSON.parse(localStorage.getItem(apiQueue.storageKey))[0].body).toEqual(apiQueue.queue[0].body)
+    })
+
+    test('retries the older save before sending the newer save and resolves dependent operations last', async () => {
+        const pause = jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'first' } })
+        apiQueue.processing = true
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })
+        apiQueue.processing = false
+        pause.mockRestore()
+        const acknowledged = jest.fn()
+        const waiting = apiQueue.waitFor('creative_42').then(acknowledged)
+        expect(acknowledged).not.toHaveBeenCalled()
+        mockCsrfFetch.mockRejectedValueOnce(new Error('temporary failure')).mockResolvedValue({ ok: true })
+        await apiQueue.processQueue()
+        await waiting
+        expect(mockCsrfFetch.mock.calls.map(([, options]) => options.body.get('description'))).toEqual(['first', 'first', 'second'])
+        expect(acknowledged).toHaveBeenCalledTimes(1)
+        await expect(apiQueue.waitFor('creative_42')).resolves.toBeUndefined()
+    })
+
+    test('rejects dependent operations when the save fails validation', async () => {
+        const pause = jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'invalid' } })
+        pause.mockRestore()
+        const waiting = expect(apiQueue.waitFor('creative_42')).rejects.toMatchObject({ status: 403 })
+        mockCsrfFetch.mockResolvedValue({ ok: false, status: 403, clone: () => ({ json: async () => ({ errors: ['Denied'] }) }) })
+        await apiQueue.processQueue()
+        await waiting
+        expect(apiQueue.failedItems).toHaveLength(1)
+    })
+
+    test('rejects enqueue without replacing the previous draft when local storage is full', () => {
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'first' } })
+        jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+        expect(() => apiQueue.enqueue({ path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })).toThrow('quota')
+        expect(apiQueue.queue[0].body.description).toBe('first')
+    })
+})

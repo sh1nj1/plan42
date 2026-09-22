@@ -137,7 +137,12 @@ export default class extends Controller {
     if (mobileBtn) mobileBtn.addEventListener('click', toggle)
   }
 
+  hasPendingSaves() {
+    return !!this.element.querySelector('.creative-tree[data-save-state]')
+  }
+
   _applyPendingSyncData() {
+    if (this.hasPendingSaves()) return
     // After editor closes, apply any sync data that was deferred
     const pendingRows = this.element.querySelectorAll('creative-tree-row[data-pending-sync-data]')
     if (pendingRows.length === 0) return
@@ -167,7 +172,7 @@ export default class extends Controller {
       // replaces the whole container, which would take that row, the editor
       // attached inside it and the unsaved draft out of the document. Re-pend
       // instead of dropping it: the reload is still owed, just not yet safe.
-      if (this._editing || this._reloadHoldCount > 0) {
+      if (this._editing || this._reloadHoldCount > 0 || this.hasPendingSaves()) {
         this._pendingRefetch = true
         return
       }
@@ -189,7 +194,7 @@ export default class extends Controller {
   // Call load() directly only for reloads the user just asked for and is waiting
   // on (filter change, archive toggle), where re-rendering is the point.
   requestReload() {
-    if (this._editing || this._reloadHoldCount > 0) {
+    if (this._editing || this._reloadHoldCount > 0 || this.hasPendingSaves()) {
       this._pendingRefetch = true
       return
     }
@@ -209,7 +214,7 @@ export default class extends Controller {
   }
 
   _drainPendingReload() {
-    if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0) return
+    if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0 || this.hasPendingSaves()) return
     this._pendingRefetch = false
     this.debouncedLoad({ preserveView: true })
   }

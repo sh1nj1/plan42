@@ -34,6 +34,7 @@ jest.unstable_mockModule('../../lib/api/queue_manager', () => ({
     initialize: jest.fn(),
     start: jest.fn(),
     enqueue,
+    waitFor: jest.fn(() => Promise.resolve()),
   },
 }))
 
@@ -94,39 +95,27 @@ afterEach(() => {
   editorOptions = null
 })
 
-test('direct save keeps FormData semantics, applies a markdown rewrite, and clears dirty state', async () => {
+test('progress save queues a serializable snapshot and applies a server rewrite', async () => {
   jest.useFakeTimers()
   const { tree } = appendMarkdownRow('42', 'before')
   openRow(tree)
-
   const textarea = document.getElementById('markdown-editor-textarea')
   textarea.value = 'draft ![image](data:old)'
   textarea.dispatchEvent(new Event('input'))
-  let submitted
-  save.mockImplementation((_path, _method, form) => {
-    submitted = new FormData(form)
-    return response({
-      markdown_source: 'draft ![image](/rails/active_storage/blobs/image.png)',
-    })
-  })
-
   const progress = document.getElementById('inline-creative-progress')
   progress.checked = true
   progress.dispatchEvent(new Event('change'))
   await flushPromises()
-
-  expect(save).toHaveBeenCalledTimes(1)
-  expect(save.mock.calls[0][0]).toMatch(/\/creatives\/42$/)
-  expect(save.mock.calls[0][1]).toBe('PATCH')
-  expect(submitted.get('creative[markdown_source]')).toBe('draft ![image](data:old)')
-  expect(submitted.getAll('creative[progress]')).toEqual(['0', '1'])
-  expect(textarea.value).toBe('draft ![image](/rails/active_storage/blobs/image.png)')
-  expect(document.getElementById('inline-markdown-source').value)
-    .toBe('draft ![image](/rails/active_storage/blobs/image.png)')
-
+  expect(save).not.toHaveBeenCalled()
+  const queued = enqueue.mock.calls[0][0]
+  expect(queued.body['creative[markdown_source]']).toBe('draft ![image](data:old)')
+  expect(queued.body['creative[progress]']).toBe(1)
+  expect(tree.dataset.saveState).toBe('pending')
+  queued.onSuccess({ markdown_source: 'draft ![image](/blob/image.png)' })
+  expect(textarea.value).toBe('draft ![image](/blob/image.png)')
   document.getElementById('inline-close').click()
-  await Promise.resolve()
-  expect(save).toHaveBeenCalledTimes(1)
+  await flushPromises()
+  expect(enqueue).toHaveBeenCalledTimes(1)
 })
 
 test('persistent queue snapshots the outgoing row, keeps its object body, applies response data, and clears dirty state', async () => {
@@ -197,10 +186,7 @@ test('persistent queue carries an unacknowledged progress toggle into the body a
   appendMarkdownRow('43', 'second', 'rich')
   openRow(first.tree)
 
-  // The checkbox fires a direct save; hold it in flight so the progress
-  // baseline is still stale when the move queues the outgoing row.
-  let settleDirectSave
-  save.mockImplementation(() => new Promise((resolve) => { settleDirectSave = resolve }))
+  // The checkbox queues immediately; moving must not enqueue the same edit again.
   editorOptions.onChange({ html: '<p>outgoing edit</p>', markdown: 'outgoing edit' })
   const progress = document.getElementById('inline-creative-progress')
   progress.checked = true
@@ -214,7 +200,7 @@ test('persistent queue carries an unacknowledged progress toggle into the body a
   expect(enqueue.mock.calls[0][0].body['creative[progress]']).toBe(1)
   expect(first.rowComponent.dataset.progressValue).toBe('1')
 
-  settleDirectSave({ ok: true, text: () => Promise.resolve('{}') })
+  enqueue.mock.calls[0][0].onSuccess({})
   await flushPromises()
 })
 
@@ -418,4 +404,58 @@ test('cancel during a failed in-flight save keeps the body and restored type for
   expect(submitted.get('creative[creative_type]')).toBe('')
   expect(submitted.get('creative[markdown_source]')).toBe('Retain this body')
   expect(document.getElementById('inline-edit-form').style.display).toBe('none')
+})
+
+
+test.each(['inline-close', 'inline-move-down', 'inline-add'])('%s releases the editor before server acknowledgment', async button => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'before')
+  appendMarkdownRow('43', 'next')
+  openRow(first.tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'Local draft'
+  textarea.dispatchEvent(new Event('input'))
+  document.getElementById(button).click()
+  await jest.advanceTimersByTimeAsync(20)
+  expect(save).not.toHaveBeenCalled()
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  expect(first.rowComponent.dataset.markdownSource).toBe('Local draft')
+  expect(first.tree.dataset.saveState).toBe('pending')
+  if (button === 'inline-close') expect(document.getElementById('inline-edit-form').style.display).toBe('none')
+  else expect(document.getElementById('inline-edit-form-element').dataset.creativeId).not.toBe('42')
+})
+
+test('autosave queues edits and ignores an older acknowledgment after another save', async () => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'before')
+  openRow(first.tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'first'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  textarea.value = 'second'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  expect(enqueue).toHaveBeenCalledTimes(2)
+  enqueue.mock.calls[0][0].onSuccess({ markdown_source: 'obsolete server rewrite' })
+  expect(textarea.value).toBe('second')
+  expect(first.tree.dataset.saveState).toBe('pending')
+  enqueue.mock.calls[1][0].onSuccess({ markdown_source: 'second' })
+  expect(document.getElementById('inline-save-status').dataset.state).toBe('saved')
+  expect(save).not.toHaveBeenCalled()
+})
+
+test('reopening an unacknowledged row preserves pending status and the local body', async () => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'before')
+  openRow(first.tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'offline draft'
+  textarea.dispatchEvent(new Event('input'))
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  openRow(first.tree)
+  await flushPromises()
+  expect(textarea.value).toBe('offline draft')
+  expect(document.getElementById('inline-save-status').dataset.state).toBe('pending')
 })

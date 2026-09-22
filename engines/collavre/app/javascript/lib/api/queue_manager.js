@@ -27,6 +27,11 @@ function isRetryable(error) {
     return true
 }
 
+function mergeQueuedBody(existing, incoming) {
+    if (!incoming || incoming instanceof FormData || typeof incoming !== 'object') return incoming || null
+    return { ...existing, ...incoming }
+}
+
 /**
  * API Queue Manager
  * Manages asynchronous API requests with localStorage persistence,
@@ -104,7 +109,7 @@ class ApiQueueManager {
      * Items with onSuccess callbacks are excluded because functions cannot be serialized
      * Items with deletedAttachmentIds are included because they're serializable data
      */
-    saveToLocalStorage() {
+    saveToLocalStorage(strict = false) {
         try {
             // Filter out onSuccess callbacks (non-serializable)
             // but keep the items themselves
@@ -115,6 +120,7 @@ class ApiQueueManager {
             })
             localStorage.setItem(this.storageKey, JSON.stringify(serializableQueue))
         } catch (error) {
+            if (strict) throw error
             console.error('Failed to save API queue to localStorage:', error)
         }
     }
@@ -156,9 +162,11 @@ class ApiQueueManager {
      * @returns {string} Request ID
      */
     enqueue(request) {
+        const previousQueue = [...this.queue]
         // Find and merge callbacks and attachment IDs from existing requests with the same dedupeKey
         let existingCallbacks = []
         let existingAttachmentIds = []
+        let existingBody = {}
         if (request.dedupeKey) {
             // CRITICAL: Skip the first item if processing is active
             // The first item might be currently executing in processQueue
@@ -167,6 +175,7 @@ class ApiQueueManager {
             const existingItems = this.queue.slice(startIndex).filter(item => item.dedupeKey === request.dedupeKey)
 
             existingItems.forEach(item => {
+                existingBody = { ...existingBody, ...item.body }
                 if (typeof item.onSuccess === 'function') {
                     existingCallbacks.push(item.onSuccess)
                 }
@@ -223,7 +232,7 @@ class ApiQueueManager {
             path: request.path,
             method: request.method || 'GET',
             params: request.params || null,
-            body: request.body || null,
+            body: mergeQueuedBody(existingBody, request.body),
             dedupeKey: request.dedupeKey || null,
             deletedAttachmentIds: mergedAttachmentIds,
             onSuccess: mergedCallback,
@@ -232,7 +241,12 @@ class ApiQueueManager {
         }
 
         this.queue.push(queueItem)
-        this.saveToLocalStorage()
+        try {
+            this.saveToLocalStorage(true)
+        } catch (error) {
+            this.queue = previousQueue
+            throw error
+        }
 
         // Start processing if not already processing
         this.processQueue()
@@ -288,6 +302,7 @@ class ApiQueueManager {
                 // Remove from queue
                 this.queue.shift()
                 this.saveToLocalStorage()
+                window.dispatchEvent(new CustomEvent('api-queue-request-completed', { detail: { item } }))
             } catch (error) {
                 console.error('API request failed:', error, item)
 
@@ -302,9 +317,7 @@ class ApiQueueManager {
                     if (isStaleCsrf(error)) {
                         await refreshCsrfToken()
                     }
-                    // Move to end of queue for retry
-                    this.queue.shift()
-                    this.queue.push(item)
+                    // Retry in place so an older save cannot overwrite a newer one.
                     this.saveToLocalStorage()
                 } else {
                     // Max retries exceeded - move to failedItems for visibility
@@ -326,6 +339,29 @@ class ApiQueueManager {
         }
 
         this.processing = false
+    }
+
+    // Dependency operations (creation/type changes/archive) need acknowledgment.
+    waitFor(dedupeKey) {
+        if (!this.queue.some(item => item.dedupeKey === dedupeKey)) return Promise.resolve()
+        return new Promise((resolve, reject) => {
+            const cleanup = () => {
+                window.removeEventListener('api-queue-request-completed', completed)
+                window.removeEventListener('api-queue-request-failed', failed)
+            }
+            const completed = () => {
+                if (this.queue.some(item => item.dedupeKey === dedupeKey)) return
+                cleanup()
+                resolve()
+            }
+            const failed = event => {
+                if (event.detail.item.dedupeKey !== dedupeKey) return
+                cleanup()
+                reject(event.detail.error)
+            }
+            window.addEventListener('api-queue-request-completed', completed)
+            window.addEventListener('api-queue-request-failed', failed)
+        })
     }
 
     /**
