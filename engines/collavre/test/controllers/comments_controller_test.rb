@@ -34,6 +34,10 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select ".creative-history-item", count: 1
+    assert_select ".creative-history-revert, .creative-history-split", count: 0
+    assert_select "details.creative-history-detail:not([open])", count: 1
+    get creative_change_set_path(@creative, Collavre::CreativeChangeSet.order(:id).last)
+    assert_response :success
     assert_select ".creative-history-revert", count: 1
     assert_select ".creative-history-diff > .creative-history-split", count: 1
     assert_select ".creative-history-inline, .creative-history-diff details", count: 0
@@ -64,7 +68,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
       after: snapshot.merge("markdown_source" => after_lines.join("\n")), position: 0
     )
 
-    get creative_comments_path(@creative), params: { topic_id: @creative.reload.history_topic.id }
+    get creative_change_set_path(@creative, change_set)
 
     assert_response :success
     assert_select ".creative-history-diff > .creative-history-split" do
@@ -132,6 +136,10 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     get creative_comments_path(@creative), params: { topic_id: history_topic.id }
 
     assert_response :success
+    assert_select ".approve-comment-btn, .deny-comment-btn", count: 0
+    get creative_change_set_path(@creative, draft)
+    assert_response :success
+    assert_select ".creative-history-split", count: 1
     assert_select ".approve-comment-btn[data-mode='approve']", text: I18n.t("collavre.creative_history.approve")
     assert_select ".deny-comment-btn[data-mode='reject']", text: I18n.t("collavre.creative_history.reject")
     assert_select ".creative-history-revert", count: 0
@@ -197,6 +205,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".creative-history-item", count: 1
     assert_select ".creative-history-revert", count: 0
+    get creative_change_set_path(@creative, Collavre::CreativeChangeSet.order(:id).last)
+    assert_response :success
     assert_select ".creative-history-state", text: I18n.t("collavre.creative_history.irreversible")
   end
 
