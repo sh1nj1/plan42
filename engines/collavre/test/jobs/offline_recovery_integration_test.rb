@@ -134,7 +134,60 @@ module Collavre
         requested_task_id: @task.id, requested_generation: old_generation)
     end
 
+    test "manual retry before recovery restarts the same running turn exactly once" do
+      assert_manual_retry_recovers("running")
+    end
+
+    test "manual retry before recovery restarts an unbroadcast delegated turn exactly once" do
+      assert_manual_retry_recovers("delegated")
+    end
+
+    test "bulk retry reclaims a dispatch-form job without creating another turn" do
+      assert_manual_retry_recovers("running", bulk: true, dispatch_form: true)
+    end
+
+    test "single retry reclaims a dispatch-form delegated job" do
+      assert_manual_retry_recovers("delegated", dispatch_form: true)
+    end
+
     private
+
+    def assert_manual_retry_recovers(status, bulk: false, dispatch_form: false)
+      AgentSubscription.create!(agent: @agent, token: "manual-retry-session")
+      @task.update!(status: "pending")
+      execution = dispatch_form ? AiAgentJob.new(@agent.id, "comment_created", @task.trigger_event_payload) : AiAgentJob.new(@task)
+      queue_job = SolidQueue::Job.enqueue(execution)
+      payload = Orchestration::ExecutionFence.stamp(@task.trigger_event_payload, job_id: execution.job_id)
+      payload = Orchestration::ExecutionFence.pending_handoff(payload) if status == "delegated"
+      @task.update!(status: status, trigger_event_payload: payload)
+      process = SolidQueue::Process.register(kind: "Worker", name: SecureRandom.uuid,
+        pid: 123, hostname: "worker.example.test")
+      queue_job.ready_execution.destroy!
+      claim = SolidQueue::ClaimedExecution.create!(job: queue_job, process: process)
+      claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      old_generation = Orchestration::ExecutionFence.generation(@task)
+      bulk ? SolidQueue::FailedExecution.retry_all([ queue_job ]) : queue_job.reload.retry
+      assert_equal "pending", @task.reload.status
+      assert_equal execution.job_id, @task.trigger_event_payload["execution_job_id"]
+      assert_nil Orchestration::ExecutionFence.generation(@task)
+      assert_equal 0, @task.resume_count
+      assert_no_enqueued_jobs(only: AiAgentJob) { RecoverInterruptedTasksJob.perform_now }
+
+      queue_job.reload.ready_execution.destroy!
+      retry_claim = SolidQueue::ClaimedExecution.create!(job: queue_job, process: process)
+      dispatches = []
+      assert_no_difference "Task.count" do
+        AgentChannel.stub :broadcast_to_agent, ->(_id, event) { dispatches << event } do
+          AgentChannel.stub :broadcast_to_topic, nil do
+            retry_claim.perform
+          end
+        end
+      end
+      assert_equal 1, dispatches.size, "The manually retried turn must actually dispatch"
+      assert_equal @task.id, dispatches.first[:task_id]
+      assert_equal "completed", @task.reload.trigger_event_payload.dig("channel_handoff", "state")
+      assert_not_equal old_generation, Orchestration::ExecutionFence.generation(@task)
+    end
 
     def perform_after_grace(*arguments)
       Orchestration::OfflineTaskGrace.write_deadline(@task, 1.second.ago)

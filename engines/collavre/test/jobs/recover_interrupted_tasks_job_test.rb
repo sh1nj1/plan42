@@ -80,7 +80,7 @@ module Collavre
         RecoverInterruptedTasksJob.perform_now
       end
       assert SolidQueue::ReadyExecution.exists?(job_id: @job.id)
-      assert_equal "running", @task.reload.status
+      assert_equal "pending", @task.reload.status
     end
 
     test "recovery also retires a failed job when the resume limit escalates the task" do

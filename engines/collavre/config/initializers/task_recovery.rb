@@ -21,3 +21,10 @@ if defined?(SolidQueue)
     end
   end
 end
+
+Rails.application.config.to_prepare do
+  if defined?(SolidQueue::FailedExecution)
+    SolidQueue::FailedExecution.prepend(Collavre::Orchestration::SolidQueueRetryRecovery)
+    SolidQueue::FailedExecution.singleton_class.prepend(Collavre::Orchestration::SolidQueueRetryRecovery::Bulk)
+  end
+end

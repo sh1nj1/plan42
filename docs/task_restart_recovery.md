@@ -44,7 +44,12 @@ The implementation targets the installed Solid Queue 1.7.0 behavior:
 - Successful recovery discards the original failed queue job while holding
   the failure and task locks, before resuming the task. Solid Queue's manual
   retry uses the same failure lock: if retry wins, recovery leaves that job
-  alone; if recovery wins, the old failure is no longer retryable. Escalation
+  alone. Both individual and bulk manual retry reclaim the matching task
+  under the failure lock before dispatch: running and current-generation
+  pending handoffs become pending, preserving the job ID and retiring the old
+  generation. Dispatch-form retries reuse that same task. Started/completed
+  handoffs are not reclaimed. If recovery wins, the old failure is no longer
+  retryable. Escalation
   at the resume limit also retires the old job.
 
 Worker startup schedules recovery. The real `on_worker_stop` hook schedules
