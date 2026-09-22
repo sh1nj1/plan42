@@ -144,6 +144,15 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert client.handed_off?, "a chunk reaching the listener is already a handoff"
   end
 
+  test "a tool result is recorded even when its listener cancels" do
+    client, = client_with(run_chunks)
+    client.on_cli_tool_event { |cli_event| raise Collavre::CancelledError, "Stopped" if cli_event["phase"] == "result" }
+
+    assert_raises(Collavre::CancelledError) { client.chat([]) }
+    usage = Collavre::ToolUsage.sole
+    assert_equal [ "Bash", true ], [ usage.tool_name, usage.succeeded ]
+  end
+
   test "private chats notify listeners but record no usage" do
     client, = client_with(run_chunks, log: false)
     seen = []

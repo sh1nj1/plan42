@@ -46,9 +46,11 @@ module Collavre
       def dispatch_cli_tool_events(message, timed:)
         return unless vendor == "cli_proxy" && message.respond_to?(:cli_events)
 
+        # Record before notifying: a listener may cancel the run, and the tool
+        # behind the event has already run either way.
         message.cli_events.each do |event|
-          cli_tool_event_listeners.each { |listener| notify_cli_tool_event(listener, event) }
           record_cli_tool_event(event, timed)
+          cli_tool_event_listeners.each { |listener| notify_cli_tool_event(listener, event) }
         end
       end
 
