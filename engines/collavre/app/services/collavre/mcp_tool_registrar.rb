@@ -41,12 +41,12 @@ module Collavre
       class_name = writer.send(:extract_class_name, source_code)
       return { error: "class_name is required for register" } if class_name.blank?
 
-      conflict = constant_conflict(class_name, expected_name)
+      conflict = constant_conflict(class_name, expected_name) || approved_conflict(writer, class_name, expected_name)
       return { error: conflict } if conflict
 
       service_class = evaluate_keeping_only_verified(source_code, class_name, expected_name)
       result = service_class.is_a?(Class) ? register_or_roll_back(writer, service_class, class_name, before_call: before_call, after_call: after_call) : service_class
-      remove_constant(class_name) if result[:error]
+      remove_tool_constants(class_name) if result[:error]
       result
     end
 
@@ -63,6 +63,32 @@ module Collavre
       "#{class_name} builds #{taken}, which another tool or the application already defines; rename the class" if taken
     end
     private_class_method :constant_conflict
+
+    # The checks above only see this process. Another worker may have approved
+    # a tool on the same constants, so the recorded sources of approved tools
+    # are checked too. The earlier approval wins, which is also the order
+    # load_active_tools keeps when both are loaded after a restart.
+    def self.approved_conflict(writer, class_name, expected_name)
+      claimed = [ class_name, *generated_constants(class_name) ]
+      earlier_approved(expected_name).find_each do |tool|
+        other = writer.send(:extract_class_name, tool.source_code)
+        next if other.blank?
+
+        taken = ([ other, *generated_constants(other) ] & claimed).first
+        return "#{class_name} uses #{taken}, which another approved tool already uses; rename the class" if taken
+      end
+      nil
+    end
+    private_class_method :approved_conflict
+
+    def self.earlier_approved(expected_name)
+      approved_at = McpTool.where(name: expected_name).pick(:approved_at)
+      others = McpTool.active.where.not(name: expected_name)
+      return others unless approved_at
+
+      others.where("approved_at < :at", at: approved_at)
+    end
+    private_class_method :earlier_approved
 
     def self.generated_constants(class_name)
       base = class_name.demodulize.delete_suffix("Service")
@@ -111,6 +137,14 @@ module Collavre
     end
     private_class_method :mark_owner
 
+    # A failed evaluation must not leave the generated constants of an earlier
+    # approval behind either: without their service class they would read as
+    # another tool's, and the next load would refuse this tool for good.
+    def self.remove_tool_constants(class_name)
+      [ *generated_constants(class_name), class_name ].each { |name| remove_constant(name) }
+    end
+    private_class_method :remove_tool_constants
+
     def self.remove_constant(class_name)
       namespace = class_name.deconstantize.presence&.safe_constantize || Object
       constant = class_name.demodulize
@@ -145,12 +179,21 @@ module Collavre
     end
     private_class_method :roll_back_registration
 
+    # A source that raises between a sig and its def leaves that sig pending on
+    # the thread, and Sorbet would fail every later evaluation on it with
+    # "You called sig twice".
+    def self.discard_pending_sig
+      T::Private::DeclState.current.reset! if defined?(T::Private::DeclState)
+    end
+    private_class_method :discard_pending_sig
+
     # Returns the service class when this evaluation extended it with ToolMeta
     # and it declares expected_name, else an error hash.
     def self.evaluate_and_verify(source_code, class_name, expected_name)
       begin
         Object.class_eval(source_code)
       rescue StandardError, ScriptError => e
+        discard_pending_sig
         return { error: "Failed to evaluate source: #{e.message}" }
       end
 

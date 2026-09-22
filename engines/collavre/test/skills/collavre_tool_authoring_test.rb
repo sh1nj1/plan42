@@ -433,6 +433,41 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert Tools::MetaToolService.new.find_schema("authored_probe")
   end
 
+  test "approval refuses constants that another worker's approved tool uses" do
+    earlier = approvable_tool(scaffold)
+    earlier.update!(approved_at: 1.minute.ago) # approved on another worker: never evaluated here
+    later = approvable_tool(scaffold.sub('tool_name "authored_probe"', 'tool_name "other_probe"'), "other_probe")
+    renamed = approvable_tool(scaffold.sub("AuthoredProbeService", "AuthoredProbeServiceService").sub('tool_name "authored_probe"', 'tool_name "renamed_probe"'), "renamed_probe")
+
+    { later => /Tools::AuthoredProbeService uses Tools::AuthoredProbeService, which another approved tool/,
+      renamed => /Tools::AuthoredProbeServiceService uses Tools::AuthoredProbeService, which another approved tool/ }.each do |tool, message|
+      assert_raises(RuntimeError, match: message) { tool.approve! }
+      assert_not tool.reload.active?
+    end
+    assert_not Tools.const_defined?(:AuthoredProbeService, false), "a refused source is never evaluated"
+
+    later.update!(approved_at: Time.current) # both approved on different workers
+    McpService.load_active_tools
+    assert_equal "authored_probe", Tools::AuthoredProbeService.tool_metadata[:name], "the earlier approval wins after a restart"
+    assert_nil Tools::MetaToolService.new.find_schema("other_probe")
+  end
+
+  test "a failed reload removes the tool's generated constants so the next load registers it" do
+    once = "    raise \"loaded twice\" if defined?(LOADED)\n    LOADED = true\n\n    def call"
+    tool = approvable_tool(scaffold.sub("    def call", once))
+    tool.approve!
+    assert Tools.const_defined?(:AuthoredProbe, false)
+
+    McpService.load_active_tools
+    assert_not Tools.const_defined?(:AuthoredProbeService, false)
+    assert_not Tools.const_defined?(:AuthoredProbe, false), "the RubyLLM tool leaves with its service class"
+    assert_not Mcp.const_defined?(:AuthoredProbe, false), "the FastMcp tool leaves with its service class"
+    assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
+
+    McpService.load_active_tools
+    assert Tools::MetaToolService.new.find_schema("authored_probe"), "the next load registers the approved tool again"
+  end
+
   private
 
   # What a development reload does: a fresh McpService (and its ::McpService
