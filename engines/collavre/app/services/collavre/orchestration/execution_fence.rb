@@ -40,6 +40,28 @@ module Collavre
         (payload || {}).except(*KEYS)
       end
 
+      # Drop the attempt's generation and handoff but keep its job id: the
+      # same job is about to run the row again (TaskResumer.reclaim_for_retry!).
+      def retire_attempt(payload)
+        (payload || {}).except(GENERATION_KEY, HANDOFF_KEY)
+      end
+
+      # Whether the attempt run by this job can be run again from scratch: it
+      # was still running, or it was delegated but its Channel handoff for the
+      # current generation never started — nothing reached the agent.
+      def retryable?(task, job_id)
+        payload = task.trigger_event_payload
+        return false unless payload.is_a?(Hash) && payload[JOB_KEY].to_s == job_id.to_s
+
+        case task.status
+        when "running" then true
+        when "delegated"
+          handoff = payload[HANDOFF_KEY]
+          handoff.is_a?(Hash) && handoff["state"] == HANDOFF_PENDING && handoff["generation"] == payload[GENERATION_KEY]
+        else false
+        end
+      end
+
       def pending_handoff(payload)
         payload = payload || {}
         payload.merge(HANDOFF_KEY => { "generation" => payload[GENERATION_KEY], "state" => HANDOFF_PENDING })

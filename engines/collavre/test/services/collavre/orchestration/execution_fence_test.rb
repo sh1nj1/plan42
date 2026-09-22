@@ -38,6 +38,17 @@ module Collavre
         assert_equal({ "generation" => nil, "state" => "pending" }, ExecutionFence.pending_handoff(nil)[ExecutionFence::HANDOFF_KEY])
       end
 
+      test "retire_attempt drops the generation and handoff but keeps the job" do
+        payload = ExecutionFence.pending_handoff(ExecutionFence.stamp({ "topic" => { "id" => 1 } }, job_id: "job-1"))
+
+        assert_equal({ "topic" => { "id" => 1 }, "execution_job_id" => "job-1" }, ExecutionFence.retire_attempt(payload))
+        assert_equal({}, ExecutionFence.retire_attempt(nil))
+      end
+
+      test "retryable? needs the same job on a row without a payload" do
+        assert_not ExecutionFence.retryable?(Task.new(status: "running", trigger_event_payload: nil), "job-1")
+      end
+
       test "current? fences a named generation and lets an unnamed one through" do
         task = Task.new(trigger_event_payload: ExecutionFence.stamp({}))
         generation = ExecutionFence.generation(task)

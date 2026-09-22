@@ -58,9 +58,8 @@ module Collavre
             transition_to_suspended(task, reason, resume_not_before, execution_generation)
           return if outcome.nil?
 
-          ActiveRecord.after_all_transactions_commit do
-            after_suspend(task, outcome, previous_status, announce)
-          end
+          suspension = { outcome: outcome, from: previous_status, announce: announce, resume_count: task.resume_count }
+          ActiveRecord.after_all_transactions_commit { after_suspend(task, suspension) }
           outcome
         end
 
@@ -90,6 +89,28 @@ module Collavre
 
           ActiveRecord.after_all_transactions_commit { after_resume(task, outcome) } if outcome.in?(%i[escalated resumed])
           outcome
+        end
+
+        # Hand a dead attempt back to the job that is about to run it again.
+        #
+        # For a queue retry of a failed execution (SolidQueue's
+        # FailedExecution#retry): the caller has confirmed the job's owner
+        # failed and calls this in the same transaction that makes the job
+        # ready again. The row the dead attempt left running — or delegated
+        # with its Channel handoff still pending, so nothing reached the agent —
+        # goes back to pending with a fresh generation to come, which the retried
+        # job starts like any promoted turn. The job id is kept: it is how a
+        # retried dispatch job (agent_id, context) finds its row instead of
+        # creating a second one (AiAgentJob.reclaimed_task).
+        #
+        # A delegated attempt whose handoff started or completed may already be
+        # with the agent, and is left to its reply or to stuck recovery.
+        #
+        # @return [Array<Task>] the rows handed back
+        def reclaim_for_retry!(execution_job_id)
+          Task.where(status: %w[running delegated])
+              .where("trigger_event_payload->>'#{ExecutionFence::JOB_KEY}' = ?", execution_job_id.to_s)
+              .select { |task| reclaim_task_for_retry!(task, execution_job_id.to_s) }
         end
 
         # Resume every suspended turn of this agent that is due. For the moment
@@ -152,6 +173,20 @@ module Collavre
 
         private
 
+        def reclaim_task_for_retry!(task, execution_job_id)
+          previous_status = task.with_lock do
+            next unless ExecutionFence.retryable?(task, execution_job_id)
+
+            status = task.status
+            task.update!(status: "pending", trigger_event_payload: ExecutionFence.retire_attempt(task.trigger_event_payload))
+            status
+          end
+          return false unless previous_status
+
+          ActiveRecord.after_all_transactions_commit { detach_partial_reply(task) } if previous_status == "running"
+          true
+        end
+
         def quota_blocked?(agent)
           (agent.respond_to?(:quota_blocked_until) && agent.quota_blocked_until&.future?) ||
             (agent.respond_to?(:quota_retry_exhausted) && agent.quota_retry_exhausted)
@@ -167,15 +202,29 @@ module Collavre
           Topic.where(id: task.topic_id, primary_agent_id: agent.id).where.not(session_id: nil).pick(:session_id)
         end
 
-        def after_suspend(task, outcome, previous_status, announce)
-          release_held_work(task, previous_status)
-          detach_partial_reply(task) if previous_status == "running"
-          if outcome == :escalated
+        # The row lock is gone by the time this runs, so a late /reply, a Stop
+        # or a resume may already have moved the task on. What the suspension
+        # held is still given back — nothing else releases it for a turn that
+        # left through the claim or Stop path — unless a resume has taken the
+        # task back: the resumed attempt now owns the task's reservation (keyed
+        # by task id) and its reply. The notices, the reply detach and the
+        # scheduled resume describe this suspension only while it still stands.
+        def after_suspend(task, suspension)
+          task.reload
+          return unless task.resume_count == suspension[:resume_count]
+
+          release_held_work(task, suspension[:from])
+          return unless task.status == (suspension[:outcome] == :escalated ? "escalated" : "suspended")
+
+          detach_partial_reply(task) if suspension[:from] == "running"
+          if suspension[:outcome] == :escalated
             post_notice(task, "escalated", cause: I18n.t("#{NOTICE_SCOPE}.escalation_causes.too_many_resumes"))
           else
-            post_suspended_notice(task) if announce
+            post_suspended_notice(task) if suspension[:announce]
             schedule_resume(task) if task.resume_not_before
           end
+        rescue ActiveRecord::RecordNotFound
+          nil
         end
 
         def after_resume(task, outcome)
