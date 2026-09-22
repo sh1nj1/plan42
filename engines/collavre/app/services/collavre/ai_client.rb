@@ -298,15 +298,7 @@ module Collavre
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         apply_request_headers!(chat)
-        chat.on_tool_call do |tool_call|
-          # Cancellation ahead of the approval gate: a turn that already
-          # reached a terminal status or its deadline must end, not park
-          # itself as pending approval for a tool it will never run. Force this
-          # boundary through the lifecycle throttle: the first tool call can
-          # arrive during the manager's initial one-second quiet period.
-          @before_tool_call&.call(true)
-          check_tool_approval!(tool_call)
-        end
+        install_tool_boundary(chat)
         if @request_timeout_seconds || @cli_proxy_identity
           chat.after_tool_result do |_result|
             # A tool can consume much of the turn. Recheck the deadline and

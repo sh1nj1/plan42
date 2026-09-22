@@ -25,6 +25,16 @@ module Collavre
 
       where(owner_id: user.id).or(requested_by(user.id))
     end
+
+    # Collavre tools report expected failures as { error: "..." } instead of raising.
+    def self.failed_result?(result)
+      result.is_a?(Hash) && (result[:error].present? || result["error"].present?)
+    end
+
+    def self.elapsed_ms(started_at)
+      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    end
+
     private
 
     def index_requesters

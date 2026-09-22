@@ -61,4 +61,31 @@
       </table>
     </div>
   <% end %>
+  <section class="usage-report__tools" aria-labelledby="tool-usage-title">
+    <h2 id="tool-usage-title"><%= t("collavre.llm_usages.tools.title") %></h2>
+    <p><%= t("collavre.llm_usages.tools.description") %></p>
+    <% if @tool_rows.empty? %>
+      <p><%= t("collavre.llm_usages.tools.empty") %></p>
+    <% else %>
+      <div class="usage-report__table" tabindex="0" role="region" aria-labelledby="tool-usage-title">
+        <table class="table">
+          <thead><tr>
+            <% %i[tool_name calls failures average_duration].each do |key| %>
+              <th scope="col"><%= t("collavre.llm_usages.tools.#{key}") %></th>
+            <% end %>
+          </tr></thead>
+          <tbody>
+            <% @tool_rows.each do |row| %>
+              <tr>
+                <td><%= row[:tool_name] %></td>
+                <td><%= number_with_delimiter(row[:calls]) %></td>
+                <td><%= number_with_delimiter(row[:failures]) %></td>
+                <td><%= row[:average_duration_ms].nil? ? t("collavre.llm_usages.unknown") : t("collavre.llm_usages.tools.milliseconds", value: number_with_delimiter(row[:average_duration_ms])) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
+  </section>
 </div>

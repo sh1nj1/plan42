@@ -55,3 +55,7 @@
   display: block;
   color: var(--text-muted);
 }
+
+.usage-report__tools {
+  margin-top: var(--space-5);
+}

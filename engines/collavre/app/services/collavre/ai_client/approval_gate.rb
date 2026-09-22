@@ -12,6 +12,21 @@ module Collavre
         add_messages(@conversation, contents) unless restore_approval_gate
       end
 
+      def install_tool_boundary(chat)
+        chat.on_tool_call do |tool_call|
+          # Cancellation ahead of the approval gate: a turn that already
+          # reached a terminal status or its deadline must end, not park
+          # itself as pending approval for a tool it will never run. Force this
+          # boundary through the lifecycle throttle: the first tool call can
+          # arrive during the manager's initial one-second quiet period.
+          @before_tool_call&.call(true)
+          check_tool_approval!(tool_call)
+          start_tool_usage(tool_call)
+        end
+        # Registered before build_conversation's boundary refresh, which can raise on deadline.
+        chat.after_tool_result { |result| finish_tool_usage(!ToolUsage.failed_result?(result)) }
+      end
+
       def check_approval_gate!(tool_call)
         args = approval_gate_arguments(tool_call)
         return unless args

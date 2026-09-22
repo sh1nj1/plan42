@@ -26,6 +26,11 @@ module Collavre
         ).map { |values| row(values) }.sort_by { |item| [ item[:period].to_s, item[:group].to_s ] }
       end
 
+      def range
+        zone = ActiveSupport::TimeZone["Asia/Seoul"]
+        zone.local(from.year, from.month, from.day)...zone.local(to.year, to.month, to.day).advance(days: 1)
+      end
+
       private
 
       def date(key, fallback)
@@ -33,8 +38,7 @@ module Collavre
       end
 
       def relation
-        zone = ActiveSupport::TimeZone["Asia/Seoul"]
-        scope = LlmUsage.visible_to(@user).where(occurred_at: zone.local(from.year, from.month, from.day)...zone.local(to.year, to.month, to.day).advance(days: 1))
+        scope = LlmUsage.visible_to(@user).where(occurred_at: range)
         FILTERS.each do |key|
           next if @params[key].blank?
 
