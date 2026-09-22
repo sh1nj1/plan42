@@ -1,4 +1,4 @@
-import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus } from './queued_creative_row'
+import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
 import creativesApi from '../lib/api/creatives'
@@ -1248,7 +1248,7 @@ function setupEditorSession() {
         if (form.dataset.creativeId === startCreativeId) setSaveStatus(isDirty || pendingSave ? 'pending' : 'saved');
       });
       if (form.dataset.creativeId === startCreativeId) setSaveStatus('pending');
-      apiQueue.enqueue({
+      enqueueCreativeSnapshot(apiQueue, {
         path: `/creatives/${creativeId}`,
         method: 'PATCH',
         body: body,
@@ -1278,7 +1278,7 @@ function setupEditorSession() {
             originalContent = applied.snapshot.content;
           }
         }
-      });
+      }, complete);
       // console.warn('apiQueue.enqueue disabled for debugging');
 
       const reset = resetCreativeSaveState(snapshot);

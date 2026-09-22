@@ -4,10 +4,11 @@ const revisions = new WeakMap()
 
 // Only the latest queued snapshot may acknowledge or rewrite a row.
 export function queuedCreativeCompletion(tree, onComplete) {
-  const revision = (revisions.get(tree) || 0) + 1
+  const previous = revisions.get(tree) || 0
+  const revision = previous + 1
   revisions.set(tree, revision)
   tree.dataset.saveState = 'pending'
-  return () => {
+  const complete = () => {
     if (revisions.get(tree) !== revision) return false
     delete tree.dataset.saveState
     const row = treeRowElement(tree)
@@ -16,6 +17,8 @@ export function queuedCreativeCompletion(tree, onComplete) {
     document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
     return true
   }
+  complete.rollback = () => revisions.set(tree, previous)
+  return complete
 }
 
 export function updateQueuedCreativeRow(tree, snapshot) {
@@ -35,4 +38,11 @@ export function updateQueuedCreativeRow(tree, snapshot) {
 
 export function queuedCreativeStatus(tree) {
   return tree?.dataset.saveState || ''
+}
+
+export function enqueueCreativeSnapshot(queue, request, completion) {
+  try { return queue.enqueue(request) } catch (error) {
+    completion.rollback()
+    throw error
+  }
 }

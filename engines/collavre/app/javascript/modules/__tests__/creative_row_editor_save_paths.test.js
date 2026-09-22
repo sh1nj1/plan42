@@ -474,3 +474,27 @@ test.each(['inline-close', 'inline-move-down'])('%s keeps the editor and draft w
   expect(document.getElementById('inline-edit-form').style.display).toBe('block')
   expect(document.getElementById('inline-save-status').dataset.state).toBe('error')
 })
+
+
+test('a storage failure restores the previous queued acknowledgment without losing the newer draft', async () => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'before')
+  openRow(first.tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'first queued draft'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  const firstRequest = enqueue.mock.calls[0][0]
+  textarea.value = 'newer retained draft'
+  textarea.dispatchEvent(new Event('input'))
+  enqueue.mockImplementationOnce(() => { throw new Error('quota') })
+  await jest.advanceTimersByTimeAsync(5000)
+  expect(first.tree.dataset.saveState).toBe('error')
+  firstRequest.onSuccess({ markdown_source: 'first queued draft' })
+  expect(first.tree.dataset.saveState).toBeUndefined()
+  expect(textarea.value).toBe('newer retained draft')
+  expect(document.getElementById('inline-save-status').dataset.state).toBe('pending')
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue.mock.calls[2][0].body['creative[markdown_source]']).toBe('newer retained draft')
+})
