@@ -168,20 +168,80 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     preference = Collavre::UserCreativePreference
     attributes = { user_id: @user.id, creative_id: nil, expanded_status: { "1" => true } }
     first = preference.create!(attributes)
-    preference.insert_all([ attributes.merge(expanded_status: { "unused" => true }) ],
+    preference.insert_all([ attributes.merge(expanded_status: { "legacy" => true }) ],
       unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
     other = preference.create!(attributes.merge(user_id: users(:two).id))
 
     post "/creative_expanded_states/toggle", params: { node_id: "2", expanded: true }, as: :json
     assert_response :success
     assert_equal [ first.id ], preference.where(user_id: @user.id, creative_id: nil).pluck(:id)
-    assert_equal({ "1" => true, "2" => true }, first.reload.expanded_status)
+    assert_equal({ "1" => true, "legacy" => true, "2" => true }, first.reload.expanded_status)
     assert_equal({ "1" => true }, other.reload.expanded_status)
 
     # The old image still inserts against the composite conflict target on rollback.
     assert_difference "Collavre::UserCreativePreference.count", 1 do
       preference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
     end
+  end
+
+  test "root consolidation merges every duplicate before applying the current collapse" do
+    preference = Collavre::UserCreativePreference
+    first = preference.create!(user: @user, expanded_status: { "current" => true, "first" => true })
+    preference.create!(user: @user, expanded_status: { "current" => true, "second" => true })
+    preference.create!(user: @user, expanded_status: { "third" => true })
+    context = preference.create!(user: @user, creative: @creative, expanded_status: { "context" => true })
+
+    post "/creative_expanded_states/toggle", params: { node_id: "current", expanded: false,
+      expansion_save_fence: expansion_fence(nil) }, as: :json
+
+    assert_response :success
+    assert_equal [ first.id ], preference.where(user: @user, creative_id: nil).pluck(:id)
+    assert_equal({ "first" => true, "second" => true, "third" => true }, first.reload.expanded_status)
+    assert_equal({ "context" => true }, context.reload.expanded_status)
+  end
+
+  test "root consolidation leaves later legacy inserts for the next save" do
+    preference = Collavre::UserCreativePreference
+    first = preference.create!(user: @user, expanded_status: { "first" => true })
+    preference.create!(user: @user, expanded_status: { "legacy" => true })
+    inserted = false
+    subscriber = lambda do |*, payload|
+      if !inserted && payload[:sql].start_with?('UPDATE "user_creative_preferences"')
+        inserted = true
+        preference.create!(user: @user, expanded_status: { "late" => true })
+      end
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      post "/creative_expanded_states/toggle", params: { node_id: "new", expanded: true }, as: :json
+      assert_response :success
+    end
+    assert inserted
+    assert_equal 2, preference.where(user: @user, creative_id: nil).count
+    assert_equal({ "first" => true, "legacy" => true, "new" => true }, first.reload.expanded_status)
+
+    post "/creative_expanded_states/toggle", params: { node_id: "new", expanded: false }, as: :json
+    assert_response :success
+    assert_equal [ first.id ], preference.where(user: @user, creative_id: nil).pluck(:id)
+    assert_equal({ "first" => true, "legacy" => true, "late" => true }, first.reload.expanded_status)
+  end
+
+  test "failed toggles roll back root consolidation and duplicate deletion" do
+    preference = Collavre::UserCreativePreference
+    first = preference.create!(user: @user, expanded_status: { "first" => true })
+    duplicate = preference.create!(user: @user, expanded_status: { "legacy" => true })
+    original_find = preference.method(:find_by!)
+    preference.stub(:find_by!, lambda { |**attributes|
+      record = original_find.call(**attributes)
+      record.define_singleton_method(:save!) { raise ActiveRecord::RecordInvalid, self }
+      record
+    }) do
+      post "/creative_expanded_states/toggle", params: { node_id: "new", expanded: true }, as: :json
+      assert_response :unprocessable_entity
+    end
+
+    assert_equal({ "first" => true }, first.reload.expanded_status)
+    assert_equal({ "legacy" => true }, duplicate.reload.expanded_status)
   end
 
   test "toggle stores expanded state" do

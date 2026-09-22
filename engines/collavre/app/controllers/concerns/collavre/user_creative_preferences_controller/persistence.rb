@@ -47,11 +47,20 @@ module Collavre
 
       # Fence missing root rows without a new constraint that breaks old images.
       Current.user.class.find(Current.user.id).with_lock do
-        roots = UserCreativePreference.where(user_id: Current.user.id, creative_id: nil)
-        first_id = roots.minimum(:id)
-        roots.where.not(id: first_id).delete_all if first_id
+        consolidate_root_preferences
         with_locked_preference(nil, &block)
       end
+    end
+
+    def consolidate_root_preferences
+      # Legacy writers do not take the user lock. Lock each observed row before
+      # reading its state, and never delete a later insert we have not merged.
+      roots = UserCreativePreference.where(user_id: Current.user.id, creative_id: nil).order(:id).lock.to_a
+      return if roots.size < 2
+
+      state = roots.each_with_object({}) { |record, merged| merged.merge!(record.expanded_status || {}) }
+      roots.first.update_columns(expanded_status: state)
+      UserCreativePreference.where(id: roots.drop(1).map(&:id)).delete_all
     end
 
     # A collapse can remove an empty row after it is found but before with_lock
