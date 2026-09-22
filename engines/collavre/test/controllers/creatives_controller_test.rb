@@ -6,15 +6,25 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
-  test "workspace initializes from this user's root expansion preference" do
-    Collavre::UserCreativePreference.create!(user: users(:one), expanded_status: { "123" => true })
-    Collavre::UserCreativePreference.create!(user: users(:two), expanded_status: { "456" => true })
-    Collavre::UserCreativePreference.create!(user: users(:one), creative: creatives(:tshirt), expanded_status: { "789" => true })
-    get creatives_path(id: creatives(:tshirt).id)
+  test "workspace restores merged root preferences without changing stored rows" do
+    root = Creative.create!(user: users(:one), description: "Root")
+    child = Creative.create!(user: users(:one), parent: root, description: "Child")
+    Creative.create!(user: users(:one), parent: child, description: "Leaf")
+    preferences = Collavre::UserCreativePreference
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => true })
+    preferences.create!(user: users(:one), expanded_status: { child.id.to_s => true })
+    preferences.create!(user: users(:two), expanded_status: { root.id.to_s => false })
+    preferences.create!(user: users(:one), creative: root, expanded_status: { child.id.to_s => false })
+    before = preferences.order(:id).map(&:attributes)
+
+    get creatives_path(id: root.id)
+
     assert_response :success
     assert_select '[data-workspace-tree-initial-expanded-ids-value]' do |elements|
-      assert_equal [ "123" ], JSON.parse(elements.first['data-workspace-tree-initial-expanded-ids-value'])
+      assert_equal [ root.id.to_s, child.id.to_s ],
+                   JSON.parse(elements.first['data-workspace-tree-initial-expanded-ids-value'])
     end
+    assert_equal before, preferences.order(:id).map(&:attributes)
   end
 
   test "default-safe formatting survives parent title and slide view rendering" do

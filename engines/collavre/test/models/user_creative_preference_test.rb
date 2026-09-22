@@ -186,6 +186,24 @@ module Collavre
       assert_empty UserCreativePreference.new.expanded_ids_root_first
     end
 
+    test "root restoration handles missing and empty state and uses later duplicate values" do
+      user = users(:one)
+      UserCreativePreference.where(user: user, creative_id: nil).delete_all
+      assert_empty UserCreativePreference.root_expanded_ids_for(user)
+
+      root = Creative.create!(user: user, description: "Root")
+      Creative.create!(user: user, parent: root, description: "Child")
+      first = UserCreativePreference.create!(user: user, expanded_status: { root.id.to_s => true })
+      empty_state = UserCreativePreference.create!(user: user, expanded_status: { "stale" => true })
+      empty_state.update_column(:expanded_status, {})
+      assert_equal [ root.id.to_s ], UserCreativePreference.root_expanded_ids_for(user)
+
+      UserCreativePreference.create!(user: user, expanded_status: { root.id.to_s => false })
+      assert_empty UserCreativePreference.root_expanded_ids_for(user)
+      assert_equal({ root.id.to_s => true }, first.reload.expanded_status)
+      assert_empty empty_state.reload.expanded_status
+    end
+
     private
 
     def assert_hidden_branches_do_not_displace_visible(**hidden_attributes)

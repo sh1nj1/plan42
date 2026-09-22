@@ -98,6 +98,18 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     refute_selector ".creative-workspace-tree-link[data-creative-id='#{@child.id}']", visible: :all
   end
 
+  test "workspace restores branches split across duplicate root preferences" do
+    @user.update!(creative_workspace_enabled: true)
+    grandchild = Creative.create!(description: "Grandchild", user: @user, parent: @child)
+    Collavre::UserCreativePreference.create!(user: @user, expanded_status: { @root_creative.id.to_s => true })
+    Collavre::UserCreativePreference.create!(user: @user, expanded_status: { @child.id.to_s => true })
+
+    page.refresh
+
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{grandchild.id}']", visible: :all
+    assert_equal 2, Collavre::UserCreativePreference.where(user: @user, creative_id: nil).count
+  end
+
   test "clears expanded state after toggling twice" do
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click

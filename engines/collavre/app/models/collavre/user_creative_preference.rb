@@ -6,6 +6,14 @@ module Collavre
     belongs_to :user, class_name: Collavre.configuration.user_class_name
     belongs_to :last_topic, class_name: "Collavre::Topic", optional: true
 
+    def self.root_expanded_ids_for(user)
+      # Legacy writers can create new duplicates after deployment cleanup.
+      # Match consolidation's ID-ordered merge without mutating rows on reads.
+      state = where(user: user, creative_id: nil).order(:id).pluck(:expanded_status)
+        .each_with_object({}) { |status, merged| merged.merge!(status) }
+      new(user: user, expanded_status: state).expanded_ids_root_first
+    end
+
     def expanded_ids_root_first
       ids = (expanded_status || {}).select { |_, expanded| expanded }.keys
       Creatives::WorkspaceExpansionOrder.new(user: user, expanded_ids: ids).call
