@@ -238,7 +238,7 @@ class AiAgentJobTest < ActiveJob::TestCase
   test "cancels during streaming when task status changes to cancelled" do
     task = Task.create!(
       name: "Response to test_event",
-      status: "running",
+      status: "pending",
       trigger_event_name: "test_event",
       trigger_event_payload: @context,
       agent: @agent
@@ -370,6 +370,8 @@ class AiAgentJobTest < ActiveJob::TestCase
     )
     assert Collavre::Orchestration::DeliveryRecord.claim_drop!(task, swallowed.id),
            "premise: a dispatch was dropped against this turn"
+    # The job starts only a turn still waiting to start (TaskAdmission.start!).
+    task.update_column(:status, "pending")
     [ topic, swallowed, task.reload ]
   end
 
@@ -712,7 +714,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     task = Task.create!(
       name: "Claude topicless task",
-      status: "running",
+      status: "pending",
       agent: claude_agent,
       creative_id: @creative.id,
       trigger_event_payload: topicless_context
@@ -745,11 +747,14 @@ class AiAgentJobTest < ActiveJob::TestCase
     }
 
     status_at_deliver = nil
+    payload_at_deliver = nil
     delivered = false
     fake_adapter = Class.new do
       define_method(:initialize) { |agent:, context:, task: nil| @agent = agent; @context = context; @task = task }
       define_method(:deliver) do
-        status_at_deliver = Task.where(agent_id: @agent.id).order(:created_at).last&.status
+        row = Task.where(agent_id: @agent.id).order(:created_at).last
+        status_at_deliver = row&.status
+        payload_at_deliver = row&.trigger_event_payload
         delivered = true
         nil
       end
@@ -764,6 +769,11 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert delivered, "Expected ClaudeChannelAdapter#deliver to be invoked"
     assert_equal "delegated", status_at_deliver,
       "Task must be in 'delegated' state before the MCP dispatch so a fast reply can find it"
+
+    fence = Collavre::Orchestration::ExecutionFence
+    assert_equal({ "generation" => payload_at_deliver[fence::GENERATION_KEY], "state" => "pending" },
+                 payload_at_deliver[fence::HANDOFF_KEY],
+                 "the handoff marker must be written with the delegated status, before the broadcast")
 
     task = Task.where(agent_id: claude_agent.id).last
     assert_equal "delegated", task.status
@@ -791,7 +801,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     Collavre::AgentSubscription.create!(agent_id: claude_agent.id, token: "cc-cancel-race")
     task = Collavre::Task.create!(
       name: "Pre-existing running task",
-      status: "running",
+      status: "pending",
       trigger_event_name: "comment_created",
       agent: claude_agent,
       topic_id: topic.id,

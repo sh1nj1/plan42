@@ -169,21 +169,16 @@ module Collavre
         if is_claude_channel_agent
           # Atomic running -> delegated transition. If AgentsController#destroy
           # races us between reserve! above and this line and flips the task
-          # to "cancelled", the WHERE filter excludes us, rows_updated == 0,
-          # we skip dispatch, and the ensure block releases the slot. A
-          # separate reload + update! would let the cancel slip in between.
-          rows_updated = Task.where(id: task.id, status: "running").update_all(
-            status: "delegated", updated_at: Time.current
-          )
-          if rows_updated.zero?
-            task.reload
+          # to "cancelled", the locked status check fails, we skip dispatch,
+          # and the ensure block releases the slot. A separate reload +
+          # update! would let the cancel slip in between.
+          unless delegate_to_channel!(task)
             Rails.logger.info(
               "[AiAgentJob] Claude Channel task #{task.id} not in running state " \
               "(status=#{task.status}); skipping dispatch"
             )
             return
           end
-          task.reload
         end
 
         return unless Workflow::FixedAnchor.validate!(task)
@@ -318,6 +313,22 @@ module Collavre
         creative_id: context&.dig("creative", "id")
       }
       .merge(Workflow::TaskAdmission.attributes(context, agent))
+    end
+
+    # The handoff marker is written with the status so recovery never sees a
+    # delegated row without it. Columns only, as the update_all this replaced:
+    # the Channel reply path owns what happens once the row is delegated.
+    def delegate_to_channel!(task)
+      task.with_lock do
+        next false unless task.status == "running"
+
+        task.update_columns(
+          status: "delegated",
+          trigger_event_payload: Orchestration::ExecutionFence.pending_handoff(task.trigger_event_payload),
+          updated_at: Time.current
+        )
+        true
+      end
     end
 
     # An admitted row starts executing under this job, so it carries the

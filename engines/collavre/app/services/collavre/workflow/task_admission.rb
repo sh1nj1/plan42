@@ -5,6 +5,7 @@ module Collavre
     # Called under the existing topic-slot transaction. Never takes a chain lock.
     module TaskAdmission
       RESUMPTION_STATUSES = %w[pending queued pending_approval].freeze
+      STARTABLE_STATUSES = %w[pending pending_approval].freeze
 
       def self.duplicate_dispatch?(context, agent)
         comment_id = context&.dig("comment", "id")
@@ -30,9 +31,9 @@ module Collavre
       # The running transition and the execution stamp are one write, so no
       # observer sees a running row still carrying the previous attempt's owner.
       def self.start!(task, execution_job_id: nil)
-        return task.update!(running_attributes(task, execution_job_id)) unless task.workflow?
+        return start_unless_taken!(task, execution_job_id) unless task.workflow?
         outcome = task.with_lock do
-          next :duplicate unless task.status.in?(%w[pending pending_approval])
+          next :duplicate unless task.status.in?(STARTABLE_STATUSES)
           task.workflow_execution.lock!
           if task.workflow_execution.open? || task.pending_approval?
             next :denied unless FixedAnchor.validate!(task)
@@ -47,12 +48,25 @@ module Collavre
         outcome == :started
       end
 
+      # Only a turn still waiting to start may start. The job a suspension left
+      # enqueued, or a second job for the same resumed row, finds it suspended,
+      # running or finished and does nothing.
+      def self.start_unless_taken!(task, execution_job_id)
+        task.with_lock do
+          next false unless task.status.in?(STARTABLE_STATUSES)
+
+          task.update!(running_attributes(task, execution_job_id))
+        end
+      end
+
       def self.running_attributes(task, execution_job_id)
         payload = Orchestration::ExecutionFence.stamp(task.trigger_event_payload, job_id: execution_job_id)
         { status: "running", trigger_event_payload: payload }
       end
 
       def self.validate_start!(task)
+        # The job a suspension left enqueued: TaskResumer starts the turn again.
+        return false if task.suspended?
         return true unless task.workflow?
         outcome = task.with_lock do
           next :duplicate unless RESUMPTION_STATUSES.include?(task.status)
