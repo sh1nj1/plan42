@@ -20,7 +20,7 @@ module Collavre
 
       def call
         result = topic.with_lock { build_result }
-        Quota::Recovery.succeeded!(result.agent) if result.comment && result.task
+        Quota::Recovery.succeeded!(result.agent, task: result.task) if result.comment && result.task
         result
       end
 

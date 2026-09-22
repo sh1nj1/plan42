@@ -1004,6 +1004,48 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_not_nil payload[Collavre::Orchestration::ExecutionFence::GENERATION_KEY]
   end
 
+  test "a retried dispatch job restarts the row its dead run left instead of creating another" do
+    job = AiAgentJob.new(@agent.id, "test_event", @context)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+    task = Task.last
+    # The worker died mid-call: the row is still running under this job.
+    task.update!(status: "running")
+    first_generation = Collavre::Orchestration::ExecutionFence.generation(task)
+    Collavre::Orchestration::TaskResumer.reclaim_for_retry!(job.job_id)
+
+    assert_no_difference -> { Task.count } do
+      AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+        job.perform_now
+      end
+    end
+
+    task.reload
+    assert_equal "done", task.status
+    assert_equal job.job_id, task.trigger_event_payload[Collavre::Orchestration::ExecutionFence::JOB_KEY]
+    assert_not_equal first_generation, Collavre::Orchestration::ExecutionFence.generation(task)
+  end
+
+  test "a retried task job restarts its reclaimed row" do
+    task = Task.create!(
+      name: "Turn", status: "pending", trigger_event_name: "comment_created", agent: @agent,
+      creative_id: @creative.id, trigger_event_payload: @context
+    )
+    job = AiAgentJob.new(task)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+    task.update!(status: "running")
+    Collavre::Orchestration::TaskResumer.reclaim_for_retry!(job.job_id)
+
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+
+    assert_equal "done", task.reload.status
+  end
+
   test "a resumed task is started under the job that runs it" do
     task = Task.create!(
       name: "Resumed", status: "pending", trigger_event_name: "comment_created", agent: @agent,

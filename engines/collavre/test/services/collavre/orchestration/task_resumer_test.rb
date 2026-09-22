@@ -398,6 +398,25 @@ module Collavre
                      "left pending it would hold the slot with no job and no recovery"
       end
 
+      test "a topic-scoped resume whose enqueue raises goes back to the queue" do
+        task = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
+
+        AiAgentJob.stub(:perform_later, ->(*) { raise ActiveJob::EnqueueError, "queue down" }) do
+          assert_equal :resumed, TaskResumer.resume!(task)
+        end
+        assert_equal "queued", task.reload.status,
+                     "left pending it would hold the slot with no job and no recovery"
+      end
+
+      test "a promotion that fails after its claim puts the waiter back and re-raises" do
+        waiter = task_for(status: "queued")
+
+        AiAgentJob.stub(:perform_later, ->(*) { raise ActiveJob::EnqueueError, "queue down" }) do
+          assert_raises(ActiveJob::EnqueueError) { AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id) }
+        end
+        assert_equal "queued", waiter.reload.status
+      end
+
       test "the job a suspension left enqueued does not start the suspended turn" do
         task = task_for(status: "pending")
         TaskResumer.suspend!(task, reason: :server_restart)
@@ -519,6 +538,61 @@ module Collavre
         assert_nil TaskResumer.suspend!(task, reason: :quota, execution_generation: generation)
       end
 
+      # --- reclaim_for_retry! -------------------------------------------------
+
+      def attempt_of(job_id, status:, handoff: nil)
+        payload = ExecutionFence.stamp(payload_for(@trigger), job_id: job_id)
+        payload = ExecutionFence.pending_handoff(payload) if handoff
+        payload[ExecutionFence::HANDOFF_KEY]["state"] = handoff if handoff
+        task_for(status: status, trigger_event_payload: payload)
+      end
+
+      test "reclaim_for_retry! hands a dead running attempt back to its job" do
+        task = attempt_of("job-1", status: "running")
+        partial = @creative.comments.create!(user: @agent, topic: @topic, content: "Half an answer",
+                                             task: task, skip_dispatch: true)
+
+        assert_equal [ task ], TaskResumer.reclaim_for_retry!("job-1")
+
+        task.reload
+        assert_equal "pending", task.status
+        assert_equal "job-1", task.trigger_event_payload[ExecutionFence::JOB_KEY],
+                     "the retried job finds its row by this id"
+        assert_nil ExecutionFence.generation(task), "the dead attempt's generation must stop matching"
+        assert_nil partial.reload.task_id, "the retried attempt writes its own reply"
+        assert_equal 0, task.resume_count, "a retry is not a resume"
+      end
+
+      test "reclaim_for_retry! takes back a delegated attempt only while its handoff never started" do
+        pending = attempt_of("job-1", status: "delegated", handoff: "pending")
+        started = attempt_of("job-2", status: "delegated", handoff: "started")
+        completed = attempt_of("job-3", status: "delegated", handoff: "completed")
+        legacy = attempt_of("job-4", status: "delegated")
+
+        assert_equal [ pending ], %w[job-1 job-2 job-3 job-4].flat_map { |id| TaskResumer.reclaim_for_retry!(id) }
+        assert_equal "pending", pending.reload.status
+        assert_nil pending.trigger_event_payload[ExecutionFence::HANDOFF_KEY]
+        assert_equal %w[delegated delegated delegated], [ started, completed, legacy ].map { |t| t.reload.status }
+      end
+
+      test "reclaim_for_retry! leaves a handoff from an earlier generation alone" do
+        task = attempt_of("job-1", status: "delegated", handoff: "pending")
+        task.trigger_event_payload[ExecutionFence::HANDOFF_KEY]["generation"] = "earlier"
+        task.save!
+
+        assert_empty TaskResumer.reclaim_for_retry!("job-1")
+        assert_equal "delegated", task.reload.status
+      end
+
+      test "reclaim_for_retry! leaves other jobs' attempts and finished turns alone" do
+        other = attempt_of("job-2", status: "running")
+        finished = attempt_of("job-1", status: "done")
+
+        assert_empty TaskResumer.reclaim_for_retry!("job-1")
+        assert_equal "running", other.reload.status
+        assert_equal "done", finished.reload.status
+      end
+
       # --- transactions -------------------------------------------------------
 
       test "suspension side effects wait for the caller's transaction to commit" do
@@ -546,6 +620,61 @@ module Collavre
 
         assert_equal "running", holder.reload.status
         assert_equal "queued", waiter.reload.status
+        assert_empty notices
+      end
+
+      test "suspension effects skip the announcement for a turn a late reply already finished" do
+        task = task_for(status: "running")
+        tracker = ResourceTracker.for(@agent)
+        tracker.reserve!(task.id)
+        reply = @creative.comments.create!(user: @agent, topic: @topic, content: "The full answer",
+                                           task: task, skip_dispatch: true)
+
+        Task.transaction do
+          assert_equal :suspended, TaskResumer.suspend!(task, reason: :agent_offline)
+          task.update!(status: "done")
+        end
+
+        assert_equal task.id, reply.reload.task_id, "the finished turn keeps its reply"
+        assert_empty notices
+        assert_equal 0, tracker.active_jobs, "nothing else gives back what the suspension held"
+      end
+
+      test "suspension effects leave a turn that was already resumed to its new attempt" do
+        task = task_for(status: "running")
+        tracker = ResourceTracker.for(@agent)
+        tracker.reserve!(task.id)
+
+        Task.transaction do
+          assert_equal :suspended, TaskResumer.suspend!(task, reason: :server_restart)
+          assert_equal :resumed, TaskResumer.resume!(task)
+        end
+
+        assert_equal "pending", task.reload.status
+        assert_equal 1, tracker.active_jobs, "the resumed attempt owns the task's reservation"
+        assert_equal [ I18n.t("collavre.orchestration.suspension.resumed", agent: @agent.display_name) ],
+                     notices.pluck(:content)
+      end
+
+      test "an escalation that was stopped before its effects ran is not announced" do
+        task = task_for(status: "running", resume_count: TaskResumer::MAX_RESUMES)
+
+        Task.transaction do
+          assert_equal :escalated, TaskResumer.suspend!(task, reason: :server_restart)
+          task.update!(status: "cancelled")
+        end
+
+        assert_empty notices
+      end
+
+      test "suspension effects of a task deleted before they run do nothing" do
+        task = task_for(status: "queued")
+
+        Task.transaction do
+          assert_equal :suspended, TaskResumer.suspend!(task, reason: :server_restart)
+          task.destroy!
+        end
+
         assert_empty notices
       end
 
