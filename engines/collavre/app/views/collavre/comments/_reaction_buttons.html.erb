@@ -1,0 +1,7 @@
+<% ["👍", "🎉", "❤️", "😂", "😮", "😢", "😡", "✅", "👌", "👀"].each do |emoji| %>
+  <%= tag.button emoji,
+        type: "button",
+        class: ["comment-reaction-picker-emoji", ("search-popup-filter-btn" if filter), ("active" if selected == emoji)],
+        aria: { label: emoji, pressed: (selected == emoji if filter) },
+        data: { action: action, emoji: emoji, filter_state: ("reaction:#{emoji}" if filter) } %>
+<% end %>
