@@ -25,6 +25,28 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     )
   end
 
+  test "quota suspension preserves partial output and unwinds without completing the task" do
+    @task.update!(trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp(@task.trigger_event_payload))
+    previous = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    client = Object.new
+    client.define_singleton_method(:handed_off?) { true }
+    client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+      block.call("Partial answer")
+      raise Collavre::Quota::ExceededError.new(reset_at: 1.hour.from_now)
+    end
+    AiClient.stub(:new, client) do
+      assert_raises(Collavre::TaskSuspendedError) { AiAgentService.new(@task).call }
+    end
+    assert_equal "suspended", @task.reload.status
+    assert_equal "Partial answer", @task.trigger_event_payload.dig("resume_context", "partial_reply")
+    assert @task.trigger_event_payload["execution_generation"].present?
+    assert @agent.reload.quota_blocked_until.future?
+    assert_nil @task.reply_comment
+  ensure
+    ActiveJob::Base.queue_adapter = previous
+  end
+
   test "gate resumption does not mark new topic history as delivered" do
     @task.update!(pending_tool_call: { kind: "approval_gate", decision: { decision: "approved" } })
     @creative.comments.create!(user: @user, content: "New message while awaiting approval", topic_id: @task.topic_id)

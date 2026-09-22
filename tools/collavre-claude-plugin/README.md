@@ -246,3 +246,17 @@ a server running an out-of-date DB schema (restart the server after migrating).
 Bump `version` in **both** `package.json` and `.claude-plugin/plugin.json`, and the plugin entry in
 the repo-root `.claude-plugin/marketplace.json`. `dist/` is built on demand (gitignored), so there
 is nothing to commit there.
+
+### Session quota recovery
+
+Plugin 0.1.1 adds a `StopFailure` command hook for session usage caps. Update the
+server and plugin together, then restart the Claude session. Recovery uses the
+server's suspended task and durable job; it does not ask the failed model to
+schedule itself. Generic rate limits and billing errors are not session caps.
+
+Use one outstanding dispatched turn per working directory for unambiguous hook
+attribution. If several turns or sibling sessions are active in that directory,
+the hook refuses to guess which task failed. Older clients without `StopFailure`
+or failed hook delivery retain ordinary server stuck/offline handling and cannot
+promise a quota-reset resume. See [the recovery contract](../../docs/agent_quota_recovery.md)
+for reset parsing, retry limits and operational recovery.
