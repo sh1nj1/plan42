@@ -49,6 +49,17 @@ module Collavre
         assert_not ExecutionFence.retryable?(Task.new(status: "running", trigger_event_payload: nil), "job-1")
       end
 
+      test "failed retries require the same job and exclude workflows and channel handoffs" do
+        task = Task.new(status: "failed", trigger_event_payload: ExecutionFence.stamp({}, job_id: "job-1"))
+        assert ExecutionFence.retryable?(task, "job-1")
+        assert_not ExecutionFence.retryable?(task, "other-job")
+        task.workflow_execution_id = 123
+        assert_not ExecutionFence.retryable?(task, "job-1")
+        task.workflow_execution_id = nil
+        task.trigger_event_payload = ExecutionFence.pending_handoff(task.trigger_event_payload)
+        assert_not ExecutionFence.retryable?(task, "job-1")
+      end
+
       test "current? fences a named generation and lets an unnamed one through" do
         task = Task.new(trigger_event_payload: ExecutionFence.stamp({}))
         generation = ExecutionFence.generation(task)

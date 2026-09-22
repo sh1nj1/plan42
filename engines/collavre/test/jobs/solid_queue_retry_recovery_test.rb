@@ -10,6 +10,34 @@ module Collavre
         trigger_event_payload: Orchestration::ExecutionFence.stamp({}, job_id: @job.active_job_id))
     end
 
+    test "manual and bulk retries execute a failed task-backed turn again" do
+      [ :manual, :bulk ].each do |mode|
+        task = Task.create!(name: "Failed turn", agent: users(:ai_bot), status: "pending")
+        active_job = AiAgentJob.new(task)
+        queue_job = SolidQueue::Job.enqueue(active_job)
+        queue_job.ready_execution.destroy!
+        service = Object.new
+        service.define_singleton_method(:call) { raise "provider failed" }
+        AiAgentService.stub(:new, ->(*) { service }) do
+          assert_raises(RuntimeError) { AiAgentJob.execute(queue_job.arguments) }
+        end
+        assert_equal "failed", task.reload.status
+        generation = Orchestration::ExecutionFence.generation(task)
+        failure = SolidQueue::FailedExecution.create!(job: queue_job, exception: RuntimeError.new("provider failed"))
+
+        mode == :manual ? failure.retry : SolidQueue::FailedExecution.retry_all([ queue_job ])
+        assert_equal "pending", task.reload.status
+        calls = 0
+        service.define_singleton_method(:call) { calls += 1 }
+        assert_no_difference -> { Task.count } do
+          AiAgentService.stub(:new, ->(*) { service }) { AiAgentJob.execute(queue_job.reload.arguments) }
+        end
+        assert_equal 1, calls
+        assert_equal "done", task.reload.status
+        assert_not_equal generation, Orchestration::ExecutionFence.generation(task)
+      end
+    end
+
     test "failed queue preparation rolls back the reclaim and retains the failure" do
       @failure.stub(:job, @job) do
         @job.stub(:prepare_for_execution, -> { raise "queue unavailable" }) do

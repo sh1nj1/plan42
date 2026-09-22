@@ -1020,6 +1020,22 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal "cancelled", task.reload.status
   end
 
+  test "a superseded channel worker cannot delegate the replacement attempt" do
+    fence = Collavre::Orchestration::ExecutionFence
+    task = Task.create!(name: "Channel turn", agent: @agent, status: "running",
+                        trigger_event_payload: fence.stamp({}, job_id: "old-job"))
+    generation = fence.generation(task)
+    stale_task = Task.find(task.id)
+    task.update!(trigger_event_payload: fence.stamp({}, job_id: "replacement-job"))
+    replacement_payload = task.trigger_event_payload.deep_dup
+
+    assert_not AiAgentJob.new.send(:delegate_to_channel!, stale_task, generation)
+    assert_equal "running", task.reload.status
+    assert_equal replacement_payload, task.trigger_event_payload
+    assert AiAgentJob.new.send(:delegate_to_channel!, task, fence.generation(task))
+    assert_equal "delegated", task.reload.status
+  end
+
   test "a new dispatch records its job and a fresh execution generation" do
     job = AiAgentJob.new(@agent.id, "test_event", @context)
     AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do

@@ -63,6 +63,7 @@ module Collavre
 
         case task.status
         when "running" then true
+        when "failed" then !task.workflow? && payload[HANDOFF_KEY].blank?
         when "delegated"
           handoff = payload[HANDOFF_KEY]
           handoff.is_a?(Hash) && handoff["state"] == HANDOFF_PENDING && handoff["generation"] == payload[GENERATION_KEY]

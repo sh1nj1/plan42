@@ -99,7 +99,7 @@ module Collavre
         # For a queue retry of a failed execution (SolidQueue's
         # FailedExecution#retry): the caller has confirmed the job's owner
         # failed and calls this in the same transaction that makes the job
-        # ready again. The row the dead attempt left running — or delegated
+        # ready again. The row the dead attempt left running or failed — or delegated
         # with its Channel handoff still pending, so nothing reached the agent —
         # goes back to pending with a fresh generation to come, which the retried
         # job starts like any promoted turn. The job id is kept: it is how a
@@ -111,7 +111,7 @@ module Collavre
         #
         # @return [Array<Task>] the rows handed back
         def reclaim_for_retry!(execution_job_id)
-          Task.where(status: %w[running delegated])
+          Task.where(status: %w[running delegated failed])
               .where("trigger_event_payload->>'#{ExecutionFence::JOB_KEY}' = ?", execution_job_id.to_s)
               .select { |task| reclaim_task_for_retry!(task, execution_job_id.to_s) }
         end
@@ -195,7 +195,7 @@ module Collavre
           end
           return false unless previous_status
 
-          ActiveRecord.after_all_transactions_commit { detach_partial_reply(task) } if previous_status == "running"
+          ActiveRecord.after_all_transactions_commit { detach_partial_reply(task) } if %w[running failed].include?(previous_status)
           true
         end
 

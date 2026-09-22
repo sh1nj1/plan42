@@ -594,6 +594,15 @@ module Collavre
         assert_equal 0, task.resume_count, "a retry is not a resume"
       end
 
+      test "reclaim_for_retry! detaches a failed attempt's partial reply" do
+        task = attempt_of("failed-job", status: "failed")
+        partial = @creative.comments.create!(user: @agent, topic: @topic, content: "Partial answer",
+                                             task: task, skip_dispatch: true)
+        assert_equal [ task ], TaskResumer.reclaim_for_retry!("failed-job")
+        assert_equal "pending", task.reload.status
+        assert_nil partial.reload.task_id
+      end
+
       test "reclaim_for_retry! takes back a delegated attempt only while its handoff never started" do
         pending = attempt_of("job-1", status: "delegated", handoff: "pending")
         started = attempt_of("job-2", status: "delegated", handoff: "started")

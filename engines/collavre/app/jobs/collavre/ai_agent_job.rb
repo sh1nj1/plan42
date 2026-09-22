@@ -179,7 +179,7 @@ module Collavre
           # to "cancelled", the locked status check fails, we skip dispatch,
           # and the ensure block releases the slot. A separate reload +
           # update! would let the cancel slip in between.
-          unless delegate_to_channel!(task)
+          unless delegate_to_channel!(task, attempt_generation)
             Rails.logger.info(
               "[AiAgentJob] Claude Channel task #{task.id} not in running state " \
               "(status=#{task.status}); skipping dispatch"
@@ -336,9 +336,10 @@ module Collavre
     # The handoff marker is written with the status so recovery never sees a
     # delegated row without it. Columns only, as the update_all this replaced:
     # the Channel reply path owns what happens once the row is delegated.
-    def delegate_to_channel!(task)
+    def delegate_to_channel!(task, attempt_generation)
       task.with_lock do
         next false unless task.status == "running"
+        next false if Orchestration::ExecutionFence.superseded?(task, attempt_generation)
 
         task.update_columns(
           status: "delegated",
