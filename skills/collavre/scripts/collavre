@@ -9,6 +9,7 @@ import http from "node:http";
 import os from "node:os";
 import { randomBytes } from "node:crypto";
 import { decodeHtmlEntities } from "./html_entities.js";
+import { scaffoldTool, toolCreativeMarkdown, validateToolSource } from "./tool_authoring.js";
 
 const CONFIG_DIR = path.join(
   os.homedir(),
@@ -518,8 +519,29 @@ Subcommands:
   search <query>                Search tools by name/description
   info <tool_name>              Show tool parameters and usage
   run <tool_name> --json '{}'   Run tool with JSON arguments
-  run <tool_name> --key value   Run tool with flag arguments`);
+  run <tool_name> --key value   Run tool with flag arguments
+
+Authoring (a tool is a Creative holding its Ruby source; see references/tool-authoring.md):
+  scaffold --name <snake_name> [--desc text]           Print a tool source template
+  create --parent <id> --file <tool.rb> [--title t]    Create the tool Creative
+  update <creative_id> --file <tool.rb> [--title t]    Replace the tool Creative's source
+  create/update --dry-run                              Validate and print the Markdown only`);
       process.exit(0);
+    }
+
+    if (sub === "scaffold") {
+      try {
+        process.stdout.write(scaffoldTool({ name: args.name, description: args.desc }));
+      } catch (e) {
+        console.error(`Usage: collavre tool scaffold --name <snake_name> [--desc text]\n${e.message}`);
+        process.exit(1);
+      }
+      return;
+    }
+
+    if (sub === "create" || sub === "update") {
+      await authorTool(sub, args, positional);
+      return;
     }
 
     await withClient(async (client) => {
@@ -596,6 +618,58 @@ Subcommands:
   },
 };
 
+function readToolSource(args) {
+  if (!args.file || args.file === true) return null;
+  if (!fs.existsSync(args.file)) {
+    console.error(`File not found: ${args.file}`);
+    process.exit(1);
+  }
+  return fs.readFileSync(args.file, "utf8");
+}
+
+function toolNotFound(result) {
+  return (result?.content || []).some((item) => /Tool not found/.test(item.text || ""));
+}
+
+async function authorTool(sub, args, positional) {
+  const creativeId = parseInt(positional[1]);
+  const parentId = parseInt(args.parent);
+  const source = readToolSource(args);
+  if (!source || (sub === "create" && !parentId) || (sub === "update" && !creativeId)) {
+    console.error(sub === "create"
+      ? "Usage: collavre tool create --parent <id> --file <tool.rb> [--title text] [--dry-run]"
+      : "Usage: collavre tool update <creative_id> --file <tool.rb> [--title text] [--dry-run]");
+    process.exit(1);
+  }
+
+  const { errors, name, description } = validateToolSource(source);
+  if (errors.length > 0) {
+    console.error(`Invalid tool source:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
+    process.exit(1);
+  }
+  const markdown = toolCreativeMarkdown({ source, name, description, title: args.title });
+  if (args["dry-run"]) {
+    process.stdout.write(markdown);
+    return;
+  }
+
+  await withClient(async (client) => {
+    if (sub === "create") {
+      // Tool names are global. An approved tool with this name already exists;
+      // a second definition would fail to save server-side without an error.
+      const existing = await client.callTool("meta_tool", { action: "get", tool_name: name });
+      if (!toolNotFound(existing)) {
+        console.error(`Tool "${name}" already exists. Pick another tool_name or update its Creative.`);
+        process.exit(1);
+      }
+      printResult(await client.callTool("creative_create_service", { description: markdown, parent_id: parentId }));
+    } else {
+      printResult(await client.callTool("creative_update_service", { id: creativeId, description: markdown }));
+    }
+    console.error(`Tool "${name}" is pending approval: the Creative owner must approve it from the approval comment before it runs.`);
+  });
+}
+
 // --- Main ---
 async function main() {
   const [cmd, ...argv] = process.argv.slice(2);
@@ -616,6 +690,7 @@ Commands:
   attach   --creative <id> --file <path>   Upload & embed a file (bearer multipart)
   batch    --file <ops.json>               Batch operations
   tool     <list|search|info|run>          Discover & run any tool
+  tool     <scaffold|create|update>        Author a tool as a Creative
   help                                     Show this help`);
     process.exit(0);
   }
