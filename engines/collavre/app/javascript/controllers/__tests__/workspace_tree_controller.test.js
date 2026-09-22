@@ -27,6 +27,20 @@ describe('WorkspaceTreeController', () => {
     expect(urls.some((url) => url.includes('expand%5B%5D=8') && url.includes('expand%5B%5D=1'))).toBe(true)
   })
 
+  test.each([[[]], [[1, 2, 3]]])('caps initial saved branches without evicting their root (path %j)', async (path) => {
+    controller.disconnect()
+    document.getElementById('creative-workspace-content')?.remove()
+    controller.currentPathValue = path
+    controller.initialExpandedIdsValue = Array.from({ length: 101 }, (_, index) => index + 1)
+    fetchMock.mockClear()
+    controller.connect()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const requested = new URL(fetchMock.mock.calls[0][0], window.location.origin).searchParams.getAll('expand[]')
+    expect(requested).toEqual(Array.from({ length: 100 }, (_, index) => String(index + 1)))
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    expect(controller.treeTarget.querySelector('[data-creative-id="2"]')).not.toBeNull()
+  })
+
   beforeEach(async () => {
     window.localStorage.clear()
     fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(

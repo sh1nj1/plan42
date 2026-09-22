@@ -71,4 +71,52 @@ describe('creative expansion persistence', () => {
       { creative_id: '9', node_id: '1', expanded: false },
     ])
   })
+  test('writes from replacement controllers wait for the previous screen queue', async () => {
+    let finish
+    fetch.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    controller.connect()
+    controller.saveExpansionState('1', true)
+    controller.saveExpansionState('2', true)
+    await flush()
+    controller.disconnect()
+    const replacement = Object.create(ExpansionController.prototype)
+    Object.defineProperty(replacement, 'element', { value: controller.element })
+    Object.defineProperty(replacement, 'hasExpandTarget', { value: false })
+    replacement.connect()
+    replacement.collapseRow(row)
+    await flush()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    finish({ headers: new Headers() })
+    await replacement.saveQueue
+    expect(fetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
+      { creative_id: null, node_id: '1', expanded: true },
+      { creative_id: null, node_id: '2', expanded: true },
+      { creative_id: null, node_id: '1', expanded: false },
+    ])
+    replacement.disconnect()
+  })
+
+  test('disconnect invalidates an unfinished expansion before reconnecting', async () => {
+    controller.connect()
+    let finish
+    controller.ensureLoaded = () => new Promise((resolve) => { finish = resolve })
+    const pending = controller.expandRow(row)
+    controller.disconnect()
+    controller.connect()
+    finish(true)
+    await pending
+    expect(fetch).not.toHaveBeenCalled()
+    expect(row.expanded).toBe(false)
+    controller.disconnect()
+  })
+
+  test('a rejected save does not block later writes', async () => {
+    fetch.mockRejectedValueOnce(new Error('offline'))
+    controller.saveExpansionState('1', true)
+    controller.saveExpansionState('1', false)
+    await controller.saveQueue
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(fetch.mock.calls[1][1].body).expanded).toBe(false)
+  })
+
 })

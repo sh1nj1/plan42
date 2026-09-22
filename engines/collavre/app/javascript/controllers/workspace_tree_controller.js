@@ -34,9 +34,10 @@ export default class extends Controller {
   }
 
   connect() {
-    this.expandedCreativeIds = new Set(this.initialExpandedIdsValue.map(String))
+    // Saved IDs are ancestor-first; reserve room for the selected path.
+    this.expandedCreativeIds = new Set([...this.currentPathValue, ...this.initialExpandedIdsValue].map(String))
+    this.expandedCreativeIds = new Set([...this.expandedCreativeIds].slice(0, MAX_EXPANDED_BRANCHES))
     this.pendingDropDestinationIds = new Set()
-    this.addExpandedPath(this.currentPathValue)
     this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
     this.invalidatedCreativeIds = new Set()
     this.destroyedCreativeIds = new Set()
