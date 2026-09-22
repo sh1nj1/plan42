@@ -11,7 +11,8 @@ module Collavre
         super
       rescue ExceededError => error
         @streamer&.finalize
-        Recovery.suspend!(@task, error, expected_generation: @quota_execution_generation)
+        result = Recovery.suspend!(@task, error, expected_generation: @quota_execution_generation)
+        raise CancelledError unless result
         @lifecycle_manager&.broadcast_status("idle")
         raise TaskSuspendedError
       end

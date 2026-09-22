@@ -314,6 +314,30 @@ class AiAgentJobTest < ActiveJob::TestCase
                  "nothing read that comment; it has no turn unless this one gives it back"
   end
 
+  test "quota error losing to cancellation restores a pre-handoff dropped dispatch" do
+    topic, swallowed, task = stopped_turn_fixture
+    client = Class.new do
+      define_method(:chat) do |*, **|
+        Collavre::Task.find(task.id).update!(status: "cancelled")
+        raise Collavre::Quota::ExceededError
+      end
+      define_method(:last_handoff_failed?) { true }
+      define_method(:handed_off?) { false }
+    end.new
+
+    with_test_queue do
+      AiClient.stub :new, client do
+        AiAgentJob.perform_now(task)
+      end
+      restored = enqueued_jobs.select { |job| job[:job] == Collavre::AiAgentJob }
+      assert_equal [ swallowed.id ], restored.map { |job| job[:args][2].dig("comment", "id") }
+      assert_equal "cancelled", task.reload.status
+      assert_equal 0, @agent.reload.quota_retry_count
+      assert_nil @agent.quota_blocked_until
+      assert_empty enqueued_jobs.select { |job| job[:job] == Collavre::ResumeSuspendedTasksJob }
+    end
+  end
+
   # StuckDetector can fail the row while this job is still inside #chat. The
   # status callback must wait, but the live worker must not leave the dispatch
   # waiting for the periodic sweep once it does come out and can answer whether

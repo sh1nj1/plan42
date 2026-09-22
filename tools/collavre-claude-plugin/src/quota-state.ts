@@ -50,14 +50,19 @@ export function quotaTurns(directory: string, alive = (pid: number) => { process
   try {
     for (const file of readdirSync(directory)) {
       if (!/^\d+\.json$/.test(file)) continue;
-      try { alive(Number(file.split(".")[0])); } catch { continue; }
-      if (++liveSessions > 1) return null;
+      try { alive(Number(file.split(".")[0])); } catch (error) {
+        // Permission and other probe errors do not prove that a process exited.
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") return null;
+        rmSync(join(directory, file), { force: true });
+        continue;
+      }
+      liveSessions++;
       const values = JSON.parse(readFileSync(join(directory, file), "utf8")) as QuotaTurn[];
       if (!Array.isArray(values)) return null;
       turns.push(...values);
     }
   } catch { return null; }
-  return turns.every(turn => turn != null && Number.isSafeInteger(turn.task_id) && turn.task_id > 0 &&
+  return liveSessions <= 1 && turns.every(turn => turn != null && Number.isSafeInteger(turn.task_id) && turn.task_id > 0 &&
     typeof turn.execution_generation === "string" && turn.execution_generation.length > 0) ? turns : null;
 }
 

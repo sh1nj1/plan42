@@ -81,6 +81,26 @@ class QuotaRecoveryTest < ActiveSupport::TestCase
     assert_equal "suspended", @task.reload.status
   end
 
+  test "execution guard preserves cancellation when a blocked task already ended" do
+    @agent.update!(quota_blocked_until: 1.hour.from_now)
+    @task.update!(status: "cancelled")
+    assert_raises(Collavre::CancelledError) { Collavre::AiAgentService.new(@task).call }
+    assert_equal "cancelled", @task.reload.status
+    assert_no_enqueued_jobs(only: Collavre::ResumeSuspendedTasksJob)
+  end
+
+  test "provider quota converts successful suspension and escalation to the parked control flow" do
+    [ 0, Collavre::Orchestration::TaskResumer::MAX_RESUMES ].each do |count|
+      @task.update!(status: "running", resume_count: count)
+      @agent.update!(quota_blocked_until: nil, quota_retry_count: 0)
+      service = Collavre::AiAgentService.new(@task)
+      service.stub(:execute_llm_conversation, -> { raise Collavre::Quota::ExceededError }) do
+        assert_raises(Collavre::TaskSuspendedError) { service.call }
+      end
+      assert_equal count.zero? ? "suspended" : "escalated", @task.reload.status
+    end
+  end
+
   test "success clears old backoff but preserves sibling newer failure" do
     @agent.update!(quota_retry_count: 2, quota_blocked_until: 1.minute.ago)
     Collavre::Quota::Recovery.succeeded!(@agent)

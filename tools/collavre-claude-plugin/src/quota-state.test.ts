@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { QuotaState, currentQuotaTurn, onlyQuotaTurn, quotaDirectory } from "./quota-state.ts";
@@ -27,7 +27,7 @@ test("multiple queued turns or sibling sessions are ambiguous; dead processes ar
     assert.equal(onlyQuotaTurn(dir, () => {}), null);
     first.remove(2); second.add({ task_id: 3, execution_generation: "c" });
     assert.equal(onlyQuotaTurn(dir, () => {}), null);
-    assert.equal(onlyQuotaTurn(dir, pid => { if (pid === 22) throw Error(); })?.task_id, 1);
+    assert.equal(onlyQuotaTurn(dir, pid => { if (pid === 22) throw Object.assign(Error(), { code: "ESRCH" }); })?.task_id, 1);
     first.clear(); second.clear();
     assert.equal(onlyQuotaTurn(dir), null);
     assert.notEqual(quotaDirectory("/a", dir), quotaDirectory("/b", dir));
@@ -78,4 +78,33 @@ test("unwritable persistence never interrupts initialization dispatch reply or c
     });
     assert.equal(onlyQuotaTurn(join(file, "sessions")), null);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("confirmed dead PID files are removed before PID reuse, including ambiguous scans", () => {
+  const dir = mkdtempSync(join(tmpdir(), "quota-"));
+  try {
+    const first = new QuotaState(dir, 11), sibling = new QuotaState(dir, 22);
+    new QuotaState(dir, 33);
+    first.add({ task_id: 1, execution_generation: "current" });
+    assert.equal(onlyQuotaTurn(dir, pid => {
+      if (pid === 33) throw Object.assign(Error(), { code: "ESRCH" });
+    }), null);
+    assert.equal(existsSync(join(dir, "33.json")), false);
+    sibling.clear();
+    assert.equal(onlyQuotaTurn(dir, () => {})?.task_id, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("unconfirmed liveness failures preserve state and refuse attribution", () => {
+  const dir = mkdtempSync(join(tmpdir(), "quota-"));
+  try {
+    new QuotaState(dir, 11).add({ task_id: 1, execution_generation: "current" });
+    new QuotaState(dir, 22);
+    for (const code of ["EPERM", "EIO"]) {
+      assert.equal(onlyQuotaTurn(dir, pid => {
+        if (pid === 22) throw Object.assign(Error(), { code });
+      }), null);
+      assert.equal(existsSync(join(dir, "22.json")), true);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

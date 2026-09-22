@@ -49,7 +49,9 @@ module Collavre
         agent = task.agent.reload
         return unless blocked?(agent)
 
-        Orchestration::TaskResumer.suspend!(task, reason: "quota", resume_not_before: agent.quota_blocked_until)
+        result = Orchestration::TaskResumer.suspend!(task, reason: "quota", resume_not_before: agent.quota_blocked_until)
+        raise CancelledError unless result
+
         raise TaskSuspendedError
       end
 
