@@ -1,5 +1,5 @@
 require "test_helper"
-require Rails.root.join("engines/collavre/db/migrate/20260922000000_deduplicate_root_creative_preferences")
+require Rails.root.join("engines/collavre/db/migrate/20260922000002_deduplicate_root_creative_preferences")
 
 class DeduplicateRootCreativePreferencesTest < ActiveSupport::TestCase
   test "PostgreSQL locks out inserts before cleanup without installing a rollout-incompatible index" do

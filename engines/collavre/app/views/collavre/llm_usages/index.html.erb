@@ -1,0 +1,64 @@
+<% content_for :head do %>
+  <%= stylesheet_link_tag "collavre/llm_usages" %>
+<% end %>
+<div class="usage-report">
+  <h1><%= t("collavre.llm_usages.title") %></h1>
+  <p><%= t("collavre.llm_usages.description") %></p>
+  <%= form_with url: collavre.llm_usages_path, method: :get, local: true, class: "usage-report__filters" do |f| %>
+    <div>
+      <%= f.label :from, t("collavre.llm_usages.from") %>
+      <%= f.date_field :from, value: @report.from, required: true %>
+    </div>
+    <div>
+      <%= f.label :to, t("collavre.llm_usages.to") %>
+      <%= f.date_field :to, value: @report.to, required: true %>
+    </div>
+    <div>
+      <%= f.label :period, t("collavre.llm_usages.period") %>
+      <%= f.select :period, Collavre::LlmUsage::Report::PERIODS.map { |v| [t("collavre.llm_usages.#{v}"), v] }, selected: @report.period %>
+    </div>
+    <div>
+      <%= f.label :group, t("collavre.llm_usages.group") %>
+      <%= f.select :group, Collavre::LlmUsage::Report::GROUPS.map { |v| [t("collavre.llm_usages.#{v}"), v] }, selected: @report.group %>
+    </div>
+    <% Collavre::LlmUsage::Report::FILTERS.each do |key| %>
+      <div>
+        <%= f.label key, t("collavre.llm_usages.#{key}") %>
+        <%= f.select key, @filters[key], selected: params[key], include_blank: t("collavre.llm_usages.all") %>
+      </div>
+    <% end %>
+    <%= f.submit t("collavre.llm_usages.apply"), class: "btn btn-primary" %>
+  <% end %>
+  <p><%= t("collavre.llm_usages.missing_note") %></p>
+  <% if @rows.empty? %>
+    <p><%= t("collavre.llm_usages.empty") %></p>
+  <% else %>
+    <div class="usage-report__table" tabindex="0" role="region" aria-label="<%= t("collavre.llm_usages.title") %>">
+      <table class="table">
+        <thead><tr>
+          <% [:period, @report.group, :records, :executions, *Collavre::LlmUsage::TOKEN_FIELDS].each do |key| %>
+            <th scope="col"><%= t("collavre.llm_usages.#{key}") %></th>
+          <% end %>
+        </tr></thead>
+        <tbody>
+          <% @rows.each do |row| %>
+            <tr>
+              <td><%= row[:period] %></td>
+              <td><%= @report.group == "requester" && row[:group] == "joint" ? t("collavre.llm_usages.joint") : (@names[row[:group].to_s] || row[:group] || t("collavre.llm_usages.unknown")) %></td>
+              <td><%= number_with_delimiter(row[:records]) %></td>
+              <td><%= number_with_delimiter(row[:executions]) %></td>
+              <% Collavre::LlmUsage::TOKEN_FIELDS.each do |field| %>
+                <td>
+                  <%= row[field].nil? ? t("collavre.llm_usages.unknown") : number_with_delimiter(row[field]) %>
+                  <% if row["#{field}_missing".to_sym].positive? %>
+                    <small><%= t("collavre.llm_usages.missing", count: row["#{field}_missing".to_sym]) %></small>
+                  <% end %>
+                </td>
+              <% end %>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+</div>

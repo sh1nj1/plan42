@@ -48,9 +48,7 @@ import FileUploadPlugin, {
   INSERT_IMAGE_COMMAND,
   INSERT_FILE_COMMAND
 } from "./plugins/image_upload_plugin"
-import { ImageNode } from "../lib/lexical/image_node"
-import { AttachmentNode } from "../lib/lexical/attachment_node"
-import { VideoNode } from "../lib/lexical/video_node"
+import { UPLOAD_NODES } from "../lib/lexical/upload_nodes"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
@@ -69,7 +67,7 @@ import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
 import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
 import { CreativeLinkNode } from "../lib/lexical/creative_link_node"
-import { registerCreativeLinkTrigger } from "../lib/lexical/creative_link_trigger"
+import CreativeLinksPlugin from "./plugins/creative_links_plugin"
 import { $createToolbarLinkNode, $findLinkNode } from "../lib/lexical/link_toolbar"
 
 const URL_MATCHERS = [
@@ -291,24 +289,6 @@ function LinkAttributesPlugin() {
       })
     })
   }, [editor])
-
-  return null
-}
-
-function CreativeLinkTriggerPlugin() {
-  const [editor] = useLexicalComposerContext()
-
-  useEffect(() => registerCreativeLinkTrigger(editor, ({ anchorRect, onSelect, onClose }) => {
-    const modal = document.getElementById("link-creative-modal")
-    const controller = modal && window.Stimulus?.getControllerForElementAndIdentifier(
-      modal,
-      "link-creative"
-    )
-    if (!controller) return false
-
-    controller.open(anchorRect, onSelect, onClose, { allowCreate: true })
-    return true
-  }), [editor])
 
   return null
 }
@@ -1020,7 +1000,7 @@ function EditorInner({
         <TrailingParagraphPlugin />
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
-        <CreativeLinkTriggerPlugin />
+        <CreativeLinksPlugin />
         <ReadyPlugin onReady={onReady} />
         <FileUploadPlugin
           onUploadStateChange={onUploadStateChange}
@@ -1090,9 +1070,7 @@ export default function InlineLexicalEditor({
         LinkNode,
         AutoLinkNode,
         CreativeLinkNode,
-        ImageNode,
-        AttachmentNode,
-        VideoNode,
+        ...UPLOAD_NODES,
         TableNode,
         TableRowNode,
         TableCellNode

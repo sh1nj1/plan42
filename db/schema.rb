@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_22_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_22_000002) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -549,6 +549,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000001) do
     t.index ["llm_vendor", "name"], name: "index_llm_models_on_llm_vendor_and_name", unique: true
   end
 
+  create_table "llm_usage_requesters", force: :cascade do |t|
+    t.bigint "llm_usage_id", null: false
+    t.bigint "user_id", null: false
+    t.index ["llm_usage_id"], name: "index_llm_usage_requesters_on_llm_usage_id"
+    t.index ["user_id", "llm_usage_id"], name: "index_llm_usage_requesters_on_user_id_and_llm_usage_id", unique: true
+  end
+
+  create_table "llm_usages", force: :cascade do |t|
+    t.bigint "activity_log_id"
+    t.bigint "agent_id"
+    t.bigint "cache_read_tokens"
+    t.bigint "cache_write_tokens"
+    t.datetime "created_at", null: false
+    t.bigint "creative_id"
+    t.string "event_key", null: false
+    t.string "execution_id", null: false
+    t.bigint "input_tokens"
+    t.string "measurement", default: "call", null: false
+    t.string "model", null: false
+    t.integer "normalization_version", default: 1, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "output_tokens"
+    t.bigint "owner_id"
+    t.json "raw_usage", default: {}, null: false
+    t.bigint "requester_id"
+    t.json "requester_ids", default: [], null: false
+    t.string "requester_kind", null: false
+    t.json "source_comment_ids", default: [], null: false
+    t.bigint "task_id"
+    t.bigint "topic_id"
+    t.datetime "updated_at", null: false
+    t.string "vendor", null: false
+    t.index ["agent_id", "occurred_at"], name: "index_llm_usages_on_agent_id_and_occurred_at"
+    t.index ["event_key"], name: "index_llm_usages_on_event_key", unique: true
+    t.index ["execution_id"], name: "index_llm_usages_on_execution_id"
+    t.index ["occurred_at"], name: "index_llm_usages_on_occurred_at"
+    t.index ["owner_id", "occurred_at"], name: "index_llm_usages_on_owner_id_and_occurred_at"
+    t.index ["requester_id", "occurred_at"], name: "index_llm_usages_on_requester_id_and_occurred_at"
+    t.index ["task_id"], name: "index_llm_usages_on_task_id"
+  end
+
   create_table "mcp_tools", force: :cascade do |t|
     t.datetime "approved_at"
     t.string "checksum"
@@ -960,6 +1001,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000001) do
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
+    t.json "usage_attribution", default: {}, null: false
     t.string "waiting_notice_scope"
     t.integer "workflow_execution_id"
     t.string "workflow_stop_reason"
@@ -1214,6 +1256,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000001) do
   add_foreign_key "linear_project_links", "creatives"
   add_foreign_key "linear_project_links", "linear_accounts", column: "account_id"
   add_foreign_key "llm_models", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "llm_usage_requesters", "llm_usages", on_delete: :cascade
   add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"
   add_foreign_key "notion_block_links", "creatives"

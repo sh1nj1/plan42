@@ -6,7 +6,9 @@ module Collavre
       private
 
       def prepare_gate_conversation(contents, tools)
+        start_usage_tracking
         @conversation = build_conversation(tools)
+        install_usage_tracking(@conversation)
         add_messages(@conversation, contents) unless restore_approval_gate
       end
 
