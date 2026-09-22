@@ -21,9 +21,12 @@ module Collavre
 
       sig { params(question: String, approver_user_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
       def call(question:, approver_user_id: nil)
-        # Native AiClient intercepts this call before RubyLLM executes it. An
-        # external MCP caller has no resumable native conversation to suspend.
+        self.class.approver!(Current.agent_turn&.dig(:task), question, approver_user_id)
+        # Valid native calls are intercepted before execution. Other callers
+        # have no resumable conversation, even if they carry an agent context.
         { error: I18n.t("collavre.approval_gate.native_required") }
+      rescue ArgumentError => e
+        { error: e.message }
       end
 
       def self.approver!(task, question, approver_user_id)

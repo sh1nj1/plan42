@@ -2,6 +2,8 @@
 
 module Collavre
   class ApprovalGateResumeJob < ApplicationJob
+    self.enqueue_after_transaction_commit = true
+
     queue_as :ai_agents
 
     def perform(task_id, tool_call_id)

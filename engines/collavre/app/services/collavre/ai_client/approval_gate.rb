@@ -15,11 +15,19 @@ module Collavre
         return unless args
 
         task = context&.dig(:task)
-        approver = Tools::ApprovalRequestService.approver!(task, args["question"], args["approver_user_id"])
+        approver = gate_approver(task, args)
+        return unless approver
         raise ApprovalGatePendingError.new(
           tool_call: tool_call, task: task, question: args["question"], approver: approver,
           messages: AiAgent::ApprovalConversation.dump(@conversation.messages)
         )
+      end
+
+      def gate_approver(task, args)
+        Tools::ApprovalRequestService.approver!(task, args["question"], args["approver_user_id"])
+      rescue ArgumentError
+        # Let the tool return validation errors so the model can correct its call.
+        nil
       end
 
       def approval_gate_arguments(tool_call)

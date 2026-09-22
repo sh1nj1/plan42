@@ -19,8 +19,11 @@ test.each(['approve', 'deny'])('%s submits the reason and replaces the decided c
   controller.topicQueryString = () => '?topic_id=3'
   global.fetch = jest.fn().mockResolvedValue({ ok: true, text: async () => '<div id="comment_42">Decided</div>' })
   const button = document.querySelector('button')
-  controller.decideComment(button, action)
-  controller.decideComment(button, action)
+  button.classList.add(`${action}-comment-btn`)
+  const event = { target: button, preventDefault: jest.fn() }
+  controller.handleClick(event)
+  controller.handleClick(event)
+  expect(event.preventDefault).toHaveBeenCalledTimes(2)
   await new Promise(resolve => setTimeout(resolve, 0))
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(fetch).toHaveBeenCalledWith(`/creatives/7/comments/42/${action}?topic_id=3`, expect.objectContaining({

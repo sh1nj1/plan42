@@ -129,6 +129,55 @@ class ApprovalGateTest < ActiveSupport::TestCase
     assert service.new.call(question: "Proceed?")[:error]
   end
 
+  %w[approval_request meta_tool].each do |tool_name|
+    { blank_question: [ "", nil, "question_required" ],
+      missing_user: [ "Proceed?", -1, "invalid_approver" ],
+      ai_user: [ "Proceed?", :ai_bot, "invalid_approver" ],
+      inaccessible_user: [ "Proceed?", :two, "invalid_approver" ] }.each do |label, (question, user, error_key)|
+      test "#{tool_name} chat returns #{label} as a tool error and accepts a corrected call" do
+        approver_id = user.is_a?(Symbol) ? users(user).id : user
+        @client.instance_variable_set(:@llm_api_key, "test")
+        chat = @client.send(:build_conversation, [ tool_name ])
+        rounds = 0
+        completion = lambda do |&block|
+          rounds += 1
+          if rounds == 2
+            result = chat.messages.last
+            assert_equal :tool, result.role
+            assert_equal "invalid-gate", result.tool_call_id
+            assert_includes result.content, I18n.t("collavre.approval_gate.#{error_key}")
+            assert @task.reload.running?
+            assert_nil @task.pending_tool_call
+          end
+          args = rounds == 1 ? { "question" => question, "approver_user_id" => approver_id } : { "question" => "Proceed?" }
+          args = { "action" => "run", "tool_name" => "approval_request", "arguments" => args } if tool_name == "meta_tool"
+          id = rounds == 1 ? "invalid-gate" : "corrected-gate"
+          call = RubyLLM::ToolCall.new(id: id, name: tool_name, arguments: args)
+          RubyLLM::Message.new(role: :assistant, content: nil, tool_calls: { id => call })
+        end
+        Current.set(user: @agent, agent_turn: { task: @task }) do
+          chat.stub(:provider_completion, completion) do
+            @client.stub(:build_conversation, chat) do
+              error = assert_raises(Collavre::ApprovalGatePendingError) do
+                @client.chat([ { role: "user", content: "Ask for approval" } ], tools: [ tool_name ])
+              end
+              assert_equal "corrected-gate", error.tool_call_id
+              assert_equal @user, error.approver
+              assert_equal 2, rounds
+            end
+          end
+        end
+      end
+    end
+  end
+
+  test "valid request without native interception still cannot suspend" do
+    Current.set(agent_turn: { task: @task }) do
+      result = Collavre::Tools::ApprovalRequestService.new.call(question: "Proceed?")
+      assert_equal I18n.t("collavre.approval_gate.native_required"), result[:error]
+    end
+  end
+
   test "snapshot retains completed results and marks remaining batch calls unexecuted" do
     previous = RubyLLM::ToolCall.new(id: "previous", name: "write", arguments: {})
     later = RubyLLM::ToolCall.new(id: "later", name: "write", arguments: {})
@@ -150,7 +199,7 @@ class ApprovalGateTest < ActiveSupport::TestCase
     pause
     assert_raises(Collavre::CancelledError) { @client.send(:restore_approval_gate) }
     @task.update!(status: "cancelled")
-    assert_raises(ArgumentError) { @client.send(:check_tool_approval!, @call) }
+    assert_nil @client.send(:check_tool_approval!, @call)
   end
 
   test "explicit approver must have access and can differ from the trigger author" do
