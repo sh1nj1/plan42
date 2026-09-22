@@ -101,13 +101,15 @@ module Collavre
         assert_not Orchestration::Matcher.permits_assignment?(payload, users(:two))
       end
 
-      test "workflow priority does not bypass disabled routing" do
-        execution = execute
-        task = materialize(execution, status: "pending")
-        pin_other_agent
-        @policy.update!(config: { "workflow_routing" => "off" })
-        assert_not TaskAdmission.validate_start!(task)
-        assert_equal "cancelled", task.reload.status
+      %w[off shadow].each do |mode|
+        test "workflow priority does not bypass #{mode} routing on resumption" do
+          execution = execute
+          task = materialize(execution, status: "pending")
+          pin_other_agent
+          @policy.update!(config: { "workflow_routing" => mode })
+          assert_not TaskAdmission.validate_start!(task)
+          assert_equal "cancelled", task.reload.status
+        end
       end
 
       test "successful completion reserves one persisted child and reuses its envelope" do
@@ -1433,6 +1435,7 @@ module Collavre
 
       def pin_other_agent
         other = users(:channel_bot)
+        other.update!(llm_vendor: "google", llm_model: "gemini-1.5-flash")
         CreativeShare.create!(creative: @creative, user: other, shared_by: @owner, permission: :feedback)
         CreativeSharesCache.find_or_create_by!(creative: @creative, user: other, permission: :feedback)
         @topic.set_primary_agent!(other)

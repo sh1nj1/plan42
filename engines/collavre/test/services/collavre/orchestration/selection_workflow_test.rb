@@ -30,6 +30,7 @@ module Collavre
 
       test "workflow candidates ignore the topic pin but retain explicit arbitration limits" do
         worker = users(:channel_bot)
+        worker.update!(llm_vendor: "google", llm_model: "gemini-1.5-flash")
         CreativeShare.create!(creative: @creative, user: worker, shared_by: @owner, permission: :feedback)
         CreativeSharesCache.find_or_create_by!(creative: @creative, user: worker, permission: :feedback)
         @topic.set_primary_agent!(worker)
