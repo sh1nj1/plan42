@@ -174,6 +174,10 @@ module Tools
         updated_at: creative.updated_at&.iso8601
       }
 
+      # Tools this Creative defines (approved or pending), so authoring clients can
+      # tell a rename from a collision. Top level only to avoid a query per node.
+      result[:mcp_tools] = creative.effective_origin.mcp_tools.pluck(:name) if current_depth == 1
+
       if include_comments
         result[:recent_comments] = creative.comments.order(created_at: :desc).limit(3).map do |comment|
           {

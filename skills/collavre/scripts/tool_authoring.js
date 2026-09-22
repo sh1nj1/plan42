@@ -59,13 +59,6 @@ function extractString(source, keyword) {
   return (match[1] ?? match[2]).replace(/\\(.)/g, (_, ch) => (ch === "n" ? " " : ch));
 }
 
-// Tool names McpService would register from a Creative's (plain text) description.
-export function registeredToolNames(text) {
-  if (!text || !text.includes(TOOL_MARKER)) return [];
-  const global = new RegExp(SERVER_TOOL_NAME.source, "g");
-  return [...text.matchAll(global)].map((match) => match[1]);
-}
-
 // Mirrors what the server needs to turn the code block into a working tool:
 // McpService only picks up blocks containing `extend ToolMeta`, reads
 // `tool_name`/`tool_description` by regex, and ToolMeta refuses to build a

@@ -56,6 +56,16 @@ module Tools
       end
     end
 
+    test "json format lists the tools a top-level Creative defines" do
+      McpTool.create!(creative: @parent, name: "parent_probe", source_code: "x", checksum: "x")
+      Current.set(user: @user) do
+        result = Tools::CreativeRetrievalService.new.call(id: @parent.id, level: 2, format: "json")
+
+        assert_equal [ "parent_probe" ], result.first[:mcp_tools]
+        assert result.first[:children].none? { |child| child.key?(:mcp_tools) }
+      end
+    end
+
     test "search by query text returns flat list" do
       Current.set(user: @user) do
         service = Tools::CreativeRetrievalService.new

@@ -190,6 +190,39 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     end
   end
 
+  test "update ignores tool names that only appear in the Creative's text" do
+    decoy = "Tool module Tools extend ToolMeta tool_name \"old_probe\" # tool_name \"authored_probe\" end"
+    responses = {
+      "creative_retrieval_service" => [ { id: 77, description: decoy, mcp_tools: [ "old_probe" ] } ].to_json,
+      "meta_tool" => '{"name":"authored_probe"}'
+    }
+    with_fake_mcp(responses) do |home, calls|
+      _out, err, status = cli_with_source(home, "update", "77")
+      assert_not_predicate status, :success?
+      assert_includes err, 'Tool "authored_probe" already exists'
+      assert_equal %w[creative_retrieval_service meta_tool], calls.map { |c| c["name"] }
+    end
+  end
+
+  test "update reads the real retrieval output of a scaffolded tool Creative" do
+    user = users(:one)
+    host = Creative.new(user: user)
+    host.content_type_input = "markdown"
+    host.markdown_source = dry_run(scaffold(desc: 'Probe "q" #{x} \\ e'), "--parent", "1")
+    host.save!
+    Collavre::McpService.new.update_from_creative(host)
+    retrieved = Current.set(user: user) do
+      Tools::CreativeRetrievalService.new.call(id: host.id, level: 1, format: "json")
+    end
+    assert_includes retrieved.first[:description], "{ error: "
+
+    with_fake_mcp("creative_retrieval_service" => retrieved.to_s) do |home, calls|
+      _out, err, status = cli_with_source(home, "update", host.id.to_s)
+      assert_predicate status, :success?, err
+      assert_equal %w[creative_retrieval_service creative_update_service], calls.map { |c| c["name"] }
+    end
+  end
+
   test "rejects sources the server would not register as intended" do
     spaced = scaffold.sub("extend ToolMeta", "extend  ToolMeta")
     assert_includes invalid(spaced), "Missing `extend ToolMeta` (exactly one space)"
@@ -201,7 +234,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
   private
 
   def owner(id, tool_name)
-    [ { id: id, description: "Tool module Tools extend ToolMeta tool_name \"#{tool_name}\" end" } ].to_json
+    [ { id: id, description: "Tool module Tools extend ToolMeta tool_name \"#{tool_name}\" end", mcp_tools: [ tool_name ] } ].to_json
   end
 
   def invalid(source)

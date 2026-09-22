@@ -38,8 +38,9 @@ collavre tool update 456 --file weekly_digest.rb
 ```
 
 Tool names are global, so pick a specific name. `create` refuses a `tool_name`
-that is already registered, and so does `update` when it would rename the tool
-to another Creative's name. Only approved tools are visible to this check: a
+that is already registered, and so does `update` when the new name is not one
+of the tools the server records for that Creative (its approved or pending
+tools, not names that merely appear in its text). Only approved tools are visible to this check: a
 name still pending approval elsewhere makes the save fail silently, and on
 `update` the Creative's previous tool is removed as well. Both commands exit
 non-zero when the server rejects the request.
