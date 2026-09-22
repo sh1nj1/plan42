@@ -550,6 +550,17 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_select "small", text: description, count: 0
   end
 
+  test "profile separates token usage and password change links with a line break" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+
+    assert_response :success
+    assert_select ".profile-actions > a[href=?] + br + a[href=?]",
+                  collavre.llm_usages_path, collavre.edit_password_user_path(@regular_user),
+                  text: I18n.t("collavre.users.change_password")
+  end
+
   test "profile opens agent gateway settings outside Turbo navigation" do
     sign_in_as(@regular_user, password: "password")
 
