@@ -82,7 +82,7 @@ class ToolUsageTest < ActiveSupport::TestCase
   end
 
   test "mcp calls made with a workspace callback token are recorded and tagged with the workspace" do
-    workspace = Struct.new(:id).new(42)
+    workspace = Struct.new(:id, :agent).new(42, @agent)
     pair = Collavre::Current.set(user: @requester, mcp_agent_workspace: workspace) do
       Collavre::ToolUsage::McpCall.track("cron_list", { creative_id: 5 }) { [ { success: true }, {} ] }
     end
@@ -91,6 +91,9 @@ class ToolUsageTest < ActiveSupport::TestCase
     assert_equal [ { success: true }, {} ], pair
     tagged, untagged = Collavre::ToolUsage.order(:id).to_a
     assert_equal [ "mcp", 42, @requester.id ], [ tagged.source, tagged.agent_workspace_id, tagged.requester_id ]
+    # The token belongs to the workspace user, but the call is the workspace agent's.
+    assert_equal [ @agent.id, @owner.id ], [ tagged.agent_id, tagged.owner_id ]
+    assert_equal [ nil, nil ], [ untagged.agent_id, untagged.owner_id ]
     assert_equal Collavre::ToolUsage.arguments_digest("creative_id" => 5), tagged.arguments_digest
     assert_nil untagged.arguments_digest
   end
@@ -115,7 +118,7 @@ class ToolUsageTest < ActiveSupport::TestCase
   end
 
   test "the FastMcp tool entry point digests the arguments of a workspace call" do
-    Collavre::Current.set(user: @requester, mcp_agent_workspace: Struct.new(:id).new(42)) do
+    Collavre::Current.set(user: @requester, mcp_agent_workspace: Struct.new(:id, :agent).new(42, @agent)) do
       Mcp::CronList.new.call_with_schema_validation!(creative_id: 0)
     end
 

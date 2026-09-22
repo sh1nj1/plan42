@@ -27,19 +27,26 @@ module Collavre
       end
 
       # McpOauthMiddleware sets Current.user to the token owner. An agent token
-      # attributes the call to that agent; a human token to that person.
+      # attributes the call to that agent; a human token to that person. A
+      # workspace callback token belongs to the workspace user (or the agent, for
+      # a shared workspace), but the call is the workspace agent's, so the agent
+      # and its owner are taken from the workspace and the token owner stays the
+      # requester.
       def self.record(tool_name, arguments, succeeded, duration_ms)
-        user = Current.user
-        context = user&.ai_user? ? { user: user } : { requester: user }
         workspace = Current.mcp_agent_workspace
-        Recorder.new(context: context, source: SOURCE, agent_workspace: workspace).record(
+        Recorder.new(context: context(Current.user, workspace), source: SOURCE, agent_workspace: workspace).record(
           tool_name: tool_name, succeeded: succeeded, duration_ms: duration_ms,
           arguments_digest: workspace && ToolUsage.arguments_digest(arguments)
         )
       rescue StandardError => e
         Rails.logger.error("Failed to persist MCP tool usage: #{e.class}: #{e.message}")
       end
-      private_class_method :record
+
+      def self.context(user, workspace)
+        return { agent: workspace.agent, requester: user } if workspace
+        user&.ai_user? ? { user: user } : { requester: user }
+      end
+      private_class_method :record, :context
     end
   end
 end
