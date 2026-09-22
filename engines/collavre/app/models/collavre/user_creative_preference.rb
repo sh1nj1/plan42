@@ -6,14 +6,9 @@ module Collavre
     belongs_to :user, class_name: Collavre.configuration.user_class_name
     belongs_to :last_topic, class_name: "Collavre::Topic", optional: true
 
-    # Persisted hash insertion order need not match the tree (a child may have
-    # been toggled before its parent). Keep ancestors when the client caps IDs.
     def expanded_ids_root_first
       ids = (expanded_status || {}).select { |_, expanded| expanded }.keys
-      active_ids = Creative.active.where(id: ids).pluck(:id)
-      readable_ids = Creatives::PermissionFilter.new(user: user).readable_ids(active_ids)
-      depths = CreativeHierarchy.where(descendant_id: readable_ids).group(:descendant_id).maximum(:generations)
-      ids.select { |id| depths.key?(id.to_i) }.sort_by { |id| depths.fetch(id.to_i) }
+      Creatives::WorkspaceExpansionOrder.new(user: user, expanded_ids: ids).call
     end
 
     validates :expanded_status, presence: true, unless: -> {

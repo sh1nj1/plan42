@@ -38,20 +38,68 @@ module Collavre
     test "readable shared branches remain eligible for restoration" do
       root = Creative.create!(user: users(:two), description: "Shared root")
       CreativeShare.create!(creative: root, user: users(:one), permission: :read)
-      preference = UserCreativePreference.new(user: users(:one), expanded_status: { root.id.to_s => true })
+      shell = Creative.create!(user: users(:one), origin: root)
+      preference = UserCreativePreference.new(user: users(:one), expanded_status: { shell.id.to_s => true })
 
-      assert_equal [ root.id.to_s ], preference.expanded_ids_root_first
+      assert_equal [ shell.id.to_s ], preference.expanded_ids_root_first
     end
 
     test "revoked access excludes a saved branch even when it is public" do
       root = Creative.create!(user: users(:two), description: "Shared root")
       CreativeShare.create!(creative: root, user: nil, permission: :read)
       share = CreativeShare.create!(creative: root, user: users(:one), permission: :read)
-      preference = UserCreativePreference.new(user: users(:one), expanded_status: { root.id.to_s => true })
-      assert_equal [ root.id.to_s ], preference.expanded_ids_root_first
+      shell = Creative.create!(user: users(:one), origin: root)
+      preference = UserCreativePreference.new(user: users(:one), expanded_status: { shell.id.to_s => true })
+      assert_equal [ shell.id.to_s ], preference.expanded_ids_root_first
 
       share.update!(permission: :no_access)
 
+      assert_empty preference.expanded_ids_root_first
+    end
+
+    test "linked descendants follow their deeper workspace shells at the client limit" do
+      origin = Creative.create!(user: users(:two), description: "Origin")
+      child = Creative.create!(user: users(:two), parent: origin, description: "Origin child")
+      CreativeShare.create!(creative: origin, user: users(:one), permission: :read)
+      root = Creative.create!(user: users(:one), description: "Root")
+      parent = Creative.create!(user: users(:one), parent: root, description: "Parent")
+      shell = Creative.create!(user: users(:one), parent: parent, origin: origin)
+      siblings = Array.new(97) { Creative.create!(user: users(:one), parent: root, description: "Sibling") }
+      saved = [ child, shell, parent, *siblings, root ].to_h { |creative| [ creative.id.to_s, true ] }
+      preference = UserCreativePreference.new(user: users(:one), expanded_status: saved)
+
+      ordered = preference.expanded_ids_root_first
+      assert_equal 101, ordered.size
+      assert_operator ordered.index(shell.id.to_s), :<, ordered.index(child.id.to_s)
+      assert_includes ordered.first(100), shell.id.to_s
+      assert_not_includes ordered.first(100), child.id.to_s
+    end
+
+    test "nested links restore in rendered order and terminate cycles" do
+      root = Creative.create!(user: users(:one), description: "Root")
+      first_origin = Creative.create!(user: users(:two), description: "First origin")
+      second_origin = Creative.create!(user: users(:two), description: "Second origin")
+      [ first_origin, second_origin ].each do |origin|
+        CreativeShare.create!(creative: origin, user: users(:one), permission: :read)
+      end
+      shell = Creative.create!(user: users(:one), parent: root, origin: first_origin)
+      nested = Creative.create!(user: users(:one), parent: first_origin, origin: second_origin)
+      cycle = Creative.create!(user: users(:one), parent: second_origin, origin: first_origin)
+      saved = [ cycle, nested, shell, root ].to_h { |creative| [ creative.id.to_s, true ] }
+      preference = UserCreativePreference.new(user: users(:one), expanded_status: saved)
+
+      assert_equal [ root, shell, nested, cycle ].map { |creative| creative.id.to_s },
+                   preference.expanded_ids_root_first
+    end
+
+    test "saved descendants of collapsed or archived ancestors do not consume the limit" do
+      root = Creative.create!(user: users(:one), description: "Root")
+      child = Creative.create!(user: users(:one), parent: root, description: "Child")
+      preference = UserCreativePreference.new(user: users(:one), expanded_status: { child.id.to_s => true })
+      assert_empty preference.expanded_ids_root_first
+
+      preference.expanded_status[root.id.to_s] = true
+      root.update!(archived_at: Time.current)
       assert_empty preference.expanded_ids_root_first
     end
 
