@@ -53,13 +53,6 @@
 
     <div class="search-popup-filters">
       <div class="search-popup-filter-section">
-        <span class="search-popup-filter-label"><%= t('collavre.search_popup.reaction_filter') %></span>
-        <div class="search-popup-filter-buttons">
-          <%= render "collavre/comments/reaction_buttons",
-                action: "click->search-popup#applyReactionFilter", selected: url_params['reaction_emoji'], filter: true %>
-        </div>
-      </div>
-      <div class="search-popup-filter-section">
         <span class="search-popup-filter-label"><%= t('collavre.search_popup.progress_filter') %></span>
         <div class="search-popup-filter-buttons">
           <button type="button"
@@ -100,6 +93,14 @@
                     data-label-off="<%= t('collavre.creatives.index.show_archived') %>"
                     data-action="click->search-popup#toggleArchive"><%= has_archived ? t('collavre.creatives.index.hide_archived') : t('collavre.creatives.index.show_archived') %></button>
           <% end %>
+        </div>
+      </div>
+
+      <div class="search-popup-filter-section">
+        <span class="search-popup-filter-label"><%= t('collavre.search_popup.reaction_filter') %></span>
+        <div class="search-popup-filter-buttons">
+          <%= render "collavre/comments/reaction_buttons",
+                action: "click->search-popup#applyReactionFilter", selected: url_params['reaction_emoji'], filter: true %>
         </div>
       </div>
     </div>
