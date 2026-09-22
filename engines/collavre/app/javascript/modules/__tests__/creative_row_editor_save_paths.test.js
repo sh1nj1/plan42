@@ -6,6 +6,13 @@ import { jest } from '@jest/globals'
 let editorOptions = null
 const save = jest.fn()
 const enqueue = jest.fn()
+const unconvert = jest.fn()
+const waitFor = jest.fn(() => Promise.resolve())
+const alertDialog = jest.fn()
+jest.unstable_mockModule('../../lib/utils/dialog', () => ({
+  alertDialog,
+  confirmDialog: jest.fn(() => Promise.resolve(true)),
+}))
 
 jest.unstable_mockModule('../lexical_inline_editor', () => ({
   createInlineEditor: jest.fn((_container, options) => {
@@ -25,6 +32,7 @@ jest.unstable_mockModule('../creative_row_editor_delegated_clicks', () => ({
 jest.unstable_mockModule('../../lib/api/creatives', () => ({
   default: {
     save,
+    unconvert,
     get: jest.fn(() => Promise.resolve({})),
     loadChildren: jest.fn(() => Promise.resolve({ creatives: [] })),
   },
@@ -34,7 +42,7 @@ jest.unstable_mockModule('../../lib/api/queue_manager', () => ({
     initialize: jest.fn(),
     start: jest.fn(),
     enqueue,
-    waitFor: jest.fn(() => Promise.resolve()),
+    waitFor,
   },
 }))
 
@@ -76,6 +84,9 @@ beforeEach(() => {
   buildEditorDom(document.getElementById('center-frame'))
   save.mockReset()
   enqueue.mockReset()
+  unconvert.mockReset()
+  waitFor.mockReset().mockResolvedValue()
+  alertDialog.mockClear()
   save.mockImplementation(() => response())
   const form = document.getElementById('inline-edit-form-element')
   const typeRoot = document.createElement('div')
@@ -497,4 +508,76 @@ test('a storage failure restores the previous queued acknowledgment without losi
   document.getElementById('inline-close').click()
   await flushPromises()
   expect(enqueue.mock.calls[2][0].body['creative[markdown_source]']).toBe('newer retained draft')
+})
+
+
+test.each(['42', '123'])('permanent failure marks only failed row %s and preserves it on reopen', async failedId => {
+  jest.useFakeTimers()
+  const current = appendMarkdownRow('42', 'current draft')
+  const other = appendMarkdownRow('123', 'other draft')
+  openRow(current.tree)
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {})
+  window.dispatchEvent(new CustomEvent('api-queue-request-failed', {
+    detail: { item: { path: `/creatives/${failedId}`, method: 'PATCH' }, error: { status: 404 } },
+  }))
+  const failed = failedId === '42' ? current : other
+  const untouched = failedId === '42' ? other : current
+  expect(failed.tree.dataset.saveState).toBe('error')
+  expect(untouched.tree.dataset.saveState).toBeUndefined()
+  if (failedId === '42') {
+    expect(document.getElementById('inline-save-status').dataset.state).toBe('error')
+    document.getElementById('inline-close').click()
+    await flushPromises()
+    expect(enqueue).toHaveBeenCalledTimes(1)
+    expect(enqueue.mock.calls[0][0].body['creative[markdown_source]']).toBe('current draft')
+  } else {
+    openRow(other.tree)
+    await flushPromises()
+    expect(document.getElementById('inline-save-status').dataset.state).toBe('error')
+  }
+  log.mockRestore()
+})
+
+test('unconvert waits for queued and direct saves before changing the linked creative', async () => {
+  jest.useFakeTimers()
+  const { tree } = appendMarkdownRow('42', 'before')
+  tree.dataset.parentId = '7'
+  tree.closest('creative-tree-row').dataset.parentId = '7'
+  openRow(tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'queued draft'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  let releaseQueue, releaseSave
+  waitFor.mockImplementationOnce(() => new Promise(resolve => { releaseQueue = resolve }))
+  save.mockImplementationOnce(() => new Promise(resolve => { releaseSave = resolve }))
+  unconvert.mockResolvedValue({ ok: false, json: async () => ({ error: 'Cannot unconvert' }) })
+  document.getElementById('inline-unconvert').click()
+  await jest.advanceTimersByTimeAsync(0)
+  expect(waitFor).toHaveBeenCalledWith('creative_42')
+  expect(save).not.toHaveBeenCalled()
+  expect(unconvert).not.toHaveBeenCalled()
+  releaseQueue()
+  await jest.advanceTimersByTimeAsync(0)
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(unconvert).not.toHaveBeenCalled()
+  releaseSave(await response())
+  await jest.advanceTimersByTimeAsync(0)
+  expect(unconvert).toHaveBeenCalledWith('42')
+  expect(alertDialog).toHaveBeenCalledWith('Cannot unconvert')
+  expect(document.getElementById('inline-unconvert').disabled).toBe(false)
+})
+
+test('unconvert stops when the preceding save fails', async () => {
+  jest.useFakeTimers()
+  const { tree } = appendMarkdownRow('42', 'retained draft')
+  tree.dataset.parentId = '7'
+  tree.closest('creative-tree-row').dataset.parentId = '7'
+  openRow(tree)
+  save.mockResolvedValue({ ok: false, clone: () => ({ json: async () => ({ error: 'Save denied' }) }), json: async () => ({ error: 'Save denied' }) })
+  document.getElementById('inline-unconvert').click()
+  await jest.advanceTimersByTimeAsync(0)
+  expect(unconvert).not.toHaveBeenCalled()
+  expect(alertDialog).toHaveBeenCalledWith('Save denied')
+  expect(document.getElementById('inline-unconvert').disabled).toBe(false)
 })

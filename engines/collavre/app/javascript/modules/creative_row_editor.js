@@ -2136,7 +2136,7 @@ function setupEditorSession() {
         if (confirmText && !(await confirmDialog(confirmText))) return;
         const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
         unconvertBtn.disabled = true;
-        requestSave()
+        saveForm(currentTree, parentInput.value)
           .then(function (saveResponse) {
             if (saveResponse && saveResponse.ok === false) {
               return saveResponse
