@@ -265,12 +265,71 @@ module Collavre
         Workflow::Resolver.stub(:new, ->(*) { flunk "mention must win" }) { assert_equal [ @agent ], match }
       end
 
-      test "primary agent wins before workflow resolution" do
+      test "matched workflow precedes the topic primary agent and retains its snapshot" do
+        rule = agent_rule
+        pin_primary
+        matcher = Matcher.new(@context)
+        assert_equal [ @other ], matcher.match
+        assert_equal rule.id, matcher.workflow_rule.creative_id
+        assert_equal rule.data["workflow_rule"], matcher.workflow_snapshot
+      end
+
+      %w[none human].each do |handler|
+        test "matched #{handler} blocks the topic primary agent" do
+          pin_primary
+          create_workflow_rule(parent: @workflow, handler: { "type" => handler })
+          assert_exclusive_empty
+        end
+      end
+
+      test "ineligible workflow responder blocks the topic primary agent" do
+        pin_primary
+        agent_rule(agent: @user)
+        assert_exclusive_empty
+      end
+
+      test "workflow miss falls back to primary even without a routing expression" do
+        pin_primary
+        @agent.update!(routing_expression: nil)
         agent_rule
-        topic = @creative.topics.create!(name: "Assigned", user: @user)
-        topic.set_primary_agent!(@agent)
-        @context["topic"] = { "id" => topic.id }
-        Workflow::Resolver.stub(:new, ->(*) { flunk "primary must win" }) { assert_equal [ @agent ], match }
+        @context["event_name"] = "other_event"
+        assert_equal [ @agent ], match
+      end
+
+      test "condition miss falls back to primary and ineligible primary blocks expressions" do
+        pin_primary
+        rule = agent_rule
+        rule.data["workflow_rule"]["when"] = { "body_contains" => [ "absent" ] }
+        rule.save!
+        assert_equal [ @agent ], match
+        CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
+        CreativeShare.where(creative: @creative, user: @agent).delete_all
+        @other.update!(routing_expression: "true")
+        assert_empty match
+      end
+
+      %w[off shadow].each do |routing_mode|
+        test "#{routing_mode} preserves topic primary routing without workflow effects" do
+          mode(routing_mode)
+          pin_primary
+          agent_rule
+          matcher = Matcher.new(@context)
+          assert_no_difference [ "Workflow::Execution.count", "Workflow::Outbox.count" ] do
+            assert_equal [ @agent ], matcher.match
+          end
+          assert_nil matcher.workflow_rule
+          assert_nil matcher.workflow_snapshot
+        end
+      end
+
+      test "shadow compares the workflow against the primary agent" do
+        mode("shadow")
+        pin_primary
+        agent_rule
+        lines = capture_shadow { assert_equal [ @agent ], match }
+        assert_includes lines.first, "workflow=[#{@other.id}]"
+        assert_includes lines.first, "expression=[#{@agent.id}]"
+        assert_includes lines.first, "agree=false"
       end
 
       test "workflow dispatch remains permitted by assignment revalidation entry points" do
@@ -434,6 +493,12 @@ module Collavre
       end
 
       private
+
+      def pin_primary
+        topic = @creative.topics.create!(name: "Assigned", user: @user)
+        topic.set_primary_agent!(@agent)
+        @context["topic"] = { "id" => topic.id }
+      end
 
       def routing_rule(id, conditions)
         Workflow::Rule.new(creative_id: id, event_name: "comment_created", conditions: conditions,

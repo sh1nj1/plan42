@@ -42,12 +42,15 @@ Each actual target creative's permissions still decide whether an agent can
 respond; pinning a workflow grants no permissions.
 
 The matching policy defaults to `shadow`, which evaluates rules and logs a
-comparison while existing agent routing expressions determine dispatch. Review
+comparison while topic assignment and existing agent routing expressions determine dispatch. Review
 shadow differences before using the admin orchestration policy editor to enable
 `workflow_routing: "on"` at the intended creative or topic scope. Use quoted mode
 strings in YAML. `"off"` skips workflows; a workflow miss in `"on"` mode retains
-the agent defaults. Topic primary agents, mentions, and review authors retain
-their higher routing precedence.
+topic assignment, then agent defaults. Routing precedence is review author →
+explicit mention → matching enabled workflow → topic primary agent → agent defaults.
+Matched human, none, or ineligible workflow handlers block topic assignment too.
+Durable workflow admissions retain this precedence when queued or resumed;
+current scope, routing mode, and permissions still gate execution.
 
 ## Execution and recovery
 
