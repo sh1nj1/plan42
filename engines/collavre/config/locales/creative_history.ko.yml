@@ -2,6 +2,15 @@
 ko:
   collavre:
     creative_history:
+      view_diff: 변경 내용 보기
+      loading: 변경 내용을 불러오는 중…
+      load_error: 변경 내용을 불러오지 못했습니다.
+      retry: 다시 시도
+      states:
+        applied: 적용됨
+        draft: 승인 대기
+        reverted: 되돌림
+        rejected: 거절됨
       read_only: 이력 토픽은 읽기 전용입니다.
       empty: 아직 기록된 변경이 없습니다.
       default_summary: 크리에이티브 수정
