@@ -158,6 +158,20 @@ module Collavre
       assert_equal expected.sort, indexed.sort
     end
 
+    test "an unreadable branch cannot exhaust presence checks for a later saved branch" do
+      user = users(:one)
+      stale = Creative.create!(user: user, description: "Stale branch")
+      live = Creative.create!(user: user, description: "Live branch")
+      Creative.insert_all!(Array.new(1_050) do |sequence|
+        { user_id: users(:two).id, parent_id: stale.id, description: "Unreadable", sequence: sequence }
+      end)
+      Creative.create!(user: user, parent: live, description: "Readable leaf")
+      preference = UserCreativePreference.new(user: user,
+        expanded_status: { stale.id.to_s => true, live.id.to_s => true })
+
+      assert_equal [ live.id.to_s ], preference.expanded_ids_root_first
+    end
+
     test "unsaved siblings cannot displace a late saved branch from restoration" do
       user = users(:one)
       root = Creative.create!(user: user, description: "Root")
