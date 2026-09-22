@@ -908,6 +908,32 @@ test.each([false, true])('ignores reconciliation after typing, even after autosa
   expect(enqueue.mock.calls.at(-1)[0].body['creative[markdown_source]']).toBe('new local text')
 })
 
+test.each([false, true])('ignores reconciliation after a progress change (acknowledged: %s)', async acknowledged => {
+  jest.useFakeTimers()
+  const { tree, rowComponent } = appendMarkdownRow('42', 'cached')
+  const finish = deferReconciliation()
+  openRow(tree)
+  const progress = document.getElementById('inline-creative-progress')
+  progress.checked = true
+  progress.dispatchEvent(new Event('change'))
+  await flushPromises()
+  const request = enqueue.mock.calls[0][0]
+  expect(request.body['creative[progress]']).toBe(1)
+  if (acknowledged) request.onSuccess({ progress: 1 })
+  finish()
+  await flushPromises()
+  expect(progress.checked).toBe(true)
+  expect(rowComponent.dataset.progressValue).toBe('1')
+  expect(document.getElementById('markdown-editor-textarea').value).toBe('cached')
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'continued edit'
+  textarea.dispatchEvent(new Event('input'))
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue.mock.calls.at(-1)[0].body['creative[markdown_source]']).toBe('continued edit')
+  expect(rowComponent.dataset.progressValue).toBe('1')
+})
+
 test('late reconciliation cannot replace another row or its save target', async () => {
   jest.useFakeTimers()
   const first = appendMarkdownRow('42', 'first')

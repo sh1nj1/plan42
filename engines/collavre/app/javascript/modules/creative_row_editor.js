@@ -1922,6 +1922,7 @@ function setupEditorSession() {
 
     if (progressInput) {
       progressInput.addEventListener('change', function () {
+	editorRevision += 1;
         if (progressValue) {
           progressValue.textContent = formatProgressDisplay(readProgressValue());
         }
