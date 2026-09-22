@@ -44,6 +44,8 @@ const queue = {
 }
 jest.unstable_mockModule('../../lib/api/queue_manager', () => ({ default: queue }))
 
+const { recordRestoredCompletion, clearQueueReconciliation } = await import('../../lib/api/queue_reconciliation')
+
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
 const {
   appendExistingRow, buildEditorDom, defineTreeRowStub, flush,
@@ -83,6 +85,7 @@ beforeEach(() => {
   save.mockReset()
   get.mockReset().mockResolvedValue({})
   enqueue.mockReset()
+  clearQueueReconciliation(queue)
   queue.failedItems = []
   queue.queue = []
   queue.unacknowledgedBody.mockReset()
@@ -648,7 +651,7 @@ function restoreFailedProgressDraft() {
 
 test('type change acknowledges recovered progress and clears the failed draft before direct save', async () => {
   jest.useFakeTimers()
-  const { unacknowledgedBody, clearAcknowledgedFailures } = await import('../../lib/api/queue_recovery')
+  const { unacknowledgedBody, acknowledgeQueuedRequest } = await import('../../lib/api/queue_recovery')
   const tree = restoreFailedProgressDraft()
   queue.queue = []
   queue.saveFailedToLocalStorage = jest.fn()
@@ -664,7 +667,7 @@ test('type change acknowledges recovered progress and clears the failed draft be
   expect(queue.queue[0].body['creative[markdown_source]']).toBe('recovered draft')
   const request = queue.queue.shift()
   request.onSuccess({})
-  clearAcknowledgedFailures(queue, request)
+  acknowledgeQueuedRequest(queue, request)
   const textarea = document.getElementById('markdown-editor-textarea')
   textarea.value = 'newer body'
   textarea.dispatchEvent(new Event('input'))
@@ -821,4 +824,32 @@ test.each([
   expect(enqueue.mock.calls[0][0].body).toMatchObject(position)
   enqueue.mock.calls[0][0].onSuccess({})
   expect(tree.dataset.saveState).toBeUndefined()
+})
+
+
+test('refetches a restored save completed before opening and edits the acknowledged draft', async () => {
+  jest.useFakeTimers()
+  const { tree, rowComponent } = appendMarkdownRow('42', 'stale server')
+  recordRestoredCompletion(queue, { dedupeKey: 'creative_42' })
+  get.mockResolvedValue({ id: 42, content_type: 'markdown', markdown_source: 'acknowledged draft', markdown_editor: 'source', description_raw_html: '<p>acknowledged draft</p>', progress: 1 })
+  openRow(tree)
+  await flushPromises()
+  const textarea = document.getElementById('markdown-editor-textarea')
+  expect(get).toHaveBeenCalledWith('42')
+  expect(textarea.value).toBe('acknowledged draft')
+  expect(rowComponent.dataset.markdownSource).toBe('acknowledged draft')
+  expect(tree.dataset.saveState).toBeUndefined()
+  expect(document.getElementById('inline-creative-progress').checked).toBe(true)
+  textarea.value += ' continued'
+  textarea.dispatchEvent(new Event('input'))
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue.mock.calls[0][0].body['creative[markdown_source]']).toBe('acknowledged draft continued')
+  enqueue.mock.calls[0][0].onSuccess({})
+  queue.queue = []
+  get.mockClear()
+  openRow(tree)
+  await flushPromises()
+  expect(get).not.toHaveBeenCalled()
+  expect(textarea.value).toBe('acknowledged draft continued')
 })

@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import { jest } from '@jest/globals'
-import { unacknowledgedBody, unacknowledgedAttachmentIds, clearAcknowledgedFailures } from '../queue_recovery'
+import { unacknowledgedBody, unacknowledgedAttachmentIds, acknowledgeQueuedRequest } from '../queue_recovery'
 
 test('merges only matching snapshots in failed, executing, then pending order', () => {
   const queue = {
@@ -13,9 +13,9 @@ test('merges only matching snapshots in failed, executing, then pending order', 
 
 test('acknowledgment clears only matching failures and persists the remaining entries', () => {
   const queue = { failedItems: [{ dedupeKey: 'a' }, { dedupeKey: 'b' }], saveFailedToLocalStorage: jest.fn() }
-  clearAcknowledgedFailures(queue, {})
+  acknowledgeQueuedRequest(queue, {})
   expect(queue.failedItems).toHaveLength(2)
-  clearAcknowledgedFailures(queue, { dedupeKey: 'a' })
+  acknowledgeQueuedRequest(queue, { dedupeKey: 'a' })
   expect(queue.failedItems).toEqual([{ dedupeKey: 'b' }])
   expect(queue.saveFailedToLocalStorage).toHaveBeenCalledTimes(2)
 })

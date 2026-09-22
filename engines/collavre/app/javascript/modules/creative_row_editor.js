@@ -1,3 +1,4 @@
+import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
 import { queuedCreativePosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
@@ -1088,7 +1089,7 @@ function setupEditorSession() {
       // CRITICAL: Require BOTH description AND progress to be present in the dataset
       // If either is missing, inlinePayloadFromTree defaults it (e.g. progress=0),
       // which would overwrite the real value on the server if we saved it.
-      if (inlineData && inlineData.id && hasDescription && hasProgress) {
+      if (inlineData && inlineData.id && hasDescription && hasProgress && !needsCreativeReconciliation(apiQueue, id, row)) {
         console.log('✅ Using cached data for creative', id, '- NO API CALL');
         applyCreativeData(inlineData, tree);
         return;
@@ -1097,7 +1098,7 @@ function setupEditorSession() {
       // Fallback: if no cached data or incomplete data, fetch from API
       // This happens for lazily loaded children or rows without inline_editor_payload
       console.warn('⚠️ Incomplete or missing cached data for creative', id, '- making API call');
-      creativesApi.get(id)
+      fetchReconciledCreative(apiQueue, id, row, id => creativesApi.get(id))
         .then(data => {
           updateRowFromData(treeRowElement(tree), data);
           applyCreativeData(data, tree);

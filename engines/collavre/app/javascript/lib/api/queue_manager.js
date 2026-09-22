@@ -1,4 +1,5 @@
-import { unacknowledgedBody, unacknowledgedAttachmentIds, clearAcknowledgedFailures } from './queue_recovery'
+import { clearQueueReconciliation } from './queue_reconciliation'
+import { unacknowledgedBody, unacknowledgedAttachmentIds, acknowledgeQueuedRequest } from './queue_recovery'
 import { waitForQueuedRequests, mergeQueueCallbacks } from './queue_completion'
 import csrfFetch, { refreshCsrfToken } from './csrf_fetch'
 import { apiErrorFromResponse } from './api_error'
@@ -277,7 +278,7 @@ class ApiQueueManager {
                     }
                 }
 
-                clearAcknowledgedFailures(this, item)
+                acknowledgeQueuedRequest(this, item)
 
                 // Remove from queue
                 this.queue.shift()
@@ -417,6 +418,7 @@ class ApiQueueManager {
      * Clear all queued requests
      */
     clear() {
+        clearQueueReconciliation(this)
         this.queue = []
         this.failedItems = []
         this.saveToLocalStorage()

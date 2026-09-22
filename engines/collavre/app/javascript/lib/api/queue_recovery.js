@@ -1,3 +1,5 @@
+import { recordRestoredCompletion } from './queue_reconciliation'
+
 // Retain executing snapshots and their callbacks; only carry their fields into
 // newer requests, with later updates taking precedence over failed snapshots.
 export function unacknowledgedBody(queue, dedupeKey) {
@@ -7,7 +9,8 @@ export function unacknowledgedBody(queue, dedupeKey) {
     .reduce((body, item) => ({ ...body, ...item.body }), {})
 }
 
-export function clearAcknowledgedFailures(queue, item) {
+export function acknowledgeQueuedRequest(queue, item) {
+  recordRestoredCompletion(queue, item)
   queue.failedItems = queue.failedItems.filter(failed => !item.dedupeKey || failed.dedupeKey !== item.dedupeKey)
   queue.saveFailedToLocalStorage()
 }

@@ -61,6 +61,26 @@ describe('ApiQueueManager', () => {
         });
     });
 
+    test('invalidates stale rows when a persisted request completes before the editor opens', async () => {
+        const { needsCreativeReconciliation, fetchReconciledCreative } = await import('../queue_reconciliation');
+        apiQueue.enqueue({ path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'persisted draft' }, onSuccess: () => {} });
+        apiQueue.initialize('test_user');
+        mockCsrfFetch.mockResolvedValue({ ok: true, text: async () => '{}' });
+        apiQueue.processQueue.mockRestore();
+        await apiQueue.processQueue();
+        expect(apiQueue.queue).toEqual([]);
+        expect(JSON.parse(localStorage.getItem(apiQueue.storageKey))).toEqual([]);
+        const row = document.createElement('div');
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(true);
+        // A Turbo session reinitializes the queue without replacing the JS singleton.
+        apiQueue.initialize('test_user');
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(true);
+        expect(await fetchReconciledCreative(apiQueue, 42, row, async () => ({ description: 'persisted draft' })))
+            .toEqual({ description: 'persisted draft' });
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(false);
+    });
+
     test.each(['failed', 'in-flight', 'reloaded'])('carries %s attachment cleanup into a successful replacement', async state => {
         const original = { path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42', body: { description: 'draft' }, deletedAttachmentIds: [1, 2] };
         apiQueue.enqueue(original);
