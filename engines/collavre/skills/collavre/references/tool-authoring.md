@@ -78,10 +78,12 @@ Rules the CLI checks before creating the Creative:
 
 - The class lives in the `Tools` namespace and has `extend T::Sig` and `extend ToolMeta`
   (written exactly like that; the server looks for the literal text).
-- `tool_name` is a snake_case string literal and `tool_description` is a string literal.
+- `tool_name` is a snake_case string literal and `tool_description` is a string literal,
+  each on one line with matching quotes.
   The server reads the first `tool_name` it finds, so keep it a plain string and
   write `tool_name` only once (not even in a comment). Approval fails if the name
-  the class actually declares differs from the recorded one.
+  the class actually declares differs from the recorded one. If approval fails,
+  nothing from the source stays registered; fix the source and approve again.
 - The entrypoint is `def call(...)` with a Sorbet `sig` above it.
 
 Rules the CLI cannot check, so follow them yourself:

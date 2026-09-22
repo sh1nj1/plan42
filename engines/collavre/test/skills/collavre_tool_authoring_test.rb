@@ -232,6 +232,9 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
 
     redeclared = scaffold.sub("    tool_description", "    tool_name \"other_probe\"\n    tool_description")
     assert_includes invalid(redeclared), "tool_name appears 2 times; declare it exactly once"
+
+    mismatched = scaffold.sub('tool_name "authored_probe"', %q(tool_name "authored_probe'))
+    assert_includes invalid(mismatched), 'tool_name "authored_probe" must be a single string literal with matching quotes'
   end
 
   test "approval refuses a source whose class declares a different tool_name" do
@@ -251,7 +254,42 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert_nil Tools::MetaToolService.new.find_schema("shadow_probe")
   end
 
+  test "a source that fails after extending ToolMeta leaves nothing registered" do
+    raising = scaffold.sub("    tool_description", "    raise \"boom\"\n    tool_description")
+    helper = scaffold + <<~RUBY
+      class Tools::AuthoredProbeHelper
+        extend ToolMeta
+      end
+    RUBY
+
+    { raising => /Failed to evaluate source: boom/, raising.sub('raise "boom"', "raise NotImplementedError, \"later\"") => /Failed to evaluate source: later/ }
+      .each do |source, message|
+        tool = approvable_tool(source)
+        assert_no_changes -> { ToolMeta.registry.dup } do
+          assert_raises(RuntimeError, match: message) { tool.approve! }
+        end
+        assert_not tool.reload.active?
+        assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
+        tool.creative.destroy!
+      end
+
+    approvable_tool(helper).approve!
+    assert_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeHelper
+  ensure
+    Tools.send(:remove_const, :AuthoredProbeHelper) if Tools.const_defined?(:AuthoredProbeHelper, false)
+  end
+
   private
+
+  def approvable_tool(source)
+    host = Creative.new(user: users(:one))
+    host.content_type_input = "markdown"
+    host.markdown_source = "# probe\n\n```ruby\n#{source}```\n"
+    host.save!
+    Collavre::McpService.new.update_from_creative(host)
+    McpTool.find_by!(name: "authored_probe")
+  end
 
   def owner(id, tool_name)
     [ { id: id, description: "Tool module Tools extend ToolMeta tool_name \"#{tool_name}\" end", mcp_tools: [ tool_name ] } ].to_json

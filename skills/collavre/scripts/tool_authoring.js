@@ -54,7 +54,7 @@ end
 }
 
 function extractString(source, keyword) {
-  const match = source.match(new RegExp(`^\\s*${keyword}\\s+(?:"((?:[^"\\\\]|\\\\.)+)"|'((?:[^'\\\\]|\\\\.)+)')`, "m"));
+  const match = source.match(new RegExp(`^\\s*${keyword}\\s+(?:"((?:[^"\\\\\\n]|\\\\.)+)"|'((?:[^'\\\\\\n]|\\\\.)+)')`, "m"));
   if (!match) return null;
   return (match[1] ?? match[2]).replace(/\\(.)/g, (_, ch) => (ch === "n" ? " " : ch));
 }
@@ -65,7 +65,8 @@ function extractString(source, keyword) {
 // schema without a Sorbet signature on the entrypoint.
 function toolNameError(name, declared, count) {
   if (!name) return 'Missing `tool_name "snake_case_name"`';
-  if (declared && declared !== name) {
+  if (!declared) return `tool_name "${name}" must be a single string literal with matching quotes`;
+  if (declared !== name) {
     return `tool_name is read as "${name}" by the server, not "${declared}"; keep the first tool_name a plain string`;
   }
   // The server records the first tool_name, but evaluating the class keeps the

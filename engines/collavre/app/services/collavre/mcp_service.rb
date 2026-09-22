@@ -69,26 +69,41 @@ module Collavre
 
     # Same steps as MetaToolWriteService#register_tool_from_source, with a name
     # check between evaluating the source and building the tool classes.
+    # Evaluating the source adds every class that extends ToolMeta to the
+    # registry, even when the class body raises afterwards. Only the verified
+    # service class may stay; everything else the source added is rolled back.
     def self.register_verified_source(writer, source_code, expected_name, before_call:, after_call:)
       class_name = writer.send(:extract_class_name, source_code)
       return { error: "class_name is required for register" } if class_name.blank?
 
-      begin
-        Object.class_eval(source_code)
-      rescue StandardError => e
-        return { error: "Failed to evaluate source: #{e.message}" }
-      end
-
-      service_class = class_name.safe_constantize
-      declared = service_class.try(:tool_metadata)&.dig(:name)
-      if service_class && declared != expected_name
-        ToolMeta.registry.delete(service_class)
-        return { error: "#{class_name} declares tool_name #{declared.inspect}, expected #{expected_name.inspect}" }
-      end
+      registered_before = ToolMeta.registry.dup
+      result = evaluate_and_verify(source_code, class_name, expected_name)
+      keep = result.is_a?(Class) ? [ result ] : []
+      ToolMeta.registry.reject! { |klass| !registered_before.include?(klass) && !keep.include?(klass) }
+      return result unless keep.any?
 
       writer.register_tool(class_name, before_call: before_call, after_call: after_call)
     end
     private_class_method :register_verified_source
+
+    # Returns the service class when it declares expected_name, else an error hash.
+    def self.evaluate_and_verify(source_code, class_name, expected_name)
+      begin
+        Object.class_eval(source_code)
+      rescue StandardError, ScriptError => e
+        return { error: "Failed to evaluate source: #{e.message}" }
+      end
+
+      service_class = class_name.safe_constantize
+      return { error: "#{class_name} is not defined by the source" } unless service_class.is_a?(Class)
+
+      declared = service_class.try(:tool_metadata)&.dig(:name)
+      return service_class if declared == expected_name
+
+      ToolMeta.registry.delete(service_class)
+      { error: "#{class_name} declares tool_name #{declared.inspect}, expected #{expected_name.inspect}" }
+    end
+    private_class_method :evaluate_and_verify
 
     def self.filter_tools(tools, user)
       return [] if tools.blank?
