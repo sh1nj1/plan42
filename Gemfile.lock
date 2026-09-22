@@ -224,7 +224,7 @@ GEM
       irb (~> 1.10)
       reline (>= 0.3.8)
     declarative (0.0.20)
-    diff-lcs (1.6.2)
+    diff-lcs (2.0.0)
     doorkeeper (5.9.7)
       railties (>= 5)
     dotenv (3.2.0)
