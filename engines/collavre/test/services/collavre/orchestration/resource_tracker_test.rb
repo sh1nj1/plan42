@@ -39,6 +39,32 @@ module Collavre
         assert_equal 0, @tracker.active_jobs
       end
 
+      test "pending approvals survive cache expiry without double counting reservations" do
+        task = Task.create!(name: "Approval", agent: @agent, status: "pending_approval")
+        @tracker.reserve!(task.id)
+        @tracker.reserve!("another-job")
+        assert_equal 2, @tracker.active_jobs
+
+        travel ResourceTracker::CACHE_EXPIRY_ACTIVE_JOBS + 1.second do
+          assert_nil Rails.cache.read("orchestrator:agent:#{@agent.id}:active_jobs")
+          assert_equal 1, @tracker.active_jobs
+          @tracker.reserve!(task.id)
+          task.update!(status: "running")
+          assert_equal 1, @tracker.active_jobs
+          task.update!(status: "done")
+          @tracker.release!(task.id)
+          assert_equal 0, @tracker.active_jobs
+        end
+      end
+
+      test "persisted approval count is agent scoped and excludes queued and terminal tasks" do
+        Task.create!(name: "Other approver", agent: users(:one), status: "pending_approval")
+        %w[queued done failed cancelled escalated].each do |status|
+          Task.create!(name: status, agent: @agent, status: status)
+        end
+        assert_equal 0, @tracker.active_jobs
+      end
+
       test "tokens_today starts at zero" do
         assert_equal 0, @tracker.tokens_today
       end

@@ -35,7 +35,9 @@ A denial is a normal tool result: reconsider the plan and do not perform the
 denied action. No response leaves the task pending indefinitely. Automatic
 expiration, automatic denial, multiple-choice options, and automatic slot
 reclamation are not part of this feature. Existing task cancellation remains
-available; a cancelled or superseded request cannot resume work.
+available; a cancelled or superseded request cannot resume work. Pending approvals
+remain in the agent concurrency count even after the resource cache expires;
+waiting does not free capacity for another topic.
 
 ## Execution and recovery
 
