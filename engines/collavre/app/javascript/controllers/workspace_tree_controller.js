@@ -26,6 +26,7 @@ export default class extends Controller {
     lastVisitedCreativeVisitToken: String,
     lastVisitedCreativeVisitSequence: Number,
     currentPath: Array,
+    initialExpandedIds: Array,
     loadingText: String,
     emptyText: String,
     errorText: String,
@@ -33,9 +34,10 @@ export default class extends Controller {
   }
 
   connect() {
-    this.expandedCreativeIds = new Set()
+    // Saved IDs are ancestor-first; reserve room for the selected path.
+    this.expandedCreativeIds = new Set([...this.currentPathValue, ...this.initialExpandedIdsValue].map(String))
+    this.expandedCreativeIds = new Set([...this.expandedCreativeIds].slice(0, MAX_EXPANDED_BRANCHES))
     this.pendingDropDestinationIds = new Set()
-    this.addExpandedPath(this.currentPathValue)
     this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
     this.invalidatedCreativeIds = new Set()
     this.destroyedCreativeIds = new Set()
@@ -382,8 +384,7 @@ export default class extends Controller {
   }
 
   togglePanel() {
-    const open = this.element.classList.toggle('is-open')
-    this.panelToggleTarget.setAttribute('aria-expanded', String(open))
+    this.panelToggleTarget.setAttribute('aria-expanded', String(this.element.classList.toggle('is-open')))
   }
 
   closePanel() {

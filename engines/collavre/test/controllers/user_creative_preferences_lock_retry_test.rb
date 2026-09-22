@@ -64,6 +64,43 @@ class UserCreativePreferencesLockRetryTest < ActiveSupport::TestCase
     assert_equal 1, runs
   end
 
+  test "root insert conflict rolls back its savepoint and applies the toggle to the winner" do
+    preference = Collavre::UserCreativePreference
+    winner = preference.create!(user: @user, expanded_status: { "existing" => true })
+    insert = preference.method(:insert_all!)
+    attempts = 0
+    # Simulate the lookup missing a concurrent winner, then raise a real
+    # database constraint error inside the controller's insertion savepoint.
+    preference.stub(:exists?, false) do
+      preference.stub(:insert_all, lambda { |attributes|
+        attempts += 1
+        insert.call(attributes)
+      }) do
+        @controller.send(:with_expansion_order) do |order|
+          order.issue
+          @controller.send(:with_preference, nil) do |record|
+            assert_equal winner.id, record.id
+            record.set_expanded("new", true)
+            record.save!
+          end
+        end
+      end
+    end
+
+    assert_equal 1, attempts
+    assert_equal({ "existing" => true, "new" => true }, winner.reload.expanded_status)
+    assert_equal 1, preference.where(user: @user, creative_id: nil).count
+    assert_not_empty @user.reload.expansion_save_sequences
+  end
+
+  test "non-root insertion uniqueness errors propagate" do
+    Collavre::UserCreativePreference.stub(:insert_all, ->(*) { raise ActiveRecord::RecordNotUnique }) do
+      assert_raises(ActiveRecord::RecordNotUnique) do
+        @controller.send(:with_preference, @creative.id) { flunk "must not apply a failed insert" }
+      end
+    end
+  end
+
   private
 
   def stub_preference_for(&block)

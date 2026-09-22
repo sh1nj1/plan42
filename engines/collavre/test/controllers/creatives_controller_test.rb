@@ -1,9 +1,75 @@
 require "test_helper"
+require Rails.root.join("test/support/legacy_root_preferences")
 
 class CreativesControllerTest < ActionDispatch::IntegrationTest
+  include LegacyRootPreferences
   setup do
     users(:one).update!(creative_workspace_enabled: true)
     sign_in_as(users(:one), password: "password")
+  end
+
+  test "workspace restores merged root preferences without changing stored rows" do
+    allow_legacy_root_duplicates!
+    root = Creative.create!(user: users(:one), description: "Root")
+    child = Creative.create!(user: users(:one), parent: root, description: "Child")
+    Creative.create!(user: users(:one), parent: child, description: "Leaf")
+    preferences = Collavre::UserCreativePreference
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => true })
+    preferences.create!(user: users(:one), expanded_status: { child.id.to_s => true })
+    preferences.create!(user: users(:two), expanded_status: { root.id.to_s => false })
+    preferences.create!(user: users(:one), creative: root, expanded_status: { child.id.to_s => false })
+    before = preferences.order(:id).map(&:attributes)
+
+    get creatives_path(id: root.id)
+
+    assert_response :success
+    assert_select '[data-workspace-tree-initial-expanded-ids-value]' do |elements|
+      assert_equal [ root.id.to_s, child.id.to_s ],
+                   JSON.parse(elements.first['data-workspace-tree-initial-expanded-ids-value'])
+    end
+    assert_equal before, preferences.order(:id).map(&:attributes)
+  end
+
+  test "central tree JSON restores merged roots and keeps context state separate" do
+    allow_legacy_root_duplicates!
+    root = Creative.create!(user: users(:one), description: "Root")
+    child = Creative.create!(user: users(:one), parent: root, description: "Child")
+    leaf = Creative.create!(user: users(:one), parent: child, description: "Leaf")
+    preferences = Collavre::UserCreativePreference
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => true })
+    preferences.create!(user: users(:one), expanded_status: { child.id.to_s => true })
+    preferences.create!(user: users(:two), expanded_status: { root.id.to_s => false })
+    preferences.create!(user: users(:one), creative: root, expanded_status: { child.id.to_s => false })
+    before = preferences.order(:id).map(&:attributes)
+
+    get creatives_path(format: :json)
+
+    assert_response :success
+    restored_root = response.parsed_body.fetch("creatives").find { |node| node.fetch("id") == root.id }
+    restored_child = restored_root.fetch("children_container").fetch("nodes").find { |node| node.fetch("id") == child.id }
+    assert_equal [ leaf.id ], restored_child.fetch("children_container").fetch("nodes").pluck("id")
+
+    get creatives_path(format: :json, id: root.id)
+
+    assert_response :success
+    context_child = response.parsed_body.fetch("creatives").find { |node| node.fetch("id") == child.id }
+    assert_empty context_child.fetch("children_container").fetch("nodes")
+    assert_equal before, preferences.order(:id).map(&:attributes)
+  end
+
+  test "central tree JSON honors the last duplicate root value" do
+    allow_legacy_root_duplicates!
+    root = Creative.create!(user: users(:one), description: "Root")
+    Creative.create!(user: users(:one), parent: root, description: "Child")
+    preferences = Collavre::UserCreativePreference
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => true })
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => false })
+
+    get creatives_path(format: :json)
+
+    assert_response :success
+    restored = response.parsed_body.fetch("creatives").find { |node| node.fetch("id") == root.id }
+    assert_empty restored.fetch("children_container").fetch("nodes")
   end
 
   test "default-safe formatting survives parent title and slide view rendering" do

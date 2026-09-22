@@ -1054,6 +1054,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.index ["creative_id"], name: "index_user_creative_preferences_on_creative_id"
     t.index ["last_topic_id"], name: "index_user_creative_preferences_on_last_topic_id"
     t.index ["user_id"], name: "index_user_creative_preferences_on_user_id"
+    t.index ["user_id"], name: "index_user_creative_preferences_on_user_id_root_unique", unique: true, where: "creative_id IS NULL"
   end
 
   create_table "user_themes", force: :cascade do |t|
@@ -1080,6 +1081,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.datetime "endpoint_health_checked_at"
     t.string "endpoint_health_error"
     t.integer "endpoint_health_status", default: 0, null: false
+    t.json "expansion_save_sequences", default: {}, null: false
     t.integer "failed_login_attempts", default: 0, null: false
     t.string "gateway_url"
     t.string "google_access_token"
