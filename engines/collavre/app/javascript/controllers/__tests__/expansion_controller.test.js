@@ -42,6 +42,30 @@ describe('creative expansion persistence', () => {
     expect(JSON.parse(fetch.mock.calls.at(-1)[1].body).expanded).toBe(false)
   })
 
+  test('collapse all skips leaf writes in a large loaded tree', async () => {
+    children.innerHTML = Array.from({ length: 1000 }, (_, index) =>
+      `<creative-tree-row creative-id="${index + 2}"></creative-tree-row>`).join('')
+    controller.toggleAll({ preventDefault() {} })
+    await flush()
+    await controller.saveQueue
+    fetch.mockClear()
+    controller.toggleAll({ preventDefault() {} })
+    await controller.saveQueue
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ creative_id: null, node_id: '1', expanded: false })
+    expect(Array.from(controller.element.querySelectorAll('creative-tree-row')).every((item) => item.expanded === false)).toBe(true)
+  })
+
+  test('collapse all still clears a previously expanded row that lost its children', async () => {
+    row.hasChildren = false
+    row.expanded = true
+    controller.allExpanded = true
+    controller.toggleAll({ preventDefault() {} })
+    await controller.saveQueue
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ creative_id: null, node_id: '1', expanded: false })
+  })
+
   test('a collapse wins over an unfinished lazy expansion', async () => {
     let finish
     controller.ensureLoaded = () => new Promise((resolve) => { finish = resolve })

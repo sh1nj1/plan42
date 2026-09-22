@@ -34,7 +34,7 @@ export default class extends Controller {
       if (this.allExpanded) {
         this.expandRow(row)
       } else {
-        this.collapseRow(row)
+        this.collapseRow(row, { persist: Boolean(row.hasChildren || row.expanded) })
       }
     })
     this.updateExpandButton()

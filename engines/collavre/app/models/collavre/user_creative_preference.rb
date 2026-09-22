@@ -11,7 +11,7 @@ module Collavre
     def expanded_ids_root_first
       ids = (expanded_status || {}).select { |_, expanded| expanded }.keys
       depths = CreativeHierarchy.where(descendant_id: ids).group(:descendant_id).maximum(:generations)
-      ids.sort_by { |id| depths.fetch(id.to_i, 0) }
+      ids.select { |id| depths.key?(id.to_i) }.sort_by { |id| depths.fetch(id.to_i) }
     end
 
     validates :expanded_status, presence: true, unless: -> {
