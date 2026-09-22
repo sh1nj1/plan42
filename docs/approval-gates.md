@@ -54,6 +54,11 @@ commits, including any outer transaction. The resume job uses the existing agent
 lifecycle with an atomic pending-to-running admission check; duplicate delivery cannot start a
 second worker. Before admission, an interrupted resume can be retried.
 
+The gate comment is the only surface that can decide its task. Deleting it, or
+moving it to another topic or creative, cancels a still-undecided gate task and
+releases its agent reservation and topic slot. An already-decided gate keeps
+resuming normally.
+
 This version supports native Collavre LLM turns, including their dynamic meta-tool
 calls. External MCP sessions and delegated Claude Channel/OpenClaw processes do
 not have a native conversation to restore and cannot use this tool to suspend;
