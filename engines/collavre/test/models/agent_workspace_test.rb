@@ -152,6 +152,20 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_nil Collavre::AgentWorkspace.for_callback_access_token(nil)
   end
 
+  test "resolving repairs a callback token id left unset by a pre-migration writer" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    token_id = workspace.callback_access_token_id
+    workspace.update_columns(callback_access_token_id: nil)
+
+    assert_equal workspace, Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    assert_equal token_id, workspace.reload.callback_access_token_id
+
+    Doorkeeper::AccessToken.find(token_id).destroy!
+    workspace.update_columns(callback_access_token_id: nil)
+    Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    assert_nil workspace.reload.callback_access_token_id
+  end
+
   test "migration backfills the callback token id of hashed and legacy plain tokens" do
     hashed = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
     hashed_id = hashed.callback_access_token_id

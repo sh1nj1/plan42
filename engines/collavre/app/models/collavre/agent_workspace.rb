@@ -52,7 +52,7 @@ module Collavre
             end
           end
 
-          return workspace if workspace
+          return workspace.repair_callback_access_token_id! if workspace
         end
       end
 
@@ -182,6 +182,18 @@ module Collavre
 
     def config_payload(base_url:)
       { url: base_url.sub(%r{/+\z}, ""), token: callback_token }
+    end
+
+    # A container still running the pre-migration code during a Kamal rollout
+    # creates rows without the token id, after the migration's backfill ran.
+    # Every proxy run resolves its workspace before the proxy can call /mcp,
+    # so filling the id in here keeps those calls tagged.
+    def repair_callback_access_token_id!
+      return self if callback_access_token_id
+
+      token_id = Doorkeeper::AccessToken.by_token(callback_token)&.id
+      update_columns(callback_access_token_id: token_id) if token_id
+      self
     end
 
     def rotate_tokens!
