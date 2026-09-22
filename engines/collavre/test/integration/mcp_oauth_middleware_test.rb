@@ -36,20 +36,33 @@ class McpOauthMiddlewareTest < ActionDispatch::IntegrationTest
       assert_not_equal 401, response.status
   end
 
-  test "marks requests made with a workspace callback token" do
+  test "marks requests made with a workspace callback token by token id, not application name" do
     marks = []
-    probe = ->(_env) { marks << Collavre::Current.mcp_agent_workspace_request; [ 200, {}, [] ] }
+    probe = ->(_env) { marks << Collavre::Current.mcp_agent_workspace; [ 200, {}, [] ] }
     middleware = McpOauthMiddleware.new(probe)
-    gateway_app = Doorkeeper::Application.create!(name: Collavre::AgentWorkspace::CALLBACK_APPLICATION_NAME, redirect_uri: "urn:ietf:wg:oauth:2.0:oob", owner: @user, confidential: true, scopes: "public")
-    callback = Doorkeeper::AccessToken.create!(application: gateway_app, resource_owner_id: @user.id, scopes: "public")
+    workspace = create_workspace
+    callback = Doorkeeper::AccessToken.find(workspace.callback_access_token_id)
+    callback.application.update!(name: "Renamed by owner")
+    lookalike_app = Doorkeeper::Application.create!(name: Collavre::AgentWorkspace::CALLBACK_APPLICATION_NAME, redirect_uri: "urn:ietf:wg:oauth:2.0:oob", owner: @user, confidential: true, scopes: "public")
+    lookalike = Doorkeeper::AccessToken.create!(application: lookalike_app, resource_owner_id: @user.id, scopes: "public")
 
-    [ callback, @token ].each do |token|
+    [ workspace.callback_token, lookalike.token, @token.token ].each do |bearer|
       Collavre::Current.reset
-      middleware.call(Rack::MockRequest.env_for("/mcp/messages", "HTTP_AUTHORIZATION" => "Bearer #{token.token}"))
+      middleware.call(Rack::MockRequest.env_for("/mcp/messages", "HTTP_AUTHORIZATION" => "Bearer #{bearer}"))
     end
 
-    assert_equal [ true, false ], marks
+    assert_equal [ workspace, nil, nil ], marks
   ensure
     Collavre::Current.reset
+  end
+
+  private
+
+  def create_workspace
+    gateway = Collavre::AgentGateway.create!(owner: @user, name: "MCP proxy", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion", identity_secret: "m" * 32, workspace_mode: :shared)
+    agent = Collavre::User.create!(name: "MCP Agent", email: "mcp-workspace-agent@ai.local", password: SecureRandom.hex(24),
+      system_prompt: "Help", llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", created_by_id: @user.id, agent_gateway: gateway)
+    Collavre::AgentWorkspace.resolve!(agent: agent, user: @user)
   end
 end

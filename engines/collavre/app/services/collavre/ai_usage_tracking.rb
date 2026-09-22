@@ -47,6 +47,7 @@ module Collavre
 
     def start_usage_tracking(measurement: nil)
       @tool_usage_recorder = @pending_tool_usage = nil
+      @usage_started_at = Time.current
       @usage_recorder = LlmUsage::Recorder.new(context: context, vendor: vendor, model: model, measurement: measurement) if @log_interactions
     rescue StandardError => e
       @usage_recorder = nil

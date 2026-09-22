@@ -12,13 +12,19 @@ module Collavre
     #   response delivers them together, so it passes timed: false and the
     #   duration stays nil.
     # - Collavre MCP tools the CLI calls are recorded here too, whatever alias the
-    #   workspace registered the server under. /mcp skips calls made with a
-    #   workspace callback token, so each call is counted once. See McpCall.
+    #   workspace registered the server under. /mcp has already recorded the call
+    #   tagged with the workspace, so a recorded result replaces the oldest
+    #   matching /mcp row of this run and each call is counted once. A call whose
+    #   result never arrives keeps its /mcp row. See McpCall.
     class CliProxyRecorder
       SOURCE = "cli_proxy"
+      # "mcp__<alias>__<tool>" (Claude) and "<alias>.<tool>" (Codex)
+      MCP_TOOL_NAME = /\A(?:mcp__.+__|[^.]+\.)(?<tool>[^.]+)\z/
 
-      def initialize(context:, execution_id:)
+      def initialize(context:, execution_id:, agent_workspace: nil, since: nil)
         @recorder = Recorder.new(context: context, source: SOURCE, execution_id: execution_id)
+        @agent_workspace_id = agent_workspace&.id
+        @since = since
         @started = {}
         @recorded = Set.new
       end
@@ -42,10 +48,20 @@ module Collavre
         started = @started.delete(id)
         return if id.present? && !@recorded.add?(id)
 
-        @recorder.record(
-          tool_name: event["name"].presence || "tool", succeeded: succeeded?(event),
+        name = event["name"].presence || "tool"
+        row = @recorder.record(
+          tool_name: name, succeeded: succeeded?(event),
           duration_ms: started && ((monotonic_now - started) * 1000).round, call_id: id.presence
         )
+        replace_mcp_row(name) if row
+      end
+
+      def replace_mcp_row(name)
+        tool = MCP_TOOL_NAME.match(name)&.[](:tool)
+        return unless tool && @agent_workspace_id && @since
+
+        ToolUsage.where(source: McpCall::SOURCE, agent_workspace_id: @agent_workspace_id, tool_name: tool)
+                 .where(occurred_at: @since..).order(:occurred_at, :id).first&.destroy
       end
 
       def succeeded?(event)

@@ -7,8 +7,9 @@ module Collavre
     class Recorder
       attr_reader :execution_id
 
-      def initialize(context:, source:, execution_id: nil)
+      def initialize(context:, source:, execution_id: nil, agent_workspace: nil)
         @identity = LlmUsage::Attribution.snapshot(context).merge(agent_id: LlmUsage::Attribution.agent(context)&.id)
+        @identity[:agent_workspace_id] = agent_workspace.id if agent_workspace
         @source = source
         @execution_id = execution_id || SecureRandom.uuid
         @sequence = 0

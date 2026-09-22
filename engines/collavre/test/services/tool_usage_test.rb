@@ -81,13 +81,15 @@ class ToolUsageTest < ActiveSupport::TestCase
     end
   end
 
-  test "mcp calls made with a workspace callback token are left to the cli_proxy events" do
-    pair = Collavre::Current.set(user: @requester, mcp_agent_workspace_request: true) do
+  test "mcp calls made with a workspace callback token are recorded and tagged with the workspace" do
+    workspace = Struct.new(:id).new(42)
+    pair = Collavre::Current.set(user: @requester, mcp_agent_workspace: workspace) do
       Collavre::ToolUsage::McpCall.track("cron_list") { [ { success: true }, {} ] }
     end
 
     assert_equal [ { success: true }, {} ], pair
-    assert_equal 0, Collavre::ToolUsage.count
+    row = Collavre::ToolUsage.sole
+    assert_equal [ "mcp", 42, @requester.id ], [ row.source, row.agent_workspace_id, row.requester_id ]
   end
 
   test "the FastMcp tool entry point records one mcp call and the RubyLLM tool records none" do

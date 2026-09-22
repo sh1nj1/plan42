@@ -202,6 +202,58 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal names, Collavre::ToolUsage.order(:id).pluck(:tool_name)
   end
 
+  def mcp_row(tool_name, workspace_id:, at:)
+    Collavre::ToolUsage.create!(event_key: SecureRandom.uuid, execution_id: SecureRandom.uuid, source: "mcp",
+      tool_name: tool_name, requester_kind: "unknown", occurred_at: at, agent_workspace_id: workspace_id)
+  end
+
+  test "a proxy result replaces the matching /mcp row of its workspace and run, once" do
+    since = 1.minute.ago
+    stale = mcp_row("topic_list", workspace_id: 7, at: 2.minutes.ago)
+    other_workspace = mcp_row("topic_list", workspace_id: 8, at: Time.current)
+    first = mcp_row("topic_list", workspace_id: 7, at: 30.seconds.ago)
+    second = mcp_row("topic_list", workspace_id: 7, at: 20.seconds.ago)
+    other_tool = mcp_row("cron_list", workspace_id: 7, at: 10.seconds.ago)
+    recorder = Collavre::ToolUsage::CliProxyRecorder.new(context: {}, execution_id: "exec-mcp",
+      agent_workspace: Struct.new(:id).new(7), since: since)
+
+    recorder.observe(event("a", "result", "mcp__workspace__topic_list", ok: true))
+    recorder.observe(event("a", "result", "mcp__workspace__topic_list", ok: true))
+    recorder.observe(event("b", "result", "Bash", ok: true))
+
+    remaining = Collavre::ToolUsage.where(source: "mcp").order(:id).pluck(:id)
+    assert_equal [ stale, other_workspace, second, other_tool ].map(&:id), remaining
+    refute Collavre::ToolUsage.exists?(first.id)
+    assert_equal %w[mcp__workspace__topic_list Bash], Collavre::ToolUsage.where(source: "cli_proxy").order(:id).pluck(:tool_name)
+
+    recorder.observe(event("c", "result", "workspace.topic_list", ok: true))
+    refute Collavre::ToolUsage.exists?(second.id)
+  end
+
+  test "a /mcp row without a proxy result, or a recorder without a workspace, is kept" do
+    row = mcp_row("topic_list", workspace_id: 7, at: Time.current)
+    Collavre::ToolUsage::CliProxyRecorder.new(context: {}, execution_id: "exec-none")
+      .observe(event("a", "result", "mcp__workspace__topic_list"))
+
+    assert Collavre::ToolUsage.exists?(row.id)
+  end
+
+  test "a cli_proxy run reconciles against its own workspace from when usage tracking started" do
+    client, = client_with([ stream_chunk(event("m1", "result", "mcp__workspace__topic_list", ok: true)), stream_chunk(content: "ok") ])
+    client.instance_variable_set(:@cli_proxy_identity, { workspace: Struct.new(:id).new(9) })
+    stale = mcp_row("topic_list", workspace_id: 9, at: 1.hour.ago)
+    client.define_singleton_method(:start_usage_tracking) do |**options|
+      super(**options)
+      Collavre::ToolUsage.create!(event_key: SecureRandom.uuid, execution_id: SecureRandom.uuid, source: "mcp",
+        tool_name: "topic_list", requester_kind: "unknown", occurred_at: Time.current, agent_workspace_id: 9)
+    end
+
+    client.chat([])
+
+    assert_equal [ stale.id ], Collavre::ToolUsage.where(source: "mcp").pluck(:id)
+    assert_equal 1, Collavre::ToolUsage.where(source: "cli_proxy").count
+  end
+
   test "the real OpenAI provider sends x_cli_events to cli_proxy only" do
     WebMock.disable_net_connect!
     owner = users(:one)

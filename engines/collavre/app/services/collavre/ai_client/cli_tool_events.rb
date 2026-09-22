@@ -76,7 +76,10 @@ module Collavre
 
         execution_id = @usage_recorder.execution_id
         @cli_tool_usage = nil unless @cli_tool_usage&.execution_id == execution_id
-        @cli_tool_usage ||= ToolUsage::CliProxyRecorder.new(context: context, execution_id: execution_id)
+        @cli_tool_usage ||= ToolUsage::CliProxyRecorder.new(
+          context: context, execution_id: execution_id,
+          agent_workspace: @cli_proxy_identity&.dig(:workspace), since: @usage_started_at
+        )
       end
     end
   end

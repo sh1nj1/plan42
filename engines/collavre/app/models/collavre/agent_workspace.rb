@@ -64,9 +64,10 @@ module Collavre
         raise ActiveRecord::RecordNotFound
       end
 
-      # True for a token a cli-openai-proxy workspace uses to call back into /mcp.
-      def callback_access_token?(access_token)
-        access_token&.application&.name == CALLBACK_APPLICATION_NAME
+      # The workspace whose cli-openai-proxy uses this token to call back into
+      # /mcp. Matched by token id: application names are editable display values.
+      def for_callback_access_token(access_token)
+        access_token && find_by(callback_access_token_id: access_token.id)
       end
 
       def manifest_digest(token)
@@ -139,7 +140,7 @@ module Collavre
 
       def create_workspace!(agent:, user:, gateway:)
         transaction do
-          callback_token = issue_callback_token!(gateway: gateway, owner: user || agent)
+          callback_token, callback_access_token_id = issue_callback_token!(gateway: gateway, owner: user || agent)
 
           create!(
             agent: agent,
@@ -149,7 +150,8 @@ module Collavre
             proxy_credential_id: proxy_credential_id_for(agent, user),
             proxy_user_id: legacy_proxy_user_id_for(agent, user),
             manifest_token: SecureRandom.urlsafe_base64(32),
-            callback_token: callback_token
+            callback_token: callback_token,
+            callback_access_token_id: callback_access_token_id
           )
         end
       end
@@ -174,7 +176,7 @@ module Collavre
         plaintext = access_token.token
         access_token.update_column(:token, Collavre::HashedAccessTokenLookup.encode(plaintext))
 
-        plaintext
+        [ plaintext, access_token.id ]
       end
     end
 
@@ -194,8 +196,8 @@ module Collavre
             raise ActiveRecord::RecordNotFound unless agent_gateway_id == gateway.id
 
             old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
-            new_callback_token = self.class.send(:issue_callback_token!, gateway: gateway, owner: user || workspace_agent)
-            update!(callback_token: new_callback_token)
+            new_callback_token, new_access_token_id = self.class.send(:issue_callback_token!, gateway: gateway, owner: user || workspace_agent)
+            update!(callback_token: new_callback_token, callback_access_token_id: new_access_token_id)
             old_access_token&.revoke
           end
         end

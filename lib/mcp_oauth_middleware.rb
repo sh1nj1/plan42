@@ -39,7 +39,7 @@ class McpOauthMiddleware
     return unless defined?(Collavre::Current)
 
     Collavre::Current.mcp_request = true
-    Collavre::Current.mcp_agent_workspace_request = Collavre::AgentWorkspace.callback_access_token?(token)
+    Collavre::Current.mcp_agent_workspace = Collavre::AgentWorkspace.for_callback_access_token(token)
   end
 
   def valid_oauth_token?(request)
