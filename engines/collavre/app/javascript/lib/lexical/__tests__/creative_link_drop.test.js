@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import { jest } from '@jest/globals'
-import { createEditor, $createParagraphNode, $createTextNode, $getRoot, $setSelection } from 'lexical'
+import { COMMAND_PRIORITY_HIGH, DROP_COMMAND, createEditor, $createParagraphNode, $createTextNode, $getRoot, $setSelection } from 'lexical'
 import { registerRichText } from '@lexical/rich-text'
 import { $createCodeNode, CodeNode, CodeHighlightNode } from '@lexical/code'
 import { LinkNode } from '@lexical/link'
@@ -8,16 +8,25 @@ import { CreativeLinkNode } from '../creative_link_node'
 import { registerCreativeLinkDrop } from '../creative_link_drop'
 import { lexicalToMarkdown } from '../markdown_serialize'
 import { createDragDropRegistry } from '../../dnd/registry'
-import { ensureDragSessionToken } from '../../dnd/session'
+import { writeDragData } from '../../dnd/envelope'
 import { getCreativeLabelFromDom } from '../../dnd/creative_label'
 
 let editor, root, cleanup, cleanupRichText
 function drag(type, value = { ids: ['12', '34', '12'] }, mime = 'application/x-collavre-creative') {
-  if (value.ids) value = { creativeId: value.ids[0], selectedCreativeIds: value.ids, treeId: 'tree', token: ensureDragSessionToken() }
+  const data = new Map()
+  const dataTransfer = {
+    files: [], dropEffect: 'none',
+    get types() { return [...data.keys()] },
+    getData: key => data.get(key) || '',
+    setData: (key, value) => data.set(key, value)
+  }
+  if (value.ids) {
+    writeDragData(dataTransfer, { kind: 'creative', ids: value.ids, payload: { treeId: 'tree' } })
+  } else {
+    dataTransfer.setData(mime, JSON.stringify(value))
+  }
   const event = new DragEvent(type, { bubbles: true, cancelable: true })
-  Object.assign(event, { clientX: 10, clientY: 20, dataTransfer: {
-    files: [], types: [mime], getData: key => key === mime ? JSON.stringify(value) : '', dropEffect: 'none'
-  } })
+  Object.assign(event, { clientX: 10, clientY: 20, dataTransfer })
   root.dispatchEvent(event)
   return event
 }
@@ -55,11 +64,36 @@ test('copies ordered, deduplicated links, preserving surrounding text and blocki
   const over = drag('dragover')
   expect(over.defaultPrevented).toBe(true)
   expect(over.dataTransfer.dropEffect).toBe('copy')
-  expect(drag('drop').defaultPrevented).toBe(true)
+  const drop = drag('drop')
+  expect(drop.dataTransfer.types).toEqual(expect.arrayContaining(['application/x-collavre-creative', 'text/plain']))
+  expect(drop.dataTransfer.getData('text/plain')).toBe(drop.dataTransfer.getData('application/x-collavre-creative'))
+  expect(drop.defaultPrevented).toBe(true)
+  expect(root.textContent).not.toContain(drop.dataTransfer.getData('text/plain'))
   expect(lexicalToMarkdown(editor)).toBe('Before [Target & title](/creatives/12) [34](/creatives/34) after')
   expect(root.querySelector('a').dataset.creativeId).toBe('12')
   expect(move).not.toHaveBeenCalled()
   outer.destroy()
+})
+
+test('Lexical sees the production plain-text payload first without inserting JSON', async () => {
+  const lexicalDrop = jest.fn(event => {
+    expect(JSON.parse(event.dataTransfer.getData('text/plain')).selectedCreativeIds).toEqual(['12', '34'])
+    expect(root.querySelectorAll('a')).toHaveLength(0)
+    // Observe Lexical's earlier root listener, then let registerRichText handle it.
+    return false
+  })
+  const unregister = editor.registerCommand(DROP_COMMAND, lexicalDrop, COMMAND_PRIORITY_HIGH)
+  try {
+    const event = drag('drop')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(lexicalDrop).toHaveBeenCalledTimes(1)
+    expect(event.defaultPrevented).toBe(true)
+    expect(root.querySelectorAll('a')).toHaveLength(2)
+    expect(root.textContent).toBe('Before Target & title 34 after')
+    expect(lexicalToMarkdown(editor)).toBe('Before [Target & title](/creatives/12) [34](/creatives/34) after')
+  } finally {
+    unregister()
+  }
 })
 
 test.each(['range', 'position'])('inserts at the pointer using the %s caret API', api => {
