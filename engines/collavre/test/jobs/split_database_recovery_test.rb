@@ -81,6 +81,47 @@ module Collavre
       assert @failure.reload.persisted?
     end
 
+    %w[individual bulk].product(%w[running delegated]).each do |mode, status|
+      test "#{mode} retry of #{status} split commit is reconciled by the periodic sweep" do
+        @task.update!(status: status,
+          trigger_event_payload: Orchestration::ExecutionFence.pending_handoff(@task.trigger_event_payload))
+        # A manual retry is valid for application failures too, not only dead owners.
+        @failure.update!(error: { "exception_class" => "RuntimeError", "message" => "provider error" })
+        assert_raises(SimulatedWorkerExit) do
+          SolidQueue::FailedExecution.transaction do
+            if mode == "individual"
+              @failure.retry
+            else
+              SolidQueue::FailedExecution.retry_all([ @queue_job ])
+            end
+            assert_equal 0, Task.connection.open_transactions
+            assert_equal "pending", @task.reload.status
+            raise SimulatedWorkerExit
+          end
+        end
+        assert SolidQueue::FailedExecution.exists?(@failure.id)
+        assert_not SolidQueue::ReadyExecution.exists?(job_id: @queue_job.id)
+        assert_nil Orchestration::ExecutionFence.generation(@task)
+
+        assert_no_difference "Task.count" do
+          2.times { RecoverInterruptedTasksJob.perform_now }
+        end
+        assert_not SolidQueue::FailedExecution.exists?(@failure.id)
+        assert_equal 1, SolidQueue::ReadyExecution.where(job_id: @queue_job.id).count
+        assert_equal @execution.job_id, @task.reload.trigger_event_payload["execution_job_id"]
+        assert_equal 0, @task.resume_count
+        assert Workflow::TaskAdmission.start!(@task, execution_job_id: @execution.job_id)
+        assert_not_nil Orchestration::ExecutionFence.generation(@task.reload)
+      end
+    end
+
+    test "pending tasks with an intact generation are not reclaimed retry intents" do
+      @task.update!(status: "pending")
+      RecoverInterruptedTasksJob.perform_now
+      assert @failure.reload.persisted?
+      assert_not SolidQueue::ReadyExecution.exists?(job_id: @queue_job.id)
+    end
+
     private
 
     def interrupt_after_primary_commit

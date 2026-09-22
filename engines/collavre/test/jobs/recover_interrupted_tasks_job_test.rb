@@ -20,6 +20,24 @@ module Collavre
       @claim = SolidQueue::ClaimedExecution.create!(job: @job, process: @process)
     end
 
+    test "reclaimed pending work with a live claim is never redispatched" do
+      @task.update!(status: "pending")
+      SolidQueue::FailedExecution.create!(job: @job, exception: RuntimeError.new("stale failure"))
+      RecoverInterruptedTasksJob.perform_now
+      assert @job.reload.failed_execution
+      assert_not @job.ready_execution
+    end
+
+    test "reclaimed pending work is rechecked under lock before retry" do
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      @task.update!(status: "pending")
+      SolidQueue::Job.stub(:find_by, ->(**) { @task.update!(status: "cancelled"); @job.reload }) do
+        RecoverInterruptedTasksJob.perform_now
+      end
+      assert @job.reload.failed_execution
+      assert_not @job.ready_execution
+    end
+
     test "boot never recovers a different healthy worker's running task" do
       2.times { RecoverInterruptedTasksJob.perform_now }
       assert_equal "running", @task.reload.status

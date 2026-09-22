@@ -16,7 +16,7 @@ module Collavre
     def perform
       return unless defined?(SolidQueue::Job)
 
-      Task.where(status: %w[running delegated]).find_each do |task|
+      Task.where(status: %w[pending running delegated]).find_each do |task|
         recover(task)
       end
     end
@@ -32,6 +32,15 @@ module Collavre
       generation.present? && handoff == { "generation" => generation, "state" => Orchestration::ExecutionFence::HANDOFF_PENDING }
     end
 
+    # Reclaim commits to the primary database before retry commits to the queue.
+    # Pending + retained job id + retired generation is the durable retry intent.
+    # If queue commit failed, retry the same job; never enqueue a replacement.
+    def retry_reclaimed(task, failure)
+      return if Orchestration::ExecutionFence.generation(task).present?
+
+      failure.retry
+    end
+
     def recover(task)
       execution_job_id = task.trigger_event_payload&.fetch("execution_job_id", nil)
       return if execution_job_id.blank?
@@ -41,13 +50,14 @@ module Collavre
       return unless failure
 
       outcome = failure.with_lock do
-        next unless OWNER_FAILURES.include?(failure.exception_class)
         # Never infer death from task age or absence of a claim. Ready, blocked,
         # scheduled and still-claimed jobs may run on another healthy worker.
         next if SolidQueue::ClaimedExecution.exists?(job_id: job.id)
 
         task.with_lock do
-          next unless recoverable_execution?(task) && task.trigger_event_payload["execution_job_id"] == execution_job_id
+          next unless task.trigger_event_payload["execution_job_id"] == execution_job_id
+          next retry_reclaimed(task, failure) if task.pending?
+          next unless OWNER_FAILURES.include?(failure.exception_class) && recoverable_execution?(task)
           Orchestration::TaskResumer.suspend!(task, reason: "server_restart").tap do |result|
             # Queue and Task can use separate databases. Commit a permanent
             # execution fence with suspension even if queue retirement rolls back.
