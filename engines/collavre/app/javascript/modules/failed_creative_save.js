@@ -1,4 +1,4 @@
-import { rememberRecoveredPosition } from './recovered_creative_position'
+import { rememberRecoveredPosition, withAcknowledgedParent } from './recovered_creative_position'
 
 // Unacknowledged entries survive reloads. Restore their latest draft before
 // establishing the editor baseline, including offline and in-flight saves.
@@ -7,7 +7,7 @@ export function recoverFailedCreative(queue, data, tree) {
   const key = `creative_${data.id}`
   const failed = queue.failedItems?.some(item => item.dedupeKey === key)
   const pending = queue.queue?.some(item => item.dedupeKey === key)
-  if (!failed && !pending) return data
+  if (!failed && !pending) return withAcknowledgedParent(tree, data)
   const body = queue.unacknowledgedBody(key)
   rememberRecoveredPosition(tree, body)
   const recovered = { ...data }

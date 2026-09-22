@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-import { rememberRecoveredPosition, queuedCreativePosition } from '../recovered_creative_position'
+import { rememberRecoveredPosition, queuedCreativePosition, rememberAcknowledgedPosition, withAcknowledgedParent } from '../recovered_creative_position'
 
 function row(id) {
   const tree = document.createElement('div')
@@ -28,4 +28,30 @@ test('clears recovery on reopen without a pending structural change', () => {
   expect(queuedCreativePosition(tree)).toEqual({ 'creative[parent_id]': '', before_id: '', after_id: '100' })
   rememberRecoveredPosition(tree)
   expect(queuedCreativePosition(tree)).toEqual({ 'creative[parent_id]': '', before_id: '', after_id: '' })
+})
+
+
+test('acknowledged positions survive reopening, while pending and explicit moves take precedence', () => {
+  const tree = row('42')
+  tree.dataset.parentId = '10'
+  const data = { parent_id: 20 }
+  rememberAcknowledgedPosition(tree, data)
+  rememberRecoveredPosition(tree)
+  expect(queuedCreativePosition(tree)).toEqual({ 'creative[parent_id]': 20 })
+  expect(withAcknowledgedParent(tree, { parent_id: 10 })).toEqual(data)
+  rememberRecoveredPosition(tree, { 'creative[parent_id]': '30', after_id: '31' })
+  expect(queuedCreativePosition(tree)).toEqual({ 'creative[parent_id]': '30', before_id: '', after_id: '31' })
+  tree.dataset.parentId = '40'
+  expect(queuedCreativePosition(tree)).toEqual({ 'creative[parent_id]': '40', before_id: '', after_id: '' })
+  expect(withAcknowledgedParent(tree, data)).toBe(data)
+})
+
+test('ignores payloads without a parent and preserves acknowledged root moves', () => {
+  const tree = row('42')
+  tree.dataset.parentId = '10'
+  rememberAcknowledgedPosition(tree, {})
+  expect(queuedCreativePosition(tree)['creative[parent_id]']).toBe('10')
+  rememberAcknowledgedPosition(tree, { parent_id: null })
+  expect(queuedCreativePosition(tree)).toEqual({ 'creative[parent_id]': '' })
+  expect(withAcknowledgedParent(tree, { parent_id: 10 }).parent_id).toBe('')
 })

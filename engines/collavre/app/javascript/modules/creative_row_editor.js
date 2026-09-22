@@ -1,5 +1,5 @@
 import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
-import { queuedCreativePosition } from './recovered_creative_position'
+import { queuedCreativePosition, rememberAcknowledgedPosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
@@ -1100,6 +1100,7 @@ function setupEditorSession() {
       console.warn('⚠️ Incomplete or missing cached data for creative', id, '- making API call');
       fetchReconciledCreative(apiQueue, id, row, id => creativesApi.get(id))
         .then(data => {
+	  rememberAcknowledgedPosition(tree, data);
           updateRowFromData(treeRowElement(tree), data);
           applyCreativeData(data, tree);
         });

@@ -853,3 +853,29 @@ test('refetches a restored save completed before opening and edits the acknowled
   expect(get).not.toHaveBeenCalled()
   expect(textarea.value).toBe('acknowledged draft continued')
 })
+
+
+test.each([20, null])('preserves an acknowledged move on subsequent edits (parent: %s)', async parentId => {
+  jest.useFakeTimers()
+  const { tree } = appendMarkdownRow('42', 'stale server')
+  tree.dataset.parentId = '10'
+  appendMarkdownRow('43', 'old neighbor')
+  recordRestoredCompletion(queue, { dedupeKey: 'creative_42' })
+  get.mockResolvedValue({ id: 42, parent_id: parentId, content_type: 'markdown', markdown_source: 'moved draft', markdown_editor: 'source', progress: 0 })
+  for (const suffix of [' first', ' second']) {
+    openRow(tree)
+    await flushPromises()
+    expect(document.getElementById('inline-parent-id').value).toBe(String(parentId ?? ''))
+    const textarea = document.getElementById('markdown-editor-textarea')
+    textarea.value += suffix
+    textarea.dispatchEvent(new Event('input'))
+    document.getElementById('inline-close').click()
+    await flushPromises()
+    const request = enqueue.mock.calls.at(-1)[0]
+    expect(request.body['creative[parent_id]']).toBe(parentId ?? '')
+    expect(request.body).not.toHaveProperty('before_id')
+    expect(request.body).not.toHaveProperty('after_id')
+    request.onSuccess({})
+    queue.queue = []
+  }
+})
