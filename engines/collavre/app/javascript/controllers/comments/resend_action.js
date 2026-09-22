@@ -6,7 +6,7 @@ function selectedOwnMessage(controller) {
   const comment = document.getElementById(`comment_${id}`)
   const userId = document.body.dataset.currentUserId
   if (!userId || comment?.dataset.userId !== userId || comment.dataset.aiUser === 'true') return null
-  if (comment.dataset.inboxSystem === 'true') return null
+  if (comment.dataset.inboxSystem === 'true' || comment.dataset.commandMessage === 'true') return null
   return id
 }
 

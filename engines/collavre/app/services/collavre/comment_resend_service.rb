@@ -6,6 +6,12 @@ module Collavre
 
     COPY_ATTRIBUTES = %w[content private approver_id review_type quoted_comment_id quoted_text].freeze
 
+    # Command results are appended to content; skip_dispatch is not persisted.
+    # Reject slash-prefixed messages without executing commands to identify them.
+    def self.command_message?(comment)
+      comment.content.to_s.strip.start_with?("/")
+    end
+
     def initialize(comment:, user:)
       @comment = comment
       @user = user
@@ -34,6 +40,7 @@ module Collavre
       raise NotAllowed unless @comment.creative_id == @creative.id && @comment.topic_id == @topic_id
       raise NotAllowed unless @creative.has_permission?(@user, :feedback)
       raise NotAllowed if @creative.reload.archived? || @comment.approval_action?
+      raise NotAllowed if self.class.command_message?(@comment)
       validate_topic!
     end
 

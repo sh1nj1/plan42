@@ -44,6 +44,23 @@ module Collavre
         assert Comment.exists?(reply.id)
       end
 
+      test "disables command resend and rejects direct requests without dispatch or deletion" do
+        [ '/topic "New"', '/compress', '/calendar list', '/custom_tool {}' ].each do |command|
+          @comment.update_columns(content: "  #{command}\n\nCommand result")
+          reply = @creative.comments.create!(user: users(:ai_bot), content: "Keep reply", topic_id: @comment.topic_id)
+          get creative_comments_path(@creative), params: { topic_id: @comment.topic_id }
+          assert_response :success
+          assert_select "#comment_#{@comment.id}[data-command-message='true']"
+
+          SystemEvents::Dispatcher.stub :dispatch, ->(*) { flunk "Dispatched command transcript" } do
+            assert_no_difference("Comment.count") { post creative_comment_resend_path(@creative, @comment) }
+          end
+          assert_response :forbidden
+          assert Comment.exists?(@comment.id)
+          assert Comment.exists?(reply.id)
+        end
+      end
+
       test "cannot address a message through another creative" do
         other = Creative.create!(user: @user, description: "Other")
         post creative_comment_resend_path(other, @comment)

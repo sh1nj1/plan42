@@ -32,7 +32,7 @@ test('enables a single own message and uses localized text', () => {
   expect(action.title).toBe('설명')
 })
 
-test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy', 'inbox-system'])('disables resend for %s', reason => {
+test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy', 'inbox-system', 'command'])('disables resend for %s', reason => {
   if (reason === 'multiple') controller.selection.add('11')
   if (reason === 'none') controller.selection.clear()
   if (reason === 'other') document.getElementById('comment_10').dataset.userId = '2'
@@ -40,6 +40,7 @@ test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy', 'i
   if (reason === 'missing') document.getElementById('comment_10').remove()
   if (reason === 'anonymous') delete document.body.dataset.currentUserId
   if (reason === 'inbox-system') document.getElementById('comment_10').dataset.inboxSystem = 'true'
+  if (reason === 'command') document.getElementById('comment_10').dataset.commandMessage = 'true'
   if (reason === 'busy') controller.resendingComment = true
   expect(button().disabled).toBe(true)
 })
@@ -119,4 +120,10 @@ test('uses localized fallback when a network error has no message', async () => 
   fetch.mockRejectedValue(new Error())
   await resendSelectedMessage(controller, button())
   expect(alertDialog).toHaveBeenCalledWith('실패')
+})
+
+test('does not send a command transcript even when invoked directly', async () => {
+  document.getElementById('comment_10').dataset.commandMessage = 'true'
+  await resendSelectedMessage(controller, button())
+  expect(fetch).not.toHaveBeenCalled()
 })
