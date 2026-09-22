@@ -25,6 +25,45 @@ class CreativeReactionFilterTest < ActionDispatch::IntegrationTest
     assert_equal [ @matched.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
   end
 
+  test "private reactions are hidden from other users with creative access" do
+    @matched.comments.update_all(private: true, user_id: @other.id)
+
+    get creatives_path(format: :json, reaction_emoji: "👍")
+
+    assert_response :success
+    assert_empty JSON.parse(response.body).fetch("creatives")
+  end
+
+  test "authors can filter by reactions on their private comments" do
+    @matched.comments.update_all(private: true)
+
+    get creatives_path(format: :json, reaction_emoji: "👍")
+
+    assert_response :success
+    assert_equal [ @matched.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
+  end
+
+  test "approvers can filter by reactions on private comments" do
+    @matched.comments.update_all(private: true, user_id: @other.id, approver_id: @user.id)
+
+    get creatives_path(format: :json, reaction_emoji: "👍")
+
+    assert_response :success
+    assert_equal [ @matched.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
+  end
+
+  test "anonymous reaction filtering only matches public comments" do
+    scope = Creative.where(id: @matched.id)
+    pipeline = Collavre::Creatives::FilterPipeline.new(user: nil, params: { reaction_emoji: "👍" }, scope: scope)
+    assert_equal [ @matched.id ], pipeline.matched_ids
+
+    @matched.comments.update_all(private: true)
+
+    assert_empty pipeline.matched_ids
+    filter = Collavre::Creatives::Filters::ReactionFilter.new(params: { reaction_emoji: "👍" }, scope: scope)
+    assert_empty filter.match
+  end
+
   test "reaction intersects existing search and progress filters" do
     get creatives_path(format: :json, reaction_emoji: "👍", search: "Marked", max_progress: 0)
     assert_equal [ @matched.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
