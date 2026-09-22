@@ -25,6 +25,28 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     )
   end
 
+  test "quota suspension preserves partial output and unwinds without completing the task" do
+    @task.update!(trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp(@task.trigger_event_payload))
+    previous = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    client = Object.new
+    client.define_singleton_method(:handed_off?) { true }
+    client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+      block.call("Partial answer")
+      raise Collavre::Quota::ExceededError.new(reset_at: 1.hour.from_now)
+    end
+    AiClient.stub(:new, client) do
+      assert_raises(Collavre::TaskSuspendedError) { AiAgentService.new(@task).call }
+    end
+    assert_equal "suspended", @task.reload.status
+    assert_equal "Partial answer", @task.trigger_event_payload.dig("resume_context", "partial_reply")
+    assert @task.trigger_event_payload["execution_generation"].present?
+    assert @agent.reload.quota_blocked_until.future?
+    assert_nil @task.reply_comment
+  ensure
+    ActiveJob::Base.queue_adapter = previous
+  end
+
   test "engine login failure creates an inline card without dispatching another agent" do
     workspace = Struct.new(:id).new(42)
     error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)

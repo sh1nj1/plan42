@@ -1,0 +1,5 @@
+post "agent/tasks/:id/suspend", to: "task_suspensions#create"
+post "agent/register", to: "agents#register"
+post "agent/reply", to: "agents#reply"
+post "agent/notify", to: "agents#notify"
+delete "agent/:id", to: "agents#destroy"

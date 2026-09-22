@@ -43,8 +43,7 @@ module Collavre
       private
 
       def evaluate(agent, topic_immediate_count: 0, scheduling_hooks: nil)
-        tracker = ResourceTracker.for(agent)
-        config = @policy_resolver.scheduling_config_for(agent)
+        tracker, config = ResourceTracker.for(agent), @policy_resolver.scheduling_config_for(agent)
 
         # Check 0: Loop breaker
         if @policy_resolver.loop_breaker_enabled?
@@ -53,6 +52,8 @@ module Collavre
             return loop_broken_decision(agent, loop_result)
           end
         end
+
+        return quota_decision(agent) if Quota::Recovery.blocked?(agent)
 
         # Check 1: Concurrency limit
         max_concurrent = config["max_concurrent_jobs"] || 5
@@ -84,6 +85,12 @@ module Collavre
 
         # All checks passed - immediate execution
         immediate_decision(agent)
+      end
+
+      def quota_decision(agent)
+        return rejected_decision(agent, :quota_exceeded) if agent.quota_retry_exhausted?
+
+        { agent: agent, timing: :suspended, reason: :quota, resume_not_before: agent.quota_blocked_until }
       end
 
       def loop_breaker_result(agent, scheduling_hooks)

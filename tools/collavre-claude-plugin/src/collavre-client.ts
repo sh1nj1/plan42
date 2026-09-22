@@ -73,8 +73,9 @@ export class CollavreClient {
     topicId: number,
     text: string,
     taskId: number,
+    executionGeneration?: string,
   ): Promise<{ comment_id: number }> {
-    const body: Record<string, unknown> = { topic_id: topicId, text, task_id: taskId };
+    const body: Record<string, unknown> = { topic_id: topicId, text, task_id: taskId, execution_generation: executionGeneration };
 
     const res = await fetch(`${this.baseUrl}/api/v1/agent/reply`, {
       method: "POST",
