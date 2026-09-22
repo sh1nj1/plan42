@@ -139,8 +139,10 @@ module Collavre
         # product's tools write creatives and post comments. A turn classified
         # as a failed handoff has everything it swallowed dispatched again, and
         # the restored turn runs those tools a second time.
-        observe_chunk(chunk)
+        # Marked before observe_chunk: a listener there may raise CancelledError,
+        # and the chunk that reached it is already proof of handoff.
         @handed_off = true
+        observe_chunk(chunk)
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
         # break, which providers routinely emit as a token of its own — is

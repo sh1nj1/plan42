@@ -141,6 +141,7 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     client.on_cli_tool_event { |_cli_event| raise Collavre::CancelledError, "Stopped" }
 
     assert_raises(Collavre::CancelledError) { client.chat([]) }
+    assert client.handed_off?, "a chunk reaching the listener is already a handoff"
   end
 
   test "private chats notify listeners but record no usage" do
