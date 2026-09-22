@@ -17,8 +17,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def open_inline_editor(creative)
-    find("#creative-#{creative.id}").hover
-    find("#creative-#{creative.id} .edit-inline-btn", wait: 5).click
+    # Saving can replace the row and its hover-revealed button between actions.
+    page.document.synchronize(5) do
+      find("#creative-#{creative.id}").hover
+      find("#creative-#{creative.id} .edit-inline-btn", wait: 5).click
+    end
     assert_selector "#inline-edit-form-element", wait: 5
   end
 
@@ -217,6 +220,9 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector ".lexical-content-editable a", text: "second.txt", wait: 10
     close_inline_editor
 
+    assert_no_selector "#creative-#{@root_creative.id}[data-save-state]", visible: :all, wait: 10
+    assert_selector "#creative-#{@root_creative.id} .creative-content a", text: "first.txt"
+    assert_selector "#creative-#{@root_creative.id} .creative-content a", text: "second.txt"
     assert_equal [ "first.txt", "second.txt" ], @root_creative.reload.files.map { |file| file.filename.to_s }.sort
     open_inline_editor(@root_creative)
     assert_selector ".lexical-content-editable a", text: "first.txt"
