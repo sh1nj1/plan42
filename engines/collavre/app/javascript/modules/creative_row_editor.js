@@ -1,3 +1,4 @@
+import { recoverFailedCreative } from './failed_creative_save'
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
@@ -404,9 +405,9 @@ function setupEditorSession() {
     const typeEditor = new CreativeTypeEditor(form, scheduleSave, () => saveQueue.saving);
 
     function applyCreativeData(data, tree) {
-      if (!data) return;
-      const creativeId = data.id;
+      const creativeId = data?.id;
       if (!creativeId) return;
+      data = recoverFailedCreative(apiQueue, data, tree);
       initializeEditorForm(form, methodInput, data);
       typeEditor.load(data);
       const content = data.description_raw_html || data.description || '';
@@ -435,11 +436,11 @@ function setupEditorSession() {
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       }
 
-      pendingSave = false;
+      pendingSave = queuedCreativeStatus(tree) === 'error';
       // Dirty detection is HTML-based for the rich surface (compares the editor's
       // HTML projection), and Markdown-source-based for the textarea surface.
       originalContent = useTextarea ? (data.markdown_source || '') : content;
-      isDirty = false;
+      isDirty = pendingSave;
       setSaveStatus(queuedCreativeStatus(tree));
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;

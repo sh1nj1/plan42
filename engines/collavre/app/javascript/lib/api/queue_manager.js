@@ -1,3 +1,4 @@
+import { unacknowledgedBody, clearAcknowledgedFailures } from './queue_recovery'
 import { waitForQueuedRequests, mergeQueueCallbacks } from './queue_completion'
 import csrfFetch, { refreshCsrfToken } from './csrf_fetch'
 import { apiErrorFromResponse } from './api_error'
@@ -167,7 +168,7 @@ class ApiQueueManager {
         // Find and merge callbacks and attachment IDs from existing requests with the same dedupeKey
         let existingCallbacks = []
         let existingAttachmentIds = []
-        let existingBody = {}
+        const existingBody = this.unacknowledgedBody(request.dedupeKey)
         if (request.dedupeKey) {
             // CRITICAL: Skip the first item if processing is active
             // The first item might be currently executing in processQueue
@@ -176,7 +177,6 @@ class ApiQueueManager {
             const existingItems = this.queue.slice(startIndex).filter(item => item.dedupeKey === request.dedupeKey)
 
             existingItems.forEach(item => {
-                existingBody = { ...existingBody, ...item.body }
                 if (typeof item.onSuccess === 'function') {
                     existingCallbacks.push(item.onSuccess)
                 }
@@ -280,6 +280,8 @@ class ApiQueueManager {
                     }
                 }
 
+                clearAcknowledgedFailures(this, item)
+
                 // Remove from queue
                 this.queue.shift()
                 this.saveToLocalStorage()
@@ -320,6 +322,10 @@ class ApiQueueManager {
         }
 
         this.processing = false
+    }
+
+    unacknowledgedBody(dedupeKey) {
+        return unacknowledgedBody(this, dedupeKey)
     }
 
     waitFor(dedupeKey) {

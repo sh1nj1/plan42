@@ -283,6 +283,35 @@ describe('ordered creative saves', () => {
         expect(JSON.parse(localStorage.getItem(apiQueue.storageKey))[0].body).toEqual(apiQueue.queue[0].body)
     })
 
+    test('carries executing progress into a later save after permanent failure', async () => {
+        const pause = jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { progress: 1, description: 'first' } })
+        const first = apiQueue.queue[0]
+        apiQueue.processing = true
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })
+        expect(apiQueue.queue[0]).toBe(first)
+        expect(apiQueue.queue[1].body).toEqual({ progress: 1, description: 'second' })
+        apiQueue.processing = false
+        pause.mockRestore()
+        mockCsrfFetch.mockResolvedValueOnce({ ok: false, status: 403, clone: () => ({ json: async () => ({ errors: ['Denied'] }) }) }).mockResolvedValue({ ok: true })
+        await apiQueue.processQueue()
+        expect(mockCsrfFetch.mock.calls[1][1].body.get('progress')).toBe('1')
+        expect(apiQueue.failedItems).toEqual([])
+        expect(JSON.parse(localStorage.getItem(`${apiQueue.storageKey}_failed`))).toEqual([])
+    })
+
+    test('merges durable failed fields into retries while allowing a new value to win', () => {
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.failedItems = [{ dedupeKey: 'creative_42', body: { progress: 1, description: 'failed' } }]
+        apiQueue.saveFailedToLocalStorage()
+        apiQueue.failedItems = []
+        apiQueue.loadFailedFromLocalStorage()
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'retry' } })
+        expect(apiQueue.queue[0].body).toEqual({ progress: 1, description: 'retry' })
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { progress: 0 } })
+        expect(apiQueue.queue[0].body).toEqual({ progress: 0, description: 'retry' })
+    })
+
     test('retries the older save before sending the newer save and resolves dependent operations last', async () => {
         const pause = jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
         apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'first' } })

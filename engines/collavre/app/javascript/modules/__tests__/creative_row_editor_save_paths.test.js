@@ -37,14 +37,11 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
     loadChildren: jest.fn(() => Promise.resolve({ creatives: [] })),
   },
 }))
-jest.unstable_mockModule('../../lib/api/queue_manager', () => ({
-  default: {
-    initialize: jest.fn(),
-    start: jest.fn(),
-    enqueue,
-    waitFor,
-  },
-}))
+const queue = {
+  initialize: jest.fn(), start: jest.fn(), enqueue, waitFor,
+  failedItems: [], unacknowledgedBody: jest.fn(),
+}
+jest.unstable_mockModule('../../lib/api/queue_manager', () => ({ default: queue }))
 
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
 const {
@@ -84,6 +81,8 @@ beforeEach(() => {
   buildEditorDom(document.getElementById('center-frame'))
   save.mockReset()
   enqueue.mockReset()
+  queue.failedItems = []
+  queue.unacknowledgedBody.mockReset()
   unconvert.mockReset()
   waitFor.mockReset().mockResolvedValue()
   alertDialog.mockClear()
@@ -580,4 +579,50 @@ test('unconvert stops when the preceding save fails', async () => {
   expect(unconvert).not.toHaveBeenCalled()
   expect(alertDialog).toHaveBeenCalledWith('Save denied')
   expect(document.getElementById('inline-unconvert').disabled).toBe(false)
+})
+
+test('reopening a row that failed while closed retries its draft without another edit', async () => {
+  const first = appendMarkdownRow('42', 'before')
+  appendMarkdownRow('43', 'second')
+  openRow(first.tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'failed draft'
+  textarea.dispatchEvent(new Event('input'))
+  document.getElementById('inline-move-down').click()
+  await flushPromises()
+  const request = enqueue.mock.calls[0][0]
+  window.dispatchEvent(new CustomEvent('api-queue-request-failed', {
+    detail: { item: request, error: new Error('offline') },
+  }))
+  expect(first.tree.dataset.saveState).toBe('error')
+  openRow(first.tree)
+  await flushPromises()
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue).toHaveBeenCalledTimes(2)
+  const retry = enqueue.mock.calls[1][0]
+  expect(retry.body['creative[markdown_source]']).toBe('failed draft')
+  retry.onSuccess({})
+  expect(first.tree.dataset.saveState).toBeUndefined()
+})
+
+test('reopening after reload restores the persisted failed draft over server data and retries it', async () => {
+  queue.failedItems = [{ dedupeKey: 'creative_42' }]
+  queue.unacknowledgedBody.mockReturnValue({
+    'creative[description]': '<p>persisted draft</p>',
+    'creative[content_type_input]': 'markdown',
+    'creative[markdown_source]': 'persisted draft',
+    'creative[markdown_editor]': 'source',
+    'creative[progress]': 1,
+  })
+  const { tree } = appendMarkdownRow('42', 'stale server')
+  openRow(tree)
+  expect(document.getElementById('markdown-editor-textarea').value).toBe('persisted draft')
+  expect(document.getElementById('inline-creative-progress').checked).toBe(true)
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  expect(enqueue.mock.calls[0][0].body['creative[markdown_source]']).toBe('persisted draft')
+  enqueue.mock.calls[0][0].onSuccess({})
+  expect(tree.dataset.saveState).toBeUndefined()
 })
