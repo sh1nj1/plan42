@@ -27,8 +27,10 @@ class LlmUsagesControllerTest < ActionDispatch::IntegrationTest
       requester_kind: "unknown", vendor: "openai", model: "test", occurred_at: Time.current,
       input_tokens: 0, output_tokens: 2, raw_usage: { secret: "secret-usage-payload-should-not-render" })
     %w[en ko].each do |locale|
+      user.update!(locale: locale)
       get llm_usages_path, params: { locale: locale, group: "owner" }
       assert_response :success
+      assert_select "h1", I18n.t("collavre.llm_usages.title", locale: locale)
       assert_select "tbody tr", 1
       assert_select "td", text: user.name
       assert_select "td", text: "0"

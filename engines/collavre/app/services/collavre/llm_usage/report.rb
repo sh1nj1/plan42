@@ -67,8 +67,10 @@ module Collavre
       end
 
       def token_aggregates
+        table = LlmUsage.arel_table
+        count = Arel::Nodes::Count.new([ Arel.star ])
         LlmUsage::TOKEN_FIELDS.flat_map do |field|
-          [ Arel.sql("SUM(#{field})"), Arel.sql("COUNT(*) - COUNT(#{field})") ]
+          [ table[field].sum, Arel::Nodes::Subtraction.new(count, table[field].count) ]
         end
       end
 
