@@ -30,6 +30,26 @@ module Collavre
       assert_equal "delegated", @task.reload.status
     end
 
+    test "lost cleanup jobs recover at the earliest persisted deadline" do
+      freeze_time do
+        grace = Orchestration::OfflineTaskGrace
+        later = Task.create!(name: "Later turn", agent: @agent, status: "delegated")
+        grace.write_deadline(@task, 5.seconds.from_now)
+        grace.write_deadline(later, 20.seconds.from_now)
+        @task.update_columns(updated_at: 1.minute.ago)
+
+        assert_enqueued_with(job: CancelOfflineDelegatedTasksJob,
+          args: [ @agent.id, nil, nil ], at: 5.seconds.from_now) do
+          OfflineTaskSweepJob.perform_now
+        end
+        travel 5.seconds
+        perform_enqueued_jobs only: CancelOfflineDelegatedTasksJob, at: Time.current
+        assert_equal "suspended", @task.reload.status
+        assert_equal "delegated", later.reload.status
+        assert_enqueued_with(job: CancelOfflineDelegatedTasksJob, at: 15.seconds.from_now)
+      end
+    end
+
     test "reconnect during sweep grace keeps existing delegated work" do
       OfflineTaskSweepJob.perform_now
       AgentSubscription.create!(agent: @agent, token: "back", session_id: "recover-session")

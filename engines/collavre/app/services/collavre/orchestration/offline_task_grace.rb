@@ -17,8 +17,7 @@ module Collavre
       end
 
       def self.disconnected!(tasks)
-        deadline = CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds.from_now
-        tasks.find_each { |task| write_deadline(task, deadline) }
+        tasks.find_each { |task| deadline(task) }
       end
 
       def self.connected!(agent, session_id)

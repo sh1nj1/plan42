@@ -37,7 +37,7 @@ module Collavre
         .map { |task| Orchestration::OfflineTaskGrace.deadline(task) }
       return if deadlines.empty?
 
-      CancelOfflineDelegatedTasksJob.set(wait_until: deadlines.max)
+      CancelOfflineDelegatedTasksJob.set(wait_until: deadlines.min)
         .perform_later(agent.id, nil, session_id)
     end
   end

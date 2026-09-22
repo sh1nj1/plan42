@@ -108,6 +108,28 @@ module Collavre
       assert_nil @task.reload.trigger_event_payload[Orchestration::OfflineTaskGrace::KEY]
     end
 
+    test "final sibling disconnect preserves an already offline private turn deadline" do
+      freeze_time do
+        topic = Topic.create!(creative: creatives(:tshirt), user: users(:one), name: "First session",
+          primary_agent_id: @agent.id, session_id: "first-session")
+        @task.update!(topic_id: topic.id)
+        shared = Task.create!(name: "Shared turn", agent: @agent, status: "delegated")
+        grace = Orchestration::OfflineTaskGrace
+        grace.disconnected!(grace.tasks_for(@agent, "first-session"))
+        original = grace.deadline(@task)
+
+        travel 10.seconds
+        grace.disconnected!(grace.tasks_for(@agent))
+        assert_equal original, grace.deadline(@task.reload)
+        assert_equal 30.seconds.from_now, grace.deadline(shared.reload)
+
+        travel 20.seconds
+        CancelOfflineDelegatedTasksJob.perform_now(@agent.id, nil)
+        assert_equal "suspended", @task.reload.status
+        assert_equal "delegated", shared.reload.status
+      end
+    end
+
     test "sibling reconnect does not reset a different private session deadline" do
       topic = Topic.create!(creative: creatives(:tshirt), user: users(:one), name: "Other session",
         primary_agent_id: @agent.id, session_id: "original-session")
