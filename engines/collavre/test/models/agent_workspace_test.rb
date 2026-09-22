@@ -179,6 +179,19 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_equal rotated_id, stale.callback_access_token_id
   end
 
+  test "resolving repairs a callback token id left stale by a pre-migration rotation" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    old_id = workspace.callback_access_token_id
+    workspace.rotate_tokens!
+    rotated_id = workspace.reload.callback_access_token_id
+    # The previous release's rotate_tokens! rewrote only callback_token.
+    workspace.update_columns(callback_access_token_id: old_id)
+
+    Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    assert_equal rotated_id, workspace.reload.callback_access_token_id
+    assert_equal workspace, Collavre::AgentWorkspace.for_callback_access_token(Doorkeeper::AccessToken.find(rotated_id))
+  end
+
   test "migration backfills the callback token id of hashed and legacy plain tokens" do
     hashed = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
     hashed_id = hashed.callback_access_token_id

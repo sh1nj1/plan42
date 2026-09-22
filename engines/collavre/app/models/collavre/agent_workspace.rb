@@ -185,19 +185,18 @@ module Collavre
     end
 
     # A container still running the pre-migration code during a Kamal rollout
-    # creates rows without the token id, after the migration's backfill ran.
-    # Every proxy run resolves its workspace before the proxy can call /mcp,
-    # so filling the id in here keeps those calls tagged. The lock reloads the
-    # row, so a concurrent rotate_tokens! can't have its new id overwritten
-    # with the id of the token this copy read before the rotation.
+    # creates rows without the token id, or rotates the token without updating
+    # it, after the migration's backfill ran. Every proxy run resolves its
+    # workspace before the proxy can call /mcp, so syncing the id with the
+    # current token here keeps those calls tagged. The lock reloads the row, so
+    # a concurrent rotate_tokens! can't have its new id overwritten with the id
+    # of the token this copy read before the rotation.
     def repair_callback_access_token_id!
-      return self if callback_access_token_id
+      return self if callback_access_token_id_current?
 
       with_lock do
-        next if callback_access_token_id
-
-        token_id = Doorkeeper::AccessToken.by_token(callback_token)&.id
-        update_columns(callback_access_token_id: token_id) if token_id
+        token_id = current_callback_access_token_id
+        update_columns(callback_access_token_id: token_id) if token_id && token_id != callback_access_token_id
       end
       self
     end
@@ -225,6 +224,15 @@ module Collavre
     end
 
     private
+
+    def current_callback_access_token_id
+      Doorkeeper::AccessToken.by_token(callback_token)&.id
+    end
+
+    def callback_access_token_id_current?
+      token_id = current_callback_access_token_id
+      token_id.nil? || token_id == callback_access_token_id
+    end
 
     def derive_manifest_token_digest
       self.manifest_token_digest = self.class.manifest_digest(manifest_token.to_s)
