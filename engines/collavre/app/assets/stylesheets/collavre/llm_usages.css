@@ -56,6 +56,10 @@
   color: var(--text-muted);
 }
 
+.usage-report__tools {
+  margin-top: var(--space-5);
+}
+
 .usage-report tfoot {
   font-weight: var(--weight-6);
   background: var(--surface-section);

@@ -1,7 +1,7 @@
 ko:
   collavre:
     llm_usages:
-      title: "토큰 사용량"
+      title: "토큰 및 도구 사용량"
       description: "한국 시간 기준 일·주·월 사용량입니다. 주는 월요일에 시작하며 입력에 캐시 토큰이 포함됩니다."
       from: "시작일"
       to: "종료일"
@@ -32,3 +32,12 @@ ko:
       missing_note: "미보고 값은 0이 아닌 알 수 없음입니다. 합계는 보고된 값만 더합니다. 게이트웨이 기록은 실행 전체 누계일 수 있습니다. 과거 사용량은 추정하지 않습니다."
       joint: "공동 요청"
       all: "전체"
+      tools:
+        title: "도구 호출"
+        description: "선택한 기간의 앱 내 Agent와 MCP 클라이언트 도구 호출을 도구 이름별로 집계합니다. 소유자·요청자·Agent·모델 필터가 적용되며, 기간 단위와 집계 기준은 토큰에만 적용됩니다."
+        empty: "이 기간에 도구 호출 기록이 없습니다."
+        tool_name: "도구"
+        calls: "호출 수"
+        failures: "실패 수"
+        average_duration: "평균 소요 시간"
+        milliseconds: "%{value}ms"

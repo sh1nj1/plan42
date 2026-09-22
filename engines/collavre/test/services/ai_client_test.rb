@@ -1386,4 +1386,127 @@ class AiClientTest < ActiveSupport::TestCase
     assert_predicate client, :handed_off?,
       "premise: the tool-call chunk arrived, so the provider has the payload — the ending must read delivered"
   end
+  def tool_loop_client(log_interactions: true)
+    client = AiClient.new(vendor: "google", model: "gemini-pro", system_prompt: "system",
+      llm_api_key: "api-key", log_interactions: log_interactions)
+    client.define_singleton_method(:check_tool_approval!) { |_tool_call| }
+    fake_chat = FakeConversation.new
+    callbacks = {}
+    fake_chat.define_singleton_method(:on_tool_call) { |&block| callbacks[:call] = block }
+    fake_chat.define_singleton_method(:after_tool_result) { |&block| callbacks[:result] = block }
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    [ client, fake_chat, callbacks, proc { |&block| block&.call(OpenStruct.new); mock_context } ]
+  end
+
+  def run_tool_loop(client, context_stub)
+    RubyLLM.stub(:context, context_stub) do
+      client.chat([ { role: "user", parts: [ { text: "go" } ] } ]) { |_delta| nil }
+    end
+  end
+
+  test "records each tool call in the execution of its LLM usage" do
+    client, fake_chat, callbacks, context_stub = tool_loop_client
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      callbacks[:call].call(OpenStruct.new(name: "creative_read", arguments: { "secret" => "not stored" }))
+      callbacks[:result].call({ ok: "result not stored" })
+      callbacks[:call].call(OpenStruct.new(name: "cron_list", arguments: {}))
+      callbacks[:result].call({ error: "Creative not found" })
+      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+    end
+
+    assert_equal "done", run_tool_loop(client, context_stub)
+
+    rows = Collavre::ToolUsage.order(:id).to_a
+    assert_equal [ [ "creative_read", true ], [ "cron_list", false ] ], rows.map { |row| [ row.tool_name, row.succeeded ] }
+    assert_equal [ Collavre::LlmUsage.sole.execution_id ], rows.map(&:execution_id).uniq
+    assert_equal [ "internal" ], rows.map(&:source).uniq
+    assert rows.all? { |row| row.duration_ms >= 0 }
+    refute_includes rows.map(&:attributes).to_json, "not stored"
+  end
+
+  test "a tool that raises is recorded as failed and a call parked for approval is not recorded" do
+    client, fake_chat, callbacks, context_stub = tool_loop_client
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      callbacks[:call].call(OpenStruct.new(name: "creative_read", arguments: {}))
+      raise "tool exploded"
+    end
+    run_tool_loop(client, context_stub)
+    assert_equal [ [ "creative_read", false ] ], Collavre::ToolUsage.pluck(:tool_name, :succeeded)
+
+    client.define_singleton_method(:check_tool_approval!) { |_tool_call| raise ArgumentError, "parked" }
+    run_tool_loop(client, context_stub)
+    assert_equal 1, Collavre::ToolUsage.count
+  end
+
+  test "RubyLLM keeps every after_tool_result callback instead of replacing earlier ones" do
+    chat = RubyLLM::Chat.allocate
+    chat.instance_variable_set(:@callbacks, Hash.new { |callbacks, name| callbacks[name] = [] })
+    chat.instance_variable_set(:@on, {})
+    fired = []
+    chat.after_tool_result { |result| fired << [ :first, result ] }
+    chat.after_tool_result { |result| fired << [ :second, result ] }
+
+    chat.send(:run_callbacks, :after_tool_result, :tool_result, "r")
+
+    assert_equal [ [ :first, "r" ], [ :second, "r" ] ], fired
+  end
+
+  test "records every tool call when the turn deadline boundary refresh is also installed" do
+    forced_checks = []
+    client = AiClient.new(vendor: "google", model: "gemini-pro", system_prompt: "system",
+      llm_api_key: "api-key", before_tool_call: ->(force) { forced_checks << force },
+      request_timeout_seconds: -> { 60.0 })
+    client.define_singleton_method(:check_tool_approval!) { |_tool_call| }
+    fake_chat = FakeConversation.new
+    on_call = nil
+    after_results = []
+    fake_chat.define_singleton_method(:on_tool_call) { |&block| on_call = block }
+    fake_chat.define_singleton_method(:after_tool_result) { |&block| after_results << block }
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      on_call.call(OpenStruct.new(name: "creative_read", arguments: {}))
+      after_results.each { |callback| callback.call({ ok: true }) }
+      on_call.call(OpenStruct.new(name: "cron_list", arguments: {}))
+      after_results.each { |callback| callback.call({ ok: true }) }
+      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+    end
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_config = RubyLLM.config.dup
+    mock_context.define_singleton_method(:config) { context_config }
+
+    assert_equal "done", run_tool_loop(client, ->(&block) { block&.call(context_config); mock_context })
+
+    assert_equal 2, after_results.size
+    assert_equal [ [ "creative_read", true ], [ "cron_list", true ] ],
+      Collavre::ToolUsage.order(:id).pluck(:tool_name, :succeeded)
+    assert_operator forced_checks.size, :>=, 2
+  end
+
+  test "tool usage is skipped without interaction logging and its failures never break chat" do
+    client, fake_chat, callbacks, context_stub = tool_loop_client(log_interactions: false)
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      callbacks[:call].call(OpenStruct.new(name: "creative_read", arguments: {}))
+      callbacks[:result].call("ok")
+      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+    end
+    assert_equal "done", run_tool_loop(client, context_stub)
+    assert_equal 0, Collavre::ToolUsage.count
+
+    client, fake_chat, callbacks, context_stub = tool_loop_client
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      callbacks[:call].call(OpenStruct.new(name: "creative_read", arguments: {}))
+      callbacks[:result].call("ok")
+      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+    end
+    Collavre::ToolUsage::Recorder.stub(:new, ->(**) { raise "db down" }) do
+      assert_equal "done", run_tool_loop(client, context_stub)
+    end
+    assert_equal 0, Collavre::ToolUsage.count
+  end
 end

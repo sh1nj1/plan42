@@ -1,7 +1,7 @@
 module Collavre
   class AiClient
     include ErrorHandling
-    include AiUsageTracking, ApprovalGate
+    include AiUsageTracking, ApprovalGate, CliToolEvents
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
       - Be concise and focus on the essentials (avoid unnecessary verbosity).
@@ -139,8 +139,10 @@ module Collavre
         # product's tools write creatives and post comments. A turn classified
         # as a failed handoff has everything it swallowed dispatched again, and
         # the restored turn runs those tools a second time.
-        observe_usage(chunk)
+        # Marked before observe_chunk: a listener there may raise CancelledError,
+        # and the chunk that reached it is already proof of handoff.
         @handed_off = true
+        observe_chunk(chunk)
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
         # break, which providers routinely emit as a token of its own — is
@@ -298,15 +300,7 @@ module Collavre
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         apply_request_headers!(chat)
-        chat.on_tool_call do |tool_call|
-          # Cancellation ahead of the approval gate: a turn that already
-          # reached a terminal status or its deadline must end, not park
-          # itself as pending approval for a tool it will never run. Force this
-          # boundary through the lifecycle throttle: the first tool call can
-          # arrive during the manager's initial one-second quiet period.
-          @before_tool_call&.call(true)
-          check_tool_approval!(tool_call)
-        end
+        install_tool_boundary(chat)
         if @request_timeout_seconds || @cli_proxy_identity
           chat.after_tool_result do |_result|
             # A tool can consume much of the turn. Recheck the deadline and

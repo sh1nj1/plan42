@@ -1,7 +1,7 @@
 en:
   collavre:
     llm_usages:
-      title: "Token usage"
+      title: "Token and tool usage"
       description: "Daily, weekly and monthly usage in Asia/Seoul. Weeks start on Monday. Input includes cache tokens."
       from: "From"
       to: "To"
@@ -32,3 +32,12 @@ en:
       missing_note: "Missing values are unknown, not zero. Totals sum reported values only. Gateway records may represent an entire run. Historical usage is not inferred."
       joint: "Joint request"
       all: "All"
+      tools:
+        title: "Tool calls"
+        description: "Calls by tool name over the selected dates, from in-app agents and MCP clients. Owner, requester, agent and model filters apply; period and grouping apply to tokens only."
+        empty: "No tool calls in this period."
+        tool_name: "Tool"
+        calls: "Calls"
+        failures: "Failures"
+        average_duration: "Average duration"
+        milliseconds: "%{value} ms"

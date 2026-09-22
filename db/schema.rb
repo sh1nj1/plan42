@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -90,6 +90,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
   create_table "agent_workspaces", force: :cascade do |t|
     t.integer "agent_gateway_id", null: false
     t.integer "agent_id", null: false
+    t.bigint "callback_access_token_id"
     t.text "callback_token", null: false
     t.datetime "created_at", null: false
     t.string "manifest_token", null: false
@@ -103,6 +104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.index ["agent_id", "agent_gateway_id"], name: "idx_agent_workspaces_shared", unique: true, where: "user_id IS NULL"
     t.index ["agent_id", "user_id", "agent_gateway_id"], name: "idx_agent_workspaces_per_user", unique: true, where: "user_id IS NOT NULL"
     t.index ["agent_id"], name: "index_agent_workspaces_on_agent_id"
+    t.index ["callback_access_token_id"], name: "index_agent_workspaces_on_callback_access_token_id", unique: true
     t.index ["manifest_token_digest"], name: "index_agent_workspaces_on_manifest_token_digest", unique: true
     t.index ["user_id"], name: "index_agent_workspaces_on_user_id"
   end
@@ -1026,6 +1028,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.index ["workflow_execution_id"], name: "index_tasks_on_workflow_execution_id"
   end
 
+  create_table "tool_usage_requesters", force: :cascade do |t|
+    t.bigint "tool_usage_id", null: false
+    t.bigint "user_id", null: false
+    t.index ["tool_usage_id"], name: "index_tool_usage_requesters_on_tool_usage_id"
+    t.index ["user_id", "tool_usage_id"], name: "index_tool_usage_requesters_on_user_id_and_tool_usage_id", unique: true
+  end
+
+  create_table "tool_usages", force: :cascade do |t|
+    t.bigint "agent_id"
+    t.bigint "agent_workspace_id"
+    t.string "arguments_digest"
+    t.datetime "created_at", null: false
+    t.bigint "creative_id"
+    t.integer "duration_ms"
+    t.string "event_key", null: false
+    t.string "execution_id", null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "owner_id"
+    t.bigint "requester_id"
+    t.json "requester_ids", default: [], null: false
+    t.string "requester_kind", null: false
+    t.string "source", null: false
+    t.json "source_comment_ids", default: [], null: false
+    t.boolean "succeeded", default: true, null: false
+    t.bigint "task_id"
+    t.string "tool_name", null: false
+    t.bigint "topic_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "occurred_at"], name: "index_tool_usages_on_agent_id_and_occurred_at"
+    t.index ["agent_workspace_id", "tool_name", "occurred_at"], name: "index_tool_usages_on_workspace_tool_and_time"
+    t.index ["event_key"], name: "index_tool_usages_on_event_key", unique: true
+    t.index ["execution_id"], name: "index_tool_usages_on_execution_id"
+    t.index ["owner_id", "occurred_at"], name: "index_tool_usages_on_owner_id_and_occurred_at"
+    t.index ["requester_id", "occurred_at"], name: "index_tool_usages_on_requester_id_and_occurred_at"
+    t.index ["task_id"], name: "index_tool_usages_on_task_id"
+    t.index ["tool_name", "occurred_at"], name: "index_tool_usages_on_tool_name_and_occurred_at"
+  end
+
   create_table "topics", force: :cascade do |t|
     t.datetime "archived_at"
     t.datetime "created_at", null: false
@@ -1312,6 +1352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
   add_foreign_key "tasks", "creatives", on_delete: :nullify
   add_foreign_key "tasks", "users", column: "agent_id"
   add_foreign_key "tasks", "workflow_executions"
+  add_foreign_key "tool_usage_requesters", "tool_usages", on_delete: :cascade
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "topics", column: "source_topic_id", on_delete: :nullify
   add_foreign_key "topics", "users"
