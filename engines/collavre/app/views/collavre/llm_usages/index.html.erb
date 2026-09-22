@@ -44,7 +44,7 @@
           <% @rows.each do |row| %>
             <tr>
               <td><%= row[:period] %></td>
-              <td><%= row[:group] == "joint" ? t("collavre.llm_usages.joint") : (@names[row[:group].to_s] || row[:group] || t("collavre.llm_usages.unknown")) %></td>
+              <td><%= @report.group == "requester" && row[:group] == "joint" ? t("collavre.llm_usages.joint") : (@names[row[:group].to_s] || row[:group] || t("collavre.llm_usages.unknown")) %></td>
               <td><%= number_with_delimiter(row[:records]) %></td>
               <td><%= number_with_delimiter(row[:executions]) %></td>
               <% Collavre::LlmUsage::TOKEN_FIELDS.each do |field| %>
