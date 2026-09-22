@@ -6,8 +6,9 @@ module Collavre
       def initialize(user:, expanded_ids:)
         @user = user
         @expanded_ids = expanded_ids.to_set
+        # Unsaved children still make a saved parent expandable.
         @children_index = ChildrenIndex.new(
-          user: user, show_archived: false, allowed_creative_ids: @expanded_ids
+          user: user, show_archived: false
         )
       end
 
@@ -19,8 +20,11 @@ module Collavre
         level = roots.where(id: readable).to_a
         visited = Set.new
         until level.empty?
-          level.each { |creative| visited.add(creative.id.to_s) }
-          level = children_of(level).uniq(&:id).reject { |creative| visited.include?(creative.id.to_s) }
+          children = children_of(level)
+          level.each { |creative| visited.add(creative.id.to_s) if @children_index.has_children?(creative) }
+          level = children.uniq(&:id).select do |creative|
+            @expanded_ids.include?(creative.id.to_s) && !visited.include?(creative.id.to_s)
+          end
         end
         visited.to_a
       end
