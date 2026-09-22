@@ -49,6 +49,12 @@ module Collavre
       request.user_agent.to_s.start_with?("CollavreDesktop/")
     end
 
+    def creative_description_alignment_class
+      return "creative-description-justified" if Current.user.nil? || Current.user.justify_creative_descriptions?
+
+      ""
+    end
+
     # Renders CSS for admin-configured default themes (light/dark mode)
     # Only applies when the user has no personal theme set
     def default_theme_styles

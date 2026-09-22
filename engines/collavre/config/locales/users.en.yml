@@ -134,6 +134,7 @@ en:
       creative_workspace:
         enabled: Enable three-column creative workspace
         description: Keep the creative tree mounted on the left, update creative content without a full page refresh, and dock chat on the right.
+      justify_creative_descriptions: Justify creative descriptions
       locale: Language
       locales:
         en: English

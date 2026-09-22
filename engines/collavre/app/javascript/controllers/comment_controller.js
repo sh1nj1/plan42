@@ -157,25 +157,19 @@ export default class extends Controller {
       })
     }
 
-    // Show approve button: user must be the designated approver or a system admin
+    this.showApprovalControls(isAdmin)
+  }
+
+  showApprovalControls(isAdmin) {
+    // Gate decisions belong exclusively to the designated approver.
     const hasPendingAction = this.element.dataset.hasPendingAction === 'true'
     const approverId = this.element.dataset.approverId
     const isApprover = this.currentUserId && approverId && this.currentUserId === approverId
-    const canApprove = hasPendingAction && (isApprover || isAdmin)
+    const canApprove = hasPendingAction && (isApprover || (isAdmin && this.element.dataset.approvalGate !== 'true'))
 
     if (canApprove) {
-      this.approveButtonTargets.forEach((button) => {
-        button.classList.remove('comment-approve-hidden')
-      })
-      // Deny button (Claude Channel permission prompts only) is gated the same
-      // way as approve.
-      this.denyButtonTargets.forEach((button) => {
-        button.classList.remove('comment-approve-hidden')
-      })
-      // Also show action block approve controls (edit action button, form)
-      this.actionApproveControlsTargets.forEach((el) => {
-        el.classList.remove('comment-approve-hidden')
-      })
+      const controls = [...this.approveButtonTargets, ...this.denyButtonTargets, ...this.actionApproveControlsTargets]
+      controls.forEach((control) => control.classList.remove('comment-approve-hidden'))
     }
   }
 
