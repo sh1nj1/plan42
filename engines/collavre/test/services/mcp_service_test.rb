@@ -317,7 +317,7 @@ class McpServiceTest < ActiveSupport::TestCase
     error = assert_raises(RuntimeError) { McpService.register_tool_from_source("1 + 1", expected_name: "x") }
     assert_match(/class_name is required/, error.message)
 
-    broken = "class Tools::BrokenProbe\n  raise 'boom'\nend\n"
+    broken = "class Tools::BrokenProbeService\n  raise 'boom'\nend\n"
     error = assert_raises(RuntimeError) { McpService.register_tool_from_source(broken, expected_name: "x") }
     assert_match(/Failed to evaluate source: boom/, error.message)
   end

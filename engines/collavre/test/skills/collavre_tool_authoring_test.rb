@@ -262,7 +262,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     error = assert_raises(RuntimeError) { tool.approve! }
     assert_match(/declares tool_name "shadow_probe", expected "authored_probe"/, error.message)
     assert_not tool.reload.active?
-    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_not Tools.const_defined?(:AuthoredProbeService, false), "the failed approval removes its class"
     assert_nil Tools::MetaToolService.new.find_schema("shadow_probe")
   end
 
@@ -282,6 +282,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
         end
         assert_not tool.reload.active?
         assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
+        assert_not Tools.const_defined?(:AuthoredProbeService, false), "the partial class is not left behind"
         tool.creative.destroy!
       end
 
@@ -335,6 +336,41 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert Tools::MetaToolService.new.find_schema("authored_probe"), "a tool may reopen the class it defined"
   end
 
+  test "approval refuses a class whose generated tool constants another tool or the application uses" do
+    approvable_tool(scaffold).approve!
+    other = approvable_tool(scaffold.sub("module Tools", "module Mcp").sub('tool_name "authored_probe"', 'tool_name "other_probe"'), "other_probe")
+    builtin = approvable_tool(scaffold.sub("AuthoredProbeService", "CreativeRetrievalServiceService").sub('tool_name "authored_probe"', 'tool_name "builtin_probe"'), "builtin_probe")
+    builtin_class = Tools::CreativeRetrievalService
+
+    { other => /Mcp::AuthoredProbeService builds Tools::AuthoredProbe, which another tool/,
+      builtin => /Tools::CreativeRetrievalServiceService builds Tools::CreativeRetrievalService, which another tool/ }.each do |tool, message|
+      assert_raises(RuntimeError, match: message) { tool.approve! }
+      assert_not tool.reload.active?
+    end
+    assert_same builtin_class, Tools::CreativeRetrievalService
+    assert_not Mcp.const_defined?(:AuthoredProbeService, false), "a refused source is never evaluated"
+    assert_not Tools.const_defined?(:CreativeRetrievalServiceService, false)
+    assert Tools::MetaToolService.new.find_schema("authored_probe")
+    assert_nil Tools::MetaToolService.new.find_schema("other_probe")
+  end
+
+  test "deleting a tool or abandoning its failed approval frees the class for another tool" do
+    approved = approvable_tool(scaffold)
+    approved.approve!
+    approved.creative.destroy!
+    assert_not Tools.const_defined?(:AuthoredProbeService, false), "deleting the tool removes the class it defined"
+
+    failed = approvable_tool(scaffold.sub("    tool_description", "    raise \"boom\"\n    tool_description"))
+    assert_raises(RuntimeError, match: /boom/) { failed.approve! }
+    failed.creative.destroy!
+
+    renamed = approvable_tool(scaffold.sub('tool_name "authored_probe"', 'tool_name "renamed_probe"'), "renamed_probe")
+    renamed.approve!
+    assert Tools::MetaToolService.new.find_schema("renamed_probe")
+  ensure
+    Tools::MetaToolWriteService.new.delete_tool("renamed_probe")
+  end
+
   test "re-approval requires the source to redeclare the class it registers" do
     approved = approvable_tool(scaffold)
     approved.approve!
@@ -349,7 +385,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
 
     assert_raises(RuntimeError, match: /Tools::AuthoredProbeService does not extend ToolMeta in the source/) { tool.approve! }
     assert_not tool.reload.active?
-    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_not Tools.const_defined?(:AuthoredProbeService, false), "the failed approval removes the class it would register"
     assert_not_includes ToolMeta.registry, Tools::AuthoredProbeNextService
     assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
   ensure
@@ -360,7 +396,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     unsigned = approvable_tool(scaffold.sub(/^    sig \{.*\n/, ""))
     assert_raises(RuntimeError, match: /Failed to register tool/) { unsigned.approve! }
     assert_not unsigned.reload.active?
-    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_not Tools.const_defined?(:AuthoredProbeService, false), "the failed approval removes its class"
 
     tool = unsigned
     tool.update!(source_code: scaffold)
@@ -368,7 +404,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
       assert_raises(RuntimeError, match: /Failed to register Tools::AuthoredProbeService: bad schema/) { tool.approve! }
     end
     assert_not tool.reload.active?
-    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_not Tools.const_defined?(:AuthoredProbeService, false), "the failed approval removes its class"
     assert_not Tools.const_defined?(:AuthoredProbe, false), "the RubyLLM tool built before the failure is removed"
     assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
   end
