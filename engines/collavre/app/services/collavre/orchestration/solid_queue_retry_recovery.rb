@@ -6,12 +6,27 @@ module Collavre
     # before making its original job ready. Use the same failure lock as the
     # recovery sweep, so only one path can take ownership of that attempt.
     module SolidQueueRetryRecovery
+      RETRY_FAILURE_KEY = "retry_failure_id"
+
+      def self.reclaim(job, failure_id)
+        tasks = TaskResumer.reclaim_for_retry!(job.active_job_id)
+        tasks << TaskResumer.reclaimed_task(job.active_job_id)
+        tasks.compact.uniq.each do |task|
+          task.with_lock do
+            next unless task.pending? && task.trigger_event_payload["execution_job_id"] == job.active_job_id
+            next if ExecutionFence.generation(task).present?
+
+            task.update!(trigger_event_payload: task.trigger_event_payload.merge(RETRY_FAILURE_KEY => failure_id))
+          end
+        end
+      end
+
       def retry
         with_lock do
           return discard if job.class_name == "Collavre::AiAgentJob" && RetiredTaskExecution.exists?(execution_job_id: job.active_job_id)
 
           Task.transaction do
-            TaskResumer.reclaim_for_retry!(job.active_job_id) if job.class_name == "Collavre::AiAgentJob"
+            SolidQueueRetryRecovery.reclaim(job, id) if job.class_name == "Collavre::AiAgentJob"
             super
           end
         end
@@ -28,7 +43,7 @@ module Collavre
           job_ids -= retired
           Task.transaction do
             SolidQueue::Job.where(id: job_ids, class_name: "Collavre::AiAgentJob").find_each do |job|
-              TaskResumer.reclaim_for_retry!(job.active_job_id)
+              SolidQueueRetryRecovery.reclaim(job, job.failed_execution.id)
             end
             super(job_ids)
           end

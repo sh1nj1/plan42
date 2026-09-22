@@ -33,10 +33,12 @@ module Collavre
     end
 
     # Reclaim commits to the primary database before retry commits to the queue.
-    # Pending + retained job id + retired generation is the durable retry intent.
+    # The retained failure id distinguishes a split commit from a new failure.
     # If queue commit failed, retry the same job; never enqueue a replacement.
     def retry_reclaimed(task, failure)
       return if Orchestration::ExecutionFence.generation(task).present?
+
+      return unless task.trigger_event_payload[Orchestration::SolidQueueRetryRecovery::RETRY_FAILURE_KEY] == failure.id
 
       failure.retry
     end

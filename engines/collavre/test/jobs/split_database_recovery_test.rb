@@ -115,6 +115,28 @@ module Collavre
       end
     end
 
+    test "a new failure before admission is not mistaken for an unfinished retry" do
+      @failure.retry
+      assert_equal "pending", @task.reload.status
+      assert_nil Orchestration::ExecutionFence.generation(@task)
+      @queue_job.reload.ready_execution.destroy!
+      new_failure = SolidQueue::FailedExecution.create!(job: @queue_job, exception: RuntimeError.new("admission failed"))
+      assert_not_equal @failure.id, new_failure.id
+      2.times { RecoverInterruptedTasksJob.perform_now }
+      assert new_failure.reload.persisted?
+      assert_not SolidQueue::ReadyExecution.exists?(job_id: @queue_job.id)
+
+      # A later explicit retry creates a new intent even though admission never ran.
+      SolidQueue::FailedExecution.transaction do
+        new_failure.retry
+        raise ActiveRecord::Rollback
+      end
+      assert_equal new_failure.id, @task.reload.trigger_event_payload[Orchestration::SolidQueueRetryRecovery::RETRY_FAILURE_KEY]
+      RecoverInterruptedTasksJob.perform_now
+      assert_not SolidQueue::FailedExecution.exists?(new_failure.id)
+      assert SolidQueue::ReadyExecution.exists?(job_id: @queue_job.id)
+    end
+
     test "pending tasks with an intact generation are not reclaimed retry intents" do
       @task.update!(status: "pending")
       RecoverInterruptedTasksJob.perform_now
