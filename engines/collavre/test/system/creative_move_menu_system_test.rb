@@ -20,10 +20,9 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   test "keyboard moves a creative using the shared destination picker" do
     visit collavre.creatives_path(id: @source.id)
     open_move_menu(:return)
-    find('[data-creative-move-target="destination"]').send_keys(:return)
-    input = find('[data-link-creative-target="input"]')
+    input = find('[data-inline-creative-picker-target="input"]')
     input.set("Menu destination")
-    assert_selector "#link-creative-modal .link-result-item[data-id='#{@destination.id}']"
+    assert_selector "#creative-move-results .link-result-item[data-id='#{@destination.id}']"
     input.send_keys(:return)
     find('[data-creative-move-target="confirm"]').send_keys(:return)
 
@@ -32,12 +31,37 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @destination, @source.reload.parent
   end
 
+  test "inline destination stays in the dialog and clears stale selections on mobile" do
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 390, height: 844, deviceScaleFactor: 1, mobile: true)
+    visit collavre.creatives_path(id: @source.id)
+    open_move_menu
+    input = find("#creative-move-destination")
+    assert_equal "true", input["aria-expanded"]
+    assert_selector "dialog[open] #creative-move-results"
+    assert_no_selector "#link-creative-modal"
+    input.set("Menu destination")
+    find("#creative-move-results .link-result-item[data-id='#{@destination.id}']").click
+    assert_equal "Menu destination", input.value
+    assert_no_selector "#creative-move-results"
+    assert_selector '[data-creative-move-target="confirm"]:not([disabled])'
+    input.set("Different destination")
+    assert_selector '[data-creative-move-target="confirm"][disabled]'
+    assert_nil @source.reload.parent_id
+    input.set("Menu destination")
+    assert_selector "#creative-move-results .link-result-item"
+    page.save_screenshot(Rails.root.join("tmp/screenshots/creative-move-mobile.png"))
+    page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
+    resize_window_to(1440, 900)
+    page.execute_script("document.body.classList.remove('dark-mode'); document.body.classList.add('light-mode')")
+    page.save_screenshot(Rails.root.join("tmp/screenshots/creative-move-desktop.png"))
+  end
+
   test "workspace move menu offers a click-only path" do
     visit collavre.creatives_path(id: @source.id)
     open_move_menu
     find('[data-creative-move-target="destination"]').click
-    find('[data-link-creative-target="input"]').set("Menu destination")
-    find("#link-creative-modal .link-result-item[data-id='#{@destination.id}']").click
+    find('[data-inline-creative-picker-target="input"]').set("Menu destination")
+    find("#creative-move-results .link-result-item[data-id='#{@destination.id}']").click
     find('[data-creative-move-target="confirm"]').click
 
     assert_no_selector "dialog[open][data-creative-move-target]"
@@ -45,9 +69,12 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @destination, @source.reload.parent
   end
 
-  test "Escape cancels and returns focus without moving" do
+  test "Escape closes inline results before cancelling and restoring focus" do
     visit collavre.creatives_path(id: @source.id)
     open_move_menu(:return)
+    find('[data-creative-move-target="destination"]').send_keys(:escape)
+    assert_selector "dialog[open][data-creative-move-target]"
+    assert_no_selector "#creative-move-results"
     find('[data-creative-move-target="destination"]').send_keys(:escape)
 
     assert_no_selector "dialog[open][data-creative-move-target]"
@@ -64,10 +91,9 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     open_move_menu(:return)
     assert_selector '[data-creative-move-target="mode"] option[value="move"][disabled]', visible: :all
     assert_equal "link", find('[data-creative-move-target="mode"]').value
-    find('[data-creative-move-target="destination"]').send_keys(:return)
-    input = find('[data-link-creative-target="input"]')
+    input = find('[data-inline-creative-picker-target="input"]')
     input.set("Menu destination")
-    assert_selector "#link-creative-modal .link-result-item[data-id='#{@destination.id}']"
+    assert_selector "#creative-move-results .link-result-item[data-id='#{@destination.id}']"
     input.send_keys(:return)
     find('[data-creative-move-target="confirm"]').send_keys(:return)
 
@@ -101,8 +127,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     open_move_menu
     assert_equal "move", find('[data-creative-move-target="mode"]').value
     find('[data-creative-move-target="destination"]').click
-    find('[data-link-creative-target="input"]').set("Menu destination")
-    find("#link-creative-modal .link-result-item[data-id='#{@destination.id}']").click
+    find('[data-inline-creative-picker-target="input"]').set("Menu destination")
+    find("#creative-move-results .link-result-item[data-id='#{@destination.id}']").click
     find('[data-creative-move-target="confirm"]').click
 
     assert_no_selector "dialog[open][data-creative-move-target]"
@@ -249,8 +275,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
       assert_equal "move", find('[data-creative-move-target="mode"]').value
       find(%([data-creative-move-target="mode"] option[value="#{mode}"])).select_option
       find('[data-creative-move-target="destination"]').click
-      find('[data-link-creative-target="input"]').set("Menu destination")
-      find("#link-creative-modal .link-result-item[data-id='#{@destination.id}']").click
+      find('[data-inline-creative-picker-target="input"]').set("Menu destination")
+      find("#creative-move-results .link-result-item[data-id='#{@destination.id}']").click
       find('[data-creative-move-target="confirm"]').click
 
       assert_no_selector "dialog[open][data-creative-move-target]"
@@ -333,8 +359,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
 
   def pick_destination(creative = @destination)
     find('[data-creative-move-target="destination"]').click
-    find('[data-link-creative-target="input"]').set(creative.description)
-    find("#link-creative-modal .link-result-item[data-id='#{creative.id}']").click
+    find('[data-inline-creative-picker-target="input"]').set(creative.description)
+    find("#creative-move-results .link-result-item[data-id='#{creative.id}']").click
   end
 
   def select_rows(*creatives)

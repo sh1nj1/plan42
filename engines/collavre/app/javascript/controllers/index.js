@@ -1,3 +1,4 @@
+import InlineCreativePickerController from './inline_creative_picker_controller'
 import CreativeMoveController from "./creative_move_controller"
 
 // Collavre Engine Controllers
@@ -57,6 +58,7 @@ import CronBadgeController from "./cron_badge_controller"
 
 // Export all controllers
 export {
+  InlineCreativePickerController,
   CreativeMoveController,
   AgentTriggerController,
   PopupMenuController,
@@ -144,6 +146,7 @@ export function registerControllers(application) {
   application.register("click-target", ClickTargetController)
   application.register("tabs", TabsController)
   application.register("link-creative", LinkCreativeController)
+  application.register("inline-creative-picker", InlineCreativePickerController)
   application.register("topic-search", TopicSearchController)
   application.register("topic-list", TopicListController)
   application.register("entity-list", EntityListController)
