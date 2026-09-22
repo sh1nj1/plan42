@@ -509,6 +509,8 @@ module Collavre
         ))
         # Workflow::TaskAdmission.start!'s execution stamp.
         turn.update!(trigger_event_payload: ExecutionFence.stamp(turn.reload.trigger_event_payload, job_id: "job"))
+        # AiAgentJob's running -> delegated handoff marker.
+        turn.update!(trigger_event_payload: ExecutionFence.pending_handoff(turn.reload.trigger_event_payload))
         DeliveryRecord.fail_while_worker_settles!(turn.reload)
 
         written = turn.reload.trigger_event_payload.keys - dispatched

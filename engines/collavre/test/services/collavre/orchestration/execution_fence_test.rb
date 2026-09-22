@@ -27,6 +27,17 @@ module Collavre
         assert_equal({ "resume_context" => { "reason" => "quota" } }, ExecutionFence.clear(payload))
       end
 
+      test "pending_handoff names the current generation and stamp or clear drop it" do
+        payload = ExecutionFence.pending_handoff(ExecutionFence.stamp({}, job_id: "job-1"))
+
+        assert_equal({ "generation" => payload[ExecutionFence::GENERATION_KEY], "state" => "pending" },
+                     payload[ExecutionFence::HANDOFF_KEY])
+        assert_not ExecutionFence.stamp(payload).key?(ExecutionFence::HANDOFF_KEY),
+                   "a new attempt must not inherit the previous attempt's handoff"
+        assert_equal({}, ExecutionFence.clear(payload))
+        assert_equal({ "generation" => nil, "state" => "pending" }, ExecutionFence.pending_handoff(nil)[ExecutionFence::HANDOFF_KEY])
+      end
+
       test "current? fences a named generation and lets an unnamed one through" do
         task = Task.new(trigger_event_payload: ExecutionFence.stamp({}))
         generation = ExecutionFence.generation(task)

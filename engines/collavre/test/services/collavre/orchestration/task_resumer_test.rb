@@ -387,6 +387,36 @@ module Collavre
         assert_equal "queued", task.reload.status
       end
 
+      test "a topic-scoped resume whose job cannot be enqueued goes back to the queue" do
+        task = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
+        unsent = AiAgentJob.new(task).tap { |job| job.successfully_enqueued = false }
+
+        AiAgentJob.stub(:perform_later, unsent) do
+          assert_equal :resumed, TaskResumer.resume!(task)
+        end
+        assert_equal "queued", task.reload.status,
+                     "left pending it would hold the slot with no job and no recovery"
+      end
+
+      test "the job a suspension left enqueued does not start the suspended turn" do
+        task = task_for(status: "pending")
+        TaskResumer.suspend!(task, reason: :server_restart)
+
+        AiAgentJob.perform_now(task.reload)
+
+        assert_equal "suspended", task.reload.status
+      end
+
+      test "a second job for a resumed turn that already started does nothing" do
+        task = task_for(status: "pending")
+        assert Workflow::TaskAdmission.start!(task, execution_job_id: "first")
+        generation = ExecutionFence.generation(task.reload)
+
+        assert_not Workflow::TaskAdmission.start!(task, execution_job_id: "second")
+        assert_equal generation, ExecutionFence.generation(task.reload)
+        assert_equal "first", task.trigger_event_payload[ExecutionFence::JOB_KEY]
+      end
+
       test "resume_for_agent! resumes only that agent's due turns" do
         due = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
         later = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "quota",

@@ -61,7 +61,13 @@ module Collavre
             # the next queued task.
             dequeue_next_for_topic(topic_id, creative_id)
           else
-            AiAgentJob.perform_later(task)
+            job = AiAgentJob.perform_later(task)
+            # A rejected enqueue would leave the row pending with no job behind
+            # it, holding the slot where no recovery looks. Back in the queue,
+            # orphan recovery promotes it again.
+            if job.respond_to?(:successfully_enqueued?) && !job.successfully_enqueued?
+              Task.where(id: task.id, status: "pending").update_all(status: "queued", updated_at: Time.current)
+            end
           end
         end
       end

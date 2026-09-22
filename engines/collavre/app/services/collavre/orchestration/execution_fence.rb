@@ -15,11 +15,19 @@ module Collavre
     # - execution_generation: a fresh token handed to the agent with the
     #   dispatch and echoed back by it, compared under the task lock.
     #
-    # Resuming clears both, so nothing from the old attempt matches the new one.
+    # A Claude Channel attempt also carries channel_handoff, written with the
+    # running -> delegated transition as { generation, state: "pending" }. The
+    # adapter moves it to "started" before the broadcast and "completed" after,
+    # so recovery can tell a dispatch that never left from one that may have.
+    #
+    # Resuming clears all of them, so nothing from the old attempt matches the
+    # new one.
     module ExecutionFence
       JOB_KEY = "execution_job_id"
       GENERATION_KEY = "execution_generation"
-      KEYS = [ JOB_KEY, GENERATION_KEY ].freeze
+      HANDOFF_KEY = "channel_handoff"
+      HANDOFF_PENDING = "pending"
+      KEYS = [ JOB_KEY, GENERATION_KEY, HANDOFF_KEY ].freeze
 
       module_function
 
@@ -30,6 +38,11 @@ module Collavre
 
       def clear(payload)
         (payload || {}).except(*KEYS)
+      end
+
+      def pending_handoff(payload)
+        payload = payload || {}
+        payload.merge(HANDOFF_KEY => { "generation" => payload[GENERATION_KEY], "state" => HANDOFF_PENDING })
       end
 
       def generation(task)
