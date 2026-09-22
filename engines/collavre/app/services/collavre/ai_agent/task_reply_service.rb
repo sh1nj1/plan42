@@ -57,7 +57,7 @@ module Collavre
       end
 
       def failed_result(comment, task)
-        task&.update!(status: "delegated")
+        claim_service.release(task) if task
         result(:unprocessable_entity, errors: comment.errors.full_messages)
       end
 

@@ -30,6 +30,7 @@ module Collavre
 
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
+    after_update_commit :refresh_suspension_notices, if: :left_suspension?
     after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
@@ -186,6 +187,12 @@ module Collavre
       saved_change_to_attribute?("status") && terminal_status?
     end
 
+    # Terminal transitions refresh the notices in broadcast_stop_button_removal.
+    def left_suspension?
+      saved_change_to_attribute?("status") && attribute_before_last_save("status") == "suspended" &&
+        !terminal_status?
+    end
+
     # This turn refused other dispatches on the strength of having read their
     # comments, and then died without answering anything. Those dispatches have
     # to come back — see Orchestration::DeliveryRecord.restore!.
@@ -254,6 +261,8 @@ module Collavre
     end
 
     def broadcast_stop_button_removal
+      refresh_suspension_notices
+
       # Login cards already omit Stop and have a queued comment replacement.
       # Replacing them again would discard an in-progress authentication form.
       return if trigger_event_payload&.key?("engine_login")
@@ -266,6 +275,20 @@ module Collavre
         partial: "collavre/comments/comment",
         locals: { comment: comment, streaming: false }
       )
+    end
+
+    # Re-render the "⏸️" notices of this turn so their Stop control goes away
+    # once the turn is resumed or ended.
+    def refresh_suspension_notices
+      Comment.where(creative_id: creative_id, topic_id: topic_id,
+                    waiting_notice_scope: Comment::SuspensionNotice::SCOPE, waiting_notice_task_id: id)
+             .find_each do |notice|
+        notice.broadcast_replace_to(
+          [ notice.creative, :comments ],
+          partial: "collavre/comments/comment",
+          locals: { comment: notice, streaming: false }
+        )
+      end
     end
 
     def check_trigger_loop_completion

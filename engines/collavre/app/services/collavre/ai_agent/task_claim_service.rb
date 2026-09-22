@@ -53,10 +53,17 @@ module Collavre
           next unless locked && Task.awaiting_reply.exists?(id: locked.id)
           next unless Orchestration::ExecutionFence.current?(locked, requested_generation)
 
+          claimed_from[locked.id] = locked.status
           Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
           claimed = locked.reload
         end
         claimed
+      end
+
+      # Undo a claim whose reply could not be saved: the task goes back to what
+      # it was claimed from — delegated, or suspended while it waits to resume.
+      def release(task)
+        task.update!(status: claimed_from.fetch(task.id, "delegated"))
       end
 
       def link_reply(task:, comment:)
@@ -83,6 +90,10 @@ module Collavre
       end
 
       private
+
+      def claimed_from
+        @claimed_from ||= {}
+      end
 
       def run_completion_effects(agent, task, comment)
         Orchestration::ResourceTracker.for(agent).release!(task.id)
