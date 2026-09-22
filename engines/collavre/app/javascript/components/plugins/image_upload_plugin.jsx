@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react"
+import { useEffect, useCallback, useRef } from "react"
 import { DirectUpload as ModuleDirectUpload } from "@rails/activestorage"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import { mergeRegister } from "@lexical/utils"
@@ -8,7 +8,6 @@ import {
     $isRangeSelection,
     $getRoot,
     COMMAND_PRIORITY_EDITOR,
-    DROP_COMMAND,
     PASTE_COMMAND,
     createCommand
 } from "lexical"
@@ -16,6 +15,8 @@ import {
 import { $createImageNode } from "../../lib/lexical/image_node"
 import { $createAttachmentNode } from "../../lib/lexical/attachment_node"
 import { $createVideoNode } from "../../lib/lexical/video_node"
+
+import { registerFileDrop } from "../../lib/lexical/file_drop"
 
 export const INSERT_IMAGE_COMMAND = createCommand("INSERT_IMAGE_COMMAND")
 export const INSERT_FILE_COMMAND = createCommand("INSERT_FILE_COMMAND")
@@ -32,20 +33,32 @@ function isVideoFile(file) {
     return /\.(mp4|webm|mov|m4v)$/i.test(file.name || "")
 }
 
+function uploadCompletion(editor, commitUpload, finishUpload) {
+    return (insert = () => {}) => {
+        if (commitUpload) commitUpload(insert, finishUpload)
+        else editor.update(insert, { onUpdate: finishUpload })
+    }
+}
+
 export default function FileUploadPlugin({
     onUploadStateChange,
     directUploadUrl,
     blobUrlTemplate
 }) {
     const [editor] = useLexicalComposerContext()
+    const pendingUploads = useRef(0)
+    const finishUpload = useCallback(() => {
+        pendingUploads.current -= 1
+        onUploadStateChange?.(pendingUploads.current > 0)
+    }, [onUploadStateChange])
 
     const startDirectUpload = useCallback(
-        (file) => {
+        (file, commitUpload) => {
             if (!file) return
 
-            const isImage = isImageFile(file)
+            const complete = uploadCompletion(editor, commitUpload, finishUpload)
 
-            // Notify start
+            pendingUploads.current += 1
             if (onUploadStateChange) onUploadStateChange(true)
 
             const rootElement = editor.getRootElement()
@@ -59,7 +72,7 @@ export default function FileUploadPlugin({
 
             if (!resolvedDirectUploadUrl || !resolvedBlobUrlTemplate || !UploadConstructor) {
                 console.error("Direct upload configuration missing")
-                if (onUploadStateChange) onUploadStateChange(false)
+                complete()
                 return
             }
 
@@ -68,7 +81,7 @@ export default function FileUploadPlugin({
             upload.create((error, attributes) => {
                 if (error) {
                     console.error("Upload failed", error)
-                    if (onUploadStateChange) onUploadStateChange(false)
+                    complete()
                     return
                 }
 
@@ -76,10 +89,10 @@ export default function FileUploadPlugin({
                     .replace(":signed_id", attributes.signed_id)
                     .replace(":filename", encodeURIComponent(attributes.filename))
 
-                editor.update(() => {
+                complete(() => {
                     let node
 
-                    if (isImage) {
+                    if (isImageFile(file)) {
                         node = $createImageNode({
                             src: url,
                             altText: attributes.filename,
@@ -113,13 +126,9 @@ export default function FileUploadPlugin({
                         paragraph.selectStart()
                     }
                 })
-
-                // Notify upload complete AFTER editor update so onChange captures
-                // the new content before save can proceed
-                if (onUploadStateChange) onUploadStateChange(false)
             })
         },
-        [blobUrlTemplate, directUploadUrl, editor, onUploadStateChange]
+        [blobUrlTemplate, directUploadUrl, editor, onUploadStateChange, finishUpload]
     )
 
     useEffect(() => {
@@ -156,20 +165,7 @@ export default function FileUploadPlugin({
                 },
                 COMMAND_PRIORITY_EDITOR
             ),
-            editor.registerCommand(
-                DROP_COMMAND,
-                (event) => {
-                    const files = event.dataTransfer?.files
-                    if (!files || files.length === 0) return false
-
-                    event.preventDefault()
-                    Array.from(files).forEach((file) => {
-                        startDirectUpload(file)
-                    })
-                    return true
-                },
-                COMMAND_PRIORITY_EDITOR
-            )
+            registerFileDrop(editor, startDirectUpload)
         )
     }, [editor, startDirectUpload])
 

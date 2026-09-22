@@ -23,6 +23,7 @@ module Collavre
     #   - after_create_commit dispatch fails
     #   - Retry skips everything because comment already exists
     def perform(parent_creative_id, child_creative_id)
+      return if Workflow::Receipt.recover(source: "drop_trigger", event_name: "comment_created", job_id: job_id)
       parent = Creative.find_by(id: parent_creative_id)
       child = Creative.find_by(id: child_creative_id)
       return unless parent && child
@@ -169,25 +170,27 @@ module Collavre
     end
 
     def initialize_trigger_loop(child, topic)
-      data = child.data || {}
-      trigger = data["trigger"] || {}
+      child.with_lock do
+        data = child.data || {}
+        trigger = data["trigger"] || {}
 
-      # Only initialize if loop doesn't exist yet
-      return if trigger["loop"].present?
+        # Only initialize if loop doesn't exist yet
+        return if trigger["loop"].present?
 
-      trigger["loop"] = {
-        "state" => "running",
-        "current_iteration" => 0,
-        "max_iterations" => 10,
-        "completion_conditions" => [],
-        "stuck_conditions" => [],
-        "on_retry" => "continue",
-        "last_task_id" => nil,
-        "cooldown_seconds" => 10,
-        "trigger_topic_id" => topic&.id
-      }
-      data["trigger"] = trigger
-      child.update!(data: data)
+        trigger["loop"] = {
+          "state" => "running",
+          "current_iteration" => 0,
+          "max_iterations" => 10,
+          "completion_conditions" => [],
+          "stuck_conditions" => [],
+          "on_retry" => "continue",
+          "last_task_id" => nil,
+          "cooldown_seconds" => 10,
+          "trigger_topic_id" => topic&.id
+        }
+        data["trigger"] = trigger
+        child.update!(data: data)
+      end
     end
 
     def task_exists_for?(comment)
@@ -203,11 +206,12 @@ module Collavre
     def dispatch_trigger(comment)
       # Use Comment#dispatch_payload — single source of truth shared with
       # the after_create_commit callback, preventing payload drift.
-      scheduled_agents = SystemEvents::Dispatcher.dispatch(
-        "comment_created", comment.dispatch_payload, source: "drop_trigger"
+      outcome = SystemEvents::Dispatcher.dispatch_with_outcome(
+        "comment_created", comment.dispatch_payload, source: "drop_trigger",
+        invocation: { source: "drop_trigger", job_id: job_id }
       )
 
-      if scheduled_agents.blank?
+      if !outcome.workflow_handled? && outcome.agents.blank?
         raise DispatchFailedError,
           "Dispatch returned no agents for comment #{comment.id} " \
           "(creative=#{comment.creative_id}, topic=#{comment.topic_id})"

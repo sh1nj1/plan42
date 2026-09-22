@@ -1,6 +1,14 @@
 require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
+  test "creative description justification defaults on and casts disabled form values" do
+    user = User.new
+
+    assert user.justify_creative_descriptions?
+    user.justify_creative_descriptions = "0"
+    refute user.justify_creative_descriptions?
+  end
+
   test "collapses line breaks in name to a single line" do
     user = User.create!(email: "multiline_name@example.com", password: "password123", name: "Line\nBreak Agent")
 
@@ -433,6 +441,34 @@ class UserTest < ActiveSupport::TestCase
     assert_not agent.endpoint_health_supported?
     assert_equal :unknown, agent.reload.agent_liveness_status
     assert_not agent.agent_online?
+  end
+
+  test "native RubyLLM vendors publish the cached endpoint verdict" do
+    agent = users(:ai_bot)
+    %w[google gemini anthropic].each do |vendor|
+      agent.update!(llm_vendor: vendor)
+      assert_predicate agent, :endpoint_health_supported?
+      agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+      assert_equal :online, agent.reload.agent_liveness_status
+    end
+  end
+
+  test "Claude Channel ignores API health and switching models invalidates the verdict" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "anthropic")
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    agent.update!(llm_model: "claude-code")
+    assert_predicate agent, :endpoint_health_unknown?
+    assert_nil agent.endpoint_health_checked_at
+    assert_not agent.endpoint_health_supported?
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    assert_equal :offline, agent.agent_liveness_status(live_claude_agent_ids: [])
+    assert_equal :online, agent.agent_liveness_status(live_claude_agent_ids: [ agent.id ])
+
+    agent.update!(llm_model: "claude-api-model")
+    assert_nil agent.endpoint_health_checked_at
+    assert_equal :unknown, agent.agent_liveness_status
   end
 
   test "changing endpoint configuration invalidates the cached verdict" do

@@ -162,6 +162,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # ActiveStorage 8.1.3.1 eagerly loads its Vips transformer during Rails boot.
+      - name: Install image processing runtime
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libvips
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
@@ -220,6 +224,12 @@ jobs:
 
       - name: Build JavaScript assets
         run: npm run build
+
+      - name: Resolve installed ChromeDriver
+        run: |
+          driver_path="$(command -v chromedriver)"
+          test -f "$driver_path" && test -x "$driver_path"
+          echo "CHROMEDRIVER_PATH=$driver_path" >> "$GITHUB_ENV"
 
       - name: Run tests
         env:

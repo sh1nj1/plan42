@@ -5,32 +5,41 @@ module Collavre
     # The only entry point to orchestration. It validates the event type and
     # stamps its envelope before the payload is persisted or scheduled.
     class Dispatcher
-      def self.dispatch(event_name, context, source: nil, parent: nil, selected_agents: nil, selection: nil,
-                        context_for: nil, scheduling_hooks: nil)
-        new.dispatch(
-          event_name, context, source: source, parent: parent,
-          selected_agents: selected_agents, selection: selection, context_for: context_for,
-          scheduling_hooks: scheduling_hooks
-        )
+      def self.dispatch(event_name, context, **options)
+        new.dispatch(event_name, context, **options)
       end
 
-      def dispatch(event_name, context, source: nil, parent: nil, selected_agents: nil, selection: nil,
-                   context_for: nil, scheduling_hooks: nil)
-        definition = Vocabulary.fetch(event_name)
-        ctx = (context || {}).deep_stringify_keys
-        envelope = resolve_envelope(definition.name, ctx, source, parent)
-        ctx[Envelope::KEY] = envelope.to_h
+      def self.dispatch_with_outcome(event_name, context, **options)
+        new.dispatch_with_outcome(event_name, context, **options)
+      end
 
+      def dispatch(event_name, context, **options)
+        dispatch_with_outcome(event_name, context, **options).agents
+      end
+
+      def dispatch_with_outcome(event_name, context, source: nil, parent: nil, invocation: nil, **options)
+        definition = Vocabulary.fetch(event_name)
+        identity = Workflow::Receipt.identity(invocation, definition.name, source)
+        recovered = Workflow::Receipt.recover(identity)
+        return recovered if recovered
+        ctx = (context || {}).deep_stringify_keys.except("workflow_execution_id")
+        envelope = resolve_envelope(definition.name, ctx, source, parent)
+        ctx[Envelope::KEY] = dispatch_metadata(ctx, envelope, parent)
         warn_missing_keys(definition, ctx, envelope)
         log_dispatch(definition, ctx, envelope)
-
-        Orchestration::AgentOrchestrator.dispatch(
-          definition.name, ctx, selected_agents: selected_agents, selection: selection,
-          context_for: context_for, scheduling_hooks: scheduling_hooks
-        )
+        Orchestration::AgentOrchestrator.dispatch_with_outcome(definition.name, ctx, invocation: invocation, **options)
       end
 
       private
+
+      def dispatch_metadata(context, envelope, parent)
+        metadata = envelope.to_h
+        original = context[Envelope::KEY]
+        if !parent && original.is_a?(Hash) && original["name"] == envelope.name
+          metadata["depth"] = original["depth"]
+        end
+        metadata
+      end
 
       def resolve_envelope(event_name, context, source, parent)
         return Envelope.child(event_name, parent: parent, source: source) if parent

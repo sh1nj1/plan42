@@ -23,9 +23,29 @@ class CreativesControllerSlideViewTest < ActionDispatch::IntegrationTest
     Creative.rebuild!
   end
 
+  test "presentation formatting survives both parent and slide views" do
+    @root.update!(description: '<div class="ppt-slide" data-ppt-slide="1" data-ppt-format="{&quot;fill&quot;:&quot;#222222&quot;}">Slide</div>')
+    [ collavre.creatives_path(id: @root.id), collavre.slide_view_creative_path(@root) ].each do |path|
+      get path
+      assert_response :success
+      page = Nokogiri::HTML.fragment(response.body)
+      assert_equal({ "fill" => "#222222" }, JSON.parse(page.at_css(".ppt-slide")["data-ppt-format"]))
+    end
+  end
+
   test "slide_view renders successfully" do
     get collavre.slide_view_creative_path(@root)
     assert_response :success
+    assert_select "body.creative-description-justified"
+  end
+
+  test "slide_view omits justification class when the preference is disabled" do
+    @owner.update!(justify_creative_descriptions: false)
+
+    get collavre.slide_view_creative_path(@root)
+
+    assert_response :success
+    assert_select "body.creative-description-justified", count: 0
   end
 
   test "build_slide_ids returns the same DFS-by-sequence order as a recursive walk" do

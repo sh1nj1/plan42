@@ -9,15 +9,40 @@ module Collavre
     #    mentioned users
     #    - Every mentioned AI agent responds, in mention order
     #    - If only humans are mentioned → no AI agents respond
-    # 2. Primary-agent assignment: If the topic has a primary_agent, that agent is
-    #    the topic's sole ambient responder (see #match_by_primary_agent)
-    # 3. Expression-based: Evaluate each agent's routing_expression (Liquid)
+    # 2. Workflow rules: Optional first-match routing for the creative subtree
+    # 3. Primary-agent assignment: If no workflow matches, use the topic's
+    #    primary_agent (see #match_by_primary_agent)
+    # 4. Agent defaults: Evaluate routing_expression and live channel presence
     #
     # Permission checks:
     # - All agents need feedback permission on the creative to respond
     # - searchable only affects discoverability, not response permission
     #
     class Matcher
+      include WorkflowRouting
+
+      # Login replays must remain selected by current routing at promotion,
+      # execution, and approval resumption. Ordinary waiting turns retain their
+      # assignment-only contract rather than re-evaluating routing expressions.
+      # Return the validated payload so execution uses the same current anchor.
+      # This includes coalesced survivors that inherited replay claims.
+      def self.prepare_waiting_payload(context, agent)
+        return CliProxy::ReplayRouting.prepare(context, agent) if CliProxy::ReplayClaims.ids(context).any?
+
+        context if permits_assignment?(context, agent)
+      end
+
+      def self.prepare_waiting_task!(task)
+        context = task.trigger_event_payload
+        return true unless context&.key?("topic")
+
+        prepared = prepare_waiting_payload(context, task.agent)
+        return false unless prepared
+
+        task.update!(trigger_event_payload: prepared) unless prepared == context
+        true
+      end
+
       # The one entry point for "may this agent answer, given the topic's
       # primary-agent assignment?", taking a raw trigger payload.
       #
@@ -31,6 +56,10 @@ module Collavre
       # absorbed along with it. The mention still reaches the agent
       # (MergedTriggerComments folds it into the trigger), so it still counts.
       def self.permits_assignment?(context, agent)
+        # Durable workflow admissions outrank topic pins; execution safety is
+        # independently checked by TaskAdmission and FixedAnchor. A bare ID is insufficient.
+        return true if Workflow::DispatchIdentity.valid?(context, agent.id)
+
         return true if new(SystemEvents::ContextBuilder.new(context).build)
                        .assignment_permits?(agent)
 
@@ -70,12 +99,8 @@ module Collavre
         mentioned_result = match_by_mention
         return mentioned_result unless mentioned_result.nil?
 
-        # Priority 2: Topic primary agent assignment (exclusive)
-        primary_result = match_by_primary_agent
-        return primary_result unless primary_result.nil?
-
-        # Priority 3: Liquid expression routing (fallback)
-        match_by_expression
+        # Priority 2: Workflow rules, then topic assignment and agent defaults
+        match_with_workflow
       end
 
       # May this agent still take the floor in this topic, given the topic's
@@ -206,7 +231,7 @@ module Collavre
       # Returns [primary_agent] when the topic has one, nil when it does not.
       #
       # A topic's primary agent is an exclusive assignment: it is the only agent
-      # that speaks on ambient events in that topic. This deliberately overrides
+      # that speaks on ambient events without a matching enabled workflow. This overrides
       # each agent's own routing_expression in BOTH directions:
       #
       # - The primary speaks even with no routing_expression (or one that
@@ -215,7 +240,7 @@ module Collavre
       #   project-wide roster of agents does not all pile into one task.
       #
       # Other agents are not muted, only demoted to explicit invitation: an
-      # @mention routes to them via #match_by_mention, which runs first.
+      # @mention or matching enabled workflow can route to them before this tier.
       #
       # Returning [] (rather than nil) when the primary is ineligible is
       # intentional — falling through to expression routing would let exactly

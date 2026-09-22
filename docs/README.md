@@ -15,6 +15,9 @@ thin agent entry point that indexes into this directory.
 - [permissions.md](permissions.md) — the permission system and the converged
   `CreativeSharesCache` / `PermissionFilter` architecture.
 
+- [workflow_rule_editor.md](workflow_rule_editor.md) — edit workflow rules,
+  understand pin scope, and roll out routing through matching policies.
+
 ## Building & Contributing
 
 - [conventions.md](conventions.md) — the engineering rulebook: Rails philosophy,
@@ -36,6 +39,7 @@ thin agent entry point that indexes into this directory.
 - [notion_integration.md](notion_integration.md)
 - [google-auth.md](google-auth.md)
 - [mcp-configuration.md](mcp-configuration.md)
+- [approval-gates.md](approval-gates.md) — human decisions that pause and resume native agent turns.
 - [linked_creative.md](linked_creative.md)
 - [agent_gateway_health.md](agent_gateway_health.md) — how optional vendor
   endpoint checks and CLI proxy readiness become an agent's online status.

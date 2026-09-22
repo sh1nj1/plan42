@@ -14,7 +14,7 @@ module Collavre
       vendors = AgentHealth.vendors
       return if vendors.empty?
 
-      User.ai_agents.with_llm_vendors(vendors).pluck(:id).each do |agent_id|
+      User.ai_agents.with_llm_vendors(vendors).where("llm_model IS NULL OR llm_model != ?", "claude-code").pluck(:id).each do |agent_id|
         EndpointHealthProbeJob.perform_later(agent_id)
       end
     end

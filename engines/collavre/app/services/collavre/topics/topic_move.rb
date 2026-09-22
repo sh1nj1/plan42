@@ -34,7 +34,7 @@ module Collavre
           topic.update!(creative: target_creative)
           release_unroutable_primary_agent
         end
-        schedule_after_commit(&after_commit) if after_commit
+        schedule_after_commit(&after_commit)
         result
       end
 
@@ -54,10 +54,25 @@ module Collavre
 
       def schedule_after_commit(&callback)
         ActiveRecord.after_all_transactions_commit do
+          abandon_moved_logins
+          next unless callback
+
           Topic.transaction do
             current_topic = Topic.lock.find_by(id: topic.id)
             callback.call(current_topic)
           end
+        end
+      end
+
+      def abandon_moved_logins
+        # Bulk comment relocation bypasses DispatchRevocation. Settle the old
+        # scope after commit, without holding the topic lock while locking tasks.
+        Task.where(creative_id: source_creative_id, topic_id: topic.id, status: :done)
+          .where("CAST(trigger_event_payload -> 'engine_login' -> 'retryable' AS TEXT) = 'true' OR " \
+                 "CAST(trigger_event_payload -> 'engine_login' -> 'resumed' AS TEXT) = 'true'")
+          .where("COALESCE(CAST(trigger_event_payload -> 'engine_login' -> 'replay_completed' AS TEXT), 'false') <> 'true'")
+          .find_each do |task|
+          CliProxy::InlineLogin.abandon_replay!(task, pending: true)
         end
       end
 

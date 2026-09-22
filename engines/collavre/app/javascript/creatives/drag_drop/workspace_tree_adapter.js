@@ -6,6 +6,7 @@ import {
   ensureDragWindowId,
 } from '../../lib/dnd/session'
 import { getVerticalDropPosition } from '../../lib/dnd/hit_test'
+import { initIndicator, showLinkHover, hideLinkHover } from './indicator'
 import { reportPartialMove } from './move_feedback'
 import { executeMoveCommand } from './move_command'
 import {
@@ -58,9 +59,10 @@ function hitWorkspaceRow({ el: row, event, previousHit }) {
   })
 }
 
-function previewWorkspaceRow(controller, expandDelay, { el: row, hit }) {
+function previewWorkspaceRow(controller, expandDelay, { el: row, hit, event }) {
   const item = workspaceItemFromRow(row)
   const clearHighlight = showWorkspaceDropPreview(row, hit)
+  workspaceDropEffect({ event })
   let expandTimer = null
   if (hit === 'child' && item?.dataset.hasChildren === 'true' && item.dataset.expanded !== 'true') {
     expandTimer = window.setTimeout(() => {
@@ -73,6 +75,7 @@ function previewWorkspaceRow(controller, expandDelay, { el: row, hit }) {
     if (expandTimer) window.clearTimeout(expandTimer)
     controller.cancelDragExpansion?.()
     clearHighlight()
+    hideLinkHover()
   }
 }
 
@@ -119,6 +122,12 @@ async function performWorkspaceDrop({ root, execute, partialFailureMessage, el: 
   notifyMoveCompletion(result.succeededIds, payload, targetItem.dataset.creativeId, hit, mode)
 }
 
+function workspaceDropEffect({ event }) {
+  if (event.shiftKey) showLinkHover(event.clientX, event.clientY)
+  else hideLinkHover()
+  return event.shiftKey ? 'copy' : 'move'
+}
+
 export function createWorkspaceTreeDragDrop({
   root = document,
   controller,
@@ -126,6 +135,7 @@ export function createWorkspaceTreeDragDrop({
   expandDelay = WORKSPACE_TREE_EXPAND_DELAY_MS,
   partialFailureMessage = '',
 } = {}) {
+  initIndicator()
   const registry = createDragDropRegistry({
     root,
     getKind: getDragKind,
@@ -144,7 +154,7 @@ export function createWorkspaceTreeDragDrop({
     hitTest: hitWorkspaceRow,
     preview: (details) => previewWorkspaceRow(controller, expandDelay, details),
     onDrop: (details) => performWorkspaceDrop({ root, execute, partialFailureMessage, ...details }),
-    dropEffect: ({ event }) => event.shiftKey ? 'copy' : 'move',
+    dropEffect: workspaceDropEffect,
   })
 
   return registry

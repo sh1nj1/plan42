@@ -4,6 +4,8 @@ module Collavre
       extend ActiveSupport::Concern
 
       def approve
+        return decide_approval_gate("approved") if @comment.approval_gate?
+
         # Claude Channel permission prompts reuse the approval comment UI but the
         # tool runs inside the remote Claude Code process — never execute it
         # server-side. Approving relays an "allow" decision to the suspended
@@ -28,6 +30,8 @@ module Collavre
       # equivalent (the native approval UI has approve-only; an un-approved
       # action is simply left pending), so deny is exclusive to these comments.
       def deny
+        return decide_approval_gate("denied") if @comment.approval_gate?
+
         unless @comment.claude_channel_permission?
           render json: { error: I18n.t("collavre.comments.approve_not_allowed") }, status: :forbidden and return
         end

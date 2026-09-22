@@ -12,7 +12,7 @@ module Collavre
 
     def perform(agent_id)
       agent = User.ai_agents.find_by(id: agent_id)
-      return unless agent && AgentHealth.checker_for(agent.llm_vendor)
+      return unless agent&.endpoint_health_supported?
 
       AgentHealth::Probe.new(agent: agent).call
     rescue StandardError => e

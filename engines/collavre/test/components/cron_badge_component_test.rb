@@ -23,8 +23,8 @@ class CronBadgeComponentTest < ViewComponent::TestCase
     assert_selector ".cron-task code", text: "0 9 * * *"
     assert_selector "textarea.cron-task-message-input[data-cron-badge-target='messageInput'][data-cron-saved-message='Daily summary']", text: "Daily summary"
     assert_selector "time[datetime='#{time.iso8601}']"
-    assert_selector "button.cron-task-save[data-cron-update-url='/creatives/42/crons/cron_42_daily']", text: "Save"
-    assert_selector "button.cron-task-delete[data-cron-delete-url='/creatives/42/crons/cron_42_daily']"
+    assert_selector "button.cron-task-save.btn.btn-primary.btn-sm[data-cron-update-url='/creatives/42/crons/cron_42_daily']", text: "Save"
+    assert_selector "button.cron-task-delete.btn.btn-danger.btn-sm[data-cron-delete-url='/creatives/42/crons/cron_42_daily']"
   end
 
   test "renders unavailable values and omits deletion without write access" do

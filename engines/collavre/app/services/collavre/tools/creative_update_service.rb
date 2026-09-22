@@ -35,10 +35,12 @@ module Tools
         creatives: review_targets(creative, base, destination, progress, parent_id),
         anchor: Creatives::AiWritePolicy.agent_anchor || creative
       ) do
-        perform_update(
-          creative: creative, base: base, description: description,
-          progress: progress, parent_id: parent_id
-        )
+        base.with_lock do
+          perform_update(
+            creative: creative, base: base, description: description,
+            progress: progress, parent_id: parent_id
+          )
+        end
       end
     end
 

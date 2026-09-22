@@ -128,6 +128,7 @@ ko:
       creative_workspace:
         enabled: 3단 크리에이티브 작업 공간 사용
         description: 왼쪽 크리에이티브 트리를 유지하고 전체 페이지 새로고침 없이 중앙 내용을 전환하며 오른쪽에 채팅을 표시합니다.
+      justify_creative_descriptions: 크리에이티브 설명 좌우 정렬
       locale: 언어
       locales:
         en: 영어

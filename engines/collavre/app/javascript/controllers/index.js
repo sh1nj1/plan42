@@ -1,3 +1,4 @@
+import InlineCreativePickerController from './inline_creative_picker_controller'
 import CreativeMoveController from "./creative_move_controller"
 
 // Collavre Engine Controllers
@@ -12,6 +13,7 @@ import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
 import CreativesSyncController from "./creatives/sync_controller"
+import CreativesWorkflowRuleController from "./creatives/workflow_rule_controller"
 import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
@@ -39,6 +41,7 @@ import CommentVersionController from "./comment_version_controller"
 import OrgChartController from "./org_chart_controller"
 import CommentBadgeController from "./comment_badge_controller"
 import ShareModalController from "./share_modal_controller"
+import CreativeImageLightboxController from "./creative_image_lightbox_controller"
 import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
@@ -49,12 +52,14 @@ import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
 import AgentVendorController from "./agent_vendor_controller"
 import DesktopProxySetupController from "./desktop_proxy_setup_controller"
+import CreativeHistoryDetailController from "./creative_history_detail_controller"
 import CreativeHistoryController from "./creative_history_controller"
 import CreativeHistoryUndoController from "./creative_history_undo_controller"
 import CronBadgeController from "./cron_badge_controller"
 
 // Export all controllers
 export {
+  InlineCreativePickerController,
   CreativeMoveController,
   AgentTriggerController,
   PopupMenuController,
@@ -89,6 +94,7 @@ export {
   OrgChartController,
   ShareModalController,
   ImageLightboxController,
+  CreativeImageLightboxController,
   SearchPopupController,
   CommentBadgeController,
   LandingVideoController,
@@ -99,17 +105,18 @@ export {
   AgentConnectionController,
   AgentVendorController,
   DesktopProxySetupController,
+  CreativeHistoryDetailController,
   CreativeHistoryController,
   CreativeHistoryUndoController,
   CronBadgeController
 }
 
-// Registration function for use with a Stimulus application
-export function registerControllers(application) {
-  application.register("creative-move", CreativeMoveController)
-  application.register("agent-trigger", AgentTriggerController)
-  application.register("popup-menu", PopupMenuController)
-  application.register("progress-filter", ProgressFilterController)
+function registerImageLightboxControllers(application) {
+  application.register("image-lightbox", ImageLightboxController)
+  application.register("creative-image-lightbox", CreativeImageLightboxController)
+}
+
+function registerCreativeControllers(application) {
   application.register("creatives--import", CreativesImportController)
   application.register("creatives--select-mode", CreativesSelectModeController)
   application.register("creatives--drag-drop", CreativesDragDropController)
@@ -118,6 +125,16 @@ export function registerControllers(application) {
   application.register("creatives--tree", CreativesTreeController)
   application.register("creatives--sync", CreativesSyncController)
   application.register("creatives--write-access-request", CreativesWriteAccessRequestController)
+  application.register("creatives--workflow-rule", CreativesWorkflowRuleController)
+}
+
+// Registration function for use with a Stimulus application
+export function registerControllers(application) {
+  application.register("creative-move", CreativeMoveController)
+  application.register("agent-trigger", AgentTriggerController)
+  application.register("popup-menu", PopupMenuController)
+  application.register("progress-filter", ProgressFilterController)
+  registerCreativeControllers(application)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
   application.register("comments--presence", CommentsPresenceController)
@@ -131,6 +148,7 @@ export function registerControllers(application) {
   application.register("click-target", ClickTargetController)
   application.register("tabs", TabsController)
   application.register("link-creative", LinkCreativeController)
+  application.register("inline-creative-picker", InlineCreativePickerController)
   application.register("topic-search", TopicSearchController)
   application.register("topic-list", TopicListController)
   application.register("entity-list", EntityListController)
@@ -143,7 +161,7 @@ export function registerControllers(application) {
   application.register("comment-version", CommentVersionController)
   application.register("org-chart", OrgChartController)
   application.register("share-modal", ShareModalController)
-  application.register("image-lightbox", ImageLightboxController)
+  registerImageLightboxControllers(application)
   application.register("search-popup", SearchPopupController)
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)
@@ -154,6 +172,7 @@ export function registerControllers(application) {
   application.register("agent-connection", AgentConnectionController)
   application.register("agent-vendor", AgentVendorController)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
+  application.register("creative-history-detail", CreativeHistoryDetailController)
   application.register("creative-history", CreativeHistoryController)
   application.register("creative-history-undo", CreativeHistoryUndoController)
   application.register("cron-badge", CronBadgeController)

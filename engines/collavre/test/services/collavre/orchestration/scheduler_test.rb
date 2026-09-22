@@ -57,6 +57,31 @@ module Collavre
         assert decisions.first[:delay].present?
       end
 
+      test "long lived approval blocks another topic until cancelled even after cache expiry" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: "User", scope_id: @agent.id,
+          config: { "max_concurrent_jobs" => 1 }
+        )
+        gate = Task.create!(
+          name: "Waiting approval", agent: @agent, creative: @creative,
+          status: "pending_approval", topic_id: nil,
+          pending_tool_call: { "kind" => "approval_gate", "tool_call_id" => "gate-1" }
+        )
+        tracker = ResourceTracker.for(@agent)
+        tracker.reserve!(gate.id)
+
+        travel ResourceTracker::CACHE_EXPIRY_ACTIVE_JOBS + 1.second do
+          assert_nil Rails.cache.read("orchestrator:agent:#{@agent.id}:active_jobs")
+          decision = Scheduler.new(@context).schedule([ @agent ]).first
+          assert_equal :delayed, decision[:timing]
+          assert_equal :busy, decision[:reason]
+
+          gate.cancel_if_active!
+          tracker.release!(gate.id)
+          assert_equal :immediate, Scheduler.new(@context).schedule([ @agent ]).first[:timing]
+        end
+      end
+
       test "schedules immediately when under concurrency limit" do
         OrchestratorPolicy.create!(
           policy_type: "scheduling",

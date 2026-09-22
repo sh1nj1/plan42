@@ -55,7 +55,7 @@ module Collavre
           children_level = @agent.creative_children_level
           max_depth = 1 + children_level
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth
+            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
           )
 
           @injected_creative_ids << creative.id
@@ -64,7 +64,10 @@ module Collavre
       end
 
       def build_ancestry_chain(creative)
-        creative.self_and_ancestors.reverse.map { |c| "#{c.creative_snippet} (id: #{c.id})" }.join(" > ")
+        ancestors = creative.self_and_ancestors.reverse
+        Creatives::OriginChainPreloader.preload(ancestors)
+        ancestors.reject { |ancestor| workflow_context?(ancestor) }
+                 .map { |ancestor| "#{ancestor.creative_snippet} (id: #{ancestor.id})" }.join(" > ")
       end
 
       def append_context_creatives(messages)
@@ -83,8 +86,7 @@ module Collavre
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
-        ids_to_load = active_ids.reject { |ctx_id| @injected_creative_ids.include?(ctx_id) }
-        creatives_by_id = Creative.where(id: ids_to_load).index_by(&:id)
+        creatives_by_id = load_prompt_context_creatives(active_ids)
 
         active_ids.each do |ctx_id|
           next if @injected_creative_ids.include?(ctx_id)
@@ -94,7 +96,7 @@ module Collavre
 
           @injected_creative_ids << ctx_id
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ ctx ], 1, true, max_depth: max_depth
+            [ ctx ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
           )
 
           messages << {
@@ -103,6 +105,21 @@ module Collavre
             parts: [ { text: "Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
           }
         end
+      end
+
+      # Workflow creatives are machine-readable routing configuration. Only
+      # Workflow::Resolver should consume them; prompt injection would expose
+      # rule titles as noise and as a prompt-injection surface.
+      def load_prompt_context_creatives(active_ids)
+        ids = active_ids.reject { |id| @injected_creative_ids.include?(id) }
+        creatives = Creative.where(id: ids).to_a
+        Creatives::OriginChainPreloader.preload(creatives)
+        creatives.reject { |creative| workflow_context?(creative) }.index_by(&:id)
+      end
+
+      def workflow_context?(creative)
+        origin = creative.effective_origin(Set.new)
+        origin.workflow? || origin.workflow_rule?
       end
 
       def append_referenced_creative_contexts(messages)
@@ -119,7 +136,7 @@ module Collavre
 
         referenced_ids = contents.flat_map { |c| referenced_creative_ids(c) }.uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
-        creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
+        creatives_by_id = load_prompt_context_creatives(referenced_ids)
 
         referenced_ids.each do |creative_id|
           creative = creatives_by_id[creative_id]
@@ -127,7 +144,7 @@ module Collavre
 
           @injected_creative_ids << creative_id
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth
+            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
           )
 
           messages << {
@@ -173,7 +190,8 @@ module Collavre
         missing = referenced_creative_ids(comment.content) - @injected_creative_ids.to_a
         return true if missing.empty?
 
-        !Creative.where(id: missing).exists?
+        # Excluded routing configuration supplies no subtree on the trigger path either.
+        load_prompt_context_creatives(missing).empty?
       end
 
       # Appends chat history messages and returns the count of messages added.

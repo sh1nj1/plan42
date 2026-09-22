@@ -118,6 +118,44 @@ module Collavre
         assert_equal 0, loop_data["infra_retry_count"]
       end
 
+      test "stale linked toggle preserves the newly committed type and metadata" do
+        shell = Creative.create!(user: @user, origin: @container)
+        stale = shell.effective_origin
+        latest = stale.data.merge("kind" => "project", "context_ids" => [ @child.id ])
+        Creative.where(id: stale.id).update_all(data: latest)
+
+        assert command(creative: shell, action: "toggle_container", enabled: false).call.success?
+        assert_equal "project", @container.reload.creative_type
+        assert_equal [ @child.id ], @container.data["context_ids"]
+        refute @container.drop_trigger_enabled?
+      end
+
+      test "stale loop commands preserve newly committed type and counters" do
+        { "pause" => "running", "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          set_loop_state(state)
+          stale = Creative.find(@child.id)
+          latest = @child.data.deep_merge("kind" => "project", "trigger" => { "loop" => { "max_iterations" => 42 } })
+          Creative.where(id: @child.id).update_all(data: latest)
+          operation = command(creative: stale, action: action)
+          operation.define_singleton_method(:post_continue_to_agent) { }
+          operation.define_singleton_method(:post_restart_trigger) { }
+
+          assert operation.call.success?
+          assert_equal "project", @child.reload.creative_type
+          assert_equal 42, @child.data.dig("trigger", "loop", "max_iterations")
+          assert_equal(action == "pause" ? "paused" : "running", @child.data.dig("trigger", "loop", "state"))
+        end
+      end
+
+      test "stale pause cannot overwrite a newly completed loop" do
+        set_loop_state("running")
+        stale = Creative.find(@child.id)
+        set_loop_state("completed")
+
+        assert command(creative: stale, action: "pause").call.success?
+        assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
+      end
+
       private
 
       def command(creative: @child, user: @user, action:, enabled: nil)

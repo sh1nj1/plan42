@@ -212,6 +212,8 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit collavre.creatives_path(id: first_branch.id)
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{second_branch.id}']", wait: 10
+    # Finish the initial visit before marking the DOM that history will cache.
+    assert_eventually { page.evaluate_script("window.Turbo?.navigator?.currentVisit == null") }
     page.execute_script(<<~JS)
       document.querySelector('[data-controller="workspace-tree"]')
         .dataset.persistenceMarker = 'mounted';
@@ -269,6 +271,8 @@ class InlineScriptsTest < ApplicationSystemTestCase
     visit collavre.creatives_path(id: branch.id)
     assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{branch.id}']",
                     visible: :all, wait: 10
+    # Finish the initial visit before marking the DOM that history will cache.
+    assert_eventually { page.evaluate_script("window.Turbo?.navigator?.currentVisit == null") }
     page.execute_script(<<~JS)
       document.querySelector('[data-controller="workspace-tree"]')
         .dataset.persistenceMarker = 'center-mounted';
@@ -338,6 +342,8 @@ class InlineScriptsTest < ApplicationSystemTestCase
     visit collavre.creatives_path(id: creative.id)
     assert_selector "#comments-popup[data-creative-id='#{creative.id}']", visible: :visible, wait: 10
     assert_docked_comments_loaded
+    # Finish the initial visit before marking the DOM that history will cache.
+    assert_eventually { page.evaluate_script("window.Turbo?.navigator?.currentVisit == null") }
     page.execute_script(<<~JS)
       document.querySelector('[data-controller="workspace-tree"]')
         .dataset.persistenceMarker = 'comment-link-mounted';

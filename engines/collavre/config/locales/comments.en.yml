@@ -235,10 +235,25 @@ en:
       stop_blocking_agent: Stop running task
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
+      activity_logs:
+        duration: "Execution time: %{duration}"
+        inline_duration: "(%{duration})"
+        duration_hint: "Latest attempt: from start to model response completion, or reply persistence for delegated agents. Excludes queue time, earlier retries, and follow-up dispatch."
+        days: "%{count}d"
+        hours: "%{count}h"
+        minutes: "%{count}m"
+        seconds: "%{count}s"
+        loading: "Loading..."
+        empty: "No activity logs available."
+        time_ago: "%{time} ago"
       table_download:
         csv: CSV
         excel: Excel
       lightbox:
+        open_image: Open image
+        zoom_in: Zoom in
+        zoom_out: Zoom out
+        zoom_reset: Reset zoom
         close: Close
         previous: Previous
         next: Next
@@ -314,6 +329,7 @@ en:
       tool_approval_needed: Tool '%{tool_name}' has been detected/updated. Please approve
         it to activate.
       approval_requested: '%{user} requested approval to execute tool "%{tool_name}" in "%{creative}".'
+      approval_gate_requested: '%{user} requested your decision in "%{creative}".'
     emails:
       index_title: Emails
       list:

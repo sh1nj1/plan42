@@ -28,10 +28,11 @@ function dataTransfer() {
   }
 }
 
-function event(type, element, transfer, { clientY = 50, shiftKey = false } = {}) {
+function event(type, element, transfer, { clientX = 40, clientY = 50, shiftKey = false } = {}) {
   const dragEvent = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperties(dragEvent, {
     dataTransfer: { value: transfer },
+    clientX: { value: clientX },
     clientY: { value: clientY },
     shiftKey: { value: shiftKey },
   })
@@ -153,6 +154,43 @@ describe('workspace tree drag and drop adapter', () => {
 
     event('dragend', source, transfer)
     expect(source.classList.contains('is-dragging')).toBe(false)
+  })
+
+  test('updates the shared link badge within a row and clears it on leave', () => {
+    const transfer = dataTransfer()
+    event('dragstart', document.getElementById('workspace-creative-1'), transfer)
+    const target = document.getElementById('workspace-creative-2')
+    const badge = document.querySelector('.creative-link-drop-indicator')
+
+    event('dragover', target, transfer, { shiftKey: true })
+    expect(badge.style.display).toBe('block')
+    expect(badge.style.left).toBe('40px')
+    event('dragover', target, transfer, { shiftKey: true, clientX: 80 })
+    expect(badge.style.left).toBe('80px')
+    event('dragover', target, transfer)
+    expect(badge.style.display).toBe('none')
+    event('dragover', target, transfer, { shiftKey: true })
+    expect(badge.style.display).toBe('block')
+    event('dragover', target, transfer, { shiftKey: true, clientY: 10 })
+    expect(badge.style.display).toBe('block')
+    event('dragleave', target, transfer)
+    expect(badge.style.display).toBe('none')
+  })
+
+  test.each(['dragend', 'escape', 'destroy', 'drop'])('%s clears the shared link badge', action => {
+    const transfer = dataTransfer()
+    const source = document.getElementById('workspace-creative-1')
+    const target = document.getElementById('workspace-creative-2')
+    event('dragstart', source, transfer)
+    event('dragover', target, transfer, { shiftKey: true })
+    const badge = document.querySelector('.creative-link-drop-indicator')
+    expect(badge.style.display).toBe('block')
+
+    if (action === 'escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    else if (action === 'destroy') registry.destroy()
+    else event(action, action === 'drop' ? target : source, transfer, { shiftKey: true })
+
+    expect(badge.style.display).toBe('none')
   })
 
   test('links a multi-selection with shift instead of moving it optimistically', async () => {

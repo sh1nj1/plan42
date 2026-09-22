@@ -6,6 +6,36 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  test "default-safe formatting survives parent title and slide view rendering" do
+    html = '<del datetime="2026-09-22" cite="https://example.com">removed</del><ins>added</ins><sub>low</sub><sup>high</sup><dl><dt>term</dt><dd>definition</dd></dl>'
+    creative = Creative.create!(user: users(:one), description: html)
+
+    [ creatives_path(id: creative.id), slide_view_creative_path(creative) ].each do |path|
+      get path
+      assert_response :success
+      document = Nokogiri::HTML.fragment(response.body)
+      assert_equal "2026-09-22", document.at_css("del")["datetime"]
+      assert_equal "https://example.com", document.at_css("del")["cite"]
+      %w[del ins sub sup dl dt dd].each do |tag|
+        assert document.at_css(tag), "expected #{tag} formatting in #{path}"
+      end
+    end
+  end
+
+  test "PPT metadata survives parent title and slide view rendering" do
+    creative = Creative.create!(user: users(:one), description: '<div class="ppt-slide" data-ppt-slide="2" data-ppt-width="12192000" data-ppt-height="6858000">Slide</div>')
+
+    [ creatives_path(id: creative.id), slide_view_creative_path(creative) ].each do |path|
+      get path
+      assert_response :success
+      slide = Nokogiri::HTML.fragment(response.body).at_css(".ppt-slide")
+      assert slide, "expected PPT slide in #{path}"
+      assert_equal "2", slide["data-ppt-slide"]
+      assert_equal "12192000", slide["data-ppt-width"]
+      assert_equal "6858000", slide["data-ppt-height"]
+    end
+  end
+
   def creative_tree_stream_selector
     signed_name = Turbo::StreamsChannel.signed_stream_name([ users(:one), :creative_tree ])
     "turbo-cable-stream-source[signed-stream-name='#{signed_name}']"
@@ -743,8 +773,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
       css_select("#creatives").first["data-creatives--tree-loading-text-value"]
   end
 
-  # The move menu's other two fields are labelled <select>s; without its own
-  # label the destination button announces only the creative it happens to hold.
+  # The inline destination input retains its label after selecting a creative.
   test "index renders the move menu with a labelled destination control" do
     get creatives_path(id: creatives(:childless_creative).id)
 
@@ -752,8 +781,9 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-overflow-menu [data-creative-move-id]", count: 1
     assert_select ".creative-tree-title [data-creative-move-id]", count: 0
     assert_select "#creative-move-destination-label", text: I18n.t("collavre.dnd.destination")
-    assert_select "[data-creative-move-target='destination'][aria-labelledby=?]",
-      "creative-move-destination-label creative-move-destination"
+    assert_select "label[for='creative-move-destination']"
+    assert_select "input[data-creative-move-target='destination'][aria-controls='creative-move-results']"
+    assert_select "#creative-move-results[hidden]"
   end
 
   test "index supplies localized drag and drop failure copy" do

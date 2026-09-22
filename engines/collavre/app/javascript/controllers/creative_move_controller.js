@@ -6,7 +6,7 @@ import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 // The header overflow menu opens the move dialog. The picker browses
 // server data, so destinations do not have to exist in either rendered tree.
 export default class extends Controller {
-  static targets = ['dialog', 'destination', 'direction', 'mode', 'confirm', 'status', 'announcement']
+  static targets = ['dialog', 'destination', 'direction', 'mode', 'confirm', 'status', 'announcement', 'picker']
   static values = { messages: Object }
 
   connect() {
@@ -19,6 +19,7 @@ export default class extends Controller {
     document.removeEventListener('click', this.openFromClick)
     this.focusObserver?.disconnect()
     this.disconnected = true
+    this.closePicker()
     this.dialogTarget.close()
   }
 
@@ -51,7 +52,7 @@ export default class extends Controller {
     this.directionTarget.value = 'child'
     this.modeTarget.querySelector('option[value="move"]').disabled = !this.canMove
     this.modeTarget.value = this.canMove ? 'move' : 'link'
-    this.destinationTarget.textContent = this.messagesValue.choose
+    this.destinationTarget.value = ''
     this.confirmTarget.disabled = true
     this.statusTarget.textContent = ''
     this.announcementTarget.textContent = ''
@@ -98,32 +99,37 @@ export default class extends Controller {
   }
 
   chooseDestination() {
-    const modal = document.getElementById('link-creative-modal')
-    const picker = modal && this.application.getControllerForElementAndIdentifier(modal, 'link-creative')
-    if (!picker) {
+    if (this.busy || this.picking || !this.dialogTarget.open) return
+    this.picker = this.application.getControllerForElementAndIdentifier(this.pickerTarget, 'inline-creative-picker')
+    if (!this.picker) {
       this.statusTarget.textContent = this.messagesValue.failed
       return
     }
-    const rect = this.destinationTarget.getBoundingClientRect()
     this.picking = true
-    this.dialogTarget.close()
-    picker.open(rect, item => {
+    this.picker.open(null, item => {
       this.targetId = String(item.id)
-      this.destinationTarget.textContent = item.label
+      this.destinationTarget.value = item.label
       const invalid = this.ids.includes(this.targetId)
       this.confirmTarget.disabled = invalid
       this.statusTarget.textContent = invalid ? this.messagesValue.invalid : ''
-    }, () => {
-      this.picking = false
-      if (this.disconnected) return
-      this.dialogTarget.showModal()
-      this.destinationTarget.focus()
-    }, { allowCreate: false, selectOrigin: false })
+    }, () => { this.picking = false }, { allowCreate: false, selectOrigin: false })
+  }
+
+  closePicker() {
+    this.picker?.close()
+  }
+
+  destinationChanged() {
+    this.targetId = null
+    this.confirmTarget.disabled = true
+    this.statusTarget.textContent = ''
+    this.chooseDestination()
   }
 
   cancel(event) {
     event?.preventDefault()
     if (this.busy) return
+    this.closePicker()
     this.dialogTarget.close()
     this.announcementTarget.textContent = this.messagesValue.cancelled
     this.restoreFocus()
@@ -133,6 +139,7 @@ export default class extends Controller {
     event.preventDefault()
     if (this.busy || !this.targetId || this.ids.includes(this.targetId)) return
     if (!this.canMove && this.modeTarget.value === 'move') return
+    this.closePicker()
     this.busy = true
     this.setDisabled(true)
     this.statusTarget.textContent = this.messagesValue.moving
@@ -163,7 +170,7 @@ export default class extends Controller {
   }
 
   setDisabled(disabled) {
-    this.dialogTarget.querySelectorAll('button, select').forEach(el => { el.disabled = disabled })
+    this.dialogTarget.querySelectorAll('button, select, input').forEach(el => { el.disabled = disabled })
   }
 
   restoreFocusAfterRefresh() {

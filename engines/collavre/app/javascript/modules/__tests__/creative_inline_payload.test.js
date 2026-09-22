@@ -256,3 +256,11 @@ describe('updateRowFromData', () => {
     });
   });
 });
+
+test('confirmed custom types survive row cache round trips and General removes stale type', () => {
+  const { row, tree } = makeRow('42')
+  updateRowFromData(row, { creative_type: 'project' })
+  expect(inlinePayloadFromTree(tree).creative_type).toBe('project')
+  updateRowFromData(row, { creative_type: '' })
+  expect(inlinePayloadFromTree(tree).creative_type).toBe('')
+})

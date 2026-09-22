@@ -46,6 +46,24 @@ module Collavre
       end
     end
 
+    test "creating workflow rules under trigger parents does not enqueue DropTriggerJob" do
+      [ nil, "workflow" ].each do |kind|
+        @trigger_parent.update!(data: @trigger_parent.data.merge("kind" => kind))
+        assert_no_enqueued_jobs(only: DropTriggerJob) do
+          Creative.create!(user: @owner, parent: @trigger_parent, description: "Rule configuration",
+                           data: { "kind" => "workflow_rule" })
+        end
+      end
+    end
+
+    test "ordinary children under trigger workflows still enqueue exactly one DropTriggerJob" do
+      @trigger_parent.update!(data: @trigger_parent.data.merge("kind" => "workflow"))
+
+      assert_enqueued_jobs(1, only: DropTriggerJob) do
+        Creative.create!(user: @owner, parent: @trigger_parent, description: "Ordinary child")
+      end
+    end
+
     test "creating child under normal parent does not enqueue DropTriggerJob" do
       assert_no_enqueued_jobs(only: DropTriggerJob) do
         Creative.create!(user: @owner, parent: @normal_parent, description: "New Child")

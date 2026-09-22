@@ -204,15 +204,18 @@ module Collavre
       @completion_mark = Collavre::SystemSetting.completion_mark
     end
 
-    def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil)
+    def creative_tree_description(creative, with_progress)
+      desc = creative.effective_description(nil, true)
+      return desc unless with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
+
+      "#{desc} (#{(creative.progress.to_f * 100).round}%)"
+    end
+
+    def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil, prune: ->(_) { false })
       return "" if creatives.blank?
       md = ""
-      creatives.each do |creative|
-        desc = creative.effective_description(nil, true)
-        if with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
-          pct = (creative.progress.to_f * 100).round
-          desc = "#{desc} (#{pct}%)"
-        end
+      creatives.reject(&prune).each do |creative|
+        desc = creative_tree_description(creative, with_progress)
         raw_html = desc.gsub(/<!--.*?-->/m, "").strip
         markdown_content = MarkdownConverter.html_to_markdown(raw_html)
         cleaned_markdown = markdown_content.strip
@@ -246,7 +249,7 @@ module Collavre
         end
         children = creative.linked_children
         if children.present? && (max_depth.nil? || level < max_depth)
-          md += render_creative_tree_markdown(children, level + 1, with_progress, max_depth: max_depth)
+          md += render_creative_tree_markdown(children, level + 1, with_progress, max_depth: max_depth, prune: prune)
         end
         md += "\n" if level <= 4 && !rendered_table_block
       end

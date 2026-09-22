@@ -36,7 +36,15 @@
       ) %>
 <% end %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal"
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal creative-image-lightbox"
+     data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
+     data-creative-image-lightbox-i18n-open-value="<%= t('collavre.comments.lightbox.open_image') %>"
+     data-creative-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
+     data-creative-image-lightbox-i18n-previous-value="<%= t('collavre.comments.lightbox.previous') %>"
+     data-creative-image-lightbox-i18n-next-value="<%= t('collavre.comments.lightbox.next') %>"
+     data-creative-image-lightbox-i18n-zoom-in-value="<%= t('collavre.comments.lightbox.zoom_in') %>"
+     data-creative-image-lightbox-i18n-zoom-out-value="<%= t('collavre.comments.lightbox.zoom_out') %>"
+     data-creative-image-lightbox-i18n-zoom-reset-value="<%= t('collavre.comments.lightbox.zoom_reset') %>"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('collavre.creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
@@ -70,6 +78,9 @@
 
     <%# Right: primary actions + overflow %>
     <div class="creative-header-actions">
+      <% if workflow_editor_creative?(current_creative) %>
+        <%= link_to t('collavre.workflow.editor.title'), edit_creative_path(current_creative), class: 'creative-header-outline-btn', data: { turbo_frame: '_top' } %>
+      <% end %>
       <%# Add button (always visible) %>
       <%= render 'add_button' if can_add %>
 
@@ -186,7 +197,7 @@
     <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
   <% end %>
   <% title_templates = [
-        content_tag(:template, data: { part: "description" }) { sanitize @parent_creative.effective_description },
+        content_tag(:template, data: { part: "description" }) { embed_youtube_iframe(@parent_creative.effective_description) },
         content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
       ] %>
   <% if @parent_creative.origin_id.present? %>

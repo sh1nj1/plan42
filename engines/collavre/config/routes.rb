@@ -42,17 +42,7 @@ Collavre::Engine.routes.draw do
       get :agent_connection, to: "agent_connections#show"
     end
   end
-  scope "users/:user_id/agent-connection", as: :agent_connection do
-    get :status, to: "agent_connections#status"
-    post "auth/:engine/sessions", to: "agent_connections#create_auth_session", as: :auth_sessions
-    get "auth/:engine/sessions/:session_id", to: "agent_connections#auth_session", as: :auth_session
-    post "auth/:engine/sessions/:session_id", to: "agent_connections#submit_auth_session"
-    delete "auth/:engine/sessions/:session_id", to: "agent_connections#cancel_auth_session"
-    post "provision/sync", to: "agent_connections#provision_sync", as: :provision_sync
-    post "provision/items/:type/:name/approve", to: "agent_connections#provision_approve", as: :provision_approve
-    delete "provision/items/:type/:name", to: "agent_connections#provision_delete", as: :provision_delete
-    post "rotate-tokens", to: "agent_connections#rotate_tokens", as: :rotate_tokens
-  end
+  draw :agent_connections
 
   get "/agents/:agent_id/workspaces/:token/provision.json",
       to: "agent_provisioning#manifest", as: :agent_provision_manifest, format: false
@@ -95,7 +85,7 @@ Collavre::Engine.routes.draw do
   end
   resources :creatives do
     resources :crons, only: %i[update destroy], param: :key
-    post "history/:id/apply", to: "creative_change_sets#apply", as: :apply_change_set
+    draw :creative_history
     resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
@@ -162,9 +152,7 @@ Collavre::Engine.routes.draw do
       patch :archive
       patch :unarchive
       get :slide_view
-      get :contexts
-      patch :update_contexts
-      patch :update_metadata
+      draw :creative_contexts
       patch :trigger_action
     end
   end

@@ -178,7 +178,7 @@ module Collavre
       end
 
       def coalesce!
-        return [] if review_trigger?(@keep)
+        return [] if independent_trigger?(@keep)
 
         absorbed_ids = []
 
@@ -198,7 +198,7 @@ module Collavre
           locked = Task.where(id: superseded_scope.pluck(:id) + [ @keep.id ])
                        .order(:id).lock.index_by(&:id)
           keep = locked[@keep.id]
-          next unless keep && UNSTARTED_STATUSES.include?(keep.status)
+          next unless foldable_survivor?(keep)
 
           # Status is re-checked against the locked rows too: a sibling promoted
           # or cancelled since the id read above is no longer ours to supersede.
@@ -208,15 +208,7 @@ module Collavre
           siblings = reject_other_workspace_principals(keep, siblings)
           comment_ids = siblings.flat_map { |t| trigger_comment_ids(t) }
 
-          siblings.each do |task|
-            task.task_actions.create!(
-              action_type: "superseded",
-              status: "done",
-              payload: { "superseded_by_task_id" => @keep.id }
-            )
-            task.update!(status: "cancelled")
-            absorbed_ids << task.id
-          end
+          absorbed_ids = supersede!(keep, siblings)
 
           # A waiter absorbed here may have parked with a per-deferral notice of
           # its own — the policy only has to have been off when it deferred and
@@ -254,6 +246,24 @@ module Collavre
 
       private
 
+      def independent_trigger?(task)
+        task.workflow? || review_trigger?(task)
+      end
+
+      def foldable_survivor?(task)
+        task && !task.workflow? && UNSTARTED_STATUSES.include?(task.status)
+      end
+
+      def supersede!(keep, siblings)
+        CliProxy::ReplayClaims.transfer!(keep, siblings)
+        siblings.map do |task|
+          task.task_actions.create!(action_type: "superseded", status: "done",
+            payload: { "superseded_by_task_id" => keep.id })
+          task.update!(status: "cancelled")
+          task.id
+        end
+      end
+
       # Only `queued` tasks are safe to supersede. A `pending` task may already
       # be riding an enqueued AiAgentJob; cancelling it makes that job return
       # early *without* draining the topic queue, stalling the topic.
@@ -262,7 +272,7 @@ module Collavre
       # coalescing concurrently would otherwise cancel each other and leave no
       # survivor. Each run only ever supersedes strictly older rows.
       def superseded_scope
-        rel = Task.where(
+        rel = Task.where(workflow_execution_id: nil).where(
           agent_id: @keep.agent_id,
           topic_id: @keep.topic_id,
           creative_id: @keep.creative_id,

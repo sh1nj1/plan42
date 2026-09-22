@@ -1,6 +1,8 @@
 module Collavre
   module Comments
     class ActivityLogsController < ApplicationController
+      helper Collavre::ActivityLogsHelper
+
       before_action :set_comment
       before_action :ensure_permission
 

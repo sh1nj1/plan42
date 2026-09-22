@@ -13,8 +13,9 @@ module Collavre
       end
 
       def call
+        return :unsupported unless @agent.endpoint_health_supported?
+
         checker = AgentHealth.checker_for(@agent.llm_vendor)
-        return :unsupported unless checker
 
         result = checker.new(agent: @agent).call
         raise ArgumentError, "health checker returned an invalid result" unless valid_result?(result)

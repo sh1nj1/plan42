@@ -29,7 +29,8 @@ The probe owns `check_error`; a checker should raise when its own implementation
 cannot produce a valid verdict. The probe contains that exception, records the
 error state, and never changes dispatch behavior.
 
-Core registers an OpenAI-compatible checker. Once a minute it sends
+Core registers the same HTTP checker for all direct RubyLLM vendors: `openai`,
+`google`, `gemini`, and `anthropic`. Once a minute, OpenAI sends
 `GET {gateway_url}/models`, or `GET https://api.openai.com/v1/models` when the
 agent has no custom base URL. It uses the same agent or integration API key as
 the normal OpenAI client. Both paths use `Collavre::OpenaiEndpoint` to restrict
@@ -41,10 +42,23 @@ route supports it, authentication; it deliberately does not make a completion
 request and therefore does not claim that inference for a particular model
 will succeed.
 
+Google/Gemini and Anthropic use the same HTTP transport, timeouts, response
+mapping, and cache. Only request settings differ: Gemini uses
+`https://generativelanguage.googleapis.com/v1beta/models` with `x-goog-api-key`;
+Anthropic uses `https://api.anthropic.com/v1/models` with `x-api-key` and
+`anthropic-version`. Native providers honor RubyLLM's configured API base and
+use their per-agent key or matching integration key. As in `AiClient`, they do
+not use the OpenAI-only per-agent `gateway_url`.
+
+Claude Channel (`claude-code`) is excluded at scheduling, execution, and status
+presentation, even though its vendor is Anthropic. Changing a model also clears
+the endpoint verdict. CLI Proxy and OpenClaw keep their existing transport
+liveness handling.
+
 The endpoint checker records `online`, `offline`, `unknown`, or `check_error`.
 An unexpected checker exception is contained and displayed as a health-check
 error. Results expire after three minutes, and changing the vendor, base URL,
-or API key invalidates the cached verdict immediately. Non-administrator URLs
+model, or API key invalidates the cached verdict immediately. Non-administrator URLs
 use the same DNS pinning and private-network rejection policy as CLI proxy
 requests; redirects are not followed.
 

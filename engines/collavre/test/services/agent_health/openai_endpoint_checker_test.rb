@@ -5,7 +5,7 @@ require "test_helper"
 module Collavre
   module AgentHealth
     class OpenaiEndpointCheckerTest < ActiveSupport::TestCase
-      Response = Struct.new(:code, keyword_init: true)
+      Response = Struct.new(:code, :body, keyword_init: true)
 
       class RecordingClient
         attr_reader :url, :headers
@@ -93,6 +93,110 @@ module Collavre
         OpenaiEndpointChecker.new(agent: @agent, client: client).call
 
         assert_equal "https://gateway.example.test/v1/models", client.url
+      end
+
+      test "uses native model endpoints and agent keys for all direct RubyLLM vendors" do
+        {
+          "google" => [ "https://generativelanguage.googleapis.com/v1beta/models", "x-goog-api-key" ],
+          "gemini" => [ "https://generativelanguage.googleapis.com/v1beta/models", "x-goog-api-key" ],
+          "anthropic" => [ "https://api.anthropic.com/v1/models", "x-api-key" ]
+        }.each do |vendor, (url, header)|
+          @agent.update!(llm_vendor: " #{vendor.upcase} ")
+          client = RecordingClient.new
+
+          IntegrationSettings.stub(:fetch, ->(*) { flunk "Agent key must take precedence" }) do
+            result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+            assert_equal :online, result.status
+          end
+
+          assert_equal url, client.url
+          assert_equal "secret-key", client.headers[header]
+          assert_not client.headers.key?("Authorization")
+          assert_equal "2023-06-01", client.headers["anthropic-version"] if vendor == "anthropic"
+        end
+      end
+
+      test "uses matching integration keys and RubyLLM base URLs for native providers" do
+        config = RubyLLM.config.dup
+        config.gemini_api_base = "https://gemini.example.test/v1beta/"
+        config.anthropic_api_base = "https://anthropic.example.test/"
+        {
+          "google" => [ :gemini_api_key, "https://gemini.example.test/v1beta/models", "x-goog-api-key" ],
+          "gemini" => [ :gemini_api_key, "https://gemini.example.test/v1beta/models", "x-goog-api-key" ],
+          "anthropic" => [ :anthropic_api_key, "https://anthropic.example.test/v1/models", "x-api-key" ]
+        }.each do |vendor, (setting, url, header)|
+          @agent.update!(llm_vendor: vendor, llm_api_key: nil)
+          client = RecordingClient.new
+          fetch = ->(key) { assert_equal setting, key; "vendor-shared-key" }
+
+          RubyLLM.stub(:config, config) do
+            IntegrationSettings.stub(:fetch, fetch) do
+              OpenaiEndpointChecker.new(agent: @agent, client: client).call
+            end
+          end
+
+          assert_equal url, client.url
+          assert_equal "vendor-shared-key", client.headers[header]
+        end
+      end
+
+      test "native authentication failures use the shared offline verdict" do
+        %w[google gemini anthropic].each do |vendor|
+          @agent.update!(llm_vendor: vendor, llm_api_key: nil)
+          client = RecordingClient.new(response: Response.new(code: 401))
+          result = IntegrationSettings.stub(:fetch, nil) do
+            OpenaiEndpointChecker.new(agent: @agent, client: client).call
+          end
+
+          assert_equal :offline, result.status
+          assert_equal "authentication_failed", result.error
+          assert_not client.headers.key?("x-goog-api-key")
+          assert_not client.headers.key?("x-api-key")
+        end
+      end
+
+      test "maps Google invalid-key 400 responses to authentication failure for both vendor aliases" do
+        body = { error: { status: "INVALID_ARGUMENT", details: [
+          { "@type" => "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" }
+        ] } }.to_json
+
+        [ " GOOGLE ", " Gemini " ].each do |vendor|
+          @agent.update!(llm_vendor: vendor)
+          client = RecordingClient.new(response: Response.new(code: 400, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :offline, result.status
+          assert_equal "authentication_failed", result.error
+        end
+      end
+
+      test "preserves unrelated or malformed Google 400 responses as unknown" do
+        @agent.update!(llm_vendor: "gemini")
+        bodies = [ nil, "", "not JSON", "null", "[]", "1", '"error"', "{}",
+          { error: nil }.to_json, { error: [] }.to_json,
+          { error: { details: nil } }.to_json, { error: { details: {} } }.to_json,
+          { error: { status: "INVALID_ARGUMENT" } }.to_json,
+          { error: { details: [ nil, "invalid", {}, { reason: "OTHER_REASON" } ] } }.to_json ]
+
+        bodies.each do |body|
+          client = RecordingClient.new(response: Response.new(code: 400, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :unknown, result.status, body.inspect
+          assert_equal "http_400", result.error, body.inspect
+        end
+      end
+
+      test "does not apply Google invalid-key body semantics to other vendors or HTTP statuses" do
+        body = { error: { details: [ { reason: "API_KEY_INVALID" } ] } }.to_json
+        [ [ "openai", 400 ], [ "anthropic", 400 ], [ "gemini", 422 ] ].each do |vendor, code|
+          @agent.update!(llm_vendor: vendor)
+          client = RecordingClient.new(response: Response.new(code: code, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :unknown, result.status
+          assert_equal "http_#{code}", result.error
+        end
       end
 
       test "maps HTTP responses without making a completion request" do

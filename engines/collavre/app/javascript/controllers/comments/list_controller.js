@@ -1,4 +1,6 @@
 import * as previousMessageNavigation from './previous_message_navigation'
+import { approvalRequestOptions } from './approval_request_options'
+import { replaceCommentsPreservingLogins } from "./inline_login_preservation"
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
@@ -11,6 +13,7 @@ import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
 import CommentReadTracker from './comment_read_tracker'
 import PrevMessageNavigator from './prev_message_navigator'
+import { beginCommentsReload, resetPaginationState } from './pagination_state'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 // Gestures that mean the user moved the list themselves, invalidating the
@@ -23,12 +26,7 @@ export default class extends Controller {
 
   connect() {
     this.selection = new Set()
-    this.loadingOlder = false
-    this.loadingOlderPromise = null
-    this.pendingPreviousMessageNavigation = null
-    this.loadingNewer = false
-    this.allOlderLoaded = false // Reached the beginning of time
-    this.allNewerLoaded = true  // Reached current time (initially true until we scroll up)
+    resetPaginationState(this)
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
@@ -184,14 +182,9 @@ export default class extends Controller {
   resetState() {
     this.selection.clear()
     this.notifySelectionChange()
-    this.loadingOlder = false
-    this.loadingOlderPromise = null
-    this.loadingNewer = false
-    this.allOlderLoaded = false
-    this.allNewerLoaded = true
+    resetPaginationState(this)
     this.movingComments = false
     this.manualSearchQuery = null
-    this.pendingPreviousMessageNavigation = null
   }
 
   resetToLatest() {
@@ -206,11 +199,7 @@ export default class extends Controller {
     if (!this.creativeId) return
     if (this.selection.size > 0) return
 
-    // The list is about to be replaced wholesale; any anchor we hold is stale.
-    this.prevMsgNavigator.reset()
-    this.pendingPreviousMessageNavigation = null
-
-    const requestVersion = ++this._loadCommentsVersion
+    const requestVersion = beginCommentsReload(this)
     const params = {}
     const requestedHighlightId = this.highlightAfterLoad
     if (requestedHighlightId) {
@@ -234,8 +223,8 @@ export default class extends Controller {
       if (!this.isServerResolvedTopic(requestVersion) &&
           String(this.currentTopicId || "") !== String(requestTopicId)) return
 
-      this.listTarget.innerHTML = html
-      this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
+      replaceCommentsPreservingLogins(this.listTarget, html, this.currentTopicId)
+      resetPaginationState(this)
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
 
@@ -559,12 +548,12 @@ export default class extends Controller {
     }
     if (target.classList.contains('approve-comment-btn')) {
       event.preventDefault()
-      this.approveComment(target)
+      this.decideComment(target, 'approve')
       return
     }
     if (target.classList.contains('deny-comment-btn')) {
       event.preventDefault()
-      this.denyComment(target)
+      this.decideComment(target, 'deny')
       return
     }
     if (target.classList.contains('edit-comment-btn')) {
@@ -1147,23 +1136,12 @@ export default class extends Controller {
     controller?.load?.()
   }
 
-  approveComment(button) {
-    this.decideComment(button, 'approve')
-  }
-
-  // Deny a Claude Channel tool-permission prompt. Mirrors approveComment but
-  // hits the /deny endpoint, which relays a "deny" decision to the suspended
-  // session.
-  denyComment(button) {
-    this.decideComment(button, 'deny')
-  }
-
   decideComment(button, action) {
     if (button.disabled) return
     button.disabled = true
     const commentId = button.getAttribute('data-comment-id')
     const topicQuery = this.topicQueryString()
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
+    fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, approvalRequestOptions(button))
       .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.error) }))
       .then(html => {
         if (!html) { button.disabled = false; return; }

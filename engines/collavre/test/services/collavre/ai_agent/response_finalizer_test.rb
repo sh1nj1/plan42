@@ -21,7 +21,7 @@ module Collavre
           content: "please revise", user: @user, topic: @topic, quoted_comment: quoted
         )
         reply = @creative.comments.create!(
-          content: Comment::STREAMING_PLACEHOLDER_CONTENT, user: @agent, topic: @topic
+          content: Comment::STREAMING_PLACEHOLDER_CONTENT, user: @agent, topic: @topic, task: @task
         )
 
         result = ResponseFinalizer.new(
@@ -31,6 +31,8 @@ module Collavre
 
         assert_equal quoted.id, result.id, "quoted comment is the survivor"
         assert_not Comment.exists?(reply.id), "placeholder reply is destroyed"
+        assert_equal @task.id, result.reload.task_id
+        assert_equal quoted.id, @task.reload.reply_comment.id
       end
 
       # The reply placeholder's activity logs must move to the surviving comment so
@@ -41,7 +43,7 @@ module Collavre
           content: "please revise", user: @user, topic: @topic, quoted_comment: quoted
         )
         reply = @creative.comments.create!(
-          content: Comment::STREAMING_PLACEHOLDER_CONTENT, user: @agent, topic: @topic
+          content: Comment::STREAMING_PLACEHOLDER_CONTENT, user: @agent, topic: @topic, task: @task
         )
         ActivityLog.create!(comment: reply, user: @agent, activity: "reply_created")
 
