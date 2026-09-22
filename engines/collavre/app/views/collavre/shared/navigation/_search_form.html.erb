@@ -12,7 +12,7 @@
     has_cron = url_params['has_cron'] == 'true'
     has_search = url_params['search'].present?
     search_mode = url_params['search_mode'] || 'flat'
-    has_any_filter = has_progress || has_archived || has_cron || has_search
+    has_any_filter = has_progress || has_archived || has_cron || has_search || url_params['reaction_emoji'].present?
 
     progress_state = if url_params['min_progress'] == '1' && url_params['max_progress'] == '1'
                        :complete
@@ -52,6 +52,13 @@
     </form>
 
     <div class="search-popup-filters">
+      <div class="search-popup-filter-section">
+        <span class="search-popup-filter-label"><%= t('collavre.search_popup.reaction_filter') %></span>
+        <div class="search-popup-filter-buttons">
+          <%= render "collavre/comments/reaction_buttons",
+                action: "click->search-popup#applyReactionFilter", selected: url_params['reaction_emoji'], filter: true %>
+        </div>
+      </div>
       <div class="search-popup-filter-section">
         <span class="search-popup-filter-label"><%= t('collavre.search_popup.progress_filter') %></span>
         <div class="search-popup-filter-buttons">

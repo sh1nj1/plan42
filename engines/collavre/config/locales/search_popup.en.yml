@@ -2,6 +2,7 @@
 en:
   collavre:
     search_popup:
+      reaction_filter: "Comment reaction"
       search: "Search"
       progress_filter: "Progress"
       search_results: "Search results"

@@ -15,6 +15,7 @@ module Creatives
       Filters::TagFilter,
       Filters::SearchFilter,
       Filters::CommentFilter,
+      Filters::ReactionFilter,
       Filters::CronFilter,
       Filters::DateFilter,
       Filters::AssigneeFilter

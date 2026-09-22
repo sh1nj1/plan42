@@ -613,7 +613,7 @@ module Collavre
       # query layer while preserving every filter the index endpoint supports.
       def index_query_params
         params.permit(
-          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron,
+          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron, :reaction_emoji,
           :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
           :assignee_id, :unassigned, :show_archived, :page, :per_page,
           tags: []
