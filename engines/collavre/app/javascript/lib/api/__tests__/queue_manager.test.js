@@ -37,6 +37,42 @@ describe('ApiQueueManager', () => {
         jest.restoreAllMocks();
     });
 
+    test('retains drained cleanup IDs across storage rollbacks until durable enqueue and successful cleanup', async () => {
+        const { enqueueCreativeSnapshot, queuedCreativeCompletion } = await import('../../../modules/queued_creative_row');
+        const tree = document.createElement('div');
+        const request = { path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'attachment removed' }, deletedAttachmentIds: [71] };
+        const cleanup = jest.fn();
+        window.addEventListener('api-queue-attachments-deleted', cleanup);
+        const storage = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+        const enqueueSnapshot = (target, snapshot) => enqueueCreativeSnapshot(apiQueue, snapshot,
+            queuedCreativeCompletion(target, jest.fn()), target);
+        expect(() => enqueueSnapshot(tree, request)).toThrow('quota');
+        expect(apiQueue.queue).toEqual([]);
+        expect(apiQueue.failedItems).toEqual([]);
+        expect(cleanup).not.toHaveBeenCalled();
+        expect(() => enqueueSnapshot(tree, { ...request, deletedAttachmentIds: [71, 72] })).toThrow('quota');
+        storage.mockRestore();
+
+        const otherTree = document.createElement('div');
+        enqueueSnapshot(otherTree, { ...request, path: '/creatives/43', dedupeKey: 'creative_43', deletedAttachmentIds: null });
+        expect(apiQueue.queue[0].deletedAttachmentIds).toBeNull();
+        enqueueSnapshot(tree, { ...request, deletedAttachmentIds: [] });
+        expect(apiQueue.queue[1].deletedAttachmentIds).toEqual([71, 72]);
+        expect(JSON.parse(localStorage.getItem(apiQueue.storageKey))[1].deletedAttachmentIds).toEqual([71, 72]);
+        expect(cleanup).not.toHaveBeenCalled();
+        mockCsrfFetch.mockResolvedValue({ ok: true, text: async () => '{}' });
+        apiQueue.processQueue.mockRestore();
+        await apiQueue.processQueue();
+        expect(cleanup).toHaveBeenCalledTimes(1);
+        expect(cleanup.mock.calls[0][0].detail.attachmentIds).toEqual([71, 72]);
+
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(async () => {});
+        enqueueSnapshot(tree, { ...request, deletedAttachmentIds: null });
+        expect(apiQueue.queue[0].deletedAttachmentIds).toBeNull();
+        window.removeEventListener('api-queue-attachments-deleted', cleanup);
+    });
+
     test('reloads a persisted draft before merging a subsequent edit', async () => {
         const { recoverFailedCreative, needsCreativeSaveRetry } = await import('../../../modules/failed_creative_save');
         apiQueue.enqueue({

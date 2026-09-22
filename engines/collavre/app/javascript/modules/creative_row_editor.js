@@ -1281,7 +1281,7 @@ function setupEditorSession() {
             originalContent = applied.snapshot.content;
           }
         }
-      }, complete);
+      }, complete, tree);
       // console.warn('apiQueue.enqueue disabled for debugging');
 
       const reset = resetCreativeSaveState(snapshot);

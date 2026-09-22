@@ -1,6 +1,7 @@
 import { treeRowElement } from './creative_row_editor_helpers'
 
 const revisions = new WeakMap()
+const retryAttachmentIds = new WeakMap()
 
 // Only the latest queued snapshot may acknowledge or rewrite a row.
 export function queuedCreativeCompletion(tree, onComplete) {
@@ -40,8 +41,15 @@ export function queuedCreativeStatus(tree) {
   return tree?.dataset.saveState || ''
 }
 
-export function enqueueCreativeSnapshot(queue, request, completion) {
-  try { return queue.enqueue(request) } catch (error) {
+export function enqueueCreativeSnapshot(queue, request, completion, tree) {
+  // The editor drains these IDs before enqueue; retain them until durable acceptance.
+  const ids = [...new Set([...(retryAttachmentIds.get(tree) || []), ...(request.deletedAttachmentIds || [])])]
+  retryAttachmentIds.set(tree, ids)
+  try {
+    const id = queue.enqueue({ ...request, deletedAttachmentIds: ids.length ? ids : null })
+    retryAttachmentIds.delete(tree)
+    return id
+  } catch (error) {
     completion.rollback()
     throw error
   }

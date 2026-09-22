@@ -7,6 +7,7 @@ let editorOptions = null
 const save = jest.fn()
 const get = jest.fn(() => Promise.resolve({}))
 const enqueue = jest.fn()
+const getDeletedAttachments = jest.fn(() => [])
 const unconvert = jest.fn()
 const waitFor = jest.fn(() => Promise.resolve())
 const alertDialog = jest.fn()
@@ -23,7 +24,7 @@ jest.unstable_mockModule('../lexical_inline_editor', () => ({
       load: jest.fn(),
       focus: jest.fn(),
       reset: jest.fn(),
-      getDeletedAttachments: jest.fn(() => []),
+      getDeletedAttachments,
     }
   }),
 }))
@@ -85,6 +86,7 @@ beforeEach(() => {
   save.mockReset()
   get.mockReset().mockResolvedValue({})
   enqueue.mockReset()
+  getDeletedAttachments.mockReset().mockReturnValue([])
   clearQueueReconciliation(queue)
   queue.failedItems = []
   queue.queue = []
@@ -991,4 +993,32 @@ test('announces the requested row immediately and periodically while reconciliat
   finish()
   await flushPromises()
   document.removeEventListener('creative-editing:start', announce)
+})
+
+
+test('retrying a close retains drained attachment cleanup IDs after enqueue fails', async () => {
+  jest.useFakeTimers()
+  const { tree } = appendMarkdownRow('42', 'before', 'rich')
+  openRow(tree)
+  editorOptions.onChange({ html: '<p>attachment removed</p>', markdown: 'attachment removed' })
+  getDeletedAttachments.mockReturnValueOnce([71])
+  enqueue.mockImplementationOnce(() => { throw new Error('quota') })
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(document.getElementById('inline-save-status').dataset.state).toBe('error')
+  expect(enqueue.mock.calls[0][0].deletedAttachmentIds).toEqual([71])
+
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  const retried = enqueue.mock.calls[1][0]
+  expect(retried.deletedAttachmentIds).toEqual([71])
+  expect(retried.body['creative[markdown_source]']).toBe('attachment removed')
+  retried.onSuccess({ markdown_source: 'attachment removed' })
+  expect(tree.dataset.saveState).toBeUndefined()
+
+  openRow(tree)
+  editorOptions.onChange({ html: '<p>next edit</p>', markdown: 'next edit' })
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue.mock.calls[2][0].deletedAttachmentIds).toBeNull()
 })
