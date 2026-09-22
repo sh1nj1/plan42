@@ -250,6 +250,10 @@ async function executeLinkDrop(command, api) {
   // Sequential on purpose (policy note 4) — link_drop resequences siblings.
   for (const id of requestOrder) {
     try {
+      // Sibling links use the target's server parent. Recheck before every
+      // insert because another target save can arrive between batch entries.
+      // eslint-disable-next-line no-await-in-loop
+      await waitForMoveSaves([targetId]);
       // eslint-disable-next-line no-await-in-loop
       const data = await api.sendLinkedCreative({ draggedId: id, targetId, direction });
       succeeded.add(id);

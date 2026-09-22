@@ -141,4 +141,61 @@ describe('moves with queued edits', () => {
     await apiQueue.processQueue()
     expect((await result).ok).toBe(true)
   })
+
+  test.each(['up', 'down', 'child'])('link drop %s waits for the target move to finish', async direction => {
+    const save = deferred()
+    let targetParent = '10'
+    jest.spyOn(apiQueue, 'executeRequest').mockImplementation(async () => {
+      await save.promise
+      targetParent = '30'
+    })
+    const sendLinkedCreative = jest.fn(async () => ({ parent_id: targetParent }))
+    enqueue('20')
+    const result = executeMoveCommand({ ...intent, direction, mode: 'link' }, { api: { sendLinkedCreative } })
+    await tick()
+    expect(sendLinkedCreative).not.toHaveBeenCalled()
+    save.resolve()
+    expect(await result).toMatchObject({ ok: true, payloads: [{ id: '42', data: { parent_id: '30' } }] })
+  })
+
+  test('each link waits for target saves added after the preceding link', async () => {
+    const save = deferred()
+    jest.spyOn(apiQueue, 'executeRequest').mockImplementation(() => save.promise)
+    const sendLinkedCreative = jest.fn().mockImplementationOnce(async () => {
+      enqueue('20')
+      return { id: 'link-43' }
+    }).mockResolvedValue({ id: 'link-42' })
+    const result = executeMoveCommand({ ...intent, ids: ['42', '43'], direction: 'down', mode: 'link' },
+      { api: { sendLinkedCreative } })
+    await tick()
+    expect(sendLinkedCreative).toHaveBeenCalledTimes(1)
+    expect(sendLinkedCreative).toHaveBeenNthCalledWith(1, { draggedId: '43', targetId: '20', direction: 'down' })
+    save.resolve()
+    expect(await result).toMatchObject({ ok: true, succeededIds: ['42', '43'] })
+    expect(sendLinkedCreative).toHaveBeenCalledTimes(2)
+  })
+
+  test('a target save failure prevents every sibling link request', async () => {
+    const save = deferred()
+    jest.spyOn(apiQueue, 'executeRequest').mockImplementation(() => save.promise)
+    const sendLinkedCreative = jest.fn()
+    enqueue('20')
+    const result = executeMoveCommand({ ...intent, ids: ['42', '43'], direction: 'up', mode: 'link' },
+      { api: { sendLinkedCreative } })
+    save.reject(Object.assign(new Error('Forbidden'), { status: 403 }))
+    expect(await result).toMatchObject({ ok: false, failedIds: ['42', '43'], succeededIds: [] })
+    expect(sendLinkedCreative).not.toHaveBeenCalled()
+  })
+
+  test('a target save failure between links preserves partial success', async () => {
+    const sendLinkedCreative = jest.fn(async () => {
+      apiQueue.failedItems = [{ dedupeKey: 'creative_20', lastError: 'Forbidden' }]
+      return { id: 'link-42' }
+    })
+    const result = await executeMoveCommand({ ...intent, ids: ['42', '43'], direction: 'up', mode: 'link' },
+      { api: { sendLinkedCreative } })
+    expect(result).toMatchObject({ status: 'partial', succeededIds: ['42'], failedIds: ['43'] })
+    expect(sendLinkedCreative).toHaveBeenCalledTimes(1)
+  })
+
 })
