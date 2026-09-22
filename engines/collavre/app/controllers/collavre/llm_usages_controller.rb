@@ -2,6 +2,8 @@
 
 module Collavre
   class LlmUsagesController < ApplicationController
+    REQUESTER_KEYS = { LlmUsage => :llm_usage_id, ToolUsage => :tool_usage_id }.freeze
+
     def index
       @report = LlmUsage::Report.new(user: Current.user, params: report_params)
       @rows = @report.rows
@@ -35,7 +37,7 @@ module Collavre
       visible = usage.visible_to(Current.user)
       return visible.distinct.pluck(field).compact unless field == "requester_id"
 
-      usage::Requester.where("#{usage.model_name.element}_id" => visible.select(:id)).distinct.pluck(:user_id)
+      usage::Requester.where(REQUESTER_KEYS.fetch(usage) => visible.select(:id)).distinct.pluck(:user_id)
     end
 
     def group_names

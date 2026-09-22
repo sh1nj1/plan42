@@ -53,6 +53,10 @@ class ToolUsageTest < ActiveSupport::TestCase
     assert Collavre::ToolUsage.failed_result?({ "error" => "boom" })
     refute Collavre::ToolUsage.failed_result?({ success: true, error: nil })
     refute Collavre::ToolUsage.failed_result?("error")
+    assert Collavre::ToolUsage.failed_result?({ tool: { name: "cron_list" }, result: { error: "Creative not found" } })
+    assert Collavre::ToolUsage.failed_result?({ "tool" => {}, "result" => { "error" => "boom" } })
+    refute Collavre::ToolUsage.failed_result?({ tool: { name: "cron_list" }, result: { crons: [] } })
+    refute Collavre::ToolUsage.failed_result?({ result: { error: "not a meta_tool wrapper" } })
   end
 
   test "mcp calls are attributed to the token owner and never break the call" do
