@@ -16,6 +16,7 @@ describe('CommentsListController read pointer updates', () => {
     topicsController = { loadTopics: jest.fn() }
     controller = Object.create(CommentsListController.prototype)
     controller.creativeId = '42'
+    controller.prevMsgNavigator = { anchorId: null }
     Object.defineProperty(controller, 'element', { value: document.createElement('div') })
     document.body.appendChild(controller.element)
     Object.defineProperty(controller, 'popupController', { value: { topicsController } })
