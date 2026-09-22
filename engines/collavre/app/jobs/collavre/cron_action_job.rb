@@ -10,7 +10,7 @@ module Collavre
   class CronActionJob < ApplicationJob
     queue_as :default
 
-    def perform(creative_id:, topic_id:, agent_id:, message:)
+    def perform(creative_id:, topic_id:, agent_id:, message:, usage_requester_attribution: {})
       creative = Creative.find_by(id: creative_id)&.effective_origin
       agent = User.find_by(id: agent_id)
 
@@ -54,7 +54,7 @@ module Collavre
         chat: {
           content: comment.content
         }
-      }, source: "cron")
+      }.merge(usage_requester_attribution: usage_requester_attribution), source: "cron")
 
       Rails.logger.info(
         "[CronActionJob] Posted cron message to creative #{creative_id}, topic #{topic_id || 'main'}"

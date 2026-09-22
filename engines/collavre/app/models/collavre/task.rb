@@ -1,6 +1,7 @@
 module Collavre
   class Task < ApplicationRecord
     self.table_name = "tasks"
+    include UsageAttributionTracking
     include ReplayLoopCompletion
     include WorkflowCompletion
     include ApprovalGateCleanup

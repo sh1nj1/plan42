@@ -230,8 +230,7 @@ module Collavre
             # caller's own object: dequeue_next_for_topic hands that same
             # instance to refresh_deferred_context! immediately after this, and
             # it has to see the ids merged here rather than its pre-fold copy.
-            payload = self.class.absorb_into_payload(keep.trigger_event_payload || {}, comment_ids)
-            @keep.update!(trigger_event_payload: payload)
+            persist_absorbed_payload(keep, siblings, comment_ids)
           end
         end
 
@@ -245,6 +244,17 @@ module Collavre
       end
 
       private
+
+      def persist_absorbed_payload(keep, siblings, comment_ids)
+        payload = self.class.absorb_into_payload(keep.trigger_event_payload || {}, comment_ids)
+        @keep.update!(trigger_event_payload: payload, usage_attribution: merged_usage_attribution(keep, siblings))
+      end
+
+      def merged_usage_attribution(keep, siblings)
+        siblings.reduce(keep.usage_attribution) do |result, sibling|
+          LlmUsage::Attribution.merge(result, sibling.usage_attribution)
+        end
+      end
 
       def independent_trigger?(task)
         task.workflow? || review_trigger?(task)

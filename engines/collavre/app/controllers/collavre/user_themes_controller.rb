@@ -15,7 +15,7 @@ module Collavre
         return
       end
 
-      variables = AutoThemeGenerator.new.generate(description)
+      variables = AutoThemeGenerator.new(requester: Current.user).generate(description)
 
       if variables.empty?
         @error = t("collavre.themes.alerts.generation_failed")
