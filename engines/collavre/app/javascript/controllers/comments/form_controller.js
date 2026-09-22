@@ -1,3 +1,4 @@
+import { getCreativeLabelFromDom } from '../../lib/dnd/creative_label'
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData } from '../../lib/dnd/envelope'
 import { previewDrop } from '../../lib/dnd/preview'
@@ -850,13 +851,7 @@ export default class extends Controller {
   }
 
   getCreativeLabelFromDom(creativeId) {
-    const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-    if (!row) return null
-    const descriptionHtml = row.descriptionHtml || row.dataset?.descriptionHtml || ''
-    if (!descriptionHtml) return null
-    const tmp = document.createElement('div')
-    tmp.innerHTML = descriptionHtml
-    return (tmp.textContent || tmp.innerText || '').trim()
+    return getCreativeLabelFromDom(creativeId)
   }
 
   insertCreativeLink({ id, label }) {
