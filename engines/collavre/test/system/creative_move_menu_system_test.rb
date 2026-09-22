@@ -23,7 +23,7 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
       visit collavre.creatives_path(id: @source.id)
       open_move_menu
 
-      within "dialog[open] .modal-dialog-footer" do
+      within 'dialog[open][data-creative-move-target="dialog"] > .modal-dialog-footer' do
         assert_selector ".desktop-only", text: I18n.t("collavre.dnd.drag_drop_hint", locale: locale)
         assert_no_selector ".mobile-only"
         resize_window_to(390, 844)
