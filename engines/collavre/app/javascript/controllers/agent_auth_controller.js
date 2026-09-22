@@ -89,7 +89,7 @@ export default class extends Controller {
   renderSession(session) {
     this.liveSession = session
     const panel = document.createElement("div")
-    panel.className = "alert alert-info mt-2"
+    panel.className = "agent-connection-session"
     const title = document.createElement("strong")
     title.textContent = `${session.engine}: ${this.statusLabel(session.status)}`
     panel.append(title)
@@ -100,12 +100,12 @@ export default class extends Controller {
       link.target = "_blank"
       link.rel = "noopener"
       link.textContent = this.openUrlValue
-      link.className = "btn btn-sm btn-secondary ml-2"
+      link.className = "btn btn-sm btn-secondary"
       panel.append(link)
     }
     if (session.userCode) {
       const code = document.createElement("p")
-      code.className = "provision-user-code"
+      code.className = "agent-connection-user-code"
       code.textContent = session.userCode
       panel.append(code)
     }
@@ -125,7 +125,7 @@ export default class extends Controller {
   appendSecretForm(panel, session) {
     if (this.requiresBaseUrl(session.engine, session.flow)) {
       const baseUrlLabel = document.createElement("label")
-      baseUrlLabel.className = "mt-2"
+      baseUrlLabel.className = "agent-connection-field"
       baseUrlLabel.textContent = this.baseUrlLabelValue
       const baseUrlHelp = document.createElement("p")
       baseUrlHelp.className = "text-muted"
@@ -136,23 +136,23 @@ export default class extends Controller {
       baseUrl.placeholder = "https://openrouter.ai/api/v1"
       baseUrl.dataset.role = "base-url"
       baseUrl.required = true
-      panel.append(baseUrlLabel, baseUrlHelp, baseUrl)
+      baseUrlLabel.append(baseUrl)
+      panel.append(baseUrlLabel, baseUrlHelp)
     }
     const secret = document.createElement("input")
     secret.type = "password"
     secret.autocomplete = "off"
     secret.setAttribute("aria-label", this.submitValue)
-    secret.className = "stacked-form-control mt-2"
+    secret.className = "stacked-form-control"
     secret.dataset.role = "secret"
     const submit = this.actionButton(this.submitValue, "agent-connection#submit", session)
     panel.append(secret, submit)
-
   }
 
   actionButton(label, action, session) {
     const button = document.createElement("button")
     button.type = "button"
-    button.className = "btn btn-sm btn-secondary mt-2"
+    button.className = "btn btn-sm btn-secondary"
     button.textContent = label
     button.dataset.action = action
     button.dataset.agentConnectionEngineParam = session.engine

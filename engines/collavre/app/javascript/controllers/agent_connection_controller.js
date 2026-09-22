@@ -77,8 +77,7 @@ export default class extends AgentAuthController {
 
   renderEngines(engines) {
     const table = document.createElement("table")
-    table.className = "settings-table"
-    table.style.width = "100%"
+    table.className = "agent-connection-engines"
     const body = document.createElement("tbody")
 
     engines.forEach((engine) => {
@@ -100,7 +99,7 @@ export default class extends AgentAuthController {
       flows.forEach((flow) => {
         const button = document.createElement("button")
         button.type = "button"
-        button.className = "btn btn-sm btn-primary mr-1"
+        button.className = "btn btn-sm btn-primary"
         button.textContent = `${this.loginValue} (${flow})`
         button.dataset.engine = engine.engine
         button.dataset.flow = flow
@@ -156,10 +155,10 @@ export default class extends AgentAuthController {
     if (!this.hasManifestTarget) return
     const notice = document.createElement("div")
     if (data.last_error) {
-      notice.className = "alert alert-danger"
+      notice.className = "agent-connection-notice agent-connection-notice--error"
       notice.textContent = `${this.lastErrorValue}: ${data.last_error}`
     } else if (!data.manifest_url) {
-      notice.className = "alert alert-warning"
+      notice.className = "agent-connection-notice agent-connection-notice--warning"
       notice.textContent = this.manifestUnregisteredValue
     } else {
       this.manifestTarget.replaceChildren()
