@@ -62,21 +62,28 @@ module Collavre
         return if id.present? && !@recorded.add?(id)
 
         name = event["name"].presence || "tool"
+        succeeded = succeeded?(event)
         row = @recorder.record(
-          tool_name: name, succeeded: succeeded?(event),
+          tool_name: name, succeeded: succeeded,
           duration_ms: started && ((monotonic_now - started) * 1000).round, call_id: id.presence
         )
-        replace_mcp_row(name, input) if row
+        replace_mcp_row(name, input, succeeded) if row
       end
 
-      def replace_mcp_row(name, input)
+      # Rows of identical calls (same workspace, tool and arguments) carry the
+      # same attribution, so taking another run's row keeps the counts right.
+      # Preferring one with the same outcome keeps the failure counts right too.
+      def replace_mcp_row(name, input, succeeded)
         tool = MCP_TOOL_NAME.match(name)&.[](:tool)
         return unless tool && @agent_workspace_id && @since
 
         rows = ToolUsage.where(source: McpCall::SOURCE, agent_workspace_id: @agent_workspace_id, tool_name: tool)
                         .where(occurred_at: @since..).order(:occurred_at, :id)
         digest = ToolUsage.arguments_digest(input)
-        (digest ? rows.find_by(arguments_digest: digest) : rows.first)&.destroy
+        return rows.first&.destroy unless digest
+
+        rows = rows.where(arguments_digest: digest)
+        (rows.find_by(succeeded: succeeded) || rows.first)&.destroy
       end
 
       def succeeded?(event)

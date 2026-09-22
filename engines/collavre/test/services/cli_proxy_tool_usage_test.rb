@@ -202,10 +202,28 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal names, Collavre::ToolUsage.order(:id).pluck(:tool_name)
   end
 
-  def mcp_row(tool_name, workspace_id:, at:, arguments: nil)
+  def mcp_row(tool_name, workspace_id:, at:, arguments: nil, succeeded: true)
     Collavre::ToolUsage.create!(event_key: SecureRandom.uuid, execution_id: SecureRandom.uuid, source: "mcp",
       tool_name: tool_name, requester_kind: "unknown", occurred_at: at, agent_workspace_id: workspace_id,
-      arguments_digest: Collavre::ToolUsage.arguments_digest(arguments))
+      arguments_digest: Collavre::ToolUsage.arguments_digest(arguments), succeeded: succeeded)
+  end
+
+  test "among identical /mcp calls a proxy result replaces one with the same outcome" do
+    arguments = { id: 1 }
+    succeeded_row = mcp_row("creatives_update", workspace_id: 7, at: 30.seconds.ago, arguments: arguments)
+    failed_row = mcp_row("creatives_update", workspace_id: 7, at: 20.seconds.ago, arguments: arguments, succeeded: false)
+    recorder = Collavre::ToolUsage::CliProxyRecorder.new(context: {}, execution_id: "exec-b",
+      agent_workspace: Struct.new(:id).new(7), since: 1.minute.ago)
+
+    recorder.observe(event("b", "call", "mcp__workspace__creatives_update", input: { "id" => 1 }))
+    recorder.observe(event("b", "result", "mcp__workspace__creatives_update", ok: false))
+
+    assert_equal [ succeeded_row.id ], Collavre::ToolUsage.where(source: "mcp").pluck(:id)
+    refute Collavre::ToolUsage.exists?(failed_row.id)
+
+    recorder.observe(event("c", "call", "mcp__workspace__creatives_update", input: { "id" => 1 }))
+    recorder.observe(event("c", "result", "mcp__workspace__creatives_update", ok: false))
+    assert_empty Collavre::ToolUsage.where(source: "mcp"), "with no same-outcome row, the oldest identical row is replaced"
   end
 
   test "a proxy result replaces the /mcp row with its own arguments, not another run's" do
