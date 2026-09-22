@@ -69,8 +69,7 @@ import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
 import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
 import { CreativeLinkNode } from "../lib/lexical/creative_link_node"
-import { registerCreativeLinkDrop } from "../lib/lexical/creative_link_drop"
-import { registerCreativeLinkTrigger } from "../lib/lexical/creative_link_trigger"
+import CreativeLinksPlugin from "./plugins/creative_links_plugin"
 import { $createToolbarLinkNode, $findLinkNode } from "../lib/lexical/link_toolbar"
 
 const URL_MATCHERS = [
@@ -292,30 +291,6 @@ function LinkAttributesPlugin() {
       })
     })
   }, [editor])
-
-  return null
-}
-
-function CreativeLinkDropPlugin() {
-  const [editor] = useLexicalComposerContext()
-  useEffect(() => registerCreativeLinkDrop(editor), [editor])
-  return null
-}
-
-function CreativeLinkTriggerPlugin() {
-  const [editor] = useLexicalComposerContext()
-
-  useEffect(() => registerCreativeLinkTrigger(editor, ({ anchorRect, onSelect, onClose }) => {
-    const modal = document.getElementById("link-creative-modal")
-    const controller = modal && window.Stimulus?.getControllerForElementAndIdentifier(
-      modal,
-      "link-creative"
-    )
-    if (!controller) return false
-
-    controller.open(anchorRect, onSelect, onClose, { allowCreate: true })
-    return true
-  }), [editor])
 
   return null
 }
@@ -1027,8 +1002,7 @@ function EditorInner({
         <TrailingParagraphPlugin />
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
-        <CreativeLinkTriggerPlugin />
-        <CreativeLinkDropPlugin />
+        <CreativeLinksPlugin />
         <ReadyPlugin onReady={onReady} />
         <FileUploadPlugin
           onUploadStateChange={onUploadStateChange}
