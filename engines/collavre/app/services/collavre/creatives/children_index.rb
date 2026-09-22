@@ -60,6 +60,11 @@ module Creatives
       child_ids(creative).filter_map { |id| @rows_by_child_id[id] }
     end
 
+    # Visible IDs without materializing rows, also used for path-specific cycle checks.
+    def child_ids(creative)
+      @child_ids_by_creative.fetch(creative.id, [])
+    end
+
     private
 
     attr_reader :user, :show_archived, :allowed_creative_ids
@@ -76,10 +81,6 @@ module Creatives
 
         (acc[origin_id] ||= []) << child_id
       end
-    end
-
-    def child_ids(creative)
-      @child_ids_by_creative.fetch(creative.id, [])
     end
   end
 end

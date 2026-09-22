@@ -74,8 +74,7 @@ module Collavre
       preference = UserCreativePreference.new(user: users(:one), expanded_status: saved)
 
       ordered = preference.expanded_ids_root_first
-      assert_equal 101, ordered.size
-      assert_operator ordered.index(shell.id.to_s), :<, ordered.index(child.id.to_s)
+      assert_equal 100, ordered.size
       assert_includes ordered.first(100), shell.id.to_s
       assert_not_includes ordered.first(100), child.id.to_s
     end
@@ -93,7 +92,7 @@ module Collavre
       saved = [ cycle, nested, shell, root ].to_h { |creative| [ creative.id.to_s, true ] }
       preference = UserCreativePreference.new(user: users(:one), expanded_status: saved)
 
-      assert_equal [ root, shell, nested, cycle ].map { |creative| creative.id.to_s },
+      assert_equal [ root, shell, nested ].map { |creative| creative.id.to_s },
                    preference.expanded_ids_root_first
     end
 
@@ -131,6 +130,56 @@ module Collavre
 
       assert_equal [ root.id.to_s, live.id.to_s ], preference.expanded_ids_root_first.first(100)
       assert_equal status, preference.reload.expanded_status
+    end
+
+    test "restoration stops at 100 roots in workspace sequence order before indexing descendants" do
+      roots = Array.new(110) do
+        root = Creative.create!(user: users(:one), description: "Root")
+        child = Creative.create!(user: users(:one), parent: root, description: "Branch")
+        Creative.create!(user: users(:one), parent: child, description: "Leaf")
+        [ root, child ]
+      end
+      roots.last.first.update_column(:sequence, -1)
+      saved = roots.flatten.to_h { |creative| [ creative.id.to_s, true ] }
+      preference = UserCreativePreference.new(user: users(:one), expanded_status: saved)
+      indexed = []
+      index = Creatives::ChildrenIndex.new(user: users(:one), show_archived: false)
+      original_index = index.method(:index)
+      index.define_singleton_method(:index) do |creatives|
+        indexed.concat(creatives.map(&:id))
+        original_index.call(creatives)
+      end
+
+      ordered = Creatives::ChildrenIndex.stub(:new, index) { preference.expanded_ids_root_first }
+
+      expected = Creative.where(id: roots.map { |root, _| root.id }).roots.limit(100).pluck(:id)
+      assert_equal expected.map(&:to_s), ordered
+      assert_equal roots.last.first.id.to_s, ordered.first
+      assert_equal expected.sort, indexed.sort
+    end
+
+    test "cycle terminal shells leave room for a later live branch" do
+      root = Creative.create!(user: users(:one), description: "Root")
+      origin = Creative.create!(user: users(:two), description: "Origin")
+      CreativeShare.create!(creative: origin, user: users(:one), permission: :read)
+      shell = Creative.create!(user: users(:one), parent: root, origin: origin)
+      terminal = Creative.create!(user: users(:one), parent: origin, origin: origin)
+      siblings = Array.new(97) do
+        branch = Creative.create!(user: users(:one), parent: root, description: "Branch")
+        Creative.create!(user: users(:one), parent: branch, description: "Leaf")
+        branch
+      end
+      # This branch is visited after the cycle-terminal shell, at the same depth.
+      live = Creative.create!(user: users(:one), parent: siblings.last, description: "Live")
+      Creative.create!(user: users(:one), parent: live, description: "Leaf")
+      saved = [ root, shell, terminal, *siblings, live ].to_h { |creative| [ creative.id.to_s, true ] }
+      preference = UserCreativePreference.new(user: users(:one), expanded_status: saved)
+
+      ordered = preference.expanded_ids_root_first
+
+      assert_equal 100, ordered.size
+      assert_not_includes ordered, terminal.id.to_s
+      assert_includes ordered, live.id.to_s
     end
 
     test "missing expansion status is empty" do
