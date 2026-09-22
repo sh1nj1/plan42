@@ -28,6 +28,22 @@ module Collavre
 
       teardown { ActiveJob::Base.queue_adapter = @adapter }
 
+      test "workflow candidates ignore the topic pin but retain explicit arbitration limits" do
+        worker = users(:channel_bot)
+        worker.update!(llm_vendor: "google", llm_model: "gemini-1.5-flash")
+        CreativeShare.create!(creative: @creative, user: worker, shared_by: @owner, permission: :feedback)
+        CreativeSharesCache.find_or_create_by!(creative: @creative, user: worker, permission: :feedback)
+        @topic.set_primary_agent!(worker)
+        rule_for("true", "agent", [ @agent.id, worker.id ])
+
+        assert_equal [ @agent.id, worker.id ].sort, select.agents.map(&:id).sort
+        policy = OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "Topic", scope_id: @topic.id,
+          config: { "strategy" => "all", "max_responders" => 1 })
+        assert_equal 1, select.agents.size
+        policy.update!(config: { "strategy" => "primary_first", "primary_agent_id" => @agent.id })
+        assert_equal [ @agent.id ], select.agents.map(&:id)
+      end
+
       test "different sender-dependent rules cannot merge responders into the base execution" do
         base = rule_for("sender.is_ai == true", "agent", [ @owner.id ])
         rule_for("sender.is_ai == false", "agent", [ @agent.id ])

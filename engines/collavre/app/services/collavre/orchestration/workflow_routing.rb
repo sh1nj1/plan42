@@ -2,7 +2,7 @@
 
 module Collavre
   module Orchestration
-    # The optional workflow tier between topic assignment and agent defaults.
+    # The optional workflow tier before topic assignment and agent defaults.
     # An empty decision is exclusive; only a missing rule falls back.
     module WorkflowRouting
       attr_reader :workflow_rule, :workflow_snapshot
@@ -10,20 +10,27 @@ module Collavre
       private
 
       def match_with_workflow
+        # Session pins identify the registered client, not an optional responder.
+        return match_without_workflow if matched_topic&.session_id.present?
+
         case PolicyResolver.new(@context).workflow_routing_mode
         when "off"
-          match_by_expression
+          match_without_workflow
         when "on"
           result = match_by_workflow
           @workflow_rule = @matched_workflow_rule
           @workflow_snapshot = @workflow_resolver&.snapshot_for(@workflow_rule&.creative_id)
-          result || match_by_expression
+          result || match_without_workflow
         else
           decision = safe_match_by_workflow
-          fallback = match_by_expression
+          fallback = match_without_workflow
           log_workflow_shadow(decision, fallback)
           fallback
         end
+      end
+
+      def match_without_workflow
+        match_by_primary_agent || match_by_expression
       end
 
       def match_by_workflow

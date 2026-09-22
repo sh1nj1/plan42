@@ -17,7 +17,9 @@ module Collavre
         @agents = [] if candidates.empty?
         return self if candidates.empty?
 
-        @arbiter = Arbiter.new(@context, policy_resolver: @policy_resolver)
+        # Workflow responders outrank the topic pin, but retain configured floor control.
+        policy = workflow_rule ? PolicyResolver.new(@context, ignore_topic_primary: true) : @policy_resolver
+        @arbiter = Arbiter.new(@context, policy_resolver: policy)
         @agents = @arbiter.select(candidates, commit: false)
         self
       end
