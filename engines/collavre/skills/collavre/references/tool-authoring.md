@@ -92,6 +92,10 @@ Rules the CLI cannot check, so follow them yourself:
   Distinct names can map to one class (`foo1` and `foo_1` both scaffold
   `Tools::Foo1Service`), and approval refuses a class the tool did not define
   itself. Rename the class if approval reports it as already defined.
+- The service class is the first class in the source, and that class itself
+  has `extend ToolMeta` and `tool_name`. Approval registers the first class and
+  refuses it if the source did not declare it again, so a class body that only
+  reopens an earlier version cannot keep the old implementation running.
 
 - Every `tool_param` matches a keyword argument in `sig` and `def call`.
   Optional params use `T.nilable(...)` and a default of `nil`.

@@ -325,6 +325,27 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert Tools::MetaToolService.new.find_schema("authored_probe"), "a tool may reopen the class it defined"
   end
 
+  test "re-approval requires the source to redeclare the class it registers" do
+    approved = approvable_tool(scaffold)
+    approved.approve!
+    stale = "class Tools::AuthoredProbeService\nend\n\n" + scaffold.sub("AuthoredProbeService", "AuthoredProbeNextService")
+    host = approved.creative
+    host.content_type_input = "markdown"
+    host.markdown_source = "# probe\n\n```ruby\n#{stale}```\n"
+    host.save!
+    Collavre::McpService.new.update_from_creative(host)
+    tool = McpTool.find_by!(name: "authored_probe")
+    assert_not tool.active?, "editing the source resets approval"
+
+    assert_raises(RuntimeError, match: /Tools::AuthoredProbeService does not extend ToolMeta in the source/) { tool.approve! }
+    assert_not tool.reload.active?
+    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeNextService
+    assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
+  ensure
+    Tools.send(:remove_const, :AuthoredProbeNextService) if Tools.const_defined?(:AuthoredProbeNextService, false)
+  end
+
   private
 
   def approvable_tool(source, name = "authored_probe")

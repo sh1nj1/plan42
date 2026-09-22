@@ -85,6 +85,8 @@ module Collavre
     # Evaluating the source adds every class that extends ToolMeta to the
     # registry, even when the class body raises afterwards. Only the verified
     # service class may stay; everything else the source added is rolled back.
+    # A class this tool defined earlier is taken out of the registry first, so
+    # the source must extend ToolMeta on it again; its old metadata cannot pass.
     def self.register_verified_source(writer, source_code, expected_name, before_call:, after_call:)
       class_name = writer.send(:extract_class_name, source_code)
       return { error: "class_name is required for register" } if class_name.blank?
@@ -94,6 +96,7 @@ module Collavre
         return { error: "#{class_name} is already defined by another tool or the application; rename the class" }
       end
 
+      ToolMeta.registry.delete(class_name.safe_constantize) if defined_before
       registered_before = ToolMeta.registry.dup
       result = evaluate_and_verify(source_code, class_name, expected_name)
       CLASS_OWNERS[class_name] = expected_name if !defined_before && Object.const_defined?(class_name)
@@ -105,7 +108,8 @@ module Collavre
     end
     private_class_method :register_verified_source
 
-    # Returns the service class when it declares expected_name, else an error hash.
+    # Returns the service class when this evaluation extended it with ToolMeta
+    # and it declares expected_name, else an error hash.
     def self.evaluate_and_verify(source_code, class_name, expected_name)
       begin
         Object.class_eval(source_code)
@@ -115,8 +119,9 @@ module Collavre
 
       service_class = class_name.safe_constantize
       return { error: "#{class_name} is not defined by the source" } unless service_class.is_a?(Class)
+      return { error: "#{class_name} does not extend ToolMeta in the source" } unless ToolMeta.registry.include?(service_class)
 
-      declared = service_class.try(:tool_metadata)&.dig(:name)
+      declared = service_class.instance_variable_get(:@tool_name)
       return service_class if declared == expected_name
 
       ToolMeta.registry.delete(service_class)
