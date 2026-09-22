@@ -913,7 +913,7 @@ function setupEditorSession() {
           }
         });
       }
-      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree))]).then(function () {
+      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree)]).then(function () {
         return saveQueue.runExclusive(performSave);
       });
     }

@@ -1,3 +1,4 @@
+import { hasRetryAttachmentIds } from './queued_creative_row'
 import { rememberRecoveredPosition, withAcknowledgedParent } from './recovered_creative_position'
 
 // Unacknowledged entries survive reloads. Restore their latest draft before
@@ -24,11 +25,11 @@ export function recoverFailedCreative(queue, data, tree) {
 // Direct saves must acknowledge the recovered fields before changing type or
 // performing a dependent operation. Re-register restored pending requests too,
 // so their completion updates the row cache and clears its pending state.
-export async function retryFailedCreativeBeforeSave(queue, creativeId, retry) {
+export async function retryFailedCreativeBeforeSave(queue, creativeId, retry, tree) {
   const key = `creative_${creativeId}`
   const failed = queue.failedItems?.some(item => item.dedupeKey === key)
   const untracked = queue.queue?.some(item => item.dedupeKey === key && !item.onSuccess)
-  if (failed || untracked) await retry()
+  if (failed || untracked || hasRetryAttachmentIds(tree)) await retry()
   await queue.waitFor(key)
 }
 

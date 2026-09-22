@@ -41,6 +41,10 @@ export function queuedCreativeStatus(tree) {
   return tree?.dataset.saveState || ''
 }
 
+export function hasRetryAttachmentIds(tree) {
+  return Boolean(retryAttachmentIds.get(tree)?.length)
+}
+
 export function enqueueCreativeSnapshot(queue, request, completion, tree) {
   // The editor drains these IDs before enqueue; retain them until durable acceptance.
   const ids = [...new Set([...(retryAttachmentIds.get(tree) || []), ...(request.deletedAttachmentIds || [])])]

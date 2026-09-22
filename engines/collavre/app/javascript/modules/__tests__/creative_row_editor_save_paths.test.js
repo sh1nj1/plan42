@@ -1022,3 +1022,56 @@ test('retrying a close retains drained attachment cleanup IDs after enqueue fail
   await flushPromises()
   expect(enqueue.mock.calls[2][0].deletedAttachmentIds).toBeNull()
 })
+
+test.each(['success', 'enqueue failure', 'server failure'])(
+  'direct save retries retained attachment cleanup before changing type: %s', async outcome => {
+    jest.useFakeTimers()
+    const { tree } = appendMarkdownRow('42', 'before', 'rich')
+    openRow(tree)
+    editorOptions.onChange({ html: '<p>attachment removed</p>', markdown: 'attachment removed' })
+    getDeletedAttachments.mockReturnValueOnce([71])
+    enqueue.mockImplementationOnce(() => { throw new Error('quota') })
+    document.getElementById('inline-close').click()
+    await flushPromises()
+    expect(enqueue.mock.calls[0][0].deletedAttachmentIds).toEqual([71])
+    expect(queue.queue).toEqual([])
+    expect(queue.failedItems).toEqual([])
+
+    let acknowledge
+    if (outcome === 'enqueue failure') enqueue.mockImplementationOnce(() => { throw new Error('quota again') })
+    waitFor.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      acknowledge = () => outcome === 'server failure' ? reject(new Error('Save denied')) : resolve()
+    }))
+    selectType('Workflow')
+    if (outcome !== 'success') document.getElementById('inline-close').click()
+    await jest.advanceTimersByTimeAsync(outcome === 'success' ? 5000 : 0)
+    expect(enqueue).toHaveBeenCalledTimes(2)
+    const retry = enqueue.mock.calls[1][0]
+    expect(retry.deletedAttachmentIds).toEqual([71])
+    expect(retry.body['creative[markdown_source]']).toBe('attachment removed')
+    expect(save).not.toHaveBeenCalled()
+    if (outcome === 'enqueue failure') {
+      expect(waitFor).not.toHaveBeenCalled()
+      document.getElementById('inline-close').click()
+      await flushPromises()
+      expect(enqueue.mock.calls[2][0].deletedAttachmentIds).toEqual([71])
+      return
+    }
+    if (outcome === 'success') retry.onSuccess({ markdown_source: 'attachment removed' })
+    acknowledge()
+    await jest.advanceTimersByTimeAsync(0)
+    if (outcome === 'server failure') {
+      expect(save).not.toHaveBeenCalled()
+      return
+    }
+    expect(save).toHaveBeenCalledTimes(1)
+    document.getElementById('inline-close').click()
+    await flushPromises()
+    expect(tree.dataset.saveState).toBeUndefined()
+    openRow(tree)
+    editorOptions.onChange({ html: '<p>next edit</p>', markdown: 'next edit' })
+    document.getElementById('inline-close').click()
+    await flushPromises()
+    expect(enqueue.mock.calls.at(-1)[0].deletedAttachmentIds).toBeNull()
+  }
+)
