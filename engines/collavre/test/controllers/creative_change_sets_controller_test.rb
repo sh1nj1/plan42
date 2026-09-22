@@ -39,7 +39,7 @@ module Collavre
 
       assert_response :success
       assert_equal "no-store", response.headers["Cache-Control"]
-      assert_select "html", count: 0
+      refute_match(/<html[\s>]/i, response.body)
       assert_select ".creative-history-split", count: 1
       assert_select ".creative-history-revert", count: 1
     end
