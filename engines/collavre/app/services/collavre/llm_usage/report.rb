@@ -31,6 +31,11 @@ module Collavre
         zone.local(from.year, from.month, from.day)...zone.local(to.year, to.month, to.day).advance(days: 1)
       end
 
+      def totals
+        values = relation.pick(Arel.sql("COUNT(*)"), Arel.sql("COUNT(DISTINCT execution_id)"), *token_aggregates)
+        row([ nil, nil, *values ]).except(:period, :group)
+      end
+
       private
 
       def date(key, fallback)

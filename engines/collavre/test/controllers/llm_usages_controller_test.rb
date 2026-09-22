@@ -63,4 +63,48 @@ class LlmUsagesControllerTest < ActionDispatch::IntegrationTest
     get llm_usages_path, params: { locale: "en", requester_id: user.id }
     assert_select ".usage-report__tools p", text: I18n.t("collavre.llm_usages.tools.empty", locale: :en)
   end
+
+  test "footer totals respect visibility dates and filters without duplicating executions" do
+    user = users(:two)
+    sign_in_as(user, password: "password")
+    attributes = { execution_id: "shared", owner_id: user.id, requester_kind: "unknown",
+                   vendor: "openai", model: "included", occurred_at: Time.zone.parse("2026-09-15 12:00:00") }
+    Collavre::LlmUsage.create!(**attributes, event_key: "total-first", input_tokens: 1000,
+      output_tokens: 0, cache_read_tokens: 10)
+    Collavre::LlmUsage.create!(**attributes, event_key: "total-second", input_tokens: 2000,
+      output_tokens: 0, occurred_at: attributes[:occurred_at] + 1.day)
+    Collavre::LlmUsage.create!(**attributes, event_key: "total-hidden", owner_id: users(:one).id, input_tokens: 9000)
+    Collavre::LlmUsage.create!(**attributes, event_key: "total-filtered", model: "excluded", input_tokens: 9000)
+    Collavre::LlmUsage.create!(**attributes, event_key: "total-old", occurred_at: attributes[:occurred_at] - 1.year, input_tokens: 9000)
+
+    %w[en ko].each do |locale|
+      user.update!(locale: locale)
+      get llm_usages_path, params: { locale: locale, from: "2026-09-01", to: "2026-09-30", model: "included" }
+      assert_response :success
+      assert_select "tbody tr", 2
+      assert_select "table > tfoot:last-child tr", 1
+      assert_select "tfoot th[scope=row][colspan='2']", I18n.t("collavre.llm_usages.total", locale: locale)
+      assert_select "tfoot td" do |cells|
+        assert_equal [ "2", "1", "3,000", "0" ], cells.first(4).map { |cell| cell.text.strip }
+        assert_equal "10", cells[4].children.first.text.strip
+        assert_includes cells[5].text, I18n.t("collavre.llm_usages.unknown", locale: locale)
+      end
+      assert_select "tfoot td:nth-child(6) small", I18n.t("collavre.llm_usages.missing", count: 1, locale: locale)
+      assert_select "tfoot td:nth-child(7) small", I18n.t("collavre.llm_usages.missing", count: 2, locale: locale)
+    end
+  end
+
+  test "empty reports keep the empty state without a footer" do
+    sign_in_as(users(:two), password: "password")
+    get llm_usages_path
+    assert_response :success
+    assert_select "tfoot", 0
+    totals = Collavre::LlmUsage::Report.new(user: users(:two)).totals
+    assert_equal 0, totals[:records]
+    assert_equal 0, totals[:executions]
+    Collavre::LlmUsage::TOKEN_FIELDS.each do |field|
+      assert_nil totals[field]
+      assert_equal 0, totals["#{field}_missing".to_sym]
+    end
+  end
 end
