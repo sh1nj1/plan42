@@ -34,6 +34,21 @@ class CreativeReactionFilterTest < ActionDispatch::IntegrationTest
     assert_empty JSON.parse(response.body).fetch("creatives")
   end
 
+  test "matching parent and child render once each in flat reaction results" do
+    comment = Comment.create!(creative: @root, user: @user, content: "Marked parent")
+    Collavre::CommentReaction.create!(comment: comment, user: @user, emoji: "👍")
+
+    get creatives_path(format: :json, reaction_emoji: "👍")
+
+    assert_response :success
+    nodes = JSON.parse(response.body).fetch("creatives")
+    assert_equal [ @root.id, @matched.id ].sort, nodes.pluck("id").sort
+    nodes.each do |node|
+      assert_equal false, node.fetch("has_children")
+      assert_nil node.fetch("children_container")
+    end
+  end
+
   test "authors can filter by reactions on their private comments" do
     @matched.comments.update_all(private: true)
 
@@ -138,6 +153,9 @@ class CreativeReactionFilterTest < ActionDispatch::IntegrationTest
 
   test "tree mode retains matching creative ancestors" do
     get creatives_path(format: :json, reaction_emoji: "👍", search_mode: "tree")
-    assert_equal [ @root.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
+    nodes = JSON.parse(response.body).fetch("creatives")
+    assert_equal [ @root.id ], nodes.pluck("id")
+    assert_equal true, nodes.first.fetch("has_children")
+    assert_equal [ @matched.id ], nodes.first.fetch("children_container").fetch("nodes").pluck("id")
   end
 end
