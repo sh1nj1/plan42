@@ -103,10 +103,13 @@ class QuotaRecoveryTest < ActiveSupport::TestCase
 
   test "success clears old backoff but preserves sibling newer failure" do
     @agent.update!(quota_retry_count: 2, quota_blocked_until: 1.minute.ago)
-    Collavre::Quota::Recovery.succeeded!(@agent)
+    @task.update!(trigger_event_payload: { "execution_generation" => "probe" })
+    @agent.update!(quota_probe_task_id: @task.id, quota_probe_generation: "probe")
+    Collavre::Quota::Recovery.succeeded!(@agent, task: @task)
     assert_equal 0, @agent.reload.quota_retry_count
     @agent.update!(quota_retry_count: 2, quota_blocked_until: 1.hour.from_now)
-    Collavre::Quota::Recovery.succeeded!(@agent)
+    @agent.update!(quota_probe_task_id: @task.id, quota_probe_generation: "probe")
+    Collavre::Quota::Recovery.succeeded!(@agent, task: @task)
     assert_equal 2, @agent.reload.quota_retry_count
   end
 

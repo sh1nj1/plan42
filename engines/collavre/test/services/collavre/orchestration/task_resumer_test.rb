@@ -510,6 +510,8 @@ module Collavre
         end
         created_namespace = !Collavre.const_defined?(:Quota, false)
         Collavre.const_set(:Quota, Module.new) if created_namespace
+        original_probe = Collavre::Quota::Probe if Collavre::Quota.const_defined?(:Probe, false)
+        Collavre::Quota.send(:remove_const, :Probe) if original_probe
         Collavre::Quota.const_set(:Probe, probe)
 
         probe.open = false
@@ -519,6 +521,7 @@ module Collavre
         assert_equal [ [ @agent, task ], [ @agent, task ] ], probe.calls
       ensure
         Collavre::Quota.send(:remove_const, :Probe) if defined?(Collavre::Quota::Probe)
+        Collavre::Quota.const_set(:Probe, original_probe) if original_probe
         Collavre.send(:remove_const, :Quota) if created_namespace
       end
 

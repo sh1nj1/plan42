@@ -10,7 +10,7 @@ module Collavre
         creative = Creative.create!(description: "Replies", user: user)
         topic = creative.topics.create!(name: "Delegated", user: user)
         events = []
-        task = Object.new
+        task = Task.new(id: 123, agent: user, status: "delegated")
         claim_service = Object.new
         claim_service.define_singleton_method(:link_reply) { |**| events << :link }
         claim_service.define_singleton_method(:finalize) { |**| events << :finalize }

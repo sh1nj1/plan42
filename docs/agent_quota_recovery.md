@@ -21,16 +21,26 @@ Valid delta seconds and HTTP-date headers schedule the original task for the
 reset plus 5–30 seconds of positive jitter. Past, invalid, absent or more than
 14-day resets use bounded 30/60/120-minute backoff. A replay of the original task
 is the probe; the health endpoint does not prove model quota is available.
-Three automatic attempts are allowed per agent until a successful turn clears
-the counter. Further quota failures block automatic retries, including new
+Three automatic attempts are allowed per agent until the elected probe succeeds
+and clears the counter. Further quota failures block automatic retries, including new
 scheduler requests. Operators should resolve the subscription/account issue
-before clearing `quota_retry_exhausted`, `quota_retry_count` and
-`quota_blocked_until` on the agent.
+before clearing `quota_retry_exhausted`, `quota_retry_count`,
+`quota_blocked_until`, `quota_probe_task_id` and `quota_probe_generation` on the agent.
 
 The agent block and task suspension commit together. TaskResumer owns the
 durable scheduled job, locks, task retry limit and recurring reconciliation.
 New requests received during a block become suspended task rows. The execution
 entry point checks again to cover jobs enqueued before the block.
+
+A durable `quota_probe_task_id` elects one task per agent. Passing the reset
+clock alone does not open the backlog: other topics stay suspended and new
+scheduler requests remain parked. The elected execution records its generation
+under the agent lock immediately before handoff. Only its successful provider
+completion or Channel reply clears the block and queues an agent-wide resume.
+A failed probe renews the bounded backoff; sibling failures do not spend another
+retry. If a probe is cancelled, failed, escalated or deleted, the oldest remaining
+active quota task becomes the candidate on the next sweep. Election and fencing
+survive worker restarts; old generations cannot release a newer quota window.
 
 ## Claude Channel
 
@@ -65,6 +75,7 @@ one outstanding dispatched turn per working directory.
 Before attributing a failure, the hook checks each recorded execution through
 authenticated `GET /api/v1/agent/tasks/:id/quota_status`. Terminal tasks and
 retired generations are excluded; failed lookups keep attribution ambiguous.
+Only successfully forwarded Channel notifications enter quota tracking.
 Dispatch and rejected replies also prune confirmed stale entries from the
 process state. A transient network error does not discard a live turn, and a
 late reply cannot delete the state of a newer generation.

@@ -21,7 +21,9 @@ module Collavre
 
       def execute_llm_conversation
         super.tap do
-          Recovery.succeeded!(@agent) if @client.respond_to?(:last_handoff_failed?) && !@client.last_handoff_failed?
+          if @client.respond_to?(:last_handoff_failed?) && !@client.last_handoff_failed?
+            Recovery.succeeded!(@agent, task: @task, execution_generation: @quota_execution_generation)
+          end
         end
       end
     end
