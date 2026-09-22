@@ -1,4 +1,4 @@
-import { installResendAction } from './resend_action'
+import { installSelectionActions } from './resend_action'
 import { approvalRequestOptions } from './approval_request_options'
 import { replaceCommentsPreservingLogins } from "./inline_login_preservation"
 import { createDragDropRegistry } from '../../lib/dnd/registry'
@@ -776,7 +776,7 @@ export default class extends Controller {
       </div>
     `
 
-    installResendAction(this, bar)
+    installSelectionActions(this, bar)
 
     // Set indeterminate state if partially selected
     const selectAllCheckbox = bar.querySelector('.selection-action-bar-select-all-checkbox')
@@ -793,12 +793,7 @@ export default class extends Controller {
       }
     })
 
-    bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); this.deleteSelectedComments() })
-    bar.querySelector('.selection-action-merge').addEventListener('click', (e) => { e.stopPropagation(); this.mergeSelectedComments() })
-    bar.querySelector('.selection-action-move').addEventListener('click', (e) => this.openMoveModal(e))
-    bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
-    bar.querySelector('.selection-action-branch').addEventListener('click', (e) => { e.stopPropagation(); this.branchSelectedComments() })
-    bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
+
 
     const typingRow = this.element.querySelector('#typing-indicator-row') || this.element.querySelector('#typing-indicator')
     if (typingRow) {

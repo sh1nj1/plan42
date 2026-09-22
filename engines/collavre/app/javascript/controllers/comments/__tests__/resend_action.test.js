@@ -3,7 +3,7 @@ import { jest } from '@jest/globals'
 
 const alertDialog = jest.fn()
 jest.unstable_mockModule('../../../lib/utils/dialog', () => ({ alertDialog }))
-const { installResendAction, resendSelectedMessage } = await import('../resend_action')
+const { installResendAction, installSelectionActions, resendSelectedMessage } = await import('../resend_action')
 
 let controller, bar
 beforeEach(() => {
@@ -94,4 +94,28 @@ test('button click sends the selected message', async () => {
   button().click()
   await Promise.resolve()
   expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+
+test('keeps existing selection actions wired alongside resend', () => {
+  const actions = { delete: 'deleteSelectedComments', merge: 'mergeSelectedComments', move: 'openMoveModal', topic: 'openTopicSearchPopup', branch: 'branchSelectedComments' }
+  for (const [name, method] of Object.entries(actions)) {
+    controller[method] = jest.fn()
+    const action = document.createElement('button')
+    action.className = `selection-action-${name}`
+    bar.append(action)
+  }
+  installSelectionActions(controller, bar)
+  for (const [name, method] of Object.entries(actions)) {
+    bar.querySelector(`.selection-action-${name}`).click()
+    expect(controller[method]).toHaveBeenCalledTimes(1)
+  }
+  bar.querySelector('.selection-action-bar-close').click()
+  expect(controller.clearSelection).toHaveBeenCalledTimes(1)
+})
+
+test('uses localized fallback when a network error has no message', async () => {
+  fetch.mockRejectedValue(new Error())
+  await resendSelectedMessage(controller, button())
+  expect(alertDialog).toHaveBeenCalledWith('실패')
 })

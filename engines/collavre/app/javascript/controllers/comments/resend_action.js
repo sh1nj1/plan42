@@ -49,3 +49,13 @@ export async function resendSelectedMessage(controller, button) {
     controller.updateSelectionActionBar()
   }
 }
+
+export function installSelectionActions(controller, bar) {
+  installResendAction(controller, bar)
+    bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); controller.deleteSelectedComments() })
+    bar.querySelector('.selection-action-merge').addEventListener('click', (e) => { e.stopPropagation(); controller.mergeSelectedComments() })
+    bar.querySelector('.selection-action-move').addEventListener('click', (e) => controller.openMoveModal(e))
+    bar.querySelector('.selection-action-topic').addEventListener('click', (e) => controller.openTopicSearchPopup(e))
+    bar.querySelector('.selection-action-branch').addEventListener('click', (e) => { e.stopPropagation(); controller.branchSelectedComments() })
+    bar.querySelector('.selection-action-bar-close').addEventListener('click', () => controller.clearSelection())
+}
