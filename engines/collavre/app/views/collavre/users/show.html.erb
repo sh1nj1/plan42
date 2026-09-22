@@ -122,6 +122,7 @@
 
       <div class="profile-actions">
         <%= link_to t("collavre.llm_usages.title"), collavre.llm_usages_path %>
+        <br>
         <%= link_to t('collavre.users.change_password'), collavre.edit_password_user_path(@user) %>
         <br>
         <%= link_to t('collavre.users.webauthn.manage'), collavre.passkeys_user_path(@user) %>
