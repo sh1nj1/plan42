@@ -24,6 +24,65 @@ class InlineAgentLoginTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  test "connection page and chat login fit mobile and use theme tokens" do
+    proxy = Object.new
+    proxy.define_singleton_method(:engines) do
+      { "data" => [ { "engine" => "claude", "flows" => [ "paste-code", "api-key" ] } ] }
+    end
+    proxy.define_singleton_method(:engine_status) { |_| { "state" => "unknown", "detail" => "LongStatus" * 30 } }
+    proxy.define_singleton_method(:provision_status) { { "items" => [], "last_error" => "LongError" * 30 } }
+    proxy.define_singleton_method(:create_auth_session) do |engine, **options|
+      { "engine" => engine, "flow" => options[:flow], "sessionId" => "layout-session", "status" => "pending",
+        "verificationUrl" => "https://claude.com/login" }
+    end
+    proxy.define_singleton_method(:auth_session) do |engine, id|
+      { "engine" => engine, "flow" => "paste-code", "sessionId" => id, "status" => "pending",
+        "verificationUrl" => "https://claude.com/login" }
+    end
+    @agent.update!(name: "LongAgent" * 20)
+
+    Collavre::CliProxy::Client.stub(:new, proxy) do
+      [ collavre.agent_connection_user_path(@agent), collavre.creative_path(@creative, open_comments: true) ].each do |path|
+        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height: 812, deviceScaleFactor: 1, mobile: true)
+        visit path.split("?").first
+        if path.include?("open_comments")
+          first("[name='show-comments-btn'][data-creative-id='#{@creative.id}']").click
+          find("#inline_agent_login_#{@reply.id}", visible: :all, wait: 10).scroll_to(:center)
+        end
+        assert_selector ".agent-connection-ui", wait: 10
+        within(".agent-connection-ui") do
+          click_button "Log in (paste-code)"
+          assert_selector ".agent-connection-session input[type='password']"
+          assert_link "Open verification page", href: "https://claude.com/login"
+        end
+        %w[light dark].each do |theme|
+          page.execute_script("document.body.classList.remove('light-mode', 'dark-mode'); document.body.classList.add(arguments[0])", "#{theme}-mode")
+          find(".agent-connection-session").scroll_to(:center)
+          page.save_screenshot(Rails.root.join("tmp/screenshots/agent-connection-#{path.include?("open_comments") ? 'inline' : 'page'}-#{theme}.png"))
+          assert page.evaluate_script("document.documentElement.scrollWidth <= window.innerWidth")
+          assert page.evaluate_script(<<~JS)
+            Array.from(document.querySelectorAll('.agent-connection-ui, .agent-connection-session, .agent-connection-engines')).every(
+              element => element.scrollWidth <= element.clientWidth
+            )
+          JS
+          assert page.evaluate_script(<<~JS)
+            (() => {
+              const input = document.querySelector('.agent-connection-session input');
+              const probe = document.createElement('span');
+              probe.style.backgroundColor = 'var(--surface-input)';
+              input.parentElement.append(probe);
+              const matches = getComputedStyle(input).backgroundColor === getComputedStyle(probe).backgroundColor;
+              probe.remove();
+              return matches;
+            })()
+          JS
+        end
+      end
+    end
+  ensure
+    page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
+  end
+
   test "chat card does not offer flows requiring a custom provider URL" do
     proxy = Object.new
     proxy.define_singleton_method(:engines) do
