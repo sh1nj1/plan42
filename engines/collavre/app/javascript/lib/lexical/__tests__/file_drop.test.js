@@ -166,6 +166,33 @@ describe("inline editor file drops", () => {
     editor.getEditorState().read(() => expect($getRoot().getLastChild().getTextContent()).toBe("other01"))
   })
 
+  it.each([[1, 4], [4, 1]])("preserves fallback selected text (%i to %i) when upload fails", async (start, end) => {
+    await prepareDocument()
+    editor.update(() => {
+      $getRoot().getFirstChild().getFirstChild().select(start, end)
+    }, { discrete: true })
+    drop([new File(["a"], "a.txt")])
+    await Promise.resolve()
+    editor.getEditorState().read(() => expect($getRoot().getTextContent()).toBe("target\n\nother"))
+    const committed = jest.fn()
+    upload.mock.calls[0][1](() => {}, committed)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(committed).toHaveBeenCalledTimes(1)
+    editor.getEditorState().read(() => expect($getRoot().getTextContent()).toBe("target\n\nother"))
+    expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain("upload-anchor")
+  })
+
+  it("inserts at the fallback selection focus without replacing selected text", async () => {
+    await prepareDocument()
+    editor.update(() => {
+      $getRoot().getFirstChild().getFirstChild().select(1, 4)
+    }, { discrete: true })
+    drop([new File(["a"], "a.txt"), new File(["b"], "b.txt")])
+    await finishUploads()
+    editor.getEditorState().read(() => expect($getRoot().getTextContent()).toBe("targ01et\n\nother"))
+  })
+
   it("cancels insertion when the captured target was deleted", async () => {
     await prepareDocument()
     drop([new File(["a"], "a.txt"), new File(["b"], "b.txt")])

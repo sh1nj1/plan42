@@ -27,7 +27,12 @@ function dropSelection(editor, event) {
 }
 
 function createUploadAnchor(selection) {
-  if (selection) $setSelection(selection)
+  if (selection) {
+    // Bookkeeping must never replace selected content, even if uploads fail.
+    const { key, offset, type } = selection.focus
+    selection.anchor.set(key, offset, type)
+    $setSelection(selection)
+  }
   else $getRoot().selectEnd()
   $addUpdateTag(HISTORY_MERGE_TAG)
   const anchor = new UploadAnchorNode()
