@@ -31,6 +31,19 @@ module Collavre
         assert_response :forbidden
       end
 
+      test "disables inbox System resend in rendered messages and rejects direct requests" do
+        inbox = Creative.inbox_for(@user)
+        topic = inbox.system_topic(fallback_user: @user)
+        reply = inbox.comments.create!(user: @user, topic: topic, content: "Inbox reply")
+        get creative_comments_path(inbox), params: { topic_id: topic.id }
+        assert_response :success
+        assert_select "#comment_#{reply.id}[data-inbox-system='true']"
+
+        assert_no_difference("Comment.count") { post creative_comment_resend_path(inbox, reply) }
+        assert_response :forbidden
+        assert Comment.exists?(reply.id)
+      end
+
       test "cannot address a message through another creative" do
         other = Creative.create!(user: @user, description: "Other")
         post creative_comment_resend_path(other, @comment)

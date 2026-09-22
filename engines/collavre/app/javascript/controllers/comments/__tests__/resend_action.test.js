@@ -32,13 +32,14 @@ test('enables a single own message and uses localized text', () => {
   expect(action.title).toBe('설명')
 })
 
-test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy'])('disables resend for %s', reason => {
+test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy', 'inbox-system'])('disables resend for %s', reason => {
   if (reason === 'multiple') controller.selection.add('11')
   if (reason === 'none') controller.selection.clear()
   if (reason === 'other') document.getElementById('comment_10').dataset.userId = '2'
   if (reason === 'ai') document.getElementById('comment_10').dataset.aiUser = 'true'
   if (reason === 'missing') document.getElementById('comment_10').remove()
   if (reason === 'anonymous') delete document.body.dataset.currentUserId
+  if (reason === 'inbox-system') document.getElementById('comment_10').dataset.inboxSystem = 'true'
   if (reason === 'busy') controller.resendingComment = true
   expect(button().disabled).toBe(true)
 })

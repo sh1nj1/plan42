@@ -144,12 +144,33 @@ module Collavre
       end
     end
 
-    test "forwards the replacement through the existing inbox reply flow" do
-      posted = []
-      InboxReplyService.stub :call, ->(comment) { posted << comment.id } do
-        replacement = resend
-        assert_equal [ replacement.id ], posted
+    test "rejects inbox System replies without deleting any messages or cross-posting" do
+      @creative = Creative.inbox_for(@user)
+      @topic = @creative.system_topic(fallback_user: @user)
+      destination = Creative.create!(user: @user, description: "Destination")
+      original = destination.comments.create!(user: users(:two), content: "Original request")
+      create_message(nil, "First alarm", skip_default_user: true, quoted_comment: original)
+      @comment = create_message(@user, "My reply")
+      InboxReplyService.call(@comment)
+      newer = destination.comments.create!(user: users(:two), content: "Different request")
+      create_message(nil, "Later alarm", skip_default_user: true, quoted_comment: newer)
+      ai_reply = create_message(users(:ai_bot), "Keep reply")
+
+      assert_no_difference("Comment.count") do
+        assert_raises(CommentResendService::NotAllowed) { resend }
       end
+      assert Comment.exists?(@comment.id)
+      assert Comment.exists?(ai_reply.id)
+      assert_equal [ original.id ], destination.comments.where(content: "My reply").pluck(:quoted_comment_id)
+    end
+
+    test "allows ordinary inbox topics and System topics outside the inbox" do
+      @topic.update!(name: Creative::SYSTEM_TOPIC_NAME)
+      assert_equal @topic.id, resend.topic_id
+      @creative = Creative.inbox_for(@user)
+      @topic = @creative.main_topic
+      @comment = create_message(@user, "Ordinary inbox chat")
+      assert_equal @topic.id, resend.topic_id
     end
 
     test "outer rollback preserves messages and never aborts a session" do

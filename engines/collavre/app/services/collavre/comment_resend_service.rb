@@ -23,7 +23,6 @@ module Collavre
 
       ActiveRecord.after_all_transactions_commit do
         @cancelled_tasks.each { |task, status| release_task(task, status) }
-        InboxReplyService.call(@replacement)
       end
       @replacement
     end
@@ -41,6 +40,7 @@ module Collavre
     def validate_topic!
       topic = @comment.topic&.reload
       raise NotAllowed if topic&.archived? || topic&.history?
+      raise NotAllowed if @creative.inbox? && topic&.name == Creative::SYSTEM_TOPIC_NAME
       raise NotAllowed if @creative.github_markdown? && topic&.name == Creative::CONTENT_TOPIC_NAME
     end
 
