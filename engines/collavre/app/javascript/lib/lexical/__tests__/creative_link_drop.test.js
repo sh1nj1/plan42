@@ -200,3 +200,30 @@ test('inserts plain link text into an empty code block', () => {
   expect(root.querySelector('a')).toBeNull()
   expect(root.textContent).toBe('[34](/creatives/34) ')
 })
+
+
+test('uses sidebar labels for creatives absent from the center pane', () => {
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="creative-workspace-tree-row" data-creative-id="34">
+      <button>Toggle</button>
+      <a class="creative-workspace-tree-link"> 사이드바 &amp; title </a>
+      <span>Progress</span>
+    </div>`)
+  drag('drop', { ids: ['34'] })
+  expect(root.querySelector('a').textContent).toBe('사이드바 & title')
+  expect(lexicalToMarkdown(editor)).toBe('Before [사이드바 & title](/creatives/34) after')
+})
+
+test('prefers the center description and falls back to sidebar text when unavailable', () => {
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="creative-workspace-tree-row" data-creative-id="12">
+      <a class="creative-workspace-tree-link">Sidebar title</a>
+    </div>`)
+  expect(getCreativeLabelFromDom('12')).toBe('Target & title')
+  document.querySelector('creative-tree-row').descriptionHtml = ''
+  expect(getCreativeLabelFromDom('12')).toBe('Sidebar title')
+  document.querySelector('.creative-workspace-tree-link').textContent = '  '
+  expect(getCreativeLabelFromDom('12')).toBe('')
+  document.querySelector('.creative-workspace-tree-link').remove()
+  expect(getCreativeLabelFromDom('12')).toBeNull()
+})
