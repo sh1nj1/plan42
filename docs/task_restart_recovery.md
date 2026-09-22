@@ -36,7 +36,8 @@ The implementation targets the installed Solid Queue 1.7.0 behavior:
   async worker thread exit produces `ThreadTerminatedError`.
 - The application records the Active Job ID in the task's
   `trigger_event_payload.execution_job_id` when execution starts.
-- `RecoverInterruptedTasksJob` only recovers a `running` task with
+- `RecoverInterruptedTasksJob` recovers `running` tasks and explicitly
+  tracked pre-broadcast `delegated` channel tasks with
   a matching failed `Collavre::AiAgentJob` and one of those process
   failures. A surviving claim, missing owner metadata, missing job, ready job,
   or ordinary application error does not authorize recovery.
@@ -61,9 +62,15 @@ recover on the next sweep. Unobserved machine loss waits for Solid Queue's
 heartbeat failure detection; stale heartbeat alone is not treated as an
 application authorization to steal work. Channel turns still in `running`
 are recovered when their recorded worker has a confirmed process failure;
-they have not reached delegation or broadcast. Once `delegated`, channel
-turns remain the responsibility of the presence policy. The recovery row
-lock rechecks the status so concurrent delegation prevents redispatch.
+they have not reached delegation or broadcast. The delegation transition
+atomically records `channel_handoff` as `pending` for the current execution
+generation. The adapter persists `started` before its first broadcast and
+`completed` after both broadcasts. A delegated turn is recoverable only when
+its failed owner and current generation match a `pending` handoff; recovery
+rechecks this under the task lock. Legacy delegated turns and `started` or
+`completed` handoffs remain the responsibility of the presence policy.
+A crash after `started` has uncertain delivery, even if the first broadcast
+has not returned, so restart recovery never automatically replays it.
 An unsupervised worker waits for its AI pool to finish; deployments should use
 the configured supervisor to retain a bounded graceful shutdown.
 Tasks started before execution ownership was recorded retain the existing

@@ -16,16 +16,23 @@ module Collavre
     def perform
       return unless defined?(SolidQueue::Job)
 
-      Task.where(status: "running").find_each do |task|
+      Task.where(status: %w[running delegated]).find_each do |task|
         recover(task)
       end
     end
 
     private
 
+    def recoverable_execution?(task)
+      return true if task.running?
+      return false unless task.delegated? && task.agent.claude_channel_agent?
+
+      generation = Orchestration::ExecutionFence.generation(task)
+      handoff = task.trigger_event_payload[Orchestration::ExecutionFence::HANDOFF_KEY]
+      generation.present? && handoff == { "generation" => generation, "state" => Orchestration::ExecutionFence::HANDOFF_PENDING }
+    end
+
     def recover(task)
-      # Running channel work has not been delegated yet and still belongs to
-      # its worker. Delegated turns are excluded by the scan and row-lock check.
       execution_job_id = task.trigger_event_payload&.fetch("execution_job_id", nil)
       return if execution_job_id.blank?
 
@@ -40,7 +47,7 @@ module Collavre
         next if SolidQueue::ClaimedExecution.exists?(job_id: job.id)
 
         task.with_lock do
-          next unless task.running? && task.trigger_event_payload["execution_job_id"] == execution_job_id
+          next unless recoverable_execution?(task) && task.trigger_event_payload["execution_job_id"] == execution_job_id
           Orchestration::TaskResumer.suspend!(task, reason: "server_restart").tap do |result|
             # Retry takes this same failure lock. Retire the original execution
             # before releasing the task lock or dispatching a replacement.

@@ -207,6 +207,50 @@ module Collavre
       assert_equal @process.id, @claim.reload.process_id
     end
 
+    test "online delegated channel work recovers once only before broadcast starts" do
+      prepare_channel_handoff("pending")
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      assert_no_difference "Task.count" do
+        assert_enqueued_jobs 1, only: AiAgentJob do
+          2.times { RecoverInterruptedTasksJob.perform_now }
+        end
+      end
+      assert_equal "pending", @task.reload.status
+      assert_equal 1, @task.resume_count
+      assert_not SolidQueue::Job.exists?(@job.id)
+    end
+
+    test "started and completed broadcasts are never replayed after owner failure" do
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      %w[started completed].each do |state|
+        prepare_channel_handoff(state)
+        assert_no_enqueued_jobs only: AiAgentJob do
+          RecoverInterruptedTasksJob.perform_now
+        end
+        assert_equal "delegated", @task.reload.status
+        assert SolidQueue::Job.exists?(@job.id)
+      end
+    end
+
+    test "pending handoff with a healthy owner or mismatched generation is not recovered" do
+      prepare_channel_handoff("pending")
+      assert_no_enqueued_jobs(only: AiAgentJob) { RecoverInterruptedTasksJob.perform_now }
+      assert_equal "delegated", @task.reload.status
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      @task.update!(trigger_event_payload: @task.trigger_event_payload.merge("execution_generation" => "new-generation"))
+      assert_no_enqueued_jobs(only: AiAgentJob) { RecoverInterruptedTasksJob.perform_now }
+      assert_equal "delegated", @task.reload.status
+    end
+
+    test "handoff starting between owner lookup and task lock prevents recovery" do
+      prepare_channel_handoff("pending")
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      SolidQueue::Job.stub(:find_by, ->(**) { prepare_channel_handoff("started"); @job.reload }) do
+        assert_no_enqueued_jobs(only: AiAgentJob) { RecoverInterruptedTasksJob.perform_now }
+      end
+      assert_equal "delegated", @task.reload.status
+    end
+
     test "delegated channel work belongs to the offline policy even after worker death" do
       @agent.update!(llm_model: "claude-code", llm_vendor: "anthropic")
       AgentSubscription.create!(agent: @agent, token: "delegated-channel")
@@ -253,6 +297,16 @@ module Collavre
       RecoverInterruptedTasksJob.perform_now
       assert_equal "done", @task.reload.status
       assert_no_enqueued_jobs only: AiAgentJob
+    end
+    private
+
+    def prepare_channel_handoff(state)
+      @agent.update!(llm_model: "claude-code", llm_vendor: "anthropic")
+      AgentSubscription.find_or_create_by!(agent: @agent, token: "handoff-channel")
+      @task.update!(status: "delegated", trigger_event_payload: {
+        "execution_job_id" => @job.active_job_id, "execution_generation" => "attempt",
+        "channel_handoff" => { "generation" => "attempt", "state" => state }
+      })
     end
   end
 end

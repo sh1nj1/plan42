@@ -2,6 +2,8 @@ require "test_helper"
 
 module Collavre
   class OfflineRecoveryIntegrationTest < ActiveJob::TestCase
+    SimulatedWorkerExit = Class.new(Exception)
+
     setup do
       @previous_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test
@@ -90,6 +92,46 @@ module Collavre
       AgentSubscription.create!(agent: @agent, token: "original-back", session_id: "original-session")
       ResumeSuspendedTasksJob.perform_now(agent_id: @agent.id)
       assert_equal "pending", @task.reload.status
+    end
+
+    test "death after delegation before adapter entry recovers the same turn and broadcasts once" do
+      AgentSubscription.create!(agent: @agent, token: "worker-crash-session")
+      @task.update!(status: "pending")
+      execution = AiAgentJob.new(@task)
+      queue_job = SolidQueue::Job.enqueue(execution)
+      process = SolidQueue::Process.register(kind: "Worker", name: SecureRandom.uuid,
+        pid: 123, hostname: "worker.example.test")
+      queue_job.ready_execution.destroy!
+      claim = SolidQueue::ClaimedExecution.create!(job: queue_job, process: process)
+
+      AiAgentService.stub :new, ->(task) {
+        assert_equal "delegated", task.reload.status
+        assert_equal({ "generation" => Orchestration::ExecutionFence.generation(task), "state" => "pending" },
+          task.trigger_event_payload["channel_handoff"])
+        raise SimulatedWorkerExit
+      } do
+        assert_raises(SimulatedWorkerExit) { execution.perform_now }
+      end
+      old_generation = Orchestration::ExecutionFence.generation(@task.reload)
+      claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      assert_enqueued_jobs 1, only: AiAgentJob do
+        2.times { RecoverInterruptedTasksJob.perform_now }
+      end
+      assert_equal "pending", @task.reload.status
+      assert_not @task.trigger_event_payload.key?("channel_handoff")
+
+      dispatches = []
+      AgentChannel.stub :broadcast_to_agent, ->(_id, payload) { dispatches << payload } do
+        AgentChannel.stub :broadcast_to_topic, nil do
+          AiAgentJob.perform_now(@task)
+        end
+      end
+      assert_equal 1, dispatches.size
+      assert_equal @task.id, dispatches.first[:task_id]
+      assert_equal "completed", @task.reload.trigger_event_payload.dig("channel_handoff", "state")
+      assert_not_equal old_generation, Orchestration::ExecutionFence.generation(@task)
+      assert_nil AiAgent::TaskClaimService.new.claim(agent: @agent, topic: @topic,
+        requested_task_id: @task.id, requested_generation: old_generation)
     end
 
     private
