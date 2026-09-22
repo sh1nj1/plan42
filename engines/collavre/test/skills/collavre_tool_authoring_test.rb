@@ -7,6 +7,8 @@ require "tmpdir"
 
 class CollavreToolAuthoringTest < ActiveSupport::TestCase
   SCRIPT = Rails.root.join("engines/collavre/skills/collavre/scripts/collavre").to_s
+  EVAL_STARTED = Queue.new
+  EVAL_GATE = Queue.new
 
   teardown do
     Tools::MetaToolWriteService.new.delete_tool("authored_probe")
@@ -278,6 +280,29 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert_not_includes ToolMeta.registry, Tools::AuthoredProbeHelper
   ensure
     Tools.send(:remove_const, :AuthoredProbeHelper) if Tools.const_defined?(:AuthoredProbeHelper, false)
+  end
+
+  test "a registration during another's evaluation survives that evaluation's rollback" do
+    waiting = scaffold.sub("    tool_description", "    CollavreToolAuthoringTest::EVAL_STARTED << true\n    CollavreToolAuthoringTest::EVAL_GATE.pop\n    raise \"late\"\n    tool_description")
+    other = scaffold.gsub("authored_probe", "authored_probe_b").gsub("AuthoredProbeService", "AuthoredProbeBService")
+
+    failing = Thread.new { Collavre::McpService.register_tool_from_source(waiting, expected_name: "authored_probe") rescue $! }
+    EVAL_STARTED.pop
+    concurrent = Thread.new { Collavre::McpService.register_tool_from_source(other, expected_name: "authored_probe_b") }
+    assert_nil concurrent.join(0.5), "registration must wait for the in-flight evaluation"
+    EVAL_GATE << true
+
+    assert_match(/Failed to evaluate source: late/, failing.value.message)
+    concurrent.join
+    assert_includes ToolMeta.registry, Tools::AuthoredProbeBService
+    assert Tools::MetaToolService.new.find_schema("authored_probe_b")
+  ensure
+    EVAL_GATE << true if failing&.alive?
+    [ failing, concurrent ].compact.each { |t| t.join(5) }
+    EVAL_STARTED.clear
+    EVAL_GATE.clear
+    Tools::MetaToolWriteService.new.delete_tool("authored_probe_b")
+    Tools.send(:remove_const, :AuthoredProbeBService) if Tools.const_defined?(:AuthoredProbeBService, false)
   end
 
   private

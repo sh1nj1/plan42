@@ -1,8 +1,14 @@
 module Collavre
   require "digest"
   require "set"
+  require "monitor"
 
   class McpService
+    # ToolMeta.registry is process-wide. Evaluating a source and rolling back
+    # what it added must not interleave with another registration, or one
+    # approval's rollback removes the class the other just registered.
+    REGISTRY_LOCK = Monitor.new
+
     # --- Registration Logic (from MetaToolService) ---
 
     # expected_name is the McpTool name recorded from the Creative. The name the
@@ -61,9 +67,11 @@ module Collavre
 
     def self.register_with_writer(source_code, expected_name, before_call:, after_call:)
       writer = ::Tools::MetaToolWriteService.new
-      return writer.register_tool_from_source(source: source_code, before_call: before_call, after_call: after_call) unless expected_name
+      REGISTRY_LOCK.synchronize do
+        next writer.register_tool_from_source(source: source_code, before_call: before_call, after_call: after_call) unless expected_name
 
-      register_verified_source(writer, source_code, expected_name, before_call: before_call, after_call: after_call)
+        register_verified_source(writer, source_code, expected_name, before_call: before_call, after_call: after_call)
+      end
     end
     private_class_method :register_with_writer
 
