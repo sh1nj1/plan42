@@ -49,6 +49,7 @@ module Collavre
       end
       assert_equal "pending", @task.reload.status
       assert_equal 1, @task.resume_count
+      assert_equal 1, RetiredTaskExecution.where(execution_job_id: @job.active_job_id).count
     end
 
     test "recovery retires the failed job before enqueueing its replacement" do
@@ -91,6 +92,7 @@ module Collavre
         RecoverInterruptedTasksJob.perform_now
       end
       assert_equal "escalated", @task.reload.status
+      assert RetiredTaskExecution.exists?(execution_job_id: @job.active_job_id)
       assert_not SolidQueue::Job.exists?(@job.id)
     end
 
@@ -146,6 +148,7 @@ module Collavre
       end
       assert SolidQueue::Job.exists?(@job.id)
       assert @job.reload.failed_execution
+      assert_not RetiredTaskExecution.exists?(execution_job_id: @job.active_job_id)
       assert_equal "running", @task.reload.status
     end
 

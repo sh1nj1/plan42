@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_22_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_22_010000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -687,6 +687,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000000) do
     t.index ["policy_type", "enabled"], name: "index_orchestrator_policies_on_policy_type_and_enabled"
     t.index ["priority"], name: "index_orchestrator_policies_on_priority"
     t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
+  end
+
+  create_table "retired_task_executions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "execution_job_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_job_id"], name: "index_retired_task_executions_on_execution_job_id", unique: true
   end
 
   create_table "sessions", force: :cascade do |t|

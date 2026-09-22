@@ -41,8 +41,17 @@ The implementation targets the installed Solid Queue 1.7.0 behavior:
   a matching failed `Collavre::AiAgentJob` and one of those process
   failures. A surviving claim, missing owner metadata, missing job, ready job,
   or ordinary application error does not authorize recovery.
-- Successful recovery discards the original failed queue job while holding
-  the failure and task locks, before resuming the task. Solid Queue's manual
+- Successful recovery records a permanent `RetiredTaskExecution` tombstone
+  in the primary database, in the same transaction as suspension (or
+  escalation), and discards the original failed queue job. The primary and
+  queue databases commit separately in production and desktop: if the queue
+  commit is lost, the primary tombstone still prevents execution of the old
+  job after the suspended-task sweep resumes its replacement. Tombstones are
+  indexed by Active Job ID, survive Task deletion, and must not be pruned while
+  serialized jobs can still be replayed. Individual and bulk retries discard
+  tombstoned queue jobs; the common `AiAgentJob` entry guard also rejects direct
+  execution of their saved arguments.
+  Solid Queue's manual
   retry uses the same failure lock: if retry wins, recovery leaves that job
   alone. Both individual and bulk manual retry reclaim the matching task
   under the failure lock before dispatch: running and current-generation

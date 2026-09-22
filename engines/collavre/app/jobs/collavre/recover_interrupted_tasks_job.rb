@@ -49,9 +49,12 @@ module Collavre
         task.with_lock do
           next unless recoverable_execution?(task) && task.trigger_event_payload["execution_job_id"] == execution_job_id
           Orchestration::TaskResumer.suspend!(task, reason: "server_restart").tap do |result|
-            # Retry takes this same failure lock. Retire the original execution
-            # before releasing the task lock or dispatching a replacement.
-            failure.discard if result
+            # Queue and Task can use separate databases. Commit a permanent
+            # execution fence with suspension even if queue retirement rolls back.
+            if result
+              RetiredTaskExecution.create_or_find_by!(execution_job_id: execution_job_id)
+              failure.discard
+            end
           end
         end
       end
