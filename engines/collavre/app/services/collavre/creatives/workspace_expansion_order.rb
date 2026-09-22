@@ -10,7 +10,9 @@ module Collavre
       def initialize(user:, expanded_ids:)
         @user = user
         @expanded_ids = expanded_ids.to_set
-        @children_index = ChildrenIndex.new(user: user, show_archived: false, candidate_limit: INSPECTION_LIMIT)
+        @children_index = ChildrenIndex.new(user: user, show_archived: false,
+          candidate_limit: INSPECTION_LIMIT, candidate_ids: @expanded_ids.to_a)
+        @presence = WorkspaceExpansionPresence.new(user: user, limit: INSPECTION_LIMIT)
       end
 
       def call
@@ -41,7 +43,7 @@ module Collavre
 
           path = ancestors.dup.add(id)
           children = @children_index.child_ids(creative).reject { |child_id| path.include?(child_id) }
-          next if children.empty?
+          next if children.empty? && !@presence.visible_child?(creative, excluding: path)
 
           restored.add(id.to_s)
           children.each do |child_id|

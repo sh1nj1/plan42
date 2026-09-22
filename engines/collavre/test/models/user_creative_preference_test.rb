@@ -158,6 +158,21 @@ module Collavre
       assert_equal expected.sort, indexed.sort
     end
 
+    test "unsaved siblings cannot displace a late saved branch from restoration" do
+      user = users(:one)
+      root = Creative.create!(user: user, description: "Root")
+      Creative.insert_all!(Array.new(1_050) do |sequence|
+        { user_id: user.id, parent_id: root.id, description: "Unsaved sibling", sequence: sequence }
+      end)
+      child = Creative.create!(user: user, parent: root, description: "Saved branch", sequence: 1_051)
+      Creative.create!(user: user, parent: child, description: "Unsaved leaf")
+      preference = UserCreativePreference.new(user: user, expanded_status: {
+        root.id.to_s => true, child.id.to_s => true
+      })
+
+      assert_equal [ root.id.to_s, child.id.to_s ], preference.expanded_ids_root_first
+    end
+
     test "stale saved children cannot exhaustively scan beyond the inspection budget" do
       assert_stale_inspection_bound(nested: true)
     end

@@ -45,6 +45,28 @@ module Creatives
       assert_empty index.child_ids(other)
     end
 
+    test "candidate IDs are filtered in SQL before the cumulative limit" do
+      user = users(:one)
+      root = Creative.create!(user: user, description: "Root")
+      ids = Creative.insert_all!(Array.new(1_050) do |sequence|
+        { user_id: user.id, parent_id: root.id, description: "Child", sequence: sequence }
+      end).rows.flatten
+      index = Collavre::Creatives::ChildrenIndex.new(user: user, show_archived: false,
+        candidate_limit: 2, candidate_ids: ids.last(3))
+      filter = Minitest::Mock.new
+      filter.expect(:readable_ids, ids.last(3).first(2), [ ids.last(3).first(2) ])
+      queries = []
+      subscriber = ->(event) { queries << event.payload if event.payload[:sql].include?('"creatives"."parent_id"') }
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        PermissionFilter.stub(:new, filter) { index.index([ root ]) }
+      end
+
+      assert_equal ids.last(3).first(2), index.child_ids(root)
+      assert_equal 2, queries.sum { |query| query[:row_count] }
+      assert queries.first[:sql].include?("LIMIT")
+      filter.verify
+    end
+
     test "normal rendering does not truncate children and retains archive filtering" do
       user = users(:one)
       root = Creative.create!(user: user, description: "Root")

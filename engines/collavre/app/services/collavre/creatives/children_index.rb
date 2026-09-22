@@ -15,8 +15,9 @@ module Creatives
   # resolves the shell to its origin first. Preload `:origin` on the level before
   # indexing it, or that resolution costs a query per shell.
   class ChildrenIndex
-    def initialize(user:, show_archived:, allowed_creative_ids: nil, candidate_limit: nil)
+    def initialize(user:, show_archived:, allowed_creative_ids: nil, candidate_limit: nil, candidate_ids: nil)
       @remaining_candidates = candidate_limit
+      @candidate_ids = candidate_ids
       @user = user
       @show_archived = show_archived
       @allowed_creative_ids = allowed_creative_ids
@@ -34,6 +35,7 @@ module Creatives
 
       candidates = Creative.where(parent_id: origin_id_by_id.values.uniq)
       candidates = candidates.where(archived_at: nil) unless show_archived
+      candidates = candidates.where(id: @candidate_ids) if @candidate_ids
       # Restoration may truncate candidates; normal rendering remains exhaustive.
       candidates = candidates.limit(@remaining_candidates) if @remaining_candidates
       rows = candidates.order(:sequence, :id).pluck(:id, :parent_id)
