@@ -4,6 +4,14 @@ module Collavre
   module Api
     module V1
       class TaskSuspensionsController < BaseController
+        def show
+          task = Task.find_by(id: params[:id])
+          return failure(:not_found) unless task && authorized?(task)
+
+          current = current_generation?(task) && task.active?
+          render json: { current: current }
+        end
+
         def create
           task = Task.find_by(id: params[:id])
           return failure(:not_found) unless task

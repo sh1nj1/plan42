@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { CollavreClient } from "./collavre-client.js";
 import { loadConfig } from "./config.js";
 import { quotaFailure, type FailureInput } from "./quota-failure.js";
-import { onlyQuotaTurn, quotaDirectory } from "./quota-state.js";
+import { currentQuotaTurn, quotaDirectory } from "./quota-state.js";
 
 async function main(): Promise<void> {
   const chunks: Buffer[] = [];
@@ -14,9 +15,10 @@ async function main(): Promise<void> {
   const input = JSON.parse(Buffer.concat(chunks).toString("utf8")) as FailureInput;
   const failure = quotaFailure(input);
   if (!failure || !input.cwd) return;
-  const turn = onlyQuotaTurn(quotaDirectory(input.cwd));
-  if (!turn) return;
   const config = loadConfig();
+  const client = new CollavreClient(config);
+  const turn = await currentQuotaTurn(quotaDirectory(input.cwd), turn => client.quotaTurnCurrent(turn));
+  if (!turn) return;
   const response = await fetch(`${config.url.replace(/\/$/, "")}/api/v1/agent/tasks/${turn.task_id}/suspend`, {
     method: "POST", signal: AbortSignal.timeout(5000),
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },

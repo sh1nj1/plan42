@@ -60,3 +60,16 @@ stuck-task recovery remain the fallback, without a promised quota-timed resume.
 The CLI proxy server-side path does not have this hook dependency. To enable
 Channel quota recovery, update the plugin, restart the Claude session, and use
 one outstanding dispatched turn per working directory.
+
+
+Before attributing a failure, the hook checks each recorded execution through
+authenticated `GET /api/v1/agent/tasks/:id/quota_status`. Terminal tasks and
+retired generations are excluded; failed lookups keep attribution ambiguous.
+Dispatch and rejected replies also prune confirmed stale entries from the
+process state. A transient network error does not discard a live turn, and a
+late reply cannot delete the state of a newer generation.
+
+If the session directory cannot be written, local quota tracking is disabled
+with a stderr diagnostic. MCP initialization, dispatch and replies still work,
+including with an explicit session ID and a read-only configuration directory.
+Channel quota-timed recovery is unavailable in that environment.

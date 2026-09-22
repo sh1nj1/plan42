@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { QuotaState, onlyQuotaTurn, quotaDirectory } from "./quota-state.ts";
+import { QuotaState, currentQuotaTurn, onlyQuotaTurn, quotaDirectory } from "./quota-state.ts";
 
 test("duplicate dispatch is idempotent and a new generation replaces old state", () => {
   const dir = mkdtempSync(join(tmpdir(), "quota-"));
@@ -43,4 +43,39 @@ test("an idle sibling session makes failure attribution ambiguous", () => {
     second.clear();
     assert.equal(onlyQuotaTurn(dir, () => {})?.task_id, 1);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("server pruning removes terminal turns but preserves uncertain and newer executions", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "quota-"));
+  try {
+    const state = new QuotaState(dir);
+    state.add({ task_id: 1, execution_generation: "cancelled" });
+    state.add({ task_id: 2, execution_generation: "current" });
+    assert.equal((await currentQuotaTurn(dir, async turn => turn.task_id === 2))?.task_id, 2);
+    assert.equal(await currentQuotaTurn(dir, async () => { throw Error("offline"); }), null);
+    await state.prune(async turn => turn.task_id === 2);
+    assert.equal(onlyQuotaTurn(dir)?.task_id, 2);
+    await state.prune(async () => { throw Error("transient reply failure"); });
+    assert.equal(onlyQuotaTurn(dir)?.task_id, 2);
+    await state.prune(async () => {
+      state.add({ task_id: 2, execution_generation: "newer" });
+      return false;
+    });
+    assert.equal(onlyQuotaTurn(dir)?.execution_generation, "newer");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("unwritable persistence never interrupts initialization dispatch reply or cleanup", () => {
+  const root = mkdtempSync(join(tmpdir(), "quota-"));
+  try {
+    const file = join(root, "not-a-directory");
+    writeFileSync(file, "");
+    const state = new QuotaState(join(file, "sessions"));
+    assert.doesNotThrow(() => {
+      state.add({ task_id: 1, execution_generation: "a" });
+      state.remove(1);
+      state.clear();
+    });
+    assert.equal(onlyQuotaTurn(join(file, "sessions")), null);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

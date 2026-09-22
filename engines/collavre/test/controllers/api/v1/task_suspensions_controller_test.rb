@@ -77,7 +77,43 @@ class TaskSuspensionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, @agent.reload.quota_retry_count
   end
 
+  test "quota status prunes terminal and retired turns without changing server state" do
+    %w[delegated running pending_approval cancelled failed done].each do |status|
+      @task.update!(status: status)
+      quota_status
+      assert_response :ok
+      assert_equal %w[delegated running pending_approval].include?(status), response.parsed_body["current"]
+      assert_equal status, @task.reload.status
+    end
+    @task.update!(status: "delegated")
+    quota_status(generation: "old")
+    assert_equal false, response.parsed_body["current"]
+    quota_status(generation: nil)
+    assert_equal false, response.parsed_body["current"]
+    suspend
+    quota_status
+    assert_equal true, response.parsed_body["current"]
+  end
+
+  test "quota status requires authentication ownership and creative access" do
+    get "/api/v1/agent/tasks/#{@task.id}/quota_status"
+    assert_response :unauthorized
+    @agent.update!(created_by_id: users(:two).id)
+    quota_status
+    assert_response :not_found
+    @agent.update!(created_by_id: @owner.id)
+    @task.update!(creative: Collavre::Creative.create!(description: "Private", user: users(:two)))
+    quota_status
+    assert_response :not_found
+  end
+
   private
+
+  def quota_status(generation: "current")
+    get "/api/v1/agent/tasks/#{@task.id}/quota_status",
+        params: { execution_generation: generation },
+        headers: { "Authorization" => "Bearer #{@token.token}" }, as: :json
+  end
 
   def suspend(generation: "current", reason: "quota")
     post "/api/v1/agent/tasks/#{@task.id}/suspend",

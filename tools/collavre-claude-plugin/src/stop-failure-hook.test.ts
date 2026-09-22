@@ -11,9 +11,15 @@ test("StopFailure command sends authenticated suspension without invoking a mode
   const home = mkdtempSync(join(tmpdir(), "quota-hook-"));
   const cwd = join(home, "workspace");
   const state = new QuotaState(quotaDirectory(cwd, join(home, ".config/collavre/sessions")));
+  state.add({ task_id: 41, execution_generation: "cancelled" });
   state.add({ task_id: 42, execution_generation: "generation-a" });
   const requests: unknown[] = [];
   const server = createServer(async (req, res) => {
+    if (req.method === "GET") {
+      assert.equal(req.headers.authorization, "Bearer test-only");
+      res.writeHead(200).end(JSON.stringify({ current: req.url?.includes("/42/") }));
+      return;
+    }
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk);
     requests.push({ path: req.url, authorization: req.headers.authorization, body: JSON.parse(Buffer.concat(chunks).toString()) });

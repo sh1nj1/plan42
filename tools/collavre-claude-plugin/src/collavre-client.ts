@@ -69,6 +69,20 @@ export class CollavreClient {
     return res.json() as Promise<RegisterResult>;
   }
 
+  async quotaTurnCurrent(turn: { task_id: number; execution_generation: string }): Promise<boolean> {
+    const url = new URL(`${this.baseUrl}/api/v1/agent/tasks/${turn.task_id}/quota_status`);
+    url.searchParams.set("execution_generation", turn.execution_generation);
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.token}` },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new Error(`Quota status failed (${res.status})`);
+    const body = await res.json() as { current?: boolean };
+    if (typeof body.current !== "boolean") throw new Error("Invalid quota status");
+    return body.current;
+  }
+
   async reply(
     topicId: number,
     text: string,

@@ -1,3 +1,4 @@
+get "agent/tasks/:id/quota_status", to: "task_suspensions#show"
 post "agent/tasks/:id/suspend", to: "task_suspensions#create"
 post "agent/register", to: "agents#register"
 post "agent/reply", to: "agents#reply"

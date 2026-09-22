@@ -132,8 +132,11 @@ function buildServer(
     if (typeof record.execution_generation !== "string" || !record.execution_generation) {
       return errorResult("execution_generation is required — echo it from the dispatch notification meta");
     }
-    const result = await client.reply(topicId, text, taskId, record.execution_generation);
-    quotaState.remove(taskId);
+    const result = await client.reply(topicId, text, taskId, record.execution_generation).catch(async error => {
+      await quotaState.prune(turn => client.quotaTurnCurrent(turn));
+      throw error;
+    });
+    quotaState.remove(taskId, record.execution_generation);
 
     // The dispatched turn is concluding (Claude has replied). Reset the active
     // context to the registration inbox default so a subsequent locally-
@@ -269,6 +272,7 @@ function makeEventHandler(
     // Record the active turn's topic AND delegated task so a permission_request
     // relayed during it can be surfaced into this topic and authorized as the
     // dispatched agent (work topics where this session is not primary_agent).
+    await quotaState.prune(turn => client.quotaTurnCurrent(turn));
     if (event.task_id && event.execution_generation) {
       quotaState.add({ task_id: event.task_id, execution_generation: event.execution_generation });
     }
