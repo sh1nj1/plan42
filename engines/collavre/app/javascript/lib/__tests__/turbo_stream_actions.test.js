@@ -202,3 +202,15 @@ test('remote child deletion restores the parent leaf checkbox control', () => {
   expect(parent.hasChildren).toBe(false)
   expect(parent.progressHtml).toBe(checkbox)
 })
+
+test('an older update broadcast cannot replace a queued local row after the editor moves away', async () => {
+  const { applyRowProperties } = await import('../../creatives/tree_renderer')
+  applyRowProperties.mockClear()
+  document.body.innerHTML = '<form id="inline-edit-form-element" data-creative-id="43"></form><creative-tree-row creative-id="42"><div class="creative-tree" data-save-state="pending"></div></creative-tree-row>'
+  const payload = { action: 'updated', creative: { id: 42, description: 'old server body', inline_editor_payload: { description: 'old server body' } } }
+  dispatchCreativeTreeStream(payload)
+  expect(applyRowProperties).not.toHaveBeenCalled()
+  delete document.querySelector('.creative-tree').dataset.saveState
+  dispatchCreativeTreeStream(payload)
+  expect(applyRowProperties).toHaveBeenCalledTimes(1)
+})

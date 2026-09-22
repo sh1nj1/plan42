@@ -1,3 +1,6 @@
+import { clearQueueReconciliation } from './queue_reconciliation'
+import { unacknowledgedBody, unacknowledgedAttachmentIds, acknowledgeQueuedRequest } from './queue_recovery'
+import { waitForQueuedRequests, mergeQueueCallbacks } from './queue_completion'
 import csrfFetch, { refreshCsrfToken } from './csrf_fetch'
 import { apiErrorFromResponse } from './api_error'
 
@@ -25,6 +28,11 @@ function isRetryable(error) {
     // Validation 422 (has payload) fails fast; payload-less 422 (stale CSRF) retries.
     if (error.status === 422) return isStaleCsrf(error)
     return true
+}
+
+function mergeQueuedBody(existing, incoming) {
+    if (!incoming || incoming instanceof FormData || typeof incoming !== 'object') return incoming || null
+    return { ...existing, ...incoming }
 }
 
 /**
@@ -104,7 +112,7 @@ class ApiQueueManager {
      * Items with onSuccess callbacks are excluded because functions cannot be serialized
      * Items with deletedAttachmentIds are included because they're serializable data
      */
-    saveToLocalStorage() {
+    saveToLocalStorage(strict = false) {
         try {
             // Filter out onSuccess callbacks (non-serializable)
             // but keep the items themselves
@@ -115,6 +123,7 @@ class ApiQueueManager {
             })
             localStorage.setItem(this.storageKey, JSON.stringify(serializableQueue))
         } catch (error) {
+            if (strict) throw error
             console.error('Failed to save API queue to localStorage:', error)
         }
     }
@@ -156,9 +165,11 @@ class ApiQueueManager {
      * @returns {string} Request ID
      */
     enqueue(request) {
+        const previousQueue = [...this.queue]
         // Find and merge callbacks and attachment IDs from existing requests with the same dedupeKey
         let existingCallbacks = []
-        let existingAttachmentIds = []
+        let existingAttachmentIds = unacknowledgedAttachmentIds(this, request.dedupeKey)
+        const existingBody = this.unacknowledgedBody(request.dedupeKey)
         if (request.dedupeKey) {
             // CRITICAL: Skip the first item if processing is active
             // The first item might be currently executing in processQueue
@@ -169,9 +180,6 @@ class ApiQueueManager {
             existingItems.forEach(item => {
                 if (typeof item.onSuccess === 'function') {
                     existingCallbacks.push(item.onSuccess)
-                }
-                if (item.deletedAttachmentIds && item.deletedAttachmentIds.length > 0) {
-                    existingAttachmentIds.push(...item.deletedAttachmentIds)
                 }
             })
 
@@ -196,34 +204,14 @@ class ApiQueueManager {
         }
 
         // Merge new callback with existing callbacks
-        let mergedCallback = null
-        if (existingCallbacks.length > 0 || request.onSuccess) {
-            mergedCallback = (responseData) => {
-                // Run all existing callbacks first
-                existingCallbacks.forEach(cb => {
-                    try {
-                        cb(responseData)
-                    } catch (error) {
-                        console.error('Merged callback failed:', error)
-                    }
-                })
-                // Then run the new callback
-                if (typeof request.onSuccess === 'function') {
-                    try {
-                        request.onSuccess(responseData)
-                    } catch (error) {
-                        console.error('New callback failed:', error)
-                    }
-                }
-            }
-        }
+        const mergedCallback = mergeQueueCallbacks(existingCallbacks, request.onSuccess)
 
         const queueItem = {
             id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             path: request.path,
             method: request.method || 'GET',
             params: request.params || null,
-            body: request.body || null,
+            body: mergeQueuedBody(existingBody, request.body),
             dedupeKey: request.dedupeKey || null,
             deletedAttachmentIds: mergedAttachmentIds,
             onSuccess: mergedCallback,
@@ -232,7 +220,12 @@ class ApiQueueManager {
         }
 
         this.queue.push(queueItem)
-        this.saveToLocalStorage()
+        try {
+            this.saveToLocalStorage(true)
+        } catch (error) {
+            this.queue = previousQueue
+            throw error
+        }
 
         // Start processing if not already processing
         this.processQueue()
@@ -285,9 +278,12 @@ class ApiQueueManager {
                     }
                 }
 
+                acknowledgeQueuedRequest(this, item)
+
                 // Remove from queue
                 this.queue.shift()
                 this.saveToLocalStorage()
+                window.dispatchEvent(new CustomEvent('api-queue-request-completed', { detail: { item } }))
             } catch (error) {
                 console.error('API request failed:', error, item)
 
@@ -302,9 +298,7 @@ class ApiQueueManager {
                     if (isStaleCsrf(error)) {
                         await refreshCsrfToken()
                     }
-                    // Move to end of queue for retry
-                    this.queue.shift()
-                    this.queue.push(item)
+                    // Retry in place so an older save cannot overwrite a newer one.
                     this.saveToLocalStorage()
                 } else {
                     // Max retries exceeded - move to failedItems for visibility
@@ -326,6 +320,14 @@ class ApiQueueManager {
         }
 
         this.processing = false
+    }
+
+    unacknowledgedBody(dedupeKey) {
+        return unacknowledgedBody(this, dedupeKey)
+    }
+
+    waitFor(dedupeKey) {
+        return waitForQueuedRequests(this, dedupeKey)
     }
 
     /**
@@ -416,6 +418,7 @@ class ApiQueueManager {
      * Clear all queued requests
      */
     clear() {
+        clearQueueReconciliation(this)
         this.queue = []
         this.failedItems = []
         this.saveToLocalStorage()

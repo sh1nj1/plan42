@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import { jest } from '@jest/globals';
+import { waitFor } from '@testing-library/dom';
 import {
   addGlobalListeners,
   handleDragLeave,
@@ -210,6 +211,7 @@ test('drops with the stored intent without reading preview CSS classes', async (
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
 
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   const options = fetchMock.mock.calls[0][1];
   expect(JSON.parse(options.body)).toMatchObject({
     dragged_id: '1',
@@ -218,7 +220,7 @@ test('drops with the stored intent without reading preview CSS classes', async (
   });
 });
 
-test('preserves canonical ids for an external creative bundle', () => {
+test('preserves canonical ids for an external creative bundle', async () => {
   document.body.innerHTML = `<creative-tree-row creative-id="9" level="1" is-root>
     <div class="creative-tree" id="creative-9" draggable="true">
       <span id="external-drop-target"></span>
@@ -248,6 +250,7 @@ test('preserves canonical ids for an external creative bundle', () => {
     dataTransfer: transfer,
   });
 
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   const options = fetchMock.mock.calls[0][1];
   expect(JSON.parse(options.body)).toMatchObject({
     dragged_ids: ['1', '2'],
@@ -256,7 +259,7 @@ test('preserves canonical ids for an external creative bundle', () => {
   });
 });
 
-test('falls back to hit testing when no preview intent is stored', () => {
+test('falls back to hit testing when no preview intent is stored', async () => {
   const { tree, target } = mountTarget();
   const transfer = dataTransfer();
   writeDragData(transfer, {
@@ -275,6 +278,7 @@ test('falls back to hit testing when no preview intent is stored', () => {
     dataTransfer: transfer,
   });
 
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   expect(JSON.parse(fetchMock.mock.calls[0][1].body).direction).toBe('up');
   expect(tree.classList.contains('drag-over')).toBe(false);
 });

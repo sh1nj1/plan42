@@ -57,6 +57,7 @@
 
 import { sendNewOrder, sendLinkedCreative, isAuthenticationRedirect } from '../../lib/api/drag_drop';
 import { serverErrorMessage } from '../../lib/api/api_error';
+import { apiQueue } from '../../lib/api/queue_manager';
 
 export const MOVE_MODES = Object.freeze({
   MOVE: 'move',
@@ -185,6 +186,19 @@ function buildResult(command, { succeeded, failures, payloads = [] }) {
   };
 }
 
+async function waitForMoveSaves(ids) {
+  const keys = ids.map(id => `creative_${id}`);
+  // A row can receive another save while a different row is still pending.
+  // Recheck the entire selection and destination after each completed batch.
+  do {
+    await Promise.all(keys.map(key => apiQueue.waitFor(key)));
+  } while (apiQueue.queue.some(item => keys.includes(item.dedupeKey)));
+  // A failed snapshot can still restore its old parent on a later retry.
+  // Keep the move reversible until that draft has been saved successfully.
+  const failed = apiQueue.failedItems.find(item => keys.includes(item.dedupeKey));
+  if (failed) throw new Error(failed.lastError || 'Queued save failed');
+}
+
 async function executeReorder(command, api) {
   const { ids, targetId, direction } = command;
   const payload = ids.length > 1
@@ -193,6 +207,7 @@ async function executeReorder(command, api) {
 
   let response;
   try {
+    await waitForMoveSaves([...ids, targetId]);
     response = await api.sendNewOrder(payload);
   } catch (error) {
     return buildResult(command, {
@@ -235,6 +250,10 @@ async function executeLinkDrop(command, api) {
   // Sequential on purpose (policy note 4) — link_drop resequences siblings.
   for (const id of requestOrder) {
     try {
+      // Sibling links use the target's server parent. Recheck before every
+      // insert because another target save can arrive between batch entries.
+      // eslint-disable-next-line no-await-in-loop
+      await waitForMoveSaves([targetId]);
       // eslint-disable-next-line no-await-in-loop
       const data = await api.sendLinkedCreative({ draggedId: id, targetId, direction });
       succeeded.add(id);
