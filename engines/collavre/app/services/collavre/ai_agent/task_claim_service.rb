@@ -31,7 +31,11 @@ module Collavre
       # agent comment, and leave the loop stuck in "running". #finalize replays
       # both callbacks after the comment is persisted via
       # Task#fire_completion_callbacks_after_external_claim.
-      def claim(agent:, topic:, requested_task_id:)
+      #
+      # requested_generation (the dispatch's execution_generation, echoed back)
+      # must still be the task's current one: a reply from an attempt that was
+      # suspended and since resumed must not complete the resumed attempt.
+      def claim(agent:, topic:, requested_task_id:, requested_generation: nil)
         # A dispatch suspended while it waited (its session went offline) is
         # still answered by its reply when that finally lands.
         scope = Task.awaiting_reply.where(agent_id: agent.id, topic_id: topic.id)
@@ -47,6 +51,7 @@ module Collavre
         Task.transaction do
           locked = Task.lock.find_by(id: candidate.id)
           next unless locked && Task.awaiting_reply.exists?(id: locked.id)
+          next unless Orchestration::ExecutionFence.current?(locked, requested_generation)
 
           Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
           claimed = locked.reload

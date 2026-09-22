@@ -787,6 +787,8 @@ class AiAgentJobTest < ActiveJob::TestCase
     )
 
     topic = Topic.create!(creative: @creative, name: "cc-cancel-race", user: @owner)
+    # Online, so the job gets past the offline guard to the reserve! race.
+    Collavre::AgentSubscription.create!(agent_id: claude_agent.id, token: "cc-cancel-race")
     task = Collavre::Task.create!(
       name: "Pre-existing running task",
       status: "running",
@@ -913,8 +915,74 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     refute delivered,
       "ClaudeChannelAdapter#deliver must not run when the resumed task's session is offline"
-    assert_equal "cancelled", queued.reload.status,
-      "the offline-resumed task must be cancelled so it does not leak slots / queue space"
+    assert_equal "suspended", queued.reload.status,
+      "the offline-resumed task is set aside for the reconnect, not left holding the slot"
+    assert_equal "agent_offline", queued.suspend_reason
+  end
+
+  test "a session topic's resumed task is suspended while only a sibling session is live" do
+    claude_agent = User.create!(
+      email: "cc-session-offline-agent@agent.collavre.local", name: "Claude Session Agent",
+      password: SecureRandom.hex(32), llm_vendor: "anthropic", llm_model: "claude-code",
+      created_by_id: @owner.id, searchable: false
+    )
+    topic = Topic.create!(creative: @creative, name: "cc-session", user: @owner,
+                          primary_agent_id: claude_agent.id, session_id: "sess-own")
+    Collavre::AgentSubscription.create!(agent_id: claude_agent.id, token: "sibling", session_id: "sess-other")
+    task = Task.create!(
+      name: "Session turn", status: "pending", agent: claude_agent, topic_id: topic.id, creative_id: @creative.id,
+      trigger_event_payload: { "creative" => { "id" => @creative.id }, "topic" => { "id" => topic.id },
+                               "comment" => { "id" => @comment.id } }
+    )
+
+    AiAgentJob.perform_now(task)
+
+    assert_equal "suspended", task.reload.status
+  end
+
+  test "an approval-paused task whose session went offline is still cancelled" do
+    claude_agent = User.create!(
+      email: "cc-approval-offline-agent@agent.collavre.local", name: "Claude Approval Agent",
+      password: SecureRandom.hex(32), llm_vendor: "anthropic", llm_model: "claude-code",
+      created_by_id: @owner.id, searchable: false
+    )
+    topic = Topic.create!(creative: @creative, name: "cc-approval-offline", user: @owner)
+    task = Task.create!(
+      name: "Approval turn", status: "pending_approval", agent: claude_agent, topic_id: topic.id,
+      creative_id: @creative.id,
+      trigger_event_payload: { "creative" => { "id" => @creative.id }, "topic" => { "id" => topic.id },
+                               "comment" => { "id" => @comment.id } }
+    )
+
+    AiAgentJob.perform_now(task)
+
+    assert_equal "cancelled", task.reload.status
+  end
+
+  test "a new dispatch records its job and a fresh execution generation" do
+    job = AiAgentJob.new(@agent.id, "test_event", @context)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+
+    payload = Task.last.trigger_event_payload
+    assert_equal job.job_id, payload[Collavre::Orchestration::ExecutionFence::JOB_KEY]
+    assert_not_nil payload[Collavre::Orchestration::ExecutionFence::GENERATION_KEY]
+  end
+
+  test "a resumed task is started under the job that runs it" do
+    task = Task.create!(
+      name: "Resumed", status: "pending", trigger_event_name: "comment_created", agent: @agent,
+      creative_id: @creative.id, resume_count: 1, trigger_event_payload: @context
+    )
+    job = AiAgentJob.new(task)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+
+    payload = task.reload.trigger_event_payload
+    assert_equal job.job_id, payload[Collavre::Orchestration::ExecutionFence::JOB_KEY]
+    assert_not_nil payload[Collavre::Orchestration::ExecutionFence::GENERATION_KEY]
   end
 
   test "turn deadline settles the task as failed" do

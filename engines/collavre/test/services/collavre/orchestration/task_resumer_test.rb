@@ -332,8 +332,13 @@ module Collavre
 
         AiAgentJob.stub(:perform_later, unsent) do
           assert_equal :resumed, TaskResumer.resume!(task)
+          assert_equal :resumed, TaskResumer.resume!(task.reload)
         end
-        assert_equal "suspended", task.reload.status
+        task.reload
+        assert_equal "suspended", task.status
+        assert_equal 0, task.resume_count, "an attempt that never ran must not use up the resume budget"
+        assert_empty Comment.where(user_id: nil, content: I18n.t("collavre.orchestration.suspension.resumed",
+                                                                 agent: @agent.display_name))
       end
 
       test "a stuck promotion leaves the resumed turn queued for orphan recovery" do
@@ -346,7 +351,7 @@ module Collavre
       end
 
       test "resume_for_agent! resumes only that agent's due turns" do
-        due = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "agent_offline")
+        due = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
         later = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "quota",
                          resume_not_before: 1.hour.from_now, trigger: comment("Later"))
         other = task_for(status: "suspended", agent: users(:two), suspended_at: Time.current,
@@ -376,6 +381,135 @@ module Collavre
         assert TaskResumer.agent_available?(@agent)
         assert_not TaskResumer.agent_available?(channel_agent)
         assert_not TaskResumer.agent_available?(nil)
+      end
+
+      test "agent_available? waits for positive liveness after an offline suspension" do
+        offline = task_for(status: "suspended", suspend_reason: "agent_offline")
+        restarted = task_for(status: "suspended", suspend_reason: "server_restart", trigger: comment("Restart"))
+
+        assert_equal :unknown, @agent.agent_liveness_status
+        assert_not TaskResumer.agent_available?(@agent, task: offline)
+        assert TaskResumer.agent_available?(@agent, task: restarted)
+
+        @agent.stub(:agent_liveness_status, :online) do
+          assert TaskResumer.agent_available?(@agent, task: offline)
+        end
+      end
+
+      test "agent_available? is held by a quota block" do
+        blocked_until = 1.hour.from_now
+        @agent.define_singleton_method(:quota_blocked_until) { blocked_until }
+        assert_not TaskResumer.agent_available?(@agent)
+
+        blocked_until = 1.minute.ago
+        assert TaskResumer.agent_available?(@agent)
+
+        @agent.define_singleton_method(:quota_retry_exhausted) { true }
+        assert_not TaskResumer.agent_available?(@agent)
+      end
+
+      test "a session topic's turn waits for its own session, not a sibling's" do
+        agent = channel_agent
+        @topic.update!(primary_agent_id: agent.id, session_id: "sess-a")
+        task = task_for(status: "suspended", agent: agent, suspend_reason: "agent_offline")
+
+        AgentSubscription.create!(agent_id: agent.id, token: "sibling", session_id: "sess-b")
+        assert agent.claude_channel_online?
+        assert_not TaskResumer.agent_available?(agent, task: task)
+
+        AgentSubscription.create!(agent_id: agent.id, token: "own", session_id: "sess-a")
+        assert TaskResumer.agent_available?(agent, task: task)
+      end
+
+      test "claude_channel_reachable? does not gate other agents" do
+        assert TaskResumer.claude_channel_reachable?(@agent, task_for(status: "queued"))
+      end
+
+      # --- execution fence ----------------------------------------------------
+
+      test "suspend! from an earlier execution leaves the current one alone" do
+        task = task_for(status: "running", trigger_event_payload: ExecutionFence.stamp(payload_for(@trigger)))
+        current = ExecutionFence.generation(task)
+
+        assert_nil TaskResumer.suspend!(task, reason: :quota, execution_generation: "earlier-attempt")
+        assert_equal "running", task.reload.status
+
+        assert_equal :suspended, TaskResumer.suspend!(task, reason: :quota, execution_generation: current)
+      end
+
+      test "resume! retires the interrupted execution but keeps its resume context" do
+        task = task_for(status: "running",
+                        trigger_event_payload: ExecutionFence.stamp(payload_for(@trigger), job_id: "job-1"))
+        generation = ExecutionFence.generation(task)
+        TaskResumer.suspend!(task, reason: :server_restart)
+
+        TaskResumer.resume!(task)
+
+        payload = task.reload.trigger_event_payload
+        assert_not payload.key?(ExecutionFence::JOB_KEY)
+        assert_not payload.key?(ExecutionFence::GENERATION_KEY)
+        assert_equal "server_restart", payload.dig(ResumeContext::KEY, "reason")
+        assert_nil TaskResumer.suspend!(task, reason: :quota, execution_generation: generation)
+      end
+
+      # --- transactions -------------------------------------------------------
+
+      test "suspension side effects wait for the caller's transaction to commit" do
+        holder = task_for(status: "running")
+        waiter = task_for(status: "queued", agent: users(:two), trigger: comment("Another request"))
+
+        Task.transaction do
+          assert_equal :suspended, TaskResumer.suspend!(holder, reason: :agent_offline)
+          assert_equal "queued", waiter.reload.status, "the queue must not drain before the suspension commits"
+          assert_empty notices
+        end
+
+        assert_equal "pending", waiter.reload.status
+        assert_equal 1, notices.count
+      end
+
+      test "a rolled-back suspension neither drains the topic nor announces itself" do
+        holder = task_for(status: "running")
+        waiter = task_for(status: "queued", agent: users(:two), trigger: comment("Another request"))
+
+        Task.transaction do
+          TaskResumer.suspend!(holder, reason: :agent_offline)
+          raise ActiveRecord::Rollback
+        end
+
+        assert_equal "running", holder.reload.status
+        assert_equal "queued", waiter.reload.status
+        assert_empty notices
+      end
+
+      test "a resume inside a transaction starts only after it commits" do
+        task = task_for(status: "suspended", suspended_at: Time.current, suspend_reason: "server_restart")
+
+        Task.transaction do
+          assert_equal :resumed, TaskResumer.resume!(task)
+          assert_equal "queued", task.reload.status
+          assert_no_enqueued_jobs only: AiAgentJob
+        end
+
+        assert_equal "pending", task.reload.status
+        assert_enqueued_with(job: AiAgentJob, args: [ task ])
+      end
+
+      test "a resumed turn absorbs newer waiters and keeps its id and resume context" do
+        # Promoted (pending) resumed turn folding the waiters behind it, as
+        # AgentOrchestrator.coalesce_promoted! does.
+        task = task_for(status: "pending", resume_count: 1,
+                        trigger_event_payload: payload_for(@trigger).merge(ResumeContext::KEY => { "reason" => "quota" }))
+        follow_up = comment("Follow-up")
+        newer = task_for(status: "queued", trigger: follow_up)
+
+        assert_equal [ newer.id ], TaskCoalescer.coalesce!(task, scope: :all)
+
+        assert_equal "cancelled", newer.reload.status
+        task.reload
+        assert_equal "pending", task.status
+        assert_equal({ "reason" => "quota" }, task.trigger_event_payload[ResumeContext::KEY])
+        assert_includes Array(task.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]).map(&:to_i), follow_up.id
       end
     end
   end

@@ -61,6 +61,28 @@ module Collavre
         assert_not @task.task_actions.exists?(action_type: "completion")
       end
 
+      test "a reply naming the current execution generation claims the task" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+        generation = Orchestration::ExecutionFence.generation(@task)
+
+        assert_equal @task, @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id,
+                                                 requested_generation: generation)
+      end
+
+      test "a reply from an earlier execution of a resumed task is refused" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+
+        assert_nil @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id,
+                                        requested_generation: "earlier-attempt")
+        assert_equal "delegated", @task.reload.status
+      end
+
+      test "a reply naming no generation is not fenced" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+
+        assert_equal @task, @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
+      end
+
       private
 
       def reply(text: "Completed")

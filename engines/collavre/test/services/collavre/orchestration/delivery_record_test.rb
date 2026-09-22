@@ -507,6 +507,8 @@ module Collavre
         turn.update!(trigger_event_payload: turn.reload.trigger_event_payload.merge(
           ResumeContext::KEY => ResumeContext.capture(turn, reason: :server_restart)
         ))
+        # Workflow::TaskAdmission.start!'s execution stamp.
+        turn.update!(trigger_event_payload: ExecutionFence.stamp(turn.reload.trigger_event_payload, job_id: "job"))
         DeliveryRecord.fail_while_worker_settles!(turn.reload)
 
         written = turn.reload.trigger_event_payload.keys - dispatched

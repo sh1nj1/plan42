@@ -39,23 +39,27 @@ module Collavre
       NOTICE_SCOPE = "collavre.orchestration.suspension"
 
       class << self
+        # @param execution_generation [String, nil] the ExecutionFence generation
+        #   the caller acted on. When given, a task that has since been resumed
+        #   (a new generation) is left alone.
         # @return [:suspended, :escalated, nil] nil when the task was no longer
-        #   suspendable (a reply landed, it was stopped) — the caller lost the
-        #   race and must leave the task alone.
-        def suspend!(task, reason:, resume_not_before: nil)
+        #   suspendable (a reply landed, it was stopped, it moved on to a newer
+        #   execution) — the caller lost the race and must leave the task alone.
+        #
+        # Everything past the row update runs after the caller's outermost
+        # transaction commits: draining the topic or posting a notice for a
+        # suspension that is then rolled back would promote or announce work
+        # that never actually stopped.
+        def suspend!(task, reason:, resume_not_before: nil, execution_generation: nil)
           reason = reason.to_s
           raise ArgumentError, "Unknown suspend reason: #{reason}" unless Task::SUSPEND_REASONS.include?(reason)
 
-          outcome, previous_status, announce = transition_to_suspended(task, reason, resume_not_before)
+          outcome, previous_status, announce =
+            transition_to_suspended(task, reason, resume_not_before, execution_generation)
           return if outcome.nil?
 
-          release_held_work(task, previous_status)
-          detach_partial_reply(task) if previous_status == "running"
-          if outcome == :escalated
-            post_notice(task, "escalated", cause: I18n.t("#{NOTICE_SCOPE}.escalation_causes.too_many_resumes"))
-          else
-            post_suspended_notice(task) if announce
-            schedule_resume(task) if task.resume_not_before
+          ActiveRecord.after_all_transactions_commit do
+            after_suspend(task, outcome, previous_status, announce)
           end
           outcome
         end
@@ -71,23 +75,20 @@ module Collavre
               task.update!(status: "escalated")
               next :escalated
             end
-            next :unavailable unless agent_available?(task.agent)
+            next :unavailable unless agent_available?(task.agent, task: task)
 
             task.update!(
               status: topic_scoped?(task) ? "queued" : "pending",
               resume_count: task.resume_count + 1,
-              waiting_notice_scope: nil
+              waiting_notice_scope: nil,
+              # The interrupted attempt's owner and generation stop matching
+              # here; the next start stamps fresh ones.
+              trigger_event_payload: ExecutionFence.clear(task.trigger_event_payload)
             )
             :resumed
           end
 
-          case outcome
-          when :escalated
-            post_notice(task, "escalated", cause: I18n.t("#{NOTICE_SCOPE}.escalation_causes.expired"))
-          when :resumed
-            post_notice(task, "resumed")
-            start(task)
-          end
+          ActiveRecord.after_all_transactions_commit { after_resume(task, outcome) } if outcome.in?(%i[escalated resumed])
           outcome
         end
 
@@ -116,19 +117,80 @@ module Collavre
           waiting_since.present? && waiting_since + SUSPEND_TTL < now
         end
 
-        # Whether the agent can take the turn back. Only positive evidence of
-        # being offline blocks a resume: an agent with no liveness signal at all
-        # (:unknown) would otherwise wait out the whole TTL for nothing.
-        def agent_available?(agent)
-          agent.present? && agent.agent_liveness_status != :offline
+        # Whether the agent can take the turn back.
+        #
+        # - A quota block (PR 3's quota_blocked_until / quota_retry_exhausted,
+        #   read only when the columns exist) holds every resume.
+        # - A turn on a Claude Channel session topic belongs to that one
+        #   session: another live session of the same agent does not answer it.
+        # - A turn suspended because the agent went offline waits for positive
+        #   evidence it is back from agents that report liveness at all.
+        # - Otherwise only positive evidence of being offline blocks: an agent
+        #   with no liveness signal (:unknown) — e.g. after a server restart —
+        #   would otherwise wait out the whole TTL for nothing.
+        def agent_available?(agent, task: nil)
+          return false if agent.blank? || quota_blocked?(agent)
+          return false unless claude_channel_reachable?(agent, task)
+
+          status = agent.agent_liveness_status
+          return status == :online if task&.suspend_reason == "agent_offline" && reports_liveness?(agent)
+
+          status != :offline
+        end
+
+        # Whether a Claude Channel client can receive this task's dispatch: the
+        # task's own session for a session topic, any live session otherwise.
+        # Always true for agents that are not Claude Channel agents.
+        def claude_channel_reachable?(agent, task = nil)
+          return true unless agent.claude_channel_agent?
+
+          session_id = session_id_for(agent, task)
+          return agent.claude_channel_online? unless session_id
+
+          AgentSubscription.live.where(agent_id: agent.id, session_id: session_id).exists?
         end
 
         private
 
+        def quota_blocked?(agent)
+          (agent.respond_to?(:quota_blocked_until) && agent.quota_blocked_until&.future?) ||
+            (agent.respond_to?(:quota_retry_exhausted) && agent.quota_retry_exhausted)
+        end
+
+        def reports_liveness?(agent)
+          agent.claude_channel_agent? || agent.cli_proxy_agent? || agent.endpoint_health_supported?
+        end
+
+        def session_id_for(agent, task)
+          return unless task&.topic_id
+
+          Topic.where(id: task.topic_id, primary_agent_id: agent.id).where.not(session_id: nil).pick(:session_id)
+        end
+
+        def after_suspend(task, outcome, previous_status, announce)
+          release_held_work(task, previous_status)
+          detach_partial_reply(task) if previous_status == "running"
+          if outcome == :escalated
+            post_notice(task, "escalated", cause: I18n.t("#{NOTICE_SCOPE}.escalation_causes.too_many_resumes"))
+          else
+            post_suspended_notice(task) if announce
+            schedule_resume(task) if task.resume_not_before
+          end
+        end
+
+        def after_resume(task, outcome)
+          if outcome == :escalated
+            post_notice(task, "escalated", cause: I18n.t("#{NOTICE_SCOPE}.escalation_causes.expired"))
+          elsif start(task)
+            post_notice(task, "resumed")
+          end
+        end
+
         # @return [Array(outcome, previous_status, announce)]
-        def transition_to_suspended(task, reason, resume_not_before)
+        def transition_to_suspended(task, reason, resume_not_before, execution_generation)
           task.with_lock do
             next [] unless SUSPENDABLE_STATUSES.include?(task.status)
+            next [] unless ExecutionFence.current?(task, execution_generation)
 
             previous_status = task.status
             if task.resume_count >= MAX_RESUMES
@@ -201,6 +263,11 @@ module Collavre
           Rails.logger.error("[TaskResumer] Could not detach partial reply of task #{task.id}: #{e.class}: #{e.message}")
         end
 
+        # @return [Boolean] whether the turn is on its way back. A queued waiter
+        #   that failed to promote still is — StuckDetector's orphan recovery
+        #   picks it up. A topic-less task has no queue behind it, so it goes
+        #   back to suspended for the next sweep, and the attempt that never ran
+        #   is neither counted against MAX_RESUMES nor announced.
         def start(task)
           if topic_scoped?(task)
             AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
@@ -208,13 +275,14 @@ module Collavre
             job = AiAgentJob.perform_later(task)
             raise ActiveJob::EnqueueError, "AiAgentJob was not enqueued" unless job&.successfully_enqueued?
           end
+          true
         rescue StandardError => e
-          # A queued waiter that failed to promote is picked up by StuckDetector's
-          # orphan recovery. A topic-less task has no queue behind it, so put it
-          # back to suspended for the next sweep rather than leave it pending
-          # with no job.
           Rails.logger.error("[TaskResumer] Could not start resumed task #{task.id}: #{e.class}: #{e.message}")
-          Task.where(id: task.id, status: "pending").update_all(status: "suspended", updated_at: Time.current)
+          return true if topic_scoped?(task)
+
+          Task.where(id: task.id, status: "pending")
+              .update_all(status: "suspended", resume_count: task.resume_count - 1, updated_at: Time.current)
+          false
         end
 
         def schedule_resume(task)

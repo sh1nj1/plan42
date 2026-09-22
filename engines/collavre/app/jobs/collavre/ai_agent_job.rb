@@ -68,7 +68,7 @@ module Collavre
           return
         end
 
-        return unless Workflow::TaskAdmission.start!(task)
+        return unless Workflow::TaskAdmission.start!(task, execution_job_id: job_id)
       else
         # Create new task
         agent = User.find(agent_id_or_task)
@@ -254,16 +254,22 @@ module Collavre
       raise error
     end
 
+    # The offline session is expected back (reconnect grace, a restarted
+    # client), so the turn is suspended rather than cancelled: the reconnect
+    # resumes it as the same row. A session topic's turn waits for that session
+    # specifically — another live session of the agent does not answer it.
     def reject_offline_resumption?(task, agent)
-      return false unless agent.claude_channel_agent? && !agent.claude_channel_online?
+      return false if Orchestration::TaskResumer.claude_channel_reachable?(agent, task)
       Rails.logger.info(
-        "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
+        "[AiAgentJob] Suspending resumed Claude Channel task #{task.id}: " \
         "session offline (no live presence)"
       )
       if task.workflow?
         Workflow::TaskAdmission.reject_resumption!(task)
-      else
-        task.update!(status: "cancelled")
+      elsif !Orchestration::TaskResumer.suspend!(task, reason: "agent_offline")
+        # Not suspendable — an approval-paused turn waits on a person, so it
+        # ends as before rather than resume past its approval.
+        task.cancel_if_active!
         if task.trigger_event_payload&.key?("topic")
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
@@ -314,10 +320,20 @@ module Collavre
       .merge(Workflow::TaskAdmission.attributes(context, agent))
     end
 
+    # An admitted row starts executing under this job, so it carries the
+    # ExecutionFence stamp from creation; a parked waiter is stamped when it is
+    # promoted and started (Workflow::TaskAdmission.start!).
+    def running_attributes(attrs)
+      attrs.merge(
+        status: "running",
+        trigger_event_payload: Orchestration::ExecutionFence.stamp(attrs[:trigger_event_payload], job_id: job_id)
+      )
+    end
+
     def admit_or_defer!(agent, event_name, context)
       attrs = dispatch_attributes(agent, event_name, context)
       unless topic_admission_scoped?(context)
-        return Task.create!(attrs.merge(status: "running")).tap { record_loop_breaker_turn(agent, context) }
+        return Task.create!(running_attributes(attrs)).tap { record_loop_breaker_turn(agent, context) }
       end
 
       task, admitted, current_context = nil, false, false
@@ -340,7 +356,7 @@ module Collavre
         next unless Workflow::TaskAdmission.permitted?(context, agent)
         current_context = true
         admitted = Orchestration::TopicSlot.available_for?(agent.id, attrs[:topic_id], attrs[:creative_id], context)
-        task = Task.create!(attrs.merge(
+        task = Task.create!((admitted ? running_attributes(attrs) : attrs).merge(
           status: admitted ? "running" : "queued",
           # Left nil on an admitted row: it is not waiting, so no notice speaks
           # for it and there is nothing for a stop control to represent.

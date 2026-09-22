@@ -546,7 +546,7 @@ module Collavre
         # test that patches AgentsController#claim_delegated_task to inject a race
         # keeps exercising the same seam.
         def claim_delegated_task(agent, topic, requested_task_id)
-          task_claim_service.claim(agent: agent, topic: topic, requested_task_id: requested_task_id)
+          task_claim_service.claim(agent:, topic:, requested_task_id:, requested_generation: params[:execution_generation])
         end
       end
     end

@@ -75,6 +75,23 @@ module Collavre
         dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
         assert_not_nil dispatch
         assert_equal task.id, dispatch[:data][:task_id]
+        assert_nil dispatch[:data][:execution_generation]
+      end
+
+      test "broadcast carries the task's execution generation for the reply to echo" do
+        task = Collavre::Task.create!(
+          name: "Response to comment_created", status: "running", trigger_event_name: "comment_created",
+          agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: Orchestration::ExecutionFence.stamp(@context)
+        )
+
+        broadcasts = []
+        ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+          ClaudeChannelAdapter.new(agent: @agent, context: @context, task: task).deliver
+        end
+
+        dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+        assert_equal Orchestration::ExecutionFence.generation(task), dispatch[:data][:execution_generation]
       end
 
       test "broadcast task_id is nil when task is not provided" do

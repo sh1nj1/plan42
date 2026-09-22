@@ -27,14 +27,16 @@ module Collavre
         !safety.reason && safety.permitted?(agent)
       end
 
-      def self.start!(task)
-        return task.update!(status: "running") unless task.workflow?
+      # The running transition and the execution stamp are one write, so no
+      # observer sees a running row still carrying the previous attempt's owner.
+      def self.start!(task, execution_job_id: nil)
+        return task.update!(running_attributes(task, execution_job_id)) unless task.workflow?
         outcome = task.with_lock do
           next :duplicate unless task.status.in?(%w[pending pending_approval])
           task.workflow_execution.lock!
           if task.workflow_execution.open? || task.pending_approval?
             next :denied unless FixedAnchor.validate!(task)
-            task.update!(status: "running")
+            task.update!(running_attributes(task, execution_job_id))
             :started
           else
             task.cancel_if_active!
@@ -43,6 +45,11 @@ module Collavre
         end
         cleanup(task) if outcome == :denied
         outcome == :started
+      end
+
+      def self.running_attributes(task, execution_job_id)
+        payload = Orchestration::ExecutionFence.stamp(task.trigger_event_payload, job_id: execution_job_id)
+        { status: "running", trigger_event_payload: payload }
       end
 
       def self.validate_start!(task)

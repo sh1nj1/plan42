@@ -1334,6 +1334,32 @@ module Collavre
                      "a reply that already answered the turn leaves nothing to resume"
         end
 
+        test "a reply from an earlier execution of a resumed dispatch is refused" do
+          reg = register_agent("stale-generation-test")
+          ai_user = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Generation creative")
+          topic = creative.topics.create!(name: "Generation topic", user: @user)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+          task = Collavre::Task.create!(
+            name: "Resumed dispatch", status: "delegated", resume_count: 1,
+            trigger_event_name: "comment_created", agent: ai_user, topic_id: topic.id, creative_id: creative.id,
+            trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp({})
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Stale answer", task_id: task.id, execution_generation: "earlier" },
+            headers: auth_headers, as: :json
+          assert_response :conflict
+          assert_equal "delegated", task.reload.status
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Current answer", task_id: task.id,
+                      execution_generation: Collavre::Orchestration::ExecutionFence.generation(task) },
+            headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal "done", task.reload.status
+        end
+
         test "reply with task_id refuses when task agent is not owned by current_user" do
           # task_id must not become a back-door to ventriloquize someone else's
           # agent — the resolved agent still has to be owned by the token holder.

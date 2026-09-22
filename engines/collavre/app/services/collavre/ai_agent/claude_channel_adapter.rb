@@ -28,10 +28,7 @@ module Collavre
         payload = {
           type: "dispatch",
           agent_id: @agent.id,
-          # task_id lets the MCP client echo it back via /reply so the server
-          # can complete the exact dispatched task even when topic concurrency
-          # > 1 allows multiple in-flight delegated tasks per topic.
-          task_id: @task&.id,
+          **task_fields,
           # session_topic marks whether this dispatch targets a Session-mapped
           # topic (topics.session_id present). One shared agent fans out to many
           # session topics; without this flag every session subscribed to
@@ -68,6 +65,16 @@ module Collavre
       end
 
       private
+
+      # task_id lets the MCP client echo it back via /reply so the server can
+      # complete the exact dispatched task even when topic concurrency > 1
+      # allows multiple in-flight delegated tasks per topic. A turn resumed
+      # after suspension keeps its task_id, so execution_generation, echoed
+      # back with it, tells the resumed attempt's reply from a late one of the
+      # interrupted attempt (Orchestration::ExecutionFence).
+      def task_fields
+        { task_id: @task&.id, execution_generation: @task && Orchestration::ExecutionFence.generation(@task) }
+      end
 
       # True when the dispatched topic is a Claude Channel Session topic (it
       # carries a stable session_id). Work/project topics the agent is merely
