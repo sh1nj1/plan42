@@ -17,6 +17,16 @@ describe('WorkspaceTreeController', () => {
     expect(controller.treeTarget.querySelectorAll('.creative-workspace-tree-link')).toHaveLength(2)
   })
 
+  test('initial saved branches are combined with the selected path', async () => {
+    controller.disconnect()
+    controller.initialExpandedIdsValue = [8, 9]
+    controller.connect()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect([...controller.expandedCreativeIds]).toEqual(expect.arrayContaining(['8', '9', '1', '2', '3']))
+    const urls = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(urls.some((url) => url.includes('expand%5B%5D=8') && url.includes('expand%5B%5D=1'))).toBe(true)
+  })
+
   beforeEach(async () => {
     window.localStorage.clear()
     fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_13_000100) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_22_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1010,6 +1010,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_13_000100) do
     t.index ["creative_id", "user_id"], name: "index_user_creative_preferences_on_creative_id_and_user_id", unique: true
     t.index ["creative_id"], name: "index_user_creative_preferences_on_creative_id"
     t.index ["last_topic_id"], name: "index_user_creative_preferences_on_last_topic_id"
+    t.index ["user_id"], name: "index_root_creative_preferences_on_user_id", unique: true, where: "creative_id IS NULL"
     t.index ["user_id"], name: "index_user_creative_preferences_on_user_id"
   end
 

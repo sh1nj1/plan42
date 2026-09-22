@@ -18,8 +18,9 @@ module Collavre
     end
 
     def insert_preference(attributes)
+      index = attributes[:creative_id].present? ? :index_user_creative_preferences_on_creative_id_and_user_id : :index_root_creative_preferences_on_user_id
       UserCreativePreference.transaction(requires_new: true) do
-        UserCreativePreference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+        UserCreativePreference.insert_all([ attributes ], unique_by: index)
       end
     rescue ActiveRecord::InvalidForeignKey
       # Only the initial insert is covered, after its savepoint has rolled back.

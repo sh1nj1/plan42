@@ -65,14 +65,37 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     find("#inline-close").click
   end
 
-  test "resets expand all state after navigation" do
+  test "preserves expand all state after navigation" do
     find("#expand-all-btn").click
     assert_selector row_selector(@child)
 
+    wait_for_network_idle(timeout: 10)
     visit root_path
     visit collavre.creatives_path
 
+    assert_selector row_selector(@child)
+  end
+
+  test "root expansion restores nested branches and initializes the workspace tree" do
+    @user.update!(creative_workspace_enabled: true)
+    grandchild = Creative.create!(description: "Grandchild", user: @user, parent: @child)
+    visit collavre.creatives_path
+    find("#expand-all-btn").click
+    assert_selector row_selector(grandchild)
+    wait_for_network_idle(timeout: 10)
+
+    page.refresh
+    assert_selector row_selector(grandchild)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{grandchild.id}']", visible: :all
+
+    # The first click starts expand-all mode; the next collapses every branch.
+    find("#expand-all-btn").click
+    find("#expand-all-btn").click
     refute_selector row_selector(@child)
+    wait_for_network_idle(timeout: 10)
+    page.refresh
+    refute_selector row_selector(@child)
+    refute_selector ".creative-workspace-tree-link[data-creative-id='#{@child.id}']", visible: :all
   end
 
   test "clears expanded state after toggling twice" do

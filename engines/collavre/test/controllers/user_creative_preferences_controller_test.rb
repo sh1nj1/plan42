@@ -11,6 +11,33 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email: @user.email, password: "password" }
   end
 
+  test "root toggles reuse one preference and preserve other nodes and contexts" do
+    node_ids = [ @creative.id.to_s, "98765" ]
+    node_ids.each do |node_id|
+      post "/creative_expanded_states/toggle", params: { node_id: node_id, expanded: true }, as: :json
+      assert_response :success
+    end
+    scope = Collavre::UserCreativePreference.where(user_id: @user.id, creative_id: nil)
+    assert_equal 1, scope.count
+    assert_equal node_ids.index_with { true }, scope.first.expanded_status
+
+    post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id, expanded: true }
+    post "/creative_expanded_states/toggle", params: { node_id: node_ids.first, expanded: false }, as: :json
+    assert_equal({ node_ids.last => true }, scope.reload.first.expanded_status)
+    post "/creative_expanded_states/toggle", params: { node_id: node_ids.last, expanded: false }, as: :json
+    assert_empty scope.reload
+    assert Collavre::UserCreativePreference.exists?(user_id: @user.id, creative_id: @creative.id)
+  end
+
+  test "database rejects duplicate root preferences but allows another user" do
+    attributes = { user_id: @user.id, creative_id: nil, expanded_status: { "1" => true } }
+    Collavre::UserCreativePreference.create!(attributes)
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      Collavre::UserCreativePreference.insert_all!([ attributes ])
+    end
+    Collavre::UserCreativePreference.create!(attributes.merge(user_id: users(:two).id))
+  end
+
   test "toggle stores expanded state" do
     post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id, expanded: true }
     assert_response :success

@@ -6,6 +6,8 @@ export default class extends Controller {
   static targets = ['expand']
 
   connect() {
+    this.rowIntents = new WeakMap()
+    this.saveQueue = Promise.resolve()
     this.allExpanded = false
     this.currentCreativeId = null
     this.handleToggleEvent = this.handleToggleEvent.bind(this)
@@ -26,9 +28,9 @@ export default class extends Controller {
     const rows = this.element.querySelectorAll('creative-tree-row')
     rows.forEach((row) => {
       if (this.allExpanded) {
-        this.expandRow(row, { persist: false })
+        this.expandRow(row)
       } else {
-        this.collapseRow(row, { persist: false })
+        this.collapseRow(row)
       }
     })
     this.updateExpandButton()
@@ -96,9 +98,12 @@ export default class extends Controller {
   }
 
   expandRow(row, { persist = true } = {}) {
+    const intent = {}
+    this.rowIntents.set(row, intent)
     const creativeId = this.rowCreativeId(row)
     const childrenDiv = this.childrenContainerFor(row)
-    this.ensureLoaded(row, childrenDiv).then((hasChildren) => {
+    return this.ensureLoaded(row, childrenDiv).then((hasChildren) => {
+      if (this.rowIntents.get(row) !== intent) return
       if (!hasChildren || !childrenDiv) {
         row.hasChildren = false
         this.collapseRow(row, { persist: false })
@@ -112,6 +117,7 @@ export default class extends Controller {
   }
 
   collapseRow(row, { persist = true } = {}) {
+    this.rowIntents.delete(row)
     const creativeId = this.rowCreativeId(row)
     const childrenDiv = this.childrenContainerFor(row)
     if (childrenDiv) {
@@ -191,7 +197,7 @@ export default class extends Controller {
       (childrenDiv && childrenDiv.dataset.expanded === 'true')
 
     if (shouldExpand && row.hasChildren) {
-      this.expandRow(row, { persist: false })
+      this.expandRow(row, { persist: this.allExpanded })
     } else {
       this.collapseRow(row, { persist: false })
     }
@@ -214,7 +220,7 @@ export default class extends Controller {
     }
     const contextId = this.currentCreativeId ?? null
 
-    csrfFetch('/creative_expanded_states/toggle', {
+    this.saveQueue = this.saveQueue.then(() => csrfFetch('/creative_expanded_states/toggle', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -225,6 +231,6 @@ export default class extends Controller {
         node_id: creativeId,
         expanded,
       }),
-    }).catch(() => {})
+    })).catch(() => {})
   }
 }

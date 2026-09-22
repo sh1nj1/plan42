@@ -26,6 +26,7 @@ export default class extends Controller {
     lastVisitedCreativeVisitToken: String,
     lastVisitedCreativeVisitSequence: Number,
     currentPath: Array,
+    initialExpandedIds: Array,
     loadingText: String,
     emptyText: String,
     errorText: String,
@@ -33,7 +34,7 @@ export default class extends Controller {
   }
 
   connect() {
-    this.expandedCreativeIds = new Set()
+    this.expandedCreativeIds = new Set(this.initialExpandedIdsValue.map(String))
     this.pendingDropDestinationIds = new Set()
     this.addExpandedPath(this.currentPathValue)
     this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)

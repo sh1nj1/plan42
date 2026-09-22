@@ -6,6 +6,17 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  test "workspace initializes from this user's root expansion preference" do
+    Collavre::UserCreativePreference.create!(user: users(:one), expanded_status: { "123" => true })
+    Collavre::UserCreativePreference.create!(user: users(:two), expanded_status: { "456" => true })
+    Collavre::UserCreativePreference.create!(user: users(:one), creative: creatives(:tshirt), expanded_status: { "789" => true })
+    get creatives_path(id: creatives(:tshirt).id)
+    assert_response :success
+    assert_select '[data-workspace-tree-initial-expanded-ids-value]' do |elements|
+      assert_equal [ "123" ], JSON.parse(elements.first['data-workspace-tree-initial-expanded-ids-value'])
+    end
+  end
+
   test "default-safe formatting survives parent title and slide view rendering" do
     html = '<del datetime="2026-09-22" cite="https://example.com">removed</del><ins>added</ins><sub>low</sub><sup>high</sup><dl><dt>term</dt><dd>definition</dd></dl>'
     creative = Creative.create!(user: users(:one), description: html)
