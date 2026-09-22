@@ -187,12 +187,18 @@ module Collavre
     # A container still running the pre-migration code during a Kamal rollout
     # creates rows without the token id, after the migration's backfill ran.
     # Every proxy run resolves its workspace before the proxy can call /mcp,
-    # so filling the id in here keeps those calls tagged.
+    # so filling the id in here keeps those calls tagged. The lock reloads the
+    # row, so a concurrent rotate_tokens! can't have its new id overwritten
+    # with the id of the token this copy read before the rotation.
     def repair_callback_access_token_id!
       return self if callback_access_token_id
 
-      token_id = Doorkeeper::AccessToken.by_token(callback_token)&.id
-      update_columns(callback_access_token_id: token_id) if token_id
+      with_lock do
+        next if callback_access_token_id
+
+        token_id = Doorkeeper::AccessToken.by_token(callback_token)&.id
+        update_columns(callback_access_token_id: token_id) if token_id
+      end
       self
     end
 
