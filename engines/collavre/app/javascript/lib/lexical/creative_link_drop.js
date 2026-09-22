@@ -48,12 +48,15 @@ function insertDroppedLinks(selection, nodes) {
     const right = $copyNode(node)
     right.append(...node.getChildren().slice(offset))
     node.insertAfter(right)
-    if (node.is(link)) {
-      link.getParentOrThrow().splice(right.getIndexWithinParent(), 0, nodes)
-      return
-    }
+    const isLink = node.is(link)
+    if (node.getChildrenSize() === 0) node.remove()
     offset = right.getIndexWithinParent()
     node = right.getParentOrThrow()
+    if (right.getChildrenSize() === 0) right.remove()
+    if (isLink) {
+      node.splice(offset, 0, nodes)
+      return
+    }
   }
 }
 

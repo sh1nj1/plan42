@@ -308,6 +308,8 @@ describe.each([
       const links = paragraph.getChildren().filter($isLinkNode)
       expect(links.filter(link => ['/creatives/12', '/creatives/34'].includes(link.getURL()))).toHaveLength(2)
       for (const link of links) {
+        expect(link.getChildrenSize()).toBeGreaterThan(0)
+        expect(link.getTextContent()).not.toBe('')
         expect(link.getChildren().every(child => !$isLinkNode(child))).toBe(true)
       }
       expect(links.filter(link => !['/creatives/12', '/creatives/34'].includes(link.getURL()))
@@ -316,7 +318,9 @@ describe.each([
       expect(exported.querySelector('a a')).toBeNull()
       expect(exported.body.textContent).toBe(root.textContent)
       expect(exported.querySelectorAll('a').length).toBe(links.length)
+      expect([...exported.querySelectorAll('a')].every(link => link.textContent.length > 0)).toBe(true)
     })
+    expect(lexicalToMarkdown(editor)).not.toContain('[](')
   })
 })
 
@@ -336,4 +340,48 @@ test.each(['element', 'nested', 'text-end', 'text-start'])('splits a link with a
   expect(root.querySelector('a a')).toBeNull()
   expect(root.textContent).toBe({ element: '34 original after', nested: 'ori34 ginal after', 'text-end': 'original34  after', 'text-start': '34 original after' }[kind])
   expect(root.querySelector('a[data-creative-id="34"]').parentElement.tagName).toBe('P')
+})
+
+
+describe.each([
+  ['link', () => $createLinkNode('https://example.com/original')],
+  ['autolink', () => $createAutoLinkNode('https://example.com/original')],
+  ['creative-link', () => $createCreativeLinkNode('/creatives/99', '99')]
+])('dropping at %s boundaries', (_kind, createLink) => {
+  test.each(['text', 'element', 'marked-text', 'marked-element'])('keeps no empty wrappers for a %s caret', kind => {
+    for (const end of [false, true]) {
+      editor.update(() => {
+        const text = $createTextNode('original')
+        const mark = $createMarkNode(['annotation']).append(text)
+        const link = createLink().append(kind.startsWith('marked') ? mark : text)
+        $getRoot().clear().append($createParagraphNode().append(
+          $createTextNode('Before '), link, $createTextNode(' after')
+        ))
+        const anchor = kind === 'element' ? link : kind === 'marked-element' ? mark : text
+        const offset = end ? (kind.endsWith('element') ? 1 : 8) : 0
+        anchor.select(offset, offset)
+      }, { discrete: true })
+      drag('drop', { ids: ['34'] })
+      expect(root.textContent).toBe(end ? 'Before original34  after' : 'Before 34 original after')
+      expect(lexicalToMarkdown(editor)).not.toContain('[](')
+      editor.getEditorState().read(() => {
+        const paragraph = $getRoot().getFirstChild()
+        const links = paragraph.getChildren().filter($isLinkNode)
+        expect(links).toHaveLength(2)
+        expect(links.map(link => link.getTextContent())).toEqual(end ? ['original', '34'] : ['34', 'original'])
+        for (const link of links) {
+          expect(link.getChildrenSize()).toBeGreaterThan(0)
+          for (const child of link.getChildren()) {
+            if (child instanceof MarkNode) {
+              expect(child.getChildrenSize()).toBeGreaterThan(0)
+              expect(child.getIDs()).toEqual(['annotation'])
+            }
+          }
+        }
+        const exported = new DOMParser().parseFromString($generateHtmlFromNodes(editor), 'text/html')
+        expect(exported.querySelector('a a')).toBeNull()
+        expect([...exported.querySelectorAll('a')].map(link => link.textContent)).toEqual(end ? ['original', '34'] : ['34', 'original'])
+      })
+    }
+  })
 })
