@@ -139,7 +139,9 @@ class CreativeReactionFilterTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-filter-state='reaction:👍'].active[aria-pressed='true']"
     assert_select "[data-filter-state='any-filter'].active"
-    assert_select "[data-action='click->search-popup#applyReactionFilter']", count: 10
+    assert_select ".search-popup-filters > .search-popup-filter-section:last-child" do
+      assert_select "[data-action='click->search-popup#applyReactionFilter']", count: 10
+    end
     assert_select "[data-creatives--tree-url-value]" do |nodes|
       url = URI.parse(nodes.first["data-creatives--tree-url-value"])
       assert_equal "👍", Rack::Utils.parse_query(url.query)["reaction_emoji"]
