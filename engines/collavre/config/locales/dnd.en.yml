@@ -1,6 +1,8 @@
 en:
   collavre:
     dnd:
+      drag_drop_hint: "You can also drag and drop to move creatives. Hold Shift while dropping to create a link instead of moving."
+      mobile_drag_drop_hint: "On some mobile devices and browsers, you can move creatives by pressing and holding, then dragging."
       move_title: "Move…"
       choose_destination: "Choose destination…"
       destination: "Destination"
