@@ -3,6 +3,7 @@ module Collavre
     self.table_name = "tasks"
     include ReplayLoopCompletion
     include WorkflowCompletion
+    include ApprovalGateCleanup
 
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy

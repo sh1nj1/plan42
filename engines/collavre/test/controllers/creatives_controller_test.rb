@@ -785,8 +785,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
       css_select("#creatives").first["data-creatives--tree-loading-text-value"]
   end
 
-  # The move menu's other two fields are labelled <select>s; without its own
-  # label the destination button announces only the creative it happens to hold.
+  # The inline destination input retains its label after selecting a creative.
   test "index renders the move menu with a labelled destination control" do
     get creatives_path(id: creatives(:childless_creative).id)
 
@@ -794,8 +793,9 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-overflow-menu [data-creative-move-id]", count: 1
     assert_select ".creative-tree-title [data-creative-move-id]", count: 0
     assert_select "#creative-move-destination-label", text: I18n.t("collavre.dnd.destination")
-    assert_select "[data-creative-move-target='destination'][aria-labelledby=?]",
-      "creative-move-destination-label creative-move-destination"
+    assert_select "label[for='creative-move-destination']"
+    assert_select "input[data-creative-move-target='destination'][aria-controls='creative-move-results']"
+    assert_select "#creative-move-results[hidden]"
   end
 
   test "index supplies localized drag and drop failure copy" do

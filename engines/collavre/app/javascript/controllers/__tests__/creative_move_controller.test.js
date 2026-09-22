@@ -20,7 +20,7 @@ beforeEach(async () => {
     <creative-tree-row creative-id="2" can-write><input class="select-creative-checkbox" type="checkbox" value="2" checked></creative-tree-row>
     <div id="link-creative-modal"></div>
     <div data-controller="creative-move" data-creative-move-messages-value='{"empty":"No selectable creatives","archived":"Deselect archived creatives","choose":"Choose","invalid":"Invalid","moving":"Moving","complete":"Done","partial":"Partial","failed":"Failed","cancelled":"Cancelled"}'>
-      <dialog data-creative-move-target="dialog"><button data-creative-move-target="destination"></button>
+      <dialog data-creative-move-target="dialog"><div data-creative-move-target="picker"></div><input data-creative-move-target="destination">
       <select data-creative-move-target="direction"><option value="child">Child</option><option value="up">Before</option><option value="down">After</option></select>
       <select data-creative-move-target="mode"><option value="move">Move</option><option value="link">Link</option></select>
       <button data-creative-move-target="confirm"></button><p data-creative-move-target="status"></p></dialog>
@@ -33,7 +33,7 @@ beforeEach(async () => {
   app.register('creative-move', CreativeMoveController)
   await flush()
   controller = app.getControllerForElementAndIdentifier(document.querySelector('[data-controller]'), 'creative-move')
-  picker = { open: jest.fn() }
+  picker = { open: jest.fn(), close: jest.fn() }
   jest.spyOn(app, 'getControllerForElementAndIdentifier').mockReturnValue(picker)
   document.querySelector('[data-creative-move-id]').click()
 })
@@ -42,7 +42,7 @@ const destination = (id = 99) => {
   controller.chooseDestination()
   const [, select, close, options] = picker.open.mock.calls.at(-1)
   expect(options).toEqual({ allowCreate: false, selectOrigin: false })
-  expect(dialog.open).toBe(false)
+  expect(dialog.open).toBe(true)
   select({ id, label: 'Off-screen creative' })
   close()
 }
@@ -123,7 +123,7 @@ test('opens a native modal from a button and uses the shared picker for off-scre
   destination()
   expect(dialog.open).toBe(true)
   expect(controller.targetId).toBe('99')
-  expect(controller.destinationTarget.textContent).toBe('Off-screen creative')
+  expect(controller.destinationTarget.value).toBe('Off-screen creative')
   expect(controller.confirmTarget.disabled).toBe(false)
 })
 
@@ -293,7 +293,7 @@ test('ignores clicks while picker is open and submissions without a destination'
   expect(executeMoveCommand).not.toHaveBeenCalled()
   controller.chooseDestination()
   document.querySelector('[data-creative-move-id]').click()
-  expect(dialog.open).toBe(false)
+  expect(dialog.open).toBe(true)
 })
 
 test('silences a rejected request after disconnection', async () => {
@@ -308,7 +308,7 @@ test('silences a rejected request after disconnection', async () => {
 })
 
 test('missing picker element fails without leaving the modal', () => {
-  document.getElementById('link-creative-modal').remove()
+  app.getControllerForElementAndIdentifier.mockReturnValue(null)
   controller.chooseDestination()
   expect(controller.statusTarget.textContent).toBe('Failed')
   expect(dialog.open).toBe(true)
@@ -679,4 +679,35 @@ test.each([['move', true], ['link', true], ['move', false], ['link', false]])('r
   executeMoveCommand.mockResolvedValue({ ok: true, succeededIds: ['1'], failedIds: [] })
   await submit()
   expect(executeMoveCommand).toHaveBeenCalledWith({ ids: ['1'], targetId: '99', direction: 'child', mode })
+})
+
+
+test('typing after choosing clears the destination and prevents a stale move', async () => {
+  destination()
+  controller.destinationTarget.value = 'another query'
+  controller.destinationChanged()
+  expect(controller.targetId).toBeNull()
+  expect(controller.confirmTarget.disabled).toBe(true)
+  await submit()
+  expect(executeMoveCommand).not.toHaveBeenCalled()
+})
+
+test('destination input is disabled during a pending move', async () => {
+  destination()
+  let resolve
+  executeMoveCommand.mockReturnValueOnce(new Promise(done => { resolve = done }))
+  const pending = submit()
+  expect(controller.destinationTarget.disabled).toBe(true)
+  expect(picker.close).toHaveBeenCalled()
+  resolve({ ok: false, succeededIds: [], failedIds: ['1', '2'] })
+  await pending
+  expect(controller.destinationTarget.disabled).toBe(false)
+})
+
+
+test.each(['busy', 'picking', 'closed'])('does not reopen inline results while %s', state => {
+  if (state === 'closed') controller.cancel()
+  else controller[state] = true
+  controller.chooseDestination()
+  expect(picker.open).not.toHaveBeenCalled()
 })

@@ -47,6 +47,71 @@ module Collavre
         end
       end
 
+      test "workflow admission executes ahead of a different topic primary agent" do
+        pin_other_agent
+        execution = execute
+        row = execution.admissions.first!
+        calls = []
+        service = ->(task) { calls << task.agent_id; Object.new.tap { |object| object.define_singleton_method(:call) { } } }
+        Recovery.execution(execution)
+        AiAgentService.stub(:new, service) { WorkflowOutboxJob.perform_now(row.id, row.reload.claim_token) }
+        assert_equal [ @agent.id ], calls
+        assert_equal execution.id, execution.tasks.first!.workflow_execution_id
+      end
+
+      %w[queued pending pending_approval].each do |status|
+        test "#{status} workflow admission survives a later topic pin" do
+          execution = execute
+          task = materialize(execution, status: status)
+          pin_other_agent
+          assert Orchestration::Matcher.prepare_waiting_task!(task)
+          assert_equal task.trigger_event_payload,
+            Orchestration::Matcher.prepare_waiting_payload(task.trigger_event_payload, @agent)
+          assert TaskAdmission.validate_start!(task)
+          assert Orchestration::AgentOrchestrator.refresh_deferred_context!(task)
+        end
+      end
+
+      test "approval resumption runs its workflow agent despite a different topic pin" do
+        task = materialize(execute, status: "pending_approval")
+        pin_other_agent
+        calls = []
+        service = ->(resumed) { calls << resumed.id; Object.new.tap { |object| object.define_singleton_method(:call) { } } }
+        AiAgentService.stub(:new, service) { AiAgentJob.perform_now(task) }
+        assert_equal [ task.id ], calls
+      end
+
+      test "a workflow admission still stops when its responder loses permission" do
+        task = materialize(execute, status: "pending")
+        pin_other_agent
+        CreativeShare.where(creative: @creative, user: @agent).delete_all
+        CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
+        assert_not TaskAdmission.validate_start!(task)
+        assert_equal "cancelled", task.reload.status
+      end
+
+      test "a workflow id alone or mismatched anchor cannot bypass topic assignment" do
+        execution = execute
+        pin_other_agent
+        forged = @context.merge("workflow_execution_id" => execution.id)
+        forged["comment"] = { "id" => -1 }
+        assert_not Orchestration::Matcher.permits_assignment?(forged, @agent)
+        assert_not Orchestration::Matcher.permits_assignment?(@context, @agent)
+        payload = execution.admissions.first!.context
+        assert_not Orchestration::Matcher.permits_assignment?(payload, users(:two))
+      end
+
+      %w[off shadow].each do |mode|
+        test "workflow priority does not bypass #{mode} routing on resumption" do
+          execution = execute
+          task = materialize(execution, status: "pending")
+          pin_other_agent
+          @policy.update!(config: { "workflow_routing" => mode })
+          assert_not TaskAdmission.validate_start!(task)
+          assert_equal "cancelled", task.reload.status
+        end
+      end
+
       test "successful completion reserves one persisted child and reuses its envelope" do
         emits!
         execution = execute
@@ -1366,6 +1431,14 @@ module Collavre
         data = @rule.data.deep_dup
         data["workflow_rule"]["emits"] = "workflow_step_completed"
         @rule.update!(data: data)
+      end
+
+      def pin_other_agent
+        other = users(:channel_bot)
+        other.update!(llm_vendor: "google", llm_model: "gemini-1.5-flash")
+        CreativeShare.create!(creative: @creative, user: other, shared_by: @owner, permission: :feedback)
+        CreativeSharesCache.find_or_create_by!(creative: @creative, user: other, permission: :feedback)
+        @topic.set_primary_agent!(other)
       end
 
       def materialize(execution, status: "running")

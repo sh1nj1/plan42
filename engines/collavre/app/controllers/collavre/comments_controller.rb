@@ -9,6 +9,7 @@ module Collavre
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
 
+    include Collavre::Comments::ApprovalGateActions
     include Collavre::Comments::HistoryTopicGuard
 
     def fullscreen

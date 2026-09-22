@@ -219,6 +219,10 @@ textarea.modal-dialog-input {
   color: var(--text-muted);
 }
 
+.modal-dialog-hints.mobile-only {
+  display: none;
+}
+
 .modal-dialog-hint {
   display: inline-flex;
   align-items: center;
@@ -368,4 +372,55 @@ textarea.modal-dialog-input {
   .modal-dialog-hints {
     display: none;
   }
+
+  .modal-dialog-hints.mobile-only {
+    display: block;
+  }
+}
+
+/* Destination browsing stays inside the native move dialog's top layer. */
+.creative-move-results {
+  max-height: 30vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--surface-section);
+  box-shadow: var(--shadow-2);
+}
+
+.creative-move-status {
+  margin: 0;
+  font-size: var(--text-0);
+  color: var(--text-muted);
+}
+
+.creative-move-status:empty {
+  display: none;
+}
+
+[data-creative-move-target="confirm"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.creative-move-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Native dialog margins otherwise offset the shared fixed-position panel. */
+dialog.creative-move-dialog {
+  margin: 0;
+}
+
+.creative-move-dialog .modal-dialog-title {
+  margin: 0;
 }

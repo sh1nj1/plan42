@@ -151,6 +151,7 @@ describe("AgentConnectionController", () => {
     controller.renderSession({ engine: "codex_custom", flow: "api-key", status: "pending", sessionId: "session-1" })
 
     const baseUrl = document.querySelector('[data-role="base-url"]')
+    expect(baseUrl.labels[0].textContent).toBe("Provider base URL")
     const secret = document.querySelector('[data-role="secret"]')
     expect(baseUrl).not.toBeNull()
     expect(secret).not.toBeNull()

@@ -1044,6 +1044,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000001) do
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
     t.string "google_uid"
+    t.boolean "justify_creative_descriptions", default: true, null: false
     t.datetime "last_visited_creative_at"
     t.string "last_visited_creative_client_id"
     t.integer "last_visited_creative_id"

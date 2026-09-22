@@ -16,6 +16,91 @@ module Collavre
       end
     end
 
+    test "list and pagination never compute document diffs" do
+      topic = @creative.reload.history_topic
+      diff = Creatives::ChangeSetDiff
+      diff.class_eval { alias_method :original_groups, :groups }
+      diff.define_method(:groups) { raise "List must not build document diffs" }
+      begin
+        [ {}, { before_id: @change_set.id + 1 }, { after_id: @change_set.id - 1 } ].each do |cursor|
+          get creative_comments_path(@creative), params: { topic_id: topic.id }.merge(cursor)
+          assert_response :success
+          assert_select ".creative-history-item", count: 1
+          assert_select ".creative-history-split, [data-mode]", count: 0
+          assert_select "[data-creative-history-detail-url-value='#{creative_change_set_path(@creative, @change_set)}']", count: 1
+        end
+      ensure
+        diff.class_eval { alias_method :groups, :original_groups; remove_method :original_groups }
+      end
+    end
+
+    test "detail renders the split diff without a layout and prevents HTTP caching" do
+      get creative_change_set_path(@creative, @change_set)
+
+      assert_response :success
+      assert_equal "no-store", response.headers["Cache-Control"]
+      refute_match(/<html[\s>]/i, response.body)
+      assert_select ".creative-history-split", count: 1
+      assert_select ".creative-history-revert", count: 1
+    end
+
+    test "detail rejects unrelated and missing change sets" do
+      foreign = Creative.create!(description: "Foreign", user: @user)
+      get creative_change_set_path(foreign, @change_set)
+      assert_response :not_found
+      get creative_change_set_path(@creative, 0)
+      assert_response :not_found
+    end
+
+    test "detail checks the requested linked placement permission" do
+      linked = Creative.create!(user: users(:two), origin: @creative)
+      get creative_change_set_path(linked, @change_set)
+      assert_response :forbidden
+    end
+
+    test "detail supports a readable linked placement" do
+      linked = Creative.create!(user: @user, origin: @creative)
+      get creative_change_set_path(linked, @change_set)
+      assert_response :success
+      assert_select ".creative-history-split", count: 1
+    end
+
+    test "detail rechecks revoked permissions" do
+      viewer = users(:two)
+      viewer.update!(email_verified_at: Time.current)
+      share = CreativeShare.create!(creative: @creative, user: viewer, shared_by: @user, permission: :read)
+      delete session_path
+      post session_path, params: { email: viewer.email, password: "password" }
+      get creative_change_set_path(@creative, @change_set)
+      assert_response :success
+      assert_select "[data-mode]", count: 0
+
+      share.update!(permission: :no_access)
+      get creative_change_set_path(@creative, @change_set)
+      assert_response :forbidden
+    end
+
+    test "detail hides inaccessible changes and the list hides their summary" do
+      foreign = Creative.create!(description: "Private after", user: users(:two))
+      snapshot = Creatives::History.snapshot(foreign)
+      @change_set.update!(summary: "Private summary")
+      @change_set.creative_changes.create!(creative: foreign, operation: "update", position: 1,
+        before: snapshot.merge("description" => "Private before"), after: snapshot)
+
+      get creative_comments_path(@creative), params: { topic_id: @creative.reload.history_topic.id }
+      assert_response :success
+      refute_includes response.body, "Private summary"
+      get creative_change_set_path(@creative, @change_set)
+      assert_response :success
+      refute_includes response.body, "Private before"
+      refute_includes response.body, "Private after"
+
+      @change_set.creative_changes.where(creative_id: @creative.id).delete_all
+      @change_set.creative_changes.sole.update!(previous_parent_id: @creative.id)
+      get creative_change_set_path(@creative, @change_set)
+      assert_response :not_found
+    end
+
     test "revert creates an append-only reverse change set" do
       assert_difference("CreativeChangeSet.count", 1) do
         post creative_apply_change_set_path(@creative, @change_set), params: { mode: "revert" }, as: :json

@@ -1,6 +1,6 @@
 module Collavre
   class AiClient
-    include ErrorHandling
+    include ErrorHandling, ApprovalGate
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
       - Be concise and focus on the essentials (avoid unnecessary verbosity).
@@ -125,8 +125,7 @@ module Collavre
         Rails.logger.warn "Unsupported LLM vendor '#{@vendor}'. Attempting to use default (google)."
       end
 
-      @conversation = build_conversation(tools)
-      add_messages(@conversation, contents)
+      prepare_gate_conversation(contents, tools)
 
       response = @conversation.complete do |chunk|
         # A chunk at all is the provider having accepted the request and begun
@@ -375,6 +374,7 @@ module Collavre
     end
 
     def check_tool_approval!(tool_call)
+      check_approval_gate!(tool_call)
       tool_name = tool_call.name
       task = context&.dig(:task)
 

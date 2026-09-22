@@ -10,6 +10,16 @@ module Collavre
 
     before_action :set_creative
 
+    def show
+      change_set = CreativeChangeSet.for_creative_scope(@requested_creative).find(params[:id])
+      diff = Creatives::ChangeSetDiff.new(change_set, user: Current.user)
+      return head :not_found if diff.change_count.zero?
+
+      response.headers["Cache-Control"] = "no-store"
+      render partial: "collavre/creative_change_sets/detail",
+             locals: { creative: @requested_creative, change_set: change_set, diff: diff }
+    end
+
     def apply
       change_set = CreativeChangeSet.for_creative_scope(@requested_creative).find(params[:id])
       result = valid_mode?(change_set) ? apply_service(change_set).call : invalid_action_result

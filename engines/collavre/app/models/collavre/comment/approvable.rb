@@ -2,6 +2,7 @@ module Collavre
   class Comment < ApplicationRecord
     module Approvable
       extend ActiveSupport::Concern
+      include ApprovalGate
 
       # A message that renders an approval button (pending) or an
       # approved/denied status label (decided) in the chat list — i.e. it

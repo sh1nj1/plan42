@@ -70,8 +70,9 @@ module Collavre
 
       MODES = %w[off shadow on].freeze
 
-      def initialize(context)
+      def initialize(context, ignore_topic_primary: false)
         @context = context
+        @ignore_topic_primary = ignore_topic_primary
       end
 
       def workflow_routing_mode
@@ -166,6 +167,8 @@ module Collavre
       # primary_agent_id is only a preference. The Arbiter needs to tell them
       # apart even though #primary_agent_id collapses both.
       def topic_primary_agent_id
+        return nil if @ignore_topic_primary
+
         topic_id = @context.dig("topic", "id")
         return nil unless topic_id
 
