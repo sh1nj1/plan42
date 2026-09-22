@@ -29,7 +29,7 @@ function shouldUseDefaultNavigation(event, anchor) {
 function workspaceCreativePath(href) {
   try {
     const url = new URL(href, window.location.href)
-    if (url.origin !== window.location.origin) return null
+    if (url.origin !== window.location.origin || isDefaultFragmentNavigation(url)) return null
 
     return `${url.pathname}${url.search}${url.hash}`
   } catch (_error) {
@@ -37,8 +37,10 @@ function workspaceCreativePath(href) {
   }
 }
 
-function isDefaultFragmentNavigation(href) {
-  return href.startsWith("#") && !/^#comment_\d+$/.test(href)
+function isDefaultFragmentNavigation(url) {
+  if (!url.href.includes("#") || /^#comment_\d+$/.test(url.hash)) return false
+
+  return url.href.split("#")[0] === window.location.href.split("#")[0]
 }
 
 export function handleCreativeLinkClick(event) {
@@ -46,8 +48,6 @@ export function handleCreativeLinkClick(event) {
   if (!anchor || shouldUseDefaultNavigation(event, anchor)) return false
 
   const href = anchor.getAttribute("href")
-  if (isDefaultFragmentNavigation(href)) return false
-
   const path = workspaceCreativePath(href)
   const mountPath = collavreMountPath()
   if (!path || (!creativeIdFromUrl(path, mountPath) && !isCreativeCommentPath(path, mountPath))) return false

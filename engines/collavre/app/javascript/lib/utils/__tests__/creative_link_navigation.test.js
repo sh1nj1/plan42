@@ -25,6 +25,7 @@ describe("creative link navigation", () => {
   })
 
   afterEach(() => {
+    window.history.replaceState({}, "", "/")
     delete window.Turbo
     document.body.innerHTML = ""
   })
@@ -258,6 +259,31 @@ describe("creative link navigation", () => {
 
     expect(event.defaultPrevented).toBe(false)
     expect(visit).not.toHaveBeenCalled()
+  })
+
+  test.each(["", "/collavre"])("preserves full-form same-document fragments under %s", (mount) => {
+    const current = `${mount}/creatives?id=42`
+    window.history.replaceState({}, "", `${current}#old-section`)
+    document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = mount
+
+    for (const href of [`${current}#creatives`, `${window.location.origin}${current}#release_comment_456`, "?id=42#creatives"]) {
+      document.getElementById("creative-link").setAttribute("href", href)
+      expect(click("#creative-link").defaultPrevented).toBe(false)
+    }
+    expect(visit).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    "/creatives?id=42#comment_456",
+    "/creatives?id=43#creatives",
+    "/creatives/43#creatives",
+    "/creatives?id=42",
+  ])("keeps frame navigation for %s", (href) => {
+    window.history.replaceState({}, "", "/creatives?id=42#old-section")
+    document.getElementById("creative-link").setAttribute("href", href)
+
+    expect(click("#creative-link").defaultPrevented).toBe(true)
+    expect(visit).toHaveBeenCalledWith(href, { action: "advance", frame: WORKSPACE_FRAME_ID })
   })
 
   test("navigates a supported comment fragment through the workspace frame", () => {
