@@ -1,14 +1,17 @@
 import csrfFetch from './csrf_fetch'
+import { reserveExpansionIntent } from './expansion_intent'
 
 // Keep same-user writes ordered across Turbo controller replacements.
 let saveQueue = Promise.resolve()
 const SAVE_TIMEOUT_MS = 10000
 
-export function queueExpansionSave(userId, state) {
+export function queueExpansionSave(userId, state, intent = reserveExpansionIntent(userId)) {
   saveQueue = saveQueue.then(async () => {
     if (!userId || document.body.dataset.currentUserId !== userId) return
 
-    const body = { ...state, expected_user_id: userId }
+    const token = await intent
+    if (!Number.isSafeInteger(token) || token <= 0) return
+    const body = { ...state, expected_user_id: userId, expansion_intent: token }
     // Issuance only reserves an order; a timed-out reservation cannot mutate
     // expansion state. The server counter survives hard reloads and other tabs.
     const { expansion_save_fence: fence } = await saveWithTimeout('fence', body)

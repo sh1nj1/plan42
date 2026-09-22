@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import { reserveExpansionIntent } from '../../lib/api/expansion_intent'
 import { queueExpansionSave } from '../../lib/api/expansion_save_queue'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 
@@ -100,7 +101,7 @@ export default class extends Controller {
   }
 
   expandRow(row, { persist = true } = {}) {
-    const intent = {}
+    const intent = { order: persist ? reserveExpansionIntent(this.userId) : null }
     this.rowIntents.set(row, intent)
     const creativeId = this.rowCreativeId(row)
     const childrenDiv = this.childrenContainerFor(row)
@@ -114,7 +115,7 @@ export default class extends Controller {
       childrenDiv.style.display = ''
       childrenDiv.dataset.expanded = 'true'
       row.expanded = true
-      if (persist) this.saveExpansionState(creativeId, true)
+      if (persist) this.saveExpansionState(creativeId, true, intent.order)
     })
   }
 
@@ -215,7 +216,7 @@ export default class extends Controller {
     return row.creativeId || row.getAttribute('creative-id')
   }
 
-  saveExpansionState(creativeId, expanded) {
+  saveExpansionState(creativeId, expanded, intent) {
     if (!creativeId) return
     if (this.currentCreativeId === null || this.currentCreativeId === undefined) {
       this.currentCreativeId = this.computeCurrentCreativeId()
@@ -226,6 +227,6 @@ export default class extends Controller {
       creative_id: contextId,
       node_id: creativeId,
       expanded,
-    })
+    }, intent)
   }
 }

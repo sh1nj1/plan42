@@ -13,6 +13,19 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email: @user.email, password: "password" }
   end
 
+  test "delayed earlier intent with a newer fence cannot resurrect a collapse" do
+    [ nil, @creative.id ].each do |context|
+      intent = { creative_id: context, node_id: @creative.id, expected_user_id: @user.id }
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: false,
+        expansion_save_fence: expansion_fence(context), expansion_intent: 200), as: :json
+      assert_equal true, response.parsed_body["success"]
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: true,
+        expansion_save_fence: expansion_fence(context), expansion_intent: 100), as: :json
+      assert_equal true, response.parsed_body["stale_expansion_save"]
+      assert_nil Collavre::UserCreativePreference.find_by(user: @user, creative_id: context)
+    end
+  end
+
   test "late timed out saves from previous documents cannot overwrite a newer collapse" do
     [ nil, @creative.id ].each do |context|
       intent = { creative_id: context, node_id: @creative.id }

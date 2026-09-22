@@ -11,7 +11,7 @@ module Collavre
 
       saved = with_expansion_order do |order|
         key = [ creative_id.to_s.presence, node_id ].to_json
-        next false unless order.accept?(params[:expansion_save_fence], key)
+        next false unless order.accept?(params[:expansion_save_fence], key, params[:expansion_intent])
 
         with_preference(creative_id) do |record|
           state = record.set_expanded(node_id, expanded)

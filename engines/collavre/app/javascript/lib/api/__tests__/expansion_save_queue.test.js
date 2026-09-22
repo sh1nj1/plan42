@@ -12,7 +12,10 @@ describe('server-issued expansion ordering', () => {
     document.body.dataset.currentUserId = '10'
     global.fetch = jest.fn().mockResolvedValue(response({ success: true }))
   })
-  afterEach(() => jest.useRealTimers())
+  afterEach(() => {
+    jest.useRealTimers()
+    delete navigator.locks
+  })
 
   test('hard reload uses the shared server counter for a new document', async () => {
     fetch.mockResolvedValueOnce(response({ expansion_save_fence: 41 }))
@@ -25,8 +28,37 @@ describe('server-issued expansion ordering', () => {
     const calls = [...firstCalls, ...fetch.mock.calls]
     expect(calls.map(([url]) => url.split('/').at(-1))).toEqual(['fence', 'toggle', 'fence', 'toggle'])
     const bodies = calls.map(([, options]) => JSON.parse(options.body))
-    expect(bodies[1]).toEqual({ ...intent, expected_user_id: '10', expansion_save_fence: 41 })
-    expect(bodies[3]).toEqual({ ...intent, expected_user_id: '10', expanded: false, expansion_save_fence: 42 })
+    expect(bodies[1]).toEqual({ ...intent, expected_user_id: '10', expansion_intent: expect.any(Number), expansion_save_fence: 41 })
+    expect(bodies[3]).toEqual({ ...intent, expected_user_id: '10', expanded: false, expansion_intent: expect.any(Number), expansion_save_fence: 42 })
+  })
+
+  test('reserves intent before a delayed fence while another tab saves', async () => {
+    let release
+    fetch.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const early = queueExpansionSave('10', intent)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const earlyRequest = fetch.mock.calls[0]
+    jest.resetModules()
+    const secondTab = await import('../expansion_save_queue')
+    fetch.mockResolvedValueOnce(response({ expansion_save_fence: 1 }))
+    await secondTab.queueExpansionSave('10', { ...intent, expanded: false })
+    release(response({ expansion_save_fence: 2 }))
+    await early
+    const bodies = [earlyRequest, ...fetch.mock.calls].map(([, options]) => JSON.parse(options.body))
+    expect(bodies[0].expansion_intent).toBeLessThan(bodies[1].expansion_intent)
+    expect(bodies[3].expansion_intent).toBe(bodies[0].expansion_intent)
+    expect(bodies[2].expanded).toBe(false)
+    expect(bodies[3].expansion_save_fence).toBe(2)
+  })
+
+  test('a failed intent reservation skips the write and does not block later saves', async () => {
+    navigator.locks = { request: jest.fn().mockRejectedValueOnce(new Error('unavailable'))
+      .mockImplementationOnce((key, allocate) => Promise.resolve(allocate())) }
+    await queueExpansionSave('10', intent)
+    expect(fetch).not.toHaveBeenCalled()
+    fetch.mockResolvedValueOnce(response({ expansion_save_fence: 1 }))
+    await queueExpansionSave('10', intent)
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   test.each([{}, { expansion_save_fence: 0 }, { expansion_save_fence: '1' }, { expansion_save_fence: 1.5 }])('invalid reservation %j never sends an unfenced toggle', async (body) => {

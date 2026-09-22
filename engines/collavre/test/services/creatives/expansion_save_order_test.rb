@@ -48,4 +48,43 @@ class Collavre::Creatives::ExpansionSaveOrderTest < ActiveSupport::TestCase
     assert_not order.accept?("invalid", "a")
     assert_not order.accept?(0, "a")
   end
+  test "intent order wins over reversed fence arrival in either apply order" do
+    [ true, false ].each do |newer_first|
+      order = Order.new(nil)
+      newer_fence = order.issue
+      older_fence = order.issue
+      if newer_first
+        assert order.accept?(newer_fence, "a", 200)
+        assert_not order.accept?(older_fence, "a", 100)
+      else
+        assert order.accept?(older_fence, "a", 100)
+        assert order.accept?(newer_fence, "a", 200)
+      end
+      order = Order.new(JSON.parse(order.state.to_json))
+      assert_not order.accept?(order.issue, "a", 100)
+      assert_not order.accept?(order.issue, "a", 200)
+      assert_not order.accept?(order.issue, "a")
+      assert order.accept?(order.issue, "a", 300)
+      assert order.accept?(order.issue, "b", 150)
+    end
+  end
+
+  test "invalid intent cannot consume a fence" do
+    order = Order.new(nil)
+    fence = order.issue
+    [ 0, -1, "bad", "1.5", 9_007_199_254_740_992 ].each do |intent|
+      assert_not order.accept?(fence, "a", intent)
+    end
+    assert order.accept?(fence, "a", 100)
+  end
+
+  test "intent watermarks remain bounded after retirement and reload" do
+    order = Order.new(nil)
+    (Order::MAX_NODES + 5).times do |index|
+      assert order.accept?(order.issue, index.to_s, index + 1)
+    end
+    order = Order.new(JSON.parse(order.state.to_json))
+    assert_equal Order::MAX_NODES, order.state["intents"]["nodes"].size
+    assert_not order.accept?(order.issue, "0", 1)
+  end
 end

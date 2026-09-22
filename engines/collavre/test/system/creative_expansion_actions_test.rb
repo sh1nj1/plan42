@@ -23,6 +23,14 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     "creative-tree-row[dom-id='creative-#{creative.id}']"
   end
 
+  def wait_for_expansion_saves
+    page.evaluate_async_script <<~JS
+      const done = arguments[0];
+      const element = document.querySelector('[data-controller~="creatives--expansion"]');
+      window.Stimulus.getControllerForElementAndIdentifier(element, 'creatives--expansion').saveQueue.then(done);
+    JS
+  end
+
   test "binds edit and comment buttons for loaded children" do
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
@@ -94,7 +102,7 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     find("#expand-all-btn").click
     find("#expand-all-btn").click
     refute_selector row_selector(@child)
-    wait_for_network_idle(timeout: 10)
+    wait_for_expansion_saves
     page.refresh
     refute_selector row_selector(@child)
     refute_selector ".creative-workspace-tree-link[data-creative-id='#{@child.id}']", visible: :all
@@ -117,19 +125,64 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
     assert_selector row_selector(@child), visible: :visible
-    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
-      assert UserCreativePreference.exists?(user: @user, creative_id: nil)
-    end
+    wait_for_expansion_saves
+    assert UserCreativePreference.exists?(user: @user, creative_id: nil)
 
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
     refute_selector row_selector(@child), visible: :visible
 
-    # fetch-based queued saves are not tracked by wait_for_network_idle's XHR hook.
+    wait_for_expansion_saves
+    assert_nil UserCreativePreference.find_by(user: @user, creative_id: nil)
+    assert_not_empty @user.reload.expansion_save_sequences
+  end
+
+  test "later collapse in another tab wins over a delayed earlier fence request" do
+    first_tab = current_window
+    second_tab = open_new_window
+    within_window(second_tab) do
+      visit collavre.creatives_path
+    end
+    page.execute_script <<~JS
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = (url, options) => {
+        if (String(url).endsWith('/creative_expanded_states/fence')) {
+          return new Promise(resolve => {
+            window.releaseExpansionFence = () => resolve(originalFetch(url, options));
+          });
+        }
+        return originalFetch(url, options).then(response => {
+          if (String(url).endsWith('/creative_expanded_states/toggle')) {
+            response.clone().json().then(body => { window.delayedExpansionResult = body; });
+          }
+          return response;
+        });
+      };
+    JS
+    find("#{row_selector(@root_creative)} .creative-toggle-btn").click
+    assert_selector row_selector(@child), visible: :visible
     page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert page.evaluate_script("typeof window.releaseExpansionFence === 'function'")
+    end
+    within_window(second_tab) do
+      find("#{row_selector(@root_creative)} .creative-toggle-btn").click
+      assert_selector row_selector(@child), visible: :visible
+      find("#{row_selector(@root_creative)} .creative-toggle-btn").click
+      refute_selector row_selector(@child), visible: :visible
+      wait_for_expansion_saves
+      assert_operator @user.reload.expansion_save_sequences.fetch("issued", 0), :>=, 2
       assert_nil UserCreativePreference.find_by(user: @user, creative_id: nil)
     end
-    assert_not_empty @user.reload.expansion_save_sequences
+    page.execute_script("window.releaseExpansionFence()")
+    wait_for_expansion_saves
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal true, page.evaluate_script("window.delayedExpansionResult?.stale_expansion_save")
+    end
+    page.refresh
+    refute_selector row_selector(@child), visible: :visible
+  ensure
+    switch_to_window(first_tab) if first_tab
+    second_tab&.close
   end
 
   test "visiting a comment share link opens popup and highlights comment" do
