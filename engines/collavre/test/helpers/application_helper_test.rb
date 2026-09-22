@@ -48,4 +48,18 @@ class Collavre::ApplicationHelperTest < ActionView::TestCase
 
     assert_not desktop?
   end
+
+  test "creative description alignment class follows the user preference" do
+    @user.update!(justify_creative_descriptions: true)
+    Current.user = @user
+    assert_equal "creative-description-justified", creative_description_alignment_class
+
+    @user.update!(justify_creative_descriptions: false)
+    assert_equal "", creative_description_alignment_class
+  end
+
+  test "creative description alignment remains justified without a signed-in user" do
+    Current.user = nil
+    assert_equal "creative-description-justified", creative_description_alignment_class
+  end
 end
