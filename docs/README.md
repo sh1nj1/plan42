@@ -46,6 +46,8 @@ thin agent entry point that indexes into this directory.
 
 ## Operations & Infrastructure
 
+- [task_restart_recovery.md](task_restart_recovery.md) — offline reconnect
+  grace, worker ownership checks, and interrupted task recovery.
 - [deploy_to_lightsail.md](deploy_to_lightsail.md) — single-instance AWS
   Lightsail runbook (host launch script, PostgreSQL, Kamal, backups).
 - [deploy_to_ec2.md](deploy_to_ec2.md)

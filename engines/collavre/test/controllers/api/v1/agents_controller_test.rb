@@ -1865,6 +1865,60 @@ module Collavre
           assert Topic.find(inbox_topic_id).archived?
         end
 
+        test "destroy cancels suspended work across topics and prevents resumption after registration" do
+          reg = register_agent("suspended-teardown")
+          agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          work_topic = creatives(:tshirt).topics.create!(name: "Suspended work", user: @user)
+          tasks = %w[queued pending running delegated].map do |status|
+            Task.create!(name: "Suspended #{status}", agent: agent,
+              topic_id: status == "delegated" ? work_topic.id : topic.id,
+              creative_id: status == "delegated" ? work_topic.creative_id : topic.creative_id,
+              status: "suspended", suspended_from: status,
+              suspend_reason: "agent_offline", suspended_at: Time.current)
+          end
+
+          delete "/api/v1/agent/#{agent.id}", params: { topic_id: topic.id },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+          tasks.each { |task| assert_equal "cancelled", task.reload.status }
+
+          reopened = register_agent("suspended-teardown")
+          assert_equal topic.id, reopened["topic_id"]
+          assert_not topic.reload.archived?
+          tasks.each do |task|
+            assert_nil Orchestration::TaskResumer.resume!(task.reload)
+            assert_equal "cancelled", task.reload.status
+          end
+        end
+
+        test "destroy cancels only its session's suspended work while a sibling is live" do
+          registrations = %w[sess-a sess-b].map do |session_id|
+            post "/api/v1/agent/register",
+              params: { agent_name: "suspended-shared", session_id: session_id },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            JSON.parse(response.body)
+          end
+          agent = User.find(registrations.first["agent_id"])
+          topics = registrations.map { |reg| Topic.find(reg["topic_id"]) }
+          AgentSubscription.create!(agent: agent, token: "live-sibling", session_id: "sess-b")
+          tasks = topics.map do |topic|
+            Task.create!(name: "Suspended session", agent: agent, topic_id: topic.id,
+              creative_id: topic.creative_id, status: "suspended", suspended_from: "delegated",
+              suspend_reason: "agent_offline", suspended_at: Time.current)
+          end
+
+          delete "/api/v1/agent/#{agent.id}", params: { topic_id: topics.first.id },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+          assert_equal "cancelled", tasks.first.reload.status
+          assert_equal "suspended", tasks.last.reload.status
+          assert topics.first.reload.archived?
+          assert_not topics.last.reload.archived?
+          assert agent.claude_channel_online?
+        end
+
         test "destroy cancels queued and pending tasks so dequeue does not activate clientless work" do
           # Topic queue (Task.queued_for_topic) is per-topic, not per-agent.
           # Without cancelling this agent's queued/pending tasks first,

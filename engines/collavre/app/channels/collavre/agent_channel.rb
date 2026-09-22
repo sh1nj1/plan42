@@ -56,7 +56,7 @@ module Collavre
         dropped_session_id = scope.pick(:session_id)
         deleted = scope.delete_all
         # Stale: our presence row is already gone. The live owner's lifecycle
-        # owns routing — do not clobber it, do not schedule cancellation.
+        # owns routing — do not clobber it, do not schedule suspension.
         if deleted.zero?
           dropped_session_id = nil
           next
@@ -69,18 +69,18 @@ module Collavre
 
         # Another session is still LIVE on this shared agent. Its presence keeps
         # dispatch active, so only the final disconnect owns agent-wide cleanup.
-        next if AgentSubscription.live.where(agent_id: @session_agent.id).exists?
+        next if defer_disconnected_work(dropped_session_id)
 
         @session_agent.update_columns(routing_subscription_token: nil)
         last_session_disconnected = true
       end
 
       if last_session_disconnected
-        # Reconnect-grace cancellation (last session): clearing routing only
+        # Reconnect-grace suspension (last session): clearing routing only
         # makes the agent unroutable. Any task already "delegated" still holds
         # its ResourceTracker slot — the dispatch was broadcast to a now-dead
         # stream so no client remains to call /reply, and the slot would stay
-        # held until StuckDetectorJob times out. The job cancels those tasks
+        # held until StuckDetectorJob times out. The job suspends those tasks
         # after a grace window, but only if the agent is still offline.
         CancelOfflineDelegatedTasksJob
           .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
@@ -91,8 +91,8 @@ module Collavre
         # topic is private to it — siblings filter session_topic dispatches to
         # their own topic, so none will /reply to a task delegated there and it
         # would hold its slot until stuck recovery. Schedule a grace-delayed,
-        # session-scoped cancellation (skipped if this same session reconnects
-        # within the window), mirroring the destroy path's cancel_tasks_for_topic.
+        # session-scoped suspension (skipped if this same session reconnects
+        # within the window).
         CancelOfflineDelegatedTasksJob
           .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
           .perform_later(@session_agent.id, @subscription_token, dropped_session_id)
@@ -134,6 +134,15 @@ module Collavre
 
     private
 
+    def defer_disconnected_work(session_id)
+      sibling_live = AgentSubscription.live.where(agent_id: @session_agent.id).exists?
+      return true if sibling_live && session_id.blank?
+
+      tasks = Orchestration::OfflineTaskGrace.tasks_for(@session_agent, sibling_live ? session_id : nil)
+      Orchestration::OfflineTaskGrace.disconnected!(tasks)
+      sibling_live
+    end
+
     def subscribe_to_topic_stream
       @topic = Topic.find_by(id: params[:topic_id])
       return reject unless @topic
@@ -167,22 +176,28 @@ module Collavre
       # session. routing_subscription_token is kept as the most-recent-session
       # marker (debugging / grace-job arg); presence rows are the real gate.
       if agent.claude_channel_agent?
-        agent.with_lock do
-          # Self-heal: clear crash-orphaned rows for this agent before counting
-          # so this session's activation isn't blocked from, and presence reads
-          # aren't fooled by, a dead process's leftover row.
-          AgentSubscription.reap_stale!(agent.id)
-          # Record the plugin-supplied session_id (stable across --resume) on the
-          # row. The HTTP unregister path (DELETE /api/v1/agent/:id) cannot know
-          # this connection's server-minted @subscription_token, so it correlates
-          # the exiting session to its row via session_id instead.
-          AgentSubscription.create!(
-            agent_id: agent.id,
-            token: @subscription_token,
-            session_id: params[:session_id].presence
-          )
-          agent.update_columns(routing_subscription_token: @subscription_token)
-        end
+        register_presence(agent)
+        ResumeSuspendedTasksJob.perform_later(agent_id: agent.id)
+      end
+    end
+
+    def register_presence(agent)
+      agent.with_lock do
+        # Self-heal: clear crash-orphaned rows for this agent before counting
+        # so this session's activation isn't blocked from, and presence reads
+        # aren't fooled by, a dead process's leftover row.
+        AgentSubscription.reap_stale!(agent.id)
+        # Record the plugin-supplied session_id (stable across --resume) on the
+        # row. The HTTP unregister path (DELETE /api/v1/agent/:id) cannot know
+        # this connection's server-minted @subscription_token, so it correlates
+        # the exiting session to its row via session_id instead.
+        AgentSubscription.create!(
+          agent_id: agent.id,
+          token: @subscription_token,
+          session_id: params[:session_id].presence
+        )
+        agent.update_columns(routing_subscription_token: @subscription_token)
+        Orchestration::OfflineTaskGrace.connected!(agent, params[:session_id])
       end
     end
 
@@ -192,7 +207,16 @@ module Collavre
     def touch_presence
       return unless @session_agent && @subscription_token
 
-      AgentSubscription.touch!(@session_agent.id, @subscription_token)
+      reactivated = @session_agent.with_lock do
+        row = AgentSubscription.find_by(agent_id: @session_agent.id, token: @subscription_token)
+        next false unless row
+
+        stale = row.last_seen_at <= AgentSubscription::STALE_AFTER.ago
+        AgentSubscription.touch!(@session_agent.id, @subscription_token)
+        Orchestration::OfflineTaskGrace.connected!(@session_agent, row.session_id) if stale
+        stale
+      end
+      ResumeSuspendedTasksJob.perform_later(agent_id: @session_agent.id) if reactivated
     end
   end
 end

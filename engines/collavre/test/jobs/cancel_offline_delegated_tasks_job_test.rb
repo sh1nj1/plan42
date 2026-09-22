@@ -2,6 +2,13 @@ require "test_helper"
 
 class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
   setup do
+    @previous_queue_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+  end
+
+  teardown { ActiveJob::Base.queue_adapter = @previous_queue_adapter }
+
+  setup do
     @owner = users(:one)
     @creative = Creative.create!(user: @owner, description: "CancelOfflineDelegatedTasksJob Test")
     @comment = Comment.create!(creative: @creative, user: @owner, content: "Hello")
@@ -18,7 +25,7 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     )
   end
 
-  test "cancels delegated tasks when agent remains offline through grace window" do
+  test "suspends delegated tasks when agent remains offline through grace window" do
     topic = Topic.create!(creative: @creative, name: "cc-offline-topic", user: @owner)
     delegated_task = Task.create!(
       name: "Delegated task",
@@ -33,9 +40,9 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       }
     )
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
+    perform_after_grace(@claude_agent.id, "expected-token-value")
 
-    assert_equal "cancelled", delegated_task.reload.status
+    assert_equal "suspended", delegated_task.reload.status
   end
 
   test "no-op when agent came back online (presence restored)" do
@@ -57,7 +64,7 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     Collavre::AgentSubscription.create!(agent_id: @claude_agent.id, token: "expected-token-value")
     @claude_agent.update_column(:routing_subscription_token, "expected-token-value")
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
+    perform_after_grace(@claude_agent.id, "expected-token-value")
 
     assert_equal "delegated", delegated_task.reload.status, "Task should not be cancelled when agent is back online"
   end
@@ -81,7 +88,7 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     # stale grace job must not double-cancel.
     @claude_agent.update_column(:routing_subscription_token, "new-different-token")
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "old-expected-token")
+    perform_after_grace(@claude_agent.id, "old-expected-token")
 
     assert_equal "delegated", delegated_task.reload.status, "Task should not be cancelled when a different session has taken over"
   end
@@ -105,13 +112,13 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     # proves the agent is online and its delegated work must not be cancelled.
     Collavre::AgentSubscription.create!(agent_id: @claude_agent.id, token: "sibling-still-here")
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
+    perform_after_grace(@claude_agent.id, "expected-token-value")
 
     assert_equal "delegated", delegated_task.reload.status,
       "delegated work must survive while a sibling session is still subscribed"
   end
 
-  test "cancels delegated work when the only presence row is stale (crash-orphaned)" do
+  test "suspends delegated work when the only presence row is stale (crash-orphaned)" do
     topic = Topic.create!(creative: @creative, name: "cc-stale-row-topic", user: @owner)
     delegated_task = Task.create!(
       name: "Delegated task",
@@ -132,15 +139,15 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     stale = Collavre::AgentSubscription.create!(agent_id: @claude_agent.id, token: "crashed-process")
     stale.update_column(:last_seen_at, (Collavre::AgentSubscription::STALE_AFTER + 1.minute).ago)
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
+    perform_after_grace(@claude_agent.id, "expected-token-value")
 
-    assert_equal "cancelled", delegated_task.reload.status,
+    assert_equal "suspended", delegated_task.reload.status,
       "a stale presence row must not keep delegated work alive"
     refute Collavre::AgentSubscription.exists?(id: stale.id),
       "the job should reap the crash-orphaned row"
   end
 
-  test "session-scoped: cancels the dropped session's session-topic delegated task despite a live sibling" do
+  test "session-scoped: suspends the dropped session's session-topic delegated task despite a live sibling" do
     # Codex P2: a live sibling keeps routing_expression on, so the agent-wide
     # rechecks would no-op — but the dropped session's own session topic is
     # private to it and no sibling will /reply. The session-scoped invocation
@@ -158,10 +165,10 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       agent: @claude_agent, creative_id: @creative.id, topic_id: session_topic.id
     )
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+    perform_after_grace(@claude_agent.id, "tok", "sess-drop")
 
-    assert_equal "cancelled", task.reload.status,
-      "the dropped session's own session-topic work must be cancelled"
+    assert_equal "suspended", task.reload.status,
+      "the dropped session's own session-topic work must be suspended"
   end
 
   test "session-scoped: no-op when the same session reconnected within the grace window" do
@@ -177,7 +184,7 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       agent: @claude_agent, creative_id: @creative.id, topic_id: session_topic.id
     )
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+    perform_after_grace(@claude_agent.id, "tok", "sess-drop")
 
     assert_equal "delegated", task.reload.status,
       "a reconnected session (live row with the same session_id) keeps its work"
@@ -199,16 +206,16 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       agent: @claude_agent, creative_id: @creative.id, topic_id: work_topic.id
     )
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+    perform_after_grace(@claude_agent.id, "tok", "sess-drop")
 
     assert_equal "delegated", work_task.reload.status,
       "work-topic tasks belong to the fan-out pool and must survive a session-scoped cancel"
   end
 
-  test "session-scoped: also cancels queued work on the dropped session topic" do
+  test "session-scoped: also suspends queued work on the dropped session topic" do
     # Codex P2: cancelling only the delegated task drains the topic queue and
     # promotes the queued task into this now-clientless session topic, which no
-    # sibling will /reply to. The queued task must be cancelled too, before the
+    # sibling will /reply to. The queued task must be suspended too, before the
     # delegated cancel triggers dequeue_next_for_topic.
     @claude_agent.update_column(:routing_expression, "true")
     Collavre::AgentSubscription.create!(
@@ -228,11 +235,19 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       agent: @claude_agent, creative_id: @creative.id, topic_id: session_topic.id
     )
 
-    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+    perform_after_grace(@claude_agent.id, "tok", "sess-drop")
 
-    assert_equal "cancelled", delegated_task.reload.status,
-      "the dropped session's delegated work must be cancelled"
-    assert_equal "cancelled", queued_task.reload.status,
-      "queued work on the dropped session topic must be cancelled, not promoted into a clientless topic"
+    assert_equal "suspended", delegated_task.reload.status,
+      "the dropped session's delegated work must be suspended"
+    assert_equal "suspended", queued_task.reload.status,
+      "queued work on the dropped session topic must be suspended, not promoted into a clientless topic"
+  end
+  private
+
+  def perform_after_grace(*arguments)
+    Collavre::Task.where(agent_id: @claude_agent.id).find_each do |task|
+      Collavre::Orchestration::OfflineTaskGrace.write_deadline(task, 1.second.ago)
+    end
+    Collavre::CancelOfflineDelegatedTasksJob.perform_now(*arguments)
   end
 end

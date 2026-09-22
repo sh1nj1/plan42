@@ -731,6 +731,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_113000) do
     t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
   end
 
+  create_table "retired_task_executions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "execution_job_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_job_id"], name: "index_retired_task_executions_on_execution_job_id", unique: true
+  end
+
   create_table "sessions", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address"

@@ -13,6 +13,13 @@ module Collavre
     end
 
     setup do
+      @previous_queue_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+    end
+
+    teardown { ActiveJob::Base.queue_adapter = @previous_queue_adapter }
+
+    setup do
       @agent = Collavre::User.create!(
         name: "Job Agent",
         email: "job-agent@example.test",
@@ -98,6 +105,17 @@ module Collavre
 
       assert_empty User.where(id: @agent.id).with_llm_vendors([ "job-vendor" ]).pluck(:id)
       assert_includes User.with_llm_vendors([ "job-vendor" ]).pluck(:id), human.id
+    end
+
+    test "positive health probes resume interrupted work and retry a missed recovery trigger" do
+      Task.create!(name: "Offline task", agent: @agent, status: "suspended",
+        suspend_reason: "agent_offline", suspended_at: Time.current, suspended_from: "running")
+      @agent.update_columns(endpoint_health_status: :offline, endpoint_health_checked_at: Time.current)
+      2.times do
+        assert_enqueued_with(job: ResumeSuspendedTasksJob, args: [ { agent_id: @agent.id } ]) do
+          EndpointHealthProbeJob.perform_now(@agent.id)
+        end
+      end
     end
 
     test "probe job executes the registered checker" do
