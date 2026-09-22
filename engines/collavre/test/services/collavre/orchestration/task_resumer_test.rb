@@ -603,6 +603,41 @@ module Collavre
         assert_nil partial.reload.task_id
       end
 
+      [ "failed", "running" ].each do |status|
+        [ nil, Comment::STREAMING_PLACEHOLDER_CONTENT, "Partial answer" ].each do |old_content|
+          test "delayed #{status} retry cleanup preserves the new reply after #{old_content.inspect}" do
+            task = attempt_of("retry-job", status: status)
+            old_reply = if old_content
+              @creative.comments.create!(user: @agent, topic: @topic, content: old_content,
+                                         task: task, skip_dispatch: true)
+            end
+            callbacks = []
+            ActiveRecord.stub(:after_all_transactions_commit, ->(&callback) { callbacks << callback }) do
+              assert_equal [ task ], TaskResumer.reclaim_for_retry!("retry-job")
+            end
+
+            assert_equal "pending", task.reload.status
+            task.update!(status: "running", trigger_event_payload: ExecutionFence.stamp(
+              task.trigger_event_payload, job_id: "retry-job"
+            ))
+            new_reply = @creative.comments.create!(user: @agent, topic: @topic,
+                                                   content: Comment::STREAMING_PLACEHOLDER_CONTENT,
+                                                   task: task, skip_dispatch: true)
+            callbacks.each(&:call)
+
+            assert Comment.exists?(new_reply.id), "cleanup must not delete the replacement placeholder"
+            assert_equal task.id, new_reply.reload.task_id
+            assert_equal new_reply, task.reload.reply_comment
+            if old_content == Comment::STREAMING_PLACEHOLDER_CONTENT
+              assert_not Comment.exists?(old_reply.id)
+            elsif old_reply
+              assert_nil old_reply.reload.task_id
+              assert_equal old_content, old_reply.content
+            end
+          end
+        end
+      end
+
       test "reclaim_for_retry! takes back a delegated attempt only while its handoff never started" do
         pending = attempt_of("job-1", status: "delegated", handoff: "pending")
         started = attempt_of("job-2", status: "delegated", handoff: "started")
