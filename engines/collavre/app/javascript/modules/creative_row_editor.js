@@ -277,6 +277,7 @@ function setupEditorSession() {
     let originalProgress = 0;
     let originalOriginId = '';
     let isDirty = false;
+    let editorRevision = 0;
     let completionCascadePending = false;
     let editingPingInterval = null;
 
@@ -665,7 +666,7 @@ function setupEditorSession() {
       updateActionButtonStates();
 
       // Notify sync controller that editing started + periodic ping
-      startEditingPresence(form.dataset.creativeId || currentRowElement?.getAttribute('creative-id'));
+      startEditingPresence(tree.dataset.id || currentRowElement?.getAttribute('creative-id'));
     }
 
     function initializeEventListeners() {
@@ -1072,6 +1073,14 @@ function setupEditorSession() {
       updateActionButtonStates();
     }
 
+    function applyFetchedCreative(data, tree, revision) {
+      if (currentTree !== tree || editorRevision !== revision) return false;
+      rememberAcknowledgedPosition(tree, data);
+      updateRowFromData(treeRowElement(tree), data);
+      applyCreativeData(data, tree);
+      return true;
+    }
+
     function loadCreative(tree) {
       if (!tree) return;
       const id = tree.dataset?.id;
@@ -1085,25 +1094,25 @@ function setupEditorSession() {
       const hasProgress = hasDatasetValue(row, 'progressValue');
 
       const inlineData = inlinePayloadFromTree(tree);
+      const revision = ++editorRevision;
+      // Bind the shared form before exposing it, even while a fresh read is pending.
+      applyCreativeData(inlineData, tree);
 
       // CRITICAL: Require BOTH description AND progress to be present in the dataset
       // If either is missing, inlinePayloadFromTree defaults it (e.g. progress=0),
       // which would overwrite the real value on the server if we saved it.
       if (inlineData && inlineData.id && hasDescription && hasProgress && !needsCreativeReconciliation(apiQueue, id, row)) {
         console.log('✅ Using cached data for creative', id, '- NO API CALL');
-        applyCreativeData(inlineData, tree);
         return;
       }
 
       // Fallback: if no cached data or incomplete data, fetch from API
       // This happens for lazily loaded children or rows without inline_editor_payload
       console.warn('⚠️ Incomplete or missing cached data for creative', id, '- making API call');
-      fetchReconciledCreative(apiQueue, id, row, id => creativesApi.get(id))
-        .then(data => {
-	  rememberAcknowledgedPosition(tree, data);
-          updateRowFromData(treeRowElement(tree), data);
-          applyCreativeData(data, tree);
-        });
+      fetchReconciledCreative(apiQueue, id, row, {
+	fetch: id => creativesApi.get(id),
+	apply: data => applyFetchedCreative(data, tree, revision),
+      });
     }
 
     function beforeNewOrMove(wasNew, prev, prevParent) {
@@ -1796,6 +1805,7 @@ function setupEditorSession() {
     }
 
     function scheduleSave() {
+      editorRevision += 1;
       // Skip scheduling save for already-destroyed creatives
       const creativeId = form.dataset?.creativeId;
       if (creativeId && destroyedCreativeIds.has(String(creativeId))) return;

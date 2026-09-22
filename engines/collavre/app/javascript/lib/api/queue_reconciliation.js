@@ -24,14 +24,14 @@ export function needsCreativeReconciliation(queue, id, row) {
   return Boolean(version && reconciledRows.get(row) !== version)
 }
 
-export async function fetchReconciledCreative(queue, id, row, fetch) {
+export async function fetchReconciledCreative(queue, id, row, { fetch, apply = () => true }) {
   const key = `creative_${id}`
   let version, data
   do {
     version = versions(queue).get(key)
     data = await fetch(id)
   } while (version !== versions(queue).get(key))
-  if (row && version) reconciledRows.set(row, version)
+  if (apply(data) && row && version) reconciledRows.set(row, version)
   return data
 }
 

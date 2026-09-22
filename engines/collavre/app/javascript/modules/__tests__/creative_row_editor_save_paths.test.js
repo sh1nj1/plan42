@@ -879,3 +879,90 @@ test.each([20, null])('preserves an acknowledged move on subsequent edits (paren
     queue.queue = []
   }
 })
+
+function deferReconciliation(id = '42') {
+  recordRestoredCompletion(queue, { dedupeKey: `creative_${id}` })
+  let resolve
+  get.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  return () => resolve({ id: Number(id), content_type: 'markdown', markdown_source: 'server draft', markdown_editor: 'source', progress: 0 })
+}
+
+test.each([false, true])('ignores reconciliation after typing, even after autosave clears dirty state (%s)', async autosave => {
+  jest.useFakeTimers()
+  const { tree, rowComponent } = appendMarkdownRow('42', 'cached')
+  const finish = deferReconciliation()
+  openRow(tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'new local text'
+  textarea.dispatchEvent(new Event('input'))
+  if (autosave) {
+    await jest.advanceTimersByTimeAsync(5000)
+    enqueue.mock.calls[0][0].onSuccess({})
+  }
+  finish()
+  await flushPromises()
+  expect(textarea.value).toBe('new local text')
+  expect(rowComponent.dataset.markdownSource).not.toBe('server draft')
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue.mock.calls.at(-1)[0].body['creative[markdown_source]']).toBe('new local text')
+})
+
+test('late reconciliation cannot replace another row or its save target', async () => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'first')
+  const second = appendMarkdownRow('43', 'second')
+  const finish = deferReconciliation()
+  openRow(first.tree)
+  openRow(second.tree)
+  await flushPromises()
+  finish()
+  await flushPromises()
+  const form = document.getElementById('inline-edit-form-element')
+  const textarea = document.getElementById('markdown-editor-textarea')
+  expect(form.dataset.creativeId).toBe('43')
+  expect(form.getAttribute('action')).toBe('/creatives/43')
+  expect(textarea.value).toBe('second')
+  textarea.value = 'second edited'
+  textarea.dispatchEvent(new Event('input'))
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue.mock.calls.at(-1)[0].path).toBe('/creatives/43')
+})
+
+test('discarded reads stay invalidated and cannot replace a reopened session of the same row', async () => {
+  jest.useFakeTimers()
+  const { tree } = appendMarkdownRow('42', 'cached')
+  const finishFirst = deferReconciliation()
+  openRow(tree)
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  const finishSecond = deferReconciliation()
+  openRow(tree)
+  finishFirst()
+  await flushPromises()
+  expect(document.getElementById('markdown-editor-textarea').value).toBe('cached')
+  finishSecond()
+  await flushPromises()
+  expect(document.getElementById('markdown-editor-textarea').value).toBe('server draft')
+})
+
+test('announces the requested row immediately and periodically while reconciliation is pending', async () => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'first')
+  const second = appendMarkdownRow('43', 'second')
+  const announce = jest.fn()
+  document.addEventListener('creative-editing:start', announce)
+  openRow(first.tree)
+  const finish = deferReconciliation('43')
+  openRow(second.tree)
+  await flushPromises()
+  expect(announce.mock.calls.at(-1)[0].detail.creativeId).toBe(43)
+  announce.mockClear()
+  await jest.advanceTimersByTimeAsync(6000)
+  expect(announce).toHaveBeenCalledTimes(2)
+  expect(announce.mock.calls.every(([event]) => event.detail.creativeId === 43)).toBe(true)
+  finish()
+  await flushPromises()
+  document.removeEventListener('creative-editing:start', announce)
+})
