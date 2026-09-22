@@ -24,12 +24,10 @@ module Collavre
         @comment.lock!
         validate!
         replace!
+        Comment.connection.add_transaction_record(Cleanup.new(-> { @cancelled_tasks.each { |task, status| release_task(task, status) } }))
       end
       raise NotAllowed unless applied
 
-      ActiveRecord.after_all_transactions_commit do
-        @cancelled_tasks.each { |task, status| release_task(task, status) }
-      end
       @replacement
     end
 

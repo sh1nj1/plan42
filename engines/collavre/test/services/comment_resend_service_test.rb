@@ -186,6 +186,47 @@ module Collavre
       assert_equal "delegated", task.reload.status
     end
 
+    [ false, true ].each do |nested|
+      test "cleans up cancelled tasks when dispatch fails after commit with nested transaction #{nested}" do
+        source_task = Task.create!(name: "Source", agent: users(:ai_bot), creative: @creative,
+                                   topic_id: @topic.id, status: "delegated",
+                                   trigger_event_payload: { "comment" => { "id" => @comment.id } })
+        reply_task = Task.create!(name: "Reply", agent: users(:ai_bot), creative: @creative,
+                                  topic_id: @topic.id, status: "pending")
+        reply = create_message(users(:ai_bot), "Partial", task: reply_task)
+        aborted, dequeued = [], []
+        tracker = Minitest::Mock.new
+        tracker.expect(:release!, nil, [ reply_task.id ])
+        tracker.expect(:release!, nil, [ source_task.id ])
+
+        AgentSessionAbort.stub :call, ->(**args) { aborted << args[:task].id } do
+          Orchestration::ResourceTracker.stub :for, tracker do
+            Orchestration::AgentOrchestrator.stub :dequeue_next_for_topic, ->(*args) { dequeued << args } do
+              SystemEvents::Dispatcher.stub :dispatch, ->(*) { raise "Dispatch failed" } do
+                error = assert_raises(RuntimeError) do
+                  if nested
+                    Comment.transaction { resend }
+                  else
+                    resend
+                  end
+                end
+                assert_equal "Dispatch failed", error.message
+              end
+            end
+          end
+        end
+
+        tracker.verify
+        assert_equal [ reply_task.id, source_task.id ], aborted
+        assert_equal [ [ @topic.id, @creative.id ] ] * 2, dequeued
+        assert_equal "cancelled", source_task.reload.status
+        assert_equal "cancelled", reply_task.reload.status
+        assert_not Comment.exists?(@comment.id)
+        assert_not Comment.exists?(reply.id)
+        assert_equal 1, @creative.comments.where(content: "Original").count
+      end
+    end
+
     private
 
     def create_message(user, content, **attrs)
