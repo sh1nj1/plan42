@@ -41,6 +41,40 @@ class CreativeReactionFilterTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "other users reactions match and deleting the last reaction removes the match" do
+    reactions = Collavre::CommentReaction.where(comment_id: @matched.comments.select(:id))
+    reactions.where(user: @user).destroy_all
+    get creatives_path(format: :json, reaction_emoji: "👍")
+    assert_equal [ @matched.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
+    reactions.destroy_all
+    get creatives_path(format: :json, reaction_emoji: "👍")
+    assert_empty JSON.parse(response.body).fetch("creatives")
+  end
+
+  test "reaction composes with paginated chats" do
+    get creatives_path(format: :json, reaction_emoji: "👍", comment: "true", per_page: 1)
+    assert_equal [ @matched.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
+    get creatives_path(format: :json, reaction_emoji: "👍", comment: "true", per_page: 1, page: 2)
+    assert_empty JSON.parse(response.body).fetch("creatives")
+  end
+
+  test "archived reaction matches are hidden unless requested" do
+    @matched.update!(archived_at: Time.current)
+    get creatives_path(format: :json, reaction_emoji: "👍")
+    assert_empty JSON.parse(response.body).fetch("creatives")
+    get creatives_path(format: :json, reaction_emoji: "👍", show_archived: "true")
+    assert_equal [ @matched.id ], JSON.parse(response.body).fetch("creatives").pluck("id")
+  end
+
+  test "chat picker retains the shared emoji buttons and action" do
+    html = Collavre::ApplicationController.render(partial: "collavre/comments/reaction_picker")
+    fragment = Nokogiri::HTML.fragment(html)
+    buttons = fragment.css("#global-reaction-picker .comment-reaction-picker-emoji")
+    assert_equal 10, buttons.size
+    assert_equal [ "click->reaction-picker#select" ], buttons.map { |button| button["data-action"] }.uniq
+    assert_empty fragment.css("[data-filter-state]")
+  end
+
   test "blank reaction is inactive" do
     refute Collavre::Creatives::Filters::ReactionFilter.new(params: { reaction_emoji: "" }, scope: Creative.all).active?
     refute Collavre::Creatives::FilterState.new({ reaction_emoji: "" }).active?
