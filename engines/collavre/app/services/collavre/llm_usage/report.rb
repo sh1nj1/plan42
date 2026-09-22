@@ -21,8 +21,8 @@ module Collavre
 
       def rows
         relation.group(Arel.sql(bucket), Arel.sql(group_column)).pluck(
-          Arel.sql(bucket), Arel.sql(group_column), Arel.sql("COUNT(*)"),
-          Arel.sql("COUNT(DISTINCT execution_id)"), *token_aggregates
+          Arel.sql("#{bucket} AS period_start"), Arel.sql("#{group_column} AS group_value"), Arel.sql("COUNT(*) AS records"),
+          Arel.sql("COUNT(DISTINCT execution_id) AS executions"), *token_aggregates
         ).map { |values| row(values) }.sort_by { |item| [ item[:period].to_s, item[:group].to_s ] }
       end
 
@@ -76,7 +76,7 @@ module Collavre
         date, identity, records, executions, *tokens = values
         result = { period: date.to_s, group: identity, records: records, executions: executions }
         LlmUsage::TOKEN_FIELDS.each_with_index do |field, index|
-          result[field] = tokens[index * 2]
+          result[field] = tokens[index * 2]&.to_i
           result["#{field}_missing".to_sym] = tokens[index * 2 + 1]
         end
         result

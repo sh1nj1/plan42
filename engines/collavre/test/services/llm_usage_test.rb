@@ -191,6 +191,43 @@ class LlmUsageTest < ActiveSupport::TestCase
     end
   end
 
+  test "a mixed known and unknown request stays joint instead of charging one person" do
+    orphan = @creative.comments.create!(user: @agent, content: "External", skip_dispatch: true)
+    @task.update!(trigger_event_payload: { "comment" => { "id" => @comment.id }, "merged_comment_ids" => [ orphan.id ] })
+    recorder.finish(response)
+    row = Collavre::LlmUsage.last
+    assert_equal "joint", row.requester_kind
+    assert_nil row.requester_id
+    assert_equal [ @requester.id ], row.requester_ids
+  end
+
+  test "tool and scheduled dispatch provenance comes from the initiating task" do
+    Collavre::Current.set(user: @agent, agent_turn: { task: @task, user: @owner }) do
+      carried = Collavre::LlmUsage::Attribution.current_requesters
+      assert_equal [ @requester.id ], carried["requester_ids"]
+      payload = { "comment" => { "id" => nil }, "usage_requester_attribution" => carried }
+      child = Collavre::Task.create!(name: "Scheduled delegation", agent: @agent, trigger_event_payload: payload)
+      assert_equal [ @requester.id ], child.usage_attribution["requester_ids"]
+      assert_equal "human", Collavre::LlmUsage::Attribution.attributes(child.usage_attribution)[:requester_kind]
+    end
+    Collavre::Current.set(user: @requester) do
+      assert_equal [ @requester.id ], Collavre::LlmUsage::Attribution.current_requesters["requester_ids"]
+    end
+    Collavre::Current.set(user: @agent) do
+      assert_empty Collavre::LlmUsage::Attribution.current_requesters["requester_ids"]
+    end
+  end
+
+  test "a Sunday belongs to the preceding Monday and boundaries are exclusive" do
+    recorder.finish(response)
+    row = Collavre::LlmUsage.last
+    row.update!(occurred_at: Time.utc(2026, 8, 30, 14, 59, 59))
+    assert_equal "2026-08-24", report(period: "week", from: "2026-08-30", to: "2026-08-30").rows.first[:period]
+    row.update!(occurred_at: Time.utc(2026, 8, 30, 15))
+    assert_empty report(from: "2026-08-30", to: "2026-08-30").rows
+    assert_equal "2026-08-31", report(period: "week", from: "2026-08-31", to: "2026-08-31").rows.first[:period]
+  end
+
   private
 
   def report(user: @owner, **params)

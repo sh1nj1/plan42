@@ -139,7 +139,7 @@ module Collavre
         # product's tools write creatives and post comments. A turn classified
         # as a failed handoff has everything it swallowed dispatched again, and
         # the restored turn runs those tools a second time.
-        @usage_recorder&.observe(chunk)
+        observe_usage(chunk)
         @handed_off = true
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
@@ -192,19 +192,7 @@ module Collavre
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
       nil
     ensure
-      finish_usage_tracking(response)
-      @last_input_tokens = input_tokens || 0
-      @last_output_tokens = output_tokens || 0
-      if @log_interactions
-        log_interaction(
-          messages: @conversation&.messages&.to_a || Array(contents),
-          tools: @conversation&.tools&.to_a || [],
-          response_content: response_content.presence,
-          error_message: error_message,
-          input_tokens: input_tokens,
-          output_tokens: output_tokens
-        )
-      end
+      finalize_chat_usage(response, contents, response_content, error_message, input_tokens, output_tokens)
     end
 
     # Ask a follow-up question using the existing conversation context.
@@ -308,7 +296,6 @@ module Collavre
       end
 
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
-        install_usage_tracking(chat)
         chat.with_instructions(system_prompt) if system_prompt.present?
         apply_request_headers!(chat)
         chat.on_tool_call do |tool_call|
@@ -467,24 +454,6 @@ module Collavre
       else
         chunk.to_s
       end
-    end
-
-    def log_interaction(messages:, tools:, response_content:, error_message: nil, input_tokens: nil, output_tokens: nil)
-      log = RubyLlmInteractionLogger.log(
-        vendor: @vendor,
-        model: @model,
-        messages: messages,
-        tools: tools,
-        response_content: response_content,
-        error_message: error_message,
-        creative: context&.dig(:creative),
-        user: context&.dig(:user),
-        comment: context&.dig(:comment),
-        input_tokens: input_tokens,
-        output_tokens: output_tokens
-      )
-      @usage_recorder&.attach(log)
-      log
     end
   end
 end

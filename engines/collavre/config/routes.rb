@@ -1,5 +1,4 @@
 Collavre::Engine.routes.draw do
-  resources :llm_usages, only: :index, path: "settings/token-usage"
   # Landing page
   get "landing", to: "landing#show"
 
@@ -12,9 +11,7 @@ Collavre::Engine.routes.draw do
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]
-  resources :agent_gateways, path: "settings/agent-gateways", except: :show do
-    post :check, on: :member
-  end
+  draw :account_settings
   get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
   post "desktop/setup/account", to: "desktop_setup#create_account", as: :desktop_setup_account
   post "desktop/setup/registration-token", to: "desktop_setup#registration_token", as: :desktop_setup_registration_token

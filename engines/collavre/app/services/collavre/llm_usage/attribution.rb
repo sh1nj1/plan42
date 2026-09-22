@@ -5,35 +5,41 @@ module Collavre
     # Accounting identity is independent of the workspace's authorization principal.
     class Attribution
       def self.from_payload(payload)
-        ids = Array(payload["merged_comment_ids"]) + [ payload.dig("comment", "id") ]
-        merge(payload.fetch("usage_requester_attribution", {}), from_comments(ids.compact))
+        anchor = payload.dig("comment", "id")
+        merged = Array(payload["merged_comment_ids"])
+        if payload.key?("usage_requester_attribution")
+          carried = merge(payload["usage_requester_attribution"], { "source_comment_ids" => [ anchor ].compact })
+          merge(carried, from_comments(merged))
+        else
+          from_comments((merged + [ anchor ]).compact)
+        end
       end
 
       def self.current_requesters
         task = Current.agent_turn&.dig(:task)
-        return task.usage_attribution.slice("requester_ids", "source_comment_ids") if task
+        return task.usage_attribution.slice("requester_ids", "source_comment_ids", "unknown_requester") if task
 
         user = Current.user
         { "requester_ids" => user && !user.ai_user? ? [ user.id ] : [], "source_comment_ids" => [] }
       end
 
       def self.from_comments(ids)
-        requesters = []
-        sources = ids.map(&:to_i)
-        Comment.where(id: ids).includes(:user, :task).each do |comment|
-          if comment.user && !comment.user.ai_user?
-            requesters << comment.user_id
-          elsif comment.task
-            inherited = comment.task.usage_attribution
-            requesters.concat(Array(inherited["requester_ids"]))
-            sources.concat(Array(inherited["source_comment_ids"]))
-          end
-        end
-        { "requester_ids" => requesters.uniq.sort, "source_comment_ids" => sources.uniq.sort }
+        comments = Comment.where(id: ids).includes(:user, :task).to_a
+        initial = { "source_comment_ids" => ids.map(&:to_i).uniq.sort, "requester_ids" => [],
+                    "unknown_requester" => comments.size < ids.uniq.size }
+        comments.reduce(initial) { |result, comment| merge(result, from_comment(comment)) }
+      end
+
+      def self.from_comment(comment)
+        return { "requester_ids" => [ comment.user_id ] } if comment.user && !comment.user.ai_user?
+
+        inherited = comment.task&.usage_attribution || {}
+        inherited.merge("unknown_requester" => inherited["unknown_requester"] || Array(inherited["requester_ids"]).empty?)
       end
 
       def self.merge(original, additions)
         original.merge(
+          "unknown_requester" => original["unknown_requester"] || additions["unknown_requester"],
           "requester_ids" => (Array(original["requester_ids"]) + Array(additions["requester_ids"])).uniq.sort,
           "source_comment_ids" => (Array(original["source_comment_ids"]) + Array(additions["source_comment_ids"])).uniq.sort
         )
@@ -61,10 +67,11 @@ module Collavre
 
       def self.attributes(attribution)
         ids = Array(attribution["requester_ids"])
+        sole_requester = ids.one? && !attribution["unknown_requester"]
         {
           owner_id: attribution["owner_id"], requester_ids: ids,
-          requester_id: ids.one? ? ids.first : nil,
-          requester_kind: ids.empty? ? "unknown" : (ids.one? ? "human" : "joint"),
+          requester_id: sole_requester ? ids.first : nil,
+          requester_kind: ids.empty? ? "unknown" : (sole_requester ? "human" : "joint"),
           source_comment_ids: Array(attribution["source_comment_ids"])
         }
       end

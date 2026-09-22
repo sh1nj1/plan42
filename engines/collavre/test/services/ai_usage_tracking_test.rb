@@ -48,7 +48,6 @@ class AiUsageTrackingTest < ActiveSupport::TestCase
     client = Collavre::AiClient.new(vendor: "openai", model: "test", system_prompt: nil, log_interactions: log)
     conversation = Conversation.new
     client.define_singleton_method(:build_conversation) do |_tools|
-      install_usage_tracking(conversation)
       conversation
     end
     [ client, conversation ]
@@ -88,15 +87,35 @@ class AiUsageTrackingTest < ActiveSupport::TestCase
     end
   end
 
+  test "accounting setup failures do not prevent provider calls" do
+    client, = client_and_conversation
+    Collavre::LlmUsage::Attribution.stub(:snapshot, ->(*) { raise ActiveRecord::StatementInvalid, "Unavailable" }) do
+      assert_equal "Answer", client.chat([])
+    end
+    assert_equal 0, Collavre::LlmUsage.count
+  end
+
+  test "link failures do not replace a completed response" do
+    client, = client_and_conversation
+    failing = Object.new
+    failing.define_singleton_method(:record) { |*| }
+    failing.define_singleton_method(:observe) { |*| }
+    failing.define_singleton_method(:finish) { |*| }
+    failing.define_singleton_method(:attach) { |*| raise ActiveRecord::StatementInvalid, "Unavailable" }
+    Collavre::LlmUsage::Recorder.stub(:new, failing) do
+      assert_equal "Answer", client.chat([])
+    end
+  end
+
   test "OpenAI usage normalization restores inclusive prompt tokens" do
     usage = { "prompt_tokens" => 100, "completion_tokens" => 5,
               "prompt_tokens_details" => { "cached_tokens" => 70, "cache_write_tokens" => 10 } }
-    message = RubyLLM::Providers::OpenAI::Streaming.build_chunk("usage" => usage)
+    message = RubyLLM::Providers::OpenAI.allocate.send(:build_chunk, "usage" => usage)
     normalized = Collavre::LlmUsage::TokenNormalizer.normalize(Collavre::LlmUsage::TokenNormalizer.parts(message), usage, vendor: "openai")
     assert_equal 100, normalized[:input_tokens]
     assert_equal 70, normalized[:cache_read_tokens]
     assert_equal 10, normalized[:cache_write_tokens]
-    message = RubyLLM::Providers::OpenAI::Streaming.build_chunk("usage" => { "prompt_tokens" => 100 })
+    message = RubyLLM::Providers::OpenAI.allocate.send(:build_chunk, "usage" => { "prompt_tokens" => 100 })
     normalized = Collavre::LlmUsage::TokenNormalizer.normalize(Collavre::LlmUsage::TokenNormalizer.parts(message), {}, vendor: "cli_proxy")
     assert_nil normalized[:cache_write_tokens]
     assert_nil normalized[:cache_read_tokens]
