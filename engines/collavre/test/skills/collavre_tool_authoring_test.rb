@@ -305,15 +305,35 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     Tools.send(:remove_const, :AuthoredProbeBService) if Tools.const_defined?(:AuthoredProbeBService, false)
   end
 
+  test "approval refuses a class another tool or the application already defines" do
+    owner = approvable_tool(scaffold)
+    owner.approve!
+    other = approvable_tool(scaffold.sub('tool_name "authored_probe"', 'tool_name "other_probe"'), "other_probe")
+    builtin = approvable_tool(scaffold.sub("AuthoredProbeService", "CreativeRetrievalService").sub('tool_name "authored_probe"', 'tool_name "builtin_probe"'), "builtin_probe")
+    builtin_metadata = Tools::CreativeRetrievalService.tool_metadata.dup
+
+    { other => "Tools::AuthoredProbeService", builtin => "Tools::CreativeRetrievalService" }.each do |tool, class_name|
+      assert_raises(RuntimeError, match: /#{class_name} is already defined by another tool or the application/) { tool.approve! }
+      assert_not tool.reload.active?
+    end
+    assert_equal builtin_metadata, Tools::CreativeRetrievalService.tool_metadata
+    assert_equal "authored_probe", Tools::AuthoredProbeService.tool_metadata[:name]
+    assert_nil Tools::MetaToolService.new.find_schema("other_probe")
+
+    Tools::MetaToolWriteService.new.delete_tool("authored_probe")
+    owner.approve!
+    assert Tools::MetaToolService.new.find_schema("authored_probe"), "a tool may reopen the class it defined"
+  end
+
   private
 
-  def approvable_tool(source)
+  def approvable_tool(source, name = "authored_probe")
     host = Creative.new(user: users(:one))
     host.content_type_input = "markdown"
     host.markdown_source = "# probe\n\n```ruby\n#{source}```\n"
     host.save!
     Collavre::McpService.new.update_from_creative(host)
-    McpTool.find_by!(name: "authored_probe")
+    McpTool.find_by!(name: name)
   end
 
   def owner(id, tool_name)

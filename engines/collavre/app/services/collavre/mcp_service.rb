@@ -9,6 +9,11 @@ module Collavre
     # approval's rollback removes the class the other just registered.
     REGISTRY_LOCK = Monitor.new
 
+    # Class name => tool name of the dynamic tool whose source first defined it.
+    # Evaluating a source reopens an existing class, so a tool may only reuse a
+    # constant it defined itself (re-approval after an edit, or a retry).
+    CLASS_OWNERS = {}
+
     # --- Registration Logic (from MetaToolService) ---
 
     # expected_name is the McpTool name recorded from the Creative. The name the
@@ -84,8 +89,14 @@ module Collavre
       class_name = writer.send(:extract_class_name, source_code)
       return { error: "class_name is required for register" } if class_name.blank?
 
+      defined_before = Object.const_defined?(class_name)
+      if defined_before && CLASS_OWNERS[class_name] != expected_name
+        return { error: "#{class_name} is already defined by another tool or the application; rename the class" }
+      end
+
       registered_before = ToolMeta.registry.dup
       result = evaluate_and_verify(source_code, class_name, expected_name)
+      CLASS_OWNERS[class_name] = expected_name if !defined_before && Object.const_defined?(class_name)
       keep = result.is_a?(Class) ? [ result ] : []
       ToolMeta.registry.reject! { |klass| !registered_before.include?(klass) && !keep.include?(klass) }
       return result unless keep.any?

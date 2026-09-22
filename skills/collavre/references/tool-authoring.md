@@ -88,6 +88,11 @@ Rules the CLI checks before creating the Creative:
 
 Rules the CLI cannot check, so follow them yourself:
 
+- The service class name is not already used by another tool or by the app.
+  Distinct names can map to one class (`foo1` and `foo_1` both scaffold
+  `Tools::Foo1Service`), and approval refuses a class the tool did not define
+  itself. Rename the class if approval reports it as already defined.
+
 - Every `tool_param` matches a keyword argument in `sig` and `def call`.
   Optional params use `T.nilable(...)` and a default of `nil`.
 - `sig` types drive the JSON schema. Use `String`, `Integer`, `Float`,
