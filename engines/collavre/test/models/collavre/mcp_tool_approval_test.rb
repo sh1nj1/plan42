@@ -54,6 +54,27 @@ module Collavre
       assert_not ::Tools.const_defined?(:LockProbeService, false)
     end
 
+    test "an approval rolled back by the caller's transaction unregisters the tool" do
+      ApplicationRecord.transaction do
+        @later.approve!
+        assert ::Tools::MetaToolService.new.find_schema("lock_probe_b"), "registered while the approval is in flight"
+        raise ActiveRecord::Rollback
+      end
+
+      assert_not @later.reload.active?
+      assert_nil ::Tools::MetaToolService.new.find_schema("lock_probe_b")
+      assert_not ::Tools.const_defined?(:LockProbeService, false)
+    end
+
+    test "an approval committed by the caller's transaction stays registered" do
+      ApplicationRecord.transaction { @later.approve! }
+
+      assert @later.reload.active?
+      assert ::Tools::MetaToolService.new.find_schema("lock_probe_b")
+    ensure
+      ::McpService.delete_tool("lock_probe_b")
+    end
+
     private
 
     def source(tool_name)

@@ -39,13 +39,11 @@ module Collavre
       self.class.serialize_approvals do
         # Register the tool immediately upon approval
         ::McpService.register_tool_from_source(source_code, expected_name: name)
-        begin
-          update!(approved_at: Time.current)
-        rescue StandardError
-          # Not recorded as approved, so it must not stay discoverable here.
-          ::McpService.delete_tool(name)
-          raise
-        end
+        # This transaction may be joined to a caller's (the approval comment's
+        # action executor). If approved_at is rolled back, here or later in that
+        # outer transaction, the tool must not stay discoverable here.
+        self.class.current_transaction.after_rollback { ::McpService.delete_tool(name) }
+        update!(approved_at: Time.current)
       end
     end
 
