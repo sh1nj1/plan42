@@ -383,8 +383,7 @@ export default class extends Controller {
   }
 
   togglePanel() {
-    const open = this.element.classList.toggle('is-open')
-    this.panelToggleTarget.setAttribute('aria-expanded', String(open))
+    this.panelToggleTarget.setAttribute('aria-expanded', String(this.element.classList.toggle('is-open')))
   }
 
   closePanel() {
