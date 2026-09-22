@@ -2,6 +2,7 @@ import {
   $createRangeSelection, $getNodeByKey, $getRoot, $getSelection,
   $isRangeSelection, $setSelection, COMMAND_PRIORITY_HIGH, DROP_COMMAND
 } from "lexical"
+import { UploadAnchorNode } from "./upload_anchor_node"
 
 function dropSelection(editor, event) {
   const root = editor.getRootElement()
@@ -24,7 +25,15 @@ function dropSelection(editor, event) {
   return $isRangeSelection(selection) ? selection.clone() : null
 }
 
-function uploadInOrder(editor, files, selection, uploadFile) {
+function createUploadAnchor(selection) {
+  if (selection) $setSelection(selection)
+  else $getRoot().selectEnd()
+  const anchor = new UploadAnchorNode()
+  $getSelection().insertNodes([anchor])
+  return anchor.getKey()
+}
+
+function uploadInOrder(editor, files, anchorKey, uploadFile) {
   const results = new Array(files.length)
   let remaining = files.length
   files.forEach((file, index) => uploadFile(file, (insert, onUpdate) => {
@@ -32,8 +41,10 @@ function uploadInOrder(editor, files, selection, uploadFile) {
     if (--remaining > 0) return
     editor.update(() => {
       // The original target can disappear while the network request is pending.
-      if (selection && $getNodeByKey(selection.anchor.key) && $getNodeByKey(selection.focus.key)) {
-        $setSelection(selection)
+      const anchor = $getNodeByKey(anchorKey)
+      if (anchor?.isAttached()) {
+        anchor.selectPrevious()
+        anchor.remove()
       } else {
         $getRoot().selectEnd()
       }
@@ -52,7 +63,7 @@ export function registerFileDrop(editor, uploadFile) {
     const selection = dropSelection(editor, event)
     event.preventDefault()
     event.stopPropagation()
-    uploadInOrder(editor, files, selection, uploadFile)
+    uploadInOrder(editor, files, createUploadAnchor(selection), uploadFile)
     return true
   }, COMMAND_PRIORITY_HIGH)
 }

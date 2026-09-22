@@ -1,6 +1,8 @@
 import { jest } from "@jest/globals"
 import { createEditor, $getRoot, $getSelection, $createParagraphNode, $createTextNode, DROP_COMMAND, COMMAND_PRIORITY_EDITOR } from "lexical"
+import { $generateHtmlFromNodes } from "@lexical/html"
 import { registerRichText } from "@lexical/rich-text"
+import { UploadAnchorNode } from "../upload_anchor_node"
 import { registerFileDrop } from "../file_drop"
 
 describe("inline editor file drops", () => {
@@ -12,7 +14,7 @@ describe("inline editor file drops", () => {
   beforeEach(() => {
     globalThis.DragEvent = class extends Event {}
     globalThis.ClipboardEvent = class extends Event {}
-    editor = createEditor({ onError: (error) => { throw error } })
+    editor = createEditor({ nodes: [UploadAnchorNode], onError: (error) => { throw error } })
     unregisterRichText = registerRichText(editor)
     upload = jest.fn()
     unregister = registerFileDrop(editor, upload)
@@ -108,6 +110,50 @@ describe("inline editor file drops", () => {
       expect($getRoot().getFirstChild().getTextContent()).toBe("tar01get")
       expect($getRoot().getLastChild().getTextContent()).toBe("other")
     })
+  })
+
+  it.each(["prefix", "delete", "split"])("tracks the drop boundary during a %s edit", async edit => {
+    const text = await prepareDocument()
+    document.caretPositionFromPoint = () => ({ offsetNode: text, offset: 3 })
+    drop([new File(["a"], "a.txt"), new File(["b"], "b.txt")])
+    editor.update(() => {
+      const prefix = $getRoot().getFirstChild().getFirstChild()
+      if (edit === "prefix") {
+        prefix.selectStart().insertText("PREFIX")
+      } else if (edit === "delete") {
+        prefix.select(0, 2).removeText()
+      } else {
+        prefix.select(1, 1).insertParagraph()
+      }
+    }, { discrete: true })
+    await finishUploads()
+    editor.getEditorState().read(() => {
+      const expected = { prefix: "PREFIXtar01get", delete: "r01get", split: "t\n\nar01get" }
+      expect($getRoot().getTextContent()).toBe(expected[edit] + "\n\nother")
+      expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain("upload-anchor")
+    })
+  })
+
+  it("keeps pending anchors invisible in exported content and through state updates", async () => {
+    const text = await prepareDocument()
+    document.caretPositionFromPoint = () => ({ offsetNode: text, offset: 3 })
+    drop([new File(["a"], "a.txt"), new File(["b"], "b.txt")])
+    await Promise.resolve()
+    editor.update(() => {
+      const anchor = $getRoot().getFirstChild().getChildren()[1]
+      anchor.getWritable()
+      expect(anchor.isKeyboardSelectable()).toBe(false)
+    }, { discrete: true })
+    editor.getEditorState().read(() => {
+      expect($getRoot().getTextContent()).toBe("target\n\nother")
+      const div = document.createElement("div")
+      div.innerHTML = $generateHtmlFromNodes(editor)
+      expect(div.textContent).toBe("targetother")
+      expect(div.querySelector("p").children).toHaveLength(2)
+    })
+    const restored = editor.parseEditorState(JSON.stringify(editor.getEditorState().toJSON()))
+    restored.read(() => expect($getRoot().getFirstChild().getChildren()[1]).toBeInstanceOf(UploadAnchorNode))
+    await finishUploads()
   })
 
   it("keeps the captured caret when coordinate lookup is unavailable", async () => {
