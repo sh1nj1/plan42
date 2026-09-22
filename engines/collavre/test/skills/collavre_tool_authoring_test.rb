@@ -380,6 +380,11 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     end
     assert_not tool.reload.active?
     assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
+    assert_not Tools.const_defined?(:AuthoredProbeService, false), "the frozen class this approval defined is removed"
+
+    tool.creative.destroy!
+    approvable_tool(scaffold).approve!
+    assert Tools::MetaToolService.new.find_schema("authored_probe"), "a corrected source approves without a restart"
   end
 
   test "a tool can re-approve its class after the service is reloaded" do

@@ -114,14 +114,24 @@ module Collavre
     private_class_method :register_verified_source
 
     # A class the source froze cannot take the owner mark, so it is not approved.
+    # This evaluation defined the constant, so it is removed as well; left
+    # without an owner it would block every later approval of the same class.
     def self.mark_owner(class_name, expected_name, result)
       defined_now = class_name.safe_constantize
       defined_now.instance_variable_set(OWNER_IVAR, expected_name) if defined_now.is_a?(Module)
       result
     rescue FrozenError => e
+      remove_constant(class_name)
       { error: "Failed to record the owner of #{class_name}: #{e.message}" }
     end
     private_class_method :mark_owner
+
+    def self.remove_constant(class_name)
+      namespace = class_name.deconstantize.presence&.safe_constantize || Object
+      constant = class_name.demodulize
+      namespace.send(:remove_const, constant) if namespace.const_defined?(constant, false)
+    end
+    private_class_method :remove_constant
 
     def self.owner_of(klass)
       klass.instance_variable_get(OWNER_IVAR) if klass.is_a?(Module)
