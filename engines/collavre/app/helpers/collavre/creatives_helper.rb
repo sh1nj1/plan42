@@ -1,5 +1,12 @@
 module Collavre
   module CreativesHelper
+    # The host app reaches engine helpers through an explicit include list
+    # (app/helpers/application_helper.rb) because an isolated engine does not
+    # prepend its helpers_path. Pulling the move action in here keeps that
+    # list from having to grow every time a row part moves into its own
+    # module: render_creative_progress is the only caller either way.
+    include CreativeMoveHelper
+
     def render_tags(labels, class_name = nil, name_only = false)
       return "" if labels&.empty? or labels.nil?
 
@@ -36,77 +43,88 @@ module Collavre
     # creatives at once (the browse tree) resolve them in batch and hand them in.
     # Left nil, each is resolved for this creative alone — correct, but a query
     # per node. Single-creative call sites take that path.
-    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil)
-      progress_value = if params[:tags].present?
-        tag_ids = Array(params[:tags]).map(&:to_s)
-        creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
-      else
-        creative.progress
-      end
-
+    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil, cron_tasks: [], can_delete_cron: nil)
       can_feedback = creative.has_permission?(Current.user, :feedback) if can_feedback.nil?
+      can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
+      has_children = creative.children.exists? if has_children.nil?
 
       content_tag(:div, class: "creative-row-end") do
-        comment_part = if creative.archived?
-          safe_join([])
-        elsif can_feedback
-          origin = creative.effective_origin
-          comments_count = origin.comments_count
-          # A batched count already has presence suppression applied by
-          # CommentBadgeIndex; re-checking here would be one cache read per node,
-          # which is exactly what the batch exists to avoid.
-          if unread_count.nil?
-            badge_index = Creatives::CommentBadgeIndex.new(user: Current.user)
-            badge_index.index([ origin ])
-            unread_count = badge_index.unread_count_for(origin)
-          end
-          classes = [ "comments-btn", "creative-action-btn" ]
-          classes << "no-comments" if comments_count.zero?
-          comment_icon = svg_tag(
-            "comment.svg",
-            class: "comment-icon"
-          )
-          badge_id = "comment-badge-#{origin.id}"
-          stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
-          badge = render(
-            Inbox::BadgeComponent.new(
-              count: unread_count,
-              badge_id: badge_id,
-              show_zero: comments_count.positive?
-            )
-          )
-          stream + button_tag(
-            comment_icon + badge,
-            name: "show-comments-btn",
-            data: {
-              creative_id: creative.id,
-              can_comment: true,
-              creative_snippet: creative.creative_snippet,
-              guide_anchor: "chat.toggle",
-              guide_anchor_key: creative.id
-            },
-            class: classes.join(" ")
-          )
-        else
-          safe_join([])
-        end
-        is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
-        can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
-        progress_part = render_progress_control(
-          creative,
-          progress_value,
-          has_children: !is_leaf,
-          can_write: can_write,
-          select_mode: select_mode
-        )
-
         safe_join([
-          progress_part,
-          comment_part,
+          render_progress_control(
+            creative,
+            creative_progress_value(creative),
+            has_children: has_children,
+            can_write: can_write,
+            select_mode: select_mode
+          ),
+          render_cron_badge_for_creative(creative, cron_tasks, can_delete: can_delete_cron),
+          render_creative_comment_action(creative, can_feedback, unread_count),
           tag.br,
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
       end
+    end
+
+    # A tag filter narrows what counts toward progress, so the filtered value
+    # wins when one is applied; `filtered_progress` is the preloaded form the
+    # browse tree hands down, and progress_for_tags is the per-node fallback.
+    def creative_progress_value(creative)
+      return creative.progress if params[:tags].blank?
+
+      creative.filtered_progress || creative.progress_for_tags(Array(params[:tags]).map(&:to_s)) || 0
+    end
+
+    def render_creative_comment_action(creative, can_feedback, unread_count)
+      return safe_join([]) if creative.archived? || !can_feedback
+
+      origin = creative.effective_origin
+      comments_count = origin.comments_count
+      if unread_count.nil?
+        badge_index = Creatives::CommentBadgeIndex.new(user: Current.user)
+        badge_index.index([ origin ])
+        unread_count = badge_index.unread_count_for(origin)
+      end
+      classes = [ "comments-btn", "creative-action-btn" ]
+      classes << "no-comments" if comments_count.zero?
+      comment_icon = svg_tag("comment.svg", class: "comment-icon")
+      badge_id = "comment-badge-#{origin.id}"
+      stream = turbo_stream_from [ Current.user, origin, :comment_badge ]
+      badge = render_comment_badge(unread_count, badge_id, comments_count)
+      stream + button_tag(
+        comment_icon + badge,
+        name: "show-comments-btn",
+        data: { creative_id: creative.id, can_comment: true, creative_snippet: creative.creative_snippet,
+          guide_anchor: "chat.toggle",
+          guide_anchor_key: creative.id },
+        class: classes.join(" ")
+      )
+    end
+
+    def render_comment_badge(unread_count, badge_id, comments_count)
+      render(
+        Inbox::BadgeComponent.new(
+          count: unread_count,
+          badge_id: badge_id,
+          show_zero: comments_count.positive?
+        )
+      )
+    end
+
+    def render_cron_badge(tasks, creative_id:, can_delete: false)
+      render(
+        Collavre::CronBadgeComponent.new(
+          tasks: tasks,
+          creative_id: creative_id,
+          can_delete: can_delete
+        )
+      )
+    end
+
+    def render_cron_badge_for_creative(creative, tasks, can_delete: false)
+      return safe_join([]) if tasks.empty?
+
+      can_delete = creative.has_permission?(Current.user, :write) if can_delete.nil?
+      render_cron_badge(tasks, creative_id: creative.effective_origin.id, can_delete: can_delete)
     end
 
     def render_progress_control(creative, value, has_children:, can_write:, select_mode: false)
@@ -190,15 +208,18 @@ module Collavre
       @completion_mark = Collavre::SystemSetting.completion_mark
     end
 
-    def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil)
+    def creative_tree_description(creative, with_progress)
+      desc = creative.effective_description(nil, true)
+      return desc unless with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
+
+      "#{desc} (#{(creative.progress.to_f * 100).round}%)"
+    end
+
+    def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil, prune: ->(_) { false })
       return "" if creatives.blank?
       md = ""
-      creatives.each do |creative|
-        desc = creative.effective_description(nil, true)
-        if with_progress && creative.respond_to?(:progress) && !creative.progress.nil?
-          pct = (creative.progress.to_f * 100).round
-          desc = "#{desc} (#{pct}%)"
-        end
+      creatives.reject(&prune).each do |creative|
+        desc = creative_tree_description(creative, with_progress)
         raw_html = desc.gsub(/<!--.*?-->/m, "").strip
         markdown_content = MarkdownConverter.html_to_markdown(raw_html)
         cleaned_markdown = markdown_content.strip
@@ -232,7 +253,7 @@ module Collavre
         end
         children = creative.linked_children
         if children.present? && (max_depth.nil? || level < max_depth)
-          md += render_creative_tree_markdown(children, level + 1, with_progress, max_depth: max_depth)
+          md += render_creative_tree_markdown(children, level + 1, with_progress, max_depth: max_depth, prune: prune)
         end
         md += "\n" if level <= 4 && !rendered_table_block
       end

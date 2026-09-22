@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -59,6 +59,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.text "completion_key"
     t.datetime "created_at", null: false
     t.boolean "desktop_managed", default: false, null: false
+    t.datetime "health_checked_at"
+    t.json "health_engines", default: {}, null: false
+    t.string "health_error"
+    t.integer "health_status", default: 0, null: false
     t.text "identity_secret"
     t.string "name", null: false
     t.integer "owner_id", null: false
@@ -86,6 +90,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
   create_table "agent_workspaces", force: :cascade do |t|
     t.integer "agent_gateway_id", null: false
     t.integer "agent_id", null: false
+    t.bigint "callback_access_token_id"
     t.text "callback_token", null: false
     t.datetime "created_at", null: false
     t.string "manifest_token", null: false
@@ -99,6 +104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.index ["agent_id", "agent_gateway_id"], name: "idx_agent_workspaces_shared", unique: true, where: "user_id IS NULL"
     t.index ["agent_id", "user_id", "agent_gateway_id"], name: "idx_agent_workspaces_per_user", unique: true, where: "user_id IS NOT NULL"
     t.index ["agent_id"], name: "index_agent_workspaces_on_agent_id"
+    t.index ["callback_access_token_id"], name: "index_agent_workspaces_on_callback_access_token_id", unique: true
     t.index ["manifest_token_digest"], name: "index_agent_workspaces_on_manifest_token_digest", unique: true
     t.index ["user_id"], name: "index_agent_workspaces_on_user_id"
   end
@@ -145,13 +151,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.bigint "inbox_comment_id", null: false
     t.text "link"
     t.text "message", null: false
+    t.integer "push_attempts"
     t.string "push_claim_token"
     t.datetime "push_claimed_at"
     t.datetime "push_enqueued_at"
+    t.string "push_state"
     t.bigint "recipient_id", null: false
+    t.text "title"
     t.datetime "updated_at", null: false
+    t.integer "workflow_execution_id"
     t.index ["delivery_key"], name: "index_comment_notification_deliveries_on_delivery_key", unique: true
     t.index ["push_enqueued_at", "push_claimed_at"], name: "index_comment_notification_deliveries_pending"
+    t.index ["push_state", "push_claimed_at"], name: "workflow_push_recovery"
+    t.index ["workflow_execution_id"], name: "index_comment_notification_deliveries_on_workflow_execution_id"
   end
 
   create_table "comment_reactions", force: :cascade do |t|
@@ -162,6 +174,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.integer "user_id", null: false
     t.index ["comment_id", "user_id", "emoji"], name: "index_comment_reactions_on_comment_id_and_user_id_and_emoji", unique: true
     t.index ["comment_id"], name: "index_comment_reactions_on_comment_id"
+    t.index ["emoji", "comment_id"], name: "index_comment_reactions_on_emoji_and_comment_id"
     t.index ["user_id"], name: "index_comment_reactions_on_user_id"
   end
 
@@ -169,10 +182,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
     t.integer "last_read_comment_id"
+    t.integer "topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.index ["creative_id", "last_read_comment_id"], name: "index_comment_read_pointers_on_creative_and_watermark"
     t.index ["creative_id"], name: "index_comment_read_pointers_on_creative_id"
-    t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_user_id_and_creative_id", unique: true
+    t.index ["topic_id"], name: "index_comment_read_pointers_on_topic_id"
+    t.index ["user_id", "creative_id", "topic_id"], name: "index_comment_read_pointers_on_user_creative_and_topic", unique: true
+    t.index ["user_id", "creative_id"], name: "index_comment_read_pointers_on_legacy_pointer", unique: true, where: "topic_id IS NULL"
     t.index ["user_id"], name: "index_comment_read_pointers_on_user_id"
   end
 
@@ -223,6 +240,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.integer "review_type", limit: 1
     t.integer "selected_version_id"
     t.integer "task_id"
+    t.datetime "topic_assigned_at", null: false
     t.boolean "topic_concurrency_defer", default: false, null: false
     t.integer "topic_id"
     t.datetime "updated_at", null: false
@@ -233,12 +251,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
     t.index ["creative_id", "id"], name: "index_comments_on_creative_id_and_id"
+    t.index ["creative_id", "private", "approver_id", "topic_id"], name: "index_comments_on_creative_private_approver_id_and_topic"
     t.index ["creative_id", "private", "id"], name: "index_comments_on_creative_id_and_private_and_id"
+    t.index ["creative_id", "private", "topic_id", "id"], name: "index_comments_on_creative_topic_private_and_id"
+    t.index ["creative_id", "private", "user_id", "topic_id"], name: "index_comments_on_creative_private_user_id_and_topic"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["notification_key"], name: "index_comments_on_notification_key", unique: true, where: "notification_key IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["task_id"], name: "index_comments_on_task_id"
+    t.index ["topic_id", "topic_assigned_at"], name: "index_comments_on_topic_and_assigned_at"
     t.index ["topic_id"], name: "index_comments_on_topic_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
   end
@@ -251,6 +273,46 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.index ["contact_user_id"], name: "index_contacts_on_contact_user_id"
     t.index ["user_id", "contact_user_id"], name: "index_contacts_on_user_id_and_contact_user_id", unique: true
     t.index ["user_id"], name: "index_contacts_on_user_id"
+  end
+
+  create_table "creative_change_sets", force: :cascade do |t|
+    t.string "actor_kind", null: false
+    t.integer "anchor_creative_id"
+    t.string "anchor_source"
+    t.datetime "applied_at"
+    t.string "change_group_token"
+    t.datetime "created_at", null: false
+    t.string "origin", null: false
+    t.integer "reverted_by_id"
+    t.integer "reverts_id"
+    t.string "status", default: "applied", null: false
+    t.text "summary"
+    t.integer "task_id"
+    t.integer "topic_id"
+    t.datetime "updated_at", null: false
+    t.integer "user_id"
+    t.index ["anchor_creative_id", "created_at"], name: "idx_on_anchor_creative_id_created_at_15aafa2718"
+    t.index ["change_group_token", "user_id"], name: "index_creative_change_sets_on_change_group_token_and_user_id"
+    t.index ["reverts_id"], name: "index_creative_change_sets_on_reverts_id"
+    t.index ["status"], name: "index_creative_change_sets_on_status"
+    t.index ["task_id"], name: "index_creative_change_sets_on_task_id"
+  end
+
+  create_table "creative_changes", force: :cascade do |t|
+    t.json "after", default: {}, null: false
+    t.json "before", default: {}, null: false
+    t.json "conflict", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.integer "creative_change_set_id", null: false
+    t.integer "creative_id", null: false
+    t.string "operation", null: false
+    t.integer "position", default: 0, null: false
+    t.integer "previous_parent_id"
+    t.datetime "updated_at", null: false
+    t.index ["creative_change_set_id", "creative_id"], name: "idx_creative_changes_on_set_and_creative", unique: true
+    t.index ["creative_change_set_id"], name: "index_creative_changes_on_creative_change_set_id"
+    t.index ["creative_id", "id"], name: "index_creative_changes_on_creative_id_and_id"
+    t.index ["previous_parent_id"], name: "index_creative_changes_on_previous_parent_id"
   end
 
   create_table "creative_hierarchies", id: false, force: :cascade do |t|
@@ -296,6 +358,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.integer "origin_id"
     t.integer "parent_id"
     t.float "progress", default: 0.0
+    t.integer "revision", default: 0, null: false
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
@@ -317,6 +380,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.index ["client_id"], name: "index_devices_on_client_id", unique: true
     t.index ["fcm_token"], name: "index_devices_on_fcm_token", unique: true
     t.index ["user_id"], name: "index_devices_on_user_id"
+    t.check_constraint "device_type != 2", name: "devices_no_android_device_type"
   end
 
   create_table "emails", force: :cascade do |t|
@@ -488,6 +552,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.index ["llm_vendor", "name"], name: "index_llm_models_on_llm_vendor_and_name", unique: true
   end
 
+  create_table "llm_usage_requesters", force: :cascade do |t|
+    t.bigint "llm_usage_id", null: false
+    t.bigint "user_id", null: false
+    t.index ["llm_usage_id"], name: "index_llm_usage_requesters_on_llm_usage_id"
+    t.index ["user_id", "llm_usage_id"], name: "index_llm_usage_requesters_on_user_id_and_llm_usage_id", unique: true
+  end
+
+  create_table "llm_usages", force: :cascade do |t|
+    t.bigint "activity_log_id"
+    t.bigint "agent_id"
+    t.bigint "cache_read_tokens"
+    t.bigint "cache_write_tokens"
+    t.datetime "created_at", null: false
+    t.bigint "creative_id"
+    t.string "event_key", null: false
+    t.string "execution_id", null: false
+    t.bigint "input_tokens"
+    t.string "measurement", default: "call", null: false
+    t.string "model", null: false
+    t.integer "normalization_version", default: 1, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "output_tokens"
+    t.bigint "owner_id"
+    t.json "raw_usage", default: {}, null: false
+    t.bigint "requester_id"
+    t.json "requester_ids", default: [], null: false
+    t.string "requester_kind", null: false
+    t.json "source_comment_ids", default: [], null: false
+    t.bigint "task_id"
+    t.bigint "topic_id"
+    t.datetime "updated_at", null: false
+    t.string "vendor", null: false
+    t.index ["agent_id", "occurred_at"], name: "index_llm_usages_on_agent_id_and_occurred_at"
+    t.index ["event_key"], name: "index_llm_usages_on_event_key", unique: true
+    t.index ["execution_id"], name: "index_llm_usages_on_execution_id"
+    t.index ["occurred_at"], name: "index_llm_usages_on_occurred_at"
+    t.index ["owner_id", "occurred_at"], name: "index_llm_usages_on_owner_id_and_occurred_at"
+    t.index ["requester_id", "occurred_at"], name: "index_llm_usages_on_requester_id_and_occurred_at"
+    t.index ["task_id"], name: "index_llm_usages_on_task_id"
+  end
+
   create_table "mcp_tools", force: :cascade do |t|
     t.datetime "approved_at"
     t.string "checksum"
@@ -626,6 +731,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.index ["policy_type", "enabled"], name: "index_orchestrator_policies_on_policy_type_and_enabled"
     t.index ["priority"], name: "index_orchestrator_policies_on_priority"
     t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
+  end
+
+  create_table "retired_task_executions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "execution_job_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_job_id"], name: "index_retired_task_executions_on_execution_job_id", unique: true
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -894,15 +1006,64 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.integer "creative_id"
     t.string "name"
     t.json "pending_tool_call"
+    t.integer "resume_count", default: 0, null: false
+    t.datetime "resume_not_before"
     t.string "status", default: "pending"
+    t.string "suspend_reason"
+    t.datetime "suspended_at"
+    t.string "suspended_from"
     t.integer "topic_id"
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
+    t.json "usage_attribution", default: {}, null: false
     t.string "waiting_notice_scope"
+    t.integer "workflow_execution_id"
+    t.string "workflow_stop_reason"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
+    t.index ["status", "resume_not_before"], name: "index_tasks_on_status_and_resume_not_before"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
+    t.index ["workflow_execution_id", "agent_id"], name: "workflow_task_identity", unique: true
+    t.index ["workflow_execution_id"], name: "index_tasks_on_workflow_execution_id"
+  end
+
+  create_table "tool_usage_requesters", force: :cascade do |t|
+    t.bigint "tool_usage_id", null: false
+    t.bigint "user_id", null: false
+    t.index ["tool_usage_id"], name: "index_tool_usage_requesters_on_tool_usage_id"
+    t.index ["user_id", "tool_usage_id"], name: "index_tool_usage_requesters_on_user_id_and_tool_usage_id", unique: true
+  end
+
+  create_table "tool_usages", force: :cascade do |t|
+    t.bigint "agent_id"
+    t.bigint "agent_workspace_id"
+    t.string "arguments_digest"
+    t.datetime "created_at", null: false
+    t.bigint "creative_id"
+    t.integer "duration_ms"
+    t.string "event_key", null: false
+    t.string "execution_id", null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "owner_id"
+    t.bigint "requester_id"
+    t.json "requester_ids", default: [], null: false
+    t.string "requester_kind", null: false
+    t.string "source", null: false
+    t.json "source_comment_ids", default: [], null: false
+    t.boolean "succeeded", default: true, null: false
+    t.bigint "task_id"
+    t.string "tool_name", null: false
+    t.bigint "topic_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "occurred_at"], name: "index_tool_usages_on_agent_id_and_occurred_at"
+    t.index ["agent_workspace_id", "tool_name", "occurred_at"], name: "index_tool_usages_on_workspace_tool_and_time"
+    t.index ["event_key"], name: "index_tool_usages_on_event_key", unique: true
+    t.index ["execution_id"], name: "index_tool_usages_on_execution_id"
+    t.index ["owner_id", "occurred_at"], name: "index_tool_usages_on_owner_id_and_occurred_at"
+    t.index ["requester_id", "occurred_at"], name: "index_tool_usages_on_requester_id_and_occurred_at"
+    t.index ["task_id"], name: "index_tool_usages_on_task_id"
+    t.index ["tool_name", "occurred_at"], name: "index_tool_usages_on_tool_name_and_occurred_at"
   end
 
   create_table "topics", force: :cascade do |t|
@@ -914,11 +1075,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.integer "primary_agent_id"
     t.string "session_id"
     t.integer "source_topic_id"
+    t.string "system_kind"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["archived_at"], name: "index_topics_on_archived_at", where: "archived_at IS NOT NULL"
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
     t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
+    t.index ["creative_id", "system_kind"], name: "index_topics_on_creative_id_and_system_kind", unique: true
     t.index ["creative_id"], name: "index_topics_on_creative_id"
     t.index ["primary_agent_id", "session_id"], name: "index_topics_on_primary_agent_and_session"
     t.index ["primary_agent_id"], name: "index_topics_on_primary_agent_id"
@@ -930,13 +1093,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.datetime "created_at", null: false
     t.integer "creative_id"
     t.json "expanded_status", default: {}, null: false
+    t.boolean "last_topic_all_messages", default: false, null: false
     t.integer "last_topic_id"
+    t.integer "last_topic_revision", default: 0, null: false
+    t.bigint "last_topic_save_fence_applied", default: 0, null: false
+    t.bigint "last_topic_save_fence_issued", default: 0, null: false
+    t.integer "last_topic_save_sequence"
+    t.json "last_topic_save_sequences", default: {}, null: false
+    t.string "last_topic_save_session_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
     t.index ["creative_id", "user_id"], name: "index_user_creative_preferences_on_creative_id_and_user_id", unique: true
     t.index ["creative_id"], name: "index_user_creative_preferences_on_creative_id"
     t.index ["last_topic_id"], name: "index_user_creative_preferences_on_last_topic_id"
     t.index ["user_id"], name: "index_user_creative_preferences_on_user_id"
+    t.index ["user_id"], name: "index_user_creative_preferences_on_user_id_root_unique", unique: true, where: "creative_id IS NULL"
   end
 
   create_table "user_themes", force: :cascade do |t|
@@ -960,12 +1131,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.json "dismissed_notices"
     t.string "email", null: false
     t.datetime "email_verified_at"
+    t.datetime "endpoint_health_checked_at"
+    t.string "endpoint_health_error"
+    t.integer "endpoint_health_status", default: 0, null: false
+    t.json "expansion_save_sequences", default: {}, null: false
     t.integer "failed_login_attempts", default: 0, null: false
     t.string "gateway_url"
     t.string "google_access_token"
     t.string "google_refresh_token"
     t.datetime "google_token_expires_at"
     t.string "google_uid"
+    t.boolean "justify_creative_descriptions", default: true, null: false
     t.datetime "last_visited_creative_at"
     t.string "last_visited_creative_client_id"
     t.integer "last_visited_creative_id"
@@ -981,6 +1157,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.datetime "onboarding_completed_at"
     t.datetime "onboarding_seeded_at"
     t.string "password_digest", null: false
+    t.datetime "quota_blocked_until"
+    t.string "quota_probe_generation"
+    t.bigint "quota_probe_task_id"
+    t.integer "quota_retry_count", default: 0, null: false
+    t.boolean "quota_retry_exhausted", default: false, null: false
     t.text "routing_expression"
     t.string "routing_subscription_token"
     t.boolean "searchable", default: false, null: false
@@ -999,6 +1180,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
+    t.index ["created_at", "id"], name: "index_users_on_created_at_and_id"
     t.index ["desktop_preset_adapter"], name: "index_users_on_desktop_preset_adapter", unique: true, where: "desktop_preset_adapter IS NOT NULL"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["last_visited_creative_id"], name: "index_users_on_last_visited_creative_id"
@@ -1018,6 +1200,69 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
     t.index ["webauthn_id"], name: "index_webauthn_credentials_on_webauthn_id", unique: true
   end
 
+  create_table "workflow_chains", force: :cascade do |t|
+    t.string "correlation_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "creative_id", null: false
+    t.integer "root_depth", null: false
+    t.integer "step_count", default: 0, null: false
+    t.integer "task_count", default: 0, null: false
+    t.bigint "topic_id", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["correlation_id", "creative_id", "topic_id"], name: "workflow_chain_identity", unique: true
+  end
+
+  create_table "workflow_executions", force: :cascade do |t|
+    t.integer "chain_id", null: false
+    t.json "context", null: false
+    t.datetime "created_at", null: false
+    t.json "decisions", default: [], null: false
+    t.string "input_event_id", null: false
+    t.bigint "owner_id"
+    t.string "reason"
+    t.boolean "reserved", default: false, null: false
+    t.bigint "rule_id", null: false
+    t.json "rule_snapshot", null: false
+    t.datetime "sealed_at"
+    t.json "selected_agent_ids", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["chain_id", "input_event_id"], name: "workflow_execution_identity", unique: true
+    t.index ["chain_id", "rule_id"], name: "index_workflow_executions_on_chain_id_and_rule_id"
+    t.index ["chain_id"], name: "index_workflow_executions_on_chain_id"
+    t.index ["sealed_at"], name: "index_workflow_executions_on_sealed_at"
+  end
+
+  create_table "workflow_outboxes", force: :cascade do |t|
+    t.bigint "agent_id"
+    t.integer "attempts", default: 0, null: false
+    t.string "claim_token"
+    t.datetime "claimed_at"
+    t.json "context", null: false
+    t.datetime "created_at", null: false
+    t.datetime "due_at", null: false
+    t.integer "execution_id", null: false
+    t.string "key", null: false
+    t.json "ordinary_delivery"
+    t.string "reason"
+    t.bigint "reply_comment_id"
+    t.string "state", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_id", "key"], name: "index_workflow_outboxes_on_execution_id_and_key", unique: true
+    t.index ["execution_id"], name: "index_workflow_outboxes_on_execution_id"
+    t.index ["state", "due_at", "claimed_at"], name: "index_workflow_outboxes_on_state_and_due_at_and_claimed_at"
+  end
+
+  create_table "workflow_receipts", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "event_name", null: false
+    t.integer "execution_id", null: false
+    t.string "job_id", null: false
+    t.string "source", null: false
+    t.datetime "updated_at", null: false
+    t.index ["execution_id"], name: "index_workflow_receipts_on_execution_id"
+    t.index ["source", "event_name", "job_id"], name: "workflow_receipt_identity", unique: true
+  end
+
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "activity_logs", "comments"
@@ -1030,9 +1275,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
   add_foreign_key "calendar_events", "creatives"
   add_foreign_key "calendar_events", "users"
   add_foreign_key "channels", "topics"
+  add_foreign_key "comment_notification_deliveries", "workflow_executions"
   add_foreign_key "comment_reactions", "comments"
   add_foreign_key "comment_reactions", "users"
   add_foreign_key "comment_read_pointers", "creatives"
+  add_foreign_key "comment_read_pointers", "topics", on_delete: :cascade
   add_foreign_key "comment_read_pointers", "users"
   add_foreign_key "comment_snapshots", "comments", column: "result_comment_id", on_delete: :nullify
   add_foreign_key "comment_snapshots", "creatives"
@@ -1048,6 +1295,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
   add_foreign_key "comments", "users", column: "approver_id"
   add_foreign_key "contacts", "users"
   add_foreign_key "contacts", "users", column: "contact_user_id"
+  add_foreign_key "creative_changes", "creative_change_sets", on_delete: :cascade
   add_foreign_key "creative_shares", "creatives"
   add_foreign_key "creative_shares", "users"
   add_foreign_key "creative_shares", "users", column: "shared_by_id", on_delete: :nullify
@@ -1070,6 +1318,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
   add_foreign_key "linear_project_links", "creatives"
   add_foreign_key "linear_project_links", "linear_accounts", column: "account_id"
   add_foreign_key "llm_models", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "llm_usage_requesters", "llm_usages", on_delete: :cascade
   add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"
   add_foreign_key "notion_block_links", "creatives"
@@ -1104,6 +1353,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
   add_foreign_key "task_actions", "tasks"
   add_foreign_key "tasks", "creatives", on_delete: :nullify
   add_foreign_key "tasks", "users", column: "agent_id"
+  add_foreign_key "tasks", "workflow_executions"
+  add_foreign_key "tool_usage_requesters", "tool_usages", on_delete: :cascade
   add_foreign_key "topics", "creatives"
   add_foreign_key "topics", "topics", column: "source_topic_id", on_delete: :nullify
   add_foreign_key "topics", "users"
@@ -1114,4 +1365,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_000000) do
   add_foreign_key "users", "agent_gateways"
   add_foreign_key "users", "creatives", column: "last_visited_creative_id", on_delete: :nullify
   add_foreign_key "webauthn_credentials", "users"
+  add_foreign_key "workflow_executions", "workflow_chains", column: "chain_id"
+  add_foreign_key "workflow_outboxes", "workflow_executions", column: "execution_id"
+  add_foreign_key "workflow_receipts", "workflow_executions", column: "execution_id"
 end

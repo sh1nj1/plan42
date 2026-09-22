@@ -366,6 +366,102 @@ class AgentGatewayTest < ActiveSupport::TestCase
     end
   end
 
+  test "health verdict only counts while it is fresh" do
+    gateway = build_gateway.tap(&:save!)
+    gateway.update_columns(health_status: 1, health_checked_at: Time.current)
+
+    assert_predicate gateway, :health_fresh?
+    assert_predicate gateway, :health_reachable?
+
+    gateway.update_columns(health_checked_at: (Collavre::AgentGateway::HEALTH_TTL + 1.second).ago)
+    assert_not gateway.health_fresh?
+    assert_not gateway.health_reachable?, "a verdict nobody has refreshed is not evidence the gateway answers"
+  end
+
+  test "connection changes invalidate the previous health verdict" do
+    gateway = build_gateway.tap(&:save!)
+
+    %i[base_url completion_key].each do |attribute|
+      gateway.update_columns(health_status: 1, health_checked_at: Time.current, health_engines: { "mode" => "host" })
+      replacement = attribute == :base_url ? "https://replacement.example.com" : SecureRandom.hex(16)
+
+      gateway.update!(attribute => replacement)
+
+      gateway.reload
+      assert_predicate gateway, :health_unknown?
+      assert_nil gateway.health_checked_at
+      assert_empty gateway.health_engines
+    end
+  end
+
+  test "an unprobed or deactivated gateway is not reachable" do
+    gateway = build_gateway.tap(&:save!)
+    assert_predicate gateway, :health_unknown?
+    assert_not gateway.health_reachable?
+
+    gateway.update_columns(health_status: 1, health_checked_at: Time.current, active: false)
+    assert_not gateway.health_reachable?
+  end
+
+  test "down and unreachable take every engine offline" do
+    gateway = build_gateway.tap(&:save!)
+
+    [ 3, 4 ].each do |status|
+      gateway.update_columns(
+        health_status: status,
+        health_checked_at: Time.current,
+        health_engines: { "mode" => "host", "items" => { "claude" => { "state" => "authenticated" } } }
+      )
+      assert_not gateway.health_serves_engine?("claude"),
+                 "expected health_status=#{status} to override a per-engine verdict"
+    end
+  end
+
+  test "degraded serves every engine but the one that is explicitly logged out" do
+    gateway = build_gateway.tap(&:save!)
+    gateway.update_columns(
+      health_status: 2,
+      health_checked_at: Time.current,
+      health_engines: {
+        "mode" => "host",
+        "items" => {
+          "claude" => { "state" => "unknown" },
+          "codex" => { "state" => "authenticated" },
+          "codex_custom" => { "state" => "unauthenticated" }
+        }
+      }
+    )
+
+    assert gateway.health_serves_engine?("codex")
+    assert gateway.health_serves_engine?("claude"), "unknown is not a failure — see the proxy's health docs"
+    assert_not gateway.health_serves_engine?("codex_custom")
+    assert gateway.health_serves_engine?("engine_this_collavre_has_never_heard_of")
+    assert gateway.health_serves_engine?(nil), "an unmapped model falls back to the rollup"
+  end
+
+  test "per-user routing reports the gateway itself, not any one worker's credential" do
+    gateway = build_gateway.tap(&:save!)
+    gateway.update_columns(
+      health_status: 1,
+      health_checked_at: Time.current,
+      health_engines: { "mode" => "per-user" }
+    )
+
+    assert gateway.health_serves_engine?("codex"),
+           "the gateway proved it routes; the engine lives in a worker HOME it cannot probe"
+  end
+
+  test "a summary-only response falls back to the rollup" do
+    gateway = build_gateway.tap(&:save!)
+    gateway.update_columns(
+      health_status: 2,
+      health_checked_at: Time.current,
+      health_engines: { "ready" => 1, "total" => 3 }
+    )
+
+    assert gateway.health_serves_engine?("codex")
+  end
+
   private
 
   def build_gateway(overrides = {})

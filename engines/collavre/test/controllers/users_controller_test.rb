@@ -70,6 +70,30 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute @regular_user.reload.system_admin?
   end
 
+  test "system admin row actions preserve and clamp the user page" do
+    sign_in_as(@admin, password: "password")
+    (20 - User.count).times do |index|
+      User.create!(email: "page-filler-#{index}@example.com", password: "password", name: "Page Filler #{index}")
+    end
+    target = User.create!(email: "page-target@example.com", password: "password", name: "Page Target")
+    final_target = User.create!(email: "final-page-target@example.com", password: "password", name: "Final Page Target")
+    page_two = collavre.users_path(page: 2)
+
+    patch collavre.grant_system_admin_user_path(target, page: 2)
+    assert_redirected_to page_two
+    patch collavre.revoke_system_admin_user_path(target, page: 2)
+    assert_redirected_to page_two
+    patch collavre.lock_user_path(target, page: 2)
+    assert_redirected_to page_two
+    patch collavre.unlock_user_path(target, page: 2)
+    assert_redirected_to page_two
+
+    delete collavre.user_path(target, page: 2)
+    assert_redirected_to page_two
+    delete collavre.user_path(final_target, page: 2)
+    assert_redirected_to collavre.users_path
+  end
+
   test "system admin cannot delete themselves" do
     sign_in_as(@admin, password: "password")
 
@@ -582,6 +606,47 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
                   "user[creative_workspace_enabled]", description
     assert_select "label[for='user_creative_workspace_enabled'][title=?]", description
     assert_select "small", text: description, count: 0
+  end
+
+  test "profile separates token usage and password change links with a line break" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+
+    assert_response :success
+    assert_select ".profile-actions > a[href=?] + br + a[href=?]",
+                  collavre.llm_usages_path, collavre.edit_password_user_path(@regular_user),
+                  text: I18n.t("collavre.users.change_password")
+  end
+
+  test "profile opens agent gateway settings outside Turbo navigation" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+
+    assert_response :success
+    assert_select "a[href=?][data-turbo='false']", collavre.agent_gateways_path,
+                  text: I18n.t("collavre.agent_gateways.manage")
+  end
+
+  test "profile page includes the creative description alignment preference" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+
+    assert_response :success
+    assert_select "input[type='checkbox'][name=?]", "user[justify_creative_descriptions]"
+  end
+
+  test "user can disable creative description justification from their profile" do
+    sign_in_as(@regular_user, password: "password")
+
+    patch collavre.user_path(@regular_user), params: {
+      user: { justify_creative_descriptions: "0" }
+    }
+
+    assert_redirected_to collavre.user_path(@regular_user)
+    refute @regular_user.reload.justify_creative_descriptions?
   end
 
   test "admin link appears in profile for system admin" do

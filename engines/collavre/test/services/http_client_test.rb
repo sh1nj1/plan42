@@ -7,6 +7,23 @@ module Collavre
   class HttpClientTest < ActiveSupport::TestCase
     ENDPOINT = "https://api.example.test/v1/resource"
 
+    FakeStreamingResponse = Struct.new(:chunks, :content_length) do
+      def code = "200"
+      def message = "OK"
+      def to_hash = {}
+      def [](header) = header == "Content-Length" ? content_length : nil
+      def read_body(&block) = chunks.each(&block)
+    end
+
+    FakeStreamingHttp = Struct.new(:response) do
+      attr_accessor :use_ssl, :open_timeout, :read_timeout
+
+      def request(_request)
+        yield response
+        response
+      end
+    end
+
     setup { WebMock.disable_net_connect! }
     teardown { WebMock.allow_net_connect! }
 
@@ -71,6 +88,54 @@ module Collavre
       stub_request(:delete, ENDPOINT).to_return(status: 204, body: "")
 
       assert_nil HttpClient.new.delete(ENDPOINT).json
+    end
+
+    test "stops reading a response that exceeds the configured byte limit" do
+      stub_request(:get, ENDPOINT).to_return(status: 200, body: "x" * 20)
+
+      error = assert_raises(HttpClient::ResponseTooLarge) do
+        HttpClient.new(max_response_bytes: 10).get(ENDPOINT)
+      end
+
+      assert_match(/10 bytes/, error.message)
+    end
+
+    test "enforces the byte limit while streaming without a content length" do
+      response = FakeStreamingResponse.new([ "12345", "67890" ], nil)
+      client = HttpClient.new(max_response_bytes: 8)
+
+      error = assert_raises(HttpClient::ResponseTooLarge) do
+        client.send(:bounded_response, FakeStreamingHttp.new(response), Net::HTTP::Get.new("/"))
+      end
+
+      assert_match(/8 bytes/, error.message)
+    end
+
+    test "returns a bounded response when the streamed body fits" do
+      response = FakeStreamingResponse.new([ '{"ok":', "true}" ], "11")
+      client = HttpClient.new(max_response_bytes: 16)
+
+      result = client.send(:bounded_response, FakeStreamingHttp.new(response), Net::HTTP::Get.new("/"))
+
+      assert_equal({ "ok" => true }, result.json)
+    end
+
+    test "enforces an overall deadline while a response keeps streaming" do
+      response = FakeStreamingResponse.new([], nil)
+      response.define_singleton_method(:read_body) do |&block|
+        loop do
+          sleep 0.01
+          block.call("x")
+        end
+      end
+      client = HttpClient.new(max_response_bytes: 1.megabyte, request_timeout: 0.05)
+      http = FakeStreamingHttp.new(response)
+
+      error = assert_raises(HttpClient::ConnectionError) do
+        client.stub(:build_connection, http) { client.get(ENDPOINT) }
+      end
+
+      assert_match(/Timeout::Error/, error.message)
     end
 
     test "pins policy-protected requests to the validated address" do

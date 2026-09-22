@@ -65,6 +65,26 @@ module Creatives
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
+    test "records bulk sequence changes in one change set" do
+      Collavre::Creatives::History.track(
+        actor: @user,
+        origin: :editor,
+        anchor: @root,
+        anchor_source: :view_root
+      ) do
+        @reorderer.reorder(
+          dragged_id: @child_c.id,
+          target_id: @child_a.id,
+          direction: "up"
+        )
+      end
+
+      change_set = Collavre::CreativeChangeSet.sole
+      assert_equal [ @child_a.id, @child_b.id, @child_c.id ].sort,
+                   change_set.creative_changes.pluck(:creative_id).sort
+      assert change_set.creative_changes.all? { |change| change.operation == "reorder" }
+    end
+
     test "reorder_multiple raises when selection contains duplicate ids" do
       assert_raises(Reorderer::Error) do
         @reorderer.reorder_multiple(
@@ -94,6 +114,45 @@ module Creatives
           target_id: descendant.id,
           direction: "up"
         )
+      end
+    end
+
+    # A single drag has to reject a cycle the same way a multi drag does. It
+    # used to reach closure_tree's validation instead, and RecordInvalid is not
+    # a Reorderer::Error, so the controller answered 500 where it promises 422.
+    test "reorder raises Reorderer::Error when target is a descendant of the dragged creative" do
+      descendant = Creative.create!(description: "Grandchild", user: @user, parent: @child_a)
+
+      %w[child up down].each do |direction|
+        assert_raises(Reorderer::Error, "direction #{direction}") do
+          @reorderer.reorder(
+            dragged_id: @child_a.id,
+            target_id: descendant.id,
+            direction: direction
+          )
+        end
+
+        assert_equal @root.id, @child_a.reload.parent_id, "direction #{direction} moved the dragged creative"
+      end
+    end
+
+    # Guards the rescue rather than the pre-check: a validation failure raised
+    # while the rows are being written still has to surface as Reorderer::Error.
+    test "reorder converts a record validation failure into Reorderer::Error" do
+      @child_a.define_singleton_method(:update!) do |*|
+        errors.add(:base, "boom")
+        raise ActiveRecord::RecordInvalid, self
+      end
+
+      lookup = lambda do |*args, **kwargs|
+        id = kwargs[:id] || args.first&.fetch(:id, nil)
+        id.to_s == @child_a.id.to_s ? @child_a : Creative.where(id: id).first
+      end
+
+      Creative.stub(:find_by, lookup) do
+        assert_raises(Reorderer::Error) do
+          @reorderer.reorder(dragged_id: @child_a.id, target_id: @child_b.id, direction: "child")
+        end
       end
     end
   end

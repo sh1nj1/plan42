@@ -18,13 +18,21 @@ module Collavre
     has_many :user_creative_preferences_as_last_topic, class_name: "Collavre::UserCreativePreference",
              foreign_key: :last_topic_id, dependent: :nullify, inverse_of: :last_topic
 
+    # The dependent nullify below clears a user's selected topic without going
+    # through the preference controller. Advance the ordering token first so a
+    # client can distinguish that deletion from an older empty preference.
+    before_destroy :advance_last_topic_preference_revisions, prepend: true
+
     # --- Archive scopes ---
     scope :active, -> { where(archived_at: nil) }
     scope :archived, -> { where.not(archived_at: nil) }
+    scope :history, -> { where(system_kind: "history") }
 
     validates :name, presence: true, uniqueness: { scope: :creative_id }
+    validates :system_kind, inclusion: { in: %w[history] }, allow_nil: true
 
     before_create :set_default_position
+    after_create :keep_history_topic_last
 
     default_scope { order(:position) }
 
@@ -87,12 +95,29 @@ module Collavre
       update!(archived_at: nil)
     end
 
+    def history?
+      system_kind == "history"
+    end
+
     private
+
+    def advance_last_topic_preference_revisions
+      user_creative_preferences_as_last_topic.update_all(
+        "last_topic_all_messages = FALSE, last_topic_revision = last_topic_revision + 1"
+      )
+    end
 
     def set_default_position
       return if position_changed? && position != 0
 
       self.position = (Topic.unscoped.where(creative_id: creative_id).maximum(:position) || -1) + 1
+    end
+
+    def keep_history_topic_last
+      return if history?
+
+      history = Topic.unscoped.find_by(creative_id: creative_id, system_kind: "history")
+      history&.update_column(:position, position + 1) if history&.position.to_i <= position
     end
   end
 end

@@ -1,8 +1,11 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Entity-level complexity ratchet. See lib/complexity_ratchet.rb for why this
-# exists and docs/complexity_budget.md for how to work with it.
+# Entity-level complexity ratchet, over Ruby (RuboCop's Metrics department) and
+# the core engine's JavaScript (ESLint's size and complexity rules). See
+# lib/complexity_ratchet.rb for why this exists, lib/complexity_ratchet/
+# javascript.rb for the JavaScript half, and docs/complexity_budget.md for how
+# to work with it.
 #
 #   bin/complexity_check                  # gate: fail on growth or new debt vs the merge base
 #   bin/complexity_check --base <ref>     # compare against something other than origin/main
@@ -18,6 +21,7 @@ require "optparse"
 ROOT = File.expand_path("..", __dir__)
 require File.join(ROOT, "lib", "complexity_ratchet")
 require File.join(ROOT, "lib", "complexity_ratchet", "base_tree")
+require File.join(ROOT, "lib", "complexity_ratchet", "javascript")
 
 options = { mode: :check, base: ENV.fetch("COMPLEXITY_BASE_REF", "origin/main") }
 OptionParser.new do |parser|
@@ -33,8 +37,9 @@ OptionParser.new do |parser|
   end
 end.parse!
 
-WAIVERS = File.join(ROOT, ComplexityRatchet::WAIVERS_PATH)
-CONFIG  = File.join(ROOT, ComplexityRatchet::CONFIG_PATH)
+WAIVERS   = File.join(ROOT, ComplexityRatchet::WAIVERS_PATH)
+CONFIG    = File.join(ROOT, ComplexityRatchet::CONFIG_PATH)
+JS_CONFIG = File.join(ROOT, ComplexityRatchet::Javascript::CONFIG_PATH)
 
 def abort_with(message)
   warn message
@@ -59,13 +64,26 @@ def budget_problems(base_sha, options)
   ComplexityRatchet.verify_budget(
     file_at(base_sha, ComplexityRatchet::CONFIG_PATH)&.then { |yaml| YAML.safe_load(yaml) || {} },
     YAML.safe_load_file(CONFIG) || {}
-  )
+  ) +
+    ComplexityRatchet::Javascript.verify_budget(
+      file_at(base_sha, ComplexityRatchet::Javascript::CONFIG_PATH)&.then { |yaml| YAML.safe_load(yaml) || {} },
+      YAML.safe_load_file(JS_CONFIG) || {}
+    )
 end
 
-actual = ComplexityRatchet::Measurement.call(root: ROOT)
+# Ruby and JavaScript entities share one hash, one waiver list and one
+# comparison: the key carries the path and the rule, so the two cannot collide,
+# and everything downstream of here is language-agnostic.
+def measure(root:, env: {})
+  ComplexityRatchet::Measurement.call(root: root, env: env)
+    .merge(ComplexityRatchet::Javascript::Measurement.call(root: root, tool_root: ROOT))
+end
+
+actual = measure(root: ROOT)
 
 if options[:mode] == :report
-  puts "#{actual.size} entities over the budget in #{ComplexityRatchet::CONFIG_PATH}:"
+  puts "#{actual.size} entities over the budgets in #{ComplexityRatchet::CONFIG_PATH} " \
+       "and #{ComplexityRatchet::Javascript::CONFIG_PATH}:"
   actual.sort.each { |key, value| puts "  #{value}\t#{key}" }
   exit 0
 end
@@ -74,9 +92,7 @@ base_measurement = nil
 base_sha = nil
 ComplexityRatchet::BaseTree.at_merge_base(root: ROOT, ref: options[:base]) do |tree, sha|
   base_sha = sha
-  base_measurement = ComplexityRatchet::Measurement.call(
-    root: tree, env: { "BUNDLE_GEMFILE" => File.join(ROOT, "Gemfile") }
-  )
+  base_measurement = measure(root: tree, env: { "BUNDLE_GEMFILE" => File.join(ROOT, "Gemfile") })
 end
 
 if base_measurement.nil?

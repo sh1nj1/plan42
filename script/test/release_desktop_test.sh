@@ -37,6 +37,71 @@ if valid_semver "1.02.3" || valid_semver "v1.2.3" || valid_semver "1.2" || \
   exit 1
 fi
 
+parse_release_options --unsigned --resume 2.3.4
+assert_equal "1" "$UNSIGNED_RELEASE"
+assert_equal "2.3.4" "$RESUME_VERSION"
+parse_release_options --resume 2.3.5 --unsigned
+assert_equal "1" "$UNSIGNED_RELEASE"
+assert_equal "2.3.5" "$RESUME_VERSION"
+parse_release_options
+assert_equal "0" "$UNSIGNED_RELEASE"
+assert_equal "" "$RESUME_VERSION"
+if (parse_release_options --resume) 2>/dev/null || \
+  (parse_release_options --resume "") 2>/dev/null || \
+  (parse_release_options --unknown) 2>/dev/null || \
+  (parse_release_options --unsigned --unsigned) 2>/dev/null; then
+  echo "invalid release options were accepted" >&2
+  exit 1
+fi
+
+distribution_prerequisite_output="$(
+  check_signing_prerequisites() { printf 'signing\n'; }
+  UNSIGNED_RELEASE=1
+  check_distribution_prerequisites
+  UNSIGNED_RELEASE=0
+  check_distribution_prerequisites
+)"
+assert_equal "signing" "$distribution_prerequisite_output"
+
+prerequisite_commands="$(
+  uname() {
+    [[ "$1" == "-s" ]] && printf 'Darwin\n' || printf 'arm64\n'
+  }
+  git() {
+    [[ "$1" == "branch" ]] && printf 'main\n'
+  }
+  require_command() { printf '%s\n' "$1"; }
+  check_desktop_build_prerequisites() { :; }
+  check_distribution_prerequisites() { :; }
+  gh() { :; }
+
+  UNSIGNED_RELEASE=1
+  check_prerequisites
+  printf '%s\n' signed-mode
+  UNSIGNED_RELEASE=0
+  check_prerequisites
+)"
+unsigned_commands="${prerequisite_commands%%signed-mode*}"
+signed_commands="${prerequisite_commands#*signed-mode}"
+grep -Fqx "hdiutil" <<< "$unsigned_commands"
+if grep -Eq '^(codesign|security|spctl|xcrun)$' <<< "$unsigned_commands"; then
+  echo "unsigned release required Apple signing commands" >&2
+  exit 1
+fi
+for signing_command in codesign security spctl xcrun; do
+  grep -Fqx "$signing_command" <<< "$signed_commands"
+done
+
+NODE_RUNTIME_URL="https://example.test/node.tar.gz"
+unset NODE_RUNTIME_DIR NODE_RUNTIME_SHA256
+if (check_node_runtime_configuration) 2>/dev/null; then
+  echo "partial Node runtime configuration was accepted" >&2
+  exit 1
+fi
+NODE_RUNTIME_SHA256="fixture-checksum"
+check_node_runtime_configuration
+unset NODE_RUNTIME_URL NODE_RUNTIME_SHA256
+
 assert_equal "1.0.0" "$(bump_version "0.9.7" major)"
 assert_equal "0.10.0" "$(bump_version "0.9.7" minor)"
 assert_equal "0.9.8" "$(bump_version "0.9.7" patch)"
@@ -254,19 +319,78 @@ write_checksum "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg" "$artifact_dir
 assert_equal "Collavre-Desktop_2.3.4_aarch64.dmg" "$(awk '{print $2}' "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256")"
 (cd "$artifact_dir" && shasum -a 256 -c "Collavre-Desktop_2.3.4_aarch64.dmg.sha256" >/dev/null)
 
+unsigned_notes_dir="$fixture_dir/unsigned-notes"
+mkdir -p "$unsigned_notes_dir"
+(
+  cd "$repo_dir"
+  ARTIFACT_DIR="$unsigned_notes_dir"
+  UNSIGNED_RELEASE=1
+  release_notes HEAD 2.3.4
+)
+grep -Fqx "This developer build is not code signed or notarized. On macOS 15 or later, first try to open the app, then go to System Settings > Privacy & Security and choose Open Anyway. On earlier macOS versions, right-click the app and choose Open." \
+  "$unsigned_notes_dir/release-notes.md"
+
+unsigned_desktop_dir="$fixture_dir/unsigned-desktop"
+unsigned_target_dir="$fixture_dir/unsigned-target"
+unsigned_artifact_dir="$fixture_dir/unsigned-artifacts"
+unsigned_build_log="$fixture_dir/unsigned-build.log"
+mkdir -p "$unsigned_desktop_dir/scripts" "$unsigned_target_dir/release/bundle/dmg" "$unsigned_artifact_dir"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nmkdir -p "%s/release/bundle/dmg"\nprintf "unsigned dmg fixture\\n" > "%s/release/bundle/dmg/source.dmg"\n' \
+  "$unsigned_build_log" "$unsigned_target_dir" "$unsigned_target_dir" \
+  > "$unsigned_desktop_dir/scripts/build-macos.sh"
+chmod +x "$unsigned_desktop_dir/scripts/build-macos.sh"
+hdiutil() {
+  if [[ "$1" == "attach" ]]; then
+    local index
+    for ((index = 1; index <= $#; index += 1)); do
+      if [[ "${!index}" == "-mountpoint" ]]; then
+	index=$((index + 1))
+	mkdir -p "${!index}/Collavre Desktop.app"
+	return
+      fi
+    done
+  fi
+}
+DESKTOP_DIR="$unsigned_desktop_dir"
+CARGO_TARGET_DIR="$unsigned_target_dir"
+ARTIFACT_DIR="$unsigned_artifact_dir"
+build_unsigned_dmg 2.3.4
+assert_equal "--no-sign" "$(<"$unsigned_build_log")"
+assert_equal "$unsigned_artifact_dir/Collavre-Desktop_2.3.4_aarch64-unsigned.dmg" "$RELEASE_ARTIFACT"
+(cd "$unsigned_artifact_dir" && shasum -a 256 -c "Collavre-Desktop_2.3.4_aarch64-unsigned.dmg.sha256" >/dev/null)
+ARTIFACT_DIR="$artifact_dir"
+
 gh_log="$fixture_dir/gh.log"
+release_assets="$(printf '%s\n' \
+  'Collavre-Desktop_2.3.4_aarch64-unsigned.dmg' \
+  'Collavre-Desktop_2.3.4_aarch64-unsigned.dmg.sha256' \
+  'unrelated.txt')"
 gh() {
   printf '%s\n' "$*" >> "$gh_log"
   if [[ "$1 $2 $3" == "release view desktop-v2.3.4" ]]; then
-    if [[ "${4:-}" == "--json" ]]; then
+    if [[ "${5:-}" == "isDraft" ]]; then
       printf 'true\n'
+    elif [[ "${5:-}" == "assets" ]]; then
+      printf '%s\n' "$release_assets"
     fi
     return 0
   fi
 }
 publish_release "desktop-v2.3.4" "2.3.4" "$artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg"
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64-unsigned.dmg --yes" "$gh_log"
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64-unsigned.dmg.sha256 --yes" "$gh_log"
 grep -Fqx "release upload desktop-v2.3.4 $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg $artifact_dir/Collavre-Desktop_2.3.4_aarch64.dmg.sha256 --clobber" "$gh_log"
 grep -Fqx "release edit desktop-v2.3.4 --draft=false --title Collavre Desktop 2.3.4 --notes-file $artifact_dir/release-notes.md" "$gh_log"
+
+: > "$gh_log"
+release_assets="$(printf '%s\n' \
+  'Collavre-Desktop_2.3.4_aarch64.dmg' \
+  'Collavre-Desktop_2.3.4_aarch64.dmg.sha256')"
+UNSIGNED_RELEASE=1
+remove_opposite_mode_assets "desktop-v2.3.4" "2.3.4"
+UNSIGNED_RELEASE=0
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64.dmg --yes" "$gh_log"
+grep -Fqx "release delete-asset desktop-v2.3.4 Collavre-Desktop_2.3.4_aarch64.dmg.sha256 --yes" "$gh_log"
 
 ci_log="$fixture_dir/ci.log"
 gh() {

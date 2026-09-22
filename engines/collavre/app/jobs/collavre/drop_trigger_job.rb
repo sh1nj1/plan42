@@ -23,6 +23,7 @@ module Collavre
     #   - after_create_commit dispatch fails
     #   - Retry skips everything because comment already exists
     def perform(parent_creative_id, child_creative_id)
+      return if Workflow::Receipt.recover(source: "drop_trigger", event_name: "comment_created", job_id: job_id)
       parent = Creative.find_by(id: parent_creative_id)
       child = Creative.find_by(id: child_creative_id)
       return unless parent && child
@@ -35,13 +36,8 @@ module Collavre
       end
 
       topic = find_or_create_trigger_topic(child, agent)
-
-      # Initialize trigger loop state on the child creative
-      initialize_trigger_loop(child, topic)
-
-      # Step 1: Find existing or create new trigger comment (idempotent)
-      comment = find_trigger_comment(child, parent, topic) ||
-                create_trigger_comment(child, parent, agent, topic)
+      comment = prepare_trigger(child, parent, agent, topic)
+      return unless comment
 
       # Step 2: Skip if dispatch already produced a Task for this comment
       return if task_exists_for?(comment)
@@ -57,6 +53,19 @@ module Collavre
     end
 
     private
+
+    def prepare_trigger(child, parent, agent, topic)
+      comment = nil
+      applied = Comments::TopicMutation.call(topic.id, child.id) do
+        # The loop reference and its trigger comment must be created under the
+        # topic lock. A concurrent topic move either sees the reference and is
+        # rejected, or wins first and makes this stale job a no-op.
+        initialize_trigger_loop(child.reload, topic)
+        comment = find_trigger_comment(child, parent, topic) ||
+                  create_trigger_comment(child, parent, agent, topic)
+      end
+      comment if applied
+    end
 
     def post_trigger_failure_notice(child, parent)
       topic = child.topics.find_by(name: DROP_TRIGGER_TOPIC_NAME) ||
@@ -102,6 +111,7 @@ module Collavre
       # selection cap so full Main history transfers regardless of length.
       main_comment_ids = main.comments
                              .visible_to(creative.user)
+                             .without_approval_action
                              .order(:created_at)
                              .pluck(:id)
 
@@ -113,7 +123,12 @@ module Collavre
           user: creative.user,
           source_topic: main,
           name: DROP_TRIGGER_TOPIC_NAME
-        ).call(comment_ids: main_comment_ids, enforce_limit: false, auto_select: false)
+        ).call(
+          comment_ids: main_comment_ids,
+          enforce_limit: false,
+          auto_select: false,
+          skip_approval_actions: true
+        )
       else
         creative.topics.create!(
           name: DROP_TRIGGER_TOPIC_NAME,
@@ -155,25 +170,27 @@ module Collavre
     end
 
     def initialize_trigger_loop(child, topic)
-      data = child.data || {}
-      trigger = data["trigger"] || {}
+      child.with_lock do
+        data = child.data || {}
+        trigger = data["trigger"] || {}
 
-      # Only initialize if loop doesn't exist yet
-      return if trigger["loop"].present?
+        # Only initialize if loop doesn't exist yet
+        return if trigger["loop"].present?
 
-      trigger["loop"] = {
-        "state" => "running",
-        "current_iteration" => 0,
-        "max_iterations" => 10,
-        "completion_conditions" => [],
-        "stuck_conditions" => [],
-        "on_retry" => "continue",
-        "last_task_id" => nil,
-        "cooldown_seconds" => 10,
-        "trigger_topic_id" => topic&.id
-      }
-      data["trigger"] = trigger
-      child.update!(data: data)
+        trigger["loop"] = {
+          "state" => "running",
+          "current_iteration" => 0,
+          "max_iterations" => 10,
+          "completion_conditions" => [],
+          "stuck_conditions" => [],
+          "on_retry" => "continue",
+          "last_task_id" => nil,
+          "cooldown_seconds" => 10,
+          "trigger_topic_id" => topic&.id
+        }
+        data["trigger"] = trigger
+        child.update!(data: data)
+      end
     end
 
     def task_exists_for?(comment)
@@ -189,11 +206,12 @@ module Collavre
     def dispatch_trigger(comment)
       # Use Comment#dispatch_payload — single source of truth shared with
       # the after_create_commit callback, preventing payload drift.
-      scheduled_agents = SystemEvents::Dispatcher.dispatch(
-        "comment_created", comment.dispatch_payload
+      outcome = SystemEvents::Dispatcher.dispatch_with_outcome(
+        "comment_created", comment.dispatch_payload, source: "drop_trigger",
+        invocation: { source: "drop_trigger", job_id: job_id }
       )
 
-      if scheduled_agents.blank?
+      if !outcome.workflow_handled? && outcome.agents.blank?
         raise DispatchFailedError,
           "Dispatch returned no agents for comment #{comment.id} " \
           "(creative=#{comment.creative_id}, topic=#{comment.topic_id})"

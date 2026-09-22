@@ -48,8 +48,8 @@ class CommentsControllerMoveToTopicTest < ActionDispatch::IntegrationTest
     @comment1.reload
     @comment2.reload
 
-    assert_nil @comment1.topic_id
-    assert_nil @comment2.topic_id
+    assert_equal @creative.main_topic.id, @comment1.topic_id
+    assert_equal @creative.main_topic.id, @comment2.topic_id
   end
 
   test "move comments to different topic" do

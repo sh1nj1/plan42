@@ -20,6 +20,18 @@
           }
         ]
       }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "rate_limit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/stop-failure-hook.js",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

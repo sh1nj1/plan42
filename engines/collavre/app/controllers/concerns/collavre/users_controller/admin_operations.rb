@@ -2,19 +2,28 @@ module Collavre
   module UsersController::AdminOperations
     extend ActiveSupport::Concern
 
+    USERS_PER_PAGE = 20
+
     included do
       before_action :require_system_admin!, only: [ :index, :grant_system_admin, :revoke_system_admin, :unlock, :lock ]
     end
 
     def index
-      @users = Collavre::User.includes(:sessions, :devices)
+      users = Collavre::User.all
+      @total_user_pages = [ (users.count.to_f / USERS_PER_PAGE).ceil, 1 ].max
+      @user_page = [ [ params[:page].to_i, 1 ].max, @total_user_pages ].min
+      @users = users
+        .includes(:sessions, :devices)
+        .order(created_at: :desc, id: :desc)
+        .offset((@user_page - 1) * USERS_PER_PAGE)
+        .limit(USERS_PER_PAGE)
     end
 
     def destroy
       @user = Collavre::User.find(params[:id])
 
       if @user == Current.user
-        redirect_to users_path, alert: I18n.t("collavre.users.destroy.cannot_delete_self")
+        redirect_to users_index_redirect_path, alert: I18n.t("collavre.users.destroy.cannot_delete_self")
         return
       end
 
@@ -28,10 +37,9 @@ module Collavre
       end
 
       if @user.destroy
-        fallback = Current.user.system_admin? ? users_path : user_path(Current.user, tab: "contacts")
-        redirect_back fallback_location: fallback, notice: I18n.t("collavre.users.destroy.success")
+        redirect_after_user_destroy
       else
-        redirect_to users_path, alert: I18n.t("collavre.users.destroy.failure")
+        redirect_to users_index_redirect_path, alert: I18n.t("collavre.users.destroy.failure")
       end
     end
 
@@ -39,9 +47,9 @@ module Collavre
       @user = Collavre::User.find(params[:id])
 
       if @user.update(system_admin: true)
-        redirect_to users_path, notice: I18n.t("collavre.users.system_admin.granted")
+        redirect_to users_index_redirect_path, notice: I18n.t("collavre.users.system_admin.granted")
       else
-        redirect_to users_path, alert: I18n.t("collavre.users.system_admin.failed")
+        redirect_to users_index_redirect_path, alert: I18n.t("collavre.users.system_admin.failed")
       end
     end
 
@@ -49,26 +57,44 @@ module Collavre
       @user = Collavre::User.find(params[:id])
 
       if @user.update(system_admin: false)
-        redirect_to users_path, notice: I18n.t("collavre.users.system_admin.revoked")
+        redirect_to users_index_redirect_path, notice: I18n.t("collavre.users.system_admin.revoked")
       else
-        redirect_to users_path, alert: I18n.t("collavre.users.system_admin.failed")
+        redirect_to users_index_redirect_path, alert: I18n.t("collavre.users.system_admin.failed")
       end
     end
 
     def unlock
       @user = Collavre::User.find(params[:id])
       @user.unlock_account!
-      redirect_to users_path, notice: I18n.t("collavre.users.unlock.success", name: @user.display_name)
+      redirect_to users_index_redirect_path, notice: I18n.t("collavre.users.unlock.success", name: @user.display_name)
     end
 
     def lock
       @user = Collavre::User.find(params[:id])
       if @user == Current.user
-        redirect_to users_path, alert: I18n.t("collavre.users.lock.cannot_lock_self")
+        redirect_to users_index_redirect_path, alert: I18n.t("collavre.users.lock.cannot_lock_self")
         return
       end
       @user.lock_account!
-      redirect_to users_path, notice: I18n.t("collavre.users.lock.success", name: @user.display_name)
+      redirect_to users_index_redirect_path, notice: I18n.t("collavre.users.lock.success", name: @user.display_name)
+    end
+
+    private
+
+    def redirect_after_user_destroy
+      fallback = Current.user.system_admin? ? users_path : user_path(Current.user, tab: "contacts")
+      return redirect_to users_index_redirect_path, notice: I18n.t("collavre.users.destroy.success") if Current.user.system_admin? && params[:page].present?
+
+      redirect_back fallback_location: fallback, notice: I18n.t("collavre.users.destroy.success")
+    end
+
+    def users_index_redirect_path
+      requested_page = params[:page].to_i
+      return users_path if requested_page <= 1
+
+      total_pages = [ (Collavre::User.count.to_f / USERS_PER_PAGE).ceil, 1 ].max
+      redirect_page = [ requested_page, total_pages ].min
+      redirect_page == 1 ? users_path : users_path(page: redirect_page)
     end
   end
 end

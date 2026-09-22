@@ -23,6 +23,29 @@
    a landing-layout view (the feature-guide breadcrumbs), which is the opposite
    of what it was for. Removed rather than narrowed. */
 
+/* ─── Return to the app ─────────────────────────────────────────────────────── */
+
+/* The layout renders this above <main> for signed-in readers only: it is their
+   only way back into the app from any page under this layout, since none of
+   them carry the application navigation. It sits in normal flow rather than
+   over the hero so it cannot cover content on a narrow window, and stays quiet
+   enough not to read as a second call to action. */
+.landing-return-bar {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5) 0;
+}
+
+.landing-return-link {
+  font-size: var(--text-2);
+  color: var(--color-active);
+  text-decoration: none;
+}
+
+.landing-return-link:hover {
+  text-decoration: underline;
+}
+
 .landing {
   font-family: var(--font-sans);
   color: var(--text-primary);

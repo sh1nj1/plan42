@@ -8,14 +8,14 @@ module CollavreGithub
     class PrMonitorService
       extend T::Sig
       extend ToolMeta
-
-      PR_URL_RE = %r{\Ahttps?://github\.com/([^/]+/[^/]+)/pull/(\d+)\z}.freeze
+      include Concerns::PrChannelLocator
 
       tool_name "pr_monitor"
       tool_description <<~DESC.strip
         Attach a GitHub PR monitor to a Collavre topic. After attachment,
         PR comments, review comments, and review submissions are injected
-        into the topic as chat messages. Idempotent.
+        into the topic as chat messages. The response identifies the attached
+        topic and creative and uses a typed channel reference. Idempotent.
       DESC
 
       tool_param :topic_id, description: "The Collavre topic id to attach the PR channel to."
@@ -23,13 +23,7 @@ module CollavreGithub
 
       sig { params(topic_id: Integer, pr_url: String).returns(T::Hash[Symbol, T.untyped]) }
       def call(topic_id:, pr_url:)
-        m = pr_url.match(PR_URL_RE)
-        raise ArgumentError, "Invalid PR URL: #{pr_url}" unless m
-        # GitHub owner/repo identifiers are case-insensitive but webhook payloads
-        # always carry the canonical case. Normalize on store so user input
-        # like "Owner/Repo" still matches incoming events.
-        repo = m[1].downcase
-        pr_number = m[2].to_i
+        repo, pr_number = parse_pr_url(pr_url)
 
         topic = Collavre::Topic.find(topic_id)
         Collavre::Tools::TopicAuthorizer.authorize_write!(topic)
@@ -41,7 +35,14 @@ module CollavreGithub
           channel.inject_into_topic!(channel.attached_message)
         end
 
-        result = { ok: true, channel_id: channel.id, repo: repo, pr_number: pr_number }
+        result = {
+          ok: true,
+          channel_ref: "ch_#{channel.id}",
+          topic: { id: topic.id, name: topic.name },
+          creative: { id: topic.creative.id, title: topic.creative.creative_snippet },
+          repo: repo,
+          pr_number: pr_number
+        }
         warning = ensure_webhook_events(topic, repo)
         result[:webhook_warning] = warning if warning
         result
@@ -68,13 +69,6 @@ module CollavreGithub
             channel.pr_state = "open" if channel.pr_state != "open"
           }
         )
-      end
-
-      sig { params(topic: Collavre::Topic, repo: String, pr_number: Integer).returns(T.nilable(CollavreGithub::GithubPrChannel)) }
-      def lookup_channel(topic, repo, pr_number)
-        CollavreGithub::GithubPrChannel.where(topic_id: topic.id).find do |c|
-          c.repo_full_name.to_s.downcase == repo.downcase && c.pr_number == pr_number
-        end
       end
 
       # Make sure the repo's webhook subscribes to the PR-channel events
@@ -122,10 +116,9 @@ module CollavreGithub
       end
 
       def scoped_repository_ids(topic, repo)
-        creative = topic.creative
-        return [] unless creative
+        candidate_ids = scoped_creative_ids(topic)
+        return [] if candidate_ids.empty?
 
-        candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
         CollavreGithub::RepositoryLink
           .where("LOWER(repository_full_name) = ?", repo.downcase)
           .where(creative_id: candidate_ids)
@@ -140,10 +133,9 @@ module CollavreGithub
       # is not safe provisioning evidence because GitHub can reuse a renamed
       # repository's old name.
       def verified_scoped_repository_links_for(topic, repo, repository_id:)
-        creative = topic.creative
-        return [] unless creative
+        candidate_ids = scoped_creative_ids(topic)
+        return [] if candidate_ids.empty?
 
-        candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
         candidates = CollavreGithub::RepositoryLink
           .where("LOWER(repository_full_name) = ?", repo.downcase)
           .where(creative_id: candidate_ids)

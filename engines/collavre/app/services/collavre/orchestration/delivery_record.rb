@@ -28,6 +28,7 @@ module Collavre
     # answer it is the resolved payload itself. This module records the answer
     # off that payload and is the single door every reader goes through.
     module DeliveryRecord
+      extend RestoredDispatchContext
       # Comment ids a turn delivered as chat history although it was not created
       # for them. Sits beside TaskCoalescer::PAYLOAD_KEY and
       # TaskCoalescer::ACQUIRED_ANCHOR_KEY, which record the other two ways a
@@ -143,10 +144,12 @@ module Collavre
       # that at the call site is how HANDOFF_FAILED_KEY came to be left in — it
       # was added here long after restored_context had named the other four —
       # and the drift test on this constant is what will catch the sixth.
+      DISPATCH_SCOPED_KEYS = %w[workflow_execution_id].freeze
+
       TURN_SCOPED_KEYS = [
         KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, HANDED_OFF_IDS_KEY,
         RESTORED_KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
-        TaskCoalescer::ACQUIRED_ANCHOR_KEY
+        TaskCoalescer::ACQUIRED_ANCHOR_KEY, ResumeContext::KEY, *ExecutionFence::KEYS
       ].freeze
 
       # Statuses in which a turn is still the thing that will answer.
@@ -340,9 +343,7 @@ module Collavre
         failed
       end
 
-      def self.worker_settling?(payload)
-        payload.is_a?(Hash) && payload[WORKER_SETTLING_KEY] == true
-      end
+      def self.worker_settling?(payload) = payload.is_a?(Hash) && payload[WORKER_SETTLING_KEY] == true
 
       # The original worker has left the provider call, so the handoff records
       # now carry the best answer this attempt can give. Clearing under the row
@@ -360,11 +361,7 @@ module Collavre
         task.reload
       end
 
-      def self.restored_ids_in(payload)
-        return [] unless payload.is_a?(Hash)
-
-        Array(payload[RESTORED_KEY]).compact.map(&:to_i)
-      end
+      def self.restored_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[RESTORED_KEY]).compact.map(&:to_i) : []
 
       # Take responsibility for putting one dispatch back, or refuse it because
       # somebody already has.
@@ -407,10 +404,14 @@ module Collavre
         end
       end
 
-      def self.dropped_ids_in(payload)
-        return [] unless payload.is_a?(Hash)
+      def self.dropped_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[DROPPED_KEY]).compact.map(&:to_i) : []
 
-        Array(payload[DROPPED_KEY]).compact.map(&:to_i)
+      def self.pending_restoration?(task)
+        payload = task&.trigger_event_payload
+        return false unless task&.ended_undelivered? && task.agent
+
+        pending = dropped_ids_in(payload) - handed_off_ids_in(payload) - claimed_comment_ids(task)
+        restorable_comments(task, pending).exists?
       end
 
       # Take responsibility for a dispatch about to be discarded, or refuse it.
@@ -453,6 +454,7 @@ module Collavre
       # creative, or a different event over the same comment, is a different
       # question and not an answer to this one.
       def self.covering_task(agent, comment_id, context, trigger_event_name)
+        return if Workflow::DispatchIdentity.valid?(context, agent.id)
         return nil if agent.nil? || comment_id.blank?
         return nil unless context.is_a?(Hash) && context.key?("topic")
         return nil unless PolicyResolver.new(context).drop_delivered_dispatches_for?(agent)
@@ -519,7 +521,7 @@ module Collavre
         return unless payload.is_a?(Hash) && payload.key?("topic")
 
         orphaned = dropped_ids_in(payload) - handed_off_ids_in(payload) -
-                   claimed_comment_ids(task) - restored_ids_in(payload)
+          claimed_comment_ids(task) - restored_ids_in(payload)
         return if orphaned.empty?
 
         agent = task.agent
@@ -528,11 +530,7 @@ module Collavre
         # Same eligibility the refresh applies when it moves an anchor: a
         # comment that was deleted, made private, or turned into an approval
         # action while the turn ran has nothing left to answer.
-        Comment.public_only.without_approval_action
-          .where(id: orphaned, topic_id: task.topic_id, creative_id: task.creative_id)
-          .where.not(user_id: [ agent.id, nil ])
-          .order(:id)
-          .each do |comment|
+        restorable_comments(task, orphaned).order(:id).each do |comment|
           begin
             enqueue_restored(task, agent, task.trigger_event_name, restored_context(payload, comment))
           rescue StandardError => e
@@ -706,6 +704,13 @@ module Collavre
       end
       private_class_method :enqueue_restored
 
+      def self.restorable_comments(task, ids)
+        Comment.public_only.without_approval_action
+          .where(id: ids, topic_id: task.topic_id, creative_id: task.creative_id)
+          .where.not(user_id: [ task.agent_id, nil ])
+      end
+      private_class_method :restorable_comments
+
       # Claim the comment, then enqueue — and only in that order. The job leaves
       # no row until a worker runs it, so between the two the comment reads as
       # orphaned to anyone else looking, and the sweep is looking every ten
@@ -732,10 +737,7 @@ module Collavre
       # succeeded unable to cover anything it read, its merged list would
       # re-send comments it was created for, and its acquired anchor would
       # label this turn's own trigger as borrowed.
-      def self.restored_context(payload, comment)
-        TaskCoalescer.reanchor_payload(payload, comment).except(*TURN_SCOPED_KEYS)
-      end
-      private_class_method :restored_context
+
 
       # Comment ids some other task in this turn's scope is already on the hook
       # for, as its trigger or as a merged block. Any status counts: what is

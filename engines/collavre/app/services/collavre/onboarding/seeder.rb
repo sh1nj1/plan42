@@ -44,6 +44,7 @@ module Collavre
               "chat_autoopen_pending" => true
             }
           })
+          [ root, first, second ].each { |item| Ownership.stamp!(item, session_id) }
           user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: nil)
           Session.new(root)
         end

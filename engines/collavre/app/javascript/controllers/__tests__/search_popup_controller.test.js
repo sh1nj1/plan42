@@ -131,6 +131,12 @@ describe('SearchPopupController filter navigation', () => {
                 data-action="click->search-popup#applyProgressFilter"></button>
         <button data-filter-state="comment"
                 data-action="click->search-popup#applyCommentFilter"></button>
+        <button data-filter-state="reaction:👍" data-emoji="👍" aria-pressed="false"
+                data-action="click->search-popup#applyReactionFilter"></button>
+        <button data-filter-state="reaction:🎉" data-emoji="🎉" aria-pressed="false"
+                data-action="click->search-popup#applyReactionFilter"></button>
+        <button data-filter-state="cron"
+                data-action="click->search-popup#applyCronFilter"></button>
         <button data-filter-state="archived"
                 data-label-on="Hide archived" data-label-off="Show archived"
                 data-action="click->search-popup#toggleArchive">Show archived</button>
@@ -181,6 +187,49 @@ describe('SearchPopupController filter navigation', () => {
     click('[data-filter-state="comment"]')
 
     expect(visit).toHaveBeenCalledWith('/creatives?comment=true', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('selects, replaces and clears reactions while preserving other filters and resetting pagination', async () => {
+    setLocation('http://localhost/creatives?search=hello&page=3')
+    await mount()
+    click('[data-emoji="👍"]')
+    let url = new URL(visit.mock.calls.at(-1)[0], window.location.origin)
+    expect(url.searchParams.get('reaction_emoji')).toBe('👍')
+    expect(url.searchParams.get('search')).toBe('hello')
+    expect(url.searchParams.has('page')).toBe(false)
+    expect(document.querySelector('[data-emoji="👍"]').getAttribute('aria-pressed')).toBe('true')
+    setLocation(url.href)
+    click('[data-emoji="🎉"]')
+    url = new URL(visit.mock.calls.at(-1)[0], window.location.origin)
+    expect(url.searchParams.get('reaction_emoji')).toBe('🎉')
+    expect(document.querySelector('[data-emoji="👍"]').getAttribute('aria-pressed')).toBe('false')
+    setLocation(url.href)
+    click('[data-emoji="🎉"]')
+    url = new URL(visit.mock.calls.at(-1)[0], window.location.origin)
+    expect(url.searchParams.has('reaction_emoji')).toBe(false)
+  })
+
+  test('restores reaction selection on browser history navigation', async () => {
+    await mount()
+    setLocation('http://localhost/creatives?reaction_emoji=👍')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(document.querySelector('[data-emoji="👍"]').getAttribute('aria-pressed')).toBe('true')
+    expect(document.querySelector('[data-filter-state="any-filter"]').classList.contains('active')).toBe(true)
+    setLocation('http://localhost/creatives')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(document.querySelector('[data-emoji="👍"]').getAttribute('aria-pressed')).toBe('false')
+    expect(document.querySelector('[data-filter-state="any-filter"]').classList.contains('active')).toBe(false)
+  })
+
+  test('toggles the cron filter through the workspace frame', async () => {
+    await mount()
+
+    click('[data-filter-state="cron"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives?has_cron=true', {
       action: 'advance',
       frame: WORKSPACE_FRAME_ID
     })

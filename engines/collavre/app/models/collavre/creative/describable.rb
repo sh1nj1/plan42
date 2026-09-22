@@ -71,12 +71,14 @@ module Collavre
         target = effective_origin
         return target.embed_attachment_blob!(blob) unless target == self
 
-        node = attachment_node_html(blob)
-        new_html = "#{description}#{node}"
-        # Markdown-mode creatives derive description from markdown_source; demote
-        # to HTML so the embedded node is the persisted source of truth.
-        self.content_type_input = "html" if data&.dig("content_type") == "markdown"
-        update!(description: new_html)
+        with_lock do
+          node = attachment_node_html(blob)
+          new_html = "#{description}#{node}"
+          # Markdown-mode creatives derive description from markdown_source; demote
+          # to HTML so the embedded node is the persisted source of truth.
+          self.content_type_input = "html" if data&.dig("content_type") == "markdown"
+          update!(description: new_html)
+        end
       end
 
       # HTML for embedding a blob inline, branching on content type. The proxy
@@ -102,22 +104,24 @@ module Collavre
         target = effective_origin
         return target.remove_attachment!(signed_id) unless target == self
 
-        blob = ActiveStorage::Blob.find_signed(signed_id)
-        return false unless blob
+        with_lock do
+          blob = ActiveStorage::Blob.find_signed(signed_id)
+          return false unless blob
 
-        attachment = files.attachments.find_by(blob_id: blob.id)
-        return false unless attachment
+          attachment = files.attachments.find_by(blob_id: blob.id)
+          return false unless attachment
 
-        stripped = description_without_attachment_node(blob.signed_id)
-        if stripped
-          # Demote markdown -> html so the stripped HTML is the persisted source
-          # of truth (mirrors embed_attachment_blob!).
-          self.content_type_input = "html" if data&.dig("content_type") == "markdown"
-          update!(description: stripped)
-        else
-          detach_and_maybe_purge(attachment)
+          stripped = description_without_attachment_node(blob.signed_id)
+          if stripped
+            # Demote markdown -> html so the stripped HTML is the persisted source
+            # of truth (mirrors embed_attachment_blob!).
+            self.content_type_input = "html" if data&.dig("content_type") == "markdown"
+            update!(description: stripped)
+          else
+            detach_and_maybe_purge(attachment, schedule_during_history: true)
+          end
+          true
         end
-        true
       end
 
       private
@@ -190,6 +194,7 @@ module Collavre
         task_list_attrs = %w[type disabled checked]
         media_tags = %w[video source]
         media_attrs = %w[controls src preload width height poster]
+        ppt_attrs = %w[data-ppt-slide data-ppt-width data-ppt-height data-ppt-format]
 
         # GFM task list checkboxes (`- [ ]` / `- [x]`) render as
         # <input type="checkbox" disabled> via Commonmarker's tasklist
@@ -211,8 +216,8 @@ module Collavre
 
         self.description = ActionController::Base.helpers.sanitize(
           scrubbed.to_html,
-          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input],
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + %w[data-lexical style]
+          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input u],
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + ppt_attrs + %w[data-lexical style]
         )
       end
 
@@ -302,7 +307,7 @@ module Collavre
       # references it — a shared blob (description copied between creatives)
       # would otherwise be deleted out from under the others, 404-ing their
       # descriptions.
-      def detach_and_maybe_purge(attachment)
+      def detach_and_maybe_purge(attachment, schedule_during_history: false)
         blob = attachment.blob
         attachment.delete
         return if blob.nil?
@@ -313,8 +318,9 @@ module Collavre
                                    .exists?
         return if still_referenced
         return if ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+        return if Creatives::History.recordable? && !schedule_during_history
 
-        blob.purge_later
+        Creatives::History.schedule_blob_purge_rechecks([ blob.id ])
       end
 
       def purge_description_attachments
@@ -332,7 +338,7 @@ module Collavre
                             .where("description LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%")
                             .exists?
 
-            blob.purge
+            PurgeUnreferencedBlobJob.perform_later(blob.id)
           rescue ActiveRecord::RecordNotFound, ActiveSupport::MessageVerifier::InvalidSignature
             Rails.logger.warn("Creative##{id}: could not find blob for signed_id=#{signed_id}")
           rescue StandardError => e

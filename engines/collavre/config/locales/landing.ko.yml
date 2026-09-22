@@ -1,6 +1,8 @@
 ko:
   collavre:
     landing:
+      nav:
+        back_to_app: "← %{app_name}(으)로 돌아가기"
       meta:
         title: "팀이 함께 생각하는 곳"
         description: "계층형 블록, AI 에이전트, 실시간 채팅이 하나로. 체계적으로 정리하고, 협업하고, AI와 함께 완성하세요."

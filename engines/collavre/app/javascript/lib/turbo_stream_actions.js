@@ -1,6 +1,13 @@
 import { Turbo } from "@hotwired/turbo-rails"
-import { createRow, applyRowProperties, replaceProgressControl, updateProgressHtml } from "../creatives/tree_renderer"
+import {
+    createRow,
+    applyRowProperties,
+    replaceProgressControl,
+    syncProgressHtmlFromDom,
+    updateProgressHtml,
+} from "../creatives/tree_renderer"
 import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
+import { invalidateCreativeTree } from "./creative_tree_invalidation"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
 function registerStreamAction(name, handler) {
@@ -50,6 +57,10 @@ registerStreamAction("refresh_creative_tree", function () {
     // Update ancestor progress for all actions
     updateAncestorProgress(creative.ancestors)
     document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+})
+
+registerStreamAction("invalidate_creative_tree", function () {
+    invalidateCreativeTree()
 })
 
 function handleCreated(creative) {
@@ -282,6 +293,7 @@ function handleUpdated(creative) {
     const editingId = editForm?.dataset?.creativeId
 
     rows.forEach(row => {
+        if (row.querySelector('.creative-tree[data-save-state]')) return
         if (String(creative.id) === String(editingId)) {
             if (creative.inline_editor_payload) {
                 row.dataset.pendingSyncData = JSON.stringify(adjustedCreative)
@@ -333,6 +345,7 @@ function handleDestroyed(creative) {
 
 export function updateProgressForRow(row, progress, progressText, progressHtml = null) {
     if (progress == null) return
+    syncProgressHtmlFromDom(row)
     const pct = Math.round(progress * 100)
     // progressText from server: completion mark string, empty string (=complete but no mark), or null
     const displayText = progressText != null ? (progressText || '\u00a0\u00a0') : `${pct}%`

@@ -90,6 +90,7 @@ module Collavre
         :calendar_id,
         :timezone,
         :locale,
+        :justify_creative_descriptions,
         :creative_workspace_enabled
       ).tap do |p|
         p[:locale] = normalize_supported_locale(p[:locale]) if p.key?(:locale)

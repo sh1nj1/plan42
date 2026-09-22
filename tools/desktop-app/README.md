@@ -29,20 +29,20 @@ commas):
 {
   "allowed_hosts": ["xxx.tailadceed.ts.net"],
   "bind_host": "0.0.0.0",
-  "port": 4000
+  "port": 45173
 }
 ```
 
 - `allowed_hosts` — a JSON array, or a `"a,b"` comma-separated string.
 - `bind_host` — omit to stay on loopback (`127.0.0.1`); set `"0.0.0.0"` to open.
-- `port` — omit to use the stable default, `4000`.
+- `port` — omit to use the stable default, `45173`.
 
 A missing or malformed file is the normal closed-loopback case and is ignored
 (the app never fails to launch over a bad config).
 
 ## Port policy
 
-The desktop shell uses `http://127.0.0.1:4000` when no valid `PORT` setting is
+The desktop shell uses `http://127.0.0.1:45173` when no valid `PORT` setting is
 provided. This origin is deliberately stable so local firewall rules and future
 PKCE/loopback OAuth callback registrations can target one URL. A valid `PORT`
 environment variable or `config.json` `port` value is an explicit override; an
@@ -119,6 +119,15 @@ its supplied SHA-256, requires a Darwin ARM64 runtime, then resolves and locks
 the exact npm package before `npm ci` installs it. The generated lockfile keeps
 the resolved tarball integrity values inside the signed application bundle.
 
+The proxy tree is installed in a staging directory under `TMPDIR`, outside the
+repository, and only moved into `vendor/proxy/` once it is complete. Node resolves
+modules by walking up the directory tree, so staging inside the repo would let a
+nested package bind to the Rails app's `node_modules` instead of its own — that is
+what made `esbuild` fail its postinstall with `Expected "<a>" but got "<b>"` on
+checkouts whose root `node_modules` carried a different `esbuild`. Point `TMPDIR`
+at a path that is not itself inside a `node_modules` tree; the script refuses to
+run otherwise.
+
 For a local DMG build, no Node runtime environment variables are required. The
 script downloads and verifies its pinned official Apple-Silicon Node archive
 (`v22.13.0`). Set `NODE_RUNTIME_DIR` only for a pre-verified expanded official
@@ -147,7 +156,7 @@ configuration is read, displayed, or sent externally.
 The whole desktop env runs from a dev checkout — no Tauri, no vendored Ruby:
 
 ```bash
-PORT=4000 bin/desktop-server
+PORT=45173 bin/desktop-server
 # → boots RAILS_ENV=desktop on SQLite, /up returns 200, no https redirect
 ```
 
@@ -180,13 +189,14 @@ source commits, then requires an explicit version that advances the current
 version and final confirmation before creating the version commit.
 
 It runs the desktop Rust and Rails test suites, creates the Apple-Silicon DMG,
-checks its code signature, submits and staples it with Apple notarization,
-writes a SHA-256 checksum, and only then creates a GitHub Release. The Git tag
-format is `desktop-v<semver>` and release notes are generated from bundled
-source commits since the preceding desktop tag. If publication fails after the
-version commit, rerun `script/release-desktop.sh --resume <version>` from that clean
-release checkout; it safely rebases an unpushed release commit onto current
-`origin/main` before rebuilding.
+writes a SHA-256 checksum, and only then creates a GitHub Release. By default it
+also checks the code signature and submits and staples the DMG with Apple
+notarization. The Git tag format is `desktop-v<semver>` and release notes are
+generated from bundled source commits since the preceding desktop tag. If
+publication fails after the version commit, rerun
+`script/release-desktop.sh --resume <version>` from that clean release checkout;
+it safely rebases an unpushed release commit onto current `origin/main` before
+rebuilding.
 
 Run it only from a clean, current `main` checkout on an Apple-Silicon Mac:
 
@@ -197,6 +207,21 @@ export APPLE_APP_SPECIFIC_PASSWORD='xxxx-xxxx-xxxx-xxxx'
 export APPLE_TEAM_ID='TEAMID'
 script/release-desktop.sh
 ```
+
+For developer-only distribution without an Apple Developer account, explicitly
+select the unsigned mode:
+
+```bash
+script/release-desktop.sh --unsigned
+```
+
+The unsigned asset is named
+`Collavre-Desktop_<version>_aarch64-unsigned.dmg`. Its release notes warn that
+macOS Gatekeeper requires an explicit override. On macOS 15 or later, first
+attempt to open the app, then go to System Settings > Privacy & Security and
+choose Open Anyway. On earlier macOS versions, right-click the app and choose
+Open. Resume an interrupted unsigned release with
+`script/release-desktop.sh --unsigned --resume <version>`.
 
 The release script defaults to a pinned, verified official Apple-Silicon Node
 archive. To use a different runtime archive, set both `NODE_RUNTIME_URL` and

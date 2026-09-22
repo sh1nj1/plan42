@@ -12,7 +12,6 @@ const popup = {
 }
 
 jest.unstable_mockModule('../../lib/common_popup', () => ({ default: jest.fn(() => popup) }))
-jest.unstable_mockModule('../../utils/caret_position', () => ({ getCaretClientRect: () => null }))
 
 await import('../mention_menu')
 

@@ -286,6 +286,13 @@ module Collavre
       assert_includes html, "creative-row-end"
     end
 
+    test "broadcast rows do not reintroduce per-row move buttons" do
+      job = CreativeBroadcastJob.new
+      html = job.send(:render_progress_html, @child, @shared_user, skip_permission_check: true)
+
+      assert_not_includes html, "data-creative-move-id"
+    end
+
     test "render_progress_html includes progress percentage" do
       # Use a leaf creative (no children) so progress stays as set
       leaf = nil

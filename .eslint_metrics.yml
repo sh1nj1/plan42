@@ -1,0 +1,67 @@
+# Complexity budget for the JavaScript half of the ratchet
+# (bin/complexity_check, lib/js_complexity/). The Ruby half is
+# .rubocop_metrics.yml; the rules, the waivers and the merge-base comparison are
+# shared. See docs/complexity_budget.md.
+#
+# There is no ESLint in this repository — no config file, no lint job, no
+# devDependency — so until now none of the core engine's 35,978 lines of
+# non-test JavaScript, across 168 files, were measured by anything. That sits
+# beside 40,153 lines of core Ruby the ratchet already covers, and it holds the
+# two largest source files in the engine.
+#
+# This file holds ONLY thresholds. Rule options that are not thresholds
+# (skipBlankLines, IIFEs) are fixed in lib/js_complexity/measure.js, and there
+# is no per-file override syntax at all, because every one of those is a way to
+# silence the gate while the number above it still reads like a budget.
+#
+# Why these numbers: unlike the Ruby side — where RuboCop's defaults put ~90% of
+# entities in violation and the budget had to be set at the 75th percentile of
+# the violators — ESLint's documented defaults are already within reach here.
+# Measured over the 168 files this file selects, on 2026-09-10, the budget
+# below leaves 217 entities over it, and each rule catches only the tail:
+#
+#   rule                     budget   entities   over budget
+#   complexity               13       3,189      88   (2.8%)
+#   max-depth                3        3,405      19   (0.6%)
+#   max-lines                300      168        23   (13.7%)
+#   max-lines-per-function   50       3,142      78   (2.5%)
+#   max-nested-callbacks     10       999        0    (0.0%)
+#   max-params               4        1,933      9    (0.5%)
+#
+# Those 217 are grandfathered by the ratchet — they may shrink but not grow.
+# The budget is what NEW code has to fit, and ordinary Stimulus controllers and
+# modules already fit it.
+
+# Everything the core engine ships, not a hand-written list of directories: a
+# glob and the real file set drift apart, and the half that drifts is always the
+# one nobody is looking at.
+#
+# The core engine and nothing else. lib/js_complexity — the measurement itself —
+# is deliberately NOT here: this gate is being introduced for engines/collavre,
+# and a tool that measures itself makes every change to the tool read as engine
+# debt. It is a two-line addition whenever someone wants it, and the tool's own
+# tests are in lib/js_complexity/__tests__ either way.
+include:
+  - "engines/collavre/**/*.js"
+  - "engines/collavre/**/*.jsx"
+
+exclude:
+  # Tests are excluded for the same reason as on the Ruby side: a 2,000-line
+  # test file is a list, not a god object. It has no callers and no shared
+  # mutable state, and splitting it buys nothing. Test bloat is real but it is a
+  # coverage-quality problem, and mixing it in here would bury the app-code
+  # signal under hundreds of function-length offenses.
+  - "**/__tests__/**"
+  - "engines/collavre/test/**"
+  - "**/node_modules/**"
+
+# Only satellite-free core JavaScript is measured. The satellites hold about
+# 2,800 lines between them against the core's 35,000, and adding them here is a
+# two-line change once someone wants it.
+rules:
+  complexity: 13
+  max-depth: 3
+  max-lines: 300
+  max-lines-per-function: 50
+  max-nested-callbacks: 10
+  max-params: 4

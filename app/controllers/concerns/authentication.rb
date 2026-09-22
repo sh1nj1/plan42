@@ -50,6 +50,8 @@ module Authentication
     end
 
     def request_authentication
+      return head :unauthorized if request.xhr?
+
       if request.get? && !request.path.start_with?("/inbox") && request.format.html?
         session[:return_to_after_authenticating] = request.url
       end

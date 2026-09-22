@@ -31,6 +31,20 @@
     <% end %>
   </head>
   <body class="<%= body_theme_class %> landing-page">
+    <%# This layout carries no application navigation, so every page under it —
+        the marketing landing page and the feature guide alike — leaves a
+        signed-in reader with nothing that leads back into the app. The help
+        menu now navigates in place, and the desktop shell's single webview has
+        no back button, so that return has to be on the page. It belongs here
+        rather than in each view: the gap is the layout's, and a page added
+        under it later would otherwise have to remember to close it again. %>
+    <% if authenticated? %>
+      <div class="landing-return-bar">
+        <%= link_to t('collavre.landing.nav.back_to_app', app_name: t('app.name')),
+              main_app.root_path,
+              class: "landing-return-link" %>
+      </div>
+    <% end %>
     <main>
       <%= yield %>
     </main>

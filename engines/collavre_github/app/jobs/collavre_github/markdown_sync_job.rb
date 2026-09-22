@@ -7,10 +7,12 @@ module CollavreGithub
       link = CollavreGithub::RepositoryLink.find_by(id: repository_link_id)
       return unless link&.markdown_sync_enabled?
 
-      CollavreGithub::MarkdownSync::IncrementalSyncService.new(
-        repository_link: link,
-        push_payload: push_payload
-      ).call
+      Collavre::Creatives::History.track(actor: nil, origin: :sync) do
+        CollavreGithub::MarkdownSync::IncrementalSyncService.new(
+          repository_link: link,
+          push_payload: push_payload
+        ).call
+      end
     end
   end
 end

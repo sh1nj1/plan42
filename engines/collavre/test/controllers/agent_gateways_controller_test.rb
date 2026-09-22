@@ -372,6 +372,46 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert_not_equal other_workspace, arguments.fetch(1).fetch(:workspace)
   end
 
+  test "gateway cards scope connection feedback and keep management actions" do
+    sign_in_as(@owner, password: "password")
+    @gateway.update!(active: false)
+    get collavre.agent_gateways_path
+
+    assert_select "article.gateway-card", count: 1 do
+      assert_select "h2", text: @gateway.name
+      assert_select ".gateway-badge", text: I18n.t("collavre.agent_gateways.inactive")
+      assert_select ".gateway-actions" do
+        assert_select "button[data-action='gateway-check#check']"
+        assert_select "[data-gateway-check-target='result'][role='status'][aria-live='polite']"
+        assert_select "a[href=?]", collavre.edit_agent_gateway_path(@gateway)
+        assert_select "form[action=?] input[name='_method'][value='delete']", collavre.agent_gateway_path(@gateway)
+      end
+    end
+    assert_select "table", count: 0
+  end
+
+  test "gateway empty state offers an add action" do
+    sign_in_as(@other, password: "password")
+    get collavre.agent_gateways_path
+
+    assert_select ".gateway-list p", text: I18n.t("collavre.agent_gateways.empty")
+    assert_select "a.btn-primary[href=?]", collavre.new_agent_gateway_path
+  end
+
+  test "gateway form groups settings and never renders stored secrets" do
+    sign_in_as(@owner, password: "password")
+    get collavre.edit_agent_gateway_path(@gateway)
+
+    assert_select "fieldset.gateway-form__section > legend", count: 3
+    assert_select ".gateway-form__mode input[type='radio']", count: Collavre::AgentGateway.workspace_modes.size
+    assert_select ".gateway-actions input[type='submit'].btn-primary"
+    %w[admin_key completion_key identity_secret].each do |key|
+      assert_select "input[name='agent_gateway[#{key}]']" do |inputs|
+        assert inputs.all? { |input| input["value"].blank? }
+      end
+    end
+  end
+
   private
 
   def create_shared_workspace

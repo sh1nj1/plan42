@@ -137,3 +137,56 @@ test('declining the confirmation deletes nothing', async () => {
   expect(container().querySelectorAll('creative-tree-row')).toHaveLength(1)
   expect(placeholder()).toBeNull()
 })
+
+
+test('late CSR checkboxes inherit selection mode and remain hidden after cancellation', async () => {
+  application = await mount([])
+  const controller = controllerFor(application)
+  controller.toggle(new Event('click'))
+  container().innerHTML = rowMarkup('7').replace('type="checkbox"', 'type="checkbox" style="display:none"')
+  await flush()
+  const first = container().querySelector('input')
+  expect(first.style.display).toBe('')
+  first.focus()
+  container().insertAdjacentHTML('beforeend', rowMarkup('8'))
+  await flush()
+  expect(document.activeElement).toBe(first)
+  expect(container().querySelector('input[value="8"]').style.display).toBe('')
+  controller.toggle(new Event('click'))
+  container().insertAdjacentHTML('beforeend', rowMarkup('9'))
+  await flush()
+  container().querySelectorAll('input').forEach(checkbox => expect(checkbox.style.display).toBe('none'))
+})
+
+test('before caching clears selections and restores the inactive UI, then permits fresh selection', async () => {
+  application = await mount(['7', '8'])
+  const element = controllerFor(application).element
+  element.insertAdjacentHTML('afterbegin', `
+    <button data-creatives--select-mode-target="toggle" data-select-text="Select" data-cancel-text="Cancel"></button>
+    <input type="checkbox" data-creatives--select-mode-target="selectAll">
+  `)
+  await flush()
+  const controller = controllerFor(application)
+  controller.toggle(new Event('click'))
+  controller.selectAllTarget.checked = true
+  controller.toggleSelectAll({ currentTarget: controller.selectAllTarget })
+  controller.dragging = true
+
+  document.dispatchEvent(new Event('turbo:before-cache'))
+
+  expect(controller.active).toBe(false)
+  expect(controller.dragging).toBe(false)
+  expect(element.querySelectorAll('input:checked')).toHaveLength(0)
+  expect(element.querySelectorAll('.selected')).toHaveLength(0)
+  expect(controller.toggleTarget.textContent).toBe('Select')
+  expect(controller.toggleTarget.getAttribute('aria-pressed')).toBe('false')
+  expect(controller.selectAllTarget.style.display).toBe('none')
+  expect(controller.deleteButtonTarget.style.display).toBe('none')
+  controller.checkboxTargets.forEach(checkbox => expect(checkbox.style.display).toBe('none'))
+
+  controller.toggle(new Event('click'))
+  controller.applySelection(controller.rowTargets[0], 'add')
+  expect(controller.active).toBe(true)
+  expect(controller.checkboxTargets[0].checked).toBe(true)
+  expect(controller.toggleTarget.textContent).toBe('Cancel')
+})

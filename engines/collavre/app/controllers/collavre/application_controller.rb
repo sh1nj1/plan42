@@ -40,11 +40,7 @@ module Collavre
     end
 
     def last_visited_creative_path
-      home_path = SystemSetting.home_page_path_authenticated.chomp("/")
-      mount_path = request.script_name.chomp("/")
-      if mount_path.present? && (home_path == mount_path || home_path.start_with?("#{mount_path}/"))
-        home_path = home_path.delete_prefix(mount_path)
-      end
+      home_path = HomePagePath.mount_relative(script_name: request.script_name)
       return unless home_path == "/creatives" || home_path == "/creatives.html"
 
       creative = Current.user.last_visited_creative

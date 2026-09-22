@@ -48,21 +48,12 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     post cancel_task_path(@task)
 
     assert_response :ok
-    tracker = Minitest::Mock.new
-    tracker.expect(:release!, true, [ @task.id ])
-    dequeued = []
-    Collavre::Orchestration::ResourceTracker.stub(:for, ->(_agent) { tracker }) do
-      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(topic_id, creative_id) {
-        dequeued << [ topic_id, creative_id ]
-      }) do
-        refute Collavre::AiAgent::TaskClaimService.new.finalize(agent: @agent, task: claimed_task, comment: reply)
-      end
+    assert_raises(ActiveRecord::RecordNotSaved) do
+      Collavre::AiAgent::TaskClaimService.new.finalize(agent: @agent, task: claimed_task, comment: reply)
     end
 
     assert_equal "cancelled", @task.reload.status
-    assert_equal @task.id, reply.reload.task_id
-    assert_equal [ [ topic.id, @creative.id ] ], dequeued
-    tracker.verify
+    assert_empty @task.task_actions.where(action_type: "completion")
   end
 
   test "cancel releases the slot held by an external reply claim" do

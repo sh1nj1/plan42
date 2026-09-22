@@ -38,6 +38,55 @@ module Collavre
         assert_equal 0, creative.progress
       end
 
+      test "stores a direct agent create as a draft under review policy" do
+        task, agent = review_agent_turn(@parent_creative)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeCreateService.new.call(parent_id: @parent_creative.id, description: "Proposed")
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_not @parent_creative.children.where("description LIKE ?", "%Proposed%").exists?
+        assert CreativeChangeSet.find(result[:change_set_id]).creative_changes.where("creative_id < 0").exists?
+      end
+
+      test "stores sibling resequencing as a draft when the sibling requires review" do
+        sibling = Creative.create!(
+          description: "Protected sibling", user: @user, parent: @parent_creative,
+          data: { "ai_write_policy" => "review" }
+        )
+        task, agent = agent_turn(@parent_creative)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeCreateService.new.call(
+            parent_id: @parent_creative.id, description: "Before sibling", before_id: sibling.id
+          )
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_not @parent_creative.children.where("description LIKE ?", "%Before sibling%").exists?
+        assert_equal 0, sibling.reload.sequence
+      end
+
+      test "stores parent progress propagation as a draft when an ancestor requires review" do
+        review_root = Creative.create!(
+          description: "Review root", user: @user,
+          data: { "ai_write_policy" => "review" }
+        )
+        @parent_creative.update!(
+          parent: review_root,
+          data: @parent_creative.data.merge("ai_write_policy" => "auto")
+        )
+        task, agent = agent_turn(review_root)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeCreateService.new.call(parent_id: @parent_creative.id, description: "Proposed child")
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_not @parent_creative.children.where("description LIKE ?", "%Proposed child%").exists?
+      end
+
       test "stores the description as Markdown-canonical" do
         service = CreativeCreateService.new
 
@@ -107,6 +156,29 @@ module Collavre
         creative = Creative.find(result[:id])
         assert_nil creative.parent_id
         assert_equal @user, creative.user
+      end
+
+      test "records sibling resequencing when inserting before a sibling" do
+        Collavre::CreativeChangeSet.destroy_all
+        Current.reset
+        first = Creative.create!(description: "First", user: @user, parent: @parent_creative, sequence: 0)
+        second = Creative.create!(description: "Second", user: @user, parent: @parent_creative, sequence: 1)
+        Current.user = @user
+
+        result = CreativeCreateService.new.call(
+          parent_id: @parent_creative.id,
+          description: "Inserted",
+          before_id: second.id
+        )
+
+        assert result[:success]
+        created = Creative.find(result.fetch(:id))
+        changes = CreativeChangeSet.sole.creative_changes.index_by(&:creative_id)
+        assert_equal [ created.id, second.id ].sort, changes.keys.sort
+        assert_equal "create", changes.fetch(created.id).operation
+        assert_equal 1, changes.fetch(created.id).after.fetch("sequence")
+        assert_equal [ 2, 1 ], [ created, second ].map { |creative| creative.reload.revision }
+        assert_equal 0, first.reload.revision
       end
 
       test "returns error when parent not found" do
@@ -197,6 +269,23 @@ module Collavre
         assert_raises(RuntimeError) do
           service.call(description: "No user task")
         end
+      end
+
+      private
+
+      def review_agent_turn(creative)
+        creative.update!(data: creative.data.merge("ai_write_policy" => "review"))
+        agent_turn(creative)
+      end
+
+      def agent_turn(creative)
+        agent = users(:ai_bot)
+        perform_enqueued_jobs(only: PermissionCacheJob) do
+          CreativeShare.create!(creative: creative, user: agent, shared_by: @user, permission: :write)
+        end
+        topic = Topic.create!(creative: creative, user: @user, name: "Review create")
+        task = Task.create!(agent: agent, creative: creative, topic_id: topic.id, name: "Review", status: "running")
+        [ task, agent ]
       end
     end
   end

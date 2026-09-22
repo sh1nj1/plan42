@@ -37,7 +37,10 @@ module Collavre
 
       # Current number of active jobs for this agent
       def active_jobs
-        active_job_set.size
+        # Approval pauses outlive the cache TTL; union IDs to avoid counting
+        # a persisted holder twice while its cached reservation is still alive.
+        pending_ids = Task.where(agent_id: @agent.id, status: "pending_approval").pluck(:id).map(&:to_s)
+        (active_job_set | pending_ids).size
       end
 
       # Total tokens used today

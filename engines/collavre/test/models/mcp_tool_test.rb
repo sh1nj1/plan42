@@ -6,9 +6,9 @@ class McpToolTest < ActiveSupport::TestCase
     tool = McpTool.create!(creative: creative, name: "test_tool", source_code: "class Foo; end")
 
     mock_service = Minitest::Mock.new
-    mock_service.expect :register_tool_from_source, nil, [ "class Foo; end" ]
+    mock_service.expect :register_tool_from_source, nil, [ "class Foo; end", "test_tool" ]
 
-    McpService.stub :register_tool_from_source, ->(s) { mock_service.register_tool_from_source(s) } do
+    McpService.stub :register_tool_from_source, ->(s, expected_name:) { mock_service.register_tool_from_source(s, expected_name) } do
       tool.approve!
     end
 
@@ -20,7 +20,7 @@ class McpToolTest < ActiveSupport::TestCase
     creative = Creative.create!(user: users(:one), description: "Test")
     tool = McpTool.create!(creative: creative, name: "fail_tool", source_code: "invalid")
 
-    McpService.stub :register_tool_from_source, ->(_) { raise "Registration failed" } do
+    McpService.stub :register_tool_from_source, ->(_, **) { raise "Registration failed" } do
       assert_raises(RuntimeError) do
         tool.approve!
       end

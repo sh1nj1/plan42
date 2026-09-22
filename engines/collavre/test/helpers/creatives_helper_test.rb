@@ -2,6 +2,36 @@ require "test_helper"
 
 class CreativesHelperTest < ActionView::TestCase
   include Collavre::CreativesHelper
+
+  test "render_cron_badge shows the count, schedules, and next run times" do
+    task = Struct.new(:key, :schedule, :next_time, :arguments)
+    first = task.new(
+      "cron_1_first",
+      "0 9 * * *",
+      Time.zone.parse("2026-09-05 09:00"),
+      [ { message: "Morning check-in" } ]
+    )
+    second = task.new(
+      "cron_1_second",
+      "0 18 * * *",
+      Time.zone.parse("2026-09-05 18:00"),
+      [ { message: "Evening check-in" } ]
+    )
+
+    I18n.with_locale(:en) do
+      html = render_cron_badge([ first, second ], creative_id: 1)
+
+      assert_includes html, "creative-cron-badge"
+      assert_includes html, "⏰"
+      assert_includes html, ">2</span>"
+      assert_includes html, "2 scheduled jobs"
+      assert_includes html, "0 9 * * *"
+      assert_includes html, I18n.l(first.next_time, format: :short)
+      assert_includes html, "Morning check-in"
+      assert_includes html, "click->popup-menu#toggle"
+    end
+  end
+
   test "markdown_links_to_html converts markdown link to HTML" do
     input = "Check [link](https://example.com)"
     result = markdown_links_to_html(input)
@@ -328,6 +358,18 @@ class CreativesHelperTest < ActionView::TestCase
       # CRITICAL: The output should ALSO contain the Origin Child description
       # because we should traverse the children of the origin.
       assert_match(/Origin Child/, markdown)
+    end
+  end
+
+  test "workflow trees remain available to ordinary markdown exports" do
+    user = users(:one)
+    workflow = Creative.create!(description: "Exported workflow", user: user, data: { "kind" => "workflow" })
+    Creative.create!(description: "Exported rule", user: user, parent: workflow, data: { "kind" => "workflow_rule" })
+
+    Current.set(user: user) do
+      markdown = render_creative_tree_markdown([ workflow ])
+      assert_includes markdown, "Exported workflow"
+      assert_includes markdown, "Exported rule"
     end
   end
 

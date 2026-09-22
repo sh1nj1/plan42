@@ -42,4 +42,14 @@ class McpServerTest < ActionDispatch::IntegrationTest
       }
     assert_response :success
   end
+  test "an mcp tools/call is recorded once as an mcp tool usage" do
+    post "/mcp/messages",
+      params: { jsonrpc: "2.0", method: "tools/call", id: 2, params: { name: "cron_list", arguments: {} } }.to_json,
+      headers: { "Authorization" => "Bearer #{@token.token}", "Content-Type" => "application/json" }
+    assert_response :success
+
+    usage = Collavre::ToolUsage.sole
+    assert_equal [ "mcp", "cron_list", true ], [ usage.source, usage.tool_name, usage.succeeded ]
+    assert_equal [ users(:one).id ], usage.requester_ids
+  end
 end

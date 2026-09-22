@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Collavre
   class CreativesController < ApplicationController
     WORKSPACE_TREE_EXPANSION_LIMIT = 100
@@ -7,6 +9,7 @@ module Collavre
     include Collavre::Concerns::TreeManageable
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
+    include Collavre::WorkflowEditable
 
     # Authorization for these read actions is not open-to-public: each action
     # enforces per-Creative read access via has_permission?(Current.user, :read)
@@ -19,8 +22,10 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
-    before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action remember_last_visited ]
+    before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
+    include Collavre::CreativeTypeEditable
+    include Collavre::Concerns::CreativeHistoryTrackable
 
     def index
       respond_to do |format|
@@ -65,7 +70,7 @@ module Collavre
           end
 
           @expanded_state_map = if user_id_for_state
-            UserCreativePreference.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
+            UserCreativePreference.expanded_status_for(user_id: user_id_for_state, creative_id: params[:id])
           else
             {}
           end
@@ -189,15 +194,10 @@ module Collavre
             else
                       @creative.ancestors.count + 1
             end
-            sanitized_data = @creative.effective_origin(Set.new).data
-            # markdown_source is exposed via the top-level `markdown_source:` field for writers;
-            # exclude it from the editable `data` payload so the metadata YAML editor can't
-            # round-trip a stale copy back into data["markdown_source"] on update_metadata.
-            if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
-              sanitized_data = sanitized_data.except("markdown_source")
-            end
+            sanitized_data = editable_metadata_for(@creative)
             render json: {
               id: @creative.id,
+              creative_type: @creative.effective_origin(Set.new).creative_type,
               description: @creative.effective_description,
               # Embedded variant for read-only display (e.g. slide view): turns
               # bare YouTube links into preview iframes. `description` stays the
@@ -259,6 +259,7 @@ module Collavre
         # the next keystroke save.
         render json: {
           id: @creative.id,
+          creative_type: @creative.creative_type,
           content_type: @creative.data&.dig("content_type"),
           markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
@@ -269,9 +270,8 @@ module Collavre
     end
 
     def edit
-      unless @creative.has_permission?(Current.user, :write)
-        redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
-      end
+      return unless creative_edit_access?
+
       if params[:inline]
         render partial: "inline_edit_form"
       end
@@ -304,15 +304,11 @@ module Collavre
         # Because if @creative is Linked, params might include origin_id.
         # Passing origin_id to the Origin creative causes it to fail validation (cannot changes if has origin)
         # or creates a self-cycle.
-        permitted.delete("origin_id")
-        permitted.delete(:origin_id)
+        permitted.except!("origin_id", :origin_id)
 
-        success &&= base.update(permitted)
+        success &&= update_creative_content(base, permitted)
         if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
-          if base.children.exists?
-            base.self_and_descendants.where(origin_id: nil)
-              .update_all(progress: 1.0, updated_at: Time.current)
-          end
+          base.complete_self_and_descendants! if base.children.exists?
         end
 
         if success
@@ -324,14 +320,7 @@ module Collavre
           format.html { redirect_to @creative }
           format.json do
             base.reload
-            response_data = {
-              id: base.id,
-              progress: base.progress,
-              progress_html: view_context.render_creative_progress(base),
-              has_children: base.children.exists?,
-              content_type: base.data&.dig("content_type"),
-              markdown_editor: base.data&.dig("editor")
-            }
+            response_data = creative_update_payload(base)
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
             # Gated on write permission so a read-only share recipient moving a
@@ -355,7 +344,7 @@ module Collavre
           end
         else
           format.html { render :edit, status: :unprocessable_entity }
-          format.json { render json: { errors: @creative.errors.full_messages }, status: :unprocessable_entity }
+          format.json { render json: { errors: base.errors.full_messages }, status: :unprocessable_entity }
         end
       end
     end
@@ -489,7 +478,7 @@ module Collavre
       previous_enabled = creative.drop_trigger_enabled?
 
       if creative.update(data: new_data)
-        notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
+        @newly_enabled_drop_trigger = creative if !previous_enabled && creative.drop_trigger_enabled?
         head :ok
       else
         render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity
@@ -498,87 +487,17 @@ module Collavre
 
     def trigger_action
       action = params[:action_name] || (request.content_type&.include?("json") ? request.request_parameters["action"] : params[:action])
+      enabled = request.content_type&.include?("json") ? request.request_parameters["enabled"] : params[:enabled]
+      result = Creatives::TriggerActionCommand.new(
+        creative: @creative,
+        user: Current.user,
+        action: action,
+        enabled: enabled
+      ).call
 
-      case action
-      when "toggle_container"
-        # Container toggle operates on effective_origin (where trigger config lives)
-        creative = @creative.effective_origin(Set.new)
-        unless creative.has_permission?(Current.user, :write)
-          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
-          return
-        end
+      return head :ok if result.success?
 
-        enabled = ActiveModel::Type::Boolean.new.cast(
-          request.content_type&.include?("json") ? request.request_parameters["enabled"] : params[:enabled]
-        )
-        data = creative.data || {}
-        trigger = data["trigger"] || {}
-        trigger["on_child_enter"] = enabled
-        data["trigger"] = trigger
-        previous_enabled = creative.drop_trigger_enabled?
-        creative.update!(data: data)
-        notify_drop_trigger_missing_agent!(creative) if !previous_enabled && creative.drop_trigger_enabled?
-      when "start"
-        # Start trigger: fires DropTriggerJob as if the child was just dropped into the container
-        creative = @creative
-        unless creative.has_permission?(Current.user, :write)
-          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
-          return
-        end
-
-        parent = creative.parent
-        unless parent&.drop_trigger_enabled?
-          render json: { error: t("collavre.drop_trigger.not_a_container") }, status: :unprocessable_entity
-          return
-        end
-
-        DropTriggerJob.perform_later(parent.id, creative.id)
-
-      when "pause", "resume", "restart"
-        # Loop actions operate on the creative itself (where loop state lives)
-        creative = @creative
-        unless creative.has_permission?(Current.user, :write)
-          render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden
-          return
-        end
-
-        data = creative.data || {}
-        trigger = data["trigger"] || {}
-        loop_data = trigger["loop"]
-
-        case action
-        when "pause"
-          if loop_data && %w[running pending_verification].include?(loop_data["state"])
-            loop_data["state"] = "paused"
-            trigger["loop"] = loop_data
-            data["trigger"] = trigger
-            creative.update!(data: data)
-          end
-        when "resume"
-          if loop_data && %w[paused idle stuck awaiting_user].include?(loop_data["state"])
-            loop_data["state"] = "running"
-            trigger["loop"] = loop_data
-            data["trigger"] = trigger
-            creative.update!(data: data)
-            post_continue_to_agent(creative, loop_data)
-          end
-        when "restart"
-          if loop_data && %w[completed max_reached stuck].include?(loop_data["state"])
-            loop_data["state"] = "running"
-            loop_data["current_iteration"] = 0
-            loop_data["infra_retry_count"] = 0
-            trigger["loop"] = loop_data
-            data["trigger"] = trigger
-            creative.update!(data: data)
-            post_restart_trigger(creative)
-          end
-        end
-      else
-        render json: { error: "Unknown action" }, status: :unprocessable_entity
-        return
-      end
-
-      head :ok
+      render json: { error: result.error }, status: result.status
     end
 
     def archive
@@ -741,7 +660,7 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor, :creative_type)
       end
 
       # Whitelist of query parameters consumed by Creatives::IndexQuery and its
@@ -750,7 +669,7 @@ module Collavre
       # query layer while preserving every filter the index endpoint supports.
       def index_query_params
         params.permit(
-          :id, :simple, :search, :search_mode, :comment, :has_comments,
+          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron, :reaction_emoji,
           :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
           :assignee_id, :unassigned, :show_archived, :page, :per_page,
           tags: []
@@ -767,18 +686,7 @@ module Collavre
       helper_method :any_filter_active?
 
       def any_filter_active?
-        params[:tags].present? ||
-          params[:min_progress].present? ||
-          params[:max_progress].present? ||
-          params[:search].present? ||
-          params[:comment] == "true" ||
-          params[:has_comments].present? ||
-          params[:due_before].present? ||
-          params[:due_after].present? ||
-          params[:has_due_date].present? ||
-          params[:assignee_id].present? ||
-          params[:unassigned].present? ||
-          params[:show_archived].present?
+        Creatives::FilterState.new(params, include_archived: true).active?
       end
 
       # Thin delegator to Creatives::CreativeTreeSerializer. Kept as a controller
@@ -796,93 +704,8 @@ module Collavre
         @reorderer ||= ::Creatives::Reorderer.new(user: Current.user)
       end
 
-      # Resume: post a continue instruction so the agent picks up where it left off.
-      # Creates a comment that triggers dispatch via after_create_commit.
-      def post_continue_to_agent(creative, loop_data)
-        parent = creative.parent
-        unless parent
-          Rails.logger.warn("[TriggerAction] resume: no parent for creative #{creative.id}")
-          return
-        end
-
-        topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.find_ai_agent(:write)
-        unless topic && agent
-          Rails.logger.warn("[TriggerAction] resume: missing topic=#{topic&.id} or agent for creative #{creative.id}")
-          return
-        end
-
-        iteration = loop_data["current_iteration"] || 0
-        max = loop_data["max_iterations"] || 10
-        content = "@#{agent.name}: #{t(
-          'collavre.trigger_loop.continue',
-          iteration: iteration,
-          max: max
-        )}"
-
-        # Use Current.user (human who clicked resume) as comment author
-        # so dispatch_to_orchestration doesn't skip it (it skips ai_user? authors)
-        comment = creative.comments.create!(
-          content: content,
-          topic_id: topic.id,
-          private: false,
-          user: Current.user,
-          skip_dispatch: false
-        )
-        Rails.logger.info("[TriggerAction] resume: posted continue comment #{comment.id} for creative #{creative.id}")
-      end
-
-      # Restart: create a fresh trigger comment and dispatch it explicitly.
-      # Uses skip_dispatch:true + manual SystemEvents dispatch to bypass
-      # after_create_commit (which would skip if user is ai_user?).
-      def post_restart_trigger(creative)
-        parent = creative.parent
-        unless parent
-          Rails.logger.warn("[TriggerAction] restart: no parent for creative #{creative.id}")
-          return
-        end
-
-        topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.find_ai_agent(:write)
-        unless topic && agent
-          Rails.logger.warn("[TriggerAction] restart: missing topic=#{topic&.id} or agent for creative #{creative.id}")
-          return
-        end
-
-        trigger_text = t(
-          "collavre.drop_trigger.child_entered",
-          child_description: creative.creative_snippet,
-          child_id: creative.id,
-          parent_description: parent.creative_snippet
-        )
-        loop_instructions = t("collavre.trigger_loop.instructions")
-        content = "@#{agent.name}: #{trigger_text}\n\n#{loop_instructions}"
-
-        comment = creative.comments.create!(
-          content: content,
-          topic_id: topic.id,
-          private: false,
-          user: Current.user,
-          skip_dispatch: true
-        )
-
-        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload)
-        Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
-      end
-
       def notify_drop_trigger_missing_agent!(creative)
-        return if creative.find_ai_agent(:write)
-
-        topic = creative.topics.find_or_create_by!(name: "Drop Trigger") do |t|
-          t.user = creative.user
-        end
-
-        creative.comments.create!(
-          content: t("collavre.drop_trigger.no_agent", parent_description: creative.creative_snippet),
-          topic_id: topic.id,
-          private: false,
-          skip_default_user: true
-        )
+        Creatives::DropTriggerMissingAgentNotifier.new(creative: creative).call
       end
 
       def enforce_creatives_login_policy

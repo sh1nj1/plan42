@@ -33,10 +33,13 @@ Gem::Specification.new do |spec|
 
   # Markdown rendering
   spec.add_dependency "commonmarker"           # GitHub-flavored Markdown to HTML
+  spec.add_dependency "rubyzip", "< 4.0"        # PPTX archive parsing
+  spec.add_dependency "diff-lcs"               # Word and line diffs for Creative history
 
   # Integrations
   spec.add_dependency "httparty"               # HTTP client for link previews and APIs
   spec.add_dependency "nokogiri"               # HTML/XML parsing
+  spec.add_dependency "addressable"            # Punycode for the help-link origin check
 
   # Optional dependencies - add to your Gemfile if using these features:
   #
@@ -51,6 +54,4 @@ Gem::Specification.new do |spec|
   # GitHub integration:
   #   gem "octokit"
   #
-  # PPT/PPTX import:
-  #   gem "rubyzip"
 end

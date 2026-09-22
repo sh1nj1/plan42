@@ -10,6 +10,7 @@ jest.unstable_mockModule('../../creatives/tree_renderer', () => ({
   createRow: jest.fn(),
   applyRowProperties: jest.fn(),
   replaceProgressControl: jest.fn((_html, controlHtml) => controlHtml),
+  syncProgressHtmlFromDom: jest.fn(),
   updateProgressHtml: jest.fn((html, progress) => progress === 1
     ? html.replace('class="progress-toggle-checkbox"', 'class="progress-toggle-checkbox" checked="checked"')
       .replace('data-current-progress="0"', 'data-current-progress="1"')
@@ -19,7 +20,7 @@ jest.unstable_mockModule('../../creatives/tree_renderer', () => ({
 }))
 
 await import('../turbo_stream_actions')
-const { createRow } = await import('../../creatives/tree_renderer')
+const { createRow, syncProgressHtmlFromDom } = await import('../../creatives/tree_renderer')
 const { updateProgressForRow } = await import('../turbo_stream_actions')
 
 const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>'
@@ -45,6 +46,18 @@ function dispatchCreativeTreeStream(payload) {
     getAttribute: (name) => name === 'data' ? JSON.stringify(payload) : null,
   })
 }
+
+test('generic tree invalidation refreshes both tree implementations', () => {
+  const legacyRefresh = jest.fn()
+  const workspaceRefresh = jest.fn()
+  document.addEventListener('creative-sync:refetch', legacyRefresh, { once: true })
+  document.addEventListener('workspace-tree:invalidate', workspaceRefresh, { once: true })
+
+  fakeTurbo.StreamActions.invalidate_creative_tree.call({})
+
+  expect(legacyRefresh).toHaveBeenCalled()
+  expect(workspaceRefresh).toHaveBeenCalled()
+})
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -136,6 +149,7 @@ test('remote progress updates keep checkbox controls actionable', () => {
 
   updateProgressForRow(row, 1, '100%')
 
+  expect(syncProgressHtmlFromDom).toHaveBeenCalledWith(row)
   expect(row.progressHtml).toContain('checked="checked"')
   expect(row.progressHtml).toContain('data-current-progress="1"')
   expect(row.progressHtml).toContain('data-new-progress="0"')
@@ -187,4 +201,16 @@ test('remote child deletion restores the parent leaf checkbox control', () => {
 
   expect(parent.hasChildren).toBe(false)
   expect(parent.progressHtml).toBe(checkbox)
+})
+
+test('an older update broadcast cannot replace a queued local row after the editor moves away', async () => {
+  const { applyRowProperties } = await import('../../creatives/tree_renderer')
+  applyRowProperties.mockClear()
+  document.body.innerHTML = '<form id="inline-edit-form-element" data-creative-id="43"></form><creative-tree-row creative-id="42"><div class="creative-tree" data-save-state="pending"></div></creative-tree-row>'
+  const payload = { action: 'updated', creative: { id: 42, description: 'old server body', inline_editor_payload: { description: 'old server body' } } }
+  dispatchCreativeTreeStream(payload)
+  expect(applyRowProperties).not.toHaveBeenCalled()
+  delete document.querySelector('.creative-tree').dataset.saveState
+  dispatchCreativeTreeStream(payload)
+  expect(applyRowProperties).toHaveBeenCalledTimes(1)
 })

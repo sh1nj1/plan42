@@ -7,7 +7,7 @@
 # runnable directly from a dev checkout to validate the desktop env without
 # packaging:
 #
-#   PORT=4000 bin/desktop-server
+#   PORT=45173 bin/desktop-server
 #
 # Env knobs:
 #   COLLAVRE_DATA_DIR   where DBs/blobs/secrets/logs live

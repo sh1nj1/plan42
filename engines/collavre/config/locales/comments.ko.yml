@@ -15,11 +15,18 @@ ko:
       default_name_prefix: "토픽"
       branch_prefix: "분기"
       main_name: "메인"
+      history_name: "이력"
       cannot_delete_main: "메인 토픽은 삭제할 수 없습니다."
-      orphaned_cron_notice: "[시스템] '%{topic_name}' 토픽이 삭제되었지만, 이 토픽을 대상으로 하는 반복 크론 작업(%{cron_key})이 아직 남아 있어 실행될 때마다 아무 동작도 하지 않고 조용히 종료됩니다. 원래 메시지: \"%{message}\". 다른 토픽으로 다시 지정하거나 cron_cancel로 취소하세요."
+      reserved_name: "예약된 토픽 이름은 지정할 수 없습니다."
+      orphaned_cron_notice: "[시스템] '%{topic_name}' 토픽과 이 토픽을 대상으로 하던 반복 크론 작업(%{cron_key})이 함께 삭제되었습니다. 크론 작업을 다시 생성하려면 다음 명령을 실행하세요:\n\n```\n%{cron_create_command}\n```"
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
+        source_changed: 요청이 대기하는 동안 토픽이 다른 크리에이티브로 이동했습니다. 현재 크리에이티브에서 다시 불러온 뒤 재시도하세요.
+        active_tasks: 이 토픽에서 에이전트 작업이 진행 중입니다. 작업이 끝날 때까지 기다리거나 취소한 뒤 토픽을 이동하세요.
+        pending_deliveries: 이 토픽에는 아직 복구 중인 에이전트 메시지가 있습니다. 복구가 끝난 뒤 토픽을 이동하세요.
+        recurring_tasks: 이 토픽을 대상으로 하는 반복 크론 작업이 있습니다. cron_cancel로 취소하고 토픽을 이동한 뒤 다시 생성하세요.
+        trigger_loop: 이 토픽은 Drop Trigger loop의 제어 토픽이므로 loop 설정이 참조하는 동안 이동할 수 없습니다.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
         session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 이동할 수 없습니다.
         primary_agent_released: '@%{agent}은(는) "%{creative}"에 피드백 권한이 없어 Primary Agent 지정이 해제되었습니다. 계속 담당하게 하려면 해당 크리에이티브를 에이전트와 공유한 뒤 다시 지정하세요.'
@@ -144,16 +151,29 @@ ko:
         minimum_required: "병합하려면 2개 이상의 메시지를 선택하세요."
         not_authorized: "메시지를 병합할 권한이 없습니다."
         own_messages_only: "자신의 메시지 또는 자신의 AI 에이전트 메시지만 병합할 수 있습니다."
+        same_topic_required: "같은 토픽의 메시지만 병합할 수 있습니다."
       branch:
         no_selection: "분기할 메시지를 선택하세요."
         not_authorized: "메시지를 분기할 권한이 없습니다."
         comments_not_found: "일부 선택한 메시지를 찾을 수 없습니다."
+        approval_action_not_branchable: "승인 요청 메시지는 분기할 수 없습니다."
       batch_delete_confirm: 선택한 메시지를 삭제하시겠습니까?
       batch_delete_no_selection: 삭제할 메시지를 선택해주세요.
       batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.
       topic_search_placeholder: 토픽 검색...
       topic_main: 전체 메세지
       topic_list: 토픽 목록
+      participant_list: 사용자 목록
+      participant_search_placeholder: 사용자 검색...
+      participant_online: 온라인
+      participant_offline: 오프라인
+      participant_health_unknown: 상태 확인 불가
+      participant_health_check_error: 헬스 체크 오류
+      user_menu:
+        open: "%{name} 프로필 메뉴 열기"
+        view_profile: 프로필 보기
+        mention: 멘션
+        agent_drag_guide: 이 아바타를 토픽 또는 토픽 추가 버튼으로 드래그하면 해당 에이전트가 Primary AI Agent가 됩니다.
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.
@@ -212,10 +232,25 @@ ko:
       stop_blocking_agent: 실행 중 작업 중지
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
+      activity_logs:
+        duration: "수행 시간: %{duration}"
+        inline_duration: "(%{duration})"
+        duration_hint: "마지막 시도의 시작부터 모델 응답 완료까지이며, 위임 에이전트는 답글 저장 완료까지입니다. 큐 대기, 이전 재시도, 후속 작업 전달 시간은 제외합니다."
+        days: "%{count}일"
+        hours: "%{count}시간"
+        minutes: "%{count}분"
+        seconds: "%{count}초"
+        loading: "불러오는 중..."
+        empty: "활동 기록이 없습니다."
+        time_ago: "%{time} 전"
       table_download:
         csv: CSV
         excel: Excel
       lightbox:
+        open_image: 이미지 열기
+        zoom_in: 확대
+        zoom_out: 축소
+        zoom_reset: 확대/축소 초기화
         close: 닫기
         previous: 이전
         next: 다음
@@ -290,6 +325,7 @@ ko:
       comment_content_unavailable: "(삭제된 댓글 내용을 표시할 수 없습니다)"
       tool_approval_needed: 도구 '%{tool_name}'가 감지/업데이트되었습니다. 활성화하려면 승인해주세요.
       approval_requested: '%{user}님이 "%{creative}"에서 도구 "%{tool_name}" 실행 승인을 요청했습니다.'
+      approval_gate_requested: '%{user}님이 "%{creative}"에서 판단을 요청했습니다.'
     emails:
       index_title: 이메일
       list:

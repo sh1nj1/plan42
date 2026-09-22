@@ -468,6 +468,17 @@ module Collavre
                      DeliveryRecord.handed_off_ids_in(turn.reload.trigger_event_payload)
       end
 
+      test "restoring a dropped dispatch does not inherit the covering replay login claim" do
+        anchor = comment("Login replay")
+        dropped = comment("Separate request")
+        payload = context_for(anchor).merge("inline_login_task_id" => 123, "inline_login_task_ids" => [ 456 ])
+        restored = DeliveryRecord.send(:restored_context, payload, dropped)
+        assert_equal dropped.id, restored.dig("comment", "id")
+        assert_not restored.key?("inline_login_task_id")
+        assert_not restored.key?("inline_login_task_ids")
+        assert_equal 123, payload["inline_login_task_id"]
+      end
+
       # The same drift, on the other list. TURN_SCOPED_KEYS is what a restored
       # dispatch is stripped of, and it is right only while it names every key a
       # turn writes onto its own payload. Driving every writer over one
@@ -491,6 +502,15 @@ module Collavre
             late
           )
         )
+        # TaskResumer.suspend!'s write, made directly: suspending would take the
+        # turn out of `running`, which fail_while_worker_settles! needs.
+        turn.update!(trigger_event_payload: turn.reload.trigger_event_payload.merge(
+          ResumeContext::KEY => ResumeContext.capture(turn, reason: :server_restart)
+        ))
+        # Workflow::TaskAdmission.start!'s execution stamp.
+        turn.update!(trigger_event_payload: ExecutionFence.stamp(turn.reload.trigger_event_payload, job_id: "job"))
+        # AiAgentJob's running -> delegated handoff marker.
+        turn.update!(trigger_event_payload: ExecutionFence.pending_handoff(turn.reload.trigger_event_payload))
         DeliveryRecord.fail_while_worker_settles!(turn.reload)
 
         written = turn.reload.trigger_event_payload.keys - dispatched

@@ -91,6 +91,8 @@ module Collavre
         user = User.create!(name: "Whitespace mention learner", email: "whitespace-mention-learner@example.com", password: "password")
         whitespace_agent = User.create!(name: " Helper", email: "whitespace-helper@example.com", password: "password",
                                         llm_vendor: "openai", searchable: true)
+        whitespace_agent.update_column(:name, " Helper") # Preserve a legacy, pre-normalization name.
+        whitespace_agent.reload
         agent = User.create!(name: "Resolvable helper", email: "resolvable-helper@example.com", password: "password",
                              llm_vendor: "openai", searchable: true)
 

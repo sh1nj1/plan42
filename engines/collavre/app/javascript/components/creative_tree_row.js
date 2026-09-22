@@ -7,6 +7,7 @@ import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { creativePathFromTemplate } from "../lib/creative_path";
+import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -239,9 +240,6 @@ class CreativeTreeRow extends LitElement {
 
     const dragEnabled = !this.selectMode || this.canWrite;
     const draggableAttr = dragEnabled ? "true" : nothing;
-    const dragActions = dragEnabled
-      ? "dragstart->creatives--drag-drop#start dragover->creatives--drag-drop#over drop->creatives--drag-drop#drop dragleave->creatives--drag-drop#leave"
-      : nothing;
 
     return html`
       <div
@@ -251,7 +249,6 @@ class CreativeTreeRow extends LitElement {
         data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
         draggable=${draggableAttr}
-        data-action=${dragActions}
       >
         <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
           <div class="creative-row-start">
@@ -618,8 +615,7 @@ class CreativeTreeRow extends LitElement {
       const data = await response.json();
       // Update this row's progressHtml from server response
       if (data.progress_html) {
-        this.progressHtml = data.progress_html;
-        this.dataset.progressHtml = data.progress_html;
+        this._applyProgressHtml(this, data.progress_html);
       }
       // Update progressValue for inline editor
       if (data.progress != null) {
@@ -635,8 +631,7 @@ class CreativeTreeRow extends LitElement {
           const row = document.querySelector(`creative-tree-row[creative-id="${ancestor.id}"]`);
           if (row) {
             if (ancestor.progress_html) {
-              row.progressHtml = ancestor.progress_html;
-              row.dataset.progressHtml = ancestor.progress_html;
+              this._applyProgressHtml(row, ancestor.progress_html);
             }
             if (ancestor.progress != null) {
               row.dataset.progressValue = String(ancestor.progress);
@@ -655,6 +650,14 @@ class CreativeTreeRow extends LitElement {
     } finally {
       wrap.classList.remove("progress-toggle-saving");
     }
+  }
+
+  _applyProgressHtml(row, serverHtml) {
+    syncProgressHtmlFromDom(row);
+    row.progressHtml = row.progressHtml
+      ? replaceProgressControl(row.progressHtml, serverHtml)
+      : serverHtml;
+    row.dataset.progressHtml = row.progressHtml;
   }
 
   _handleContentClick(event) {

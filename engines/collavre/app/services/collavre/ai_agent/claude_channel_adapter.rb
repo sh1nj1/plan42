@@ -8,10 +8,14 @@ module Collavre
     class ClaudeChannelAdapter
       class UndeliverableError < StandardError; end
 
+      HANDOFF_STARTED = "started"
+      HANDOFF_COMPLETED = "completed"
+
       def initialize(agent:, context:, task: nil)
         @agent = agent
         @context = context
         @task = task
+        @execution_generation = task && Orchestration::ExecutionFence.generation(task)
         @topic_id = context.dig("topic", "id")
       end
 
@@ -28,10 +32,7 @@ module Collavre
         payload = {
           type: "dispatch",
           agent_id: @agent.id,
-          # task_id lets the MCP client echo it back via /reply so the server
-          # can complete the exact dispatched task even when topic concurrency
-          # > 1 allows multiple in-flight delegated tasks per topic.
-          task_id: @task&.id,
+          **task_fields,
           # session_topic marks whether this dispatch targets a Session-mapped
           # topic (topics.session_id present). One shared agent fans out to many
           # session topics; without this flag every session subscribed to
@@ -46,8 +47,9 @@ module Collavre
             # chat history — so comments that Orchestration::TaskCoalescer
             # folded into this turn have to be rendered inline here or they
             # never reach the agent at all.
-            content: MergedTriggerComments.prepend_to(
-              @context.dig("comment", "content"), @context, agent: @agent
+            content: Orchestration::ResumeContext.prepend_to(
+              MergedTriggerComments.prepend_to(@context.dig("comment", "content"), @context, agent: @agent),
+              @context
             ),
             author_id: @context.dig("sender", "id") || @context.dig("comment", "user_id"),
             author_name: @context.dig("sender", "name") || comment&.user&.display_name,
@@ -57,16 +59,51 @@ module Collavre
           }
         }
 
+        broadcast_dispatch(payload)
+      end
+
+      private
+
+      def broadcast_dispatch(payload)
         # Per-agent stream is the source of truth for MCP plugin clients:
         # they subscribe once by agent_id and receive every dispatch routed
         # to this agent regardless of which topic triggered it. The per-topic
         # stream is kept for legacy/UI viewers but is not how Claude Channel
         # plugins consume dispatches.
+        return unless transition_handoff(Orchestration::ExecutionFence::HANDOFF_PENDING, HANDOFF_STARTED)
+
         AgentChannel.broadcast_to_agent(@agent.id, payload)
         AgentChannel.broadcast_to_topic(@topic_id, payload)
+        transition_handoff(HANDOFF_STARTED, HANDOFF_COMPLETED)
       end
 
-      private
+      # Persist before the first external side effect. A crash after this point
+      # has uncertain delivery, so restart recovery must not rebroadcast it.
+      def transition_handoff(from, to)
+        return true unless @task
+
+        @task.with_lock do
+          next false unless Orchestration::ExecutionFence.generation(@task) == @execution_generation
+          payload = @task.trigger_event_payload || {}
+          handoff = payload[Orchestration::ExecutionFence::HANDOFF_KEY]
+          next true unless handoff # Legacy dispatches remain outside restart recovery.
+          next false unless @task.delegated? && handoff == { "generation" => @execution_generation, "state" => from }
+
+          @task.update!(trigger_event_payload: payload.merge(
+            Orchestration::ExecutionFence::HANDOFF_KEY => { "generation" => @execution_generation, "state" => to }
+          ))
+        end
+      end
+
+      # task_id lets the MCP client echo it back via /reply so the server can
+      # complete the exact dispatched task even when topic concurrency > 1
+      # allows multiple in-flight delegated tasks per topic. A turn resumed
+      # after suspension keeps its task_id, so execution_generation, echoed
+      # back with it, tells the resumed attempt's reply from a late one of the
+      # interrupted attempt (Orchestration::ExecutionFence).
+      def task_fields
+        { task_id: @task&.id, execution_generation: @task && Orchestration::ExecutionFence.generation(@task) }
+      end
 
       # True when the dispatched topic is a Claude Channel Session topic (it
       # carries a stable session_id). Work/project topics the agent is merely

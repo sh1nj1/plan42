@@ -61,9 +61,7 @@ nav #search {
 .progress-filter-btn {
     border-radius: var(--radius-3);
     border: none;
-    background: transparent;
     padding: var(--space-1) var(--space-2);
-    transition: background 0.2s var(--ease-out-2);
 }
 
 .progress-filter-btn:first-child {
@@ -79,9 +77,72 @@ nav #search {
 }
 
 .progress-filter-btn.active {
-    background: var(--surface-hover);
     color: var(--text-primary);
     font-weight: var(--weight-5);
+}
+
+/*
+ * Nav pills that toggle their selected surface in place
+ * -----------------------------------------------------
+ * The chat filter and the search trigger flip `.active` on a live page during
+ * turbo-frame navigation, so their surface changes where it sits instead of
+ * arriving already painted in a fresh document. Animating `background` there
+ * re-rasterises the pill's rounded corners on every frame of the transition,
+ * and mobile GPU rasterisers have been observed to mis-composite a corner arc
+ * under that load: the bottom-left arc is replaced by its own chord and the
+ * clipped sliver is drawn back on top, which reads as a folded corner.
+ *
+ * Put the surface on an overlay pseudo-element and cross-fade it with
+ * `opacity`, which the compositor animates without repainting. The rounded
+ * rect is rasterised once and only its alpha moves.
+ *
+ * `z-index: -1` keeps the overlay above the button's own background box and
+ * below its text; that needs the button to be a stacking context, hence
+ * `position: relative` + `z-index: 0`.
+ */
+.progress-filter-btn,
+.search-popup-trigger {
+    position: relative;
+    z-index: 0;
+    transition: color 0.2s var(--ease-out-2);
+}
+
+.progress-filter-btn::before,
+.search-popup-trigger::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--surface-hover);
+    opacity: 0;
+    transition: opacity 0.2s var(--ease-out-2);
+    pointer-events: none;
+    will-change: opacity;
+}
+
+.progress-filter-btn:hover::before,
+.progress-filter-btn:active::before,
+.progress-filter-btn.active::before,
+.search-popup-trigger:hover::before,
+.search-popup-trigger:active::before,
+.search-popup-trigger.active::before {
+    opacity: 1;
+}
+
+/*
+ * The button itself has to stay transparent in every state, otherwise the
+ * `nav a/button` surfaces above would stack on top of the overlay.
+ */
+.progress-filter-btn,
+.progress-filter-btn:hover,
+.progress-filter-btn:active,
+.progress-filter-btn.active,
+.search-popup-trigger,
+.search-popup-trigger:hover,
+.search-popup-trigger:active,
+.search-popup-trigger.active {
+    background: transparent;
 }
 
 /* ChatGPT-style popup menu overrides */

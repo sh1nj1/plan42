@@ -54,10 +54,7 @@ module Collavre
       end
 
       def tag_added_practice_with_session!(session)
-        data = creative.data.is_a?(Hash) ? creative.data : {}
-        onboarding = data["onboarding"].is_a?(Hash) ? data["onboarding"] : {}
-
-        creative.update!(data: data.merge("onboarding" => onboarding.merge("session_id" => session.session_id)))
+        Ownership.stamp!(creative, session.session_id)
       end
 
       def valid_subject?(session)

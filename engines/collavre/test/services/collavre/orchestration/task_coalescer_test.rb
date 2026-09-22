@@ -6,6 +6,8 @@ module Collavre
   module Orchestration
     class TaskCoalescerTest < ActiveSupport::TestCase
       setup do
+        @previous_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
         @user = users(:one)
         @creative = creatives(:tshirt)
         @agent = users(:ai_bot)
@@ -17,6 +19,10 @@ module Collavre
           llm_model: "gpt-4"
         )
         @topic = Collavre::Topic.create!(creative: @creative, name: "Coalesce topic", user: @user)
+      end
+
+      teardown do
+        ActiveJob::Base.queue_adapter = @previous_adapter
       end
 
       def create_waiter(comment_id:, agent: @agent, topic: @topic, creative: @creative,
@@ -37,6 +43,78 @@ module Collavre
           topic_id: topic&.id,
           creative_id: creative&.id
         )
+      end
+
+      [ :older, :all ].each do |scope|
+        %w[done cancelled failed escalated].each do |ending|
+          test "#{scope} fold transfers all replay claims until survivor ends #{ending}" do
+            keep = create_waiter(comment_id: 10) if scope == :all
+            originals = [ 11, 12 ].map do |comment_id|
+              original = create_waiter(comment_id: comment_id, status: "done")
+              original.update!(trigger_event_payload: original.trigger_event_payload.merge(
+                "engine_login" => { "retryable" => true, "resumed" => true }))
+              original
+            end
+            waiters = originals.map do |original|
+              waiter = create_waiter(comment_id: original.trigger_event_payload.dig("comment", "id"))
+              waiter.update!(trigger_event_payload: waiter.trigger_event_payload.merge("inline_login_task_id" => original.id))
+              waiter
+            end
+            keep ||= create_waiter(comment_id: 13)
+            clear_enqueued_jobs
+            TaskCoalescer.coalesce!(keep, scope: scope)
+            originals.each do |original|
+              assert_equal true, original.reload.trigger_event_payload.dig("engine_login", "resumed")
+              assert_not original.trigger_event_payload.dig("engine_login", "replay_abandoned")
+            end
+            assert_equal originals.map(&:id).sort, keep.reload.trigger_event_payload["inline_login_task_ids"].sort
+            assert_no_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob)
+            waiters.each { |waiter| waiter.reload.fire_completion_callbacks_after_external_claim }
+            originals.each { |original| assert_not original.reload.trigger_event_payload.dig("engine_login", "replay_abandoned") }
+
+            # A second fold must preserve every inherited claim, including the
+            # survivor's own link, until this entire request actually terminates.
+            final = create_waiter(comment_id: 14)
+            final.update!(trigger_event_payload: final.trigger_event_payload.merge("inline_login_task_id" => originals.first.id))
+            TaskCoalescer.coalesce!(final)
+            assert_equal originals.map(&:id).sort, final.reload.trigger_event_payload["inline_login_task_ids"].sort
+            final.task_actions.create!(action_type: "reply_created", status: "done") if ending == "done"
+            final.update!(status: ending)
+            originals.each do |original|
+              state = original.reload.trigger_event_payload.fetch("engine_login")
+              assert_equal ending == "done", state["resumed"]
+              assert_equal ending != "done", !!state["replay_abandoned"]
+              assert_equal ending == "done", !!state["replay_completed"]
+              assert_equal false, state["retryable"]
+            end
+          end
+        end
+      end
+
+      test "rolling back a fold restores both claim ownership and queued status" do
+        first = create_waiter(comment_id: 11)
+        first.update!(trigger_event_payload: first.trigger_event_payload.merge("inline_login_task_id" => 123))
+        keep = create_waiter(comment_id: 12)
+        Task.transaction(requires_new: true) do
+          TaskCoalescer.coalesce!(keep)
+          raise ActiveRecord::Rollback
+        end
+        assert_equal "queued", first.reload.status
+        assert_equal 123, first.trigger_event_payload["inline_login_task_id"]
+        assert_nil keep.reload.trigger_event_payload["inline_login_task_ids"]
+        assert_empty first.task_actions.where(action_type: "superseded")
+      end
+
+      test "promotion can settle a transferred login newer than the survivor" do
+        keep = create_waiter(comment_id: 10)
+        original = create_waiter(comment_id: 11, status: "done")
+        original.update!(trigger_event_payload: original.trigger_event_payload.merge(
+          "engine_login" => { "retryable" => true, "resumed" => true }))
+        replay = create_waiter(comment_id: 11)
+        replay.update!(trigger_event_payload: replay.trigger_event_payload.merge("inline_login_task_id" => original.id))
+        TaskCoalescer.coalesce!(keep, scope: :all)
+        keep.cancel_if_active!
+        assert_equal true, original.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
       end
 
       test "absorbs older queued siblings into the newest waiter" do

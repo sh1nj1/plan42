@@ -1,9 +1,9 @@
 require_relative "../application_system_test_case"
 
-# The leaf progress checkbox is a hover action on pointer devices: a resting row
-# stays quiet and the box appears with the row's other hover controls. Touch
-# devices have no hover to reveal it, so the box stays visible there. Both
-# branches are CSS-only, so they are verified in a real browser.
+# Incomplete leaves always expose their progress checkbox. Completed leaves use
+# the configured completion mark at rest and reveal their checked box on hover
+# or keyboard focus. The pointer branches are CSS-only, so they are verified in
+# a real browser.
 class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
   # Headless runners report no pointer at all, so the hover branch needs a
   # browser pinned to a desktop pointer to be observable.
@@ -92,15 +92,15 @@ class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
     # The browser is already gone when a test tears down after a failure.
   end
 
-  test "a pointer device hides the checkbox until the row is hovered" do
+  test "a pointer device always shows an incomplete leaf checkbox" do
     checkbox = "#{wrap_selector(@incomplete)} .progress-toggle-checkbox"
-    assert_opacity checkbox, 0.0, "expected a resting row to hide the checkbox"
+    assert_opacity checkbox, 1.0, "expected a resting incomplete row to show the checkbox"
 
     hover_row(@incomplete)
-    assert_opacity checkbox, 1.0, "expected row hover to reveal the checkbox"
+    assert_opacity checkbox, 1.0, "expected row hover to keep the checkbox visible"
 
     unhover
-    assert_opacity checkbox, 0.0, "expected the checkbox to hide again once the pointer leaves"
+    assert_opacity checkbox, 1.0, "expected the checkbox to remain visible once the pointer leaves"
   end
 
   test "a pointer device swaps a completed leaf's mark for the checkbox on row hover" do
@@ -115,8 +115,8 @@ class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
   end
 
   test "keyboard focus reveals the checkbox without a pointer" do
-    checkbox = "#{wrap_selector(@incomplete)} .progress-toggle-checkbox"
-    assert_opacity checkbox, 0.0, "expected a resting row to hide the checkbox"
+    checkbox = "#{wrap_selector(@complete)} .progress-toggle-checkbox"
+    assert_opacity checkbox, 0.0, "expected a resting completed row to hide the checkbox"
 
     page.execute_script("document.querySelector('#{checkbox}').focus()")
 

@@ -26,11 +26,8 @@ module Collavre
 
         creatives = entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
         prepare_level(creatives)
-        branches = creatives.select { |creative| children_index.has_children?(creative) }
-        children_index.load(branches)
-        children_by_parent = creatives.to_h do |creative|
-          [ creative.id, children_index.has_children?(creative) ? children_index.children_for(creative) : [] ]
-        end
+        children_index.load(creatives)
+        children_by_parent = creatives.to_h { |creative| [ creative.id, children_index.children_for(creative) ] }
         prepare_presence(children_by_parent.values.flatten)
         child_entries_by_parent = entries.to_h do |entry|
           creative = entry.fetch(:creative)
@@ -45,22 +42,27 @@ module Collavre
 
         entries.map do |entry|
           creative = entry.fetch(:creative)
-          visible_children = acyclic_children(entry, children_by_parent.fetch(creative.id))
-          children = child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }
-          {
-            id: creative.id,
-            label: Collavre::HtmlText.label(creative.effective_description),
-            snippet: creative.creative_snippet,
-            can_comment: allowed?(creative, :feedback),
-            # Linked creatives are placement shells. Their own progress is not
-            # updated when the origin advances, so the workspace must expose
-            # the origin's authoritative value.
-            progress: creative.origin&.progress || creative.progress,
-            url: view_context.collavre.creatives_path(id: creative.id),
-            has_children: visible_children.any?,
-            children: children
-          }
+          node(
+            creative,
+            visible_children: acyclic_children(entry, children_by_parent.fetch(creative.id)),
+            children: child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }
+          )
         end
+      end
+
+      def node(creative, visible_children:, children:)
+        {
+          id: creative.id,
+          parent_id: creative.parent_id,
+          progress: creative.origin&.progress || creative.progress,
+          label: Collavre::HtmlText.label(creative.effective_description),
+          snippet: creative.creative_snippet,
+          can_comment: allowed?(creative, :feedback),
+          can_write: allowed?(creative, :write) && !creative.effective_origin.read_only_source?,
+          url: view_context.collavre.creatives_path(id: creative.id),
+          has_children: visible_children.any?,
+          children: children
+        }
       end
 
       def acyclic_children(entry, children)

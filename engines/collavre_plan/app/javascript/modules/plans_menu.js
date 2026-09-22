@@ -1,50 +1,40 @@
 // Plans menu functionality
-// Handles the plans menu button click and lazy-loads plans data
+// Delegate clicks once: workspace navigation preserves the GNB across turbo:load.
 
 import { notifyPopupOpen, onOtherPopupOpen } from 'collavre/lib/gnb_popup_manager'
 
 const POPUP_ID = 'plans-menu'
-let initialized = false
+const loadedAreas = new WeakSet()
 
-function initPlansMenu() {
-  if (initialized) return
-  initialized = true
+onOtherPopupOpen(POPUP_ID, function() {
+  const area = document.getElementById('plans-list-area')
+  if (area) area.style.display = 'none'
+})
 
-  document.addEventListener('turbo:load', function() {
-    const btns = document.querySelectorAll('.plans-menu-btn')
-    const area = document.getElementById('plans-list-area')
-    let loaded = false
-    const timeline = document.getElementById('plans-timeline')
+document.addEventListener('click', function(event) {
+  if (!event.target.closest('.plans-menu-btn')) return
 
-    function closePlans() {
-      if (area) area.style.display = 'none'
-    }
+  const area = document.getElementById('plans-list-area')
+  if (!area) return
 
-    onOtherPopupOpen(POPUP_ID, closePlans)
+  if (area.style.display !== 'none') {
+    area.style.display = 'none'
+    return
+  }
 
-    btns.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        if (area.style.display === 'none') {
-          notifyPopupOpen(POPUP_ID)
-          area.style.display = 'block'
-          if (!loaded) {
-            const plansUrl = area.dataset.plansUrl || '/plans.json'
-            fetch(plansUrl)
-              .then(function(r) { return r.json() })
-              .then(function(plans) {
-                if (timeline) { timeline.dataset.plans = JSON.stringify(plans) }
-                if (window.initPlansTimeline && timeline) {
-                  window.initPlansTimeline(timeline)
-                }
-                loaded = true
-              })
-          }
-        } else {
-          area.style.display = 'none'
-        }
-      })
+  notifyPopupOpen(POPUP_ID)
+  area.style.display = 'block'
+  if (loadedAreas.has(area)) return
+
+  const timeline = document.getElementById('plans-timeline')
+  const plansUrl = area.dataset.plansUrl || '/plans.json'
+  fetch(plansUrl)
+    .then(function(r) { return r.json() })
+    .then(function(plans) {
+      if (timeline) { timeline.dataset.plans = JSON.stringify(plans) }
+      if (window.initPlansTimeline && timeline) {
+        window.initPlansTimeline(timeline)
+      }
+      loadedAreas.add(area)
     })
-  })
-}
-
-initPlansMenu()
+})

@@ -1,0 +1,67 @@
+.usage-report {
+  max-width: 76rem;
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-3);
+}
+
+.usage-report__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border-1) solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--surface-section);
+}
+
+.usage-report__filters label {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.usage-report__filters input,
+.usage-report__filters select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+}
+
+.usage-report__filters input[type="submit"] {
+  align-self: end;
+}
+
+.usage-report__table {
+  overflow-x: auto;
+  border: var(--border-1) solid var(--color-border);
+  border-radius: var(--radius-2);
+}
+
+.usage-report table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-report th,
+.usage-report td {
+  padding: var(--space-3);
+  text-align: start;
+  white-space: nowrap;
+  border-bottom: var(--border-1) solid var(--color-border);
+}
+
+.usage-report small {
+  display: block;
+  color: var(--text-muted);
+}
+
+.usage-report__tools {
+  margin-top: var(--space-5);
+}
+
+.usage-report tfoot {
+  font-weight: var(--weight-6);
+  background: var(--surface-section);
+  border-top: var(--border-2) solid var(--color-border);
+}

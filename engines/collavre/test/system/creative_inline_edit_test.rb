@@ -17,8 +17,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def open_inline_editor(creative)
-    find("#creative-#{creative.id}").hover
-    find("#creative-#{creative.id} .edit-inline-btn", wait: 5).click
+    # Saving can replace the row and its hover-revealed button between actions.
+    page.document.synchronize(5) do
+      find("#creative-#{creative.id}").hover
+      find("#creative-#{creative.id} .edit-inline-btn", wait: 5).click
+    end
     assert_selector "#inline-edit-form-element", wait: 5
   end
 
@@ -62,7 +65,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def close_inline_editor
     find("#inline-close", wait: 5).click
-    assert_no_selector ".lexical-content-editable", visible: true, wait: 5
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 10
     wait_for_network_idle(timeout: 10)
   end
 
@@ -137,6 +140,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     find("#inline-add", wait: 5).click
     fill_inline_editor("C")
     find("#inline-add", wait: 5).click
+    assert_selector "#creatives > creative-tree-row:nth-of-type(4) #inline-edit-form-element", wait: 10
     fill_inline_editor("D")
     close_inline_editor
 
@@ -198,6 +202,31 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     # now. The template sits outside the container and survives, which is what
     # restoreTreeEmptyState() clones from when the last row is removed.
     assert_selector "template#creatives-empty-state-template", visible: :all, count: 1
+  end
+
+  test "drops multiple files as attachments and keeps them after reopening" do
+    open_inline_editor(@root_creative)
+    field = inline_editor_field
+    field.click
+    execute_script(<<~JS, field)
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["First attachment"], "first.txt", { type: "text/plain" }));
+      transfer.items.add(new File(["Second attachment"], "second.txt", { type: "text/plain" }));
+      arguments[0].dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+      arguments[0].dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    JS
+
+    assert_selector ".lexical-content-editable a", text: "first.txt", wait: 10
+    assert_selector ".lexical-content-editable a", text: "second.txt", wait: 10
+    close_inline_editor
+
+    assert_no_selector "#creative-#{@root_creative.id}[data-save-state]", visible: :all, wait: 10
+    assert_selector "#creative-#{@root_creative.id} .creative-content a", text: "first.txt"
+    assert_selector "#creative-#{@root_creative.id} .creative-content a", text: "second.txt"
+    assert_equal [ "first.txt", "second.txt" ], @root_creative.reload.files.map { |file| file.filename.to_s }.sort
+    open_inline_editor(@root_creative)
+    assert_selector ".lexical-content-editable a", text: "first.txt"
+    assert_selector ".lexical-content-editable a", text: "second.txt"
   end
 
   test "does not duplicate attachments when re-editing inline creative" do

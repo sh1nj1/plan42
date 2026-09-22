@@ -1,5 +1,8 @@
 ---
 ko:
+  time:
+    formats:
+      collavre_users_joined_at: "%Y-%m-%d %H:%M"
   collavre:
     users:
       app_header:
@@ -125,6 +128,7 @@ ko:
       creative_workspace:
         enabled: 3단 크리에이티브 작업 공간 사용
         description: 왼쪽 크리에이티브 트리를 유지하고 전체 페이지 새로고침 없이 중앙 내용을 전환하며 오른쪽에 채팅을 표시합니다.
+      justify_creative_descriptions: 크리에이티브 설명 좌우 정렬
       locale: 언어
       locales:
         en: 영어
@@ -170,6 +174,7 @@ ko:
         avatar: 아바타
         name: 이름
         email: 이메일
+        joined_at: 가입일
         last_login_at: 마지막 로그인
         last_login_unknown: 로그인 기록 없음
         push_token: 푸시 토큰
@@ -180,6 +185,11 @@ ko:
         actions: 작업
         current_user: 현재 사용자
         system_admin: 시스템 관리자
+      pagination:
+        label: 사용자 목록 페이지
+        prev: 이전
+        next: 다음
+        page_info: "%{current} / %{total} 페이지"
     user_mailer:
       email_verification:
         subject: 이메일 인증

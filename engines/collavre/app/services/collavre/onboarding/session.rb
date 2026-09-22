@@ -36,7 +36,7 @@ module Collavre
 
       def self.onboarding_root?(creative, session_id)
         onboarding = creative.data.is_a?(Hash) ? creative.data["onboarding"] : nil
-        creative.user&.onboarding_seeded_at? && onboarding.is_a?(Hash) && onboarding["seeded"] == true &&
+        creative.user&.onboarding_seeded_at? && Ownership.owned?(creative) && onboarding.is_a?(Hash) && onboarding["seeded"] == true &&
           registered_scenario?(onboarding["scenario_key"]) && onboarding["session_id"].present? &&
           (session_id.blank? || onboarding["session_id"] == session_id)
       end

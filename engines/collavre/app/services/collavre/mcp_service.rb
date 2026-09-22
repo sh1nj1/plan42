@@ -5,10 +5,13 @@ module Collavre
   class McpService
     # --- Registration Logic (from MetaToolService) ---
 
-    def self.register_tool_from_source(source_code)
+    # expected_name is the McpTool name recorded from the Creative. The name the
+    # evaluated class actually declares must match it, otherwise the tool would
+    # run without its McpTool row and filter_tools would treat it as a system tool.
+    def self.register_tool_from_source(source_code, expected_name: nil)
       # Extract tool name for logging context
       tool_name_match = source_code.match(/tool_name\s+["'](.+?)["']/)
-      tool_name = tool_name_match ? tool_name_match[1] : "unknown_tool"
+      tool_name = expected_name || (tool_name_match ? tool_name_match[1] : "unknown_tool")
 
       before_call = proc do |tool_instance, method_name, args|
         # Store args for after_call access if needed, or just log start
@@ -43,11 +46,7 @@ module Collavre
         Rails.logger.error("Failed to log tool activity: #{e.message}")
       end
 
-      result = ::Tools::MetaToolWriteService.new.register_tool_from_source(
-        source: source_code,
-        before_call: before_call,
-        after_call: after_call
-      )
+      result = register_with_writer(source_code, expected_name, before_call: before_call, after_call: after_call)
       Rails.logger.info("Registered tool: #{result}")
 
       if result[:error]
@@ -59,6 +58,16 @@ module Collavre
       Rails.logger.error("Failed to register tool from source: #{e.message}")
       raise e
     end
+
+    def self.register_with_writer(source_code, expected_name, before_call:, after_call:)
+      writer = ::Tools::MetaToolWriteService.new
+      McpToolRegistrar.synchronize do
+        next writer.register_tool_from_source(source: source_code, before_call: before_call, after_call: after_call) unless expected_name
+
+        McpToolRegistrar.register(writer, source_code, expected_name, before_call: before_call, after_call: after_call)
+      end
+    end
+    private_class_method :register_with_writer
 
     def self.filter_tools(tools, user)
       return [] if tools.blank?
@@ -107,7 +116,9 @@ module Collavre
 
     def self.load_active_tools
       McpTool.active.find_each do |tool|
-        register_tool_from_source(tool.source_code)
+        register_tool_from_source(tool.source_code, expected_name: tool.name)
+      rescue StandardError => e
+        Rails.logger.error("Skipped MCP tool #{tool.name}: #{e.message}")
       end
     end
 
@@ -126,7 +137,7 @@ module Collavre
     end
 
     def self.delete_tool(tool_name)
-      result = ::Tools::MetaToolWriteService.new.delete_tool(tool_name)
+      result = McpToolRegistrar.delete(tool_name)
 
       if result[:error]
         Rails.logger.error("Failed to delete tool #{tool_name}: #{result[:error]}")

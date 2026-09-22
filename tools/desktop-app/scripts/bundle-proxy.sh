@@ -35,9 +35,32 @@ fail() {
   fail "CLI_OPENAI_PROXY_VERSION must be an exact semver, not a range"
 
 mkdir -p "$DESKTOP_DIR/vendor"
-stage="$(mktemp -d "$DESKTOP_DIR/vendor/.proxy.XXXXXX")"
+
+# The staging dir must live OUTSIDE the repository. Node resolves a module by
+# walking UP the directory tree, so a stage inside the repo lets a nested package
+# escape into the Rails app's own node_modules. Concretely: npm's tree for this
+# dependency set never installs @esbuild/darwin-arm64, so esbuild's postinstall
+# resolves "@esbuild/darwin-arm64/bin/esbuild" out of the stage, finds the app's
+# copy, and aborts the build with `Expected "<a>" but got "<b>"` whenever the two
+# esbuild versions differ. Outside the repo there is nothing to escape to, and
+# esbuild falls back to its integrity-checked download of the matching binary.
+stage="$(mktemp -d "${TMPDIR:-/tmp}/collavre-proxy.XXXXXX")"
+stage="$(cd -P "$stage" && pwd)"
 cleanup() { rm -rf "$stage"; }
 trap cleanup EXIT
+
+# Same hazard if TMPDIR itself sits under a node_modules tree: fail loudly rather
+# than bundling packages resolved from outside the stage.
+probe="$stage"
+while :; do
+  probe="$(dirname "$probe")"
+  if [[ -d "$probe/node_modules" ]]; then
+    fail "staging dir is nested under $probe/node_modules; set TMPDIR to a path outside any node_modules tree"
+  fi
+  if [[ "$probe" == "/" ]]; then
+    break
+  fi
+done
 
 if [[ -n "$NODE_RUNTIME_DIR" ]]; then
   [[ -x "$NODE_RUNTIME_DIR/bin/node" && -x "$NODE_RUNTIME_DIR/bin/npm" ]] || \
@@ -113,6 +136,10 @@ EOF
 
 rm -rf "$OUTPUT_DIR"
 cd "$DESKTOP_DIR"
-mv "$stage" "$OUTPUT_DIR"
+# TMPDIR may be on a different volume than the repo, so fall back to a copy.
+if ! mv "$stage" "$OUTPUT_DIR" 2>/dev/null; then
+  cp -Rp "$stage" "$OUTPUT_DIR"
+  rm -rf "$stage"
+fi
 trap - EXIT
 echo "[bundle-proxy] bundled $PACKAGE_NAME@$PACKAGE_VERSION with $node_version"

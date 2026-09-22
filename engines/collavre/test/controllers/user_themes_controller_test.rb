@@ -6,6 +6,24 @@ class UserThemesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@user, password: "password")
   end
 
+  test "theme generation usage is visible to its human requester" do
+    factory = ->(**options) {
+      Collavre::LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
+      client = Object.new
+      def client.chat(*) = '{"--surface-bg":"#ffffff"}'
+      client
+    }
+    Collavre::AiClient.stub(:new, factory) do
+      post collavre.user_themes_url, params: { description: "Snow" }
+    end
+    assert_response :redirect
+    usage = Collavre::LlmUsage.last
+    assert_equal @user.id, usage.requester_id
+    assert_nil usage.agent_id
+    assert_nil usage.owner_id
+    assert_includes Collavre::LlmUsage.visible_to(@user), usage
+  end
+
   test "should get index" do
     get collavre.user_themes_url
     assert_response :success

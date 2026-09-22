@@ -1,9 +1,105 @@
 require "test_helper"
+require Rails.root.join("test/support/legacy_root_preferences")
 
 class CreativesControllerTest < ActionDispatch::IntegrationTest
+  include LegacyRootPreferences
   setup do
     users(:one).update!(creative_workspace_enabled: true)
     sign_in_as(users(:one), password: "password")
+  end
+
+  test "workspace restores merged root preferences without changing stored rows" do
+    allow_legacy_root_duplicates!
+    root = Creative.create!(user: users(:one), description: "Root")
+    child = Creative.create!(user: users(:one), parent: root, description: "Child")
+    Creative.create!(user: users(:one), parent: child, description: "Leaf")
+    preferences = Collavre::UserCreativePreference
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => true })
+    preferences.create!(user: users(:one), expanded_status: { child.id.to_s => true })
+    preferences.create!(user: users(:two), expanded_status: { root.id.to_s => false })
+    preferences.create!(user: users(:one), creative: root, expanded_status: { child.id.to_s => false })
+    before = preferences.order(:id).map(&:attributes)
+
+    get creatives_path(id: root.id)
+
+    assert_response :success
+    assert_select '[data-workspace-tree-initial-expanded-ids-value]' do |elements|
+      assert_equal [ root.id.to_s, child.id.to_s ],
+                   JSON.parse(elements.first['data-workspace-tree-initial-expanded-ids-value'])
+    end
+    assert_equal before, preferences.order(:id).map(&:attributes)
+  end
+
+  test "central tree JSON restores merged roots and keeps context state separate" do
+    allow_legacy_root_duplicates!
+    root = Creative.create!(user: users(:one), description: "Root")
+    child = Creative.create!(user: users(:one), parent: root, description: "Child")
+    leaf = Creative.create!(user: users(:one), parent: child, description: "Leaf")
+    preferences = Collavre::UserCreativePreference
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => true })
+    preferences.create!(user: users(:one), expanded_status: { child.id.to_s => true })
+    preferences.create!(user: users(:two), expanded_status: { root.id.to_s => false })
+    preferences.create!(user: users(:one), creative: root, expanded_status: { child.id.to_s => false })
+    before = preferences.order(:id).map(&:attributes)
+
+    get creatives_path(format: :json)
+
+    assert_response :success
+    restored_root = response.parsed_body.fetch("creatives").find { |node| node.fetch("id") == root.id }
+    restored_child = restored_root.fetch("children_container").fetch("nodes").find { |node| node.fetch("id") == child.id }
+    assert_equal [ leaf.id ], restored_child.fetch("children_container").fetch("nodes").pluck("id")
+
+    get creatives_path(format: :json, id: root.id)
+
+    assert_response :success
+    context_child = response.parsed_body.fetch("creatives").find { |node| node.fetch("id") == child.id }
+    assert_empty context_child.fetch("children_container").fetch("nodes")
+    assert_equal before, preferences.order(:id).map(&:attributes)
+  end
+
+  test "central tree JSON honors the last duplicate root value" do
+    allow_legacy_root_duplicates!
+    root = Creative.create!(user: users(:one), description: "Root")
+    Creative.create!(user: users(:one), parent: root, description: "Child")
+    preferences = Collavre::UserCreativePreference
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => true })
+    preferences.create!(user: users(:one), expanded_status: { root.id.to_s => false })
+
+    get creatives_path(format: :json)
+
+    assert_response :success
+    restored = response.parsed_body.fetch("creatives").find { |node| node.fetch("id") == root.id }
+    assert_empty restored.fetch("children_container").fetch("nodes")
+  end
+
+  test "default-safe formatting survives parent title and slide view rendering" do
+    html = '<del datetime="2026-09-22" cite="https://example.com">removed</del><ins>added</ins><sub>low</sub><sup>high</sup><dl><dt>term</dt><dd>definition</dd></dl>'
+    creative = Creative.create!(user: users(:one), description: html)
+
+    [ creatives_path(id: creative.id), slide_view_creative_path(creative) ].each do |path|
+      get path
+      assert_response :success
+      document = Nokogiri::HTML.fragment(response.body)
+      assert_equal "2026-09-22", document.at_css("del")["datetime"]
+      assert_equal "https://example.com", document.at_css("del")["cite"]
+      %w[del ins sub sup dl dt dd].each do |tag|
+        assert document.at_css(tag), "expected #{tag} formatting in #{path}"
+      end
+    end
+  end
+
+  test "PPT metadata survives parent title and slide view rendering" do
+    creative = Creative.create!(user: users(:one), description: '<div class="ppt-slide" data-ppt-slide="2" data-ppt-width="12192000" data-ppt-height="6858000">Slide</div>')
+
+    [ creatives_path(id: creative.id), slide_view_creative_path(creative) ].each do |path|
+      get path
+      assert_response :success
+      slide = Nokogiri::HTML.fragment(response.body).at_css(".ppt-slide")
+      assert slide, "expected PPT slide in #{path}"
+      assert_equal "2", slide["data-ppt-slide"]
+      assert_equal "12192000", slide["data-ppt-width"]
+      assert_equal "6858000", slide["data-ppt-height"]
+    end
   end
 
   def creative_tree_stream_selector
@@ -302,6 +398,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creative-workspace-tree"
     assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-token-value]"
     assert_select "[data-controller='workspace-tree'][data-workspace-tree-last-visited-creative-visit-sequence-value]"
+    assert_select "[data-controller='workspace-tree'][data-workspace-tree-partial-failure-text-value=?]",
+      I18n.t("collavre.creatives.drag_drop.partial_failure")
     assert_select "[data-controller='last-visited-creative']", count: 0
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-last-visited-creative-visit-token][data-last-visited-creative-visit-sequence]"
@@ -314,6 +412,20 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select ".creative-workspace-shell > #{creative_tree_stream_selector}", count: 0
     assert_select ".creative-workspace-tree-region #{creative_tree_stream_selector}", count: 1
     assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
+  end
+
+  test "comments popup close control uses shared SVG action icons" do
+    get creatives_path(id: creatives(:root_parent))
+
+    assert_response :success
+    assert_select "#close-comments-btn.comments-popup-action.popup-close-btn" do
+      assert_select "[data-comments--popup-target='closeIcon'][aria-hidden='true'] svg.comments-popup-action-icon" do
+        assert_select "path[d='M6 6l12 12M6 18L18 6']"
+      end
+      assert_select "[data-comments--popup-target='expandDockedIcon'][aria-hidden='true'] svg.comments-popup-action-icon" do
+        assert_select "path[d='M15 6L9 12L15 18']"
+      end
+    end
   end
 
   test "workspace action paths preserve the engine mount prefix" do
@@ -386,10 +498,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a.creative-breadcrumb-current[href='#{creative_path(child)}'][data-turbo-action='replace'][data-turbo-prefetch='false']"
   end
 
-  test "workspace tree JSON returns collapsed roots including leaves" do
+  test "workspace tree JSON returns childless creatives at every expanded level" do
     branch = Creative.create!(user: users(:one), description: "Workspace branch")
     child = Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
-    Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
+    nested_leaf = Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
     leaf = Creative.create!(user: users(:one), description: "Workspace leaf")
 
     get creatives_path(format: :json, workspace_tree: 1)
@@ -399,6 +511,11 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     ids = payload.fetch("creatives").pluck("id")
     assert_includes ids, branch.id
     assert_includes ids, leaf.id
+    refute_includes ids, nested_leaf.id
+    leaf_payload = payload.fetch("creatives").find { |node| node.fetch("id") == leaf.id }
+    assert_equal creatives_path(id: leaf.id), leaf_payload.fetch("url")
+    refute leaf_payload.fetch("has_children")
+    assert_empty leaf_payload.fetch("children")
     branch_payload = payload.fetch("creatives").find { |node| node.fetch("id") == branch.id }
     assert_equal creatives_path(id: branch.id), branch_payload.fetch("url")
     assert_equal branch.creative_snippet, branch_payload.fetch("snippet")
@@ -412,6 +529,14 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     expanded_branch = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
     assert_equal [ child.id ], expanded_branch.fetch("children").pluck("id")
+
+    get creatives_path(format: :json, workspace_tree: 1, expand: [ branch.id, child.id ])
+
+    assert_response :success
+    expanded_branch = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
+    expanded_child = expanded_branch.fetch("children").find { |node| node.fetch("id") == child.id }
+    assert_equal [ nested_leaf.id ], expanded_child.fetch("children").pluck("id")
+    refute expanded_child.fetch("children").first.fetch("has_children")
   end
 
   test "workspace tree JSON ignores invalid and excessive expansion ids" do
@@ -761,6 +886,91 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     # later reloads, so the accessible name does not switch languages mid-session.
     assert_equal I18n.t("collavre.creatives.index.loading_creatives"),
       css_select("#creatives").first["data-creatives--tree-loading-text-value"]
+  end
+
+  # The inline destination input retains its label after selecting a creative.
+  test "index renders the move menu with a labelled destination control" do
+    get creatives_path(id: creatives(:childless_creative).id)
+
+    assert_response :success
+    assert_select "#creative-overflow-menu [data-creative-move-id]", count: 1
+    assert_select ".creative-tree-title [data-creative-move-id]", count: 0
+    assert_select "#creative-move-destination-label", text: I18n.t("collavre.dnd.destination")
+    assert_select "label[for='creative-move-destination']"
+    assert_select "input[data-creative-move-target='destination'][aria-controls='creative-move-results']"
+    assert_select "#creative-move-results[hidden]"
+  end
+
+  test "index supplies localized drag and drop failure copy" do
+    get creatives_path(id: creatives(:childless_creative).id)
+
+    assert_response :success
+    assert_select "[data-creatives--drag-drop-partial-failure-text-value=?]",
+      I18n.t("collavre.creatives.drag_drop.partial_failure")
+  end
+
+  test "header move action is hidden for inaccessible and missing requested creatives" do
+    inaccessible = Creative.create!(user: users(:two), description: "Private move source")
+    assert_not inaccessible.has_permission?(users(:one), :read)
+    # The first index visit lazily creates the user's Inbox, which claims the
+    # next sequence value. Reserve an id well past it so it stays missing.
+    missing_id = Creative.maximum(:id) + 1_000
+
+    [ inaccessible.id, missing_id ].each do |id|
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path(id: id), headers: headers
+
+        assert_response :success
+        assert_not Creative.exists?(missing_id)
+        assert_select "#creative-overflow-menu [data-creative-move-id]", count: 0
+      end
+    end
+  end
+
+  test "header move action is hidden on the actual root route" do
+    [ {}, { id: "" } ].each do |params|
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path, params: params, headers: headers
+
+        assert_response :success
+        assert_select "#creative-overflow-menu [data-creative-move-id]", count: 0
+        assert_select "#creative-overflow-menu #select-creative-btn", count: 1
+      end
+    end
+  end
+
+  test "archived parent retains a selection-only header action for active children" do
+    parent = Creative.create!(user: users(:one), description: "Archived parent", archived_at: Time.current)
+    child = Creative.create!(user: users(:one), parent: parent, description: "Active child")
+    assert_not child.archived?
+
+    [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+      get creatives_path(id: parent.id, show_archived: true), headers: headers
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id='']", count: 1
+      assert_select "#creative-overflow-menu [data-creative-move-id=?]", parent.id.to_s, count: 0
+    end
+  end
+
+  test "header move capability respects registered read-only sources and their linked shells" do
+    source_type = "header_move_read_only_source"
+    Creative.register_read_only_source(source_type)
+    source = Creative.create!(user: users(:one), description: "Managed source",
+      data: { "source" => { "type" => source_type } })
+    linked = Creative.create!(user: users(:one), origin: source)
+    writable = Creative.create!(user: users(:one), description: "Writable source")
+
+    [ [ source, false ], [ linked, false ], [ writable, true ] ].each do |creative, can_move|
+      assert creative.has_permission?(users(:one), :write)
+      get creatives_path(id: creative.id)
+
+      assert_response :success
+      assert_select "#creative-overflow-menu [data-creative-move-id=?][data-creative-move-writable=?]",
+        creative.id.to_s, can_move.to_s, count: 1
+    end
+  ensure
+    Creative.read_only_source_types.delete(source_type)
   end
 
   test "index renders an empty-state template outside the client-rendered tree" do

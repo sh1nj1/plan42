@@ -156,57 +156,13 @@ module Collavre
             return
           end
 
-          creative = topic.creative&.effective_origin
-          unless creative
-            render json: { error: "Creative not found" }, status: :not_found
-            return
-          end
-
-          unless creative.has_permission?(current_user, :feedback)
-            render json: { error: "Not authorized" }, status: :forbidden
-            return
-          end
-
-          agent = resolve_reply_agent(topic, params[:task_id])
-          unless agent
-            render json: { error: "Not authorized" }, status: :forbidden
-            return
-          end
-
-          # Atomically claim the delegated task BEFORE saving the reply.
-          # Two concurrent /reply requests with the same task_id can both
-          # pass resolve_reply_agent (which is a read-only scope check) and,
-          # without an atomic WHERE status='delegated' transition, both would
-          # save separate comments and both would run completion logic —
-          # producing duplicate linked replies for one dispatch. Claim first,
-          # save second, so the loser sees rows_updated == 0 and bails out
-          # before touching the comments table.
-          claimed_task = claim_delegated_task(agent, topic, params[:task_id])
-          if params[:task_id].present? && claimed_task.nil?
-            render json: { error: "Task already completed or not delegated" }, status: :conflict
-            return
-          end
-
-          comment = creative.comments.build(
-            content: params[:text].to_s,
-            topic: topic,
-            user: agent,
-            skip_default_user: true,
-            skip_dispatch: true
-          )
-
-          if comment.save
-            return head(:conflict) if claimed_task && !task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment)
-
-            dispatch_a2a(agent, comment, task: claimed_task)
-            render json: { comment_id: comment.id }, status: :created
-          else
-            # Restore the dispatch so the MCP client can retry — the failure
-            # is text-level (validation), not task-level. A concurrent Stop
-            # owns any terminal state, so it must not be resurrected here.
-            task_claim_service.restore_claim(task: claimed_task) if claimed_task
-            render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
-          end
+          result = AiAgent::TaskReplyService.new(
+            topic: topic, current_user: current_user, text: params[:text], requested_task_id: params[:task_id],
+            agent_resolver: method(:resolve_reply_agent), task_claimer: method(:claim_delegated_task),
+            claim_service: task_claim_service
+          ).call
+          dispatch_a2a(result.agent, result.comment.reload, task: result.task) if result.comment
+          render json: result.body, status: result.status
         end
 
         # POST /api/v1/agent/notify
@@ -399,7 +355,7 @@ module Collavre
         # must not silently post as primary_agent.
         def resolve_notify_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.awaiting_reply.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 
@@ -441,7 +397,7 @@ module Collavre
         # completed/cancelled. Return nil so reply renders 403.
         def resolve_reply_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.awaiting_reply.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 
@@ -478,7 +434,7 @@ module Collavre
         # this topic are unambiguously the ending session's — its session topic
         # is private to it.
         def cancel_tasks_for_topic(agent, topic)
-          cancel_pending_tasks(Task.where(topic_id: topic.id, status: %w[queued pending running]), agent)
+          cancel_pending_tasks(Task.where(topic_id: topic.id, status: %w[queued pending running suspended]), agent)
           cancel_delegated_tasks(Task.where(topic_id: topic.id, status: "delegated"), agent)
         end
 
@@ -491,14 +447,16 @@ module Collavre
 
           tracker = Orchestration::ResourceTracker.for(agent)
           tasks.find_each do |task|
-            task.update!(status: "cancelled", pending_tool_call: nil)
+            next unless task.cancel_if_active!(statuses: %w[delegated], pending_tool_call: nil)
+
             tracker.release!(task.id)
 
             Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
           end
         end
 
-        # Cancel pre-delegation tasks for this session's agent:
+        # Cancel pre-delegation and suspended tasks for this session's agent:
+        #   - suspended: explicitly ended turns must never resume on reconnect
         #   - queued: waiting in topic queue, no slot reserved
         #   - pending: between dequeue and AiAgentJob#perform, no slot reserved
         #   - running: AiAgentJob is mid-perform; for Claude Channel agents the
@@ -511,7 +469,7 @@ module Collavre
         # idempotent (Set#delete no-ops on missing key) and we don't know from
         # the DB whether AiAgentJob had already reached tracker.reserve!.
         def cancel_pending_tasks_for_session(agent)
-          cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running]), agent)
+          cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running suspended]), agent)
         end
 
         def cancel_pending_tasks(tasks, agent)
@@ -520,8 +478,10 @@ module Collavre
           tracker = Orchestration::ResourceTracker.for(agent)
           drained_topics = {}
           tasks.find_each do |task|
-            was_running = task.status == "running"
-            task.update!(status: "cancelled")
+            previous_status = task.cancel_if_active!(statuses: %w[queued pending running suspended])
+            next unless previous_status
+
+            was_running = previous_status == "running"
             tracker.release!(task.id) if was_running
             drained_topics[task.topic_id] ||= task.creative_id
           end
@@ -544,10 +504,10 @@ module Collavre
           AiAgent::A2aDispatcher.new(
             agent: agent,
             reply_comment: comment,
-            context: {
-              "creative" => { "id" => comment.creative_id },
-              "topic" => { "id" => comment.topic_id }
-            },
+            context: { "creative" => { "id" => comment.creative_id },
+              "topic" => { "id" => comment.topic_id },
+              SystemEvents::Envelope::KEY => task&.trigger_event_payload&.dig(SystemEvents::Envelope::KEY)
+            }.compact,
             workspace_user: workspace_user_for(task)
           ).dispatch
         end
@@ -587,7 +547,7 @@ module Collavre
         # test that patches AgentsController#claim_delegated_task to inject a race
         # keeps exercising the same seam.
         def claim_delegated_task(agent, topic, requested_task_id)
-          task_claim_service.claim(agent: agent, topic: topic, requested_task_id: requested_task_id)
+          task_claim_service.claim(agent:, topic:, requested_task_id:, requested_generation: params[:execution_generation])
         end
       end
     end

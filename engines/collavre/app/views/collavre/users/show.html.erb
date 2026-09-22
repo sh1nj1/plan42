@@ -104,6 +104,10 @@
           <%= f.check_box :creative_workspace_enabled, title: creative_workspace_hint %>
           <%= f.label :creative_workspace_enabled, t('collavre.users.creative_workspace.enabled'), title: creative_workspace_hint %>
         </div>
+        <div class="checkbox-field">
+          <%= f.check_box :justify_creative_descriptions %>
+          <%= f.label :justify_creative_descriptions, t('collavre.users.justify_creative_descriptions') %>
+        </div>
         <div>
           <%= f.label :locale, t('collavre.users.locale') %>
           <%= f.select :locale, I18n.available_locales.map { |loc| [t("collavre.users.locales.#{loc}"), loc] } %>
@@ -117,11 +121,14 @@
       <% end %>
 
       <div class="profile-actions">
+        <%= link_to t("collavre.llm_usages.title"), collavre.llm_usages_path %>
+        <br>
         <%= link_to t('collavre.users.change_password'), collavre.edit_password_user_path(@user) %>
         <br>
         <%= link_to t('collavre.users.webauthn.manage'), collavre.passkeys_user_path(@user) %>
         <br>
-        <%= link_to t('collavre.agent_gateways.manage'), collavre.agent_gateways_path %>
+        <%= link_to t('collavre.agent_gateways.manage'), collavre.agent_gateways_path,
+                    data: { turbo: false } %>
         <br>
         <% if @user == Current.user %>
           <%= button_to t('collavre.onboarding.reset'), collavre.reset_onboarding_path, method: :post, class: 'link-button' %>

@@ -37,6 +37,17 @@ module Collavre
         [ :update_owner, { creative_id: @creative.id, old_user_id: @owner.id, new_user_id: @other.id } ]
     end
 
+    test "changing owner reconciles that owner's stranded topic pointer" do
+      source = Creative.create!(user: @owner, description: "Pointer source", progress: 0.0)
+      topic = @creative.topics.create!(name: "Moved topic", user: @owner)
+      comment = Comment.create!(creative: @creative, topic: topic, user: @owner, content: "read comment")
+      pointer = CommentReadPointer.create!(user: @other, creative: source, topic: topic, last_read_comment: comment)
+
+      @creative.update!(user: @other)
+
+      assert_equal @creative.id, pointer.reload.creative_id
+    end
+
     test "an untracked attribute change enqueues no rebuild" do
       calls = capture_permission_cache_jobs do
         @creative.update!(description: "Renamed")

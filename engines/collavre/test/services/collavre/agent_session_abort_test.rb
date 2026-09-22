@@ -6,6 +6,16 @@ module Collavre
       AgentSessionAbort.registry.delete("test-vendor")
     end
 
+    test "normalizes vendors for registration and abort lookup" do
+      called = false
+      AgentSessionAbort.register(" Test-Vendor ", ->(**) { called = true })
+      agent = User.new(llm_vendor: " TEST-VENDOR ")
+
+      AgentSessionAbort.call(agent: agent, task: Object.new)
+
+      assert called
+    end
+
     test "dispatches to the handler registered for the agent's vendor (case-insensitive)" do
       received = nil
       AgentSessionAbort.register("test-vendor", lambda { |agent:, task:, creative:, comment:|

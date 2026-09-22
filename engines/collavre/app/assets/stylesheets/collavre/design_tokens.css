@@ -341,3 +341,21 @@ body.dark-mode {
     --color-drag-over-edge: var(--border-drag-edge);
   }
 }
+
+/* Tree D&D aliases resolve on the themed body, including user-defined themes. */
+:root,
+body {
+  --dnd-color: var(--color-active);
+  --dnd-target-bg: color-mix(in srgb, var(--color-active) 12%, transparent);
+  --dnd-edge-width: var(--border-2);
+  --dnd-radius: var(--radius-2);
+  --dnd-source-opacity: 0.55;
+  --dnd-child-icon-size: var(--text-3);
+  --dnd-child-icon-inset: var(--space-2);
+  --dnd-badge-bg: var(--surface-section);
+  --dnd-badge-text: var(--color-active);
+  --dnd-badge-font-size: var(--text-0);
+  --dnd-badge-padding: var(--border-2) var(--space-2);
+  --dnd-badge-offset: translate(-50%, -170%);
+  --dnd-indicator-layer: var(--layer-fullscreen);
+}

@@ -18,6 +18,12 @@ Rails.application.configure do
   # Configure public file server for tests with cache-control for performance.
   config.public_file_server.headers = { "cache-control" => "public, max-age=3600" }
 
+  # A local assets:precompile leaves a manifest under public/assets. Propshaft
+  # treats any manifest there as authoritative, so system tests can load stale
+  # CSS and JavaScript instead of the source under test. Give every test boot a
+  # fresh, non-public manifest path so its resolver always reads current assets.
+  config.assets.manifest_path = Rails.root.join("tmp/test-assets/#{Process.pid}/.manifest.json")
+
   # Show full error reports.
   config.consider_all_requests_local = true
   # config.cache_store = :null_store

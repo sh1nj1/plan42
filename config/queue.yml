@@ -34,6 +34,14 @@ default: &default
       threads: 1
       processes: 1
       polling_interval: 0.1
+    # Dedicated worker for gateway and vendor endpoint health probes. Probes
+    # spend seconds blocked on unreachable hosts, so they must not hold threads
+    # needed by user-facing jobs. Size this pool to drain all configured probes
+    # within their three-minute TTL; see docs/agent_gateway_health.md.
+    - queues: [gateway_health]
+      threads: <%= ENV.fetch("GATEWAY_HEALTH_THREADS", 12) %>
+      processes: 1
+      polling_interval: 0.5
 
 development:
   <<: *default

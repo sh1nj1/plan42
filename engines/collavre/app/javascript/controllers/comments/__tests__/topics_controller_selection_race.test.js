@@ -4,7 +4,7 @@
 
 import { jest } from '@jest/globals'
 
-const saveLastTopic = jest.fn().mockResolvedValue(undefined)
+const saveLastTopic = jest.fn().mockResolvedValue(true)
 
 jest.unstable_mockModule('../../../lib/api/topics', () => ({
   fetchNextTopicName: jest.fn(),
@@ -56,6 +56,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
   })
 
   afterEach(() => {
+    controller?.cancelPendingSaveLastTopic()
     document.body.innerHTML = ''
     document.head.innerHTML = ''
     application.stop()
@@ -119,6 +120,186 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
     await loading
 
     expect(controller.serverLastTopicId).toBe('3')
+  })
+
+  test('an unresolved Main fallback is not saved as All Messages', () => {
+    controller.mainTopicId = null
+    controller.serverLastTopicId = ''
+    const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+    controller.restoreSelection()
+
+    expect(controller.currentTopicId).toBe('')
+    expect(saveSpy).not.toHaveBeenCalled()
+  })
+
+  test('a deletion broadcast invalidates an older topic-list response', async () => {
+    let resolveStaleFetch
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
+    controller.serverLastTopicId = '2'
+
+    const loading = controller.loadTopics()
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+
+    resolveStaleFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 2,
+      }),
+    })
+    await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: null,
+        last_topic_all_messages: false,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.currentTopicId).toBe('1')
+    expect(controller.topics.map((topic) => topic.id)).toEqual([1, 3])
+    expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
+  })
+
+  test('a deletion broadcast invalidates a response already being decoded', async () => {
+    let resolveStaleFetch
+    let resolveJson
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
+    controller.serverLastTopicId = '2'
+
+    const loading = controller.loadTopics()
+    resolveStaleFetch({
+      ok: true,
+      status: 200,
+      json: () => new Promise((resolve) => { resolveJson = resolve }),
+    })
+    await Promise.resolve()
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+    resolveJson({
+      topics: TOPICS,
+      archived_topics: [],
+      can_manage: true,
+      main_topic_id: 1,
+      last_topic_id: 2,
+    })
+    await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: null,
+        last_topic_all_messages: false,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.currentTopicId).toBe('1')
+    expect(controller.topics.map((topic) => topic.id)).toEqual([1, 3])
+  })
+
+  test('an inactive deletion also replaces an in-flight stale topic list', async () => {
+    let resolveStaleFetch
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
+    controller.serverLastTopicId = '1'
+
+    const loading = controller.loadTopics()
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+    resolveStaleFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 1,
+      }),
+    })
+    await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 1,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.currentTopicId).toBe('1')
+    expect(controller.topics.map((topic) => topic.id)).toEqual([1, 3])
+  })
+
+  test('a deleted deep link does not replace its distinct saved preference with Main', async () => {
+    let resolveStaleFetch
+    let resolveReloadFetch
+    global.fetch = jest.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleFetch = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReloadFetch = resolve }))
+    controller.serverLastTopicId = '3'
+    controller.setOverrideTopicId('2')
+    const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+    const loading = controller.loadTopics()
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+
+    expect(controller.currentTopicId).toBe('3')
+    expect(saveSpy).not.toHaveBeenCalled()
+
+    resolveStaleFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: TOPICS,
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 3,
+      }),
+    })
+    await loading
+    resolveReloadFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        topics: [TOPICS[0], TOPICS[2]],
+        archived_topics: [],
+        can_manage: true,
+        main_topic_id: 1,
+        last_topic_id: 3,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.currentTopicId).toBe('3')
+    expect(saveSpy).not.toHaveBeenCalledWith('1')
   })
 
   // The strip can also be stale about its own creative: another member deletes
@@ -209,7 +390,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await loading
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null)
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null, expect.any(String), expect.anything())
     })
   })
 
@@ -262,8 +443,8 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await loading
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2')
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null)
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', null, expect.any(String), expect.anything())
     })
 
     // The pick supersedes the legacy value, so the key has served its purpose
@@ -301,8 +482,100 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await controller.loadTopics()
 
       expect(controller.currentTopicId).toBe('2')
-      expect(saveLastTopic).toHaveBeenCalledWith('42', '2')
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
       expect(localStorage.getItem(LEGACY_KEY)).toBeNull()
+    })
+  })
+
+  describe('a persisted All Messages selection', () => {
+    const loadEmptyPreference = ({ revision = 2, allMessages = true } = {}) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          topics: TOPICS,
+          archived_topics: [],
+          can_manage: true,
+          main_topic_id: 1,
+          last_topic_id: null,
+          last_topic_all_messages: allMessages,
+          last_topic_revision: [5, revision],
+        }),
+      })
+      return controller.loadTopics()
+    }
+
+    afterEach(() => localStorage.clear())
+
+    test('survives a later topic re-render', () => {
+      controller.selectTopic('')
+      controller._pendingPick = null
+
+      controller.handleTopicMessage({ action: 'updated', topic: { id: 1, name: 'Renamed Main' } })
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller.listTarget.querySelector('.topic-all-messages').classList)
+        .toContain('active')
+      expect(changeEvents.at(-1).topicId).toBe('')
+    })
+
+    test('is restored from an explicit server preference', async () => {
+      await loadEmptyPreference()
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller.listTarget.querySelector('.topic-all-messages').classList)
+        .toContain('active')
+      expect(changeEvents.at(-1).topicId).toBe('')
+    })
+
+    test('outranks the legacy localStorage migration', async () => {
+      localStorage.setItem('collavre_creative_42_last_topic', '2')
+      await loadEmptyPreference()
+
+      expect(controller.currentTopicId).toBe('')
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
+      expect(localStorage.getItem('collavre_creative_42_last_topic')).toBeNull()
+    })
+
+    test('a deletion or move tombstone still defaults to Main', async () => {
+      await loadEmptyPreference({ allMessages: false })
+
+      expect(controller.currentTopicId).toBe('1')
+      expect(controller.listTarget.querySelector('.topic-tag[data-id="1"]').classList)
+        .toContain('active')
+    })
+
+    test('does not write a deep link over the stored All Messages preference', async () => {
+      window.history.replaceState({}, '', '/creatives/42?topic_id=3')
+      const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+      await loadEmptyPreference()
+
+      expect(controller.currentTopicId).toBe('3')
+      expect(saveSpy).not.toHaveBeenCalled()
+      expect(controller._explicitAllMessagesSelection).toBe(true)
+    })
+
+    test('does not rewrite the preference for an empty deep-link override', async () => {
+      controller.setOverrideTopicId('')
+      const saveSpy = jest.spyOn(controller, 'debounceSaveLastTopic')
+
+      await loadEmptyPreference()
+
+      expect(controller.currentTopicId).toBe('')
+      expect(saveSpy).not.toHaveBeenCalled()
+      expect(controller._explicitAllMessagesSelection).toBe(true)
+    })
+
+    test('keeps All Messages behind a deleted deep-linked topic', () => {
+      controller.serverLastTopicId = ''
+      controller._explicitAllMessagesSelection = true
+      controller.setOverrideTopicId('2')
+
+      controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+
+      expect(controller.currentTopicId).toBe('')
+      expect(controller._explicitAllMessagesSelection).toBe(true)
     })
   })
 
@@ -356,7 +629,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await switching
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('99', '11')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('99', '11', expect.any(String), expect.anything())
     })
 
     // An empty pick is authoritative for the creative whose strip it was made
@@ -475,7 +748,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await loading
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String), expect.anything())
     })
 
     // A real pick has already won this load. A later restore is derived from
@@ -495,17 +768,17 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
 
       expect(controller.currentTopicId).toBe('3')
       await controller.flushSaveLastTopic(controller.currentTopicId)
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
     })
 
-    test('re-dispatches a picked All Messages after an interim restore', async () => {
+    test('keeps a picked All Messages through an interim restore', async () => {
       let resolveFetch
       global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
 
       const loading = controller.loadTopics()
       controller.selectTopic('')
       broadcastCreate()
-      expect(changeEvents.at(-1).topicId).toBe('1')
+      expect(changeEvents.at(-1).topicId).toBe('')
 
       respond(resolveFetch)
       await loading
@@ -579,7 +852,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
       await controller.flushSaveLastTopic(controller.currentTopicId)
 
       expect(controller.currentTopicId).toBe('2')
-      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2')
+      expect(saveLastTopic).toHaveBeenLastCalledWith('42', '2', expect.any(String), expect.anything())
     })
 
     // The same broadcast for a topic this user created elsewhere auto-selects
@@ -621,7 +894,7 @@ describe('TopicsController selection vs. in-flight loadTopics', () => {
 
     expect(controller.currentTopicId).toBe('3')
     await controller.flushSaveLastTopic(controller.currentTopicId)
-    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3')
+    expect(saveLastTopic).toHaveBeenLastCalledWith('42', '3', expect.any(String), expect.anything())
   })
 
   // Once that pick reaches the server, a later load is free to take the
@@ -900,28 +1173,41 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
     })
 
     afterEach(() => {
-      jest.runOnlyPendingTimers()
+      controller.cancelPendingSaveLastTopic()
+      jest.clearAllTimers()
       jest.useRealTimers()
     })
 
-    test('the deep link is not written back over the broadcast preference', () => {
+    test('cancels a zero-valued debounce handle after accepting a broadcast', () => {
+      const clearTimer = jest.spyOn(global, 'clearTimeout')
+      controller.setOverrideTopicId('3')
+      controller._saveLastTopicTimer = 0
+
+      controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
+
+      expect(clearTimer).toHaveBeenCalledWith(0)
+      expect(controller._saveLastTopicTimer).toBeNull()
+      clearTimer.mockRestore()
+    })
+
+    test('the deep link is not written back over the broadcast preference', async () => {
       window.history.replaceState({}, '', '/creatives/42?topic_id=3')
       controller.restoreSelection()
 
       controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
-      jest.advanceTimersByTime(500)
+      await jest.advanceTimersByTimeAsync(500)
 
-      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3')
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3', expect.any(String), expect.anything())
     })
 
     // The broadcast is the preference now; nothing this popup had queued
     // beforehand describes it, so nothing queued beforehand may be sent.
-    test('no save at all follows an accepted broadcast', () => {
+    test('no save at all follows an accepted broadcast', async () => {
       controller.setOverrideTopicId('3')
       controller.restoreSelection()
 
       controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
-      jest.advanceTimersByTime(500)
+      await jest.advanceTimersByTimeAsync(500)
 
       expect(saveLastTopic).not.toHaveBeenCalled()
       expect(controller.serverLastTopicId).toBe('2')
@@ -929,39 +1215,39 @@ describe('TopicsController deep-link sources vs. a preference broadcast', () => 
 
     // Cancelling is scoped to the accepted broadcast. A selection the user
     // makes afterwards is theirs, and still has to reach the server.
-    test('a pick after the broadcast still saves', () => {
+    test('a pick after the broadcast still saves', async () => {
       controller.setOverrideTopicId('3')
       controller.restoreSelection()
       controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
 
       controller.selectTopic('1')
-      jest.advanceTimersByTime(500)
+      await jest.advanceTimersByTimeAsync(500)
 
-      expect(saveLastTopic).toHaveBeenCalledWith('42', '1')
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '1', expect.any(String), expect.anything())
     })
 
     // With no link to hold the view, the broadcast is followed, and following
     // it re-arms the debounce with the broadcast's own value — so the timer
     // must not be left cancelled on that path.
-    test('a followed broadcast still persists its own value', () => {
+    test('a followed broadcast still persists its own value', async () => {
       controller.restoreSelection()
 
       controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
-      jest.advanceTimersByTime(500)
+      await jest.advanceTimersByTimeAsync(500)
 
-      expect(saveLastTopic).toHaveBeenCalledWith('42', '2')
+      expect(saveLastTopic).toHaveBeenCalledWith('42', '2', expect.any(String), expect.anything())
     })
 
-    test('a later restore leaves the broadcast preference behind the deep link', () => {
+    test('a later restore leaves the broadcast preference behind the deep link', async () => {
       controller.setOverrideTopicId('3')
       controller.handleTopicMessage({ action: 'last_topic_changed', last_topic_id: 2 })
 
       controller.handleTopicMessage({ action: 'updated', topic: { id: 1, name: 'Renamed Main' } })
-      jest.advanceTimersByTime(500)
+      await jest.advanceTimersByTimeAsync(500)
 
       expect(controller.currentTopicId).toBe('3')
       expect(controller.serverLastTopicId).toBe('2')
-      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3')
+      expect(saveLastTopic).not.toHaveBeenCalledWith('42', '3', expect.any(String), expect.anything())
     })
   })
 })

@@ -7,9 +7,9 @@ module Collavre
       @agent = User.create!(email: "agent-enum@example.com", password: TEST_PASSWORD, name: "Agent")
     end
 
-    test "status is a string-backed enum covering all nine values" do
+    test "status is a string-backed enum covering all ten values" do
       assert_equal(
-        %w[pending queued running delegated pending_approval done failed cancelled escalated].sort,
+        %w[pending queued running delegated pending_approval done failed cancelled escalated suspended].sort,
         Collavre::Task.statuses.keys.sort
       )
       # string-backed: key maps to identical string
@@ -33,6 +33,15 @@ module Collavre
     test "update_all bypasses callbacks and keeps the string value" do
       task = Task.create!(name: "T", status: "delegated", agent: @agent)
       Task.where(id: task.id).update_all(status: "done")
+      assert task.reload.done?
+    end
+
+    test "stale cancellation does not overwrite a completed task" do
+      task = Task.create!(name: "T", status: "running", agent: @agent)
+      stale_task = Task.find(task.id)
+      Task.where(id: task.id).update_all(status: "done")
+
+      assert_nil stale_task.cancel_if_active!
       assert task.reload.done?
     end
   end

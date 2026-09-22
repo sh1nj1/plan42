@@ -15,10 +15,34 @@ class PlansSystemTest < CollavrePlanSystemTestCase
   end
 
 
+  test "plans menu works after workspace creative navigation" do
+    @user.update!(creative_workspace_enabled: true, system_admin: true)
+    creative = Creative.create!(user: @user, description: "Navigation parent")
+    Creative.create!(user: @user, parent: creative, description: "Navigation child")
+    visit collavre.creatives_path
+    assert_selector "turbo-frame#creative-workspace-content"
+
+    page.execute_script("document.querySelector('.plans-menu-btn').dataset.navigationMarker = 'kept'")
+    destination = collavre.creatives_path(id: creative.id)
+    page.execute_script("window.Turbo.visit(arguments[0], { action: 'advance', frame: 'creative-workspace-content' })", destination)
+    assert_current_path destination
+    assert_selector "#creative-workspace-content", text: "Navigation child"
+    assert_selector ".plans-menu-btn[data-navigation-marker='kept']", visible: :all
+
+    find_all(".plans-menu-btn").first.click
+    assert_selector "#plans-list-area", visible: :visible
+    assert_selector "#plans-timeline[data-initialized='true']"
+    find_all(".plans-menu-btn").first.click
+    assert_no_selector "#plans-list-area", visible: :visible
+  end
+
   test "user can create a plan and see it on the timeline" do
     Creative.create!(user: @user, description: "Launch Creative")
 
     find_all(".plans-menu-btn").first.click
+
+    # The menu inserts the form before attaching its input handlers.
+    assert_selector "#plans-timeline[data-initialized='true']"
 
     # Click input to open search popup
     find("#plan-select-creative-input").click
@@ -46,6 +70,9 @@ class PlansSystemTest < CollavrePlanSystemTestCase
     creative = Creative.create!(user: @user, description: "Plan to be deleted")
 
     find_all(".plans-menu-btn").first.click
+
+    # The menu inserts the form before attaching its input handlers.
+    assert_selector "#plans-timeline[data-initialized='true']"
 
     # Click input to open search popup
     find("#plan-select-creative-input").click

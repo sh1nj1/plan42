@@ -1,6 +1,39 @@
 require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
+  test "creative description justification defaults on and casts disabled form values" do
+    user = User.new
+
+    assert user.justify_creative_descriptions?
+    user.justify_creative_descriptions = "0"
+    refute user.justify_creative_descriptions?
+  end
+
+  test "collapses line breaks in name to a single line" do
+    user = User.create!(email: "multiline_name@example.com", password: "password123", name: "Line\nBreak Agent")
+
+    assert_equal "Line Break Agent", user.name
+  end
+
+  test "collapses a line break run with surrounding spaces to one space" do
+    user = User.create!(email: "multiline_padded@example.com", password: "password123", name: "Line \r\n  Break")
+
+    assert_equal "Line Break", user.name
+  end
+
+  test "strips surrounding whitespace from name" do
+    user = User.create!(email: "padded_name@example.com", password: "password123", name: "  Padded Agent  ")
+
+    assert_equal "Padded Agent", user.name
+  end
+
+  test "keeps a blank name invalid rather than normalizing it into one" do
+    user = User.new(email: "blank_name@example.com", password: "password123", name: "\n \n")
+
+    assert_not user.valid?
+    assert_includes user.errors[:name], "can't be blank"
+  end
+
   test "requires valid email" do
     user = User.new(email: "bad", password: "password123", password_confirmation: "password123", name: "Bad")
     assert_not user.valid?
@@ -123,7 +156,7 @@ class UserTest < ActiveSupport::TestCase
       name: "Invalid CLI agent",
       email: "invalid-cli-agent@ai.local",
       password: SecureRandom.hex(24),
-      llm_vendor: "cli_proxy",
+      llm_vendor: " CLI_PROXY ",
       llm_model: "paperclip/claude_local",
       created_by_id: owner.id,
       agent_gateway: gateway
@@ -145,7 +178,7 @@ class UserTest < ActiveSupport::TestCase
       name: "Keyless CLI agent",
       email: "keyless-cli-agent@ai.local",
       password: SecureRandom.hex(24),
-      llm_vendor: "cli_proxy",
+      llm_vendor: " CLI_PROXY ",
       llm_model: "paperclip/claude_local",
       created_by_id: owner.id,
       agent_gateway: gateway
@@ -344,5 +377,128 @@ class UserTest < ActiveSupport::TestCase
     refute creative.has_permission?(agent, :feedback)
     assert creative.has_permission?(viewer, :read)
     refute agent.gateway_accessible_to?(viewer)
+  end
+
+  test "a gateway-backed agent is online when its gateway can still serve its engine" do
+    owner = users(:one)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner, name: "Presence proxy", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion", identity_secret: "i" * 32
+    )
+    claude_agent = create_cli_proxy_agent(owner, gateway, "paperclip/claude_local")
+    codex_agent = create_cli_proxy_agent(owner, gateway, "paperclip/codex_local")
+
+    assert_not claude_agent.agent_online?, "an unprobed gateway proves nothing"
+
+    gateway.update_columns(
+      health_status: 2,
+      health_checked_at: Time.current,
+      health_engines: {
+        "mode" => "host",
+        "items" => {
+          "claude" => { "state" => "authenticated" },
+          "codex" => { "state" => "unauthenticated" }
+        }
+      }
+    )
+
+    assert claude_agent.reload.agent_online?
+    assert_not codex_agent.reload.agent_online?,
+               "one logged-out engine must not carry the agents that do not use it"
+  end
+
+  test "agents with no liveness evidence are not asserted online" do
+    assert_not users(:ai_bot).agent_online?, "a hosted vendor API publishes nothing either way"
+    assert_not users(:one).agent_online?
+  end
+
+  test "a registered endpoint checker contributes fresh liveness state" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "openai")
+
+    assert_equal :unknown, agent.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    assert_equal :online, agent.reload.agent_liveness_status
+    assert_predicate agent, :agent_online?
+
+    agent.update_columns(endpoint_health_status: 2, endpoint_health_checked_at: Time.current)
+    assert_equal :offline, agent.reload.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 3, endpoint_health_checked_at: Time.current)
+    assert_equal :check_error, agent.reload.agent_liveness_status
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: 4.minutes.ago)
+    assert_equal :unknown, agent.reload.agent_liveness_status
+    assert_not agent.agent_online?
+  end
+
+  test "an unregistered checker stays unknown and never makes an agent online" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "vendor-without-checker")
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+
+    assert_not agent.endpoint_health_supported?
+    assert_equal :unknown, agent.reload.agent_liveness_status
+    assert_not agent.agent_online?
+  end
+
+  test "native RubyLLM vendors publish the cached endpoint verdict" do
+    agent = users(:ai_bot)
+    %w[google gemini anthropic].each do |vendor|
+      agent.update!(llm_vendor: vendor)
+      assert_predicate agent, :endpoint_health_supported?
+      agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+      assert_equal :online, agent.reload.agent_liveness_status
+    end
+  end
+
+  test "Claude Channel ignores API health and switching models invalidates the verdict" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "anthropic")
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    agent.update!(llm_model: "claude-code")
+    assert_predicate agent, :endpoint_health_unknown?
+    assert_nil agent.endpoint_health_checked_at
+    assert_not agent.endpoint_health_supported?
+
+    agent.update_columns(endpoint_health_status: 1, endpoint_health_checked_at: Time.current)
+    assert_equal :offline, agent.agent_liveness_status(live_claude_agent_ids: [])
+    assert_equal :online, agent.agent_liveness_status(live_claude_agent_ids: [ agent.id ])
+
+    agent.update!(llm_model: "claude-api-model")
+    assert_nil agent.endpoint_health_checked_at
+    assert_equal :unknown, agent.agent_liveness_status
+  end
+
+  test "changing endpoint configuration invalidates the cached verdict" do
+    agent = users(:ai_bot)
+    agent.update!(llm_vendor: "openai", gateway_url: "https://old.example.test/v1")
+    agent.update_columns(
+      endpoint_health_status: 1,
+      endpoint_health_checked_at: Time.current,
+      endpoint_health_error: "old"
+    )
+
+    agent.update!(gateway_url: "https://new.example.test/v1")
+
+    assert_predicate agent, :endpoint_health_unknown?
+    assert_nil agent.endpoint_health_checked_at
+    assert_nil agent.endpoint_health_error
+  end
+
+  private
+
+  def create_cli_proxy_agent(owner, gateway, model)
+    Collavre::User.create!(
+      name: "CLI Agent #{SecureRandom.hex(3)}",
+      email: "cli-#{SecureRandom.hex(4)}@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: model,
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
   end
 end

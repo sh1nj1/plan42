@@ -6,15 +6,12 @@ Collavre::Engine.routes.draw do
   # cards. Keys come from Collavre::FeatureCardRegistry, which rejects a key this
   # constraint could not route, so the two cannot drift apart.
   get "features", to: "features#index", as: :features
-  get "features/:key", to: "features#show", as: :feature,
-      constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
+  get "features/:key", to: "features#show", as: :feature, constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
 
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]
-  resources :agent_gateways, path: "settings/agent-gateways", except: :show do
-    post :check, on: :member
-  end
+  draw :account_settings
   get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
   post "desktop/setup/account", to: "desktop_setup#create_account", as: :desktop_setup_account
   post "desktop/setup/registration-token", to: "desktop_setup#registration_token", as: :desktop_setup_registration_token
@@ -43,17 +40,7 @@ Collavre::Engine.routes.draw do
       get :agent_connection, to: "agent_connections#show"
     end
   end
-  scope "users/:user_id/agent-connection", as: :agent_connection do
-    get :status, to: "agent_connections#status"
-    post "auth/:engine/sessions", to: "agent_connections#create_auth_session", as: :auth_sessions
-    get "auth/:engine/sessions/:session_id", to: "agent_connections#auth_session", as: :auth_session
-    post "auth/:engine/sessions/:session_id", to: "agent_connections#submit_auth_session"
-    delete "auth/:engine/sessions/:session_id", to: "agent_connections#cancel_auth_session"
-    post "provision/sync", to: "agent_connections#provision_sync", as: :provision_sync
-    post "provision/items/:type/:name/approve", to: "agent_connections#provision_approve", as: :provision_approve
-    delete "provision/items/:type/:name", to: "agent_connections#provision_delete", as: :provision_delete
-    post "rotate-tokens", to: "agent_connections#rotate_tokens", as: :rotate_tokens
-  end
+  draw :agent_connections
 
   get "/agents/:agent_id/workspaces/:token/provision.json",
       to: "agent_provisioning#manifest", as: :agent_provision_manifest, format: false
@@ -95,6 +82,8 @@ Collavre::Engine.routes.draw do
     end
   end
   resources :creatives do
+    resources :crons, only: %i[update destroy], param: :key
+    draw :creative_history
     resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
@@ -114,8 +103,7 @@ Collavre::Engine.routes.draw do
     resources :comments, only: [ :index, :create, :destroy, :show, :update ] do
       member do
         post :convert
-        post :approve
-        post :deny
+        %i[approve deny].each { |action| post action }
         patch :update_action
         delete :reactions, to: "comments/reactions#destroy"
         get :download_images
@@ -162,18 +150,14 @@ Collavre::Engine.routes.draw do
       patch :archive
       patch :unarchive
       get :slide_view
-      get :contexts
-      patch :update_contexts
-      patch :update_metadata
+      draw :creative_contexts
       patch :trigger_action
     end
   end
 
   resources :emails, only: [ :index, :show ]
   resource :invite, only: [ :show, :create ]
-
-  post "/creative_expanded_states/toggle", to: "user_creative_preferences#toggle"
-  patch "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", as: :update_last_topic
+  draw :creative_preferences
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
   post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
   delete "/notices", to: "notices#restore_all", as: :restore_notices
@@ -185,20 +169,7 @@ Collavre::Engine.routes.draw do
   # Agent API (Claude Channel MCP plugin)
   namespace :api do
     namespace :v1 do
-      post "agent/register", to: "agents#register"
-      post "agent/reply", to: "agents#reply"
-      post "agent/notify", to: "agents#notify"
-      delete "agent/:id", to: "agents#destroy"
-
-      # Mobile voice companion (Android): poll Inbox#System messages, read aloud,
-      # reply to the origin topic; a cold mic press starts work in Inbox#Main.
-      namespace :mobile do
-        post "voice_commands", to: "voice_commands#create"
-        get  "agent_events", to: "agent_events#index"
-        post "agent_events/:id/respond", to: "agent_events#respond"
-        post "agent_events/:id/read", to: "agent_events#read"
-        post "devices", to: "devices#create"
-      end
+      draw :agent_api
     end
   end
 

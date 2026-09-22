@@ -1,5 +1,7 @@
 require "collavre/sensitive_request_silencer"
 require "collavre/hashed_access_token_lookup"
+# Registers the ActionView hook that exposes `collavre_stylesheets` to hosts.
+require "collavre/stylesheets_helper"
 
 module Collavre
   class Engine < ::Rails::Engine
@@ -285,7 +287,7 @@ module Collavre
           key: :home,
           label: "app.home",
           type: :button,
-          path: -> { main_app.root_path },
+          path: -> { home_navigation_path }, html_class: "home-nav-button",
           priority: 110
         )
 

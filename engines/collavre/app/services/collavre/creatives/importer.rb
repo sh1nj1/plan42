@@ -1,3 +1,6 @@
+require "nokogiri"
+require "zip"
+
 module Collavre
 module Creatives
   class Importer
@@ -5,9 +8,10 @@ module Creatives
     class UnsupportedFile < Error; end
 
     MARKDOWN_MIME_TYPES = %w[text/markdown text/x-markdown application/octet-stream].freeze
-    PPT_MIME_TYPES = %w[
-      application/vnd.ms-powerpoint
+    PPTX_MIME_TYPES = %w[
       application/vnd.openxmlformats-officedocument.presentationml.presentation
+      application/octet-stream
+      application/vnd.ms-powerpoint
     ].freeze
 
     def initialize(file:, user:, parent: nil)
@@ -19,20 +23,30 @@ module Creatives
     def call
       raise Error, "File required" if file.blank?
 
-      case mime_type
-      when *MARKDOWN_MIME_TYPES
+      case extension
+      when ".md"
+        raise UnsupportedFile, "Invalid file type" unless MARKDOWN_MIME_TYPES.include?(mime_type)
+
         content = read_file_content
         MarkdownImporter.import(content, parent: parent, user: user, create_root: true)
-      when *PPT_MIME_TYPES
+      when ".pptx"
+        raise UnsupportedFile, "Invalid file type" unless PPTX_MIME_TYPES.include?(mime_type)
+
         PptImporter.import(file.tempfile, parent: parent, user: user, create_root: true, filename: file.original_filename)
       else
         raise UnsupportedFile, "Invalid file type"
       end
+    rescue Zip::Error, Nokogiri::XML::SyntaxError, PptImporter::InvalidArchive
+      raise UnsupportedFile, "Invalid file type"
     end
 
     private
 
     attr_reader :file, :user, :parent
+
+    def extension
+      File.extname(file.original_filename.to_s).downcase
+    end
 
     def mime_type
       file.content_type.presence || Rack::Mime.mime_type(File.extname(file.original_filename.to_s))

@@ -1,0 +1,40 @@
+<% unless pagination %><div class="creative-history-list" data-controller="creative-history"><% end %>
+  <% if change_sets.empty? && !pagination %>
+    <p class="creative-history-empty"><%= t("collavre.creative_history.empty") %></p>
+  <% end %>
+
+  <% change_sets.each do |change_set| %>
+    <% diff = Collavre::Creatives::ChangeSetDiff.new(change_set, user: Current.user) %>
+    <% next if diff.change_count.zero? %>
+    <article class="creative-history-item" data-change-set-id="<%= change_set.id %>" data-controller="creative-history">
+      <header class="creative-history-header">
+        <%= render Collavre::AvatarComponent.new(user: change_set.user, size: 20, classes: "avatar") %>
+        <strong><%= change_set.user&.display_name || t("collavre.comments.system_user") %></strong>
+        <time title="<%= l(change_set.created_at.in_time_zone, format: :chat_timestamp) %>"
+              datetime="<%= change_set.created_at.iso8601 %>">
+          · <%= t("datetime.ago", time: time_ago_in_words(change_set.created_at)) %>
+        </time>
+      </header>
+
+      <p class="creative-history-summary">
+        <%= (diff.fully_visible? ? change_set.summary : nil).presence || t("collavre.creative_history.default_summary") %>
+      </p>
+      <p class="creative-history-stats">
+        <%= t("collavre.creative_history.changed_count", count: diff.change_count) %>
+        <span class="creative-history-state"><%= t("collavre.creative_history.states.#{change_set.status}") %></span>
+      </p>
+
+      <details class="creative-history-detail" data-controller="creative-history-detail"
+               data-action="toggle->creative-history-detail#load"
+               data-creative-history-detail-url-value="<%= creative_change_set_path(creative, change_set) %>">
+        <summary><%= t("collavre.creative_history.view_diff") %></summary>
+        <div data-creative-history-detail-target="content" aria-live="polite"></div>
+        <p data-creative-history-detail-target="loading" hidden><%= t("collavre.creative_history.loading") %></p>
+        <div data-creative-history-detail-target="error" hidden role="alert">
+          <%= t("collavre.creative_history.load_error") %>
+          <button type="button" data-action="creative-history-detail#load"><%= t("collavre.creative_history.retry") %></button>
+        </div>
+      </details>
+    </article>
+  <% end %>
+<% unless pagination %></div><% end %>

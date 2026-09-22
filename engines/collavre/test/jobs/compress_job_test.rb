@@ -21,7 +21,12 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
       true
     end
 
-    Collavre::AiClient.stub(:new, mock_client) do
+    build_client = lambda do |**options|
+      assert_equal @user, options[:context][:requester]
+      assert_equal @topic.id, options[:context][:topic_id]
+      mock_client
+    end
+    Collavre::AiClient.stub(:new, build_client) do
       Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
     end
 
@@ -205,6 +210,49 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     # No summary comment should be created
     summary_comments = @creative.comments.where(topic: @topic).where.not(id: [ @comment1.id, @comment2.id, @comment3.id ])
     assert_empty summary_comments
+  end
+
+  test "does not persist a summary when the topic moves during the AI call" do
+    create_ai_agent_for_creative
+    destination = Collavre::Creative.create!(description: "Moved compression", user: @user)
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, "summary") do |_messages, **_kwargs, &block|
+      block.call("summary")
+      Collavre::Topics::TopicMove.new(topic: @topic, target_creative: destination).call
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    assert_equal destination.id, @topic.reload.creative_id
+    assert_equal [ @comment1.id, @comment2.id, @comment3.id ].sort,
+                 destination.comments.where(topic: @topic).pluck(:id).sort
+    assert_not Collavre::CommentSnapshot.where(topic: @topic).exists?
+  end
+
+  test "does not compress when a selected comment changes topics during the AI call" do
+    create_ai_agent_for_creative
+    other_topic = @creative.topics.create!(name: "Moved comment", user: @user)
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, "summary") do |_messages, **_kwargs, &block|
+      block.call("summary")
+      Collavre::CommentMoveService.new(creative: @creative, user: @user).call(
+        comment_ids: [ @comment2.id ], target_topic_id: other_topic.id
+      )
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    assert_equal other_topic.id, @comment2.reload.topic_id
+    assert Collavre::Comment.exists?(@comment1.id)
+    assert Collavre::Comment.exists?(@comment3.id)
+    assert_not Collavre::CommentSnapshot.where(topic: @topic).exists?
+    assert_equal 2, @creative.comments.where(topic: @topic).count
   end
 
   private

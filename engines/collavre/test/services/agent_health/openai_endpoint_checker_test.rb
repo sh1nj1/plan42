@@ -1,0 +1,253 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+module Collavre
+  module AgentHealth
+    class OpenaiEndpointCheckerTest < ActiveSupport::TestCase
+      Response = Struct.new(:code, :body, keyword_init: true)
+
+      class RecordingClient
+        attr_reader :url, :headers
+
+        def initialize(response: Response.new(code: 200), error: nil)
+          @response = response
+          @error = error
+        end
+
+        def get(url, headers:)
+          @url = url
+          @headers = headers
+          raise @error if @error
+
+          @response
+        end
+      end
+
+      setup do
+        @owner = users(:one)
+        @agent = Collavre::User.create!(
+          name: "Endpoint Agent",
+          email: "endpoint-agent@example.test",
+          password: SecureRandom.hex(24),
+          llm_vendor: "openai",
+          llm_model: "gpt-test",
+          llm_api_key: "secret-key",
+          gateway_url: "https://gateway.example.test/v1/",
+          created_by_id: @owner.id
+        )
+      end
+
+      test "checks the models endpoint with the configured bearer key" do
+        client = RecordingClient.new
+
+        result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+        assert_equal :online, result.status
+        assert_nil result.error
+        assert_equal "https://gateway.example.test/v1/models", client.url
+        assert_equal "Bearer secret-key", client.headers["Authorization"]
+        assert_equal "application/json", client.headers["Accept"]
+      end
+
+      test "uses the official endpoint and integration key when agent settings are blank" do
+        @agent.update!(gateway_url: nil, llm_api_key: nil)
+        client = RecordingClient.new
+
+        IntegrationSettings.stub(:fetch, "shared-key") do
+          OpenaiEndpointChecker.new(agent: @agent, client: client).call
+        end
+
+        assert_equal "https://api.openai.com/v1/models", client.url
+        assert_equal "Bearer shared-key", client.headers["Authorization"]
+      end
+
+      test "does not send authorization when a keyless endpoint is configured" do
+        @agent.update!(llm_api_key: nil)
+        client = RecordingClient.new
+
+        IntegrationSettings.stub(:fetch, "shared-key") do
+          OpenaiEndpointChecker.new(agent: @agent, client: client).call
+        end
+
+        assert_not client.headers.key?("Authorization")
+      end
+
+      test "uses the integration key for normalized forms of the official endpoint" do
+        [ "https://API.OPENAI.COM/v1", "https://api.openai.com:443/v1/" ].each do |gateway_url|
+          @agent.update!(gateway_url: gateway_url, llm_api_key: nil)
+          client = RecordingClient.new
+
+          IntegrationSettings.stub(:fetch, "shared-key") do
+            OpenaiEndpointChecker.new(agent: @agent, client: client).call
+          end
+
+          assert_equal "Bearer shared-key", client.headers["Authorization"], gateway_url
+        end
+      end
+
+      test "does not append models twice" do
+        @agent.update!(gateway_url: "https://gateway.example.test/v1/models")
+        client = RecordingClient.new
+
+        OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+        assert_equal "https://gateway.example.test/v1/models", client.url
+      end
+
+      test "uses native model endpoints and agent keys for all direct RubyLLM vendors" do
+        {
+          "google" => [ "https://generativelanguage.googleapis.com/v1beta/models", "x-goog-api-key" ],
+          "gemini" => [ "https://generativelanguage.googleapis.com/v1beta/models", "x-goog-api-key" ],
+          "anthropic" => [ "https://api.anthropic.com/v1/models", "x-api-key" ]
+        }.each do |vendor, (url, header)|
+          @agent.update!(llm_vendor: " #{vendor.upcase} ")
+          client = RecordingClient.new
+
+          IntegrationSettings.stub(:fetch, ->(*) { flunk "Agent key must take precedence" }) do
+            result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+            assert_equal :online, result.status
+          end
+
+          assert_equal url, client.url
+          assert_equal "secret-key", client.headers[header]
+          assert_not client.headers.key?("Authorization")
+          assert_equal "2023-06-01", client.headers["anthropic-version"] if vendor == "anthropic"
+        end
+      end
+
+      test "uses matching integration keys and RubyLLM base URLs for native providers" do
+        config = RubyLLM.config.dup
+        config.gemini_api_base = "https://gemini.example.test/v1beta/"
+        config.anthropic_api_base = "https://anthropic.example.test/"
+        {
+          "google" => [ :gemini_api_key, "https://gemini.example.test/v1beta/models", "x-goog-api-key" ],
+          "gemini" => [ :gemini_api_key, "https://gemini.example.test/v1beta/models", "x-goog-api-key" ],
+          "anthropic" => [ :anthropic_api_key, "https://anthropic.example.test/v1/models", "x-api-key" ]
+        }.each do |vendor, (setting, url, header)|
+          @agent.update!(llm_vendor: vendor, llm_api_key: nil)
+          client = RecordingClient.new
+          fetch = ->(key) { assert_equal setting, key; "vendor-shared-key" }
+
+          RubyLLM.stub(:config, config) do
+            IntegrationSettings.stub(:fetch, fetch) do
+              OpenaiEndpointChecker.new(agent: @agent, client: client).call
+            end
+          end
+
+          assert_equal url, client.url
+          assert_equal "vendor-shared-key", client.headers[header]
+        end
+      end
+
+      test "native authentication failures use the shared offline verdict" do
+        %w[google gemini anthropic].each do |vendor|
+          @agent.update!(llm_vendor: vendor, llm_api_key: nil)
+          client = RecordingClient.new(response: Response.new(code: 401))
+          result = IntegrationSettings.stub(:fetch, nil) do
+            OpenaiEndpointChecker.new(agent: @agent, client: client).call
+          end
+
+          assert_equal :offline, result.status
+          assert_equal "authentication_failed", result.error
+          assert_not client.headers.key?("x-goog-api-key")
+          assert_not client.headers.key?("x-api-key")
+        end
+      end
+
+      test "maps Google invalid-key 400 responses to authentication failure for both vendor aliases" do
+        body = { error: { status: "INVALID_ARGUMENT", details: [
+          { "@type" => "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" }
+        ] } }.to_json
+
+        [ " GOOGLE ", " Gemini " ].each do |vendor|
+          @agent.update!(llm_vendor: vendor)
+          client = RecordingClient.new(response: Response.new(code: 400, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :offline, result.status
+          assert_equal "authentication_failed", result.error
+        end
+      end
+
+      test "preserves unrelated or malformed Google 400 responses as unknown" do
+        @agent.update!(llm_vendor: "gemini")
+        bodies = [ nil, "", "not JSON", "null", "[]", "1", '"error"', "{}",
+          { error: nil }.to_json, { error: [] }.to_json,
+          { error: { details: nil } }.to_json, { error: { details: {} } }.to_json,
+          { error: { status: "INVALID_ARGUMENT" } }.to_json,
+          { error: { details: [ nil, "invalid", {}, { reason: "OTHER_REASON" } ] } }.to_json ]
+
+        bodies.each do |body|
+          client = RecordingClient.new(response: Response.new(code: 400, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :unknown, result.status, body.inspect
+          assert_equal "http_400", result.error, body.inspect
+        end
+      end
+
+      test "does not apply Google invalid-key body semantics to other vendors or HTTP statuses" do
+        body = { error: { details: [ { reason: "API_KEY_INVALID" } ] } }.to_json
+        [ [ "openai", 400 ], [ "anthropic", 400 ], [ "gemini", 422 ] ].each do |vendor, code|
+          @agent.update!(llm_vendor: vendor)
+          client = RecordingClient.new(response: Response.new(code: code, body: body))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal :unknown, result.status
+          assert_equal "http_#{code}", result.error
+        end
+      end
+
+      test "maps HTTP responses without making a completion request" do
+        expectations = {
+          204 => [ :online, nil ],
+          401 => [ :offline, "authentication_failed" ],
+          403 => [ :offline, "authentication_failed" ],
+          404 => [ :unknown, "models_endpoint_unsupported" ],
+          405 => [ :unknown, "models_endpoint_unsupported" ],
+          408 => [ :offline, "http_408" ],
+          425 => [ :offline, "http_425" ],
+          429 => [ :offline, "http_429" ],
+          503 => [ :offline, "http_503" ],
+          400 => [ :unknown, "http_400" ]
+        }
+
+        expectations.each do |code, (status, error)|
+          client = RecordingClient.new(response: Response.new(code: code))
+          result = OpenaiEndpointChecker.new(agent: @agent, client: client).call
+
+          assert_equal status, result.status, "HTTP #{code}"
+          error.nil? ? assert_nil(result.error, "HTTP #{code}") : assert_equal(error, result.error, "HTTP #{code}")
+        end
+      end
+
+      test "maps transport and oversized response errors" do
+        connection = RecordingClient.new(error: HttpClient::ConnectionError.new("secret host failed"))
+        oversized = RecordingClient.new(error: HttpClient::ResponseTooLarge.new("too large"))
+
+        assert_equal "connection_failed", OpenaiEndpointChecker.new(agent: @agent, client: connection).call.error
+        oversized_result = OpenaiEndpointChecker.new(agent: @agent, client: oversized).call
+        assert_equal :unknown, oversized_result.status
+        assert_equal "response_too_large", oversized_result.error
+      end
+
+      test "rejects malformed and policy-blocked endpoints" do
+        @agent.update!(gateway_url: "not a URL")
+        assert_equal "invalid_endpoint", OpenaiEndpointChecker.new(agent: @agent).call.error
+
+        non_admin = users(:two)
+        @agent.update!(created_by_id: non_admin.id, gateway_url: "http://127.0.0.1:11434/v1")
+        assert_equal "invalid_endpoint", OpenaiEndpointChecker.new(agent: @agent).call.error
+      end
+
+      test "applies endpoint policy for non-admin owners and bypasses it for administrators" do
+        assert_nil OpenaiEndpointChecker.new(agent: @agent, client: RecordingClient.new).send(:endpoint_policy)
+
+        @agent.update!(created_by_id: users(:two).id)
+        policy = OpenaiEndpointChecker.new(agent: @agent, client: RecordingClient.new).send(:endpoint_policy)
+        assert_instance_of CliProxy::EndpointPolicy, policy
+      end
+    end
+  end
+end

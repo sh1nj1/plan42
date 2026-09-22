@@ -3,6 +3,7 @@ module Collavre
     self.table_name = "users"
 
     include HasInboxCreative
+    include AgentLiveness
 
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
 
@@ -188,7 +189,7 @@ module Collavre
     end
 
     def cli_proxy_agent?
-      llm_vendor == "cli_proxy" && agent_gateway.present?
+      llm_vendor.to_s.strip.downcase == "cli_proxy" && agent_gateway.present?
     end
 
     def gateway_accessible_to?(user)
@@ -214,20 +215,19 @@ module Collavre
       agent_workspaces.where(agent_gateway_id: old_gateway_id).destroy_all
     end
 
-    def claude_channel_agent?
-      llm_model == "claude-code"
-    end
-
-    def claude_channel_online?
-      claude_channel_agent? && AgentSubscription.live.where(agent_id: id).exists?
-    end
-
     scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }
 
+    # No DISTINCT here on purpose. `or` merges two predicates over the same
+    # single table, so a row can match both branches but is still returned once.
+    # DISTINCT would only add a Postgres-only failure: `users` carries `json`
+    # columns (`tools`, `dismissed_notices`) and Postgres has no equality
+    # operator for `json`, so `SELECT DISTINCT users.*` raises
+    # PG::UndefinedFunction. Dev and test run SQLite, which accepts it, so the
+    # crash surfaces only in the deployed environment.
     def self.accessible_ai_agents_for(user)
       owned = ai_agents.where(created_by_id: user.id)
       searchable = ai_agents.where(searchable: true)
-      owned.or(searchable).distinct.order(:name)
+      owned.or(searchable).order(:name)
     end
 
     def self.mentionable_for(creative)
@@ -241,6 +241,12 @@ module Collavre
     end
 
     normalizes :email, with: ->(e) { e.strip.downcase }
+    # A name is written back as the canonical mention "@name:", and mention
+    # parsing stops a name at a line break so that a colon-free mention on one
+    # line cannot swallow the next line's mention. A stored line break would
+    # therefore make that user's own canonical mention unresolvable, so names
+    # are kept to a single line.
+    normalizes :name, with: ->(n) { n.to_s.gsub(/[^\S\r\n]*[\r\n]+[^\S\r\n]*/, " ").strip }
     normalizes :timezone, with: ->(tz) do
       tz = tz.to_s.strip
       next if tz.blank?
@@ -265,7 +271,7 @@ module Collavre
               inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
               allow_nil: true
     def cli_proxy_gateway_belongs_to_creator
-      return unless llm_vendor == "cli_proxy"
+      return unless llm_vendor.to_s.strip.downcase == "cli_proxy"
 
       validate_cli_proxy_gateway(agent_gateway)
     end
@@ -274,18 +280,16 @@ module Collavre
     # gateway checks immediately before writing the agent while holding the
     # same row lock used by a completion-key removal.
     def serialize_cli_proxy_gateway_assignment
-      return yield unless llm_vendor == "cli_proxy" && agent_gateway_id.present?
+      return yield unless llm_vendor.to_s.strip.downcase == "cli_proxy" && agent_gateway_id.present?
 
       gateway = AgentGateway.find_by(id: agent_gateway_id)
       return yield unless gateway
 
       gateway.with_lock do
-        begin
-          @cli_proxy_gateway_assignment_lock = gateway
-          yield
-        ensure
-          @cli_proxy_gateway_assignment_lock = nil
-        end
+        @cli_proxy_gateway_assignment_lock = gateway
+        yield
+      ensure
+        @cli_proxy_gateway_assignment_lock = nil
       end
     end
 

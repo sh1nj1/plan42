@@ -14,21 +14,31 @@ module Collavre
       #      echoes the dispatch's task_id). Without task_id (legacy clients),
       #      oldest-first.
       #   2. Inside a transaction: SELECT FOR UPDATE the row, re-check
-      #      status == 'delegated' under the lock, then transition it to
-      #      'running'.
+      #      status == 'delegated' under the lock, then update it to 'running'.
       #      Concurrent claimers block on the lock; the loser sees the
       #      already-flipped status post-lock and returns nil so the caller can
       #      refuse the duplicate.
-      # update_all (NOT update!) is required to skip Task's after_update_commit
-      # callbacks at claim time. The callbacks fire check_trigger_loop_completion
+      # running is a transient claimed-reply state. It remains active while the
+      # comment transaction commits, so TopicMove cannot slip between claim and
+      # finalize; another /reply cannot claim it because only delegated rows are
+      # eligible. update_all (NOT update!) is required to skip callbacks at
+      # claim time. The callbacks fire check_trigger_loop_completion
       # (which enqueues TriggerLoopCheckJob) and broadcast_stop_button_removal
       # (which reads reply_comment). Both depend on the reply comment already
       # existing — but reply() claims BEFORE comment.save to win the race against
-      # concurrent /reply calls. Keeping the task active until #finalize also
-      # prevents deferred onboarding cleanup from deleting the Creative before
-      # the reply can be persisted.
-      def claim(agent:, topic:, requested_task_id:)
-        scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
+      # concurrent /reply calls. If update! fired the trigger-loop check here, the
+      # job could run (cooldown_seconds: 0) before comment.save commits, find no
+      # agent comment, and leave the loop stuck in "running". #finalize replays
+      # both callbacks after the comment is persisted via
+      # Task#fire_completion_callbacks_after_external_claim.
+      #
+      # requested_generation (the dispatch's execution_generation, echoed back)
+      # must still be the task's current one: a reply from an attempt that was
+      # suspended and since resumed must not complete the resumed attempt.
+      def claim(agent:, topic:, requested_task_id:, requested_generation: nil)
+        # A dispatch suspended while it waited (its session went offline) is
+        # still answered by its reply when that finally lands.
+        scope = Task.awaiting_reply.where(agent_id: agent.id, topic_id: topic.id)
         candidate =
           if requested_task_id.present?
             scope.find_by(id: requested_task_id)
@@ -40,69 +50,75 @@ module Collavre
         claimed = nil
         Task.transaction do
           locked = Task.lock.find_by(id: candidate.id)
-          next unless locked && locked.status == "delegated"
+          next unless locked && Task.awaiting_reply.exists?(id: locked.id)
+          next unless Orchestration::ExecutionFence.current?(locked, requested_generation)
 
-          Task.where(id: locked.id).update_all(
-            status: "running",
-            pending_tool_call: nil,
-            trigger_event_payload: locked.trigger_event_payload.to_h.merge("external_reply_claimed" => true),
-            updated_at: Time.current
-          )
+          claimed_from[locked.id] = locked.status
+          Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil,
+                                           trigger_event_payload: (locked.trigger_event_payload || {}).merge("external_reply_claimed" => true),
+                                           updated_at: Time.current)
           claimed = locked.reload
         end
         claimed
       end
 
-      # Post-claim side effects, run only after the reply comment is saved. Links
-      # the comment to the claimed task, releases the ResourceTracker slot the
-      # AiAgentJob held under task.id, and drains the topic queue — mirroring
-      # AiAgentJob#perform's success path for non-delegated runs.
-      def finalize(agent:, task:, comment:)
-        comment.update_column(:task_id, task.id)
-
-        # Complete the task only after the reply is linked. This runs the normal
-        # completion callbacks after TriggerLoopCheckJob, stop-button updates,
-        # and deferred onboarding cleanup can safely observe the reply.
-        finalized = false
+      # Undo a claim whose reply could not be saved: the task goes back to what
+      # it was claimed from — delegated, or suspended while it waits to resume.
+      # Only while the claim still holds it: a Stop that cancelled the claimed
+      # row in the meantime wins.
+      def release(task)
         task.with_lock do
-          task.reload
-          next unless task.running?
-
-          task.update!(status: "done")
-          finalized = true
+          task.update!(status: claimed_from.fetch(task.id, "delegated")) if task.status == "running"
         end
-        unless finalized
-          # Claimed Claude Channel tasks have no worker left to release their
-          # slot. A concurrent Stop owns the terminal status, but this late
-          # reply still needs to free the handoff's resource reservation.
-          Orchestration::ResourceTracker.for(agent).release!(task.id)
-          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
-          return false
-        end
+      end
 
+      def link_reply(task:, comment:)
+        comment.update_column(:task_id, task.id)
+      end
+
+      # Finalize the claimed row inside TaskReplyService's topic-lock
+      # transaction. Completion effects are registered after commit, when the
+      # linked comment and done status are both visible. This leaves no gap for
+      # cancellation or TopicMove between reply persistence and completion.
+      # The effects release the ResourceTracker slot the
+      # AiAgentJob held under task.id, and drains the topic queue — mirroring AiAgentJob#perform's success path for
+      # non-delegated runs.
+      def finalize(agent:, task:, comment:)
+        completed = Task.where(id: task.id, status: "running")
+                        .update_all(status: "done", updated_at: Time.current)
+        raise ActiveRecord::RecordNotSaved, "claimed reply task was not running" unless completed == 1
+
+        task.reload
+        task.task_actions.create!(action_type: "completion", status: "done", payload: { comment_id: comment.id })
+        ActiveRecord.after_all_transactions_commit do
+          run_completion_effects(agent, task, comment)
+        end
+      end
+
+      private
+
+      def claimed_from
+        @claimed_from ||= {}
+      end
+
+      def run_completion_effects(agent, task, comment)
         Orchestration::ResourceTracker.for(agent).release!(task.id)
 
         Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+
+        # Replay the after_update_commit callbacks that were bypassed by
+        # update_all in #claim — now that the reply comment is linked,
+        # TriggerLoopCheckJob can read it and decide whether to advance/await/
+        # complete the drop-trigger loop, and the stop-button broadcast has a
+        # comment to render.
+        task.fire_completion_callbacks_after_external_claim
 
         # Clear the typing indicator immediately on reply. ClaudeChannelPresenceJob
         # would also stop on its next beat (task no longer "delegated"), but that
         # is up to HEARTBEAT_SECONDS away — broadcast idle now so the indicator
         # drops the moment Claude's reply lands.
         broadcast_claude_idle(agent, task, comment)
-        true
       end
-
-      # A rejected reply should make the delegated task available for retry, but
-      # only while this request still owns the claim. Stop may have changed the
-      # task to a terminal status while the comment was being validated.
-      def restore_claim(task:)
-        task.with_lock do
-          task.reload
-          task.update!(status: "delegated") if task.running?
-        end
-      end
-
-      private
 
       # Clear the chat typing indicator via the canonical status broadcaster (the
       # same one AiAgentService uses for every other agent), so the Claude path

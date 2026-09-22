@@ -106,7 +106,7 @@ describe('CommentsFormController stashed draft across a creative switch', () => 
     await flush()
 
     expect(textarea.value).toBe('')
-    expect(controller._stashedDraft).toBeNull()
+    expect(controller._drafts._stashedDraft).toBeNull()
   })
 
   test('still restores the draft when the same creative is reopened mid-flight', async () => {
@@ -161,6 +161,6 @@ describe('CommentsFormController stashed draft across a creative switch', () => 
     controller._restoreStashedDraft('')
 
     expect(textarea.value).toBe('')
-    expect(controller._stashedDraft).toBeNull()
+    expect(controller._drafts._stashedDraft).toBeNull()
   })
 })

@@ -17,8 +17,15 @@
       <rect x="3" y="3" width="7" height="5" rx="1"/>
       <rect x="14" y="10" width="7" height="5" rx="1"/>
       <rect x="14" y="17.5" width="7" height="5" rx="1" opacity="0.45"/>
-      <path d="M6.5 8v9a2 2 0 0 0 2 2H14M6.5 10.5V12.5"/>
-      <path d="M6.5 8v2.5a2 2 0 0 0 2 2H14"/>
+      <%# Trunk plus the elbow into the lower node. The elbow has to land on the
+          node's vertical centre (y=20 for a rect at y=17.5, height 5) — ending
+          at y=19 ran the connector into the node's rounded top-left corner,
+          which at this icon's 28px render size reads as a folded corner. %>
+      <path d="M6.5 8v10a2 2 0 0 0 2 2H14"/>
+      <%# Elbow into the upper node. It starts at the branch point instead of
+          re-drawing the trunk from y=8: two separately antialiased strokes over
+          the same pixels leave a visible step where the overlap ends. %>
+      <path d="M6.5 10.5a2 2 0 0 0 2 2H14"/>
     </svg>
   </div>
   <h3 class="creative-empty-state-heading"><%= heading %></h3>

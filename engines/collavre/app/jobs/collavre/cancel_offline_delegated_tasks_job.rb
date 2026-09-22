@@ -1,19 +1,8 @@
 # frozen_string_literal: true
 
 module Collavre
-  # Reconnect-grace cancellation for delegated tasks owned by a Claude Channel
-  # session whose WebSocket dropped without DELETE /api/v1/agent/:id.
-  #
-  # AgentChannel#unsubscribed makes the agent unroutable, but a task already
-  # in "delegated" still holds its ResourceTracker slot. The dispatch was
-  # broadcast to a now-dead stream, so no client remains to call /reply —
-  # without this job
-  # the slot stays held until StuckDetectorJob times out (minutes to hours).
-  #
-  # The grace delay lets transient WS blips self-heal: if the client
-  # reconnects before the job fires, AgentChannel#subscribe_to_agent_stream
-  # creates a fresh live presence row and writes a fresh subscription token.
-  # The job's online-state recheck then no-ops.
+  # Preserve interrupted channel work after the reconnect grace period. The
+  # historical job name is retained for jobs already persisted in Solid Queue.
   class CancelOfflineDelegatedTasksJob < ApplicationJob
     queue_as :default
 
@@ -23,83 +12,50 @@ module Collavre
       agent = User.find_by(id: agent_id)
       return unless agent&.claude_channel_agent?
 
-      # Session-scoped variant: a live sibling may keep the shared agent
-      # routable (so the agent-wide rechecks below would no-op), but the
-      # dropped session's OWN session topic is private to it — siblings filter
-      # session_topic dispatches to their own topic, so none will /reply. Cancel
-      # only that topic's delegated work. Enqueued by AgentChannel#unsubscribed
-      # when a sibling remains; mirrors the destroy path's cancel_tasks_for_topic.
-      return cancel_dropped_session_tasks(agent, session_id) if session_id.present?
+      # Presence and suspension must serialize with subscribe/unsubscribe. A
+      # reconnect either prevents suspension or observes it and schedules resume.
+      deferred_until = nil
+      agent.with_lock do
+        AgentSubscription.reap_stale!(agent.id)
+        tasks = offline_tasks(agent, expected_token, session_id)
+        next unless tasks
 
-      # A session (reconnect or a still-live sibling sharing this agent) holds
-      # a LIVE presence row — the agent is online, its delegated work is still
-      # owned. Presence is the authority now that one agent fans out to many
-      # concurrent sessions. Reap crash-orphaned rows first so a dead process's
-      # leftover row can't masquerade as a live session and strand this work.
-      AgentSubscription.reap_stale!(agent.id)
-      return if AgentSubscription.live.where(agent_id: agent.id).exists?
-
-      # A different subscription has taken over (token rotated). The new
-      # session's lifecycle owns its own cancellation; don't double-cancel.
-      if expected_token.present? &&
-         agent.routing_subscription_token.present? &&
-         agent.routing_subscription_token != expected_token
-        return
+        deferred_until = suspend_due_tasks(tasks)
       end
-
-      cancel_delegated_tasks(Task.where(agent_id: agent.id, status: "delegated"), agent)
+      self.class.set(wait_until: deferred_until).perform_later(agent_id, expected_token, session_id) if deferred_until
     end
 
     private
 
-    # Cancel only the dropped session's own session-topic delegated work, unless
-    # this same session reconnected within the grace window (a fresh live row
-    # under the same session_id). Work on OTHER topics is fan-out — any live
-    # sibling can still claim it — so it is deliberately left untouched.
-    def cancel_dropped_session_tasks(agent, session_id)
-      AgentSubscription.reap_stale!(agent.id)
-      return if AgentSubscription.live.where(agent_id: agent.id, session_id: session_id).exists?
-
-      topic = Topic.find_by(primary_agent_id: agent.id, session_id: session_id)
-      return unless topic
-
-      # Cancel queued/pending/running work FIRST. Otherwise cancelling the
-      # delegated task below calls dequeue_next_for_topic, which promotes the next
-      # queued task on this session topic into "delegated" and broadcasts it — but
-      # the session that owned this private topic is gone and siblings filter
-      # session_topic dispatches to their own topic, so nothing would /reply and
-      # the promoted task would hold its slot until stuck recovery. Draining the
-      # queue first leaves nothing to promote. Mirrors cancel_tasks_for_topic.
-      cancel_pending_tasks(
-        Task.where(agent_id: agent.id, topic_id: topic.id, status: %w[queued pending running]), agent
-      )
-      cancel_delegated_tasks(
-        Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated"), agent
-      )
-    end
-
-    def cancel_pending_tasks(tasks, agent)
-      return if tasks.empty?
-
-      tracker = Orchestration::ResourceTracker.for(agent)
-      tasks.find_each do |task|
-        was_running = task.status == "running"
-        task.update!(status: "cancelled")
-        tracker.release!(task.id) if was_running
-      end
-    end
-
-    def cancel_delegated_tasks(tasks, agent)
-      return if tasks.empty?
-
-      tracker = Orchestration::ResourceTracker.for(agent)
-      tasks.find_each do |task|
-        task.update!(status: "cancelled")
-        tracker.release!(task.id)
-
-        if task.topic_id.present?
-          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+    def suspend_due_tasks(tasks)
+      deadlines = []
+      %w[queued pending running delegated].each do |status|
+        tasks.where(status: status).find_each do |task|
+          deadline = Orchestration::OfflineTaskGrace.deadline(task)
+          if deadline > Time.current
+            deadlines << deadline
+          else
+            Orchestration::TaskResumer.suspend!(task, reason: "agent_offline")
+          end
         end
+      end
+      deadlines.min
+    end
+
+    def offline_tasks(agent, expected_token, session_id)
+      live = AgentSubscription.live.where(agent_id: agent.id)
+      if session_id.present?
+        return if live.where(session_id: session_id).exists?
+        topic = Topic.find_by(primary_agent_id: agent.id, session_id: session_id)
+        return unless topic
+
+        Task.where(agent_id: agent.id, topic_id: topic.id, status: %w[queued pending running delegated])
+      else
+        return if live.exists?
+        return if expected_token.present? && agent.routing_subscription_token.present? &&
+          agent.routing_subscription_token != expected_token
+
+        Task.where(agent_id: agent.id, status: %w[queued pending running delegated])
       end
     end
   end

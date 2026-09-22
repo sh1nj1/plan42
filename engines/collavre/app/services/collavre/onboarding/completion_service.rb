@@ -44,7 +44,9 @@ module Collavre
 
       def session_items(session_id)
         user.creatives.select do |creative|
-          creative_session_id = creative.data&.dig("onboarding", "session_id")
+          next false unless Ownership.owned?(creative)
+
+          creative_session_id = Ownership.metadata(creative)["session_id"]
           creative_session_id.present? && (session_id.nil? || creative_session_id == session_id)
         end
       end

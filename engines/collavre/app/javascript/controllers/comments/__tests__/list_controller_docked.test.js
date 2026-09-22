@@ -90,4 +90,26 @@ describe('CommentsListController docked startup', () => {
 
     expect(controller.listTarget.innerHTML).toBe('')
   })
+
+  test('flushes a pending read safely when the CSRF meta tag is absent', () => {
+    const controller = Object.create(CommentsListController.prototype)
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    controller.creativeId = '12'
+    controller.currentTopicId = ''
+    controller.pendingRead = { creativeId: '12', topicId: null, topicIds: null, topicWatermarks: null }
+    Object.defineProperty(controller, 'element', { value: element })
+    const originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: new Headers() })
+    document.querySelector('meta[name="csrf-token"]')?.remove()
+
+    expect(() => controller.flushPendingRead()).not.toThrow()
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/comment_read_pointers/update',
+      expect.objectContaining({ method: 'POST' })
+    )
+
+    global.fetch = originalFetch
+    element.remove()
+  })
 })

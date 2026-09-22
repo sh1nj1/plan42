@@ -24,14 +24,9 @@ module Collavre
       loop_config = child_creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "running"
 
-      # Use the task's topic directly — not a stored topic_id which can become stale
-      topic = Topic.find_by(id: task.topic_id)
+      topic = trigger_completion_topic(task, loop_config)
       return unless topic
-
-      # Only evaluate tasks from the loop's trigger topic to prevent
-      # cross-topic contamination from unrelated AI conversations
-      trigger_topic_id = loop_config["trigger_topic_id"]
-      return if trigger_topic_id.present? && trigger_topic_id != task.topic_id
+      return if finish_abandoned_replay(task, child_creative, topic)
 
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
@@ -47,7 +42,7 @@ module Collavre
       # LLM fallback: when agent doesn't use [STATUS: ...] tags, ask LLM
       # to determine whether the work is actually done.
       if status == :no_tag
-        status = llm_fallback_evaluate(child_creative, parent_creative, last_agent_comment)
+        status = llm_fallback_evaluate(child_creative, parent_creative, last_agent_comment, task)
       end
 
       case status
@@ -223,7 +218,7 @@ module Collavre
       Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
     PROMPT
 
-    def llm_fallback_evaluate(child_creative, parent_creative, agent_comment)
+    def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
       verifier = pick_fallback_agent(parent_creative)
 
       unless verifier
@@ -251,7 +246,7 @@ module Collavre
         system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
         llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
         gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: {}
+        context: { agent: verifier, usage_source_task: task }
       )
 
       response_text = +""

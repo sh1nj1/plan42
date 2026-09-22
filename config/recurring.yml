@@ -1,4 +1,13 @@
 production: &production
+  interrupted_task_recovery:
+    class: Collavre::RecoverInterruptedTasksJob
+    schedule: every minute
+  offline_task_recovery:
+    class: Collavre::OfflineTaskSweepJob
+    schedule: every minute
+  workflow_recovery:
+    class: Collavre::WorkflowSweepJob
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -7,16 +16,41 @@ production: &production
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  gateway_health_sweep:
+    class: Collavre::GatewayHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
+  endpoint_health_sweep:
+    class: Collavre::EndpointHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
   restore_dropped_dispatches:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
     schedule: every 10 minutes
+  resume_suspended_tasks:
+    class: Collavre::ResumeSuspendedTasksJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day
 
 desktop:
+  interrupted_task_recovery:
+    class: Collavre::RecoverInterruptedTasksJob
+    schedule: every minute
+  offline_task_recovery:
+    class: Collavre::OfflineTaskSweepJob
+    schedule: every minute
+  workflow_recovery:
+    class: Collavre::WorkflowSweepJob
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -25,16 +59,41 @@ desktop:
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  gateway_health_sweep:
+    class: Collavre::GatewayHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
+  endpoint_health_sweep:
+    class: Collavre::EndpointHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
   restore_dropped_dispatches:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
     schedule: every 10 minutes
+  resume_suspended_tasks:
+    class: Collavre::ResumeSuspendedTasksJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day
 
 development:
+  interrupted_task_recovery:
+    class: Collavre::RecoverInterruptedTasksJob
+    schedule: every minute
+  offline_task_recovery:
+    class: Collavre::OfflineTaskSweepJob
+    schedule: every minute
+  workflow_recovery:
+    class: Collavre::WorkflowSweepJob
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -43,11 +102,27 @@ development:
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  gateway_health_sweep:
+    class: Collavre::GatewayHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
+  endpoint_health_sweep:
+    class: Collavre::EndpointHealthSweepJob
+    queue: gateway_health
+    schedule: every minute
   restore_dropped_dispatches:
     class: Collavre::RestoreDroppedDispatchesJob
     queue: default
     schedule: every 10 minutes
+  resume_suspended_tasks:
+    class: Collavre::ResumeSuspendedTasksJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
     schedule: at 4am every day
+  creative_history_prune:
+    class: Collavre::CreativeHistoryPruneJob
+    queue: default
+    schedule: at 4:30am every day

@@ -64,17 +64,11 @@ module Creatives
     end
 
     def any_filter_active?
-      params[:tags].present? ||
-        params[:min_progress].present? ||
-        params[:max_progress].present? ||
-        params[:search].present? ||
-        params[:comment] == "true" ||
-        params[:has_comments].present? ||
-        params[:due_before].present? ||
-        params[:due_after].present? ||
-        params[:has_due_date].present? ||
-        params[:assignee_id].present? ||
-        params[:unassigned].present?
+      FilterState.new(params).active?
+    end
+
+    def flat_filter_results?
+      (params[:search].present? || params[:reaction_emoji].present? || params[:comment] == "true") && params[:search_mode] != "tree"
     end
 
     def handle_filtered_query
@@ -97,7 +91,7 @@ module Creatives
       # For search/comment filters, return matched items directly (flat results sorted by relevance)
       # Unless search_mode=tree is specified, which returns tree structure instead
       # For other filters (tags, progress), return tree start nodes
-      if (params[:search].present? || params[:comment] == "true") && params[:search_mode] != "tree"
+      if flat_filter_results?
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil
 
         if params[:comment] == "true"

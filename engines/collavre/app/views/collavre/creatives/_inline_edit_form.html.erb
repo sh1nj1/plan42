@@ -12,6 +12,8 @@
     <input type="hidden" id="inline-after-id" name="after_id" />
     <input type="hidden" id="inline-child-id" name="child_id" />
     <input type="hidden" id="inline-origin-id" name="creative[origin_id]" />
+    <input type="hidden" id="inline-history-anchor-id" name="history_anchor_id" value="<%= @parent_creative&.id %>" />
+    <input type="hidden" id="inline-change-group-token" name="change_group_token" value="<%= SecureRandom.uuid %>" />
     <div id="lexical-inline-editor"
          data-lexical-editor-root
          class="lexical-inline-editor"
@@ -27,7 +29,7 @@
            data-placeholder="<%= t('collavre.creatives.inline_editor.markdown_preview_placeholder') %>"></div>
     </div>
     <div id="actions-inline-editor" style="padding: 0px 8px;">
-      <div style="margin-top:0.5em;display:flex;align-items:center;gap:0.5em;">
+      <div style="margin-top:0.5em;display:flex;flex-wrap:wrap;align-items:center;gap:0.5em;">
         <input type="hidden" name="creative[progress]" value="0">
         <label for="inline-creative-progress" style="display:flex;align-items:center;gap:0.4em;">
           <input type="checkbox"
@@ -39,6 +41,7 @@
                  data-children-alert-message="<%= t('collavre.creatives.index.progress_complete_children_alert') %>">
           <span id="inline-progress-value"><%= t('collavre.creatives.index.progress_incomplete') %></span>
         </label>
+        <%= render "collavre/creatives/type_selector" %>
         <button type="button" id="inline-metadata-btn" class="creative-action-btn" title="<%= t('collavre.creatives.index.metadata_tooltip') %>" style="margin-left:0.5em;font-family:monospace;font-size:0.9em;">
           { }
         </button>

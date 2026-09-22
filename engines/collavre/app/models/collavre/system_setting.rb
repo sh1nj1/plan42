@@ -47,6 +47,12 @@ module Collavre
     # bounds only a single request inside it.
     DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS = 3600
 
+    # Default creative history retention settings
+    DEFAULT_CREATIVE_HISTORY_RETENTION_COUNT = 50
+    DEFAULT_CREATIVE_HISTORY_RETENTION_DAYS = 90
+    MIN_CREATIVE_HISTORY_RETENTION_COUNT = 10
+    MIN_CREATIVE_HISTORY_RETENTION_DAYS = 7
+
     # Default creative display settings (system-wide)
     DEFAULT_DISPLAY_LEVEL = 6
     DEFAULT_COMPLETION_MARK = ""
@@ -72,6 +78,7 @@ module Collavre
         api_rate_limit api_rate_period_minutes auth_providers_disabled
         creatives_login_required home_page_path home_page_path_authenticated default_light_theme_id default_dark_theme_id
         display_level completion_mark llm_request_timeout_seconds ai_agent_turn_deadline_seconds
+        creative_history_retention_count creative_history_retention_days
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -211,6 +218,16 @@ module Collavre
     def self.ai_agent_turn_deadline_seconds
       value = cached_value("ai_agent_turn_deadline_seconds")&.to_i
       value.nil? || value < 60 ? DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS : value
+    end
+
+    def self.creative_history_retention_count
+      value = cached_value("creative_history_retention_count")&.to_i
+      value.nil? || value < MIN_CREATIVE_HISTORY_RETENTION_COUNT ? DEFAULT_CREATIVE_HISTORY_RETENTION_COUNT : value
+    end
+
+    def self.creative_history_retention_days
+      value = cached_value("creative_history_retention_days")&.to_i
+      value.nil? || value < MIN_CREATIVE_HISTORY_RETENTION_DAYS ? DEFAULT_CREATIVE_HISTORY_RETENTION_DAYS : value
     end
   end
 end

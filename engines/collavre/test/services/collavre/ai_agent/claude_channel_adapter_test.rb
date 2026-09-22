@@ -75,6 +75,23 @@ module Collavre
         dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
         assert_not_nil dispatch
         assert_equal task.id, dispatch[:data][:task_id]
+        assert_nil dispatch[:data][:execution_generation]
+      end
+
+      test "broadcast carries the task's execution generation for the reply to echo" do
+        task = Collavre::Task.create!(
+          name: "Response to comment_created", status: "running", trigger_event_name: "comment_created",
+          agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: Orchestration::ExecutionFence.stamp(@context)
+        )
+
+        broadcasts = []
+        ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+          ClaudeChannelAdapter.new(agent: @agent, context: @context, task: task).deliver
+        end
+
+        dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+        assert_equal Orchestration::ExecutionFence.generation(task), dispatch[:data][:execution_generation]
       end
 
       test "broadcast task_id is nil when task is not provided" do
@@ -114,6 +131,82 @@ module Collavre
         assert_equal false, dispatch[:data][:session_topic]
       end
 
+      test "handoff is started durably before either broadcast and completed afterwards" do
+        task, adapter = tracked_dispatch
+        count = 0
+        ActionCable.server.stub :broadcast, ->(*) {
+          count += 1
+          assert_equal "started", task.reload.trigger_event_payload.dig("channel_handoff", "state")
+        } do
+          adapter.deliver
+        end
+        assert_equal 2, count
+        assert_equal "completed", task.reload.trigger_event_payload.dig("channel_handoff", "state")
+        assert_equal "attempt", task.trigger_event_payload.dig("channel_handoff", "generation")
+      end
+
+      test "broadcast failure leaves uncertain handoff started so recovery cannot replay it" do
+        task, adapter = tracked_dispatch
+        ActionCable.server.stub :broadcast, ->(*) { raise IOError, "connection lost" } do
+          assert_raises(IOError) { adapter.deliver }
+        end
+        assert_equal "started", task.reload.trigger_event_payload.dig("channel_handoff", "state")
+      end
+
+      test "partial broadcast failure also leaves handoff started" do
+        task, adapter = tracked_dispatch
+        agent_deliveries = 0
+        AgentChannel.stub :broadcast_to_agent, ->(*) { agent_deliveries += 1 } do
+          AgentChannel.stub :broadcast_to_topic, ->(*) { raise IOError, "topic stream lost" } do
+            assert_raises(IOError) { adapter.deliver }
+          end
+        end
+        assert_equal 1, agent_deliveries
+        assert_equal "started", task.reload.trigger_event_payload.dig("channel_handoff", "state")
+      end
+
+      test "old adapter completion cannot overwrite a replacement generation" do
+        task, adapter = tracked_dispatch
+        AgentChannel.stub :broadcast_to_agent, ->(*) {
+          task.update!(trigger_event_payload: { "execution_generation" => "replacement",
+            "channel_handoff" => { "generation" => "replacement", "state" => "pending" } })
+        } do
+          AgentChannel.stub(:broadcast_to_topic, nil) { adapter.deliver }
+        end
+        assert_equal({ "generation" => "replacement", "state" => "pending" },
+          task.reload.trigger_event_payload["channel_handoff"])
+      end
+
+      test "repeated delivery cannot broadcast the same tracked attempt twice" do
+        _task, adapter = tracked_dispatch
+        count = 0
+        ActionCable.server.stub :broadcast, ->(*) { count += 1 } do
+          2.times { adapter.deliver }
+        end
+        assert_equal 2, count
+      end
+
+      test "cancelled or replaced attempt cannot start its handoff" do
+        task, adapter = tracked_dispatch
+        task.update!(status: "cancelled")
+        ActionCable.server.stub :broadcast, ->(*) { flunk "cancelled attempt broadcast" } do
+          assert_not adapter.deliver
+        end
+        task.update!(status: "delegated", trigger_event_payload: { "execution_generation" => "replacement" })
+        ActionCable.server.stub :broadcast, ->(*) { flunk "stale attempt broadcast" } do
+          assert_not adapter.deliver
+        end
+      end
+
+      test "immediate reply during broadcast cannot be overwritten by handoff completion" do
+        task, adapter = tracked_dispatch
+        ActionCable.server.stub :broadcast, ->(*) { task.update!(status: "done") } do
+          adapter.deliver
+        end
+        assert_equal "done", task.reload.status
+        assert_equal "started", task.trigger_event_payload.dig("channel_handoff", "state")
+      end
+
       test "raises UndeliverableError when topic_id is missing" do
         adapter = ClaudeChannelAdapter.new(
           agent: @agent,
@@ -121,6 +214,16 @@ module Collavre
         )
 
         assert_raises(ClaudeChannelAdapter::UndeliverableError) { adapter.deliver }
+      end
+      private
+
+      def tracked_dispatch
+        task = Task.create!(name: "Tracked channel dispatch", status: "delegated", agent: @agent,
+          topic_id: @topic.id, creative_id: @creative.id, trigger_event_payload: {
+            "execution_generation" => "attempt",
+            "channel_handoff" => { "generation" => "attempt", "state" => "pending" }
+          })
+        [ task, ClaudeChannelAdapter.new(agent: @agent, context: @context, task: task) ]
       end
     end
   end

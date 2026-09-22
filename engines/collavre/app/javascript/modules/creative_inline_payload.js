@@ -1,3 +1,4 @@
+import { applyInlineDataset } from './creative_inline_dataset'
 // Inline creative payload mapping cluster extracted from creative_row_editor.js
 // (slice 3 of the god-file decomposition).
 //
@@ -13,6 +14,7 @@ import {
   hasDatasetValue,
   setRowDatasetValue,
 } from './creative_row_editor_helpers'
+import { replaceProgressControl, syncProgressHtmlFromDom } from '../creatives/tree_renderer'
 
 export function updateRowFromData(row, data) {
   if (!row || !data) return;
@@ -22,24 +24,17 @@ export function updateRowFromData(row, data) {
   setRowDatasetValue(row, 'descriptionHtml', descriptionHtml);
   setRowDatasetValue(row, 'descriptionRawHtml', rawHtml);
   if (data.progress_html != null) {
-    row.progressHtml = data.progress_html;
-    setRowDatasetValue(row, 'progressHtml', data.progress_html);
+		syncProgressHtmlFromDom(row);
+		const progressHtml = row.progressHtml
+			? replaceProgressControl(row.progressHtml, data.progress_html)
+			: data.progress_html;
+		row.progressHtml = progressHtml;
+		setRowDatasetValue(row, 'progressHtml', progressHtml);
   }
   if (Object.prototype.hasOwnProperty.call(data, 'progress')) {
     setRowDatasetValue(row, 'progressValue', data.progress ?? '');
   }
-  if (Object.prototype.hasOwnProperty.call(data, 'origin_id')) {
-    setRowDatasetValue(row, 'originId', data.origin_id ?? '');
-  }
-  if (Object.prototype.hasOwnProperty.call(data, 'content_type')) {
-    setRowDatasetValue(row, 'contentType', data.content_type ?? '');
-  }
-  if (Object.prototype.hasOwnProperty.call(data, 'markdown_source')) {
-    setRowDatasetValue(row, 'markdownSource', data.markdown_source ?? '');
-  }
-  if (Object.prototype.hasOwnProperty.call(data, 'markdown_editor')) {
-    setRowDatasetValue(row, 'markdownEditor', data.markdown_editor ?? '');
-  }
+  applyInlineDataset(row, data);
   if (Object.prototype.hasOwnProperty.call(data, 'has_children')) {
     if (data.has_children) {
       row.setAttribute('has-children', '');
@@ -79,6 +74,7 @@ export function inlinePayloadFromTree(tree) {
     origin_id: row.dataset?.originId || '',
     parent_id: parentId,
     progress: Number.isNaN(progressValue) ? 0 : progressValue,
+    creative_type: row.dataset.creativeType,
     content_type: row.dataset?.contentType || null,
     markdown_editor: row.dataset?.markdownEditor || null,
     markdown_source: row.dataset?.markdownSource || null

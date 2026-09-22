@@ -48,6 +48,7 @@ module Creatives
 
       preload_permissions(creatives)
       preload_comment_badges(creatives)
+      preload_cron_tasks(creatives)
 
       return if children_suppressed?
 
@@ -82,8 +83,8 @@ module Creatives
 
     def can_write?(creative)
       return false unless user
-      # Read-only-source creatives are never writable
-      return false if creative.read_only_source?
+      # Linked shells inherit their effective origin's read-only capability.
+      return false if creative.effective_origin.read_only_source?
 
       allowed?(creative, :write)
     end
@@ -98,6 +99,24 @@ module Creatives
       return if visible.empty?
 
       comment_badge_index.index(visible.map(&:effective_origin), include_visible_counts: false)
+    end
+
+    def cron_filter_active?
+      raw_params["has_cron"].present?
+    end
+
+    def preload_cron_tasks(creatives)
+      return unless cron_filter_active?
+
+      index = Collavre::Crons::RecurringTaskIndex.for_creatives(creatives)
+      creatives.each do |creative|
+        origin_id = creative.effective_origin.id
+        cron_tasks_by_creative_id[origin_id] = index.tasks_for(origin_id)
+      end
+    end
+
+    def cron_tasks_by_creative_id
+      @cron_tasks_by_creative_id ||= {}
     end
 
     def build_nodes(creatives, level:)
@@ -168,13 +187,13 @@ module Creatives
       false
     end
 
-    # The chats feed and flat search render rows, not a tree: no node has children
+    # The chats feed and flat text/reaction searches render rows: no node has children
     # there, so the whole child resolution is skipped.
     def children_suppressed?
       return @children_suppressed if defined?(@children_suppressed)
 
       @children_suppressed = raw_params["comment"] == "true" ||
-        (raw_params["search"].present? && raw_params["search_mode"] != "tree")
+        ((raw_params["search"].present? || raw_params["reaction_emoji"].present?) && raw_params["search_mode"] != "tree")
     end
 
     def load_children_now?(creative)
@@ -197,14 +216,19 @@ module Creatives
     def template_payload_for(creative, has_children: nil, can_write: nil)
       description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
       can_feedback = can_feedback?(creative)
-      progress_html = view_context.render_creative_progress(
-        creative,
+      cron_tasks = cron_filter_active? ? cron_tasks_by_creative_id.fetch(creative.effective_origin.id, []) : []
+      progress_options = {
         select_mode: !!select_mode,
         has_children: has_children,
         can_write: can_write,
         can_feedback: can_feedback,
         unread_count: can_feedback ? comment_badge_index.unread_count_for(creative.effective_origin) : nil
-      )
+      }
+      if cron_tasks.any?
+        progress_options[:cron_tasks] = cron_tasks
+        progress_options[:can_delete_cron] = allowed?(creative, :write)
+      end
+      progress_html = view_context.render_creative_progress(creative, **progress_options)
 
       {
         description_html: description_html,
@@ -224,7 +248,8 @@ module Creatives
         origin_id: creative.origin_id,
         content_type: effective.data&.dig("content_type"),
         markdown_source: origin_writable ? effective.data&.dig("markdown_source") : nil,
-        markdown_editor: effective.data&.dig("editor")
+        markdown_editor: effective.data&.dig("editor"),
+        creative_type: effective.creative_type
       }
     end
 

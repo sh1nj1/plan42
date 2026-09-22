@@ -1,6 +1,10 @@
 module Collavre
   class Task < ApplicationRecord
     self.table_name = "tasks"
+    include UsageAttributionTracking
+    include ReplayLoopCompletion
+    include WorkflowCompletion
+    include ApprovalGateCleanup
 
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy
@@ -18,11 +22,17 @@ module Collavre
       done: "done",
       failed: "failed",
       cancelled: "cancelled",
-      escalated: "escalated"
+      escalated: "escalated",
+      suspended: "suspended"
     }, default: :pending
+
+    # Why a turn was set aside to be resumed later rather than ended. See
+    # Orchestration::TaskResumer, the only writer of the suspension columns.
+    SUSPEND_REASONS = %w[agent_offline server_restart quota].freeze
 
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
+    after_update_commit :refresh_suspension_notices, if: :left_suspension?
     after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
     after_update_commit :schedule_onboarding_cleanup, if: :became_inactive?
 
@@ -63,7 +73,19 @@ module Collavre
     # job returned holding the slot while it awaits an MCP /reply or a tool
     # approval, and #cancel still accepts both. Kept here rather than in the
     # client so one list decides it.
-    ACTIVE_STATUSES = %w[running delegated pending pending_approval queued].freeze
+    #
+    # suspended counts too: it is still work the user is waiting on, so Stop and
+    # deleting the trigger comment must be able to end it. It does not occupy a
+    # slot — TaskResumer released that when it suspended the turn.
+    ACTIVE_STATUSES = %w[running delegated pending pending_approval queued suspended].freeze
+
+    # A turn that was waiting on a Claude Channel /reply when it was suspended.
+    # The agent may still answer the dispatch it was sent, and that reply is the
+    # turn's answer — TaskClaimService claims these rows exactly like delegated
+    # ones, so a late reply completes the turn instead of being refused.
+    scope :awaiting_reply, -> {
+      where(status: "delegated").or(where(status: "suspended", suspended_from: "delegated"))
+    }
 
     def active?
       ACTIVE_STATUSES.include?(status)
@@ -76,16 +98,46 @@ module Collavre
       trigger_event_payload&.fetch("external_reply_claimed", false)
     end
 
+    # Cancellation callers often select an active row before waiting on another
+    # request's task lock. Reload under that lock so a completed reply cannot be
+    # overwritten by a stale running/delegated instance.
+    def cancel_if_active!(statuses: ACTIVE_STATUSES, **attributes)
+      with_lock do
+        next unless status.in?(statuses)
+
+        previous_status = status
+        update!(attributes.merge(status: "cancelled"))
+        previous_status
+      end
+    end
+
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same
-    # comment would produce duplicate replies.
+    # comment would produce duplicate replies. "suspended" likewise: it will be
+    # resumed to answer the same comment.
     def self.duplicate_running_for_comment?(agent_id, comment_id)
-      where(agent_id: agent_id, status: %w[running delegated], trigger_event_name: "comment_created")
+      where(agent_id: agent_id, status: %w[running delegated suspended], trigger_event_name: "comment_created")
         .find_each do |task|
         return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
       end
       false
+    end
+
+    # Replay the after_update_commit callbacks when the status transition was
+    # made via an UPDATE that bypassed callbacks (e.g. update_all in an atomic
+    # claim flow). The private callback predicates rely on
+    # saved_change_to_attribute? which is false outside a save lifecycle, so
+    # the callbacks themselves would no-op when called directly. This method
+    # is the supported escape hatch for AgentsController#finalize_claimed_task
+    # to drive the same side effects (trigger-loop continuation + stop-button
+    # broadcast) once the related reply_comment has been persisted.
+    def fire_completion_callbacks_after_external_claim
+      settle_workflow
+      recheck_abandoned_replays
+      check_trigger_loop_completion if trigger_loop_completion_eligible?
+      broadcast_stop_button_removal if terminal_status?
+      schedule_onboarding_cleanup if terminal_status?
     end
 
     # What a persisted row says about whether this turn ever handed anything
@@ -128,6 +180,8 @@ module Collavre
     # fire_completion_callbacks_after_external_claim for explicit replay.
     def trigger_loop_completion_eligible?
       return false unless status == "done"
+      # Pending and completed replays own completion instead of the login card.
+      return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
       return false unless trigger_event_name == "comment_created"
       return false unless creative&.parent&.drop_trigger_enabled?
 
@@ -158,7 +212,9 @@ module Collavre
       # (for example, by onboarding reset), so do not inspect a stale belongs_to
       # association from the running task instance.
       creative = Creative.find_by(id: creative_id)
-      onboarding = creative&.data&.fetch("onboarding", {})
+      return unless creative && Onboarding::Ownership.owned?(creative)
+
+      onboarding = Onboarding::Ownership.metadata(creative)
       session_id = onboarding&.fetch("session_id", nil)
       return if session_id.blank?
 
@@ -170,6 +226,12 @@ module Collavre
       return unless onboarding["cleanup_pending"] || user&.onboarding_completed_at?
 
       OnboardingCleanupJob.perform_later(user.id, session_id)
+    end
+
+    # Terminal transitions refresh the notices in broadcast_stop_button_removal.
+    def left_suspension?
+      saved_change_to_attribute?("status") && attribute_before_last_save("status") == "suspended" &&
+        !terminal_status?
     end
 
     # This turn refused other dispatches on the strength of having read their
@@ -240,6 +302,12 @@ module Collavre
     end
 
     def broadcast_stop_button_removal
+      refresh_suspension_notices
+
+      # Login cards already omit Stop and have a queued comment replacement.
+      # Replacing them again would discard an in-progress authentication form.
+      return if trigger_event_payload&.key?("engine_login")
+
       comment = reply_comment
       return unless comment
 
@@ -248,6 +316,20 @@ module Collavre
         partial: "collavre/comments/comment",
         locals: { comment: comment, streaming: false }
       )
+    end
+
+    # Re-render the "⏸️" notices of this turn so their Stop control goes away
+    # once the turn is resumed or ended.
+    def refresh_suspension_notices
+      Comment.where(creative_id: creative_id, topic_id: topic_id,
+                    waiting_notice_scope: Comment::SuspensionNotice::SCOPE, waiting_notice_task_id: id)
+             .find_each do |notice|
+        notice.broadcast_replace_to(
+          [ notice.creative, :comments ],
+          partial: "collavre/comments/comment",
+          locals: { comment: notice, streaming: false }
+        )
+      end
     end
 
     def check_trigger_loop_completion

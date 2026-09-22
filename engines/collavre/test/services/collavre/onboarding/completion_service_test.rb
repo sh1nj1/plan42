@@ -15,6 +15,34 @@ module Collavre
         ActiveJob::Base.queue_adapter = @previous_adapter
       end
 
+      test "reset preserves legacy metadata with and without a genuine session" do
+        user = User.create!(name: "Legacy", email: "legacy-reset@example.com", password: "password")
+        scalar = Creative.create!(user: user, description: "Scalar", data: { "onboarding" => "legacy" })
+        legacy = Creative.create!(user: user, description: "Legacy", data: {
+          "onboarding" => { "seeded" => true, "scenario_key" => "first_steps", "session_id" => "old" }
+        })
+        service = CompletionService.new(user: user)
+        assert service.call
+        assert Creative.exists?(scalar.id)
+        assert Creative.exists?(legacy.id)
+
+        session = Seeder.new(user: user, force: true).call
+        copied = Creative.create!(user: user, description: "Copied", data: session.root.data)
+        assert service.call
+        refute Creative.exists?(session.root.id)
+        [ scalar, legacy, copied ].each { |creative| assert Creative.exists?(creative.id) }
+      end
+
+      test "terminal task ignores scalar and untrusted onboarding metadata" do
+        user = users(:one)
+        [ "legacy", { "session_id" => "legacy", "cleanup_pending" => true } ].each do |metadata|
+          creative = Creative.create!(user: user, description: "Legacy", data: { "onboarding" => metadata })
+          task = Task.create!(name: "Ordinary turn", status: "running", creative: creative, agent: users(:ai_bot))
+          assert_no_enqueued_jobs(only: OnboardingCleanupJob) { task.update!(status: "done") }
+          assert task.reload.done?
+        end
+      end
+
       test "removes every item carrying the session id even after a practice item moves" do
         user = User.create!(name: "Finisher", email: "finisher@example.com", password: "password")
         session = Seeder.new(user: user).call
@@ -78,7 +106,7 @@ module Collavre
         refute Creative.exists?(session.root.id)
       end
 
-      test "defers cleanup while an active task references a moved onboarding comment" do
+      test "defers cleanup for a residual active task after its trigger moved" do
         user = User.create!(name: "Moved comment finisher", email: "moved-comment-finisher@example.com", password: "password")
         agent = User.create!(name: "Moved comment helper", email: "moved-comment-helper@example.com", password: "password",
                              llm_vendor: "openai", searchable: true)
@@ -89,6 +117,8 @@ module Collavre
                             trigger_event_payload: { "comment" => { "id" => comment.id } }, agent: agent, creative: creative)
         destination = Creative.create!(user: user, description: "Outside onboarding")
         comment.update!(creative: destination)
+        # A worker may still be settling an earlier dispatch after revocation.
+        task.update_columns(status: "running")
 
         assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
           CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
@@ -252,7 +282,9 @@ module Collavre
         reply = Comment.create!(creative: creative, topic: topic, user: agent, content: "I can help")
 
         assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
-          AiAgent::TaskClaimService.new.finalize(agent: agent, task: claimed_task, comment: reply)
+          claim_service = AiAgent::TaskClaimService.new
+          claim_service.link_reply(task: claimed_task, comment: reply)
+          claim_service.finalize(agent: agent, task: claimed_task, comment: reply)
         end
       end
     end
