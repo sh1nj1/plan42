@@ -1,7 +1,7 @@
 module Collavre
   class AiClient
     include ErrorHandling
-    include AiUsageTracking, ApprovalGate
+    include AiUsageTracking, ApprovalGate, CliToolEvents
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
       - Be concise and focus on the essentials (avoid unnecessary verbosity).
@@ -139,7 +139,7 @@ module Collavre
         # product's tools write creatives and post comments. A turn classified
         # as a failed handoff has everything it swallowed dispatched again, and
         # the restored turn runs those tools a second time.
-        observe_usage(chunk)
+        observe_chunk(chunk)
         @handed_off = true
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
