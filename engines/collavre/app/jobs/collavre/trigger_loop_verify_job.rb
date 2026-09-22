@@ -44,7 +44,7 @@ module Collavre
         return
       end
 
-      result = verify_completion(verifier, instructions, last_agent_comment.content.to_s)
+      result = verify_completion(verifier, instructions, last_agent_comment.content.to_s, task)
 
       if result == :verified
         update_loop_data(child_creative, state: "completed")
@@ -130,7 +130,7 @@ module Collavre
       - IMPORTANT: If the agent correctly identified that it needs user approval, user input, or user action before it can proceed, and has paused/stopped to wait for the user, respond AWAITING_USER. This is NOT incomplete work — the agent did the right thing by asking.
     PROMPT
 
-    def verify_completion(verifier, instructions, agent_response)
+    def verify_completion(verifier, instructions, agent_response, task)
       prompt = <<~PROMPT
         ## Instructions given to the agent:
         #{instructions}
@@ -152,7 +152,7 @@ module Collavre
         system_prompt: VERIFY_SYSTEM_PROMPT,
         llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
         gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: {}
+        context: { agent: verifier, usage_source_task: task }
       )
 
       response_text = +""

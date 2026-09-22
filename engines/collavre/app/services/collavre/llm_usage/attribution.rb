@@ -46,6 +46,8 @@ module Collavre
       end
 
       def self.snapshot(context)
+        return source_task_snapshot(context) if context[:usage_source_task]
+
         task = context[:task]
         return standalone(context) unless task
 
@@ -57,6 +59,13 @@ module Collavre
           end
           attributes(attribution).merge(task_id: task.id, creative_id: task.creative_id, topic_id: task.topic_id)
         end
+      end
+
+      # Auxiliary evaluators inherit requesters, but consume their own agent's credentials.
+      def self.source_task_snapshot(context)
+        task = context.fetch(:usage_source_task)
+        attribution = task.usage_attribution.merge("owner_id" => agent(context)&.created_by_id)
+        attributes(attribution).merge(task_id: task.id, creative_id: task.creative_id, topic_id: task.topic_id)
       end
 
       def self.agent(context)

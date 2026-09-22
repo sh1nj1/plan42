@@ -42,7 +42,7 @@ module Collavre
       # LLM fallback: when agent doesn't use [STATUS: ...] tags, ask LLM
       # to determine whether the work is actually done.
       if status == :no_tag
-        status = llm_fallback_evaluate(child_creative, parent_creative, last_agent_comment)
+        status = llm_fallback_evaluate(child_creative, parent_creative, last_agent_comment, task)
       end
 
       case status
@@ -218,7 +218,7 @@ module Collavre
       Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
     PROMPT
 
-    def llm_fallback_evaluate(child_creative, parent_creative, agent_comment)
+    def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
       verifier = pick_fallback_agent(parent_creative)
 
       unless verifier
@@ -246,7 +246,7 @@ module Collavre
         system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
         llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
         gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: {}
+        context: { agent: verifier, usage_source_task: task }
       )
 
       response_text = +""

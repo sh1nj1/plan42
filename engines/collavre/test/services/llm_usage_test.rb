@@ -24,6 +24,21 @@ class LlmUsageTest < ActiveSupport::TestCase
       cached_tokens: 50, cache_creation_tokens: 20 }.merge(options))
   end
 
+  test "auxiliary usage preserves joint and unknown requester attribution" do
+    attribution = { "requester_ids" => [ @requester.id, @owner.id ].sort,
+      "unknown_requester" => true, "source_comment_ids" => [ @comment.id ], "owner_id" => @owner.id }
+    @task.update!(usage_attribution: attribution)
+    collector = Collavre::LlmUsage::Recorder.new(context: { agent: @agent, usage_source_task: @task },
+      vendor: "openai", model: "test")
+    collector.finish(response)
+    usage = Collavre::LlmUsage.last
+    assert_equal "joint", usage.requester_kind
+    assert_nil usage.requester_id
+    assert_equal attribution["requester_ids"], usage.requester_ids
+    assert_equal [ @comment.id ], usage.source_comment_ids
+    assert_equal attribution, @task.reload.usage_attribution
+  end
+
   test "records inclusive input without double counting and links activity log" do
     collector = recorder
     message = response(raw: { "usage" => { "prompt_tokens" => 80 }, "secret" => "not stored" })
