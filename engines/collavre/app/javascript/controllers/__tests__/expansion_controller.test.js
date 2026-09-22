@@ -158,6 +158,50 @@ describe('creative expansion persistence', () => {
     controller.disconnect()
   })
 
+  test('a stalled save is aborted and a replacement controller can persist within the timeout', async () => {
+    jest.useFakeTimers()
+    try {
+      fetch.mockImplementationOnce(() => new Promise(() => {}))
+      controller.connect()
+      controller.saveExpansionState('1', true)
+      await jest.advanceTimersByTimeAsync(0)
+      const signal = fetch.mock.calls[0][1].signal
+      controller.disconnect()
+      const replacement = Object.create(ExpansionController.prototype)
+      Object.defineProperty(replacement, 'element', { value: controller.element })
+      Object.defineProperty(replacement, 'hasExpandTarget', { value: false })
+      replacement.connect()
+      replacement.collapseRow(row)
+      await jest.advanceTimersByTimeAsync(9999)
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(signal.aborted).toBe(false)
+      await jest.advanceTimersByTimeAsync(1)
+      await replacement.saveQueue
+      expect(signal.aborted).toBe(true)
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(JSON.parse(fetch.mock.calls[1][1].body).expanded).toBe(false)
+      expect(jest.getTimerCount()).toBe(0)
+      replacement.disconnect()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  test.each(['success', 'failure'])('clears the save timeout after %s', async (outcome) => {
+    jest.useFakeTimers()
+    try {
+      if (outcome === 'failure') fetch.mockRejectedValueOnce(new Error('offline'))
+      controller.saveExpansionState('1', true)
+      await controller.saveQueue
+      const signal = fetch.mock.calls[0][1].signal
+      expect(jest.getTimerCount()).toBe(0)
+      await jest.advanceTimersByTimeAsync(10000)
+      expect(signal.aborted).toBe(false)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   test('a rejected save does not block later writes', async () => {
     fetch.mockRejectedValueOnce(new Error('offline'))
     controller.saveExpansionState('1', true)
