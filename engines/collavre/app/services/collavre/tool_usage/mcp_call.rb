@@ -7,7 +7,8 @@ module Collavre
     # are not also counted by the agent's internal tool hook.
     #
     # A call made with a cli-openai-proxy workspace callback token is tagged with
-    # its workspace. When the proxy's matching x_cli_events result arrives, the
+    # its workspace and a digest of its arguments. When the proxy's matching
+    # x_cli_events result arrives, the
     # cli_proxy row (which carries the agent and the LLM execution) replaces it;
     # if the stream breaks first, this row still counts the call.
     # See CliProxyRecorder.
@@ -15,22 +16,26 @@ module Collavre
       SOURCE = "mcp"
 
       # The block returns FastMcp's [result, metadata] pair.
-      def self.track(tool_name)
+      def self.track(tool_name, arguments = nil)
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         succeeded = false
         pair = yield
         succeeded = !ToolUsage.failed_result?(pair.first)
         pair
       ensure
-        record(tool_name, succeeded, ToolUsage.elapsed_ms(started_at))
+        record(tool_name, arguments, succeeded, ToolUsage.elapsed_ms(started_at))
       end
 
       # McpOauthMiddleware sets Current.user to the token owner. An agent token
       # attributes the call to that agent; a human token to that person.
-      def self.record(tool_name, succeeded, duration_ms)
+      def self.record(tool_name, arguments, succeeded, duration_ms)
         user = Current.user
         context = user&.ai_user? ? { user: user } : { requester: user }
-        Recorder.new(context: context, source: SOURCE, agent_workspace: Current.mcp_agent_workspace).record(tool_name: tool_name, succeeded: succeeded, duration_ms: duration_ms)
+        workspace = Current.mcp_agent_workspace
+        Recorder.new(context: context, source: SOURCE, agent_workspace: workspace).record(
+          tool_name: tool_name, succeeded: succeeded, duration_ms: duration_ms,
+          arguments_digest: workspace && ToolUsage.arguments_digest(arguments)
+        )
       rescue StandardError => e
         Rails.logger.error("Failed to persist MCP tool usage: #{e.class}: #{e.message}")
       end

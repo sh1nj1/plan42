@@ -36,6 +36,24 @@ module Collavre
       wrapped && failed_result?(result[:result] || result["result"])
     end
 
+    # Fingerprint of a call's arguments, so a cli_proxy result can find the /mcp
+    # row of the same call. Key order and symbol vs string keys don't matter.
+    def self.arguments_digest(arguments)
+      return unless arguments.is_a?(Hash)
+
+      Digest::SHA256.hexdigest(JSON.generate(canonical_arguments(arguments)))
+    end
+
+    def self.canonical_arguments(value)
+      case value
+      when Hash then value.to_h { |key, item| [ key.to_s, canonical_arguments(item) ] }.sort.to_h
+      when Array then value.map { |item| canonical_arguments(item) }
+      when Float then value.finite? && value == value.floor ? value.to_i : value
+      else value
+      end
+    end
+    private_class_method :canonical_arguments
+
     def self.elapsed_ms(started_at)
       ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
     end

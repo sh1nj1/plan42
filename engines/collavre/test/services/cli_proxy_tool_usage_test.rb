@@ -202,9 +202,31 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal names, Collavre::ToolUsage.order(:id).pluck(:tool_name)
   end
 
-  def mcp_row(tool_name, workspace_id:, at:)
+  def mcp_row(tool_name, workspace_id:, at:, arguments: nil)
     Collavre::ToolUsage.create!(event_key: SecureRandom.uuid, execution_id: SecureRandom.uuid, source: "mcp",
-      tool_name: tool_name, requester_kind: "unknown", occurred_at: at, agent_workspace_id: workspace_id)
+      tool_name: tool_name, requester_kind: "unknown", occurred_at: at, agent_workspace_id: workspace_id,
+      arguments_digest: Collavre::ToolUsage.arguments_digest(arguments))
+  end
+
+  test "a proxy result replaces the /mcp row with its own arguments, not another run's" do
+    run_a = mcp_row("creatives_update", workspace_id: 7, at: 30.seconds.ago, arguments: { id: 1, title: "A" })
+    run_b = mcp_row("creatives_update", workspace_id: 7, at: 20.seconds.ago, arguments: { title: "B", id: 2 })
+    recorder = Collavre::ToolUsage::CliProxyRecorder.new(context: {}, execution_id: "exec-b",
+      agent_workspace: Struct.new(:id).new(7), since: 1.minute.ago)
+
+    recorder.observe(event("b", "call", "mcp__workspace__creatives_update", input: { "id" => 2, "title" => "B" }))
+    recorder.observe(event("b", "result", "mcp__workspace__creatives_update", ok: true))
+    assert_equal [ run_a.id ], Collavre::ToolUsage.where(source: "mcp").pluck(:id)
+    refute Collavre::ToolUsage.exists?(run_b.id)
+
+    recorder.observe(event("c", "call", "mcp__workspace__creatives_update", input: { "id" => 3 }))
+    recorder.observe(event("c", "result", "mcp__workspace__creatives_update", ok: false))
+    assert_equal [ run_a.id ], Collavre::ToolUsage.where(source: "mcp").pluck(:id), "a call that never reached /mcp takes no row"
+
+    recorder.observe(event("d", "call", "workspace.creatives_update", input: "{\"id\":4… [truncated 9000 bytes]"))
+    recorder.observe(event("d", "result", "workspace.creatives_update", ok: true))
+    assert_empty Collavre::ToolUsage.where(source: "mcp"), "a clipped input falls back to the oldest row"
+    assert_equal 3, Collavre::ToolUsage.where(source: "cli_proxy").count
   end
 
   test "a proxy result replaces the matching /mcp row of its workspace and run, once" do

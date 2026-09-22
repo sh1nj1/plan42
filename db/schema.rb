@@ -1038,6 +1038,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_23_000000) do
   create_table "tool_usages", force: :cascade do |t|
     t.bigint "agent_id"
     t.bigint "agent_workspace_id"
+    t.string "arguments_digest"
     t.datetime "created_at", null: false
     t.bigint "creative_id"
     t.integer "duration_ms"
