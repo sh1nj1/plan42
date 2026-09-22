@@ -61,6 +61,40 @@ describe('ApiQueueManager', () => {
         });
     });
 
+    test.each(['failed', 'in-flight', 'reloaded'])('carries %s attachment cleanup into a successful replacement', async state => {
+        const original = { path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42', body: { description: 'draft' }, deletedAttachmentIds: [1, 2] };
+        apiQueue.enqueue(original);
+        if (state === 'failed') {
+            apiQueue.failedItems = apiQueue.queue;
+            apiQueue.queue = [];
+            apiQueue.saveFailedToLocalStorage();
+            apiQueue.saveToLocalStorage();
+            apiQueue.initialize('test_user');
+        } else if (state === 'in-flight') {
+            apiQueue.processing = true;
+        } else {
+            apiQueue.initialize('test_user');
+        }
+        apiQueue.failedItems.push({ dedupeKey: 'other', deletedAttachmentIds: [99] });
+        apiQueue.enqueue({ ...original, body: { description: 'continued' }, deletedAttachmentIds: [2, 3] });
+        const replacement = apiQueue.queue.at(-1);
+        expect(replacement.deletedAttachmentIds).toEqual([1, 2, 3]);
+        if (state === 'in-flight') {
+            expect(apiQueue.queue).toHaveLength(2);
+            apiQueue.failedItems.push(apiQueue.queue.shift());
+            apiQueue.processing = false;
+        }
+        const cleanup = jest.fn();
+        window.addEventListener('api-queue-attachments-deleted', cleanup);
+        mockCsrfFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+        apiQueue.processQueue.mockRestore();
+        await apiQueue.processQueue();
+        window.removeEventListener('api-queue-attachments-deleted', cleanup);
+        expect(cleanup).toHaveBeenCalledTimes(1);
+        expect(cleanup.mock.calls[0][0].detail.attachmentIds).toEqual([1, 2, 3]);
+        expect(apiQueue.failedItems).toEqual([{ dedupeKey: 'other', deletedAttachmentIds: [99] }]);
+    });
+
     test('should deduplicate requests and merge callbacks', () => {
         const callback1 = jest.fn();
         const callback2 = jest.fn();

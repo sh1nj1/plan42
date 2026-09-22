@@ -797,3 +797,28 @@ test.each([false, true])('type change tracks restored pending saves before reope
   expect(document.getElementById('inline-creative-progress').checked).toBe(true)
   expect(tree.dataset.saveState).toBeUndefined()
 })
+
+
+test.each([
+  { 'creative[parent_id]': '99', before_id: '100', after_id: '101' },
+  { 'creative[parent_id]': '', before_id: '', after_id: '' },
+])('closing a recovered move retains its position %j', async position => {
+  queue.queue = [{ dedupeKey: 'creative_42' }]
+  queue.unacknowledgedBody.mockReturnValue({
+    'creative[description]': '<p>pending draft</p>',
+    'creative[content_type_input]': 'markdown',
+    'creative[markdown_source]': 'pending draft',
+    ...position,
+  })
+  appendMarkdownRow('41', 'old neighbor')
+  const { tree } = appendMarkdownRow('42', 'stale server')
+  tree.dataset.parentId = '10'
+  appendMarkdownRow('43', 'old next neighbor')
+  openRow(tree)
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  expect(enqueue.mock.calls[0][0].body).toMatchObject(position)
+  enqueue.mock.calls[0][0].onSuccess({})
+  expect(tree.dataset.saveState).toBeUndefined()
+})

@@ -1,3 +1,4 @@
+import { queuedCreativePosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
@@ -1160,9 +1161,7 @@ function setupEditorSession() {
         originId: originIdInput?.value,
       });
       const isMarkdownSave = snapshot.contentType === 'markdown';
-      const currentParentId = tree.dataset.parentId || '';
-      const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
-      const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
+      const position = queuedCreativePosition(tree);
       const startCreativeId = creativeId;
       if (creativeSaveSnapshotIsEmpty(snapshot)) {
         pendingSave = false;
@@ -1209,18 +1208,10 @@ function setupEditorSession() {
         body['creative[progress]'] = snapshot.progress;
       }
 
-      // Always include parent_id, even if empty (for moving to root)
-      body['creative[parent_id]'] = currentParentId;
+      Object.assign(body, position);
       body['creative[origin_id]'] = snapshot.originId;
       if (historyAnchorInput?.value) body.history_anchor_id = historyAnchorInput.value;
       if (changeGroupTokenInput?.value) body.change_group_token = changeGroupTokenInput.value;
-
-      if (currentBeforeId) {
-        body['before_id'] = currentBeforeId;  // Top-level, not creative[before_id]
-      }
-      if (currentAfterId) {
-        body['after_id'] = currentAfterId;  // Top-level, not creative[after_id]
-      }
 
       updateQueuedCreativeRow(tree, snapshot);
 
