@@ -15,9 +15,21 @@ module Collavre
           )
           task = Task.create!(attributes)
           Orchestration::TaskResumer.suspend!(task, reason: "quota", resume_not_before: deadline)
+          record_turn(agent, context)
           task
         end
       end
+
+      def self.record_turn(agent, context)
+        creative_id = context.dig("creative", "id")
+        return unless creative_id
+
+        Orchestration::LoopBreaker.new(context).record_task(
+          creative_id, agent.id, topic_id: context.dig("topic", "id"),
+          triggered_by_user: context.dig("comment", "from_ai") != true
+        )
+      end
+      private_class_method :record_turn
     end
   end
 end

@@ -116,6 +116,32 @@ class QuotaRecoveryTest < ActiveSupport::TestCase
     end
   end
 
+  test "parked AI turns count toward creative retry limits exactly once" do
+    context = { "creative" => { "id" => creatives(:tshirt).id },
+                "comment" => { "id" => 987654, "from_ai" => true } }
+    resolver = Struct.new(:loop_breaker_config).new({ "enabled" => true, "creative_retry_threshold" => 2 })
+    breaker = Collavre::Orchestration::LoopBreaker.new(context, policy_resolver: resolver)
+    Rails.stub :cache, ActiveSupport::Cache::MemoryStore.new do
+      2.times do |index|
+        assert breaker.check.safe?
+        context["comment"]["id"] += index
+        assert Collavre::Quota::PendingDispatch.call(@agent, "comment_created", context, 1.hour.from_now)
+        assert_nil Collavre::Quota::PendingDispatch.call(@agent, "comment_created", context, 1.hour.from_now)
+      end
+      assert_equal :creative_retry_exceeded, breaker.check.reason
+      assert_equal 2, breaker.check.details[:task_count]
+    end
+  end
+
+  test "parked human turns do not count toward creative retry limits" do
+    context = { "creative" => { "id" => creatives(:tshirt).id }, "comment" => { "id" => 987654 } }
+    resolver = Struct.new(:loop_breaker_config).new({ "enabled" => true, "creative_retry_threshold" => 1 })
+    Rails.stub :cache, ActiveSupport::Cache::MemoryStore.new do
+      assert Collavre::Quota::PendingDispatch.call(@agent, "comment_created", context, 1.hour.from_now)
+      assert Collavre::Orchestration::LoopBreaker.new(context, policy_resolver: resolver).check.safe?
+    end
+  end
+
   test "quota exhaustion notice is translated and does not dispatch another turn" do
     @task.update!(creative: creatives(:tshirt))
     assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do

@@ -19,7 +19,9 @@ module Collavre
       end
 
       def call
-        topic.with_lock { build_result }
+        result = topic.with_lock { build_result }
+        Quota::Recovery.succeeded!(result.agent) if result.comment && result.task
+        result
       end
 
       private
