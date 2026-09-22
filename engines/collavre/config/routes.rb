@@ -1,4 +1,5 @@
 Collavre::Engine.routes.draw do
+  resources :llm_usages, only: :index, path: "settings/token-usage"
   # Landing page
   get "landing", to: "landing#show"
 

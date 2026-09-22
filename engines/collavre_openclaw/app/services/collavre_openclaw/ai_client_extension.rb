@@ -45,6 +45,7 @@ module CollavreOpenclaw
           request_timeout_seconds: @request_timeout_seconds
         )
 
+        start_usage_tracking(measurement: "run")
         response_content = nil
         error_message = nil
 
@@ -65,6 +66,7 @@ module CollavreOpenclaw
           # Honor no-log mode. Base Collavre::AiClient#chat gates logging behind
           # @log_interactions; this prepended adapter path bypasses super, so it
           # must gate logging too.
+          finish_usage_tracking
           if @log_interactions
             log_interaction(
               messages: messages_data[:messages],

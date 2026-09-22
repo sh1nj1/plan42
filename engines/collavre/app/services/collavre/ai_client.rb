@@ -1,6 +1,7 @@
 module Collavre
   class AiClient
-    include ErrorHandling, ApprovalGate
+    include ErrorHandling
+    include AiUsageTracking, ApprovalGate
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
       - Be concise and focus on the essentials (avoid unnecessary verbosity).
@@ -138,6 +139,7 @@ module Collavre
         # product's tools write creatives and post comments. A turn classified
         # as a failed handoff has everything it swallowed dispatched again, and
         # the restored turn runs those tools a second time.
+        @usage_recorder&.observe(chunk)
         @handed_off = true
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
@@ -190,6 +192,7 @@ module Collavre
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
       nil
     ensure
+      finish_usage_tracking(response)
       @last_input_tokens = input_tokens || 0
       @last_output_tokens = output_tokens || 0
       if @log_interactions
@@ -210,6 +213,7 @@ module Collavre
     def ask(prompt)
       return nil unless @conversation
 
+      start_usage_tracking
       refresh_turn_boundary!(@conversation)
       # Disable tool calls for summary generation to avoid recursive approval
       @conversation.with_tools(replace: true)
@@ -224,6 +228,8 @@ module Collavre
       refresh_turn_boundary!(@conversation)
       Rails.logger.warn("AiClient#ask failed: #{e.class} #{e.message}")
       nil
+    ensure
+      finish_usage_tracking(response) if @conversation
     end
 
     private
@@ -302,6 +308,7 @@ module Collavre
       end
 
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
+        install_usage_tracking(chat)
         chat.with_instructions(system_prompt) if system_prompt.present?
         apply_request_headers!(chat)
         chat.on_tool_call do |tool_call|
@@ -463,7 +470,7 @@ module Collavre
     end
 
     def log_interaction(messages:, tools:, response_content:, error_message: nil, input_tokens: nil, output_tokens: nil)
-      RubyLlmInteractionLogger.log(
+      log = RubyLlmInteractionLogger.log(
         vendor: @vendor,
         model: @model,
         messages: messages,
@@ -476,6 +483,8 @@ module Collavre
         input_tokens: input_tokens,
         output_tokens: output_tokens
       )
+      @usage_recorder&.attach(log)
+      log
     end
   end
 end
