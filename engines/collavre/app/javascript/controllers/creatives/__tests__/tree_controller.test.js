@@ -1254,6 +1254,23 @@ describe('CreativesTreeController requestReload', () => {
     application.stop()
   })
 
+  test('defers reload while a locally saved row is awaiting acknowledgment', async () => {
+    const { application, controller, load } = await installConnected()
+    const tree = document.createElement('div')
+    tree.className = 'creative-tree'
+    tree.dataset.saveState = 'pending'
+    controller.element.appendChild(tree)
+    controller.requestReload()
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+    delete tree.dataset.saveState
+    controller.requestReload()
+    jest.advanceTimersByTime(300)
+    expect(load).toHaveBeenCalledTimes(1)
+    application.stop()
+  })
+
   test('keeps a pending reload held after editing stops until the operation finishes', async () => {
     const { application, controller, load } = await installConnected()
 

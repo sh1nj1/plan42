@@ -10,6 +10,8 @@ export function queuedCreativeCompletion(tree, onComplete) {
   return () => {
     if (revisions.get(tree) !== revision) return false
     delete tree.dataset.saveState
+    const row = treeRowElement(tree)
+    if (row) delete row.dataset.pendingSyncData
     onComplete()
     document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
     return true
@@ -29,4 +31,8 @@ export function updateQueuedCreativeRow(tree, snapshot) {
   row.dataset.markdownEditor = markdown ? snapshot.markdownEditor : ''
   row.parentId = tree.dataset.parentId || null
   row.requestUpdate?.()
+}
+
+export function queuedCreativeStatus(tree) {
+  return tree?.dataset.saveState || ''
 }

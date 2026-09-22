@@ -1,4 +1,4 @@
-import { updateQueuedCreativeRow, queuedCreativeCompletion } from './queued_creative_row'
+import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
 import creativesApi from '../lib/api/creatives'
@@ -440,7 +440,7 @@ function setupEditorSession() {
       // HTML projection), and Markdown-source-based for the textarea surface.
       originalContent = useTextarea ? (data.markdown_source || '') : content;
       isDirty = false;
-      setSaveStatus(tree?.dataset.saveState || '');
+      setSaveStatus(queuedCreativeStatus(tree));
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
       setProgressState(normalizedProgress);
@@ -750,14 +750,14 @@ function setupEditorSession() {
         });
     }
 
-    function saveForm(tree = currentTree, parentId = parentInput.value) {
+    function requestSave(tree = currentTree, parentId = parentInput.value) {
       if (form.dataset.creativeId && typeEditor.value === undefined && !saveQueue.saving) {
-        return queueSaveIfDirty(tree);
+        return persistQueuedSave(tree);
       }
-      return saveDirectForm(tree, parentId);
+      return saveForm(tree, parentId);
     }
 
-    function saveDirectForm(tree, parentId) {
+    function saveForm(tree, parentId) {
       // Reflect the in-flight save immediately, *before* awaiting pending uploads.
       // Direct-save callers (progress checkbox, structure moves) bypass
       // scheduleSave(), so without this an attachment upload still in flight would
@@ -1014,7 +1014,7 @@ function setupEditorSession() {
 
       const finalizeHide = function () {
         template.style.display = 'none';
-        const p = typeEditor.needsFlush(pendingSave, saveQueue.saving) ? typeEditor.flush(() => waitForServer ? saveDirectForm(tree, parentId) : saveForm(tree, parentId)) : Promise.resolve();
+        const p = typeEditor.needsFlush(pendingSave, saveQueue.saving) ? typeEditor.flush(() => waitForServer ? saveForm(tree, parentId) : requestSave(tree, parentId)) : apiQueue.waitFor(waitForServer ? `creative_${editCreativeId}` : null);
         return p.then((result) => {
           if (isFailedSaveResult(result)) {
             recoverFromFailedSave();
@@ -1104,7 +1104,7 @@ function setupEditorSession() {
 
     function beforeNewOrMove(wasNew, prev, prevParent) {
       const needsSave = pendingSave || wasNew || saveQueue.saving;
-      const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
+      const p = needsSave ? requestSave(prev, prevParent) : Promise.resolve();
       return p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
           removeTreeElement(prev);
@@ -1121,6 +1121,14 @@ function setupEditorSession() {
      * IMPORTANT: Waits for pending uploads to complete before queueing
      * @param {Element} tree - The tree element whose row should be updated (defaults to currentTree)
      */
+    async function persistQueuedSave(tree = currentTree) {
+      try { return await queueSaveIfDirty(tree); } catch (error) {
+        tree.dataset.saveState = 'error';
+        setSaveStatus('error');
+        return { ok: false };
+      }
+    }
+
     async function queueSaveIfDirty(tree = currentTree) {
       // Check both isDirty (text changes) and pendingSave (progress/structure changes)
       if (!isDirty && !pendingSave) return;
@@ -1202,6 +1210,7 @@ function setupEditorSession() {
 
       // Always include parent_id, even if empty (for moving to root)
       body['creative[parent_id]'] = currentParentId;
+      body['creative[origin_id]'] = snapshot.originId;
       if (historyAnchorInput?.value) body.history_anchor_id = historyAnchorInput.value;
       if (changeGroupTokenInput?.value) body.change_group_token = changeGroupTokenInput.value;
 
@@ -1292,15 +1301,7 @@ function setupEditorSession() {
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly because currentTree will be updated immediately after
-      if (!wasNew) {
-        if (uploadsPending) {
-          // If uploading, we MUST wait for the upload to finish and the save to capture the new URL
-          // otherwise we risk saving the blob URL and losing the attachment
-          await queueSaveIfDirty(prev);
-        } else {
-          queueSaveIfDirty(prev);
-        }
-      }
+      if (!wasNew && isFailedSaveResult(await persistQueuedSave(prev))) return;
 
       // Update UI immediately
       currentTree = target;
@@ -1366,13 +1367,7 @@ function setupEditorSession() {
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly
-      if (!wasNew) {
-        if (uploadsPending) {
-          await queueSaveIfDirty(prev);
-        } else {
-          queueSaveIfDirty(prev);
-        }
-      }
+      if (!wasNew && isFailedSaveResult(await persistQueuedSave(prev))) return;
 
       // Editing is NOT announced as stopped here. Both branches below end in
       // startNew(), which flushes the previous row through hideCurrent() and
@@ -1432,13 +1427,7 @@ function setupEditorSession() {
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly
-      if (!wasNew) {
-        if (uploadsPending) {
-          await queueSaveIfDirty(prev);
-        } else {
-          queueSaveIfDirty(prev);
-        }
-      }
+      if (!wasNew && isFailedSaveResult(await persistQueuedSave(prev))) return;
 
       const handleAddChild = () => {
         const parentId = prev.dataset.id;
@@ -1826,7 +1815,7 @@ function setupEditorSession() {
       // up/down, reorder) schedule a save without setting isDirty, and must not
       // keep showing the previous "saved" label.
       setSaveStatus('pending');
-      saveQueue.schedule(function () { saveForm(); });
+      saveQueue.schedule(function () { requestSave(); });
     }
 
     function onLexicalChange(payload) {
@@ -1913,7 +1902,7 @@ function setupEditorSession() {
 
       if ((isArrowUp || isCtrlP) && atStart) {
         event.preventDefault();
-        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+        // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
         move(-1);
         requestAnimationFrame(() => lexicalEditor.focus());
         return;
@@ -1921,7 +1910,7 @@ function setupEditorSession() {
 
       if ((isArrowDown || isCtrlN) && atEnd) {
         event.preventDefault();
-        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+        // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
         move(1);
         requestAnimationFrame(() => lexicalEditor.focus());
       }
@@ -1947,7 +1936,7 @@ function setupEditorSession() {
         // when the user navigates away before the debounce timer fires.
         pendingSave = true;
         saveQueue.cancelTimer();
-        saveForm();
+        requestSave();
       });
     }
 
@@ -1956,11 +1945,11 @@ function setupEditorSession() {
     }
 
     upBtn.addEventListener('click', function () {
-      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+      // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
       move(-1);
     });
     downBtn.addEventListener('click', function () {
-      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+      // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
       move(1);
     });
 
@@ -2147,7 +2136,7 @@ function setupEditorSession() {
         if (confirmText && !(await confirmDialog(confirmText))) return;
         const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
         unconvertBtn.disabled = true;
-        saveForm()
+        requestSave()
           .then(function (saveResponse) {
             if (saveResponse && saveResponse.ok === false) {
               return saveResponse

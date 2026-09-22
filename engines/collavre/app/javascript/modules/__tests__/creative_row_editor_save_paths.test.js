@@ -126,8 +126,7 @@ test('persistent queue snapshots the outgoing row, keeps its object body, applie
 
   editorOptions.onChange({ html: '<p>outgoing edit</p>', markdown: 'outgoing edit' })
   document.getElementById('inline-move-down').click()
-  await Promise.resolve()
-  await Promise.resolve()
+  await flushPromises()
 
   expect(enqueue).toHaveBeenCalledTimes(1)
   const queued = enqueue.mock.calls[0][0]
@@ -174,8 +173,7 @@ test('persistent queue skips an empty buffer', async () => {
 
   editorOptions.onChange({ html: '', markdown: '' })
   document.getElementById('inline-move-down').click()
-  await Promise.resolve()
-  await Promise.resolve()
+  await flushPromises()
 
   expect(enqueue).not.toHaveBeenCalled()
 })
@@ -458,4 +456,21 @@ test('reopening an unacknowledged row preserves pending status and the local bod
   await flushPromises()
   expect(textarea.value).toBe('offline draft')
   expect(document.getElementById('inline-save-status').dataset.state).toBe('pending')
+})
+
+test.each(['inline-close', 'inline-move-down'])('%s keeps the editor and draft when local persistence fails', async button => {
+  jest.useFakeTimers()
+  const first = appendMarkdownRow('42', 'before')
+  appendMarkdownRow('43', 'next')
+  openRow(first.tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'Retain this draft'
+  textarea.dispatchEvent(new Event('input'))
+  enqueue.mockImplementation(() => { throw new Error('quota') })
+  document.getElementById(button).click()
+  await flushPromises()
+  expect(textarea.value).toBe('Retain this draft')
+  expect(document.getElementById('inline-edit-form-element').dataset.creativeId).toBe('42')
+  expect(document.getElementById('inline-edit-form').style.display).toBe('block')
+  expect(document.getElementById('inline-save-status').dataset.state).toBe('error')
 })

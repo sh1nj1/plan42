@@ -1,3 +1,4 @@
+import { waitForQueuedRequests, mergeQueueCallbacks } from './queue_completion'
 import csrfFetch, { refreshCsrfToken } from './csrf_fetch'
 import { apiErrorFromResponse } from './api_error'
 
@@ -205,27 +206,7 @@ class ApiQueueManager {
         }
 
         // Merge new callback with existing callbacks
-        let mergedCallback = null
-        if (existingCallbacks.length > 0 || request.onSuccess) {
-            mergedCallback = (responseData) => {
-                // Run all existing callbacks first
-                existingCallbacks.forEach(cb => {
-                    try {
-                        cb(responseData)
-                    } catch (error) {
-                        console.error('Merged callback failed:', error)
-                    }
-                })
-                // Then run the new callback
-                if (typeof request.onSuccess === 'function') {
-                    try {
-                        request.onSuccess(responseData)
-                    } catch (error) {
-                        console.error('New callback failed:', error)
-                    }
-                }
-            }
-        }
+        const mergedCallback = mergeQueueCallbacks(existingCallbacks, request.onSuccess)
 
         const queueItem = {
             id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -341,27 +322,8 @@ class ApiQueueManager {
         this.processing = false
     }
 
-    // Dependency operations (creation/type changes/archive) need acknowledgment.
     waitFor(dedupeKey) {
-        if (!this.queue.some(item => item.dedupeKey === dedupeKey)) return Promise.resolve()
-        return new Promise((resolve, reject) => {
-            const cleanup = () => {
-                window.removeEventListener('api-queue-request-completed', completed)
-                window.removeEventListener('api-queue-request-failed', failed)
-            }
-            const completed = () => {
-                if (this.queue.some(item => item.dedupeKey === dedupeKey)) return
-                cleanup()
-                resolve()
-            }
-            const failed = event => {
-                if (event.detail.item.dedupeKey !== dedupeKey) return
-                cleanup()
-                reject(event.detail.error)
-            }
-            window.addEventListener('api-queue-request-completed', completed)
-            window.addEventListener('api-queue-request-failed', failed)
-        })
+        return waitForQueuedRequests(this, dedupeKey)
     }
 
     /**

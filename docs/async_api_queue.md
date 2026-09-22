@@ -35,7 +35,10 @@ The core class managing the queue. It is a singleton instance exported as `apiQu
 The inline editor integrates with the queue for all state-changing operations.
 
 - **Initialization**: Calls `apiQueue.initialize(currentUserId)` and `apiQueue.start()` on `turbo:load`.
-- **Saving**: `saveForm` now enqueues requests instead of calling `fetch` directly.
+- **Saving**: Existing-row autosave (5-second trailing debounce), close, row navigation, and progress changes share the persistent queue. The outgoing row cache updates before the editor is released; server acknowledgment is asynchronous.
+- **Dependencies**: New creative creation, type changes, and archive flushes still require server acknowledgment. They wait for earlier queued saves of the same creative before issuing their request. Uploads finish before their signed references are queued.
+- **Status and reconciliation**: Pending rows retain their local content on reopen and defer background tree reloads. Older acknowledgments cannot mark newer edits saved or overwrite them. Permanent failures remain in the failed queue and surface an error; local persistence failures retain the open editor.
+- **Ordering**: Retries stay ahead of newer requests. Deduplication merges partial bodies, preserving unsent progress changes when a later body edit omits progress.
 - **Deletion**: `deleteCurrent` removes any pending saves for the creative before destroying it to prevent race conditions.
 - **Error Handling**: Listens for `api-queue-request-failed` to alert the user (suppressing 404s for deleted items).
 
@@ -47,7 +50,7 @@ The inline editor integrates with the queue for all state-changing operations.
   id: "timestamp_random",
   path: "/creatives/123",
   method: "PATCH",
-  body: FormData, // Serialized for storage
+  body: { 'creative[markdown_source]': 'Edited text' }, // JSON-serializable snapshot
   dedupeKey: "creative_123",
   retries: 0,
   timestamp: 1234567890
