@@ -1,4 +1,4 @@
-import { recoverFailedCreative } from './failed_creative_save'
+import { recoverFailedCreative, retryFailedCreativeBeforeSave } from './failed_creative_save'
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
@@ -910,7 +910,7 @@ function setupEditorSession() {
           }
         });
       }
-      return Promise.all([waitForUploads(), apiQueue.waitFor(`creative_${form.dataset.creativeId}`)]).then(function () {
+      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree))]).then(function () {
         return saveQueue.runExclusive(performSave);
       });
     }

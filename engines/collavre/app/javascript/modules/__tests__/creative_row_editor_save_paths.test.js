@@ -5,6 +5,7 @@ import { jest } from '@jest/globals'
 
 let editorOptions = null
 const save = jest.fn()
+const get = jest.fn(() => Promise.resolve({}))
 const enqueue = jest.fn()
 const unconvert = jest.fn()
 const waitFor = jest.fn(() => Promise.resolve())
@@ -33,7 +34,7 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
   default: {
     save,
     unconvert,
-    get: jest.fn(() => Promise.resolve({})),
+    get,
     loadChildren: jest.fn(() => Promise.resolve({ creatives: [] })),
   },
 }))
@@ -80,6 +81,7 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="creatives"></div><div id="center-frame"></div>'
   buildEditorDom(document.getElementById('center-frame'))
   save.mockReset()
+  get.mockReset().mockResolvedValue({})
   enqueue.mockReset()
   queue.failedItems = []
   queue.unacknowledgedBody.mockReset()
@@ -625,4 +627,79 @@ test('reopening after reload restores the persisted failed draft over server dat
   expect(enqueue.mock.calls[0][0].body['creative[markdown_source]']).toBe('persisted draft')
   enqueue.mock.calls[0][0].onSuccess({})
   expect(tree.dataset.saveState).toBeUndefined()
+})
+
+function restoreFailedProgressDraft() {
+  const body = {
+    'creative[description]': '<p>recovered draft</p>',
+    'creative[content_type_input]': 'markdown',
+    'creative[markdown_source]': 'recovered draft',
+    'creative[progress]': 1,
+  }
+  queue.failedItems = [{ dedupeKey: 'creative_42', body }]
+  queue.unacknowledgedBody.mockReturnValue(body)
+  const { tree } = appendMarkdownRow('42', 'stale server')
+  tree.dataset.parentId = '7'
+  tree.closest('creative-tree-row').dataset.parentId = '7'
+  openRow(tree)
+  return tree
+}
+
+test('type change acknowledges recovered progress and clears the failed draft before direct save', async () => {
+  jest.useFakeTimers()
+  const { unacknowledgedBody, clearAcknowledgedFailures } = await import('../../lib/api/queue_recovery')
+  const tree = restoreFailedProgressDraft()
+  queue.queue = []
+  queue.saveFailedToLocalStorage = jest.fn()
+  enqueue.mockImplementation(request => {
+    queue.queue.push({ ...request, body: { ...unacknowledgedBody(queue, request.dedupeKey), ...request.body } })
+  })
+  let acknowledge
+  waitFor.mockImplementationOnce(() => new Promise(resolve => { acknowledge = resolve }))
+  selectType('Workflow')
+  await jest.advanceTimersByTimeAsync(5000)
+  expect(save).not.toHaveBeenCalled()
+  expect(queue.queue[0].body['creative[progress]']).toBe(1)
+  expect(queue.queue[0].body['creative[markdown_source]']).toBe('recovered draft')
+  const request = queue.queue.shift()
+  request.onSuccess({})
+  clearAcknowledgedFailures(queue, request)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'newer body'
+  textarea.dispatchEvent(new Event('input'))
+  save.mockImplementation((_path, _method, form) => {
+    expect(new FormData(form).get('creative[markdown_source]')).toBe('newer body')
+    return response({ id: 42, creative_type: 'workflow' })
+  })
+  get.mockResolvedValue({ id: 42, content_type: 'markdown', markdown_source: 'newer body', markdown_editor: 'source', description: '<p>newer body</p>', progress: 1, creative_type: 'workflow' })
+  acknowledge()
+  await jest.advanceTimersByTimeAsync(0)
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(queue.failedItems).toEqual([])
+  expect(queue.saveFailedToLocalStorage).toHaveBeenCalled()
+  document.getElementById('inline-close').click()
+  await jest.advanceTimersByTimeAsync(0)
+  openRow(tree)
+  await jest.advanceTimersByTimeAsync(0)
+  expect(textarea.value).toBe('newer body')
+})
+
+test.each(['type', 'unconvert'])('%s stops if the recovered draft retry fails', async action => {
+  jest.useFakeTimers()
+  restoreFailedProgressDraft()
+  let rejectRetry
+  waitFor.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRetry = reject }))
+  if (action === 'type') {
+    selectType('Workflow')
+    document.getElementById('inline-close').click()
+  } else document.getElementById('inline-unconvert').click()
+  await jest.advanceTimersByTimeAsync(0)
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  expect(save).not.toHaveBeenCalled()
+  expect(unconvert).not.toHaveBeenCalled()
+  rejectRetry(new Error('Retry denied'))
+  await jest.advanceTimersByTimeAsync(0)
+  expect(save).not.toHaveBeenCalled()
+  expect(unconvert).not.toHaveBeenCalled()
+  expect(queue.failedItems).toHaveLength(1)
 })

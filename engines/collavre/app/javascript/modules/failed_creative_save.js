@@ -14,3 +14,11 @@ export function recoverFailedCreative(queue, data, tree) {
   tree.dataset.saveState = 'error'
   return recovered
 }
+
+// Direct saves must acknowledge the recovered fields before changing type or
+// performing a dependent operation. Queue success also clears durable failures.
+export async function retryFailedCreativeBeforeSave(queue, creativeId, retry) {
+  const key = `creative_${creativeId}`
+  if (queue.failedItems?.some(item => item.dedupeKey === key)) await retry()
+  await queue.waitFor(key)
+}
