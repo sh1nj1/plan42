@@ -53,6 +53,25 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert markdown.end_with?("\n````\n")
   end
 
+  test "fence markers in the summary cannot swallow the source block" do
+    user = users(:one)
+    source = scaffold(desc: "```ruby ~~~ x")
+    markdown = dry_run(source, "--parent", "1", "--title", "~~~ Probe")
+
+    assert_match(/\A# \\~\\~\\~ Probe\n\n\\`\\`\\`ruby \\~\\~\\~ x\n\n````ruby\nmodule Tools\n/, markdown)
+
+    host = Creative.new(user: user)
+    host.content_type_input = "markdown"
+    host.markdown_source = markdown
+    host.save!
+    Collavre::McpService.new.update_from_creative(host)
+
+    tool = McpTool.find_by!(name: "authored_probe")
+    assert_equal source.strip, tool.source_code.strip
+    tool.approve!
+    assert tool.reload.active?
+  end
+
   test "reads single-quoted metadata and flattens escaped newlines in the summary" do
     source = scaffold
       .sub('tool_name "authored_probe"', "tool_name 'authored_probe'")

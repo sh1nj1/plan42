@@ -152,12 +152,20 @@ module Tools
     def build_json_tree(creatives, depth:, include_comments: false)
       return [] if creatives.blank?
 
+      ActiveRecord::Associations::Preloader.new(records: creatives.to_a, associations: :origin).call
+      origins = creatives.index_with(&:effective_origin)
+      @tool_names = McpTool.where(creative_id: origins.values.map(&:id).uniq)
+        .pluck(:creative_id, :name)
+        .group_by(&:first)
+        .transform_values { |pairs| pairs.map(&:last) }
+
       creatives.map do |creative|
-        serialize_creative(creative, depth: depth, current_depth: 1, include_comments: include_comments)
+        serialize_creative(creative, depth: depth, current_depth: 1, include_comments: include_comments,
+                                     origin_id: origins[creative].id)
       end
     end
 
-    def serialize_creative(creative, depth:, current_depth:, include_comments: false)
+    def serialize_creative(creative, depth:, current_depth:, include_comments: false, origin_id: nil)
       children = creative.linked_children
 
       result = {
@@ -175,8 +183,8 @@ module Tools
       }
 
       # Tools this Creative defines (approved or pending), so authoring clients can
-      # tell a rename from a collision. Top level only to avoid a query per node.
-      result[:mcp_tools] = creative.effective_origin.mcp_tools.pluck(:name) if current_depth == 1
+      # tell a rename from a collision. Top level only; loaded in one query by build_json_tree.
+      result[:mcp_tools] = @tool_names.fetch(origin_id, []) if current_depth == 1
       result[:recent_comments] = recent_comments(creative) if include_comments
       result[:children] = if current_depth < depth
         children.map do |child|

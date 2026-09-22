@@ -108,8 +108,15 @@ function fenceFor(source) {
   return "`".repeat(Math.max(3, longest + 1));
 }
 
+// Backslash-escape fence characters in the prose above the source, so a
+// summary starting with ``` or ~~~ cannot open a code block that swallows
+// the tool's own fence.
+function escapeProse(text) {
+  return String(text).replace(/[\\`~]/g, "\\$&");
+}
+
 export function toolCreativeMarkdown({ source, name, description, title }) {
-  const heading = title && title !== true ? title : name;
+  const heading = escapeProse(title && title !== true ? title : name);
   const fence = fenceFor(source);
-  return `# ${heading}\n\n${description}\n\n${fence}ruby\n${source.replace(/\s+$/, "")}\n${fence}\n`;
+  return `# ${heading}\n\n${escapeProse(description)}\n\n${fence}ruby\n${source.replace(/\s+$/, "")}\n${fence}\n`;
 }
