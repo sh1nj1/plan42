@@ -9,7 +9,7 @@ import http from "node:http";
 import os from "node:os";
 import { randomBytes } from "node:crypto";
 import { decodeHtmlEntities } from "./html_entities.js";
-import { scaffoldTool, toolCreativeMarkdown, validateToolSource } from "./tool_authoring.js";
+import { registeredToolNames, scaffoldTool, toolCreativeMarkdown, validateToolSource } from "./tool_authoring.js";
 
 const CONFIG_DIR = path.join(
   os.homedir(),
@@ -631,6 +631,46 @@ function toolNotFound(result) {
   return (result?.content || []).some((item) => /Tool not found/.test(item.text || ""));
 }
 
+function parsedTexts(result) {
+  return (result?.content || []).map((item) => {
+    try {
+      return JSON.parse(fixRubyHash(item.text || ""));
+    } catch {
+      return item.text;
+    }
+  });
+}
+
+function failOnServiceError(result) {
+  const failure = parsedTexts(result).find((value) => value && typeof value === "object" && !Array.isArray(value) && value.error);
+  if (!result?.isError && !failure) return;
+  printResult(result);
+  console.error(`Error: ${failure?.error || "request failed"}`);
+  process.exit(1);
+}
+
+// Tool names are global. A second definition under a registered name fails to
+// save server-side without an error, and on update the Creative's old tool is
+// dropped too. Only approved tools are visible here; pending ones are not.
+async function refuseRegisteredName(client, name) {
+  const existing = await client.callTool("meta_tool", { action: "get", tool_name: name });
+  if (!toolNotFound(existing)) {
+    console.error(`Tool "${name}" already exists. Pick another tool_name or update its Creative.`);
+    process.exit(1);
+  }
+}
+
+async function ownedToolNames(client, creativeId) {
+  const result = await client.callTool("creative_retrieval_service", { id: creativeId, level: 1, format: "json" });
+  failOnServiceError(result);
+  const creative = parsedTexts(result).flat().find((value) => value?.id === creativeId);
+  if (!creative) {
+    console.error(`Error: Creative ${creativeId} not found`);
+    process.exit(1);
+  }
+  return registeredToolNames(creative.description);
+}
+
 async function authorTool(sub, args, positional) {
   const creativeId = parseInt(positional[1]);
   const parentId = parseInt(args.parent);
@@ -654,18 +694,17 @@ async function authorTool(sub, args, positional) {
   }
 
   await withClient(async (client) => {
+    let result;
     if (sub === "create") {
-      // Tool names are global. An approved tool with this name already exists;
-      // a second definition would fail to save server-side without an error.
-      const existing = await client.callTool("meta_tool", { action: "get", tool_name: name });
-      if (!toolNotFound(existing)) {
-        console.error(`Tool "${name}" already exists. Pick another tool_name or update its Creative.`);
-        process.exit(1);
-      }
-      printResult(await client.callTool("creative_create_service", { description: markdown, parent_id: parentId }));
+      await refuseRegisteredName(client, name);
+      result = await client.callTool("creative_create_service", { description: markdown, parent_id: parentId });
     } else {
-      printResult(await client.callTool("creative_update_service", { id: creativeId, description: markdown }));
+      const owned = await ownedToolNames(client, creativeId);
+      if (!owned.includes(name)) await refuseRegisteredName(client, name);
+      result = await client.callTool("creative_update_service", { id: creativeId, description: markdown });
     }
+    failOnServiceError(result);
+    printResult(result);
     console.error(`Tool "${name}" is pending approval: the Creative owner must approve it from the approval comment before it runs.`);
   });
 }

@@ -5,6 +5,10 @@
 // from the approval comment, then it is registered and runnable via meta_tool.
 
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+// Same matching McpService uses: a code block is a tool only if it contains
+// this literal text, and its registered name is the first tool_name match.
+const TOOL_MARKER = "extend ToolMeta";
+const SERVER_TOOL_NAME = /tool_name\s+["'](.+?)["']/;
 
 export function toolClassName(toolName) {
   const camel = toolName
@@ -55,6 +59,13 @@ function extractString(source, keyword) {
   return (match[1] ?? match[2]).replace(/\\(.)/g, (_, ch) => (ch === "n" ? " " : ch));
 }
 
+// Tool names McpService would register from a Creative's (plain text) description.
+export function registeredToolNames(text) {
+  if (!text || !text.includes(TOOL_MARKER)) return [];
+  const global = new RegExp(SERVER_TOOL_NAME.source, "g");
+  return [...text.matchAll(global)].map((match) => match[1]);
+}
+
 // Mirrors what the server needs to turn the code block into a working tool:
 // McpService only picks up blocks containing `extend ToolMeta`, reads
 // `tool_name`/`tool_description` by regex, and ToolMeta refuses to build a
@@ -64,12 +75,15 @@ export function validateToolSource(source) {
   if (!source || !source.trim()) {
     return { errors: ["Tool source is empty"] };
   }
-  if (!/\bextend\s+ToolMeta\b/.test(source)) errors.push("Missing `extend ToolMeta`");
+  if (!source.includes(TOOL_MARKER)) errors.push("Missing `extend ToolMeta` (exactly one space)");
   if (!/\bextend\s+T::Sig\b/.test(source)) errors.push("Missing `extend T::Sig`");
 
-  const name = extractString(source, "tool_name");
+  const name = source.match(SERVER_TOOL_NAME)?.[1];
+  const declared = extractString(source, "tool_name");
   if (!name) {
     errors.push('Missing `tool_name "snake_case_name"`');
+  } else if (declared && declared !== name) {
+    errors.push(`tool_name is read as "${name}" by the server, not "${declared}"; keep the first tool_name a plain string`);
   } else if (!TOOL_NAME_PATTERN.test(name)) {
     errors.push(`tool_name "${name}" must be snake_case`);
   }

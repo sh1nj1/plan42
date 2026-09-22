@@ -37,8 +37,12 @@ collavre tool run weekly_digest --json '{"creative_id": 123}'
 collavre tool update 456 --file weekly_digest.rb
 ```
 
-`create` refuses a `tool_name` that is already registered. Tool names are
-global, so pick a specific name.
+Tool names are global, so pick a specific name. `create` refuses a `tool_name`
+that is already registered, and so does `update` when it would rename the tool
+to another Creative's name. Only approved tools are visible to this check: a
+name still pending approval elsewhere makes the save fail silently, and on
+`update` the Creative's previous tool is removed as well. Both commands exit
+non-zero when the server rejects the request.
 
 ## Tool source shape
 
@@ -71,8 +75,10 @@ end
 
 Rules the CLI checks before creating the Creative:
 
-- The class lives in the `Tools` namespace and has `extend T::Sig` and `extend ToolMeta`.
+- The class lives in the `Tools` namespace and has `extend T::Sig` and `extend ToolMeta`
+  (written exactly like that; the server looks for the literal text).
 - `tool_name` is a snake_case string literal and `tool_description` is a string literal.
+  The server reads the first `tool_name` it finds, so keep it a plain string.
 - The entrypoint is `def call(...)` with a Sorbet `sig` above it.
 
 Rules the CLI cannot check, so follow them yourself:

@@ -104,8 +104,10 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     assert_includes scaffold(desc: nil), 'tool_description "TODO: describe what authored_probe does"'
   end
 
+  NOT_FOUND = '{"error":"Tool not found: authored_probe"}'
+
   test "create checks for an existing tool, then creates the Creative" do
-    with_fake_mcp(get_text: '{"error":"Tool not found: authored_probe"}') do |home, calls|
+    with_fake_mcp("meta_tool" => NOT_FOUND) do |home, calls|
       out, err, status = cli_with_source(home, "create", "--parent", "42")
       assert_predicate status, :success?, err
       assert_equal %w[meta_tool creative_create_service], calls.map { |c| c["name"] }
@@ -118,7 +120,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
   end
 
   test "create refuses a tool name that is already registered" do
-    with_fake_mcp(get_text: '{"name":"authored_probe"}') do |home, calls|
+    with_fake_mcp("meta_tool" => '{"name":"authored_probe"}') do |home, calls|
       _out, err, status = cli_with_source(home, "create", "--parent", "42")
       assert_not_predicate status, :success?
       assert_includes err, 'Tool "authored_probe" already exists'
@@ -126,17 +128,91 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     end
   end
 
-  test "update replaces the tool Creative description" do
-    with_fake_mcp(get_text: "") do |home, calls|
-      _out, err, status = cli_with_source(home, "update", "77")
-      assert_predicate status, :success?, err
-      assert_equal %w[creative_update_service], calls.map { |c| c["name"] }
-      assert_equal 77, calls.first.dig("arguments", "id")
-      assert_includes calls.first.dig("arguments", "description"), "```ruby\nmodule Tools\n"
+  test "create fails when the server rejects the Creative" do
+    responses = { "meta_tool" => NOT_FOUND, "creative_create_service" => '{"error":"Parent Creative not found","id":42}' }
+    with_fake_mcp(responses) do |home, _calls|
+      out, err, status = cli_with_source(home, "create", "--parent", "42")
+      assert_not_predicate status, :success?
+      assert_includes out, "Parent Creative not found"
+      assert_includes err, "Error: Parent Creative not found"
+      assert_not_includes err, "pending approval"
     end
   end
 
+  test "update keeps the Creative's own tool name without a registry check" do
+    with_fake_mcp("creative_retrieval_service" => owner(77, "authored_probe")) do |home, calls|
+      _out, err, status = cli_with_source(home, "update", "77")
+      assert_predicate status, :success?, err
+      assert_equal %w[creative_retrieval_service creative_update_service], calls.map { |c| c["name"] }
+      assert_equal({ "id" => 77, "level" => 1, "format" => "json" }, calls.first["arguments"])
+      assert_equal 77, calls.last.dig("arguments", "id")
+      assert_includes calls.last.dig("arguments", "description"), "```ruby\nmodule Tools\n"
+      assert_includes err, "pending approval"
+    end
+  end
+
+  test "update refuses renaming onto another Creative's registered tool" do
+    responses = { "creative_retrieval_service" => owner(77, "old_probe"), "meta_tool" => '{"name":"authored_probe"}' }
+    with_fake_mcp(responses) do |home, calls|
+      _out, err, status = cli_with_source(home, "update", "77")
+      assert_not_predicate status, :success?
+      assert_includes err, 'Tool "authored_probe" already exists'
+      assert_equal %w[creative_retrieval_service meta_tool], calls.map { |c| c["name"] }
+    end
+  end
+
+  test "update to a free name checks the registry, then saves" do
+    plain = [ { id: 77, description: "Notes only" } ].to_json
+    with_fake_mcp("creative_retrieval_service" => plain, "meta_tool" => NOT_FOUND) do |home, calls|
+      _out, err, status = cli_with_source(home, "update", "77")
+      assert_predicate status, :success?, err
+      assert_equal %w[creative_retrieval_service meta_tool creative_update_service], calls.map { |c| c["name"] }
+    end
+  end
+
+  test "update fails for a missing Creative or a rejected save" do
+    with_fake_mcp("creative_retrieval_service" => "[]") do |home, calls|
+      _out, err, status = cli_with_source(home, "update", "77")
+      assert_not_predicate status, :success?
+      assert_includes err, "Creative 77 not found"
+      assert_equal %w[creative_retrieval_service], calls.map { |c| c["name"] }
+    end
+
+    responses = {
+      "creative_retrieval_service" => owner(77, "authored_probe"),
+      "creative_update_service" => [ "No write permission on this Creative", true ]
+    }
+    with_fake_mcp(responses) do |home, _calls|
+      _out, err, status = cli_with_source(home, "update", "77")
+      assert_not_predicate status, :success?
+      assert_includes err, "Error: request failed"
+      assert_not_includes err, "pending approval"
+    end
+  end
+
+  test "rejects sources the server would not register as intended" do
+    spaced = scaffold.sub("extend ToolMeta", "extend  ToolMeta")
+    assert_includes invalid(spaced), "Missing `extend ToolMeta` (exactly one space)"
+
+    shadowed = scaffold.sub("    tool_name", "    # tool_name \"other_probe\"\n    tool_name")
+    assert_includes invalid(shadowed), 'tool_name is read as "other_probe" by the server, not "authored_probe"'
+  end
+
   private
+
+  def owner(id, tool_name)
+    [ { id: id, description: "Tool module Tools extend ToolMeta tool_name \"#{tool_name}\" end" } ].to_json
+  end
+
+  def invalid(source)
+    Dir.mktmpdir do |dir|
+      file = File.join(dir, "tool.rb")
+      File.write(file, source)
+      _out, err, status = cli("tool", "create", "--parent", "1", "--file", file, home: dir)
+      assert_not_predicate status, :success?
+      err
+    end
+  end
 
   def cli(*argv, home: Dir.tmpdir)
     Open3.capture3({ "HOME" => home }, "node", SCRIPT, *argv)
@@ -166,15 +242,16 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
   end
 
   # Minimal MCP SSE endpoint: GET /mcp/sse announces the messages URL, and each
-  # POSTed tools/call is answered on the SSE stream.
-  def with_fake_mcp(get_text:)
+  # POSTed tools/call is answered on the SSE stream. `responses` maps a tool name
+  # to its text, or to [text, isError].
+  def with_fake_mcp(responses)
     server = TCPServer.new("127.0.0.1", 0)
     calls = []
     sse = Queue.new
     thread = Thread.new do
       loop do
         socket = server.accept
-        Thread.new(socket) { |s| serve_fake_mcp(s, sse, calls, get_text) }
+        Thread.new(socket) { |s| serve_fake_mcp(s, sse, calls, responses) }
       end
     rescue IOError
       nil
@@ -192,7 +269,7 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     thread&.kill
   end
 
-  def serve_fake_mcp(socket, sse, calls, get_text)
+  def serve_fake_mcp(socket, sse, calls, responses)
     request_line = socket.gets
     headers = {}
     while (line = socket.gets) && line != "\r\n"
@@ -210,10 +287,11 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
       calls << params
       socket.write("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
       socket.close
-      text = params["name"] == "meta_tool" ? get_text : '{"ok":true}'
+      text, is_error = responses.fetch(params["name"], '{"ok":true}')
+      result = { content: [ { type: "text", text: text } ], isError: is_error == true }
       stream = sse.pop
       sse << stream
-      stream.write("data: #{{ jsonrpc: '2.0', id: body['id'], result: { content: [ { type: 'text', text: text } ] } }.to_json}\n\n")
+      stream.write("data: #{{ jsonrpc: '2.0', id: body['id'], result: result }.to_json}\n\n")
     end
   rescue IOError, Errno::EPIPE, Errno::ECONNRESET
     nil
