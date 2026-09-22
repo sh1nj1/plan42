@@ -21,8 +21,12 @@ class LlmUsagesSystemTest < ApplicationSystemTestCase
     assert_selector "tbody td", text: "Usage owner"
     assert_selector "tbody td", text: "100"
     assert_selector "tbody small", text: "1 unreported"
+    assert_selector "tfoot th", text: "Total"
+    assert_selector "tfoot td", text: "100", exact_text: true
+    assert_selector "tfoot small", text: "1 unreported"
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height: 812, deviceScaleFactor: 1, mobile: true)
     assert page.evaluate_script("document.documentElement.scrollWidth <= window.innerWidth")
+    find("tfoot").scroll_to
     page.save_screenshot(Rails.root.join("tmp", "llm-usages-mobile.png"))
   ensure
     page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
