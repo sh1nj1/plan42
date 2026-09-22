@@ -30,14 +30,14 @@ module Collavre
       assert_operator replacement.created_at, :>=, human.created_at
     end
 
-    test "preserves images privacy mentions and quoted text" do
+    test "preserves images mentions and quoted text" do
       quote = create_message(users(:two), "Quoted", created_at: @comment.created_at - 1.second)
-      @comment.update!(content: "@AI Bot: look", private: true, quoted_comment: quote, quoted_text: "Quoted")
+      @comment.update!(content: "@AI Bot: look", quoted_comment: quote, quoted_text: "Quoted")
       @comment.images.attach(io: StringIO.new("image"), filename: "image.png", content_type: "image/png")
       blob_id = @comment.images.first.blob_id
       replacement = resend
       assert_equal "@AI Bot: look", replacement.content
-      assert replacement.private?
+      assert_not replacement.private?
       assert_equal quote.id, replacement.quoted_comment_id
       assert_equal "Quoted", replacement.quoted_text
       assert_equal [ blob_id ], replacement.images.pluck(:blob_id)

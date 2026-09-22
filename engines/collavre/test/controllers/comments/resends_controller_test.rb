@@ -61,6 +61,28 @@ module Collavre
         end
       end
 
+      test "disables private resend and preserves later public prompts replies and tasks" do
+        @comment.update!(private: true)
+        prompt = @creative.comments.create!(user: users(:two), content: "Public prompt", topic_id: @comment.topic_id)
+        task = Task.create!(name: "Reply", agent: users(:ai_bot), creative: @creative,
+                            topic_id: @comment.topic_id, status: "running")
+        reply = @creative.comments.create!(user: users(:ai_bot), content: "Public reply",
+                                          topic_id: @comment.topic_id, task: task)
+        get creative_comments_path(@creative), params: { topic_id: @comment.topic_id }
+        assert_response :success
+        assert_select "#comment_#{@comment.id}[data-private='true']"
+        assert_select "#comment_#{prompt.id}[data-private='false']"
+
+        SystemEvents::Dispatcher.stub :dispatch, ->(*) { flunk "Dispatched private message" } do
+          assert_no_difference("Comment.count") { post creative_comment_resend_path(@creative, @comment) }
+        end
+        assert_response :forbidden
+        assert @comment.reload.private?
+        assert_equal "Public prompt", prompt.reload.content
+        assert_equal "Public reply", reply.reload.content
+        assert_equal "running", task.reload.status
+      end
+
       test "cannot address a message through another creative" do
         other = Creative.create!(user: @user, description: "Other")
         post creative_comment_resend_path(other, @comment)

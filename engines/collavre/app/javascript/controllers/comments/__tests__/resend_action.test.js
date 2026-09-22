@@ -32,7 +32,7 @@ test('enables a single own message and uses localized text', () => {
   expect(action.title).toBe('설명')
 })
 
-test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy', 'inbox-system', 'command'])('disables resend for %s', reason => {
+test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy', 'inbox-system', 'command', 'private'])('disables resend for %s', reason => {
   if (reason === 'multiple') controller.selection.add('11')
   if (reason === 'none') controller.selection.clear()
   if (reason === 'other') document.getElementById('comment_10').dataset.userId = '2'
@@ -41,6 +41,7 @@ test.each(['multiple', 'none', 'other', 'ai', 'missing', 'anonymous', 'busy', 'i
   if (reason === 'anonymous') delete document.body.dataset.currentUserId
   if (reason === 'inbox-system') document.getElementById('comment_10').dataset.inboxSystem = 'true'
   if (reason === 'command') document.getElementById('comment_10').dataset.commandMessage = 'true'
+  if (reason === 'private') document.getElementById('comment_10').dataset.private = 'true'
   if (reason === 'busy') controller.resendingComment = true
   expect(button().disabled).toBe(true)
 })
@@ -71,6 +72,13 @@ test.each(['server', 'network', 'invalid-json'])('preserves selection and restor
   expect(controller.resendingComment).toBe(false)
   expect(controller.updateSelectionActionBar).toHaveBeenCalled()
   expect(alertDialog).toHaveBeenCalled()
+})
+
+test('rechecks privacy when invoked', async () => {
+  const action = button()
+  document.getElementById('comment_10').dataset.private = 'true'
+  await resendSelectedMessage(controller, action)
+  expect(fetch).not.toHaveBeenCalled()
 })
 
 test('rechecks ownership when invoked', async () => {

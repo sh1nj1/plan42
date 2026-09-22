@@ -38,7 +38,7 @@ module Collavre
       raise NotAllowed unless @comment.creative_id == @creative.id && @comment.topic_id == @topic_id
       raise NotAllowed unless @creative.has_permission?(@user, :feedback)
       raise NotAllowed if @creative.reload.archived? || @comment.approval_action?
-      raise NotAllowed if self.class.command_message?(@comment)
+      raise NotAllowed if @comment.private? || self.class.command_message?(@comment)
       validate_topic!
     end
 
