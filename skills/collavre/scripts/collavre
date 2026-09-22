@@ -679,6 +679,17 @@ async function ownedToolNames(client, creativeId) {
   return Array.isArray(creative.mcp_tools) ? creative.mcp_tools : [];
 }
 
+// Under ai_write_policy=review the write becomes a draft change set: no
+// Creative and no approval comment exist until that draft is approved.
+function reportToolState(result, name) {
+  const draft = parsedTexts(result).find((value) => value?.pending_review);
+  if (draft) {
+    console.error(`Tool "${name}" is waiting for change set ${draft.change_set_id} to be reviewed; once it is applied, the Creative owner must approve the tool from the approval comment.`);
+  } else {
+    console.error(`Tool "${name}" is pending approval: the Creative owner must approve it from the approval comment before it runs.`);
+  }
+}
+
 async function authorTool(sub, args, positional) {
   const creativeId = parseInt(positional[1]);
   const parentId = parseInt(args.parent);
@@ -713,7 +724,7 @@ async function authorTool(sub, args, positional) {
     }
     failOnServiceError(result);
     printResult(result);
-    console.error(`Tool "${name}" is pending approval: the Creative owner must approve it from the approval comment before it runs.`);
+    reportToolState(result, name);
   });
 }
 

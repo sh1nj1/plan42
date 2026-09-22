@@ -44,6 +44,9 @@ tools, not names that merely appear in its text). Only approved tools are visibl
 name still pending approval elsewhere makes the save fail silently, and on
 `update` the Creative's previous tool is removed as well. Both commands exit
 non-zero when the server rejects the request.
+If the Creative's `ai_write_policy` is `review`, the save becomes a draft change
+set first; the CLI reports it, and the approval comment only appears after that
+draft is applied.
 
 ## Tool source shape
 

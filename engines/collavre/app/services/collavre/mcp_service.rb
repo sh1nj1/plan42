@@ -9,10 +9,11 @@ module Collavre
     # approval's rollback removes the class the other just registered.
     REGISTRY_LOCK = Monitor.new
 
-    # Class name => tool name of the dynamic tool whose source first defined it.
     # Evaluating a source reopens an existing class, so a tool may only reuse a
-    # constant it defined itself (re-approval after an edit, or a retry).
-    CLASS_OWNERS = {}
+    # constant it defined itself (re-approval after an edit, or a retry). The
+    # owner is stored on the class, not in this reloadable service, so it
+    # survives a development reload for as long as the class does.
+    OWNER_IVAR = :@collavre_mcp_tool_owner
 
     # --- Registration Logic (from MetaToolService) ---
 
@@ -91,22 +92,50 @@ module Collavre
       class_name = writer.send(:extract_class_name, source_code)
       return { error: "class_name is required for register" } if class_name.blank?
 
-      defined_before = Object.const_defined?(class_name)
-      if defined_before && CLASS_OWNERS[class_name] != expected_name
+      existing = class_name.safe_constantize
+      if existing && owner_of(existing) != expected_name
         return { error: "#{class_name} is already defined by another tool or the application; rename the class" }
       end
 
-      ToolMeta.registry.delete(class_name.safe_constantize) if defined_before
+      ToolMeta.registry.delete(existing) if existing
       registered_before = ToolMeta.registry.dup
       result = evaluate_and_verify(source_code, class_name, expected_name)
-      CLASS_OWNERS[class_name] = expected_name if !defined_before && Object.const_defined?(class_name)
+      defined_now = class_name.safe_constantize
+      defined_now.instance_variable_set(OWNER_IVAR, expected_name) if !existing && defined_now.is_a?(Module)
       keep = result.is_a?(Class) ? [ result ] : []
       ToolMeta.registry.reject! { |klass| !registered_before.include?(klass) && !keep.include?(klass) }
       return result unless keep.any?
 
-      writer.register_tool(class_name, before_call: before_call, after_call: after_call)
+      register_or_roll_back(writer, result, class_name, before_call: before_call, after_call: after_call)
     end
     private_class_method :register_verified_source
+
+    def self.owner_of(klass)
+      klass.instance_variable_get(OWNER_IVAR) if klass.is_a?(Module)
+    end
+    private_class_method :owner_of
+
+    # Building the tool classes can still fail (e.g. a sig that yields no
+    # schema). The verified class must then leave the registry too, or the
+    # unapproved tool stays discoverable through MetaToolService.
+    def self.register_or_roll_back(writer, service_class, class_name, before_call:, after_call:)
+      result = writer.register_tool(class_name, before_call: before_call, after_call: after_call)
+      roll_back_registration(service_class) if result[:error]
+      result
+    rescue StandardError, ScriptError => e
+      roll_back_registration(service_class)
+      { error: "Failed to register #{class_name}: #{e.message}" }
+    end
+    private_class_method :register_or_roll_back
+
+    def self.roll_back_registration(service_class)
+      ToolMeta.registry.delete(service_class)
+      { ::Tools => ToolSchema::RubyLlmFactory, ::Mcp => ToolSchema::FastMcpFactory }.each do |namespace, factory|
+        constant = factory.tool_class_name(service_class)
+        namespace.send(:remove_const, constant) if namespace.const_defined?(constant, false)
+      end
+    end
+    private_class_method :roll_back_registration
 
     # Returns the service class when this evaluation extended it with ToolMeta
     # and it declares expected_name, else an error hash.

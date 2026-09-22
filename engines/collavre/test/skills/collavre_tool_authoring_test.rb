@@ -141,6 +141,16 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     end
   end
 
+  test "create reports a draft change set instead of a tool approval under review policy" do
+    draft = '{"success":true,"status":"pending_review","pending_review":true,"change_set_id":9}'
+    with_fake_mcp("meta_tool" => NOT_FOUND, "creative_create_service" => draft) do |home, _calls|
+      _out, err, status = cli_with_source(home, "create", "--parent", "42")
+      assert_predicate status, :success?, err
+      assert_includes err, "waiting for change set 9 to be reviewed"
+      assert_not_includes err, "pending approval"
+    end
+  end
+
   test "update keeps the Creative's own tool name without a registry check" do
     with_fake_mcp("creative_retrieval_service" => owner(77, "authored_probe")) do |home, calls|
       _out, err, status = cli_with_source(home, "update", "77")
@@ -346,7 +356,44 @@ class CollavreToolAuthoringTest < ActiveSupport::TestCase
     Tools.send(:remove_const, :AuthoredProbeNextService) if Tools.const_defined?(:AuthoredProbeNextService, false)
   end
 
+  test "a verified class leaves the registry when building its tool classes fails" do
+    unsigned = approvable_tool(scaffold.sub(/^    sig \{.*\n/, ""))
+    assert_raises(RuntimeError, match: /Failed to register tool/) { unsigned.approve! }
+    assert_not unsigned.reload.active?
+    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+
+    tool = unsigned
+    tool.update!(source_code: scaffold)
+    ToolSchema::FastMcpFactory.stub(:build, ->(*) { raise ArgumentError, "bad schema" }) do
+      assert_raises(RuntimeError, match: /Failed to register Tools::AuthoredProbeService: bad schema/) { tool.approve! }
+    end
+    assert_not tool.reload.active?
+    assert_not_includes ToolMeta.registry, Tools::AuthoredProbeService
+    assert_not Tools.const_defined?(:AuthoredProbe, false), "the RubyLLM tool built before the failure is removed"
+    assert_nil Tools::MetaToolService.new.find_schema("authored_probe")
+  end
+
+  test "a tool can re-approve its class after the service is reloaded" do
+    tool = approvable_tool(scaffold)
+    tool.approve!
+    Tools::MetaToolWriteService.new.delete_tool("authored_probe")
+    reload_mcp_service
+
+    tool.approve!
+    assert Tools::MetaToolService.new.find_schema("authored_probe")
+  end
+
   private
+
+  # What a development reload does: a fresh McpService (and its ::McpService
+  # alias), while the dynamically evaluated tool classes stay defined.
+  def reload_mcp_service
+    path = Collavre::McpService.method(:register_tool_from_source).source_location.first
+    Collavre.send(:remove_const, :McpService)
+    load path
+    Object.send(:remove_const, :McpService)
+    Object.const_set(:McpService, Collavre::McpService)
+  end
 
   def approvable_tool(source, name = "authored_probe")
     host = Creative.new(user: users(:one))
