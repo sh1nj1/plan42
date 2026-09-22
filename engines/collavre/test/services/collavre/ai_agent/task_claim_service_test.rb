@@ -41,6 +41,16 @@ module Collavre
         assert_equal :created, reply.status
       end
 
+      test "an invalid late reply leaves a suspended turn suspended" do
+        @task.update!(status: "suspended", suspended_from: "delegated", suspend_reason: "agent_offline",
+                      suspended_at: Time.current)
+
+        assert_equal :unprocessable_entity, reply(text: "").status
+        assert_equal "suspended", @task.reload.status
+        assert_equal "delegated", @task.suspended_from
+        assert_not @task.task_actions.exists?(action_type: "completion")
+      end
+
       test "completion failure rolls back the claim and reply" do
         TaskAction.stub(:_insert_record, ->(*) { raise ActiveRecord::RecordNotSaved, "completion failed" }) do
           assert_no_difference "Comment.count" do

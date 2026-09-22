@@ -293,10 +293,11 @@ module Collavre
         end
 
         def post_suspended_notice(task)
+          stop_control = { waiting_notice_scope: Comment::SuspensionNotice::SCOPE, waiting_notice_task_id: task.id }
           if task.suspend_reason == "quota" && task.resume_not_before
-            post_notice(task, "suspended.quota_until", time: notice_time(task.resume_not_before))
+            post_notice(task, "suspended.quota_until", time: notice_time(task.resume_not_before), **stop_control)
           else
-            post_notice(task, "suspended.#{task.suspend_reason}")
+            post_notice(task, "suspended.#{task.suspend_reason}", **stop_control)
           end
         end
 
@@ -307,7 +308,7 @@ module Collavre
 
         # Authorless and non-dispatching: the notice must not wake any agent,
         # including the one it is about.
-        def post_notice(task, key, **params)
+        def post_notice(task, key, waiting_notice_scope: nil, waiting_notice_task_id: nil, **params)
           creative = Creative.find_by(id: task.creative_id || task.trigger_event_payload&.dig("creative", "id"))
           return unless creative
 
@@ -316,7 +317,9 @@ module Collavre
             topic_id: task.topic_id,
             private: false,
             skip_default_user: true,
-            skip_dispatch: true
+            skip_dispatch: true,
+            waiting_notice_scope: waiting_notice_scope,
+            waiting_notice_task_id: waiting_notice_task_id
           )
         rescue StandardError => e
           Rails.logger.error("[TaskResumer] Could not post #{key} notice for task #{task.id}: #{e.class}: #{e.message}")

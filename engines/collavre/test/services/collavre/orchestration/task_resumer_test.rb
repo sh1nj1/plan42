@@ -44,6 +44,18 @@ module Collavre
         @creative.comments.where(topic_id: @topic.id, user_id: nil).order(:id)
       end
 
+      # Ids of the comments re-rendered over Turbo while the block runs.
+      def rerendered_comment_ids
+        ids = []
+        Comment.alias_method :__original_broadcast_replace_to, :broadcast_replace_to
+        Comment.define_method(:broadcast_replace_to) { |*| ids << id }
+        yield
+        ids
+      ensure
+        Comment.alias_method :broadcast_replace_to, :__original_broadcast_replace_to
+        Comment.remove_method :__original_broadcast_replace_to
+      end
+
       def channel_agent
         users(:channel_bot).tap { |agent| agent.update!(llm_model: "claude-code") }
       end
@@ -211,6 +223,31 @@ module Collavre
                             agent: @agent.display_name,
                             cause: I18n.t("collavre.orchestration.suspension.escalation_causes.too_many_resumes")),
                      notices.last.content
+      end
+
+      test "the suspension notice carries the turn's Stop control while it is suspended" do
+        task = task_for(status: "running")
+        TaskResumer.suspend!(task, reason: :server_restart)
+        notice = notices.last
+
+        assert_equal task, Comment::SuspensionNotice.turn_for(notice)
+        html = ApplicationController.render(partial: "collavre/comments/comment", locals: { comment: notice })
+        assert Nokogiri::HTML.fragment(html).at_css(".comment-stop-btn[data-task-id='#{task.id}']")
+
+        refreshed = rerendered_comment_ids { assert_equal :resumed, TaskResumer.resume!(task.reload) }
+
+        assert_includes refreshed, notice.id
+        assert_nil Comment::SuspensionNotice.turn_for(notice.reload)
+        html = ApplicationController.render(partial: "collavre/comments/comment", locals: { comment: Comment.find(notice.id) })
+        assert_nil Nokogiri::HTML.fragment(html).at_css(".comment-stop-btn")
+      end
+
+      test "ending a suspended turn refreshes its suspension notice" do
+        task = task_for(status: "running")
+        TaskResumer.suspend!(task, reason: :server_restart)
+        notice = notices.last
+
+        assert_equal [ notice.id ], rerendered_comment_ids { task.reload.cancel_if_active! }
       end
 
       test "suspension notices do not dispatch to agents" do
